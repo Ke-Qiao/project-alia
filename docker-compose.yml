@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: alia-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: alia
+      POSTGRES_PASSWORD: alia_dev
+      POSTGRES_DB: alia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

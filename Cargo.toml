@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "packages/alia-server",
+    "packages/alia-embedded",
+    "crates/proto",
+    "crates/transport",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# Shared crates
+alia-proto = { path = "crates/proto" }
+alia-transport = { path = "crates/transport" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# gRPC / Protobuf
+tonic = "0.13"
+tonic-build = "0.13"
+prost = "0.13"
+
+# HTTP
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+
+# Database
+sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+sea-orm-migration = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Unix
+libc = "0.2"

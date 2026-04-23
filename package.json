@@ -1,0 +1,19 @@
+{
+  "name": "project-alia",
+  "private": true,
+  "scripts": {
+    "frontend": "pnpm --filter alia-frontend dev",
+    "frontend:web": "pnpm --filter alia-frontend web",
+    "db": "docker compose up -d",
+    "db:stop": "docker compose down",
+    "server": "cargo run -p alia-server",
+    "embedded": "cargo run -p alia-embedded",
+    "dev:backend": "concurrently -k -n db,server,embedded -c blue,green,yellow \"pnpm db\" \"cargo run -p alia-server\" \"cargo run -p alia-embedded\"",
+    "dev": "concurrently -k -n db,server,embedded,frontend -c blue,green,yellow,magenta \"pnpm db\" \"cargo run -p alia-server\" \"cargo run -p alia-embedded\" \"pnpm frontend:web\""
+  },
+  "author": "Zerlight",
+  "packageManager": "pnpm@10.28.1",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
