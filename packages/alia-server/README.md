@@ -19,17 +19,21 @@ docker compose up -d postgres
 
 ### 2. Configuration
 
-Copy and edit the config file:
+Config files live in the workspace root `config/` directory.
+
+Copy the example and edit:
 
 ```bash
-cp config/server.toml config/local.toml
-# Edit config/local.toml with your settings (API keys, DB URL, etc.)
+# From workspace root
+cp config/server.example.toml config/server.toml
+# Edit config/server.toml with your settings (API keys, DB URL, etc.)
 ```
 
-Override the config path at runtime:
+The `mise.toml` at the workspace root automatically sets `ALIA_CONFIG_PATH=config/server.toml`.
+To override manually:
 
 ```bash
-export ALIA_CONFIG_PATH=config/local.toml
+export ALIA_CONFIG_PATH=config/server.toml
 ```
 
 Individual values can also be overridden via environment variables:

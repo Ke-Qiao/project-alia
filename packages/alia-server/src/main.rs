@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::routing::get;
 use axum::Router;
 use sea_orm::{ConnectOptions, Database};
@@ -41,7 +42,8 @@ async fn main() -> anyhow::Result<()> {
     // 2. Load configuration
     let config_path = std::env::var("ALIA_CONFIG_PATH")
         .unwrap_or_else(|_| "config/server.toml".into());
-    let config = ServerConfig::load(Path::new(&config_path))?;
+    let config = ServerConfig::load(Path::new(&config_path))
+        .context(format!("failed to load config from '{config_path}'"))?;
     let config = Arc::new(config);
     tracing::info!(path = %config_path, "configuration loaded");
 
@@ -50,7 +52,8 @@ async fn main() -> anyhow::Result<()> {
     db_opts
         .max_connections(config.database.max_connections)
         .min_connections(config.database.min_connections);
-    let db = Database::connect(db_opts).await?;
+    let db = Database::connect(db_opts).await
+        .context(format!("failed to connect to database at '{}'", config.database.url))?;
     tracing::info!("connected to database");
 
     // 4. Create EventBus
@@ -72,7 +75,8 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.clone(),
     )
     .build()
-    .await?;
+    .await
+    .context("failed to initialize server modules")?;
     tracing::info!("all modules initialized and started");
 
     // 8. Build Axum router
@@ -85,7 +89,8 @@ async fn main() -> anyhow::Result<()> {
 
     // 9. Bind and serve
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = tokio::net::TcpListener::bind(&addr).await
+        .context(format!("failed to bind to {addr}"))?;
     tracing::info!("alia-server listening on {addr}");
 
     // 10. Graceful shutdown

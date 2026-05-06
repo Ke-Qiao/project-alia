@@ -31,16 +31,29 @@ alia-embedded/
 cargo run -p alia-embedded
 ```
 
-The binary expects `config/embedded.toml` relative to the working directory. Run from `packages/alia-embedded/` or copy the config to wherever you launch.
+The binary expects `config/embedded.toml` relative to the workspace root.
+
+Copy the example and edit:
 
 ```sh
-cd packages/alia-embedded
-cargo run
+cp config/embedded.example.toml config/embedded.toml
+```
+
+Run from the workspace root:
+
+```sh
+cargo run -p alia-embedded
+```
+
+Or override via environment variable:
+
+```sh
+export ALIA_EMBEDDED_CONFIG_PATH=config/embedded.toml
 ```
 
 ## Configuration
 
-All settings live in a single `config/embedded.toml`. See the included example for all fields.
+All settings live in a single `config/embedded.toml` at the workspace root. See `config/embedded.example.toml` for all fields.
 
 | Section | Purpose |
 |---------|---------|
