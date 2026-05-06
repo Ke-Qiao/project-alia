@@ -1,0 +1,86 @@
+[server]
+host = "0.0.0.0"
+port = 3000
+log_level = "info"
+
+[database]
+url = "postgres://alia:alia_dev@localhost/alia"
+max_connections = 10
+min_connections = 2
+
+[auth]
+jwt_secret = "change-me-in-production"
+jwt_expiry_hours = 24
+refresh_expiry_days = 30
+argon2_memory_kib = 19456
+argon2_iterations = 2
+argon2_parallelism = 1
+
+[embedded]
+endpoint = ""
+reconnect_interval_sec = 5
+reconnect_max_backoff_sec = 60
+grpc_timeout_sec = 10
+
+[modules]
+llm = "openai"
+stt = "whisper_cpp"
+tts = "gpt_sovits"
+embedding = "ollama"
+memory = "graphrag"
+cache = "two_layer"
+skills = "builtin"
+persona = "template"
+meditation = "scheduled"
+router = "multi_layer"
+rule_engine = "simple"
+
+[ai]
+llm_adapter = "openai"
+openai_api_key = ""
+openai_model = "gpt-4o"
+openai_base_url = "https://api.openai.com/v1"
+ollama_endpoint = "http://localhost:11434"
+ollama_model = "qwen2.5:7b"
+router_model = "qwen3:4b"
+router_temperature = 0.1
+embedding_adapter = "ollama"
+ollama_embedding_model = "bge-m3"
+openai_embedding_model = "text-embedding-3-small"
+stt_adapter = "whisper_cpp"
+whisper_cpp_endpoint = "http://localhost:8080"
+whisper_cpp_model = "large-v3"
+tts_adapter = "gpt_sovits"
+gpt_sovits_tts_endpoint = "http://localhost:9880"
+max_conversation_context = 20
+streaming_enabled = true
+
+[ai.memory]
+enabled = true
+epidosic_ttl_days = 90
+max_core_memories = 500
+max_retrieval_results = 10
+similarity_threshold = 0.75
+graph_community_algorithm = "leiden"
+
+[ai.cache]
+enabled = true
+exact_match_enabled = true
+semantic_match_enabled = true
+semantic_threshold = 0.92
+default_ttl_seconds = 3600
+skill_cache_ttl_seconds = 300
+
+[ai.meditation]
+enabled = true
+extraction_enabled = true
+consolidation_idle_minutes = 30
+reflection_schedule = "0 3 * * *"
+habit_detection_schedule = "0 4 * * *"
+memory_threshold = 50
+max_concurrent_meditations = 1
+presence_sensor_plugin = "presence"
+
+[rules]
+evaluation_interval_sec = 10
+max_rules_per_user = 50

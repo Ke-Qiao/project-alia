@@ -52,6 +52,25 @@ toml = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.9"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Auth / Security
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Template engine
+handlebars = "6"
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-axum = "0.2"
+utoipa-scalar = { version = "0.3", features = ["axum"] }
+
+# Async utilities
+async-trait = "0.1"
 
 # Unix
 libc = "0.2"

@@ -1,0 +1,33 @@
+use async_trait::async_trait;
+use uuid::Uuid;
+
+use crate::providers::adapter::{CacheBackend, CacheEntry, CacheFilter, CachedResponse};
+use crate::module::ModuleLifecycle;
+
+pub struct NoopCache;
+
+#[async_trait]
+impl ModuleLifecycle for NoopCache {
+    fn name(&self) -> &'static str {
+        "noop"
+    }
+}
+
+#[async_trait]
+impl CacheBackend for NoopCache {
+    async fn get(
+        &self,
+        _user_id: Option<Uuid>,
+        _query: &str,
+    ) -> anyhow::Result<Option<CachedResponse>> {
+        Ok(None)
+    }
+
+    async fn put(&self, _entry: CacheEntry) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn invalidate(&self, _filter: CacheFilter) -> anyhow::Result<u64> {
+        Ok(0)
+    }
+}

@@ -1,45 +1,122 @@
-use std::env;
+#![allow(dead_code)]
 
+use std::path::Path;
+use std::sync::Arc;
+
+use axum::routing::get;
 use axum::Router;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, Database};
+use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
 
-#[derive(Clone)]
-pub struct AppState {
-    pub db: DatabaseConnection,
-}
+mod providers;
+mod api;
+mod auth;
+mod config;
+mod embedded;
+mod error;
+mod event;
+mod module;
+mod openapi;
+mod rules;
+mod state;
+mod ws;
 
-async fn connect_db() -> anyhow::Result<DatabaseConnection> {
-    let database_url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://alia:alia_dev@alia-postgres.orb.local/alia".into());
-
-    let mut opt = ConnectOptions::new(&database_url);
-    opt.max_connections(10).min_connections(2);
-
-    let db = Database::connect(opt).await?;
-    tracing::info!("connected to database");
-    Ok(db)
-}
+use config::ServerConfig;
+use embedded::EmbeddedClient;
+use event::EventBus;
+use module::ServerBuilder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // 1. Initialize tracing
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
-    let db = connect_db().await?;
-    let state = AppState { db };
+    // 2. Load configuration
+    let config_path = std::env::var("ALIA_CONFIG_PATH")
+        .unwrap_or_else(|_| "config/server.toml".into());
+    let config = ServerConfig::load(Path::new(&config_path))?;
+    let config = Arc::new(config);
+    tracing::info!(path = %config_path, "configuration loaded");
 
+    // 3. Connect to PostgreSQL
+    let mut db_opts = ConnectOptions::new(&config.database.url);
+    db_opts
+        .max_connections(config.database.max_connections)
+        .min_connections(config.database.min_connections);
+    let db = Database::connect(db_opts).await?;
+    tracing::info!("connected to database");
+
+    // 4. Create EventBus
+    let event_bus = EventBus::new(1024);
+
+    // 5. Create EmbeddedClient (gRPC connection to alia-embedded)
+    let embedded = EmbeddedClient::new(&config.embedded.endpoint, event_bus.clone());
+    tracing::info!(endpoint = %config.embedded.endpoint, "embedded client created");
+
+    // 6. Create CancellationToken for graceful shutdown
+    let cancel_token = CancellationToken::new();
+
+    // 7. Build server via ServerBuilder (init + start all modules)
+    let state = ServerBuilder::new(
+        config.clone(),
+        db,
+        embedded,
+        event_bus,
+        cancel_token.clone(),
+    )
+    .build()
+    .await?;
+    tracing::info!("all modules initialized and started");
+
+    // 8. Build Axum router
     let app = Router::new()
+        .merge(api::routes())
+        .route("/api/v1/ws", get(ws::ws_handler))
+        .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state.clone());
 
-    let addr = "0.0.0.0:3000";
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    // 9. Bind and serve
+    let addr = format!("{}:{}", config.server.host, config.server.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("alia-server listening on {addr}");
-    axum::serve(listener, app).await?;
+
+    // 10. Graceful shutdown
+    let shutdown_signal = async move {
+        let ctrl_c = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+        tracing::info!("shutdown signal received, starting graceful shutdown...");
+        cancel_token.cancel();
+    };
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal)
+        .await?;
+
+    // 11. Stop all modules in reverse order
+    state.modules.shutdown().await;
+    tracing::info!("alia-server shutdown complete");
 
     Ok(())
 }
+

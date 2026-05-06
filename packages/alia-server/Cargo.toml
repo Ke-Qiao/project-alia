@@ -3,16 +3,82 @@ name = "alia-server"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = [
+    "llm-openai", "llm-ollama",
+    "stt-whisper", "tts-sovits",
+    "embed-ollama", "memory-graphrag",
+    "cache-semantic", "meditation",
+]
+
+# LLM backends
+llm-openai = ["dep:reqwest"]
+llm-ollama = ["dep:reqwest"]
+
+# STT / TTS backends
+stt-whisper = ["dep:reqwest"]
+tts-sovits = ["dep:reqwest"]
+
+# Embedding backends
+embed-ollama = ["dep:reqwest"]
+embed-openai = ["dep:reqwest"]
+
+# Memory backend
+memory-graphrag = []
+
+# Cache backend
+cache-semantic = []
+
+# Meditation system
+meditation = []
+
 [dependencies]
 alia-proto.workspace = true
 alia-transport.workspace = true
-anyhow.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+
+# HTTP framework
 axum.workspace = true
+tower-http.workspace = true
+
+# gRPC
+tonic.workspace = true
+
+# Database
 sea-orm.workspace = true
+
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
-tonic.workspace = true
-tower-http.workspace = true
+toml.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Logging
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Auth
+jsonwebtoken.workspace = true
+argon2.workspace = true
+
+# OpenAPI
+utoipa.workspace = true
+utoipa-axum.workspace = true
+utoipa-scalar.workspace = true
+
+# Template engine
+handlebars.workspace = true
+
+# HTTP client (optional, for AI adapters)
+reqwest = { workspace = true, optional = true }
