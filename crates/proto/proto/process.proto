@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package alia.process;
+
+service ProcessManager {
+  // Start a managed process
+  rpc StartProcess(StartProcessRequest) returns (StartProcessResponse);
+
+  // Stop a managed process
+  rpc StopProcess(StopProcessRequest) returns (StopProcessResponse);
+
+  // Restart a managed process
+  rpc RestartProcess(RestartProcessRequest) returns (RestartProcessResponse);
+
+  // List all managed processes
+  rpc ListProcesses(ListProcessesRequest) returns (ListProcessesResponse);
+
+  // Stream stdout/stderr output from a process
+  rpc StreamOutput(StreamOutputRequest) returns (stream ProcessOutput);
+}
+
+message StartProcessRequest {
+  string name = 1;
+}
+
+message StartProcessResponse {
+  bool success = 1;
+  string message = 2;
+  uint32 pid = 3;
+}
+
+message StopProcessRequest {
+  string name = 1;
+  bool force = 2; // SIGKILL instead of SIGTERM
+}
+
+message StopProcessResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RestartProcessRequest {
+  string name = 1;
+}
+
+message RestartProcessResponse {
+  bool success = 1;
+  string message = 2;
+  uint32 pid = 3;
+}
+
+message ListProcessesRequest {}
+
+message ListProcessesResponse {
+  repeated ProcessInfo processes = 1;
+}
+
+message ProcessInfo {
+  string name = 1;
+  ProcessState state = 2;
+  uint32 pid = 3;
+  uint64 uptime_secs = 4;
+  uint32 restart_count = 5;
+}
+
+enum ProcessState {
+  PROCESS_STATE_UNKNOWN = 0;
+  PROCESS_STATE_STOPPED = 1;
+  PROCESS_STATE_STARTING = 2;
+  PROCESS_STATE_RUNNING = 3;
+  PROCESS_STATE_STOPPING = 4;
+  PROCESS_STATE_FAILED = 5;
+}
+
+message StreamOutputRequest {
+  string name = 1;
+  bool follow = 2; // Keep streaming (like tail -f)
+  uint32 tail_lines = 3; // Number of recent lines to replay
+}
+
+message ProcessOutput {
+  string name = 1;
+  OutputChannel channel = 2;
+  string line = 3;
+  uint64 timestamp_us = 4;
+}
+
+enum OutputChannel {
+  OUTPUT_CHANNEL_STDOUT = 0;
+  OUTPUT_CHANNEL_STDERR = 1;
+}

@@ -1,0 +1,63 @@
+# config/embedded.toml — Example configuration for alia-embedded
+
+[modules]
+wakeword = "sherpa_onnx"
+edge_stt = "sherpa_onnx"
+direct_response = "keyword"
+audio_capture = "cpal"
+audio_playback = "cpal"
+mixer = "priority"
+face_tracker = "mediapipe"
+discovery = "mdns"
+
+[identity]
+device_id = "alia-pi-a1b2c3d4"
+device_name = "客厅助手"
+keypair_path = "config/device.key"
+
+[wakeword]
+engine = "sherpa-onnx"
+model_path = "models/hey_alia.onnx"
+keywords = ["你好阿利亚", "Hey Alia"]
+sensitivity = 0.6
+
+[audio]
+capture_device = "default"
+capture_sample_rate = 16000
+capture_channels = 1
+playback_device = "default"
+playback_sample_rate = 24000
+playback_channels = 1
+playback_buffer_ms = 60
+opus_bitrate = 24000
+opus_frame_ms = 20
+upload_buffer_frames = 5
+jitter_buffer_ms = 60
+
+[discovery]
+mdns_enabled = true
+mdns_service_name = "_alia-embedded._tcp"
+mdns_instance_name = "客厅助手"
+ble_provision_enabled = true
+ble_provision_timeout_sec = 300
+require_physical_confirm = true
+max_bind_attempts = 3
+lockout_duration_sec = 600
+reconnect_interval_sec = 5
+reconnect_max_backoff_sec = 60
+
+[[process]]
+name = "mediapipe_face"
+command = "python3"
+args = ["scripts/mediapipe_face.py"]
+auto_restart = true
+
+[[direct_response]]
+keywords = ["现在几点", "几点了", "报时"]
+audio = "assets/responses/time.wav"
+action = "report_time"
+
+[[direct_response]]
+keywords = ["开灯", "打开灯"]
+audio = "assets/responses/light_on.wav"
+action = "gpio_light_on"

@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package alia.binding;
+
+import "google/protobuf/empty.proto";
+
+service DeviceBinding {
+  // Server → Pi: request binding
+  rpc Bind(BindRequest) returns (BindResponse);
+
+  // Server → Pi: unbind
+  rpc Unbind(UnbindRequest) returns (UnbindResponse);
+
+  // Query current binding status
+  rpc GetBindingStatus(google.protobuf.Empty) returns (BindingStatus);
+
+  // Server → Pi: prepare handoff to new server
+  rpc PrepareHandoff(HandoffRequest) returns (HandoffToken);
+
+  // New server → Pi: complete handoff
+  rpc CompleteHandoff(CompleteHandoffRequest) returns (BindResponse);
+}
+
+message BindRequest {
+  string server_id = 1;
+  string server_name = 2;
+  string server_endpoint = 3;
+  bytes auth_token = 4;
+}
+
+message BindResponse {
+  bool success = 1;
+  string device_id = 2;
+  string device_name = 3;
+  bytes device_public_key = 4;
+}
+
+message UnbindRequest {
+  string server_id = 1;
+}
+
+message UnbindResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message BindingStatus {
+  bool is_bound = 1;
+  string bound_server_id = 2;
+  string bound_server_name = 3;
+  string bound_since = 4; // RFC 3339 timestamp
+  BindingState state = 5;
+}
+
+enum BindingState {
+  BINDING_STATE_UNBOUND = 0;
+  BINDING_STATE_BOUND = 1;
+  BINDING_STATE_HANDOFF_PENDING = 2;
+}
+
+message HandoffRequest {
+  string current_server_id = 1;
+  string new_server_id = 2;
+  string new_server_endpoint = 3;
+}
+
+message HandoffToken {
+  bytes token = 1;
+  string device_id = 2;
+  uint64 expires_at = 3;
+}
+
+message CompleteHandoffRequest {
+  bytes token = 1;
+}

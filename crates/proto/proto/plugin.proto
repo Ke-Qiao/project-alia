@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package alia.plugin;
+
+service PluginManager {
+  // Install a plugin from a zip archive
+  rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
+
+  // Uninstall a plugin
+  rpc UninstallPlugin(UninstallPluginRequest) returns (UninstallPluginResponse);
+
+  // List all installed plugins
+  rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+
+  // Start a plugin
+  rpc StartPlugin(StartPluginRequest) returns (StartPluginResponse);
+
+  // Stop a plugin
+  rpc StopPlugin(StopPluginRequest) returns (StopPluginResponse);
+
+  // Send a command to a plugin
+  rpc SendCommand(PluginCommandRequest) returns (PluginCommandResponse);
+
+  // Stream events from plugins (server-side stream)
+  rpc StreamEvents(StreamEventsRequest) returns (stream PluginEvent);
+}
+
+message InstallPluginRequest {
+  string name = 1;
+  string version = 2;
+  bytes zip_data = 3;
+}
+
+message InstallPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UninstallPluginRequest {
+  string name = 1;
+}
+
+message UninstallPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListPluginsRequest {}
+
+message ListPluginsResponse {
+  repeated PluginInfo plugins = 1;
+}
+
+message PluginInfo {
+  string name = 1;
+  string version = 2;
+  string plugin_type = 3; // sensor | actuator | processor | bridge
+  PluginState state = 4;
+  string description = 5;
+}
+
+enum PluginState {
+  PLUGIN_STATE_UNKNOWN = 0;
+  PLUGIN_STATE_INSTALLED = 1;
+  PLUGIN_STATE_STARTING = 2;
+  PLUGIN_STATE_RUNNING = 3;
+  PLUGIN_STATE_STOPPING = 4;
+  PLUGIN_STATE_STOPPED = 5;
+  PLUGIN_STATE_FAILED = 6;
+}
+
+message StartPluginRequest {
+  string name = 1;
+}
+
+message StartPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StopPluginRequest {
+  string name = 1;
+}
+
+message StopPluginResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message PluginCommandRequest {
+  string plugin_name = 1;
+  string command_id = 2;
+  string action = 3;
+  bytes payload_json = 4;
+}
+
+message PluginCommandResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StreamEventsRequest {
+  repeated string plugin_names = 1; // Filter by plugin name, empty = all
+  repeated string event_types = 2; // Filter by event type, empty = all
+}
+
+message PluginEvent {
+  string plugin_name = 1;
+  string event_type = 2;
+  bytes payload_json = 3;
+  uint64 timestamp_us = 4;
+}

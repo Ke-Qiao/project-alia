@@ -1,0 +1,60 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use super::lifecycle::ModuleHealth;
+use super::traits::*;
+use crate::plugin::PluginRegistry;
+use crate::process::ProcessManager;
+
+/// Central registry holding all active module instances.
+///
+/// Non-slot core infrastructure (ProcessManager, PluginRegistry) are also
+/// held here for unified lifecycle management and health reporting.
+pub struct EmbeddedModuleRegistry {
+    // Audio pipeline
+    pub wakeword: Arc<dyn WakeWordEngine>,
+    pub edge_stt: Arc<dyn EdgeSttEngine>,
+    pub direct_response: Arc<dyn DirectResponseEngine>,
+    pub audio_capture: Arc<dyn AudioCaptureBackend>,
+    pub audio_playback: Arc<dyn AudioPlaybackBackend>,
+    pub mixer: Arc<dyn AudioMixer>,
+
+    // Vision
+    pub face_tracker: Arc<dyn FaceTracker>,
+
+    // Network
+    pub discovery: Arc<dyn DiscoveryBackend>,
+
+    // Core infrastructure (non-slot, unified lifecycle)
+    pub process_manager: Arc<ProcessManager>,
+    pub plugin_registry: Arc<PluginRegistry>,
+}
+
+impl EmbeddedModuleRegistry {
+    /// Shut down all modules in reverse dependency order.
+    pub async fn shutdown(&self) {
+        // Reverse order: network → vision → audio output → audio input → processing
+        let _ = self.discovery.stop().await;
+        let _ = self.face_tracker.stop().await;
+        let _ = self.mixer.stop().await;
+        let _ = self.audio_playback.stop().await;
+        let _ = self.audio_capture.stop().await;
+        let _ = self.direct_response.stop().await;
+        let _ = self.edge_stt.stop().await;
+        let _ = self.wakeword.stop().await;
+    }
+
+    /// Collect health status from all modules.
+    pub async fn health(&self) -> HashMap<&'static str, ModuleHealth> {
+        let mut map = HashMap::new();
+        map.insert(self.wakeword.name(), self.wakeword.health_check().await);
+        map.insert(self.edge_stt.name(), self.edge_stt.health_check().await);
+        map.insert(self.direct_response.name(), self.direct_response.health_check().await);
+        map.insert(self.audio_capture.name(), self.audio_capture.health_check().await);
+        map.insert(self.audio_playback.name(), self.audio_playback.health_check().await);
+        map.insert(self.mixer.name(), self.mixer.health_check().await);
+        map.insert(self.face_tracker.name(), self.face_tracker.health_check().await);
+        map.insert(self.discovery.name(), self.discovery.health_check().await);
+        map
+    }
+}

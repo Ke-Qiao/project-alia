@@ -19,6 +19,7 @@ alia-transport = { path = "crates/transport" }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = "0.7"
 futures = "0.3"
 
 # gRPC / Protobuf
@@ -45,6 +46,12 @@ thiserror = "2"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config / Serialization
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Unix
 libc = "0.2"
