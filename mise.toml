@@ -1,0 +1,24 @@
+[tools]
+node = "24.15.0"
+pnpm = "10.33.4"
+rust = "1.95.0"
+
+[env]
+ALIA_CONFIG_PATH = "config/server.toml"
+
+[tasks.dev-server]
+description = "Run alia-server in dev mode"
+run = "cargo run -p alia-server"
+
+[tasks.dev-frontend]
+description = "Run alia-frontend dev server"
+dir = "packages/alia-frontend"
+run = "pnpm dev"
+
+[tasks.check]
+description = "Check all Rust crates"
+run = "cargo check --workspace"
+
+[tasks.db]
+description = "Start PostgreSQL via Docker"
+run = "docker compose up -d postgres"
