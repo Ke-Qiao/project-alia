@@ -3,7 +3,7 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
-use crate::providers::cache::{NoopCache, TwoLayerCache};
+use crate::providers::cache::{DbCache, NoopCache, TwoLayerCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
 use crate::providers::meditation::NoopMeditation;
@@ -133,6 +133,10 @@ pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
 
 pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
     match name {
+        "db" => {
+            tracing::info!(module = name, "creating cache backend (DbCache)");
+            Box::new(DbCache::new())
+        }
         "two_layer" => {
             tracing::info!(module = name, "creating cache backend (TwoLayerCache)");
             Box::new(TwoLayerCache::new())
@@ -142,8 +146,8 @@ pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
             Box::new(NoopCache)
         }
         _ => {
-            tracing::warn!(module = name, "unknown cache backend, using two_layer");
-            Box::new(TwoLayerCache::new())
+            tracing::warn!(module = name, "unknown cache backend, using db");
+            Box::new(DbCache::new())
         }
     }
 }
