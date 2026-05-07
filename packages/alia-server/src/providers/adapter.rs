@@ -313,3 +313,145 @@ pub trait RuleEvaluator: ModuleLifecycle {
     async fn evaluate(&self, event: &crate::event::ServerEvent) -> anyhow::Result<Vec<RuleAction>>;
     async fn reload(&self) -> anyhow::Result<()>;
 }
+
+// ========== Scheduler Backend ==========
+
+/// Scheduled task trigger types: cron, once, or interval
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleConfig {
+    #[serde(rename = "type")]
+    pub schedule_type: String, // "cron" | "once" | "interval"
+    #[serde(default)]
+    pub cron_expression: Option<String>, // For cron type
+    #[serde(default)]
+    pub run_at: Option<String>, // For once type (ISO 8601)
+    #[serde(default)]
+    pub every_sec: Option<u32>, // For interval type
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTask {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub enabled: bool,
+    pub schedule: ScheduleConfig,
+    pub conditions: serde_json::Value, // JSON array of condition configs
+    pub action: serde_json::Value,      // Action config (type + payload)
+    pub cooldown_sec: u32,
+    pub max_retries: u32,
+    pub created_by: String, // "user" | "ai"
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TaskFilter {
+    pub user_id: Option<Uuid>,
+    pub enabled_only: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskPatch {
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub schedule: Option<ScheduleConfig>,
+    pub conditions: Option<serde_json::Value>,
+    pub action: Option<serde_json::Value>,
+}
+
+/// Event subscription: trigger actions when EventBus events match a pattern
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventSubscription {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub enabled: bool,
+    pub event_pattern: serde_json::Value, // Pattern to match against ServerEvent
+    pub conditions: serde_json::Value,    // Additional conditions
+    pub action: serde_json::Value,        // Action config
+    pub cooldown_sec: u32,
+    pub created_by: String,
+}
+
+/// Trait for plugin-provided condition evaluators
+#[async_trait]
+pub trait ConditionEvaluator: Send + Sync {
+    fn condition_type(&self) -> &str;
+    async fn evaluate(&self, config: &serde_json::Value) -> anyhow::Result<bool>;
+}
+
+/// Trait for plugin-provided action executors
+#[async_trait]
+pub trait ActionExecutor: Send + Sync {
+    fn action_type(&self) -> &str;
+    async fn execute(&self, config: &serde_json::Value) -> anyhow::Result<serde_json::Value>;
+}
+
+#[async_trait]
+pub trait SchedulerBackend: ModuleLifecycle {
+    /// Create a new scheduled task
+    async fn create_task(&self, task: ScheduledTask) -> anyhow::Result<Uuid>;
+    /// Update a task
+    async fn update_task(&self, task_id: Uuid, patch: TaskPatch) -> anyhow::Result<()>;
+    /// Delete a task
+    async fn delete_task(&self, task_id: Uuid) -> anyhow::Result<()>;
+    /// List tasks with filters
+    async fn list_tasks(&self, filter: TaskFilter) -> anyhow::Result<Vec<ScheduledTask>>;
+    /// Pause a task
+    async fn pause_task(&self, task_id: Uuid) -> anyhow::Result<()>;
+    /// Resume a task
+    async fn resume_task(&self, task_id: Uuid) -> anyhow::Result<()>;
+    /// Subscribe to events
+    async fn subscribe_event(&self, sub: EventSubscription) -> anyhow::Result<Uuid>;
+    /// Unsubscribe from events
+    async fn unsubscribe_event(&self, sub_id: Uuid) -> anyhow::Result<()>;
+    /// List event subscriptions
+    async fn list_subscriptions(&self, user_id: Uuid) -> anyhow::Result<Vec<EventSubscription>>;
+}
+
+// ========== Tool Registry ==========
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value, // JSON Schema
+    pub source: String,                // "builtin" | plugin name
+    pub require_confirmation: bool,
+    pub required_role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub tool_name: String,
+    pub arguments: serde_json::Value,
+    pub call_id: String, // LLM-assigned ID for result correlation
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub call_id: String,
+    pub success: bool,
+    pub output: serde_json::Value,
+    pub display: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolContext {
+    pub user_id: Uuid,
+    pub conversation_id: Option<Uuid>,
+    pub source: String, // "ai" | "manual" | "scheduler"
+}
+
+#[async_trait]
+pub trait ToolRegistry: ModuleLifecycle {
+    /// List all available tools
+    async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>>;
+    /// Get a specific tool definition
+    async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>>;
+    /// Execute a tool call
+    async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult>;
+    /// Register a plugin tool
+    async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()>;
+    /// Unregister a plugin tool
+    async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()>;
+}

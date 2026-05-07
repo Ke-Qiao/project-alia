@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
+    SchedulerBackend, ToolRegistry,
 };
 use crate::config::ServerConfig;
 use crate::embedded::EmbeddedClient;
@@ -35,6 +36,8 @@ pub struct ServerBuilder {
     meditation: Option<Box<dyn MeditationStrategy>>,
     router: Option<Box<dyn RouterStrategy>>,
     rule_engine: Option<Box<dyn RuleEvaluator>>,
+    scheduler: Option<Box<dyn SchedulerBackend>>,
+    tools: Option<Box<dyn ToolRegistry>>,
 
     extensions: Vec<Box<dyn ModuleLifecycle>>,
 }
@@ -64,6 +67,8 @@ impl ServerBuilder {
             meditation: None,
             router: None,
             rule_engine: None,
+            scheduler: None,
+            tools: None,
             extensions: Vec::new(),
         }
     }
@@ -123,6 +128,16 @@ impl ServerBuilder {
         self
     }
 
+    pub fn with_scheduler(mut self, sched: impl SchedulerBackend + 'static) -> Self {
+        self.scheduler = Some(Box::new(sched));
+        self
+    }
+
+    pub fn with_tools(mut self, tools: impl ToolRegistry + 'static) -> Self {
+        self.tools = Some(Box::new(tools));
+        self
+    }
+
     pub fn with_extension(mut self, ext: impl ModuleLifecycle + 'static) -> Self {
         self.extensions.push(Box::new(ext));
         self
@@ -170,6 +185,12 @@ impl ServerBuilder {
         let mut rule_engine = self
             .rule_engine
             .unwrap_or_else(|| factory::create_rule_engine(&self.config.modules.rule_engine));
+        let mut scheduler = self
+            .scheduler
+            .unwrap_or_else(|| factory::create_scheduler(&self.config.modules.scheduler));
+        let mut tools = self
+            .tools
+            .unwrap_or_else(|| factory::create_tools(&self.config.modules.tools));
 
         // Initialize modules in dependency order
         tracing::info!("initializing modules...");
@@ -184,6 +205,8 @@ impl ServerBuilder {
         router.init(&ctx).await?;
         meditation.init(&ctx).await?;
         rule_engine.init(&ctx).await?;
+        tools.init(&ctx).await?;
+        scheduler.init(&ctx).await?;
 
         // Initialize extensions
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
@@ -205,6 +228,8 @@ impl ServerBuilder {
             meditation: Arc::from(meditation),
             router: Arc::from(router),
             rule_engine: Arc::from(rule_engine),
+            scheduler: Arc::from(scheduler),
+            tools: Arc::from(tools),
             extensions,
         };
 
@@ -221,6 +246,8 @@ impl ServerBuilder {
         registry.router.start().await?;
         registry.meditation.start().await?;
         registry.rule_engine.start().await?;
+        registry.scheduler.start().await?;
+        registry.tools.start().await?;
 
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);

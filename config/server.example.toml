@@ -34,6 +34,8 @@ persona = "template"
 meditation = "scheduled"
 router = "multi_layer"
 rule_engine = "simple"
+scheduler = "cron"
+tools = "builtin"
 
 [ai]
 llm_adapter = "openai"
@@ -84,3 +86,18 @@ presence_sensor_plugin = "presence"
 [rules]
 evaluation_interval_sec = 10
 max_rules_per_user = 50
+
+[scheduler]
+enabled = true
+max_tasks_per_user = 100
+max_subscriptions_per_user = 50
+tick_interval_sec = 1
+missed_task_policy = "skip"
+task_timeout_sec = 30
+max_concurrent_tasks = 5
+
+[tools]
+max_tool_call_depth = 5
+tool_call_timeout_sec = 30
+allow_plugin_tools = true
+require_confirmation = []

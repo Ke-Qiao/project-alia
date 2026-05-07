@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
+    SchedulerBackend, ToolRegistry,
 };
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 
@@ -23,6 +24,8 @@ pub struct ModuleRegistry {
     pub router: Arc<dyn RouterStrategy>,
     // Infrastructure
     pub rule_engine: Arc<dyn RuleEvaluator>,
+    pub scheduler: Arc<dyn SchedulerBackend>,
+    pub tools: Arc<dyn ToolRegistry>,
     // Custom extensions
     pub extensions: Vec<Arc<dyn ModuleLifecycle>>,
 }
@@ -39,6 +42,8 @@ impl ModuleRegistry {
 
         // Stop core modules in reverse dependency order
         let modules: Vec<&dyn ModuleLifecycle> = vec![
+            self.scheduler.as_ref(),
+            self.tools.as_ref(),
             self.meditation.as_ref(),
             self.rule_engine.as_ref(),
             self.router.as_ref(),
@@ -75,6 +80,8 @@ impl ModuleRegistry {
             self.rule_engine.name(),
             self.rule_engine.health_check().await,
         );
+        results.insert(self.scheduler.name(), self.scheduler.health_check().await);
+        results.insert(self.tools.name(), self.tools.health_check().await);
         results
     }
 }

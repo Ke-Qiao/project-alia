@@ -1,6 +1,7 @@
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
+    SchedulerBackend, ToolRegistry,
 };
 use crate::providers::cache::NoopCache;
 use crate::providers::embedding::NoopEmbedding;
@@ -11,6 +12,8 @@ use crate::providers::persona::NoopPersona;
 use crate::providers::router::PassthroughRouter;
 use crate::providers::skills::NoopSkills;
 use crate::rules::NoopRuleEngine;
+use crate::scheduler::{NoopScheduler, CronScheduler};
+use crate::tools::{NoopToolRegistry, BuiltinToolRegistry};
 
 pub fn create_llm(_name: &str) -> Box<dyn LlmAdapter> {
     // TODO: match on name to create OpenAI/Ollama implementations
@@ -67,4 +70,38 @@ pub fn create_router(_name: &str) -> Box<dyn RouterStrategy> {
 pub fn create_rule_engine(_name: &str) -> Box<dyn RuleEvaluator> {
     tracing::info!(module = _name, "creating rule engine (noop placeholder)");
     Box::new(NoopRuleEngine)
+}
+
+pub fn create_scheduler(name: &str) -> Box<dyn SchedulerBackend> {
+    match name {
+        "cron" => {
+            tracing::info!(module = name, "creating scheduler (CronScheduler)");
+            Box::new(CronScheduler::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating scheduler (noop)");
+            Box::new(NoopScheduler)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown scheduler, using noop");
+            Box::new(NoopScheduler)
+        }
+    }
+}
+
+pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
+    match name {
+        "builtin" => {
+            tracing::info!(module = name, "creating tool registry (BuiltinToolRegistry)");
+            Box::new(BuiltinToolRegistry::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating tool registry (noop)");
+            Box::new(NoopToolRegistry)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown tool registry, using noop");
+            Box::new(NoopToolRegistry)
+        }
+    }
 }

@@ -8,9 +8,11 @@ pub mod personas;
 pub mod plugins;
 pub mod processes;
 pub mod rules;
+pub mod scheduler;
 pub mod sensors;
 pub mod settings;
 pub mod skills;
+pub mod tools;
 pub mod users;
 pub mod voice;
 
@@ -34,10 +36,12 @@ fn api_routes() -> Router<AppState> {
         .merge(processes::routes())
         .merge(plugins::routes())
         .merge(rules::routes())
+        .merge(scheduler::routes())
         .merge(settings::routes())
         .merge(sensors::routes())
         .merge(memories::routes())
         .merge(personas::routes())
         .merge(meditation::routes())
         .merge(skills::routes())
+        .merge(tools::routes())
 }

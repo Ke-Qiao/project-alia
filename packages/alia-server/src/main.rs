@@ -23,7 +23,9 @@ mod event;
 mod module;
 mod openapi;
 mod rules;
+mod scheduler;
 mod state;
+mod tools;
 mod ws;
 
 use config::ServerConfig;

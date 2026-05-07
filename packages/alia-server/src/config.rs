@@ -10,6 +10,10 @@ pub struct ServerConfig {
     pub modules: ModulesSection,
     pub ai: AiSection,
     pub rules: RulesSection,
+    #[serde(default)]
+    pub scheduler: SchedulerSection,
+    #[serde(default)]
+    pub tools: ToolsSection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -57,6 +61,18 @@ pub struct ModulesSection {
     pub meditation: String,
     pub router: String,
     pub rule_engine: String,
+    #[serde(default = "default_scheduler_module")]
+    pub scheduler: String,
+    #[serde(default = "default_tools_module")]
+    pub tools: String,
+}
+
+fn default_scheduler_module() -> String {
+    "cron".to_string()
+}
+
+fn default_tools_module() -> String {
+    "builtin".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -121,6 +137,48 @@ pub struct RulesSection {
     pub evaluation_interval_sec: u64,
     pub max_rules_per_user: u32,
 }
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SchedulerSection {
+    #[serde(default = "default_scheduler_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_max_tasks")]
+    pub max_tasks_per_user: u32,
+    #[serde(default = "default_max_subscriptions")]
+    pub max_subscriptions_per_user: u32,
+    #[serde(default = "default_tick_interval")]
+    pub tick_interval_sec: u64,
+    #[serde(default = "default_missed_task_policy")]
+    pub missed_task_policy: String,
+    #[serde(default = "default_task_timeout")]
+    pub task_timeout_sec: u64,
+    #[serde(default = "default_max_concurrent_tasks")]
+    pub max_concurrent_tasks: u32,
+}
+
+fn default_scheduler_enabled() -> bool { true }
+fn default_max_tasks() -> u32 { 100 }
+fn default_max_subscriptions() -> u32 { 50 }
+fn default_tick_interval() -> u64 { 1 }
+fn default_missed_task_policy() -> String { "skip".to_string() }
+fn default_task_timeout() -> u64 { 30 }
+fn default_max_concurrent_tasks() -> u32 { 5 }
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToolsSection {
+    #[serde(default = "default_tool_call_depth")]
+    pub max_tool_call_depth: u32,
+    #[serde(default = "default_tool_timeout")]
+    pub tool_call_timeout_sec: u64,
+    #[serde(default = "default_allow_plugin_tools")]
+    pub allow_plugin_tools: bool,
+    #[serde(default)]
+    pub require_confirmation: Vec<String>,
+}
+
+fn default_tool_call_depth() -> u32 { 5 }
+fn default_tool_timeout() -> u64 { 30 }
+fn default_allow_plugin_tools() -> bool { true }
 
 impl ServerConfig {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
