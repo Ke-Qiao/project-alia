@@ -73,6 +73,9 @@ async-stream = "0.3"
 # Cryptography
 sha2 = "0.10"
 
+# Vector database
+pgvector = { version = "0.4", features = ["sqlx"] }
+
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-axum = "0.2"

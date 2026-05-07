@@ -1,4 +1,7 @@
 //! Database entity models.
 //!
-//! This module will contain SeaORM entity definitions for database tables.
-//! Currently empty - entities will be added when implementing database persistence.
+//! This module contains SeaORM entity definitions for database tables.
+
+pub mod memory_community;
+pub mod memory_edge;
+pub mod memory_node;

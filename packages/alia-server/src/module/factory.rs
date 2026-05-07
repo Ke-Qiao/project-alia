@@ -7,7 +7,7 @@ use crate::providers::cache::{NoopCache, TwoLayerCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
 use crate::providers::meditation::NoopMeditation;
-use crate::providers::memory::{NoopMemory, SimpleMemory};
+use crate::providers::memory::{GraphRagMemory, NoopMemory, SimpleMemory};
 use crate::providers::persona::{NoopPersona, TemplatePersona};
 use crate::providers::router::PassthroughRouter;
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
@@ -112,6 +112,10 @@ pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
 
 pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
     match name {
+        "graphrag" => {
+            tracing::info!(module = name, "creating memory backend (GraphRagMemory)");
+            Box::new(GraphRagMemory::new())
+        }
         "simple" => {
             tracing::info!(module = name, "creating memory backend (SimpleMemory)");
             Box::new(SimpleMemory::new())
@@ -120,10 +124,9 @@ pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
             tracing::info!(module = name, "creating memory backend (noop)");
             Box::new(NoopMemory)
         }
-        // TODO: Add "graphrag" when implemented
         _ => {
-            tracing::warn!(module = name, "unknown memory backend, using simple");
-            Box::new(SimpleMemory::new())
+            tracing::warn!(module = name, "unknown memory backend, using graphrag");
+            Box::new(GraphRagMemory::new())
         }
     }
 }
