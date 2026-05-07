@@ -1,10 +1,13 @@
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio::sync::broadcast;
+use uuid::Uuid;
 
 /// Internal event types
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ServerEvent {
+    // Device events
     DeviceOnline {
         device_id: String,
     },
@@ -12,11 +15,15 @@ pub enum ServerEvent {
         device_id: String,
         reason: String,
     },
+    
+    // Plugin events
     PluginEvent {
         plugin_name: String,
         event_type: String,
         data: serde_json::Value,
     },
+    
+    // Process events
     ProcessOutput {
         name: String,
         channel: String,
@@ -27,14 +34,20 @@ pub enum ServerEvent {
         old_state: String,
         new_state: String,
     },
+    
+    // Voice events
     VoiceStateChanged {
         state: String,
     },
+    
+    // Rule events
     RuleTriggered {
-        rule_id: uuid::Uuid,
+        rule_id: Uuid,
         rule_name: String,
         action: String,
     },
+    
+    // Meditation events
     MeditationStarted {
         phase: String,
         trigger: String,
@@ -43,6 +56,49 @@ pub enum ServerEvent {
         phase: String,
         nodes_created: u32,
         nodes_updated: u32,
+    },
+    
+    // Scheduler events
+    TaskScheduled {
+        task_id: Uuid,
+        task_name: String,
+        next_run: DateTime<Utc>,
+    },
+    TaskTriggered {
+        task_id: Uuid,
+        task_name: String,
+        trigger_source: String,
+    },
+    TaskCompleted {
+        task_id: Uuid,
+        task_name: String,
+        success: bool,
+        duration_ms: u64,
+    },
+    TaskFailed {
+        task_id: Uuid,
+        task_name: String,
+        error: String,
+        retry_count: u32,
+    },
+    
+    // Tool events
+    ToolCallStarted {
+        call_id: String,
+        tool_name: String,
+        source: String,
+    },
+    ToolCallCompleted {
+        call_id: String,
+        tool_name: String,
+        success: bool,
+        duration_ms: u64,
+    },
+    ToolConfirmationRequired {
+        call_id: String,
+        tool_name: String,
+        description: String,
+        timeout_sec: u32,
     },
 }
 

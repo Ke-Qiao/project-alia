@@ -64,6 +64,9 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 # Template engine
 handlebars = "6"
 
+# Cron scheduling
+cron = "0.15"
+
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-axum = "0.2"

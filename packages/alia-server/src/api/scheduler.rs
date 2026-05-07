@@ -1,186 +1,212 @@
-//! Scheduler API: Task scheduling and event subscriptions
-//!
-//! Endpoints:
-//! - POST /scheduler/tasks - Create scheduled task
-//! - GET /scheduler/tasks - List user's tasks
-//! - GET /scheduler/tasks/{id} - Get task details
-//! - PUT /scheduler/tasks/{id} - Update task
-//! - DELETE /scheduler/tasks/{id} - Delete task
-//! - POST /scheduler/tasks/{id}/pause - Pause task
-//! - POST /scheduler/tasks/{id}/resume - Resume task
-//! - POST /scheduler/subscriptions - Subscribe to event
-//! - GET /scheduler/subscriptions - List subscriptions
-//! - DELETE /scheduler/subscriptions/{id} - Unsubscribe
-//! - GET /scheduler/tasks/{id}/executions - Get execution logs
-//! - GET /scheduler/tasks/{id}/next-run - Get next scheduled run time
-
 use axum::extract::{Path, State};
-use axum::routing::{get, post};
+use axum::routing::{get, post, delete};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::error::Result;
+use crate::providers::adapter::{ScheduleConfig, ScheduledTask, TaskFilter, TaskPatch, EventSubscription};
 use crate::state::AppState;
-use crate::providers::adapter::{ScheduledTask, EventSubscription};
+
+// ========== Request/Response Types ==========
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateTaskRequest {
     pub name: String,
-    pub schedule: serde_json::Value,
-    pub conditions: Option<serde_json::Value>,
+    pub schedule: ScheduleConfig,
+    pub conditions: serde_json::Value,
     pub action: serde_json::Value,
-    pub cooldown_sec: Option<u32>,
-    pub max_retries: Option<u32>,
+    #[serde(default = "default_cooldown")]
+    pub cooldown_sec: u32,
+    #[serde(default)]
+    pub max_retries: u32,
 }
+
+fn default_cooldown() -> u32 { 0 }
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateTaskRequest {
     pub name: Option<String>,
     pub enabled: Option<bool>,
-    pub schedule: Option<serde_json::Value>,
+    pub schedule: Option<ScheduleConfig>,
     pub conditions: Option<serde_json::Value>,
     pub action: Option<serde_json::Value>,
-    pub cooldown_sec: Option<u32>,
-    pub max_retries: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateSubscriptionRequest {
-    pub event_pattern: String,
-    pub condition: Option<serde_json::Value>,
+    pub name: String,
+    pub event_pattern: serde_json::Value,
+    pub conditions: serde_json::Value,
     pub action: serde_json::Value,
-    pub cooldown_sec: Option<u32>,
-    pub max_retries: Option<u32>,
+    #[serde(default = "default_cooldown")]
+    pub cooldown_sec: u32,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct ExecutionLog {
-    pub id: Uuid,
-    pub task_id: Uuid,
-    pub started_at: String,
-    pub completed_at: Option<String>,
-    pub status: String, // "running", "success", "failed"
-    pub result: Option<serde_json::Value>,
-    pub error: Option<String>,
-}
+// ========== Handlers ==========
 
-// TODO: List user's scheduled tasks
+/// List all scheduled tasks for the current user
 async fn list_tasks(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
+    State(state): State<AppState>,
+    auth: AuthUser,
 ) -> Result<Json<Vec<ScheduledTask>>> {
-    Ok(Json(Vec::new()))
+    let filter = TaskFilter {
+        user_id: Some(auth.id),
+        enabled_only: false,
+    };
+    let tasks = state.modules.scheduler.list_tasks(filter).await?;
+    Ok(Json(tasks))
 }
 
-// TODO: Create scheduled task
+/// Create a new scheduled task
 async fn create_task(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Json(_body): Json<CreateTaskRequest>,
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(body): Json<CreateTaskRequest>,
 ) -> Result<Json<ScheduledTask>> {
-    Err(crate::error::AppError::Internal(anyhow::anyhow!("Not implemented")))
+    let task = ScheduledTask {
+        id: Uuid::new_v4(),
+        user_id: auth.id,
+        name: body.name,
+        enabled: true,
+        schedule: body.schedule,
+        conditions: body.conditions,
+        action: body.action,
+        cooldown_sec: body.cooldown_sec,
+        max_retries: body.max_retries,
+        created_by: "user".to_string(),
+    };
+
+    let task_id = state.modules.scheduler.create_task(task.clone()).await?;
+    tracing::info!(%task_id, "task created");
+
+    Ok(Json(task))
 }
 
-// TODO: Get task details
+/// Get a specific task by ID
 async fn get_task(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<ScheduledTask>> {
-    Err(crate::error::AppError::NotFound("Task not found".into()))
+    let filter = TaskFilter {
+        user_id: Some(auth.id),
+        enabled_only: false,
+    };
+    let tasks = state.modules.scheduler.list_tasks(filter).await?;
+    
+    tasks
+        .into_iter()
+        .find(|t| t.id == id)
+        .map(Json)
+        .ok_or_else(|| crate::error::AppError::NotFound("Task not found".into()))
 }
 
-// TODO: Update task
+/// Update a task
 async fn update_task(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: AuthUser,
-    Path(_id): Path<Uuid>,
-    Json(_body): Json<UpdateTaskRequest>,
-) -> Result<Json<ScheduledTask>> {
-    Err(crate::error::AppError::NotFound("Task not found".into()))
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateTaskRequest>,
+) -> Result<Json<serde_json::Value>> {
+    let patch = TaskPatch {
+        name: body.name,
+        enabled: body.enabled,
+        schedule: body.schedule,
+        conditions: body.conditions,
+        action: body.action,
+    };
+
+    state.modules.scheduler.update_task(id, patch).await?;
+    Ok(Json(serde_json::json!({"success": true, "task_id": id})))
 }
 
-// TODO: Delete task
-async fn delete_task(
-    State(_state): State<AppState>,
+/// Delete a task
+async fn delete_task_handler(
+    State(state): State<AppState>,
     _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    state.modules.scheduler.delete_task(id).await?;
     Ok(Json(serde_json::json!({"success": true})))
 }
 
-// TODO: Pause task
+/// Pause a task
 async fn pause_task(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({"success": true})))
+    state.modules.scheduler.pause_task(id).await?;
+    Ok(Json(serde_json::json!({"success": true, "paused": true})))
 }
 
-// TODO: Resume task
+/// Resume a task
 async fn resume_task(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({"success": true})))
+    state.modules.scheduler.resume_task(id).await?;
+    Ok(Json(serde_json::json!({"success": true, "paused": false})))
 }
 
-// TODO: Subscribe to event pattern
-async fn create_subscription(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Json(_body): Json<CreateSubscriptionRequest>,
-) -> Result<Json<EventSubscription>> {
-    Err(crate::error::AppError::Internal(anyhow::anyhow!("Not implemented")))
-}
+// ========== Event Subscriptions ==========
 
-// TODO: List event subscriptions
+/// List all event subscriptions for the current user
 async fn list_subscriptions(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
+    State(state): State<AppState>,
+    auth: AuthUser,
 ) -> Result<Json<Vec<EventSubscription>>> {
-    Ok(Json(Vec::new()))
+    let subs = state.modules.scheduler.list_subscriptions(auth.id).await?;
+    Ok(Json(subs))
 }
 
-// TODO: Delete subscription
+/// Create a new event subscription
+async fn create_subscription(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(body): Json<CreateSubscriptionRequest>,
+) -> Result<Json<EventSubscription>> {
+    let sub = EventSubscription {
+        id: Uuid::new_v4(),
+        user_id: auth.id,
+        name: body.name,
+        enabled: true,
+        event_pattern: body.event_pattern,
+        conditions: body.conditions,
+        action: body.action,
+        cooldown_sec: body.cooldown_sec,
+        created_by: "user".to_string(),
+    };
+
+    let sub_id = state.modules.scheduler.subscribe_event(sub.clone()).await?;
+    tracing::info!(%sub_id, "subscription created");
+
+    Ok(Json(sub))
+}
+
+/// Delete an event subscription
 async fn delete_subscription(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    state.modules.scheduler.unsubscribe_event(id).await?;
     Ok(Json(serde_json::json!({"success": true})))
 }
 
-// TODO: Get execution logs for task
-async fn list_executions(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_task_id): Path<Uuid>,
-) -> Result<Json<Vec<ExecutionLog>>> {
-    Ok(Json(Vec::new()))
-}
-
-// TODO: Get next scheduled run time
-async fn get_next_run(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>> {
-    Ok(Json(serde_json::json!({"next_run_at": null})))
-}
+// ========== Routes ==========
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        // Tasks
         .route("/scheduler/tasks", get(list_tasks).post(create_task))
-        .route("/scheduler/tasks/{id}", get(get_task).put(update_task).delete(delete_task))
+        .route("/scheduler/tasks/{id}", get(get_task).put(update_task).delete(delete_task_handler))
         .route("/scheduler/tasks/{id}/pause", post(pause_task))
         .route("/scheduler/tasks/{id}/resume", post(resume_task))
-        .route("/scheduler/tasks/{id}/executions", get(list_executions))
-        .route("/scheduler/tasks/{id}/next-run", get(get_next_run))
+        // Subscriptions
         .route("/scheduler/subscriptions", get(list_subscriptions).post(create_subscription))
-        .route("/scheduler/subscriptions/{id}", axum::routing::delete(delete_subscription))
+        .route("/scheduler/subscriptions/{id}", delete(delete_subscription))
 }

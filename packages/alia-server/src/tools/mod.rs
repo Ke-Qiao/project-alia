@@ -1,25 +1,19 @@
-//! Tool Registry module: AI function calling and tool management
+//! Tools module: Tool registry and built-in tools for AI function calling.
 //!
-//! Provides a registry of tools that LLM can call via function_calling / tool_use.
-//! Supports both built-in tools and dynamically-registered plugin tools.
-//!
-//! Tools include:
-//! - Scheduler operations (create_task, list_tasks, delete_task, subscribe_event)
-//! - Device control (get_status, send_command)
-//! - Memory operations (search, store)
-//! - Notifications
-//! - Plugin commands
-//! - TTS announcements
+//! This module provides:
+//! - `NoopToolRegistry`: A no-op implementation for disabled tools
+//! - `BuiltinToolRegistry`: Full implementation with built-in tools and plugin support
+
+pub mod builtin;
+
+pub use builtin::BuiltinToolRegistry;
 
 use async_trait::async_trait;
 
 use crate::module::ModuleLifecycle;
-use crate::providers::adapter::{ToolDefinition, ToolCall, ToolResult, ToolContext, ToolRegistry};
+use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
 
-mod builtin;
-pub use builtin::BuiltinToolRegistry;
-
-/// No-op tool registry: no tools available
+/// No-op tool registry implementation for disabled state.
 pub struct NoopToolRegistry;
 
 #[async_trait]
@@ -39,15 +33,20 @@ impl ToolRegistry for NoopToolRegistry {
         Ok(None)
     }
 
-    async fn execute(&self, _call: ToolCall, _ctx: &ToolContext) -> anyhow::Result<ToolResult> {
-        Err(anyhow::anyhow!("No tools available in noop registry"))
+    async fn execute(&self, call: ToolCall, _ctx: &ToolContext) -> anyhow::Result<ToolResult> {
+        Ok(ToolResult {
+            call_id: call.call_id,
+            success: false,
+            output: serde_json::json!({"error": "tools are disabled"}),
+            display: Some("Tools are disabled".to_string()),
+        })
     }
 
     async fn register_plugin_tool(&self, _tool: ToolDefinition) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("tools are disabled")
     }
 
     async fn unregister_plugin_tool(&self, _tool_name: &str) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("tools are disabled")
     }
 }

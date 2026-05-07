@@ -18,6 +18,7 @@ mod api;
 mod auth;
 mod config;
 mod embedded;
+mod entity;
 mod error;
 mod event;
 mod module;
