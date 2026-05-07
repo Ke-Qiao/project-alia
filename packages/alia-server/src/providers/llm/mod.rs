@@ -1,3 +1,20 @@
+//! LLM adapters for AI chat completion.
+//!
+//! Available implementations:
+//! - `OpenAiLlm`: OpenAI GPT models (gpt-4o, gpt-4-turbo, etc.)
+//! - `OllamaLlm`: Local Ollama models (qwen2.5, llama3, etc.)
+//! - `NoopLlm`: No-op placeholder
+
+#[cfg(feature = "llm-openai")]
+pub mod openai;
+#[cfg(feature = "llm-ollama")]
+pub mod ollama;
+
+#[cfg(feature = "llm-openai")]
+pub use openai::OpenAiLlm;
+#[cfg(feature = "llm-ollama")]
+pub use ollama::OllamaLlm;
+
 use std::pin::Pin;
 
 use async_trait::async_trait;

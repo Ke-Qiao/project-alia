@@ -15,26 +15,99 @@ use crate::rules::NoopRuleEngine;
 use crate::scheduler::{NoopScheduler, CronScheduler};
 use crate::tools::{NoopToolRegistry, BuiltinToolRegistry};
 
-pub fn create_llm(_name: &str) -> Box<dyn LlmAdapter> {
-    // TODO: match on name to create OpenAI/Ollama implementations
-    // For now return noop
-    tracing::info!(module = _name, "creating LLM adapter (noop placeholder)");
-    Box::new(NoopLlm)
+#[cfg(feature = "llm-openai")]
+use crate::providers::llm::OpenAiLlm;
+#[cfg(feature = "llm-ollama")]
+use crate::providers::llm::OllamaLlm;
+#[cfg(feature = "stt-whisper")]
+use crate::providers::stt::WhisperCppStt;
+#[cfg(feature = "tts-sovits")]
+use crate::providers::tts::GptSovitsTts;
+#[cfg(feature = "embed-ollama")]
+use crate::providers::embedding::OllamaEmbedding;
+#[cfg(feature = "embed-openai")]
+use crate::providers::embedding::OpenAiEmbedding;
+
+pub fn create_llm(name: &str) -> Box<dyn LlmAdapter> {
+    match name {
+        #[cfg(feature = "llm-openai")]
+        "openai" => {
+            tracing::info!(module = name, "creating LLM adapter (OpenAI)");
+            Box::new(OpenAiLlm::new())
+        }
+        #[cfg(feature = "llm-ollama")]
+        "ollama" => {
+            tracing::info!(module = name, "creating LLM adapter (Ollama)");
+            Box::new(OllamaLlm::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating LLM adapter (noop)");
+            Box::new(NoopLlm)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown LLM adapter, using noop");
+            Box::new(NoopLlm)
+        }
+    }
 }
 
-pub fn create_stt(_name: &str) -> Box<dyn SttAdapter> {
-    tracing::info!(module = _name, "creating STT adapter (noop placeholder)");
-    Box::new(NoopStt)
+pub fn create_stt(name: &str) -> Box<dyn SttAdapter> {
+    match name {
+        #[cfg(feature = "stt-whisper")]
+        "whisper" => {
+            tracing::info!(module = name, "creating STT adapter (Whisper)");
+            Box::new(WhisperCppStt::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating STT adapter (noop)");
+            Box::new(NoopStt)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown STT adapter, using noop");
+            Box::new(NoopStt)
+        }
+    }
 }
 
-pub fn create_tts(_name: &str) -> Box<dyn TtsAdapter> {
-    tracing::info!(module = _name, "creating TTS adapter (noop placeholder)");
-    Box::new(NoopTts)
+pub fn create_tts(name: &str) -> Box<dyn TtsAdapter> {
+    match name {
+        #[cfg(feature = "tts-sovits")]
+        "gpt_sovits" | "sovits" => {
+            tracing::info!(module = name, "creating TTS adapter (GPT-SoVITS)");
+            Box::new(GptSovitsTts::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating TTS adapter (noop)");
+            Box::new(NoopTts)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown TTS adapter, using noop");
+            Box::new(NoopTts)
+        }
+    }
 }
 
-pub fn create_embedding(_name: &str) -> Box<dyn EmbeddingAdapter> {
-    tracing::info!(module = _name, "creating embedding adapter (noop placeholder)");
-    Box::new(NoopEmbedding)
+pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
+    match name {
+        #[cfg(feature = "embed-ollama")]
+        "ollama" => {
+            tracing::info!(module = name, "creating embedding adapter (Ollama)");
+            Box::new(OllamaEmbedding::new())
+        }
+        #[cfg(feature = "embed-openai")]
+        "openai" => {
+            tracing::info!(module = name, "creating embedding adapter (OpenAI)");
+            Box::new(OpenAiEmbedding::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating embedding adapter (noop)");
+            Box::new(NoopEmbedding)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown embedding adapter, using noop");
+            Box::new(NoopEmbedding)
+        }
+    }
 }
 
 pub fn create_memory(_name: &str) -> Box<dyn MemoryBackend> {

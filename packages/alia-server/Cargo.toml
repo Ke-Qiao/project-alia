@@ -83,5 +83,8 @@ handlebars.workspace = true
 # Cron scheduling
 cron.workspace = true
 
+# Async streaming
+async-stream.workspace = true
+
 # HTTP client (optional, for AI adapters)
 reqwest = { workspace = true, optional = true }
