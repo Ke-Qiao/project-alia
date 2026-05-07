@@ -86,5 +86,8 @@ cron.workspace = true
 # Async streaming
 async-stream.workspace = true
 
+# Cryptography
+sha2.workspace = true
+
 # HTTP client (optional, for AI adapters)
 reqwest = { workspace = true, optional = true }

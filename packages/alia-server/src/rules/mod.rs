@@ -1,3 +1,13 @@
+//! Rule engine for automation rules.
+//!
+//! Available implementations:
+//! - `SimpleRuleEngine`: Basic condition-based rule evaluation
+//! - `NoopRuleEngine`: No-op placeholder (no rules)
+
+pub mod engine;
+
+pub use engine::SimpleRuleEngine;
+
 use async_trait::async_trait;
 
 use crate::providers::adapter::{RuleAction, RuleEvaluator};

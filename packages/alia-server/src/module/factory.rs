@@ -3,15 +3,15 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
-use crate::providers::cache::NoopCache;
+use crate::providers::cache::{NoopCache, TwoLayerCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
 use crate::providers::meditation::NoopMeditation;
-use crate::providers::memory::NoopMemory;
-use crate::providers::persona::NoopPersona;
+use crate::providers::memory::{NoopMemory, SimpleMemory};
+use crate::providers::persona::{NoopPersona, TemplatePersona};
 use crate::providers::router::PassthroughRouter;
-use crate::providers::skills::NoopSkills;
-use crate::rules::NoopRuleEngine;
+use crate::providers::skills::{BuiltinSkills, NoopSkills};
+use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
 use crate::scheduler::{NoopScheduler, CronScheduler};
 use crate::tools::{NoopToolRegistry, BuiltinToolRegistry};
 
@@ -110,24 +110,73 @@ pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
     }
 }
 
-pub fn create_memory(_name: &str) -> Box<dyn MemoryBackend> {
-    tracing::info!(module = _name, "creating memory backend (noop placeholder)");
-    Box::new(NoopMemory)
+pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
+    match name {
+        "simple" => {
+            tracing::info!(module = name, "creating memory backend (SimpleMemory)");
+            Box::new(SimpleMemory::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating memory backend (noop)");
+            Box::new(NoopMemory)
+        }
+        // TODO: Add "graphrag" when implemented
+        _ => {
+            tracing::warn!(module = name, "unknown memory backend, using simple");
+            Box::new(SimpleMemory::new())
+        }
+    }
 }
 
-pub fn create_cache(_name: &str) -> Box<dyn CacheBackend> {
-    tracing::info!(module = _name, "creating cache backend (noop placeholder)");
-    Box::new(NoopCache)
+pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
+    match name {
+        "two_layer" => {
+            tracing::info!(module = name, "creating cache backend (TwoLayerCache)");
+            Box::new(TwoLayerCache::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating cache backend (noop)");
+            Box::new(NoopCache)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown cache backend, using two_layer");
+            Box::new(TwoLayerCache::new())
+        }
+    }
 }
 
-pub fn create_skills(_name: &str) -> Box<dyn SkillProvider> {
-    tracing::info!(module = _name, "creating skill provider (noop placeholder)");
-    Box::new(NoopSkills)
+pub fn create_skills(name: &str) -> Box<dyn SkillProvider> {
+    match name {
+        "builtin" => {
+            tracing::info!(module = name, "creating skill provider (BuiltinSkills)");
+            Box::new(BuiltinSkills::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating skill provider (noop)");
+            Box::new(NoopSkills)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown skill provider, using builtin");
+            Box::new(BuiltinSkills::new())
+        }
+    }
 }
 
-pub fn create_persona(_name: &str) -> Box<dyn PersonaProvider> {
-    tracing::info!(module = _name, "creating persona provider (noop placeholder)");
-    Box::new(NoopPersona)
+pub fn create_persona(name: &str) -> Box<dyn PersonaProvider> {
+    match name {
+        "template" => {
+            tracing::info!(module = name, "creating persona provider (TemplatePersona)");
+            Box::new(TemplatePersona::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating persona provider (noop)");
+            Box::new(NoopPersona)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown persona provider, using template");
+            Box::new(TemplatePersona::new())
+        }
+    }
 }
 
 pub fn create_meditation(_name: &str) -> Box<dyn MeditationStrategy> {
@@ -140,9 +189,21 @@ pub fn create_router(_name: &str) -> Box<dyn RouterStrategy> {
     Box::new(PassthroughRouter)
 }
 
-pub fn create_rule_engine(_name: &str) -> Box<dyn RuleEvaluator> {
-    tracing::info!(module = _name, "creating rule engine (noop placeholder)");
-    Box::new(NoopRuleEngine)
+pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
+    match name {
+        "simple" => {
+            tracing::info!(module = name, "creating rule engine (SimpleRuleEngine)");
+            Box::new(SimpleRuleEngine::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating rule engine (noop)");
+            Box::new(NoopRuleEngine)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown rule engine, using simple");
+            Box::new(SimpleRuleEngine::new())
+        }
+    }
 }
 
 pub fn create_scheduler(name: &str) -> Box<dyn SchedulerBackend> {

@@ -70,6 +70,9 @@ cron = "0.15"
 # Async streaming
 async-stream = "0.3"
 
+# Cryptography
+sha2 = "0.10"
+
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-axum = "0.2"

@@ -1,3 +1,13 @@
+//! Persona providers for AI personality and prompt management.
+//!
+//! Available implementations:
+//! - `TemplatePersona`: Handlebars template-based system prompt rendering
+//! - `NoopPersona`: No-op placeholder with default Alia persona
+
+pub mod template;
+
+pub use template::TemplatePersona;
+
 use async_trait::async_trait;
 use uuid::Uuid;
 

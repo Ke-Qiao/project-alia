@@ -1,3 +1,14 @@
+//! Memory backends for storing and retrieving user memories.
+//!
+//! Available implementations:
+//! - `SimpleMemory`: In-memory storage with keyword-based retrieval
+//! - `NoopMemory`: No-op placeholder (returns empty results)
+//! - GraphRagMemory: (planned) PostgreSQL + pgvector based knowledge graph
+
+pub mod simple;
+
+pub use simple::SimpleMemory;
+
 use async_trait::async_trait;
 use uuid::Uuid;
 

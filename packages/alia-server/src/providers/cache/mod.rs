@@ -1,3 +1,13 @@
+//! Cache backends for response caching.
+//!
+//! Available implementations:
+//! - `TwoLayerCache`: In-memory cache with exact hash matching + semantic fallback (planned)
+//! - `NoopCache`: No-op placeholder (no caching)
+
+pub mod two_layer;
+
+pub use two_layer::TwoLayerCache;
+
 use async_trait::async_trait;
 use uuid::Uuid;
 
