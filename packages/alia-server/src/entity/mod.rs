@@ -6,3 +6,4 @@ pub mod llm_cache;
 pub mod memory_community;
 pub mod memory_edge;
 pub mod memory_node;
+pub mod skill;

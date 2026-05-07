@@ -1,34 +1,48 @@
 //! Builtin Skills Provider
 //!
-//! Provides a set of built-in skills with keyword-based intent matching.
-//! Skills are registered in-memory and matched against user intents using
-//! keyword scoring. Each skill has associated keywords and a handler function.
+//! DB-backed skill provider that loads skill definitions from PostgreSQL.
+//! On first init, seeds default built-in skills if the table is empty.
+//! Supports keyword-based intent matching with priority-based conflict resolution.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Utc;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
+};
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
+use crate::entity::skill;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
 
-/// A registered skill with its metadata and handler
+/// A loaded skill with its metadata for in-memory matching
 #[derive(Clone)]
-pub struct RegisteredSkill {
+pub struct LoadedSkill {
     pub info: SkillInfo,
-    /// Keywords that trigger this skill (lowercase)
+    /// Keywords that trigger this skill (from intent_patterns)
     pub keywords: Vec<String>,
     /// Parameter schema (JSON Schema)
-    pub param_schema: Option<serde_json::Value>,
-    /// Whether the skill requires external service
-    pub requires_external: bool,
+    pub param_schema: serde_json::Value,
+    /// Internal execution routing config (plugin, action)
+    pub execution_config: Option<serde_json::Value>,
+    /// Response template for simple confirmations
+    pub prompt_template: Option<String>,
+    /// Whether the response is cacheable
+    pub cacheable: bool,
+    /// Priority for conflict resolution (higher wins)
+    pub priority: i32,
 }
 
-/// Builtin skills provider with keyword-based matching
+/// DB-backed skills provider
 pub struct BuiltinSkills {
-    /// Registered skills by name
-    skills: Arc<RwLock<HashMap<String, RegisteredSkill>>>,
+    db: Option<DatabaseConnection>,
+    /// In-memory skill index (loaded from DB)
+    skills: Arc<RwLock<HashMap<String, LoadedSkill>>>,
     /// Minimum confidence threshold for matching
     min_confidence: f32,
 }
@@ -41,184 +55,87 @@ impl Default for BuiltinSkills {
 
 impl BuiltinSkills {
     pub fn new() -> Self {
-        let skills = Arc::new(RwLock::new(HashMap::new()));
-        let provider = Self {
-            skills,
+        Self {
+            db: None,
+            skills: Arc::new(RwLock::new(HashMap::new())),
             min_confidence: 0.3,
-        };
-        // Register default builtin skills synchronously during construction
-        provider.register_builtin_skills_sync();
-        provider
+        }
     }
 
-    /// Register default builtin skills
-    fn register_builtin_skills_sync(&self) {
-        // We need to do this synchronously in the constructor
-        // Use blocking lock since we're in a sync context during construction
-        let mut skills = self.skills.blocking_write();
+    fn db(&self) -> anyhow::Result<&DatabaseConnection> {
+        self.db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("BuiltinSkills not initialized"))
+    }
 
-        // Light control skill
-        skills.insert(
-            "light_control".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "light_control".into(),
-                    display_name: "灯光控制".into(),
-                    description: "控制智能灯的开关、亮度和颜色".into(),
-                    category: "smart_home".into(),
-                },
-                keywords: vec![
-                    "灯".into(), "灯光".into(), "开灯".into(), "关灯".into(),
-                    "亮度".into(), "调暗".into(), "调亮".into(), "light".into(),
-                    "lights".into(), "lamp".into(), "brightness".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["on", "off", "dim", "brighten", "set_color"]},
-                        "room": {"type": "string"},
-                        "brightness": {"type": "integer", "minimum": 0, "maximum": 100},
-                        "color": {"type": "string"}
-                    }
-                })),
-                requires_external: true,
-            },
-        );
+    /// Load all enabled skills from DB into memory
+    async fn load_skills(&self) -> anyhow::Result<()> {
+        let db = self.db()?;
 
-        // Timer skill
-        skills.insert(
-            "timer".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "timer".into(),
-                    display_name: "定时器".into(),
-                    description: "设置倒计时提醒".into(),
-                    category: "utility".into(),
-                },
-                keywords: vec![
-                    "定时".into(), "计时".into(), "提醒".into(), "倒计时".into(),
-                    "timer".into(), "remind".into(), "countdown".into(), "alarm".into(),
-                    "分钟后".into(), "小时后".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "duration_seconds": {"type": "integer", "minimum": 1},
-                        "message": {"type": "string"}
+        let rows = skill::Entity::find()
+            .filter(skill::Column::Enabled.eq(true))
+            .order_by_desc(skill::Column::Priority)
+            .all(db)
+            .await?;
+
+        let mut skills = self.skills.write().await;
+        skills.clear();
+
+        for row in rows {
+            let keywords = row
+                .intent_patterns
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            skills.insert(
+                row.name.clone(),
+                LoadedSkill {
+                    info: SkillInfo {
+                        name: row.name,
+                        display_name: row.display_name,
+                        description: row.description.unwrap_or_default(),
+                        category: row.category,
                     },
-                    "required": ["duration_seconds"]
-                })),
-                requires_external: false,
-            },
-        );
-
-        // Weather skill
-        skills.insert(
-            "weather".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "weather".into(),
-                    display_name: "天气查询".into(),
-                    description: "查询当前天气或天气预报".into(),
-                    category: "information".into(),
+                    keywords,
+                    param_schema: row.parameters,
+                    execution_config: row.execution_config,
+                    prompt_template: row.prompt_template,
+                    cacheable: row.cacheable,
+                    priority: row.priority,
                 },
-                keywords: vec![
-                    "天气".into(), "气温".into(), "温度".into(), "下雨".into(),
-                    "下雪".into(), "预报".into(), "weather".into(), "temperature".into(),
-                    "forecast".into(), "rain".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string"},
-                        "days": {"type": "integer", "minimum": 1, "maximum": 7}
-                    }
-                })),
-                requires_external: true,
-            },
-        );
+            );
+        }
 
-        // Music control skill
-        skills.insert(
-            "music_control".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "music_control".into(),
-                    display_name: "音乐控制".into(),
-                    description: "播放、暂停、切换音乐".into(),
-                    category: "entertainment".into(),
-                },
-                keywords: vec![
-                    "音乐".into(), "播放".into(), "暂停".into(), "下一首".into(),
-                    "上一首".into(), "歌".into(), "music".into(), "play".into(),
-                    "pause".into(), "next".into(), "previous".into(), "song".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["play", "pause", "next", "previous", "stop"]},
-                        "query": {"type": "string"},
-                        "volume": {"type": "integer", "minimum": 0, "maximum": 100}
-                    }
-                })),
-                requires_external: true,
-            },
-        );
+        tracing::info!(count = skills.len(), "loaded skills from database");
+        Ok(())
+    }
 
-        // Device status skill
-        skills.insert(
-            "device_status".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "device_status".into(),
-                    display_name: "设备状态".into(),
-                    description: "查询智能设备状态".into(),
-                    category: "smart_home".into(),
-                },
-                keywords: vec![
-                    "设备".into(), "状态".into(), "查看".into(), "检查".into(),
-                    "device".into(), "status".into(), "check".into(), "state".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "device_id": {"type": "string"},
-                        "device_type": {"type": "string"}
-                    }
-                })),
-                requires_external: true,
-            },
-        );
+    /// Seed default skills if the table is empty
+    async fn seed_defaults(&self) -> anyhow::Result<()> {
+        let db = self.db()?;
+        let count = skill::Entity::find().count(db).await?;
+        if count > 0 {
+            tracing::debug!(existing = count, "skills table not empty, skipping seed");
+            return Ok(());
+        }
 
-        // Scene activation skill
-        skills.insert(
-            "scene".into(),
-            RegisteredSkill {
-                info: SkillInfo {
-                    name: "scene".into(),
-                    display_name: "场景激活".into(),
-                    description: "激活预设的智能家居场景".into(),
-                    category: "smart_home".into(),
-                },
-                keywords: vec![
-                    "场景".into(), "模式".into(), "回家".into(), "离家".into(),
-                    "睡眠".into(), "起床".into(), "scene".into(), "mode".into(),
-                    "home".into(), "away".into(), "sleep".into(), "wake".into(),
-                ],
-                param_schema: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "scene_name": {"type": "string"}
-                    },
-                    "required": ["scene_name"]
-                })),
-                requires_external: true,
-            },
-        );
+        tracing::info!("seeding default built-in skills");
+
+        let defaults = builtin_skill_seeds();
+        for model in defaults {
+            model.insert(db).await?;
+        }
+
+        Ok(())
     }
 
     /// Calculate match score between intent and skill keywords
-    fn calculate_match_score(&self, intent: &str, skill: &RegisteredSkill) -> f32 {
+    fn calculate_match_score(intent: &str, skill: &LoadedSkill) -> f32 {
         let intent_lower = intent.to_lowercase();
         let mut matched_keywords = 0;
         let mut total_weight = 0.0;
@@ -226,8 +143,8 @@ impl BuiltinSkills {
         for keyword in &skill.keywords {
             if intent_lower.contains(keyword) {
                 matched_keywords += 1;
-                // Longer keywords get higher weight
-                total_weight += keyword.len() as f32 / 10.0;
+                // Longer keywords get higher weight (CJK chars count more)
+                total_weight += keyword.chars().count() as f32 / 10.0;
             }
         }
 
@@ -235,23 +152,57 @@ impl BuiltinSkills {
             return 0.0;
         }
 
-        // Combine keyword count and weight
         let count_score = matched_keywords as f32 / skill.keywords.len().max(1) as f32;
         let weight_score = total_weight.min(1.0);
 
         (count_score * 0.6 + weight_score * 0.4).min(1.0)
     }
 
-    /// Register a custom skill
-    pub async fn register_skill(&self, skill: RegisteredSkill) {
-        let mut skills = self.skills.write().await;
-        skills.insert(skill.info.name.clone(), skill);
+    /// Reload skills from DB into memory
+    pub async fn reload(&self) -> anyhow::Result<()> {
+        self.load_skills().await
     }
 
-    /// Unregister a skill by name
-    pub async fn unregister_skill(&self, name: &str) -> bool {
-        let mut skills = self.skills.write().await;
-        skills.remove(name).is_some()
+    /// Get a skill by name from DB
+    pub async fn get_by_name(&self, name: &str) -> anyhow::Result<Option<skill::Model>> {
+        let db = self.db()?;
+        Ok(skill::Entity::find()
+            .filter(skill::Column::Name.eq(name))
+            .one(db)
+            .await?)
+    }
+
+    /// Create a new skill in DB
+    pub async fn create(&self, model: skill::ActiveModel) -> anyhow::Result<skill::Model> {
+        let db = self.db()?;
+        let result = model.insert(db).await?;
+        self.load_skills().await?;
+        Ok(result)
+    }
+
+    /// Update a skill in DB
+    pub async fn update(&self, model: skill::ActiveModel) -> anyhow::Result<skill::Model> {
+        let db = self.db()?;
+        let result = model.update(db).await?;
+        self.load_skills().await?;
+        Ok(result)
+    }
+
+    /// Delete a skill by ID
+    pub async fn delete(&self, id: Uuid) -> anyhow::Result<bool> {
+        let db = self.db()?;
+        let result = skill::Entity::delete_by_id(id).exec(db).await?;
+        self.load_skills().await?;
+        Ok(result.rows_affected > 0)
+    }
+
+    /// List all skills from DB (including disabled)
+    pub async fn list_all_db(&self) -> anyhow::Result<Vec<skill::Model>> {
+        let db = self.db()?;
+        Ok(skill::Entity::find()
+            .order_by_desc(skill::Column::Priority)
+            .all(db)
+            .await?)
     }
 }
 
@@ -261,18 +212,19 @@ impl ModuleLifecycle for BuiltinSkills {
         "builtin_skills"
     }
 
-    async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
-        let skills = self.skills.read().await;
-        tracing::info!(
-            skill_count = skills.len(),
-            "BuiltinSkills initialized with {} skills",
-            skills.len()
-        );
+    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+        self.db = Some(ctx.db.clone());
+        self.seed_defaults().await?;
+        self.load_skills().await?;
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        ModuleHealth::Healthy
+        if self.db.is_some() {
+            ModuleHealth::Healthy
+        } else {
+            ModuleHealth::Unhealthy("Database not initialized".into())
+        }
     }
 }
 
@@ -281,33 +233,35 @@ impl SkillProvider for BuiltinSkills {
     async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>> {
         let skills = self.skills.read().await;
 
-        let mut best_match: Option<(String, f32)> = None;
+        // Find best matching skill, using priority to break ties
+        let mut best: Option<(&str, f32, i32)> = None; // (name, score, priority)
 
         for (name, skill) in skills.iter() {
-            let score = self.calculate_match_score(intent, skill);
+            let score = Self::calculate_match_score(intent, skill);
             if score >= self.min_confidence {
-                if best_match.is_none() || score > best_match.as_ref().unwrap().1 {
-                    best_match = Some((name.clone(), score));
+                let dominated = match best {
+                    Some((_, best_score, best_prio)) => {
+                        score > best_score || (score == best_score && skill.priority > best_prio)
+                    }
+                    None => true,
+                };
+                if dominated {
+                    best = Some((name, score, skill.priority));
                 }
             }
         }
 
-        match best_match {
-            Some((name, confidence)) => {
-                tracing::debug!(
-                    skill = %name,
-                    confidence = %confidence,
-                    intent = %intent,
-                    "Matched skill"
-                );
+        match best {
+            Some((name, confidence, _)) => {
+                tracing::debug!(skill = %name, confidence, intent = %intent, "matched skill");
                 Ok(Some(SkillMatch {
-                    name,
+                    name: name.to_string(),
                     confidence,
                     parameters: serde_json::Value::Object(serde_json::Map::new()),
                 }))
             }
             None => {
-                tracing::debug!(intent = %intent, "No skill matched");
+                tracing::debug!(intent = %intent, "no skill matched");
                 Ok(None)
             }
         }
@@ -320,7 +274,7 @@ impl SkillProvider for BuiltinSkills {
     ) -> anyhow::Result<SkillResult> {
         let skills = self.skills.read().await;
 
-        let registered = match skills.get(&skill.name) {
+        let loaded = match skills.get(&skill.name) {
             Some(s) => s,
             None => {
                 return Ok(SkillResult {
@@ -331,55 +285,24 @@ impl SkillProvider for BuiltinSkills {
             }
         };
 
-        // For builtin skills, we return a structured response that indicates
-        // the skill was matched but actual execution requires external service
-        if registered.requires_external {
-            return Ok(SkillResult {
-                success: true,
-                output: serde_json::json!({
-                    "skill": skill.name,
-                    "status": "requires_external_execution",
-                    "parameters": params,
-                    "schema": registered.param_schema,
-                }),
-                message: Some(format!(
-                    "Skill '{}' matched. Execution requires external service integration.",
-                    registered.info.display_name
-                )),
-            });
-        }
+        // If skill has a prompt_template, return it for template-based response
+        // (the caller can fill the template or pass to LLM)
+        let template = loaded.prompt_template.clone();
+        let exec_config = loaded.execution_config.clone();
 
-        // For skills that don't require external service (like timer),
-        // we can provide a basic response
-        match skill.name.as_str() {
-            "timer" => {
-                let duration = params.get("duration_seconds")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(60);
-                let message = params.get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("时间到了");
-
-                Ok(SkillResult {
-                    success: true,
-                    output: serde_json::json!({
-                        "timer_id": uuid::Uuid::new_v4().to_string(),
-                        "duration_seconds": duration,
-                        "message": message,
-                        "status": "scheduled"
-                    }),
-                    message: Some(format!("定时器已设置，{}秒后提醒: {}", duration, message)),
-                })
-            }
-            _ => Ok(SkillResult {
-                success: true,
-                output: serde_json::json!({
-                    "skill": skill.name,
-                    "parameters": params,
-                }),
-                message: Some(format!("Skill '{}' executed", skill.name)),
+        Ok(SkillResult {
+            success: true,
+            output: serde_json::json!({
+                "skill": skill.name,
+                "category": loaded.info.category,
+                "parameters": params,
+                "param_schema": loaded.param_schema,
+                "execution_config": exec_config,
+                "prompt_template": template,
+                "cacheable": loaded.cacheable,
             }),
-        }
+            message: Some(format!("Skill '{}' ready for execution", loaded.info.display_name)),
+        })
     }
 
     async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {
@@ -388,66 +311,321 @@ impl SkillProvider for BuiltinSkills {
     }
 }
 
+/// Generate seed data for all default built-in skills
+fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
+    let now = Utc::now();
+
+    vec![
+        // smart_light_control
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("smart_light_control".into()),
+            display_name: Set("智能灯光控制".into()),
+            description: Set(Some("控制智能灯的开关、亮度、色温".into())),
+            category: Set("smart_home".into()),
+            intent_patterns: Set(serde_json::json!([
+                "灯", "灯光", "开灯", "关灯", "亮度", "调暗", "调亮", "色温",
+                "light", "lights", "lamp", "brightness", "把灯"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["on", "off", "set_brightness", "set_color_temp"]},
+                    "device_name": {"type": "string", "description": "设备名称或位置"},
+                    "value": {"type": "number", "description": "亮度(0-100)或色温(2700-6500K)"}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "send_plugin_command",
+                    "parameters": {"plugin_name": "zigbee-bridge", "action": "light_control"}
+                }
+            }))),
+            prompt_template: Set(Some("用户想要{action}{device_name}。请执行操作并用自然语言确认。".into())),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(10),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // smart_ac_control
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("smart_ac_control".into()),
+            display_name: Set("空调控制".into()),
+            description: Set(Some("控制空调的开关、温度、模式".into())),
+            category: Set("smart_home".into()),
+            intent_patterns: Set(serde_json::json!([
+                "空调", "冷气", "暖气", "温度", "制冷", "制热", "除湿",
+                "ac", "air conditioner", "调温", "度"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["on", "off", "set_temperature", "set_mode"]},
+                    "device_name": {"type": "string"},
+                    "temperature": {"type": "number", "minimum": 16, "maximum": 30},
+                    "mode": {"type": "string", "enum": ["cool", "heat", "auto", "dehumidify", "fan"]}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "send_plugin_command",
+                    "parameters": {"plugin_name": "ir-bridge", "action": "ac_control"}
+                }
+            }))),
+            prompt_template: Set(Some("用户想要{action}空调。温度: {temperature}°C，模式: {mode}。".into())),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(10),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // smart_appliance
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("smart_appliance".into()),
+            display_name: Set("通用家电控制".into()),
+            description: Set(Some("控制通用智能家电（插座、窗帘、风扇等）".into())),
+            category: Set("smart_home".into()),
+            intent_patterns: Set(serde_json::json!([
+                "窗帘", "风扇", "插座", "电视", "扫地机", "加湿器",
+                "curtain", "fan", "plug", "tv", "vacuum", "humidifier",
+                "打开", "关闭", "开", "关"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["on", "off", "toggle"]},
+                    "device_name": {"type": "string"},
+                    "device_type": {"type": "string"}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "send_plugin_command",
+                    "parameters": {"plugin_name": "smart-home", "action": "device_control"}
+                }
+            }))),
+            prompt_template: Set(None),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(5),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // timer_alarm
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("timer_alarm".into()),
+            display_name: Set("定时器/闹钟".into()),
+            description: Set(Some("设置倒计时定时器或闹钟提醒".into())),
+            category: Set("utility".into()),
+            intent_patterns: Set(serde_json::json!([
+                "定时", "计时", "提醒", "倒计时", "闹钟",
+                "timer", "remind", "countdown", "alarm",
+                "分钟后", "小时后", "秒后"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "duration_seconds": {"type": "integer", "minimum": 1},
+                    "message": {"type": "string"},
+                    "type": {"type": "string", "enum": ["timer", "alarm"]}
+                },
+                "required": ["duration_seconds"]
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "schedule_task",
+                    "parameters": {"trigger_type": "once"}
+                }
+            }))),
+            prompt_template: Set(Some("定时器已设置，{duration}后提醒: {message}".into())),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(8),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // weather_query
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("weather_query".into()),
+            display_name: Set("天气查询".into()),
+            description: Set(Some("查询当前天气或天气预报".into())),
+            category: Set("information".into()),
+            intent_patterns: Set(serde_json::json!([
+                "天气", "气温", "温度", "下雨", "下雪", "预报", "湿度",
+                "weather", "temperature", "forecast", "rain", "snow"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string"},
+                    "days": {"type": "integer", "minimum": 1, "maximum": 7}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "weather_query",
+                    "parameters": {}
+                }
+            }))),
+            prompt_template: Set(None),
+            cacheable: Set(true),
+            enabled: Set(true),
+            priority: Set(8),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // device_status
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("device_status".into()),
+            display_name: Set("设备状态查询".into()),
+            description: Set(Some("查询智能设备的当前状态".into())),
+            category: Set("information".into()),
+            intent_patterns: Set(serde_json::json!([
+                "设备", "状态", "查看", "检查", "多少度", "开着",
+                "device", "status", "check", "state"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string"},
+                    "device_type": {"type": "string"}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "device_control",
+                    "parameters": {"action": "query_status"}
+                }
+            }))),
+            prompt_template: Set(None),
+            cacheable: Set(true),
+            enabled: Set(true),
+            priority: Set(6),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // memory_query
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("memory_query".into()),
+            display_name: Set("记忆查询".into()),
+            description: Set(Some("查询自己的记忆（\"我之前说过什么\"）".into())),
+            category: Set("memory".into()),
+            intent_patterns: Set(serde_json::json!([
+                "记得", "记忆", "之前说", "上次", "以前",
+                "remember", "memory", "previously", "last time",
+                "我说过", "你记得", "你还记得"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "all"]}
+                }
+            })),
+            execution_config: Set(Some(serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "memory_search",
+                    "parameters": {}
+                }
+            }))),
+            prompt_template: Set(None),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(7),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // rule_management
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("rule_management".into()),
+            display_name: Set("自动化规则管理".into()),
+            description: Set(Some("语音管理自动化规则（创建/修改/删除）".into())),
+            category: Set("automation".into()),
+            intent_patterns: Set(serde_json::json!([
+                "规则", "自动化", "自动", "每天", "当",
+                "rule", "automation", "automate", "schedule",
+                "如果", "触发", "条件"
+            ])),
+            parameters: Set(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["create", "update", "delete", "list"]},
+                    "rule_description": {"type": "string"}
+                }
+            })),
+            execution_config: Set(None),
+            prompt_template: Set(None),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(5),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_match_light_skill() {
-        let provider = BuiltinSkills::new();
-        
-        let result = provider.match_skill("帮我把客厅的灯打开").await.unwrap();
-        assert!(result.is_some());
-        let m = result.unwrap();
-        assert_eq!(m.name, "light_control");
-        assert!(m.confidence > 0.0);
+    /// Test that seed data generates valid skill models
+    #[test]
+    fn test_seed_data() {
+        let seeds = builtin_skill_seeds();
+        assert_eq!(seeds.len(), 8);
+
+        // Verify all expected skills are present
+        let names: Vec<String> = seeds
+            .iter()
+            .map(|s| s.name.clone().unwrap())
+            .collect();
+        assert!(names.contains(&"smart_light_control".to_string()));
+        assert!(names.contains(&"smart_ac_control".to_string()));
+        assert!(names.contains(&"smart_appliance".to_string()));
+        assert!(names.contains(&"timer_alarm".to_string()));
+        assert!(names.contains(&"weather_query".to_string()));
+        assert!(names.contains(&"device_status".to_string()));
+        assert!(names.contains(&"memory_query".to_string()));
+        assert!(names.contains(&"rule_management".to_string()));
     }
 
-    #[tokio::test]
-    async fn test_match_timer_skill() {
-        let provider = BuiltinSkills::new();
-        
-        let result = provider.match_skill("设置一个5分钟的定时器").await.unwrap();
-        assert!(result.is_some());
-        let m = result.unwrap();
-        assert_eq!(m.name, "timer");
-    }
-
-    #[tokio::test]
-    async fn test_no_match() {
-        let provider = BuiltinSkills::new();
-        
-        let result = provider.match_skill("今天心情不错").await.unwrap();
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_list_skills() {
-        let provider = BuiltinSkills::new();
-        
-        let skills = provider.list_skills().await.unwrap();
-        assert!(!skills.is_empty());
-        assert!(skills.iter().any(|s| s.name == "light_control"));
-        assert!(skills.iter().any(|s| s.name == "timer"));
-    }
-
-    #[tokio::test]
-    async fn test_execute_timer() {
-        let provider = BuiltinSkills::new();
-        
-        let skill_match = SkillMatch {
-            name: "timer".into(),
-            confidence: 0.8,
-            parameters: serde_json::Value::Null,
+    /// Test keyword match scoring
+    #[test]
+    fn test_match_scoring() {
+        let skill = LoadedSkill {
+            info: SkillInfo {
+                name: "test".into(),
+                display_name: "Test".into(),
+                description: "Test skill".into(),
+                category: "test".into(),
+            },
+            keywords: vec!["灯".into(), "开灯".into(), "灯光".into()],
+            param_schema: serde_json::json!({}),
+            execution_config: None,
+            prompt_template: None,
+            cacheable: false,
+            priority: 0,
         };
 
-        let params = serde_json::json!({
-            "duration_seconds": 300,
-            "message": "煮饭时间到"
-        });
+        let score = BuiltinSkills::calculate_match_score("帮我开灯", &skill);
+        assert!(score > 0.0, "should match '开灯'");
 
-        let result = provider.execute(&skill_match, params).await.unwrap();
-        assert!(result.success);
-        assert!(result.output.get("timer_id").is_some());
+        let score = BuiltinSkills::calculate_match_score("今天心情不错", &skill);
+        assert_eq!(score, 0.0, "should not match irrelevant text");
     }
 }
