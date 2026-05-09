@@ -20,14 +20,14 @@ pub enum ServerEvent {
         device_id: String,
         reason: String,
     },
-    
+
     // Plugin events
     PluginEvent {
         plugin_name: String,
         event_type: String,
         data: serde_json::Value,
     },
-    
+
     // Process events
     ProcessOutput {
         name: String,
@@ -39,19 +39,19 @@ pub enum ServerEvent {
         old_state: String,
         new_state: String,
     },
-    
+
     // Voice events
     VoiceStateChanged {
         state: String,
     },
-    
+
     // Rule events
     RuleTriggered {
         rule_id: Uuid,
         rule_name: String,
         action: String,
     },
-    
+
     // Meditation events
     MeditationStarted {
         phase: String,
@@ -62,7 +62,7 @@ pub enum ServerEvent {
         nodes_created: u32,
         nodes_updated: u32,
     },
-    
+
     // Scheduler events
     TaskScheduled {
         task_id: Uuid,
@@ -86,7 +86,7 @@ pub enum ServerEvent {
         error: String,
         retry_count: u32,
     },
-    
+
     // Tool events
     ToolCallStarted {
         call_id: String,

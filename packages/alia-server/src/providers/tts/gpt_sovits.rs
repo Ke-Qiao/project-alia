@@ -74,20 +74,21 @@ impl ModuleLifecycle for GptSovitsTts {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.endpoint = server_config.ai.gpt_sovits_tts_endpoint.clone();
         // ref_audio_path and prompt_text can be added to config if needed
-        
+
         tracing::info!(endpoint = %config.endpoint, "GPT-SoVITS TTS initialized");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
-        
+
         // Try to connect to GPT-SoVITS server
-        match self.client
+        match self
+            .client
             .get(&config.endpoint)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -97,7 +98,9 @@ impl ModuleLifecycle for GptSovitsTts {
                 // 400 is expected without proper parameters
                 ModuleHealth::Healthy
             }
-            Ok(resp) => ModuleHealth::Unhealthy(format!("GPT-SoVITS returned status {}", resp.status())),
+            Ok(resp) => {
+                ModuleHealth::Unhealthy(format!("GPT-SoVITS returned status {}", resp.status()))
+            }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to GPT-SoVITS: {}", e)),
         }
     }
@@ -107,7 +110,7 @@ impl ModuleLifecycle for GptSovitsTts {
 impl TtsAdapter for GptSovitsTts {
     async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>> {
         let config = self.config.read().await;
-        
+
         let request = SovitsRequest {
             text: text.to_string(),
             text_lang: Some(config.language.clone()),
@@ -117,7 +120,8 @@ impl TtsAdapter for GptSovitsTts {
             streaming: Some(false),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&config.endpoint)
             .json(&request)
             .send()
@@ -138,7 +142,7 @@ impl TtsAdapter for GptSovitsTts {
         text: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
         let config = self.config.read().await;
-        
+
         let request = SovitsRequest {
             text: text.to_string(),
             text_lang: Some(config.language.clone()),
@@ -148,7 +152,8 @@ impl TtsAdapter for GptSovitsTts {
             streaming: Some(true),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&config.endpoint)
             .json(&request)
             .send()
@@ -162,7 +167,7 @@ impl TtsAdapter for GptSovitsTts {
 
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();
-            
+
             while let Some(chunk_result) = byte_stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
@@ -175,7 +180,7 @@ impl TtsAdapter for GptSovitsTts {
                 }
             }
         };
-        
+
         Ok(Box::pin(stream))
     }
 }

@@ -177,7 +177,10 @@ impl DbCache {
             .await?;
 
         if result.rows_affected > 0 {
-            tracing::info!(removed = result.rows_affected, "expired cache entries cleaned");
+            tracing::info!(
+                removed = result.rows_affected,
+                "expired cache entries cleaned"
+            );
         }
 
         Ok(result.rows_affected)

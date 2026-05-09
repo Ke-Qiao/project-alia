@@ -11,8 +11,8 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -207,11 +207,7 @@ impl ProceduralMemory {
     }
 
     /// Get habits for a specific time window
-    pub async fn get_for_time(
-        &self,
-        user_id: Uuid,
-        hour: u8,
-    ) -> anyhow::Result<Vec<HabitEntry>> {
+    pub async fn get_for_time(&self, user_id: Uuid, hour: u8) -> anyhow::Result<Vec<HabitEntry>> {
         // Get all habits and filter by time window
         let nodes = memory_node::Entity::find()
             .filter(memory_node::Column::UserId.eq(user_id))
@@ -297,10 +293,9 @@ impl ProceduralMemory {
 
             if category == Some(&entry.category) {
                 // Check time window overlap
-                if let (Some(existing_tw), Some(new_tw)) = (
-                    metadata.get("time_window"),
-                    &entry.time_window,
-                ) {
+                if let (Some(existing_tw), Some(new_tw)) =
+                    (metadata.get("time_window"), &entry.time_window)
+                {
                     let existing_start = existing_tw.get("start_hour").and_then(|v| v.as_u64());
                     let existing_end = existing_tw.get("end_hour").and_then(|v| v.as_u64());
 

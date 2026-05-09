@@ -189,9 +189,14 @@ impl ModuleLifecycle for TemplatePersona {
                     tracing::warn!(persona = %p.name, error = ?e, "failed to register persona template, will use default");
                 }
             }
-            tracing::info!(count = personas.len(), "TemplatePersona loaded personas from database");
+            tracing::info!(
+                count = personas.len(),
+                "TemplatePersona loaded personas from database"
+            );
         } else {
-            tracing::warn!("TemplatePersona: failed to load personas from database, using defaults");
+            tracing::warn!(
+                "TemplatePersona: failed to load personas from database, using defaults"
+            );
         }
 
         Ok(())

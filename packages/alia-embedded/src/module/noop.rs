@@ -23,7 +23,11 @@ impl ModuleLifecycle for NoopEdgeStt {
 
 #[tonic::async_trait]
 impl EdgeSttEngine for NoopEdgeStt {
-    async fn transcribe_short(&self, _pcm: &[i16], _max_duration_ms: u32) -> Result<Option<String>> {
+    async fn transcribe_short(
+        &self,
+        _pcm: &[i16],
+        _max_duration_ms: u32,
+    ) -> Result<Option<String>> {
         Ok(None)
     }
 }

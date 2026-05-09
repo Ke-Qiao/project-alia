@@ -11,8 +11,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -276,7 +276,10 @@ impl CoreMemory {
             user_id: node.user_id,
             core_type,
             content: node.content,
-            data: metadata.get("data").cloned().unwrap_or(serde_json::Value::Null),
+            data: metadata
+                .get("data")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
             importance: node.importance,
             source: metadata
                 .get("source")

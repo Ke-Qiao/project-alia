@@ -69,7 +69,9 @@ impl BindingManager {
         if self.persist_path.exists() {
             let content = tokio::fs::read_to_string(&self.persist_path)
                 .await
-                .with_context(|| format!("reading binding state: {}", self.persist_path.display()))?;
+                .with_context(|| {
+                    format!("reading binding state: {}", self.persist_path.display())
+                })?;
             let data: BindingData = serde_json::from_str(&content)?;
             *self.data.write().await = data;
         }
@@ -102,7 +104,8 @@ impl BindingManager {
         *attempts += 1;
         if *attempts >= self.max_attempts {
             let mut lockout = self.lockout_until.write().await;
-            *lockout = Some(Instant::now() + std::time::Duration::from_secs(self.lockout_duration_secs));
+            *lockout =
+                Some(Instant::now() + std::time::Duration::from_secs(self.lockout_duration_secs));
             *attempts = 0;
             warn!("bind lockout activated for {}s", self.lockout_duration_secs);
         }
@@ -126,7 +129,10 @@ impl BindingManager {
         let mut data = self.data.write().await;
         if data.state == BindingState::Bound {
             self.record_failure().await;
-            bail!("already bound to server {}", data.server_id.as_deref().unwrap_or("unknown"));
+            bail!(
+                "already bound to server {}",
+                data.server_id.as_deref().unwrap_or("unknown")
+            );
         }
 
         // TODO: validate auth_token against physical confirmation

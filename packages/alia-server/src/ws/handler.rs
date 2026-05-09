@@ -95,10 +95,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                     // Backpressure: drop if too many pending
                     if pending >= BACKPRESSURE_LIMIT {
-                        tracing::warn!(
-                            pending,
-                            "WebSocket backpressure: dropping event"
-                        );
+                        tracing::warn!(pending, "WebSocket backpressure: dropping event");
                         continue;
                     }
 

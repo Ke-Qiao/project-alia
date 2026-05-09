@@ -67,11 +67,11 @@ impl ModuleLifecycle for OllamaEmbedding {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.endpoint = server_config.ai.ollama_endpoint.clone();
         config.model = server_config.ai.ollama_embedding_model.clone();
-        
+
         // Set dimension based on model
         config.dimension = match config.model.as_str() {
             "nomic-embed-text" => 768,
@@ -81,22 +81,25 @@ impl ModuleLifecycle for OllamaEmbedding {
             "bge-m3" => 1024,
             _ => 768, // default
         };
-        
+
         tracing::info!(model = %config.model, endpoint = %config.endpoint, dimension = config.dimension, "Ollama Embedding initialized");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
-        
-        match self.client
+
+        match self
+            .client
             .get(format!("{}/api/version", config.endpoint))
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
             Ok(resp) if resp.status().is_success() => ModuleHealth::Healthy,
-            Ok(resp) => ModuleHealth::Unhealthy(format!("Ollama returned status {}", resp.status())),
+            Ok(resp) => {
+                ModuleHealth::Unhealthy(format!("Ollama returned status {}", resp.status()))
+            }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Ollama: {}", e)),
         }
     }
@@ -108,15 +111,16 @@ impl EmbeddingAdapter for OllamaEmbedding {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let config = self.config.read().await;
-        
+
         let request = EmbedRequest {
             model: config.model.clone(),
             input: texts.to_vec(),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/api/embed", config.endpoint))
             .json(&request)
             .send()

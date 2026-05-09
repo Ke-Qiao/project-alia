@@ -3,22 +3,22 @@ use std::sync::Arc;
 use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
-use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
-    PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
-    SchedulerBackend, ToolRegistry,
-};
-use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
+use crate::auth::JwtKeys;
 use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
+use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
-use crate::module::factory;
+use crate::providers::adapter::{
+    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
+    TtsAdapter,
+};
+use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::scheduler::ConditionRegistry;
 use crate::scheduler::evaluators::{SensorConditionEvaluator, TimeRangeConditionEvaluator};
 use crate::state::AppState;
-use crate::auth::JwtKeys;
 
 pub struct ServerBuilder {
     config: Arc<ServerConfig>,
@@ -203,7 +203,9 @@ impl ServerBuilder {
         // Build condition registry with built-in evaluators
         let condition_registry = Arc::new(ConditionRegistry::new());
         condition_registry
-            .register(Arc::new(SensorConditionEvaluator::new(sensor_registry.clone())))
+            .register(Arc::new(SensorConditionEvaluator::new(
+                sensor_registry.clone(),
+            )))
             .await;
         condition_registry
             .register(Arc::new(TimeRangeConditionEvaluator))
@@ -261,7 +263,8 @@ impl ServerBuilder {
                 tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
                 continue;
             }
-            let mut channel: Box<dyn ChannelAdapter> = factory::create_channel(ch_cfg, self.event_bus.clone());
+            let mut channel: Box<dyn ChannelAdapter> =
+                factory::create_channel(ch_cfg, self.event_bus.clone());
             channel.init(&ctx).await?;
             channel_registry.register(Arc::from(channel)).await?;
         }

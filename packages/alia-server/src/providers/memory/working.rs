@@ -24,7 +24,7 @@ const DEFAULT_WINDOW_SIZE: usize = 20;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationTurn {
     pub id: Uuid,
-    pub role: String,          // "user" | "assistant" | "system"
+    pub role: String, // "user" | "assistant" | "system"
     pub content: String,
     pub timestamp: DateTime<Utc>,
     pub metadata: serde_json::Value,

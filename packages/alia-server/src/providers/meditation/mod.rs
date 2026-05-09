@@ -4,8 +4,10 @@ mod scheduled;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::providers::adapter::{MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask};
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{
+    MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask,
+};
 
 #[cfg(feature = "meditation")]
 pub use scheduled::ScheduledMeditation;

@@ -16,10 +16,7 @@ pub struct User {
     pub role: String,
 }
 
-async fn list_users(
-    State(_state): State<AppState>,
-    auth: AuthUser,
-) -> Result<Json<Vec<User>>> {
+async fn list_users(State(_state): State<AppState>, auth: AuthUser) -> Result<Json<Vec<User>>> {
     if !auth.is_admin() {
         return Err(AppError::Forbidden);
     }
@@ -62,7 +59,8 @@ async fn delete_user(
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/users", get(list_users))
-        .route("/users/{id}", get(get_user).patch(update_user).delete(delete_user))
+    Router::new().route("/users", get(list_users)).route(
+        "/users/{id}",
+        get(get_user).patch(update_user).delete(delete_user),
+    )
 }

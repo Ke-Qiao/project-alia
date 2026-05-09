@@ -5,8 +5,8 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{broadcast, RwLock};
-use tracing::{info, warn, error};
+use tokio::sync::{RwLock, broadcast};
+use tracing::{error, info, warn};
 
 use crate::config::ProcessConfig;
 
@@ -245,10 +245,7 @@ impl ProcessManager {
                 name: p.config.name.clone(),
                 state: p.state,
                 pid: p.pid.unwrap_or(0),
-                uptime_secs: p
-                    .started_at
-                    .map(|t| t.elapsed().as_secs())
-                    .unwrap_or(0),
+                uptime_secs: p.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0),
                 restart_count: p.restart_count,
             })
             .collect()
@@ -259,11 +256,7 @@ impl ProcessManager {
         self.output_tx.subscribe()
     }
 
-    fn spawn_output_capture(
-        &self,
-        name: String,
-        child: &mut Child,
-    ) -> tokio::task::JoinHandle<()> {
+    fn spawn_output_capture(&self, name: String, child: &mut Child) -> tokio::task::JoinHandle<()> {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
         let tx = self.output_tx.clone();

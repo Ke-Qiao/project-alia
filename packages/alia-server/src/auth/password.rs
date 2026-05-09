@@ -1,6 +1,6 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
 /// Hash a password using Argon2id (runs in spawn_blocking to avoid blocking async runtime)
@@ -23,8 +23,8 @@ pub async fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool>
     let password = password.to_string();
     let hash = hash.to_string();
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-        let parsed = PasswordHash::new(&hash)
-            .map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
+        let parsed =
+            PasswordHash::new(&hash).map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
         Ok(Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
             .is_ok())

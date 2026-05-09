@@ -5,24 +5,26 @@
 //! - `OllamaLlm`: Local Ollama models (qwen2.5, llama3, etc.)
 //! - `NoopLlm`: No-op placeholder
 
-#[cfg(feature = "llm-openai")]
-pub mod openai;
 #[cfg(feature = "llm-ollama")]
 pub mod ollama;
-
 #[cfg(feature = "llm-openai")]
-pub use openai::OpenAiLlm;
+pub mod openai;
+
 #[cfg(feature = "llm-ollama")]
 pub use ollama::OllamaLlm;
+#[cfg(feature = "llm-openai")]
+pub use openai::OpenAiLlm;
 
 use std::pin::Pin;
 
 use async_trait::async_trait;
-use futures::stream;
 use futures::Stream;
+use futures::stream;
 
-use crate::providers::adapter::{AudioEncoding, ChatMessage, LlmAdapter, SttAdapter, TranscribeChunk, TtsAdapter};
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{
+    AudioEncoding, ChatMessage, LlmAdapter, SttAdapter, TranscribeChunk, TtsAdapter,
+};
 
 // ========== Noop LLM ==========
 

@@ -36,7 +36,9 @@ async fn get_conversation(
     _auth: AuthUser,
     Path(_id): Path<Uuid>,
 ) -> Result<Json<Conversation>> {
-    Err(crate::error::AppError::NotFound("Conversation not found".into()))
+    Err(crate::error::AppError::NotFound(
+        "Conversation not found".into(),
+    ))
 }
 
 async fn delete_conversation(
@@ -58,6 +60,9 @@ async fn get_messages(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/conversations", get(list_conversations))
-        .route("/conversations/{id}", get(get_conversation).delete(delete_conversation))
+        .route(
+            "/conversations/{id}",
+            get(get_conversation).delete(delete_conversation),
+        )
         .route("/conversations/{id}/messages", get(get_messages))
 }

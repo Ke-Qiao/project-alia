@@ -70,12 +70,7 @@ impl ToolExecutor for SensorReadTool {
                         "timestamp": r.timestamp.to_rfc3339(),
                         "quality": r.quality,
                     }),
-                    display: Some(format!(
-                        "{}: {} {}",
-                        sensor_id,
-                        r.value,
-                        unit
-                    )),
+                    display: Some(format!("{}: {} {}", sensor_id, r.value, unit)),
                 })
             }
             None => Ok(ToolResult {

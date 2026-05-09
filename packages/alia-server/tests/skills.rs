@@ -1,8 +1,8 @@
 use alia_server::entity::skill;
-use alia_server::providers::skills::builtin::{builtin_skill_seeds, BuiltinSkills, LoadedSkill};
-use alia_server::providers::skills::markdown::{parse_skill_file, toml_to_json};
-use alia_server::providers::skills::tool_format::{to_tool_definition, ToolFormat};
 use alia_server::providers::SkillInfo;
+use alia_server::providers::skills::builtin::{BuiltinSkills, LoadedSkill, builtin_skill_seeds};
+use alia_server::providers::skills::markdown::{parse_skill_file, toml_to_json};
+use alia_server::providers::skills::tool_format::{ToolFormat, to_tool_definition};
 
 // ── builtin seeds ──────────────────────────────────────────────────────
 
@@ -203,7 +203,10 @@ fn test_openai_format() {
     let def = &result.definition;
     assert_eq!(def["type"], "function");
     assert_eq!(def["function"]["name"], "smart_light_control");
-    assert_eq!(def["function"]["description"], "控制智能灯的开关、亮度、色温");
+    assert_eq!(
+        def["function"]["description"],
+        "控制智能灯的开关、亮度、色温"
+    );
     assert_eq!(def["function"]["parameters"]["type"], "object");
     assert!(def["function"].get("execution_config").is_none());
 }
@@ -217,5 +220,8 @@ fn test_empty_params_normalized() {
     assert_eq!(claude.definition["input_schema"]["type"], "object");
 
     let openai = to_tool_definition(&skill, ToolFormat::OpenAI);
-    assert_eq!(openai.definition["function"]["parameters"]["type"], "object");
+    assert_eq!(
+        openai.definition["function"]["parameters"]["type"],
+        "object"
+    );
 }

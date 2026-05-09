@@ -4,9 +4,9 @@ pub mod tool_format;
 
 use async_trait::async_trait;
 
-pub use builtin::BuiltinSkills;
-use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
+pub use builtin::BuiltinSkills;
 
 pub struct NoopSkills;
 

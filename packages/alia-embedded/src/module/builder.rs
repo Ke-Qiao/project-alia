@@ -199,9 +199,18 @@ impl EmbeddedBuilder {
         info!("initializing modules");
         wakeword.init(&ctx).await.context("init wakeword")?;
         edge_stt.init(&ctx).await.context("init edge_stt")?;
-        direct_response.init(&ctx).await.context("init direct_response")?;
-        audio_capture.init(&ctx).await.context("init audio_capture")?;
-        audio_playback.init(&ctx).await.context("init audio_playback")?;
+        direct_response
+            .init(&ctx)
+            .await
+            .context("init direct_response")?;
+        audio_capture
+            .init(&ctx)
+            .await
+            .context("init audio_capture")?;
+        audio_playback
+            .init(&ctx)
+            .await
+            .context("init audio_playback")?;
         mixer.init(&ctx).await.context("init mixer")?;
         face_tracker.init(&ctx).await.context("init face_tracker")?;
         discovery.init(&ctx).await.context("init discovery")?;
@@ -234,9 +243,15 @@ impl EmbeddedBuilder {
         info!("starting modules");
         wakeword.start().await.context("start wakeword")?;
         edge_stt.start().await.context("start edge_stt")?;
-        direct_response.start().await.context("start direct_response")?;
+        direct_response
+            .start()
+            .await
+            .context("start direct_response")?;
         audio_capture.start().await.context("start audio_capture")?;
-        audio_playback.start().await.context("start audio_playback")?;
+        audio_playback
+            .start()
+            .await
+            .context("start audio_playback")?;
         mixer.start().await.context("start mixer")?;
         face_tracker.start().await.context("start face_tracker")?;
         discovery.start().await.context("start discovery")?;

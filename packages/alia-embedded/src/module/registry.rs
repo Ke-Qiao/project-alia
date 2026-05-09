@@ -49,11 +49,23 @@ impl EmbeddedModuleRegistry {
         let mut map = HashMap::new();
         map.insert(self.wakeword.name(), self.wakeword.health_check().await);
         map.insert(self.edge_stt.name(), self.edge_stt.health_check().await);
-        map.insert(self.direct_response.name(), self.direct_response.health_check().await);
-        map.insert(self.audio_capture.name(), self.audio_capture.health_check().await);
-        map.insert(self.audio_playback.name(), self.audio_playback.health_check().await);
+        map.insert(
+            self.direct_response.name(),
+            self.direct_response.health_check().await,
+        );
+        map.insert(
+            self.audio_capture.name(),
+            self.audio_capture.health_check().await,
+        );
+        map.insert(
+            self.audio_playback.name(),
+            self.audio_playback.health_check().await,
+        );
         map.insert(self.mixer.name(), self.mixer.health_check().await);
-        map.insert(self.face_tracker.name(), self.face_tracker.health_check().await);
+        map.insert(
+            self.face_tracker.name(),
+            self.face_tracker.health_check().await,
+        );
         map.insert(self.discovery.name(), self.discovery.health_check().await);
         map
     }

@@ -11,8 +11,8 @@ pub use template::TemplatePersona;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::providers::adapter::{Persona, PersonaProvider, PromptVars};
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{Persona, PersonaProvider, PromptVars};
 
 pub struct NoopPersona;
 

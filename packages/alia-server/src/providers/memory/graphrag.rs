@@ -178,8 +178,10 @@ impl ModuleLifecycle for GraphRagMemory {
 
         // Initialize memory layers with database connection
         self.db = Some(db.clone());
-        self.episodic = Some(EpisodicMemory::new(db.clone()).with_ttl(self.config.episodic_ttl_days));
-        self.core = Some(CoreMemory::new(db.clone()).with_max_per_user(self.config.max_core_memories));
+        self.episodic =
+            Some(EpisodicMemory::new(db.clone()).with_ttl(self.config.episodic_ttl_days));
+        self.core =
+            Some(CoreMemory::new(db.clone()).with_max_per_user(self.config.max_core_memories));
         self.procedural = Some(ProceduralMemory::new(db.clone()));
         self.graph = Some(KnowledgeGraph::new(db.clone()));
         self.retrieval = Some(HybridRetrieval::new(db.clone()));
@@ -205,9 +207,10 @@ impl ModuleLifecycle for GraphRagMemory {
 #[async_trait]
 impl MemoryBackend for GraphRagMemory {
     async fn store(&self, user_id: Uuid, node: AdapterMemoryNode) -> anyhow::Result<Uuid> {
-        let graph = self.graph.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+        let graph = self
+            .graph
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         let layer = Self::adapter_to_layer(&node.memory_layer);
         let node_type = Self::adapter_to_node_type(&node.node_type);
@@ -232,9 +235,10 @@ impl MemoryBackend for GraphRagMemory {
         query: &str,
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<AdapterMemoryNode>> {
-        let retrieval = self.retrieval.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+        let retrieval = self
+            .retrieval
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         let retrieval_opts = RetrievalOptions {
             max_results: opts.max_results.unwrap_or(10) as usize,
@@ -266,9 +270,10 @@ impl MemoryBackend for GraphRagMemory {
     }
 
     async fn update(&self, node_id: Uuid, patch: MemoryPatch) -> anyhow::Result<()> {
-        let db = self.db.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         use crate::entity::memory_node;
         use sea_orm::{ActiveModelTrait, EntityTrait, Set};
@@ -299,18 +304,24 @@ impl MemoryBackend for GraphRagMemory {
     }
 
     async fn delete(&self, node_id: Uuid) -> anyhow::Result<()> {
-        let graph = self.graph.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+        let graph = self
+            .graph
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         graph.delete_node(node_id).await?;
         Ok(())
     }
 
-    async fn graph_neighbors(&self, node_id: Uuid, depth: u32) -> anyhow::Result<AdapterGraphFragment> {
-        let graph = self.graph.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+    async fn graph_neighbors(
+        &self,
+        node_id: Uuid,
+        depth: u32,
+    ) -> anyhow::Result<AdapterGraphFragment> {
+        let graph = self
+            .graph
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         let fragment = graph.get_neighbors(node_id, depth).await?;
 
@@ -343,9 +354,10 @@ impl MemoryBackend for GraphRagMemory {
     }
 
     async fn refresh_communities(&self, user_id: Uuid) -> anyhow::Result<()> {
-        let graph = self.graph.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("GraphRAG not initialized - call init() first")
-        })?;
+        let graph = self
+            .graph
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GraphRAG not initialized - call init() first"))?;
 
         // Clear existing communities
         graph.clear_communities(user_id).await?;

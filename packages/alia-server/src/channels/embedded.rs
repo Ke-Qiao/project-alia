@@ -12,8 +12,8 @@ use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
 
 use crate::event::EventBus;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::module::ModuleLifecycle;
+use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 
 use super::adapter::{
     AudioFormat, AudioPayload, ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
@@ -32,8 +32,13 @@ pub struct EmbeddedChannelConfig {
 #[derive(Debug, Clone)]
 enum ConnectionStatus {
     Connected,
-    Disconnected { since: DateTime<Utc>, reason: String },
-    Reconnecting { attempt: u32 },
+    Disconnected {
+        since: DateTime<Utc>,
+        reason: String,
+    },
+    Reconnecting {
+        attempt: u32,
+    },
 }
 
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
@@ -94,8 +99,7 @@ impl EmbeddedChannel {
                         Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
-                    *self.binding_client.write().await =
-                        Some(DeviceBindingClient::new(channel));
+                    *self.binding_client.write().await = Some(DeviceBindingClient::new(channel));
                     *self.status.write().await = ConnectionStatus::Connected;
                     tracing::info!(
                         endpoint = %self.config.endpoint,
@@ -279,10 +283,7 @@ impl ChannelAdapter for EmbeddedChannel {
 
         // Drain the response stream (Pi sends back ack chunks as it plays)
         while let Some(ack) = response_stream.message().await? {
-            tracing::trace!(
-                seq = ack.sequence,
-                "play_audio ack from Pi"
-            );
+            tracing::trace!(seq = ack.sequence, "play_audio ack from Pi");
         }
 
         // Also send raw chunk via UploadAudio for the actual data delivery
@@ -332,15 +333,11 @@ impl ChannelAdapter for EmbeddedChannel {
                 }))
             }
             "send_plugin_command" => {
-                let plugin = action.params["plugin"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("send_plugin_command requires 'plugin' param"))?;
-                let command_action = action.params["action"]
-                    .as_str()
-                    .unwrap_or("");
-                let payload = action.params["payload"]
-                    .as_str()
-                    .unwrap_or("{}");
+                let plugin = action.params["plugin"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("send_plugin_command requires 'plugin' param")
+                })?;
+                let command_action = action.params["action"].as_str().unwrap_or("");
+                let payload = action.params["payload"].as_str().unwrap_or("{}");
                 let mut client = self.plugin_client().await?;
                 let resp = client
                     .send_command(alia_proto::plugin::PluginCommandRequest {

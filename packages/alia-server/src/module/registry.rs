@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
-    PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
-    SchedulerBackend, ToolRegistry,
-};
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::providers::adapter::{
+    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
+    TtsAdapter,
+};
 
 /// Runtime module registry — read-only after construction, shared via Arc
 pub struct ModuleRegistry {

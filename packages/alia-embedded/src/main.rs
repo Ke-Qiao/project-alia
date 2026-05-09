@@ -43,10 +43,7 @@ async fn main() -> Result<()> {
     info!(device_id = %config.identity.device_id, device_name = %config.identity.device_name, "identity loaded");
 
     // Build and run the embedded node using the module builder
-    let node = EmbeddedBuilder::from_config(config)
-        .await?
-        .build()
-        .await?;
+    let node = EmbeddedBuilder::from_config(config).await?.build().await?;
 
     node.run().await?;
 

@@ -94,9 +94,15 @@ impl ChannelConfig {
     }
 }
 
-fn default_reconnect_interval() -> u64 { 5 }
-fn default_reconnect_max_backoff() -> u64 { 60 }
-fn default_grpc_timeout() -> u64 { 10 }
+fn default_reconnect_interval() -> u64 {
+    5
+}
+fn default_reconnect_max_backoff() -> u64 {
+    60
+}
+fn default_grpc_timeout() -> u64 {
+    10
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {
@@ -227,13 +233,27 @@ pub struct SchedulerSection {
     pub max_concurrent_tasks: u32,
 }
 
-fn default_scheduler_enabled() -> bool { true }
-fn default_max_tasks() -> u32 { 100 }
-fn default_max_subscriptions() -> u32 { 50 }
-fn default_tick_interval() -> u64 { 1 }
-fn default_missed_task_policy() -> String { "skip".to_string() }
-fn default_task_timeout() -> u64 { 30 }
-fn default_max_concurrent_tasks() -> u32 { 5 }
+fn default_scheduler_enabled() -> bool {
+    true
+}
+fn default_max_tasks() -> u32 {
+    100
+}
+fn default_max_subscriptions() -> u32 {
+    50
+}
+fn default_tick_interval() -> u64 {
+    1
+}
+fn default_missed_task_policy() -> String {
+    "skip".to_string()
+}
+fn default_task_timeout() -> u64 {
+    30
+}
+fn default_max_concurrent_tasks() -> u32 {
+    5
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ToolsSection {
@@ -247,9 +267,15 @@ pub struct ToolsSection {
     pub require_confirmation: Vec<String>,
 }
 
-fn default_tool_call_depth() -> u32 { 5 }
-fn default_tool_timeout() -> u64 { 30 }
-fn default_allow_plugin_tools() -> bool { true }
+fn default_tool_call_depth() -> u32 {
+    5
+}
+fn default_tool_timeout() -> u64 {
+    30
+}
+fn default_allow_plugin_tools() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SkillsSection {

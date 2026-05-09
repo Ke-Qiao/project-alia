@@ -10,9 +10,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{memory_edge, memory_node, memory_community};
 use crate::entity::memory_edge::RelationType;
 use crate::entity::memory_node::{MemoryLayer, NodeType};
+use crate::entity::{memory_community, memory_edge, memory_node};
 
 /// Graph edge with resolved node info
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,10 +115,7 @@ impl KnowledgeGraph {
     pub async fn update_embedding(&self, id: Uuid, embedding: Vec<f32>) -> anyhow::Result<()> {
         // Convert f32 vec to bytes for storage
         // pgvector expects specific format - we'll use raw SQL for actual vector ops
-        let bytes: Vec<u8> = embedding
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
 
         let node = memory_node::Entity::find_by_id(id).one(&self.db).await?;
         if let Some(node) = node {
@@ -256,7 +253,12 @@ impl KnowledgeGraph {
     }
 
     /// Find shortest path between two nodes (BFS)
-    pub async fn find_path(&self, from: Uuid, to: Uuid, max_depth: u32) -> anyhow::Result<Option<Vec<Uuid>>> {
+    pub async fn find_path(
+        &self,
+        from: Uuid,
+        to: Uuid,
+        max_depth: u32,
+    ) -> anyhow::Result<Option<Vec<Uuid>>> {
         use std::collections::{HashMap, VecDeque};
 
         let mut visited: HashMap<Uuid, Uuid> = HashMap::new(); // node -> parent
@@ -307,7 +309,8 @@ impl KnowledgeGraph {
         level: i32,
     ) -> anyhow::Result<Uuid> {
         let id = Uuid::new_v4();
-        let node_ids_json = serde_json::json!(node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>());
+        let node_ids_json =
+            serde_json::json!(node_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>());
 
         let model = memory_community::ActiveModel {
             id: Set(id),
@@ -326,9 +329,13 @@ impl KnowledgeGraph {
     }
 
     /// Get communities for a user
-    pub async fn get_communities(&self, user_id: Uuid, level: Option<i32>) -> anyhow::Result<Vec<Community>> {
-        let mut query = memory_community::Entity::find()
-            .filter(memory_community::Column::UserId.eq(user_id));
+    pub async fn get_communities(
+        &self,
+        user_id: Uuid,
+        level: Option<i32>,
+    ) -> anyhow::Result<Vec<Community>> {
+        let mut query =
+            memory_community::Entity::find().filter(memory_community::Column::UserId.eq(user_id));
 
         if let Some(l) = level {
             query = query.filter(memory_community::Column::Level.eq(l));

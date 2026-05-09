@@ -4,8 +4,8 @@ use tonic::{Request, Response, Status};
 
 use alia_proto::binding::device_binding_server::DeviceBinding as DeviceBindingTrait;
 use alia_proto::binding::{
-    BindRequest, BindResponse, BindingStatus, CompleteHandoffRequest, HandoffRequest,
-    HandoffToken, UnbindRequest, UnbindResponse,
+    BindRequest, BindResponse, BindingStatus, CompleteHandoffRequest, HandoffRequest, HandoffToken,
+    UnbindRequest, UnbindResponse,
 };
 
 use crate::binding::BindingManager;
@@ -24,10 +24,7 @@ impl DeviceBindingService {
 
 #[tonic::async_trait]
 impl DeviceBindingTrait for DeviceBindingService {
-    async fn bind(
-        &self,
-        request: Request<BindRequest>,
-    ) -> Result<Response<BindResponse>, Status> {
+    async fn bind(&self, request: Request<BindRequest>) -> Result<Response<BindResponse>, Status> {
         let req = request.into_inner();
         match self
             .binding

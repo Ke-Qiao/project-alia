@@ -64,9 +64,11 @@ async fn voice_chat(
 ) -> Result<Json<VoiceChatResponse>> {
     // Resolve channel capabilities (if a channel is targeted)
     let capabilities = if let Some(Path(ref id)) = channel_id {
-        let ch = state.channels.get(id).await.ok_or_else(|| {
-            AppError::NotFound(format!("channel '{}' not found", id))
-        })?;
+        let ch = state
+            .channels
+            .get(id)
+            .await
+            .ok_or_else(|| AppError::NotFound(format!("channel '{}' not found", id)))?;
         Some(ch.capabilities())
     } else {
         None
@@ -219,9 +221,7 @@ async fn voice_chat_with_channel(
 
 /// Decide whether to run TTS based on channel capabilities.
 /// If no channel is specified (direct API call), always synthesize.
-fn should_synthesize(
-    capabilities: &Option<crate::channels::adapter::ChannelCapabilities>,
-) -> bool {
+fn should_synthesize(capabilities: &Option<crate::channels::adapter::ChannelCapabilities>) -> bool {
     match capabilities {
         Some(caps) => caps.voice_output,
         None => true, // direct API call: always provide audio

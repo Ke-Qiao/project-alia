@@ -13,8 +13,13 @@ use crate::event::EventBus;
 #[derive(Debug, Clone)]
 pub enum ConnectionStatus {
     Connected,
-    Disconnected { since: DateTime<Utc>, reason: String },
-    Reconnecting { attempt: u32 },
+    Disconnected {
+        since: DateTime<Utc>,
+        reason: String,
+    },
+    Reconnecting {
+        attempt: u32,
+    },
 }
 
 /// gRPC client wrapper for communicating with alia-embedded
@@ -71,8 +76,7 @@ impl EmbeddedClient {
                         Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
-                    *self.binding_client.write().await =
-                        Some(DeviceBindingClient::new(channel));
+                    *self.binding_client.write().await = Some(DeviceBindingClient::new(channel));
                     *self.status.write().await = ConnectionStatus::Connected;
                     tracing::info!(endpoint = %self.endpoint, "connected to alia-embedded");
                     return Ok(());
@@ -98,9 +102,7 @@ impl EmbeddedClient {
     }
 
     /// Get a ProcessManagerClient, connecting lazily if needed.
-    pub async fn process_client(
-        &self,
-    ) -> anyhow::Result<ProcessManagerClient<Channel>> {
+    pub async fn process_client(&self) -> anyhow::Result<ProcessManagerClient<Channel>> {
         if self.process_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -112,9 +114,7 @@ impl EmbeddedClient {
     }
 
     /// Get a PluginManagerClient, connecting lazily if needed.
-    pub async fn plugin_client(
-        &self,
-    ) -> anyhow::Result<PluginManagerClient<Channel>> {
+    pub async fn plugin_client(&self) -> anyhow::Result<PluginManagerClient<Channel>> {
         if self.plugin_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -126,9 +126,7 @@ impl EmbeddedClient {
     }
 
     /// Get a DeviceBindingClient, connecting lazily if needed.
-    pub async fn binding_client(
-        &self,
-    ) -> anyhow::Result<DeviceBindingClient<Channel>> {
+    pub async fn binding_client(&self) -> anyhow::Result<DeviceBindingClient<Channel>> {
         if self.binding_client.read().await.is_none() {
             self.connect().await?;
         }

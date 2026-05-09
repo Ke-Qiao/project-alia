@@ -10,7 +10,7 @@ use crate::error::Result;
 use crate::providers::adapter::MeditationPhase;
 use crate::state::AppState;
 
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, PaginatorTrait};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
 #[derive(Serialize)]
 pub struct MeditationStatusResponse {
@@ -43,8 +43,12 @@ pub struct PaginationParams {
     pub per_page: u64,
 }
 
-fn default_page() -> u64 { 1 }
-fn default_per_page() -> u64 { 20 }
+fn default_page() -> u64 {
+    1
+}
+fn default_per_page() -> u64 {
+    20
+}
 
 #[derive(Serialize)]
 pub struct PaginatedResponse<T: Serialize> {
@@ -60,7 +64,9 @@ pub struct TriggerRequest {
     pub phase: String,
 }
 
-fn default_phase() -> String { "extraction".to_string() }
+fn default_phase() -> String {
+    "extraction".to_string()
+}
 
 async fn get_status(
     State(state): State<AppState>,
@@ -81,10 +87,7 @@ async fn get_status(
     }))
 }
 
-async fn toggle(
-    State(state): State<AppState>,
-    _auth: AuthUser,
-) -> Result<Json<serde_json::Value>> {
+async fn toggle(State(state): State<AppState>, _auth: AuthUser) -> Result<Json<serde_json::Value>> {
     // Toggle is a config-level operation; for now we report current state
     let config_enabled = state.config.ai.meditation.enabled;
     Ok(Json(serde_json::json!({
@@ -103,11 +106,15 @@ async fn get_logs(
         .order_by_desc(meditation_log::Column::CreatedAt)
         .paginate(&state.db, params.per_page);
 
-    let total = paginator.num_items().await
+    let total = paginator
+        .num_items()
+        .await
         .map_err(|e| crate::error::AppError::Database(e))?;
 
     let page_idx = if params.page > 0 { params.page - 1 } else { 0 };
-    let logs = paginator.fetch_page(page_idx).await
+    let logs = paginator
+        .fetch_page(page_idx)
+        .await
         .map_err(|e| crate::error::AppError::Database(e))?;
 
     let data: Vec<MeditationLogResponse> = logs
@@ -179,9 +186,9 @@ async fn trigger_meditation(
         "reflection" => MeditationPhase::Reflection,
         "habit_detection" => MeditationPhase::HabitDetection,
         other => {
-            return Err(crate::error::AppError::Validation(
-                format!("unknown phase: {other}; valid: extraction, consolidation, reflection, habit_detection"),
-            ));
+            return Err(crate::error::AppError::Validation(format!(
+                "unknown phase: {other}; valid: extraction, consolidation, reflection, habit_detection"
+            )));
         }
     };
 
@@ -236,5 +243,8 @@ pub fn routes() -> Router<AppState> {
         .route("/meditation/logs", get(get_logs))
         .route("/meditation/insights", get(get_insights))
         .route("/meditation/trigger", post(trigger_meditation))
-        .route("/meditation/conditions", get(get_conditions).put(set_conditions))
+        .route(
+            "/meditation/conditions",
+            get(get_conditions).put(set_conditions),
+        )
 }

@@ -17,8 +17,8 @@ pub use openai::OpenAiEmbedding;
 
 use async_trait::async_trait;
 
-use crate::providers::adapter::EmbeddingAdapter;
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::EmbeddingAdapter;
 
 pub struct NoopEmbedding;
 

@@ -5,9 +5,9 @@ use tonic::{Request, Response, Status};
 use alia_proto::plugin::plugin_manager_server::PluginManager as PluginManagerTrait;
 use alia_proto::plugin::{
     InstallPluginRequest, InstallPluginResponse, ListPluginsRequest, ListPluginsResponse,
-    PluginCommandRequest, PluginCommandResponse, PluginEvent, PluginInfo,
-    StartPluginRequest, StartPluginResponse, StopPluginRequest, StopPluginResponse,
-    StreamEventsRequest, UninstallPluginRequest, UninstallPluginResponse,
+    PluginCommandRequest, PluginCommandResponse, PluginEvent, PluginInfo, StartPluginRequest,
+    StartPluginResponse, StopPluginRequest, StopPluginResponse, StreamEventsRequest,
+    UninstallPluginRequest, UninstallPluginResponse,
 };
 
 use crate::plugin::{PluginRegistry, PluginState};
@@ -113,8 +113,7 @@ impl PluginManagerTrait for PluginManagerService {
         }))
     }
 
-    type StreamEventsStream =
-        tokio_stream::wrappers::ReceiverStream<Result<PluginEvent, Status>>;
+    type StreamEventsStream = tokio_stream::wrappers::ReceiverStream<Result<PluginEvent, Status>>;
 
     async fn stream_events(
         &self,
@@ -122,7 +121,9 @@ impl PluginManagerTrait for PluginManagerService {
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
         // TODO: stream plugin stdout events
         let (_tx, rx) = tokio::sync::mpsc::channel(128);
-        Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(rx)))
+        Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
+            rx,
+        )))
     }
 }
 

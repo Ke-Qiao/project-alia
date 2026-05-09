@@ -107,7 +107,11 @@ pub trait ChannelAdapter: ModuleLifecycle {
     async fn send_message(&self, target: &ChannelTarget, msg: &str) -> anyhow::Result<()>;
 
     /// Send audio (TTS output) to the channel.
-    async fn send_audio(&self, _target: &ChannelTarget, _audio: AudioPayload) -> anyhow::Result<()> {
+    async fn send_audio(
+        &self,
+        _target: &ChannelTarget,
+        _audio: AudioPayload,
+    ) -> anyhow::Result<()> {
         Err(anyhow::anyhow!(
             "audio not supported by channel '{}'",
             self.channel_type()

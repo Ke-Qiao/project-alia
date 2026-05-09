@@ -1,10 +1,10 @@
 #![cfg(feature = "llm-ollama")]
 
+use alia_server::providers::adapter::RouteDecision;
+use alia_server::providers::router::multi_layer::strip_code_fences;
 use alia_server::providers::router::multi_layer::{
     Classification, LlmMode, MultiLayerRouter, RouterConfig,
 };
-use alia_server::providers::router::multi_layer::strip_code_fences;
-use alia_server::providers::adapter::RouteDecision;
 
 #[test]
 fn test_strip_code_fences_bare_json() {

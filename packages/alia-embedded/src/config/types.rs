@@ -36,14 +36,30 @@ pub struct ModulesConfig {
     pub discovery: String,
 }
 
-fn default_wakeword_module() -> String { "sherpa_onnx".to_string() }
-fn default_edge_stt_module() -> String { "sherpa_onnx".to_string() }
-fn default_direct_response_module() -> String { "keyword".to_string() }
-fn default_audio_capture_module() -> String { "cpal".to_string() }
-fn default_audio_playback_module() -> String { "cpal".to_string() }
-fn default_mixer_module() -> String { "priority".to_string() }
-fn default_face_tracker_module() -> String { "mediapipe".to_string() }
-fn default_discovery_module() -> String { "mdns".to_string() }
+fn default_wakeword_module() -> String {
+    "sherpa_onnx".to_string()
+}
+fn default_edge_stt_module() -> String {
+    "sherpa_onnx".to_string()
+}
+fn default_direct_response_module() -> String {
+    "keyword".to_string()
+}
+fn default_audio_capture_module() -> String {
+    "cpal".to_string()
+}
+fn default_audio_playback_module() -> String {
+    "cpal".to_string()
+}
+fn default_mixer_module() -> String {
+    "priority".to_string()
+}
+fn default_face_tracker_module() -> String {
+    "mediapipe".to_string()
+}
+fn default_discovery_module() -> String {
+    "mdns".to_string()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IdentityConfig {

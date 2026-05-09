@@ -281,7 +281,13 @@ impl MultiLayerRouter {
 
         // Include recent conversation context (last 4 turns max) for better classification
         let context_window = input.conversation_context.len().min(4);
-        for msg in input.conversation_context.iter().rev().take(context_window).rev() {
+        for msg in input
+            .conversation_context
+            .iter()
+            .rev()
+            .take(context_window)
+            .rev()
+        {
             messages.push(OllamaMessage {
                 role: msg.role.clone(),
                 content: msg.content.clone(),
@@ -437,10 +443,7 @@ impl ModuleLifecycle for MultiLayerRouter {
                 .await
             {
                 Ok(r) if r.status().is_success() => ModuleHealth::Healthy,
-                Ok(r) => ModuleHealth::Degraded(format!(
-                    "ollama returned {}",
-                    r.status()
-                )),
+                Ok(r) => ModuleHealth::Degraded(format!("ollama returned {}", r.status())),
                 Err(e) => ModuleHealth::Degraded(format!(
                     "ollama unreachable: {e}, routing will fall back to remote"
                 )),

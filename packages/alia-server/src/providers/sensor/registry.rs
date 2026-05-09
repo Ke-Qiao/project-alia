@@ -283,8 +283,9 @@ impl SensorRegistry {
 
     /// Run cleanup: discard readings older than retention_duration.
     pub async fn cleanup(&self) {
-        let cutoff = Utc::now() - chrono::Duration::from_std(self.config.retention_duration)
-            .unwrap_or(chrono::Duration::hours(24));
+        let cutoff = Utc::now()
+            - chrono::Duration::from_std(self.config.retention_duration)
+                .unwrap_or(chrono::Duration::hours(24));
         let mut readings = self.readings.write().await;
         let mut total_removed = 0usize;
 
@@ -307,8 +308,7 @@ impl SensorRegistry {
         let max_per_sensor = self.config.max_readings_per_sensor;
 
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(Duration::from_secs(interval_sec));
+            let mut interval = tokio::time::interval(Duration::from_secs(interval_sec));
 
             loop {
                 tokio::select! {

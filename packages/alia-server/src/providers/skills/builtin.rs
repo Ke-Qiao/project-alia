@@ -17,10 +17,10 @@ use sea_orm::{
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::markdown;
 use crate::entity::skill;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
-use super::markdown;
 
 /// A loaded skill with its metadata for in-memory matching
 #[derive(Clone)]
@@ -181,8 +181,12 @@ impl BuiltinSkills {
             let fm = &parsed.frontmatter;
             let now = Utc::now();
 
-            let intent_patterns =
-                serde_json::Value::Array(fm.intent_patterns.iter().map(|s| serde_json::json!(s)).collect());
+            let intent_patterns = serde_json::Value::Array(
+                fm.intent_patterns
+                    .iter()
+                    .map(|s| serde_json::json!(s))
+                    .collect(),
+            );
 
             let parameters = fm
                 .parameters
@@ -388,7 +392,10 @@ impl SkillProvider for BuiltinSkills {
                 "prompt_template": template,
                 "cacheable": loaded.cacheable,
             }),
-            message: Some(format!("Skill '{}' ready for execution", loaded.info.display_name)),
+            message: Some(format!(
+                "Skill '{}' ready for execution",
+                loaded.info.display_name
+            )),
         })
     }
 
@@ -411,8 +418,19 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("控制智能灯的开关、亮度、色温".into())),
             category: Set("smart_home".into()),
             intent_patterns: Set(serde_json::json!([
-                "灯", "灯光", "开灯", "关灯", "亮度", "调暗", "调亮", "色温",
-                "light", "lights", "lamp", "brightness", "把灯"
+                "灯",
+                "灯光",
+                "开灯",
+                "关灯",
+                "亮度",
+                "调暗",
+                "调亮",
+                "色温",
+                "light",
+                "lights",
+                "lamp",
+                "brightness",
+                "把灯"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -429,7 +447,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "parameters": {"plugin_name": "zigbee-bridge", "action": "light_control"}
                 }
             }))),
-            prompt_template: Set(Some("用户想要{action}{device_name}。请执行操作并用自然语言确认。".into())),
+            prompt_template: Set(Some(
+                "用户想要{action}{device_name}。请执行操作并用自然语言确认。".into(),
+            )),
             cacheable: Set(false),
             enabled: Set(true),
             priority: Set(10),
@@ -444,8 +464,17 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("控制空调的开关、温度、模式".into())),
             category: Set("smart_home".into()),
             intent_patterns: Set(serde_json::json!([
-                "空调", "冷气", "暖气", "温度", "制冷", "制热", "除湿",
-                "ac", "air conditioner", "调温", "度"
+                "空调",
+                "冷气",
+                "暖气",
+                "温度",
+                "制冷",
+                "制热",
+                "除湿",
+                "ac",
+                "air conditioner",
+                "调温",
+                "度"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -463,7 +492,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "parameters": {"plugin_name": "ir-bridge", "action": "ac_control"}
                 }
             }))),
-            prompt_template: Set(Some("用户想要{action}空调。温度: {temperature}°C，模式: {mode}。".into())),
+            prompt_template: Set(Some(
+                "用户想要{action}空调。温度: {temperature}°C，模式: {mode}。".into(),
+            )),
             cacheable: Set(false),
             enabled: Set(true),
             priority: Set(10),
@@ -478,9 +509,22 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("控制通用智能家电（插座、窗帘、风扇等）".into())),
             category: Set("smart_home".into()),
             intent_patterns: Set(serde_json::json!([
-                "窗帘", "风扇", "插座", "电视", "扫地机", "加湿器",
-                "curtain", "fan", "plug", "tv", "vacuum", "humidifier",
-                "打开", "关闭", "开", "关"
+                "窗帘",
+                "风扇",
+                "插座",
+                "电视",
+                "扫地机",
+                "加湿器",
+                "curtain",
+                "fan",
+                "plug",
+                "tv",
+                "vacuum",
+                "humidifier",
+                "打开",
+                "关闭",
+                "开",
+                "关"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -512,9 +556,18 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("设置倒计时定时器或闹钟提醒".into())),
             category: Set("utility".into()),
             intent_patterns: Set(serde_json::json!([
-                "定时", "计时", "提醒", "倒计时", "闹钟",
-                "timer", "remind", "countdown", "alarm",
-                "分钟后", "小时后", "秒后"
+                "定时",
+                "计时",
+                "提醒",
+                "倒计时",
+                "闹钟",
+                "timer",
+                "remind",
+                "countdown",
+                "alarm",
+                "分钟后",
+                "小时后",
+                "秒后"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -547,8 +600,18 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("查询当前天气或天气预报".into())),
             category: Set("information".into()),
             intent_patterns: Set(serde_json::json!([
-                "天气", "气温", "温度", "下雨", "下雪", "预报", "湿度",
-                "weather", "temperature", "forecast", "rain", "snow"
+                "天气",
+                "气温",
+                "温度",
+                "下雨",
+                "下雪",
+                "预报",
+                "湿度",
+                "weather",
+                "temperature",
+                "forecast",
+                "rain",
+                "snow"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -579,8 +642,16 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("查询智能设备的当前状态".into())),
             category: Set("information".into()),
             intent_patterns: Set(serde_json::json!([
-                "设备", "状态", "查看", "检查", "多少度", "开着",
-                "device", "status", "check", "state"
+                "设备",
+                "状态",
+                "查看",
+                "检查",
+                "多少度",
+                "开着",
+                "device",
+                "status",
+                "check",
+                "state"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -611,9 +682,18 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("查询自己的记忆（\"我之前说过什么\"）".into())),
             category: Set("memory".into()),
             intent_patterns: Set(serde_json::json!([
-                "记得", "记忆", "之前说", "上次", "以前",
-                "remember", "memory", "previously", "last time",
-                "我说过", "你记得", "你还记得"
+                "记得",
+                "记忆",
+                "之前说",
+                "上次",
+                "以前",
+                "remember",
+                "memory",
+                "previously",
+                "last time",
+                "我说过",
+                "你记得",
+                "你还记得"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",
@@ -644,9 +724,18 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             description: Set(Some("语音管理自动化规则（创建/修改/删除）".into())),
             category: Set("automation".into()),
             intent_patterns: Set(serde_json::json!([
-                "规则", "自动化", "自动", "每天", "当",
-                "rule", "automation", "automate", "schedule",
-                "如果", "触发", "条件"
+                "规则",
+                "自动化",
+                "自动",
+                "每天",
+                "当",
+                "rule",
+                "automation",
+                "automate",
+                "schedule",
+                "如果",
+                "触发",
+                "条件"
             ])),
             parameters: Set(serde_json::json!({
                 "type": "object",

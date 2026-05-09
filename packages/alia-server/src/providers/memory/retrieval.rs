@@ -127,7 +127,9 @@ impl HybridRetrieval {
         deduped.sort_by(|a, b| {
             let score_a = a.relevance_score * 0.7 + a.importance * 0.3;
             let score_b = b.relevance_score * 0.7 + b.importance * 0.3;
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Limit results
@@ -379,7 +381,8 @@ impl HybridRetrieval {
                 })
                 .collect();
             if !layer_enums.is_empty() {
-                query_builder = query_builder.filter(memory_node::Column::MemoryLayer.is_in(layer_enums));
+                query_builder =
+                    query_builder.filter(memory_node::Column::MemoryLayer.is_in(layer_enums));
             }
         }
 

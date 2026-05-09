@@ -8,12 +8,14 @@
 //! - Memory threshold: pending episodic memories > threshold → Phase 2
 //! - Manual trigger via API
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -23,8 +25,8 @@ use crate::entity::meditation_log;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask,
-    ScheduleConfig, ScheduledTask, SchedulerBackend,
+    MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask, ScheduleConfig,
+    ScheduledTask, SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
@@ -283,13 +285,14 @@ impl ScheduledMeditation {
     ) {
         match event {
             // Scheduler-fired cron tasks for Phase 3 (reflection) and Phase 4 (habit detection)
-            ServerEvent::TaskTriggered { task_id, task_name, .. } => {
+            ServerEvent::TaskTriggered {
+                task_id, task_name, ..
+            } => {
                 let phase = if Some(*task_id) == reflection_task_id
                     || task_name == TASK_NAME_REFLECTION
                 {
                     Some(MeditationPhase::Reflection)
-                } else if Some(*task_id) == habit_task_id
-                    || task_name == TASK_NAME_HABIT_DETECTION
+                } else if Some(*task_id) == habit_task_id || task_name == TASK_NAME_HABIT_DETECTION
                 {
                     Some(MeditationPhase::HabitDetection)
                 } else {
@@ -300,10 +303,9 @@ impl ScheduledMeditation {
                     let phase_str = phase.as_str();
                     let user_id = Uuid::nil(); // TODO: resolve user
                     pending_tasks.fetch_add(1, Ordering::Relaxed);
-                    let _ = Self::execute_phase(
-                        db, event_bus, user_id,
-                        &phase, "schedule", semaphore,
-                    ).await;
+                    let _ =
+                        Self::execute_phase(db, event_bus, user_id, &phase, "schedule", semaphore)
+                            .await;
                     pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
                     let mut s = state.lock().await;
@@ -331,9 +333,15 @@ impl ScheduledMeditation {
                 let event_bus = event_bus.clone();
                 let semaphore_ref = semaphore;
                 match Self::execute_phase(
-                    &db, &event_bus, user_id,
-                    &MeditationPhase::Extraction, "post_conversation", semaphore_ref,
-                ).await {
+                    &db,
+                    &event_bus,
+                    user_id,
+                    &MeditationPhase::Extraction,
+                    "post_conversation",
+                    semaphore_ref,
+                )
+                .await
+                {
                     Ok(log) => {
                         let mut s = state.lock().await;
                         s.last_phase = Some("extraction".to_string());
@@ -350,10 +358,10 @@ impl ScheduledMeditation {
             }
 
             // Sensor-triggered meditation: presence sensor detects user left/returned
-            ServerEvent::SensorDataIngested { sensor_id, value, .. } => {
-                if config.presence_sensor_id.is_empty()
-                    || sensor_id != &config.presence_sensor_id
-                {
+            ServerEvent::SensorDataIngested {
+                sensor_id, value, ..
+            } => {
+                if config.presence_sensor_id.is_empty() || sensor_id != &config.presence_sensor_id {
                     return;
                 }
 
@@ -379,13 +387,23 @@ impl ScheduledMeditation {
                 let user_id = Uuid::nil(); // TODO: resolve from sensor context
                 pending_tasks.fetch_add(1, Ordering::Relaxed);
                 let _ = Self::execute_phase(
-                    db, event_bus, user_id,
-                    &MeditationPhase::Consolidation, "sensor", semaphore,
-                ).await;
+                    db,
+                    event_bus,
+                    user_id,
+                    &MeditationPhase::Consolidation,
+                    "sensor",
+                    semaphore,
+                )
+                .await;
                 let _ = Self::execute_phase(
-                    db, event_bus, user_id,
-                    &MeditationPhase::Reflection, "sensor", semaphore,
-                ).await;
+                    db,
+                    event_bus,
+                    user_id,
+                    &MeditationPhase::Reflection,
+                    "sensor",
+                    semaphore,
+                )
+                .await;
                 pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
                 let mut s = state.lock().await;
@@ -574,7 +592,8 @@ impl ModuleLifecycle for ScheduledMeditation {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let meditation_config = ctx.config.ai.meditation.clone();
 
-        self.enabled.store(meditation_config.enabled, Ordering::Relaxed);
+        self.enabled
+            .store(meditation_config.enabled, Ordering::Relaxed);
         self.concurrency_semaphore = Arc::new(Semaphore::new(
             meditation_config.max_concurrent_meditations as usize,
         ));
@@ -591,13 +610,29 @@ impl ModuleLifecycle for ScheduledMeditation {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        let config = self.config.lock().await.clone()
+        let config = self
+            .config
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
-        let db = self.db.lock().await.clone()
+        let db = self
+            .db
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
-        let event_bus = self.event_bus.lock().await.clone()
+        let event_bus = self
+            .event_bus
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
-        let cancel_token = self.cancel_token.lock().await.clone()
+        let cancel_token = self
+            .cancel_token
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
 
         if !config.enabled {
@@ -607,19 +642,20 @@ impl ModuleLifecycle for ScheduledMeditation {
 
         // Register cron tasks with the scheduler for Phase 3 + 4
         let conditions = config.conditions.clone();
-        let (reflection_task_id, habit_task_id) =
-            if let Some(scheduler) = self.scheduler.lock().await.as_ref() {
-                match Self::register_scheduler_tasks(scheduler.as_ref(), &config, &conditions).await {
-                    Ok(ids) => ids,
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to register meditation cron tasks");
-                        (None, None)
-                    }
+        let (reflection_task_id, habit_task_id) = if let Some(scheduler) =
+            self.scheduler.lock().await.as_ref()
+        {
+            match Self::register_scheduler_tasks(scheduler.as_ref(), &config, &conditions).await {
+                Ok(ids) => ids,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to register meditation cron tasks");
+                    (None, None)
                 }
-            } else {
-                tracing::warn!("no scheduler available, cron-based meditation phases disabled");
-                (None, None)
-            };
+            }
+        } else {
+            tracing::warn!("no scheduler available, cron-based meditation phases disabled");
+            (None, None)
+        };
 
         *self.reflection_task_id.lock().await = reflection_task_id;
         *self.habit_task_id.lock().await = habit_task_id;
@@ -645,10 +681,18 @@ impl ModuleLifecycle for ScheduledMeditation {
         let cfg_clone = config.clone();
         tokio::spawn(async move {
             Self::event_listener_loop(
-                db_clone, eb_clone, ct_clone,
-                en_clone, pt_clone, sem_clone, st_clone, cfg_clone,
-                reflection_task_id, habit_task_id,
-            ).await;
+                db_clone,
+                eb_clone,
+                ct_clone,
+                en_clone,
+                pt_clone,
+                sem_clone,
+                st_clone,
+                cfg_clone,
+                reflection_task_id,
+                habit_task_id,
+            )
+            .await;
         });
 
         // Spawn idle check loop
@@ -662,9 +706,16 @@ impl ModuleLifecycle for ScheduledMeditation {
         let idle_minutes = config.consolidation_idle_minutes;
         tokio::spawn(async move {
             Self::idle_check_loop(
-                db_clone, eb_clone, ct_clone,
-                en_clone, pt_clone, sem_clone, st_clone, idle_minutes,
-            ).await;
+                db_clone,
+                eb_clone,
+                ct_clone,
+                en_clone,
+                pt_clone,
+                sem_clone,
+                st_clone,
+                idle_minutes,
+            )
+            .await;
         });
 
         tracing::info!("ScheduledMeditation started (2 background tasks, cron via scheduler)");
@@ -708,9 +759,17 @@ impl MeditationStrategy for ScheduledMeditation {
             other => anyhow::bail!("unknown meditation phase: {other}"),
         };
 
-        let db = self.db.lock().await.clone()
+        let db = self
+            .db
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
-        let event_bus = self.event_bus.lock().await.clone()
+        let event_bus = self
+            .event_bus
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
 
         self.pending_tasks.fetch_add(1, Ordering::Relaxed);
@@ -721,8 +780,14 @@ impl MeditationStrategy for ScheduledMeditation {
         // Run in background to avoid blocking the caller
         tokio::spawn(async move {
             let _ = Self::execute_phase(
-                &db, &event_bus, task.user_id, &phase, &task.trigger, &semaphore,
-            ).await;
+                &db,
+                &event_bus,
+                task.user_id,
+                &phase,
+                &task.trigger,
+                &semaphore,
+            )
+            .await;
             pending.fetch_sub(1, Ordering::Relaxed);
         });
 
@@ -760,15 +825,29 @@ impl MeditationStrategy for ScheduledMeditation {
     }
 
     async fn trigger(&self, user_id: Uuid, phase: MeditationPhase) -> anyhow::Result<()> {
-        let db = self.db.lock().await.clone()
+        let db = self
+            .db
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
-        let event_bus = self.event_bus.lock().await.clone()
+        let event_bus = self
+            .event_bus
+            .lock()
+            .await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
 
         self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let result = Self::execute_phase(
-            &db, &event_bus, user_id, &phase, "manual", &self.concurrency_semaphore,
-        ).await;
+            &db,
+            &event_bus,
+            user_id,
+            &phase,
+            "manual",
+            &self.concurrency_semaphore,
+        )
+        .await;
         self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
         // Update internal state

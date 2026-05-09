@@ -101,30 +101,34 @@ impl PluginRegistry {
             let cursor = std::io::Cursor::new(&zip_data);
             let mut archive = zip::ZipArchive::new(cursor)?;
 
-            let canonical_base = plugin_dir_clone.canonicalize().unwrap_or(plugin_dir_clone.clone());
+            let canonical_base = plugin_dir_clone
+                .canonicalize()
+                .unwrap_or(plugin_dir_clone.clone());
 
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i)?;
-                let raw_name = file.enclosed_name()
-                    .context("invalid zip entry name")?;
+                let raw_name = file.enclosed_name().context("invalid zip entry name")?;
 
                 let out_path = plugin_dir_clone.join(&raw_name);
 
                 // Path traversal check: ensure extracted path stays within plugin_dir
                 // We must check the path components, not just canonicalize (which requires the file to exist)
-                let normalized = out_path
-                    .components()
-                    .fold(PathBuf::new(), |mut acc, comp| {
-                        match comp {
-                            std::path::Component::ParentDir => { acc.pop(); }
-                            std::path::Component::Normal(c) => acc.push(c),
-                            std::path::Component::RootDir => acc.push("/"),
-                            _ => {}
+                let normalized = out_path.components().fold(PathBuf::new(), |mut acc, comp| {
+                    match comp {
+                        std::path::Component::ParentDir => {
+                            acc.pop();
                         }
-                        acc
-                    });
+                        std::path::Component::Normal(c) => acc.push(c),
+                        std::path::Component::RootDir => acc.push("/"),
+                        _ => {}
+                    }
+                    acc
+                });
                 if !normalized.starts_with(&canonical_base) {
-                    bail!("path traversal detected in zip entry: {}", raw_name.display());
+                    bail!(
+                        "path traversal detected in zip entry: {}",
+                        raw_name.display()
+                    );
                 }
 
                 if file.is_dir() {
@@ -208,7 +212,10 @@ impl PluginRegistry {
     }
 
     /// Get mutable access to a plugin entry for state updates.
-    pub async fn get_mut(&self, name: &str) -> Option<tokio::sync::RwLockWriteGuard<'_, HashMap<String, PluginEntry>>> {
+    pub async fn get_mut(
+        &self,
+        name: &str,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'_, HashMap<String, PluginEntry>>> {
         let plugins = self.plugins.write().await;
         if plugins.contains_key(name) {
             Some(plugins)

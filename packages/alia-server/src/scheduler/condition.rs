@@ -81,7 +81,10 @@ impl ConditionRegistry {
 
             let Some(evaluator) = evaluators.get(cond_type) else {
                 // No evaluator registered for this type — open-world, pass
-                tracing::trace!(condition_type = cond_type, "no evaluator registered, skipping");
+                tracing::trace!(
+                    condition_type = cond_type,
+                    "no evaluator registered, skipping"
+                );
                 continue;
             };
 

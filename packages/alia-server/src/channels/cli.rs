@@ -3,14 +3,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Config, EditMode};
+use rustyline::{Config, DefaultEditor, EditMode};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::event::EventBus;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::module::ModuleLifecycle;
+use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 
 use super::adapter::{
     ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelEvent, ChannelTarget,

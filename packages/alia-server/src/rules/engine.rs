@@ -22,9 +22,15 @@ use crate::providers::adapter::{RuleAction, RuleEvaluator};
 #[serde(tag = "op")]
 pub enum Condition {
     #[serde(rename = "eq")]
-    Equals { field: String, value: serde_json::Value },
+    Equals {
+        field: String,
+        value: serde_json::Value,
+    },
     #[serde(rename = "neq")]
-    NotEquals { field: String, value: serde_json::Value },
+    NotEquals {
+        field: String,
+        value: serde_json::Value,
+    },
     #[serde(rename = "contains")]
     Contains { field: String, value: String },
     #[serde(rename = "gt")]
@@ -138,7 +144,7 @@ impl SimpleRuleEngine {
     fn get_field(data: &serde_json::Value, path: &str) -> serde_json::Value {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = data;
-        
+
         for part in parts {
             match current {
                 serde_json::Value::Object(map) => {
@@ -147,7 +153,7 @@ impl SimpleRuleEngine {
                 _ => return serde_json::Value::Null,
             }
         }
-        
+
         current.clone()
     }
 }
@@ -182,32 +188,32 @@ impl RuleEvaluator for SimpleRuleEngine {
         let rules = self.rules.read().await;
         let event_type = Self::event_type_name(event);
         let event_data = Self::event_to_json(event);
-        
+
         let mut actions = Vec::new();
-        
+
         for rule in rules.iter() {
             if !rule.enabled {
                 continue;
             }
-            
+
             // Check if event type matches trigger
             if rule.trigger_event != event_type && rule.trigger_event != "*" {
                 continue;
             }
-            
+
             // Evaluate conditions if present
             let conditions_match = match &rule.conditions {
                 Some(cond) => Self::evaluate_condition(cond, &event_data),
                 None => true,
             };
-            
+
             if conditions_match {
                 tracing::debug!(
                     rule_id = %rule.id,
                     rule_name = %rule.name,
                     "rule matched"
                 );
-                
+
                 actions.push(RuleAction {
                     rule_id: rule.id,
                     rule_name: rule.name.clone(),
@@ -216,7 +222,7 @@ impl RuleEvaluator for SimpleRuleEngine {
                 });
             }
         }
-        
+
         Ok(actions)
     }
 

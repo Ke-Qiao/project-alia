@@ -1,6 +1,6 @@
 use alia_server::event::ServerEvent;
-use alia_server::rules::engine::{Condition, Rule, SimpleRuleEngine};
 use alia_server::providers::RuleEvaluator;
+use alia_server::rules::engine::{Condition, Rule, SimpleRuleEngine};
 use uuid::Uuid;
 
 #[tokio::test]

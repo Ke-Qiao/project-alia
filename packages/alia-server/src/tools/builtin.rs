@@ -116,7 +116,10 @@ impl ModuleLifecycle for BuiltinToolRegistry {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         self.register_builtins();
-        tracing::info!(count = self.builtins.len(), "BuiltinToolRegistry initialized");
+        tracing::info!(
+            count = self.builtins.len(),
+            "BuiltinToolRegistry initialized"
+        );
         Ok(())
     }
 }
@@ -235,7 +238,8 @@ impl ToolExecutor for GetCurrentTime {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "get_current_time".to_string(),
-            description: "Get the current date and time. Optionally specify a timezone.".to_string(),
+            description: "Get the current date and time. Optionally specify a timezone."
+                .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -414,7 +418,9 @@ impl ToolExecutor for ScheduleTask {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "schedule_task".to_string(),
-            description: "Create a scheduled task to run at a specific time or on a recurring schedule.".to_string(),
+            description:
+                "Create a scheduled task to run at a specific time or on a recurring schedule."
+                    .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -620,9 +626,7 @@ pub fn to_openai_functions(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
 }
 
 /// Parse OpenAI function call response into ToolCall
-pub fn parse_openai_tool_call(
-    function_call: &serde_json::Value,
-) -> anyhow::Result<ToolCall> {
+pub fn parse_openai_tool_call(function_call: &serde_json::Value) -> anyhow::Result<ToolCall> {
     let name = function_call
         .get("name")
         .and_then(|v| v.as_str())

@@ -1,12 +1,14 @@
 use axum::extract::{Path, State};
-use axum::routing::{get, post, delete};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::error::Result;
-use crate::providers::adapter::{ScheduleConfig, ScheduledTask, TaskFilter, TaskPatch, EventSubscription};
+use crate::providers::adapter::{
+    EventSubscription, ScheduleConfig, ScheduledTask, TaskFilter, TaskPatch,
+};
 use crate::state::AppState;
 
 // ========== Request/Response Types ==========
@@ -23,7 +25,9 @@ pub struct CreateTaskRequest {
     pub max_retries: u32,
 }
 
-fn default_cooldown() -> u32 { 0 }
+fn default_cooldown() -> u32 {
+    0
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateTaskRequest {
@@ -95,7 +99,7 @@ async fn get_task(
         enabled_only: false,
     };
     let tasks = state.modules.scheduler.list_tasks(filter).await?;
-    
+
     tasks
         .into_iter()
         .find(|t| t.id == id)
@@ -203,10 +207,16 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         // Tasks
         .route("/scheduler/tasks", get(list_tasks).post(create_task))
-        .route("/scheduler/tasks/{id}", get(get_task).put(update_task).delete(delete_task_handler))
+        .route(
+            "/scheduler/tasks/{id}",
+            get(get_task).put(update_task).delete(delete_task_handler),
+        )
         .route("/scheduler/tasks/{id}/pause", post(pause_task))
         .route("/scheduler/tasks/{id}/resume", post(resume_task))
         // Subscriptions
-        .route("/scheduler/subscriptions", get(list_subscriptions).post(create_subscription))
+        .route(
+            "/scheduler/subscriptions",
+            get(list_subscriptions).post(create_subscription),
+        )
         .route("/scheduler/subscriptions/{id}", delete(delete_subscription))
 }

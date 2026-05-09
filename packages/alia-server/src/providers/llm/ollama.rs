@@ -88,9 +88,13 @@ impl OllamaLlm {
         }
     }
 
-    async fn chat_internal(&self, messages: &[ChatMessage], stream: bool) -> anyhow::Result<reqwest::Response> {
+    async fn chat_internal(
+        &self,
+        messages: &[ChatMessage],
+        stream: bool,
+    ) -> anyhow::Result<reqwest::Response> {
         let config = self.config.read().await;
-        
+
         let request = OllamaRequest {
             model: config.model.clone(),
             messages: messages.iter().map(OllamaMessage::from).collect(),
@@ -101,7 +105,8 @@ impl OllamaLlm {
             }),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/api/chat", config.endpoint))
             .json(&request)
             .send()
@@ -131,27 +136,30 @@ impl ModuleLifecycle for OllamaLlm {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.endpoint = server_config.ai.ollama_endpoint.clone();
         config.model = server_config.ai.ollama_model.clone();
-        
+
         tracing::info!(model = %config.model, endpoint = %config.endpoint, "Ollama LLM initialized");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
-        
+
         // Try to connect to Ollama
-        match self.client
+        match self
+            .client
             .get(format!("{}/api/version", config.endpoint))
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
             Ok(resp) if resp.status().is_success() => ModuleHealth::Healthy,
-            Ok(resp) => ModuleHealth::Unhealthy(format!("Ollama returned status {}", resp.status())),
+            Ok(resp) => {
+                ModuleHealth::Unhealthy(format!("Ollama returned status {}", resp.status()))
+            }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Ollama: {}", e)),
         }
     }
@@ -170,25 +178,25 @@ impl LlmAdapter for OllamaLlm {
         messages: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
         let response = self.chat_internal(messages, true).await?;
-        
+
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();
             let mut buffer = String::new();
-            
+
             while let Some(chunk_result) = byte_stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
                         buffer.push_str(&String::from_utf8_lossy(&chunk));
-                        
+
                         // Process complete JSON lines (Ollama uses NDJSON)
                         while let Some(line_end) = buffer.find('\n') {
                             let line = buffer[..line_end].trim().to_string();
                             buffer = buffer[line_end + 1..].to_string();
-                            
+
                             if line.is_empty() {
                                 continue;
                             }
-                            
+
                             if let Ok(chunk) = serde_json::from_str::<OllamaStreamChunk>(&line) {
                                 if let Some(msg) = chunk.message {
                                     if !msg.content.is_empty() {
@@ -208,7 +216,7 @@ impl LlmAdapter for OllamaLlm {
                 }
             }
         };
-        
+
         Ok(Box::pin(stream))
     }
 }

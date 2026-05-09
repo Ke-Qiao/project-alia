@@ -1,6 +1,6 @@
 use axum::extract::State;
-use axum::{Json, Router};
 use axum::routing::get;
+use axum::{Json, Router};
 use serde::Serialize;
 use std::collections::HashMap;
 use utoipa::ToSchema;

@@ -81,7 +81,7 @@ impl ModuleLifecycle for TwoLayerCache {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         // Load config
         self.default_ttl = Duration::from_secs(ctx.config.ai.cache.default_ttl_seconds);
-        
+
         tracing::info!(
             ttl_seconds = self.default_ttl.as_secs(),
             "TwoLayerCache initialized"
@@ -104,7 +104,7 @@ impl CacheBackend for TwoLayerCache {
         // Try exact match first (L1)
         // Use "default" scope for basic queries
         let key = Self::make_key("default", user_id, query);
-        
+
         let cache = self.exact_cache.read().await;
         if let Some(item) = cache.get(&key) {
             if item.expires_at > Instant::now() {
@@ -115,14 +115,14 @@ impl CacheBackend for TwoLayerCache {
 
         // TODO: L2 semantic match would go here
         // This would require access to embedding module and a vector index
-        
+
         tracing::debug!(query = %query, "cache miss");
         Ok(None)
     }
 
     async fn put(&self, entry: CacheEntry) -> anyhow::Result<()> {
         let key = Self::make_key(&entry.scope, entry.user_id, &entry.query_text);
-        
+
         let ttl = if entry.ttl_seconds > 0 {
             Duration::from_secs(entry.ttl_seconds)
         } else {
@@ -141,7 +141,7 @@ impl CacheBackend for TwoLayerCache {
 
         let mut cache = self.exact_cache.write().await;
         cache.insert(key, item);
-        
+
         tracing::debug!(
             query = %entry.query_text,
             ttl_seconds = ttl.as_secs(),
@@ -160,19 +160,19 @@ impl CacheBackend for TwoLayerCache {
     async fn invalidate(&self, filter: CacheFilter) -> anyhow::Result<u64> {
         let mut cache = self.exact_cache.write().await;
         let original_len = cache.len();
-        
+
         cache.retain(|_, item| {
             // Keep item if it doesn't match filter
             let user_match = filter.user_id.is_none() || item.user_id == filter.user_id;
             let scope_match = filter.scope.is_none() || Some(&item.scope) == filter.scope.as_ref();
-            
+
             // Remove if matches filter
             !(user_match && scope_match)
         });
-        
+
         let removed = (original_len - cache.len()) as u64;
         tracing::info!(removed_count = removed, "cache invalidated");
-        
+
         Ok(removed)
     }
 }

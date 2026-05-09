@@ -98,9 +98,13 @@ impl OpenAiLlm {
         }
     }
 
-    async fn chat_internal(&self, messages: &[ChatMessage], stream: bool) -> anyhow::Result<reqwest::Response> {
+    async fn chat_internal(
+        &self,
+        messages: &[ChatMessage],
+        stream: bool,
+    ) -> anyhow::Result<reqwest::Response> {
         let config = self.config.read().await;
-        
+
         let request = ChatRequest {
             model: config.model.clone(),
             messages: messages.iter().map(OpenAiMessage::from).collect(),
@@ -109,7 +113,8 @@ impl OpenAiLlm {
             stream,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/chat/completions", config.base_url))
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
@@ -141,16 +146,16 @@ impl ModuleLifecycle for OpenAiLlm {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.api_key = server_config.ai.openai_api_key.clone();
         config.base_url = server_config.ai.openai_base_url.clone();
         config.model = server_config.ai.openai_model.clone();
-        
+
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured");
         }
-        
+
         tracing::info!(model = %config.model, base_url = %config.base_url, "OpenAI LLM initialized");
         Ok(())
     }
@@ -170,7 +175,7 @@ impl LlmAdapter for OpenAiLlm {
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
         let response = self.chat_internal(messages, false).await?;
         let chat_response: ChatResponse = response.json().await?;
-        
+
         chat_response
             .choices
             .first()
@@ -183,27 +188,27 @@ impl LlmAdapter for OpenAiLlm {
         messages: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
         let response = self.chat_internal(messages, true).await?;
-        
+
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();
             let mut buffer = String::new();
-            
+
             while let Some(chunk_result) = byte_stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
                         buffer.push_str(&String::from_utf8_lossy(&chunk));
-                        
+
                         // Process complete SSE lines
                         while let Some(line_end) = buffer.find('\n') {
                             let line = buffer[..line_end].trim().to_string();
                             buffer = buffer[line_end + 1..].to_string();
-                            
+
                             if line.starts_with("data: ") {
                                 let data = &line[6..];
                                 if data == "[DONE]" {
                                     break;
                                 }
-                                
+
                                 if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
                                     for choice in chunk.choices {
                                         if let Some(content) = choice.delta.content {
@@ -221,7 +226,7 @@ impl LlmAdapter for OpenAiLlm {
                 }
             }
         };
-        
+
         Ok(Box::pin(stream))
     }
 }

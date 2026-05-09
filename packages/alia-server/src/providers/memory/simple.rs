@@ -35,18 +35,18 @@ impl SimpleMemory {
     fn score_relevance(query: &str, content: &str) -> f32 {
         let query_words: Vec<&str> = query.split_whitespace().collect();
         let content_lower = content.to_lowercase();
-        
+
         let mut matches = 0;
         for word in &query_words {
             if content_lower.contains(&word.to_lowercase()) {
                 matches += 1;
             }
         }
-        
+
         if query_words.is_empty() {
             return 0.0;
         }
-        
+
         matches as f32 / query_words.len() as f32
     }
 }
@@ -78,10 +78,10 @@ impl MemoryBackend for SimpleMemory {
     async fn store(&self, user_id: Uuid, mut node: MemoryNode) -> anyhow::Result<Uuid> {
         let id = node.id.unwrap_or_else(Uuid::new_v4);
         node.id = Some(id);
-        
+
         let mut memories = self.memories.write().await;
         memories.entry(user_id).or_default().push(node);
-        
+
         tracing::debug!(user_id = %user_id, node_id = %id, "stored memory node");
         Ok(id)
     }
@@ -93,7 +93,7 @@ impl MemoryBackend for SimpleMemory {
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<MemoryNode>> {
         let memories = self.memories.read().await;
-        
+
         let user_memories = match memories.get(&user_id) {
             Some(mems) => mems,
             None => return Ok(Vec::new()),
@@ -146,7 +146,7 @@ impl MemoryBackend for SimpleMemory {
 
     async fn update(&self, node_id: Uuid, patch: MemoryPatch) -> anyhow::Result<()> {
         let mut memories = self.memories.write().await;
-        
+
         for user_memories in memories.values_mut() {
             for memory in user_memories.iter_mut() {
                 if memory.id == Some(node_id) {
@@ -170,7 +170,7 @@ impl MemoryBackend for SimpleMemory {
 
     async fn delete(&self, node_id: Uuid) -> anyhow::Result<()> {
         let mut memories = self.memories.write().await;
-        
+
         for user_memories in memories.values_mut() {
             let original_len = user_memories.len();
             user_memories.retain(|m| m.id != Some(node_id));

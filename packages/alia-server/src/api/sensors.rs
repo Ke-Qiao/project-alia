@@ -155,7 +155,10 @@ async fn query_readings(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/sensors", get(list_sensors).post(register_sensor))
-        .route("/sensors/{sensor_id}", get(get_sensor).delete(unregister_sensor))
+        .route(
+            "/sensors/{sensor_id}",
+            get(get_sensor).delete(unregister_sensor),
+        )
         .route("/sensors/{sensor_id}/latest", get(get_latest))
         .route("/sensors/ingest", post(ingest_reading))
         .route("/sensors/ingest/batch", post(ingest_batch))

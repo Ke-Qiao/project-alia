@@ -56,10 +56,7 @@ async fn delete_memory(
     Ok(Json(serde_json::json!({"success": true})))
 }
 
-async fn get_graph(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-) -> Result<Json<GraphData>> {
+async fn get_graph(State(_state): State<AppState>, _auth: AuthUser) -> Result<Json<GraphData>> {
     Ok(Json(GraphData {
         nodes: Vec::new(),
         edges: Vec::new(),
@@ -84,7 +81,10 @@ async fn clear_memories(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/memories", get(list_memories).delete(clear_memories))
-        .route("/memories/{id}", get(get_memory).patch(update_memory).delete(delete_memory))
+        .route(
+            "/memories/{id}",
+            get(get_memory).patch(update_memory).delete(delete_memory),
+        )
         .route("/memories/graph", get(get_graph))
         .route("/memories/search", post(search_memories))
 }

@@ -10,8 +10,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -218,8 +218,14 @@ impl EpisodicMemory {
             id: node.id,
             user_id: node.user_id,
             summary: node.content,
-            topic: metadata.get("topic").and_then(|v| v.as_str()).map(String::from),
-            sentiment: metadata.get("sentiment").and_then(|v| v.as_str()).map(String::from),
+            topic: metadata
+                .get("topic")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            sentiment: metadata
+                .get("sentiment")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             entities: metadata
                 .get("entities")
                 .and_then(|v| v.as_array())
@@ -229,7 +235,10 @@ impl EpisodicMemory {
                         .collect()
                 })
                 .unwrap_or_default(),
-            turn_count: metadata.get("turn_count").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+            turn_count: metadata
+                .get("turn_count")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32,
             session_start: metadata
                 .get("session_start")
                 .and_then(|v| v.as_str())
@@ -244,7 +253,9 @@ impl EpisodicMemory {
                 .unwrap_or(node.created_at),
             importance: node.importance,
             created_at: node.created_at,
-            expires_at: node.expires_at.unwrap_or(node.created_at + Duration::days(DEFAULT_TTL_DAYS)),
+            expires_at: node
+                .expires_at
+                .unwrap_or(node.created_at + Duration::days(DEFAULT_TTL_DAYS)),
         }
     }
 }

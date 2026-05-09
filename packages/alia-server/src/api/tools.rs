@@ -43,7 +43,9 @@ async fn list_tools_openai_format(
 ) -> Result<Json<OpenAIFunctionsResponse>> {
     let tools = state.modules.tools.list_tools().await?;
     let openai_tools = to_openai_functions(&tools);
-    Ok(Json(OpenAIFunctionsResponse { tools: openai_tools }))
+    Ok(Json(OpenAIFunctionsResponse {
+        tools: openai_tools,
+    }))
 }
 
 /// Execute a tool call

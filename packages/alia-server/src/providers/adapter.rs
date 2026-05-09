@@ -234,11 +234,8 @@ pub struct PromptVars {
 #[async_trait]
 pub trait PersonaProvider: ModuleLifecycle {
     async fn get_effective_persona(&self, user_id: Uuid) -> anyhow::Result<Persona>;
-    async fn render_system_prompt(
-        &self,
-        user_id: Uuid,
-        vars: PromptVars,
-    ) -> anyhow::Result<String>;
+    async fn render_system_prompt(&self, user_id: Uuid, vars: PromptVars)
+    -> anyhow::Result<String>;
 }
 
 // ========== Meditation Strategy ==========
@@ -291,10 +288,19 @@ pub struct RouterInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteDecision {
-    CacheHit { response: String },
-    Skill { skill_name: String, params: serde_json::Value },
-    LocalLlm { system_prompt: Option<String> },
-    RemoteLlm { system_prompt: Option<String> },
+    CacheHit {
+        response: String,
+    },
+    Skill {
+        skill_name: String,
+        params: serde_json::Value,
+    },
+    LocalLlm {
+        system_prompt: Option<String>,
+    },
+    RemoteLlm {
+        system_prompt: Option<String>,
+    },
 }
 
 #[async_trait]
@@ -341,7 +347,7 @@ pub struct ScheduledTask {
     pub enabled: bool,
     pub schedule: ScheduleConfig,
     pub conditions: serde_json::Value, // JSON array of condition configs
-    pub action: serde_json::Value,      // Action config (type + payload)
+    pub action: serde_json::Value,     // Action config (type + payload)
     pub cooldown_sec: u32,
     pub max_retries: u32,
     pub created_by: String, // "user" | "ai"

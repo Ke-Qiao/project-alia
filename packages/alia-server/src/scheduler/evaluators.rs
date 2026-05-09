@@ -5,8 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{Timelike, Utc};
 
-use crate::providers::sensor::SensorRegistry;
 use super::condition::ConditionEvaluator;
+use crate::providers::sensor::SensorRegistry;
 
 /// Evaluates sensor-based conditions.
 ///

@@ -16,8 +16,8 @@ pub use two_layer::TwoLayerCache;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::providers::adapter::{CacheBackend, CacheEntry, CacheFilter, CachedResponse};
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{CacheBackend, CacheEntry, CacheFilter, CachedResponse};
 
 pub struct NoopCache;
 

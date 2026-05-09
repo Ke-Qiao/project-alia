@@ -1,5 +1,7 @@
 use alia_server::providers::adapter::{ToolCall, ToolContext, ToolDefinition};
-use alia_server::tools::builtin::{to_openai_functions, parse_openai_tool_call, GetCurrentTime, ToolExecutor};
+use alia_server::tools::builtin::{
+    GetCurrentTime, ToolExecutor, parse_openai_tool_call, to_openai_functions,
+};
 use uuid::Uuid;
 
 #[tokio::test]

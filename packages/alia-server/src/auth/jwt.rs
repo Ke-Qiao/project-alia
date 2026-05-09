@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -25,7 +25,13 @@ impl JwtKeys {
         }
     }
 
-    pub fn encode(&self, user_id: Uuid, name: &str, role: &str, expiry_hours: u64) -> anyhow::Result<String> {
+    pub fn encode(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        role: &str,
+        expiry_hours: u64,
+    ) -> anyhow::Result<String> {
         let now = Utc::now();
         let claims = Claims {
             sub: user_id,

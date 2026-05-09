@@ -10,4 +10,7 @@
 
 pub mod registry;
 
-pub use registry::{SensorDefinition, SensorQuery, SensorReading, SensorRegistry, SensorRegistryConfig, SensorSummary};
+pub use registry::{
+    SensorDefinition, SensorQuery, SensorReading, SensorRegistry, SensorRegistryConfig,
+    SensorSummary,
+};

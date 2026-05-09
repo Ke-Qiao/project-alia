@@ -1,25 +1,24 @@
 use std::sync::Arc;
 
-use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
-    PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
-    SchedulerBackend, ToolRegistry,
-};
-use crate::providers::sensor::SensorRegistry;
 use crate::channels::adapter::ChannelAdapter;
+use crate::channels::cli::CliChannel;
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
-use crate::channels::cli::CliChannel;
 use crate::config::ChannelConfig;
 use crate::event::EventBus;
-use crate::providers::cache::{DbCache, NoopCache};
+use crate::providers::adapter::{
+    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
+    TtsAdapter,
+};
 #[cfg(feature = "cache-semantic")]
 use crate::providers::cache::TwoLayerCache;
+use crate::providers::cache::{DbCache, NoopCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
+use crate::providers::meditation::NoopMeditation;
 #[cfg(feature = "meditation")]
 use crate::providers::meditation::ScheduledMeditation;
-use crate::providers::meditation::NoopMeditation;
 #[cfg(feature = "memory-graphrag")]
 use crate::providers::memory::GraphRagMemory;
 use crate::providers::memory::{NoopMemory, SimpleMemory};
@@ -27,23 +26,24 @@ use crate::providers::persona::{NoopPersona, TemplatePersona};
 #[cfg(feature = "llm-ollama")]
 use crate::providers::router::MultiLayerRouter;
 use crate::providers::router::PassthroughRouter;
+use crate::providers::sensor::SensorRegistry;
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
 use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
-use crate::scheduler::{ConditionRegistry, NoopScheduler, CronScheduler};
-use crate::tools::{NoopToolRegistry, BuiltinToolRegistry};
+use crate::scheduler::{ConditionRegistry, CronScheduler, NoopScheduler};
+use crate::tools::{BuiltinToolRegistry, NoopToolRegistry};
 
-#[cfg(feature = "llm-openai")]
-use crate::providers::llm::OpenAiLlm;
-#[cfg(feature = "llm-ollama")]
-use crate::providers::llm::OllamaLlm;
-#[cfg(feature = "stt-whisper")]
-use crate::providers::stt::WhisperCppStt;
-#[cfg(feature = "tts-sovits")]
-use crate::providers::tts::GptSovitsTts;
 #[cfg(feature = "embed-ollama")]
 use crate::providers::embedding::OllamaEmbedding;
 #[cfg(feature = "embed-openai")]
 use crate::providers::embedding::OpenAiEmbedding;
+#[cfg(feature = "llm-ollama")]
+use crate::providers::llm::OllamaLlm;
+#[cfg(feature = "llm-openai")]
+use crate::providers::llm::OpenAiLlm;
+#[cfg(feature = "stt-whisper")]
+use crate::providers::stt::WhisperCppStt;
+#[cfg(feature = "tts-sovits")]
+use crate::providers::tts::GptSovitsTts;
 
 pub fn create_llm(name: &str) -> Box<dyn LlmAdapter> {
     match name {
@@ -209,7 +209,10 @@ pub fn create_meditation(name: &str) -> Box<dyn MeditationStrategy> {
     match name {
         #[cfg(feature = "meditation")]
         "scheduled" => {
-            tracing::info!(module = name, "creating meditation strategy (ScheduledMeditation)");
+            tracing::info!(
+                module = name,
+                "creating meditation strategy (ScheduledMeditation)"
+            );
             Box::new(ScheduledMeditation::new())
         }
         "noop" => {
@@ -258,7 +261,10 @@ pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
     }
 }
 
-pub fn create_scheduler(name: &str, conditions: Arc<ConditionRegistry>) -> Box<dyn SchedulerBackend> {
+pub fn create_scheduler(
+    name: &str,
+    conditions: Arc<ConditionRegistry>,
+) -> Box<dyn SchedulerBackend> {
     match name {
         "cron" => {
             tracing::info!(module = name, "creating scheduler (CronScheduler)");
@@ -278,7 +284,10 @@ pub fn create_scheduler(name: &str, conditions: Arc<ConditionRegistry>) -> Box<d
 pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
     match name {
         "builtin" => {
-            tracing::info!(module = name, "creating tool registry (BuiltinToolRegistry)");
+            tracing::info!(
+                module = name,
+                "creating tool registry (BuiltinToolRegistry)"
+            );
             Box::new(BuiltinToolRegistry::new())
         }
         "noop" => {
@@ -293,10 +302,16 @@ pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
 }
 
 /// Create tools with sensor registry integration (includes sensor_read + sensor_list).
-pub fn create_tools_with_sensors(name: &str, sensors: Arc<SensorRegistry>) -> Box<dyn ToolRegistry> {
+pub fn create_tools_with_sensors(
+    name: &str,
+    sensors: Arc<SensorRegistry>,
+) -> Box<dyn ToolRegistry> {
     match name {
         "builtin" => {
-            tracing::info!(module = name, "creating tool registry with sensors (BuiltinToolRegistry)");
+            tracing::info!(
+                module = name,
+                "creating tool registry with sensors (BuiltinToolRegistry)"
+            );
             Box::new(BuiltinToolRegistry::with_sensors(sensors))
         }
         _ => create_tools(name),

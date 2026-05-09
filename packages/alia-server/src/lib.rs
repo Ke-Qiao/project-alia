@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-pub mod providers;
 pub mod api;
 pub mod auth;
 pub mod channels;
@@ -12,6 +11,7 @@ pub mod error;
 pub mod event;
 pub mod module;
 pub mod openapi;
+pub mod providers;
 pub mod rules;
 pub mod scheduler;
 pub mod state;

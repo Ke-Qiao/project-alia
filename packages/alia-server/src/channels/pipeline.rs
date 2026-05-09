@@ -9,10 +9,8 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::channels::adapter::{
-    AudioPayload, ChannelEvent, ChannelTarget,
-};
 use crate::channels::ChannelRegistry;
+use crate::channels::adapter::{AudioPayload, ChannelEvent, ChannelTarget};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
@@ -122,7 +120,11 @@ async fn process_event(
             )
             .await
         }
-        ChannelEvent::SensorData { channel_id, sensor_type, payload } => {
+        ChannelEvent::SensorData {
+            channel_id,
+            sensor_type,
+            payload,
+        } => {
             // Ingest sensor data into the registry
             use crate::providers::sensor::SensorReading;
             let sensor_id = format!("{}:{}", channel_id, sensor_type);
@@ -135,9 +137,7 @@ async fn process_event(
             sensors.ingest(reading).await;
             Ok(())
         }
-        ChannelEvent::StatusChange { .. } => {
-            Ok(())
-        }
+        ChannelEvent::StatusChange { .. } => Ok(()),
     }
 }
 
@@ -150,9 +150,7 @@ async fn process_text(
     let uid = Uuid::parse_str(user_id).unwrap_or_else(|_| Uuid::nil());
 
     // 1. Check cache first
-    if let Some(CachedResponse { response_text, .. }) =
-        modules.cache.get(Some(uid), text).await?
-    {
+    if let Some(CachedResponse { response_text, .. }) = modules.cache.get(Some(uid), text).await? {
         tracing::debug!(query = text, "pipeline cache hit");
         return Ok(response_text);
     }
@@ -174,9 +172,9 @@ async fn process_text(
                 parameters: params.clone(),
             };
             let result = modules.skills.execute(&skill_match, params).await?;
-            result.message.unwrap_or_else(|| {
-                serde_json::to_string_pretty(&result.output).unwrap_or_default()
-            })
+            result
+                .message
+                .unwrap_or_else(|| serde_json::to_string_pretty(&result.output).unwrap_or_default())
         }
         RouteDecision::LocalLlm { system_prompt } | RouteDecision::RemoteLlm { system_prompt } => {
             let mut messages = Vec::new();
@@ -218,10 +216,9 @@ async fn send_response(
     text: Option<String>,
     audio: Option<AudioPayload>,
 ) -> anyhow::Result<()> {
-    let channel = channels
-        .get(channel_id)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("channel '{}' not found for response delivery", channel_id))?;
+    let channel = channels.get(channel_id).await.ok_or_else(|| {
+        anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
+    })?;
 
     let target = ChannelTarget {
         user_id: user_id.to_string(),

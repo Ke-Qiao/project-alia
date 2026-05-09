@@ -1,8 +1,8 @@
 #![cfg(feature = "cache-semantic")]
 
+use alia_server::providers::CacheBackend;
 use alia_server::providers::adapter::{CacheEntry, CacheFilter};
 use alia_server::providers::cache::two_layer::TwoLayerCache;
-use alia_server::providers::CacheBackend;
 use uuid::Uuid;
 
 #[tokio::test]

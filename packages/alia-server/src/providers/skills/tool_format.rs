@@ -46,7 +46,10 @@ pub fn loaded_to_tool_definition(skill: &LoadedSkill, format: ToolFormat) -> For
 
 /// Convert all skills to tool definitions for a given format.
 pub fn to_tool_definitions(skills: &[skill::Model], format: ToolFormat) -> Vec<FormattedTool> {
-    skills.iter().map(|s| to_tool_definition(s, format)).collect()
+    skills
+        .iter()
+        .map(|s| to_tool_definition(s, format))
+        .collect()
 }
 
 // ========== Claude format ==========

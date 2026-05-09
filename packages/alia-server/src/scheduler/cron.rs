@@ -17,16 +17,16 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use cron::Schedule;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::condition::ConditionRegistry;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::providers::adapter::{
     EventSubscription, ScheduleConfig, ScheduledTask, SchedulerBackend, TaskFilter, TaskPatch,
 };
-use super::condition::ConditionRegistry;
 
 /// Internal task state tracking next run time and retry count
 #[derive(Debug, Clone)]
@@ -284,7 +284,8 @@ impl CronScheduler {
         match (event, pattern) {
             (serde_json::Value::Object(ev), serde_json::Value::Object(pat)) => {
                 pat.iter().all(|(k, v)| {
-                    ev.get(k).map_or(false, |ev_v| Self::matches_pattern(ev_v, v))
+                    ev.get(k)
+                        .map_or(false, |ev_v| Self::matches_pattern(ev_v, v))
                 })
             }
             (ev, pat) => ev == pat,
@@ -326,7 +327,9 @@ impl CronScheduler {
     ) {
         let task_info = {
             let tasks = tasks.read().unwrap();
-            tasks.get(&task_id).map(|s| (s.task.name.clone(), s.task.action.clone()))
+            tasks
+                .get(&task_id)
+                .map(|s| (s.task.name.clone(), s.task.action.clone()))
         };
 
         let Some((task_name, action)) = task_info else {
@@ -400,7 +403,7 @@ impl CronScheduler {
         };
 
         let result = Self::run_action(&action).await;
-        
+
         // Update last_triggered
         {
             let mut subs = subscriptions.write().unwrap();
@@ -442,11 +445,12 @@ impl CronScheduler {
             }
             "ai_prompt" => {
                 // TODO: Dispatch to LLM
-                let prompt = action
-                    .get("prompt")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                tracing::info!(action = "ai_prompt", prompt_len = prompt.len(), "would execute AI prompt");
+                let prompt = action.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+                tracing::info!(
+                    action = "ai_prompt",
+                    prompt_len = prompt.len(),
+                    "would execute AI prompt"
+                );
                 Ok(serde_json::json!({"prompt_len": prompt.len(), "status": "not_implemented"}))
             }
             _ => {
@@ -501,7 +505,14 @@ impl ModuleLifecycle for CronScheduler {
         let cancel_clone = cancel_token.clone();
         let conditions_clone = self.conditions.clone();
         tokio::spawn(async move {
-            Self::tick_loop(tasks_clone, action_tx_clone, cancel_clone, 1, conditions_clone).await;
+            Self::tick_loop(
+                tasks_clone,
+                action_tx_clone,
+                cancel_clone,
+                1,
+                conditions_clone,
+            )
+            .await;
         });
 
         // Start event loop

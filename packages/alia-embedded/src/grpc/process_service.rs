@@ -4,9 +4,9 @@ use tonic::{Request, Response, Status};
 
 use alia_proto::process::process_manager_server::ProcessManager as ProcessManagerTrait;
 use alia_proto::process::{
-    ListProcessesRequest, ListProcessesResponse, ProcessInfo, ProcessOutput,
-    RestartProcessRequest, RestartProcessResponse, StartProcessRequest, StartProcessResponse,
-    StopProcessRequest, StopProcessResponse, StreamOutputRequest,
+    ListProcessesRequest, ListProcessesResponse, ProcessInfo, ProcessOutput, RestartProcessRequest,
+    RestartProcessResponse, StartProcessRequest, StartProcessResponse, StopProcessRequest,
+    StopProcessResponse, StreamOutputRequest,
 };
 
 use crate::process::{self, ProcessManager};
@@ -97,8 +97,7 @@ impl ProcessManagerTrait for ProcessManagerService {
         Ok(Response::new(ListProcessesResponse { processes }))
     }
 
-    type StreamOutputStream =
-        tokio_stream::wrappers::ReceiverStream<Result<ProcessOutput, Status>>;
+    type StreamOutputStream = tokio_stream::wrappers::ReceiverStream<Result<ProcessOutput, Status>>;
 
     async fn stream_output(
         &self,

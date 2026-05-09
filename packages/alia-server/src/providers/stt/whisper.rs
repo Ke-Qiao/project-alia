@@ -76,26 +76,29 @@ impl ModuleLifecycle for WhisperCppStt {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.endpoint = server_config.ai.whisper_cpp_endpoint.clone();
-        
+
         tracing::info!(endpoint = %config.endpoint, "Whisper STT initialized");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
-        
+
         // Try to connect to whisper.cpp server
-        match self.client
+        match self
+            .client
             .get(format!("{}/health", config.endpoint))
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
         {
             Ok(resp) if resp.status().is_success() => ModuleHealth::Healthy,
-            Ok(resp) => ModuleHealth::Unhealthy(format!("Whisper returned status {}", resp.status())),
+            Ok(resp) => {
+                ModuleHealth::Unhealthy(format!("Whisper returned status {}", resp.status()))
+            }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Whisper: {}", e)),
         }
     }
@@ -105,7 +108,7 @@ impl ModuleLifecycle for WhisperCppStt {
 impl SttAdapter for WhisperCppStt {
     async fn transcribe(&self, audio: &[u8], encoding: AudioEncoding) -> anyhow::Result<String> {
         let config = self.config.read().await;
-        
+
         let form = reqwest::multipart::Form::new()
             .part(
                 "file",
@@ -116,7 +119,8 @@ impl SttAdapter for WhisperCppStt {
             .text("language", config.language.clone())
             .text("response_format", "json");
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/inference", config.endpoint))
             .multipart(form)
             .send()
@@ -139,14 +143,14 @@ impl SttAdapter for WhisperCppStt {
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<TranscribeChunk>> + Send>>> {
         let config = self.config.read().await.clone();
         let client = self.client.clone();
-        
+
         let stream = async_stream::stream! {
             let mut audio_stream = audio_stream;
             let mut accumulated = Vec::new();
-            
+
             while let Some(chunk) = audio_stream.next().await {
                 accumulated.extend(chunk);
-                
+
                 // Process audio in chunks (e.g., every ~2 seconds of audio)
                 // For 16kHz 16-bit mono: 2 seconds = 64000 bytes
                 if accumulated.len() >= 64000 {
@@ -183,11 +187,11 @@ impl SttAdapter for WhisperCppStt {
                             yield Err(anyhow::anyhow!("Request error: {}", e));
                         }
                     }
-                    
+
                     accumulated.clear();
                 }
             }
-            
+
             // Process remaining audio
             if !accumulated.is_empty() {
                 let form = reqwest::multipart::Form::new()
@@ -225,7 +229,7 @@ impl SttAdapter for WhisperCppStt {
                 }
             }
         };
-        
+
         Ok(Box::pin(stream))
     }
 }

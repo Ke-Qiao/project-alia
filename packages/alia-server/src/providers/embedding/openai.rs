@@ -76,12 +76,12 @@ impl ModuleLifecycle for OpenAiEmbedding {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
-        
+
         let mut config = self.config.write().await;
         config.api_key = server_config.ai.openai_api_key.clone();
         config.base_url = server_config.ai.openai_base_url.clone();
         config.model = server_config.ai.openai_embedding_model.clone();
-        
+
         // Set dimension based on model
         config.dimension = match config.model.as_str() {
             "text-embedding-3-small" => 1536,
@@ -89,11 +89,11 @@ impl ModuleLifecycle for OpenAiEmbedding {
             "text-embedding-ada-002" => 1536,
             _ => 1536, // default
         };
-        
+
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured for embedding");
         }
-        
+
         tracing::info!(model = %config.model, dimension = config.dimension, "OpenAI Embedding initialized");
         Ok(())
     }
@@ -114,9 +114,9 @@ impl EmbeddingAdapter for OpenAiEmbedding {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let config = self.config.read().await;
-        
+
         let request = EmbedRequest {
             model: config.model.clone(),
             input: texts.to_vec(),
@@ -127,7 +127,8 @@ impl EmbeddingAdapter for OpenAiEmbedding {
             },
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/embeddings", config.base_url))
             .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
@@ -142,7 +143,11 @@ impl EmbeddingAdapter for OpenAiEmbedding {
         }
 
         let embed_response: EmbedResponse = response.json().await?;
-        Ok(embed_response.data.into_iter().map(|d| d.embedding).collect())
+        Ok(embed_response
+            .data
+            .into_iter()
+            .map(|d| d.embedding)
+            .collect())
     }
 
     fn dimension(&self) -> usize {

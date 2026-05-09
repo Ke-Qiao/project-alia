@@ -31,7 +31,9 @@ async fn create_rule(
     _auth: AuthUser,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<AutomationRule>> {
-    Err(crate::error::AppError::Internal(anyhow::anyhow!("Not implemented")))
+    Err(crate::error::AppError::Internal(anyhow::anyhow!(
+        "Not implemented"
+    )))
 }
 
 async fn get_rule(
@@ -70,6 +72,9 @@ async fn toggle_rule(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/rules", get(list_rules).post(create_rule))
-        .route("/rules/{id}", get(get_rule).put(update_rule).delete(delete_rule))
+        .route(
+            "/rules/{id}",
+            get(get_rule).put(update_rule).delete(delete_rule),
+        )
         .route("/rules/{id}/toggle", post(toggle_rule))
 }

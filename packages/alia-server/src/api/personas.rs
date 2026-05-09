@@ -1,9 +1,7 @@
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -169,7 +167,9 @@ async fn create_persona(
     }
 
     if body.name.is_empty() || body.display_name.is_empty() {
-        return Err(AppError::Validation("name and display_name are required".into()));
+        return Err(AppError::Validation(
+            "name and display_name are required".into(),
+        ));
     }
 
     let now = chrono::Utc::now();
@@ -412,10 +412,7 @@ async fn update_my_persona(
 }
 
 /// Helper: find the user's active persona or fallback to first system persona
-async fn find_user_active_persona(
-    state: &AppState,
-    user_id: Uuid,
-) -> Result<persona::Model> {
+async fn find_user_active_persona(state: &AppState, user_id: Uuid) -> Result<persona::Model> {
     // Check explicit selection
     if let Some(active) = user_active_persona::Entity::find_by_id(user_id)
         .one(&state.db)

@@ -10,9 +10,9 @@ pub use engine::SimpleRuleEngine;
 
 use async_trait::async_trait;
 
-use crate::providers::adapter::{RuleAction, RuleEvaluator};
 use crate::event::ServerEvent;
 use crate::module::ModuleLifecycle;
+use crate::providers::adapter::{RuleAction, RuleEvaluator};
 
 pub struct NoopRuleEngine;
 
