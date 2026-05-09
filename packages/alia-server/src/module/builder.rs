@@ -8,12 +8,15 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
+use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::module::factory;
+use crate::scheduler::ConditionRegistry;
+use crate::scheduler::evaluators::{SensorConditionEvaluator, TimeRangeConditionEvaluator};
 use crate::state::AppState;
 use crate::auth::JwtKeys;
 
@@ -150,6 +153,9 @@ impl ServerBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<AppState> {
+        // Create sensor registry early so tools and modules can reference it
+        let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
+
         let base_ctx = ModuleContext {
             db: self.db.clone(),
             config: self.config.clone(),
@@ -192,12 +198,23 @@ impl ServerBuilder {
         let mut rule_engine = self
             .rule_engine
             .unwrap_or_else(|| factory::create_rule_engine(&self.config.modules.rule_engine));
-        let mut scheduler = self
-            .scheduler
-            .unwrap_or_else(|| factory::create_scheduler(&self.config.modules.scheduler));
-        let mut tools = self
-            .tools
-            .unwrap_or_else(|| factory::create_tools(&self.config.modules.tools));
+
+        // Build condition registry with built-in evaluators
+        let condition_registry = Arc::new(ConditionRegistry::new());
+        condition_registry
+            .register(Arc::new(SensorConditionEvaluator::new(sensor_registry.clone())))
+            .await;
+        condition_registry
+            .register(Arc::new(TimeRangeConditionEvaluator))
+            .await;
+
+        let mut scheduler = self.scheduler.unwrap_or_else(|| {
+            factory::create_scheduler(&self.config.modules.scheduler, condition_registry.clone())
+        });
+
+        let mut tools = self.tools.unwrap_or_else(|| {
+            factory::create_tools_with_sensors(&self.config.modules.tools, sensor_registry.clone())
+        });
 
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
@@ -300,11 +317,16 @@ impl ServerBuilder {
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);
 
+        // Start sensor auto-cleanup
+        sensor_registry.spawn_cleanup_loop(self.cancel_token.clone());
+
         let state = AppState {
             db: self.db,
             channels: channel_registry,
             event_bus: self.event_bus,
             modules: Arc::new(registry),
+            sensors: sensor_registry,
+            conditions: condition_registry,
             config: self.config,
             jwt_keys: Arc::new(jwt_keys),
             cancel_token: self.cancel_token,
@@ -315,6 +337,7 @@ impl ServerBuilder {
             &state.event_bus,
             state.modules.clone(),
             state.channels.clone(),
+            state.sensors.clone(),
             state.cancel_token.clone(),
         );
 

@@ -26,6 +26,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::providers::adapter::{
     EventSubscription, ScheduleConfig, ScheduledTask, SchedulerBackend, TaskFilter, TaskPatch,
 };
+use super::condition::ConditionRegistry;
 
 /// Internal task state tracking next run time and retry count
 #[derive(Debug, Clone)]
@@ -131,6 +132,7 @@ pub struct CronScheduler {
     action_tx: Mutex<Option<mpsc::Sender<ActionMessage>>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     event_bus: Mutex<Option<EventBus>>,
+    conditions: Arc<ConditionRegistry>,
 }
 
 impl CronScheduler {
@@ -141,7 +143,25 @@ impl CronScheduler {
             action_tx: Mutex::new(None),
             cancel_token: Mutex::new(None),
             event_bus: Mutex::new(None),
+            conditions: Arc::new(ConditionRegistry::new()),
         }
+    }
+
+    /// Create a scheduler with a pre-configured condition registry.
+    pub fn with_conditions(conditions: Arc<ConditionRegistry>) -> Self {
+        Self {
+            tasks: Arc::new(RwLock::new(HashMap::new())),
+            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            action_tx: Mutex::new(None),
+            cancel_token: Mutex::new(None),
+            event_bus: Mutex::new(None),
+            conditions,
+        }
+    }
+
+    /// Get a reference to the condition registry (for plugin registration).
+    pub fn condition_registry(&self) -> &Arc<ConditionRegistry> {
+        &self.conditions
     }
 
     /// Background tick loop: checks for due tasks
@@ -150,6 +170,7 @@ impl CronScheduler {
         action_tx: mpsc::Sender<ActionMessage>,
         cancel_token: CancellationToken,
         tick_interval_sec: u64,
+        conditions: Arc<ConditionRegistry>,
     ) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(tick_interval_sec));
 
@@ -161,20 +182,23 @@ impl CronScheduler {
                 }
                 _ = interval.tick() => {
                     let now = Utc::now();
-                    let due_tasks: Vec<Uuid> = {
+                    // Collect time-due candidates
+                    let candidates: Vec<(Uuid, serde_json::Value)> = {
                         let tasks = tasks.read().unwrap();
                         tasks.iter()
                             .filter(|(_, state)| {
                                 state.task.enabled
                                     && state.next_run.map_or(false, |nr| nr <= now)
                             })
-                            .map(|(id, _)| *id)
+                            .map(|(id, state)| (*id, state.task.conditions.clone()))
                             .collect()
                     };
 
-                    for task_id in due_tasks {
-                        if action_tx.send(ActionMessage::Task(task_id)).await.is_err() {
-                            tracing::error!("failed to send task action message");
+                    for (task_id, task_conditions) in candidates {
+                        if conditions.evaluate_all(&task_conditions).await {
+                            if action_tx.send(ActionMessage::Task(task_id)).await.is_err() {
+                                tracing::error!("failed to send task action message");
+                            }
                         }
                     }
                 }
@@ -475,8 +499,9 @@ impl ModuleLifecycle for CronScheduler {
         let tasks_clone = self.tasks.clone();
         let action_tx_clone = action_tx.clone();
         let cancel_clone = cancel_token.clone();
+        let conditions_clone = self.conditions.clone();
         tokio::spawn(async move {
-            Self::tick_loop(tasks_clone, action_tx_clone, cancel_clone, 1).await;
+            Self::tick_loop(tasks_clone, action_tx_clone, cancel_clone, 1, conditions_clone).await;
         });
 
         // Start event loop

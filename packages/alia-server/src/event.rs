@@ -105,6 +105,13 @@ pub enum ServerEvent {
         description: String,
         timeout_sec: u32,
     },
+
+    // Sensor events
+    SensorDataIngested {
+        sensor_id: String,
+        source: String,
+        value: serde_json::Value,
+    },
 }
 
 /// Event bus wrapping tokio broadcast channel

@@ -3,8 +3,10 @@
 //! This module provides:
 //! - `NoopToolRegistry`: A no-op implementation for disabled tools
 //! - `BuiltinToolRegistry`: Full implementation with built-in tools and plugin support
+//! - Sensor tools: `sensor_read`, `sensor_list`
 
 pub mod builtin;
+pub mod sensor;
 
 pub use builtin::BuiltinToolRegistry;
 

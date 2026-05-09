@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend,
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
+use crate::providers::sensor::SensorRegistry;
 use crate::channels::adapter::ChannelAdapter;
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
@@ -26,7 +29,7 @@ use crate::providers::router::MultiLayerRouter;
 use crate::providers::router::PassthroughRouter;
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
 use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
-use crate::scheduler::{NoopScheduler, CronScheduler};
+use crate::scheduler::{ConditionRegistry, NoopScheduler, CronScheduler};
 use crate::tools::{NoopToolRegistry, BuiltinToolRegistry};
 
 #[cfg(feature = "llm-openai")]
@@ -255,11 +258,11 @@ pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
     }
 }
 
-pub fn create_scheduler(name: &str) -> Box<dyn SchedulerBackend> {
+pub fn create_scheduler(name: &str, conditions: Arc<ConditionRegistry>) -> Box<dyn SchedulerBackend> {
     match name {
         "cron" => {
             tracing::info!(module = name, "creating scheduler (CronScheduler)");
-            Box::new(CronScheduler::new())
+            Box::new(CronScheduler::with_conditions(conditions))
         }
         "noop" => {
             tracing::info!(module = name, "creating scheduler (noop)");
@@ -286,6 +289,17 @@ pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
             tracing::warn!(module = name, "unknown tool registry, using noop");
             Box::new(NoopToolRegistry)
         }
+    }
+}
+
+/// Create tools with sensor registry integration (includes sensor_read + sensor_list).
+pub fn create_tools_with_sensors(name: &str, sensors: Arc<SensorRegistry>) -> Box<dyn ToolRegistry> {
+    match name {
+        "builtin" => {
+            tracing::info!(module = name, "creating tool registry with sensors (BuiltinToolRegistry)");
+            Box::new(BuiltinToolRegistry::with_sensors(sensors))
+        }
+        _ => create_tools(name),
     }
 }
 

@@ -1,5 +1,12 @@
 #![allow(dead_code)]
 
+// TODO(sensor): Implement sensor reporting system:
+//   - Add a `sensor` module that collects readings from hardware sensors (temperature, humidity, motion, etc.)
+//   - Report sensor data to alia-server via gRPC `SensorData` channel events
+//   - Support plugin-defined sensors (plugins can register custom sensor types)
+//   - Periodic reporting interval configurable per sensor
+//   - Batch multiple readings in a single gRPC call for efficiency
+
 mod binding;
 mod config;
 mod grpc;

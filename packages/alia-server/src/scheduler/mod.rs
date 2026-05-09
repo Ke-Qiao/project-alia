@@ -1,11 +1,19 @@
-//! Scheduler module: time-based task scheduling and event subscriptions.
+//! Scheduler module: time-based task scheduling, event subscriptions, and condition evaluation.
 //!
 //! This module provides:
 //! - `NoopScheduler`: A no-op implementation for disabled scheduler
 //! - `CronScheduler`: A full implementation with cron, one-time, and interval scheduling
+//! - `ConditionRegistry` + `ConditionEvaluator`: Extensible condition evaluation
+//!   (built-in: sensor, time_range; plugins can register custom evaluators at runtime)
 
+pub mod condition;
 mod cron;
+pub mod evaluators;
 
+pub use condition::ConditionRegistry;
+// Re-exported for plugin implementors
+#[allow(unused_imports)]
+pub use condition::ConditionEvaluator;
 pub use cron::CronScheduler;
 
 use async_trait::async_trait;

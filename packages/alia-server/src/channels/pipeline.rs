@@ -18,6 +18,7 @@ use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     AudioEncoding, CachedResponse, ChatMessage, RouteDecision, RouterInput,
 };
+use crate::providers::sensor::SensorRegistry;
 
 /// Spawn the pipeline processing loop.
 ///
@@ -28,6 +29,7 @@ pub fn spawn_pipeline(
     event_bus: &EventBus,
     modules: Arc<ModuleRegistry>,
     channels: Arc<ChannelRegistry>,
+    sensors: Arc<SensorRegistry>,
     cancel_token: CancellationToken,
 ) {
     let mut rx = event_bus.subscribe();
@@ -44,9 +46,10 @@ pub fn spawn_pipeline(
                         Ok(ServerEvent::ChannelInput(event)) => {
                             let modules = modules.clone();
                             let channels = channels.clone();
+                            let sensors = sensors.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors).await {
                                     tracing::error!(error = ?e, "pipeline processing failed");
                                 }
                             });
@@ -73,6 +76,7 @@ async fn process_event(
     event: ChannelEvent,
     modules: &ModuleRegistry,
     channels: &ChannelRegistry,
+    sensors: &SensorRegistry,
 ) -> anyhow::Result<()> {
     match event {
         ChannelEvent::TextMessage {
@@ -118,8 +122,20 @@ async fn process_event(
             )
             .await
         }
-        ChannelEvent::SensorData { .. } | ChannelEvent::StatusChange { .. } => {
-            // Sensor and status events don't go through the LLM pipeline
+        ChannelEvent::SensorData { channel_id, sensor_type, payload } => {
+            // Ingest sensor data into the registry
+            use crate::providers::sensor::SensorReading;
+            let sensor_id = format!("{}:{}", channel_id, sensor_type);
+            let reading = SensorReading {
+                sensor_id,
+                value: payload,
+                timestamp: chrono::Utc::now(),
+                quality: 1.0,
+            };
+            sensors.ingest(reading).await;
+            Ok(())
+        }
+        ChannelEvent::StatusChange { .. } => {
             Ok(())
         }
     }

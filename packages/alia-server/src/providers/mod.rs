@@ -6,6 +6,7 @@ pub mod meditation;
 pub mod memory;
 pub mod persona;
 pub mod router;
+pub mod sensor;
 pub mod skills;
 pub mod stt;
 pub mod tts;

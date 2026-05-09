@@ -21,6 +21,8 @@ use chrono::Utc;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
+use crate::providers::sensor::SensorRegistry;
+use crate::tools::sensor::{SensorListTool, SensorReadTool};
 
 /// Trait for implementing tool executors
 #[async_trait]
@@ -52,6 +54,20 @@ impl BuiltinToolRegistry {
         }
     }
 
+    /// Create with sensor registry integration (sensor_read + sensor_list tools).
+    pub fn with_sensors(sensors: Arc<SensorRegistry>) -> Self {
+        let mut this = Self::new();
+        this.builtins.insert(
+            "sensor_read".to_string(),
+            Arc::new(SensorReadTool::new(sensors.clone())),
+        );
+        this.builtins.insert(
+            "sensor_list".to_string(),
+            Arc::new(SensorListTool::new(sensors)),
+        );
+        this
+    }
+
     fn register_builtins(&mut self) {
         // get_current_time
         self.builtins
@@ -76,6 +92,12 @@ impl BuiltinToolRegistry {
         // device_control
         self.builtins
             .insert("device_control".to_string(), Arc::new(DeviceControl));
+    }
+
+    /// Register an additional tool executor at runtime (for tools that need external state).
+    pub fn register_executor(&mut self, executor: Arc<dyn ToolExecutor>) {
+        let name = executor.definition().name;
+        self.builtins.insert(name, executor);
     }
 }
 
