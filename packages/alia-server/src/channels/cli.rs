@@ -65,7 +65,7 @@ impl ModuleLifecycle for CliChannel {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        let _event_bus = self.event_bus.clone(); // TODO: publish ChannelEvent to pipeline
+        let event_bus = self.event_bus.clone();
         let channel_id = self.id.clone();
         let cancel = self
             .cancel_token
@@ -134,8 +134,7 @@ impl ModuleLifecycle for CliChannel {
                             user_id: "cli-user".into(),
                             text,
                         };
-                        // TODO: full pipeline integration — publish to EventBus
-                        tracing::debug!(?event, "cli channel input");
+                        event_bus.publish(crate::event::ServerEvent::ChannelInput(event));
                     }
                     Err(ReadlineError::Interrupted) => {
                         // Ctrl+C — cancel current line, continue loop

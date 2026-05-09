@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use serde::Serialize;
 
 use crate::module::ModuleLifecycle;
 
@@ -31,7 +32,7 @@ pub struct ChannelAction {
 }
 
 /// Audio payload exchanged between channels and the AI pipeline.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AudioPayload {
     pub data: Vec<u8>,
     pub sample_rate: u32,
@@ -39,14 +40,14 @@ pub struct AudioPayload {
     pub format: AudioFormat,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AudioFormat {
     Pcm16,
     Opus,
 }
 
 /// Channel status.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ChannelStatus {
     Connected,
     Disconnected { reason: String },
@@ -54,7 +55,7 @@ pub enum ChannelStatus {
 }
 
 /// Inbound event from a channel into the AI pipeline.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ChannelEvent {
     TextMessage {
         channel_id: String,

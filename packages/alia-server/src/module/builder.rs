@@ -8,7 +8,7 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
-use crate::channels::{ChannelAdapter, ChannelRegistry};
+use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
@@ -309,6 +309,14 @@ impl ServerBuilder {
             jwt_keys: Arc::new(jwt_keys),
             cancel_token: self.cancel_token,
         };
+
+        // Spawn the Channel → AI Pipeline processing loop
+        spawn_pipeline(
+            &state.event_bus,
+            state.modules.clone(),
+            state.channels.clone(),
+            state.cancel_token.clone(),
+        );
 
         Ok(state)
     }

@@ -3,10 +3,15 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::channels::adapter::ChannelEvent;
+
 /// Internal event types
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ServerEvent {
+    // Channel pipeline events
+    ChannelInput(ChannelEvent),
+
     // Device events
     DeviceOnline {
         device_id: String,

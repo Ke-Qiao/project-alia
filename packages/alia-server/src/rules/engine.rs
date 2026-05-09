@@ -80,6 +80,7 @@ impl SimpleRuleEngine {
             ServerEvent::ToolCallStarted { .. } => "tool_call_started",
             ServerEvent::ToolCallCompleted { .. } => "tool_call_completed",
             ServerEvent::ToolConfirmationRequired { .. } => "tool_confirmation_required",
+            ServerEvent::ChannelInput(_) => "channel_input",
         }
     }
 
