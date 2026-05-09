@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
 use crate::event::EventBus;
+use crate::providers::adapter::SchedulerBackend;
 
 /// Health status of a module
 #[derive(Debug, Clone)]
@@ -21,6 +22,8 @@ pub struct ModuleContext {
     pub config: Arc<ServerConfig>,
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
+    /// Scheduler reference, available for modules initialized after the scheduler.
+    pub scheduler: Option<Arc<dyn SchedulerBackend>>,
 }
 
 /// Base trait for all pluggable modules

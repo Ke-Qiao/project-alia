@@ -46,6 +46,7 @@ ollama_endpoint = "http://localhost:11434"
 ollama_model = "qwen2.5:7b"
 router_model = "qwen3:4b"
 router_temperature = 0.1
+router_timeout_sec = 5
 embedding_adapter = "ollama"
 ollama_embedding_model = "bge-m3"
 openai_embedding_model = "text-embedding-3-small"

@@ -75,6 +75,10 @@ fn default_tools_module() -> String {
     "builtin".to_string()
 }
 
+fn default_router_timeout() -> u64 {
+    5
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AiSection {
     pub llm_adapter: String,
@@ -85,6 +89,8 @@ pub struct AiSection {
     pub ollama_model: String,
     pub router_model: String,
     pub router_temperature: f32,
+    #[serde(default = "default_router_timeout")]
+    pub router_timeout_sec: u64,
     pub embedding_adapter: String,
     pub ollama_embedding_model: String,
     pub openai_embedding_model: String,

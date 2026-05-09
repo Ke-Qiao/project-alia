@@ -144,11 +144,12 @@ impl ServerBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<AppState> {
-        let ctx = ModuleContext {
+        let base_ctx = ModuleContext {
             db: self.db.clone(),
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
+            scheduler: None,
         };
 
         // Create modules: use override or create from config
@@ -192,8 +193,21 @@ impl ServerBuilder {
             .tools
             .unwrap_or_else(|| factory::create_tools(&self.config.modules.tools));
 
-        // Initialize modules in dependency order
+        // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
+        scheduler.init(&base_ctx).await?;
+        let scheduler: Arc<dyn SchedulerBackend> = Arc::from(scheduler);
+
+        // Context with scheduler for modules that need it
+        let ctx = ModuleContext {
+            db: self.db.clone(),
+            config: self.config.clone(),
+            event_bus: self.event_bus.clone(),
+            cancel_token: self.cancel_token.clone(),
+            scheduler: Some(scheduler.clone()),
+        };
+
+        // Initialize remaining modules in dependency order
         embedding.init(&ctx).await?;
         llm.init(&ctx).await?;
         stt.init(&ctx).await?;
@@ -206,7 +220,6 @@ impl ServerBuilder {
         meditation.init(&ctx).await?;
         rule_engine.init(&ctx).await?;
         tools.init(&ctx).await?;
-        scheduler.init(&ctx).await?;
 
         // Initialize extensions
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
@@ -228,13 +241,14 @@ impl ServerBuilder {
             meditation: Arc::from(meditation),
             router: Arc::from(router),
             rule_engine: Arc::from(rule_engine),
-            scheduler: Arc::from(scheduler),
+            scheduler,
             tools: Arc::from(tools),
             extensions,
         };
 
-        // Start modules
+        // Start modules (scheduler first since it was init'd first)
         tracing::info!("starting modules...");
+        registry.scheduler.start().await?;
         registry.llm.start().await?;
         registry.stt.start().await?;
         registry.tts.start().await?;
@@ -246,7 +260,6 @@ impl ServerBuilder {
         registry.router.start().await?;
         registry.meditation.start().await?;
         registry.rule_engine.start().await?;
-        registry.scheduler.start().await?;
         registry.tools.start().await?;
 
         // Build JWT keys

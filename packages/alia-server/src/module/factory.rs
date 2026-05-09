@@ -6,10 +6,10 @@ use crate::providers::adapter::{
 use crate::providers::cache::{DbCache, NoopCache, TwoLayerCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::providers::meditation::NoopMeditation;
+use crate::providers::meditation::{NoopMeditation, ScheduledMeditation};
 use crate::providers::memory::{GraphRagMemory, NoopMemory, SimpleMemory};
 use crate::providers::persona::{NoopPersona, TemplatePersona};
-use crate::providers::router::PassthroughRouter;
+use crate::providers::router::{MultiLayerRouter, PassthroughRouter};
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
 use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
 use crate::scheduler::{NoopScheduler, CronScheduler};
@@ -186,14 +186,39 @@ pub fn create_persona(name: &str) -> Box<dyn PersonaProvider> {
     }
 }
 
-pub fn create_meditation(_name: &str) -> Box<dyn MeditationStrategy> {
-    tracing::info!(module = _name, "creating meditation strategy (noop placeholder)");
-    Box::new(NoopMeditation)
+pub fn create_meditation(name: &str) -> Box<dyn MeditationStrategy> {
+    match name {
+        #[cfg(feature = "meditation")]
+        "scheduled" => {
+            tracing::info!(module = name, "creating meditation strategy (ScheduledMeditation)");
+            Box::new(ScheduledMeditation::new())
+        }
+        "noop" => {
+            tracing::info!(module = name, "creating meditation strategy (noop)");
+            Box::new(NoopMeditation)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown meditation strategy, using noop");
+            Box::new(NoopMeditation)
+        }
+    }
 }
 
-pub fn create_router(_name: &str) -> Box<dyn RouterStrategy> {
-    tracing::info!(module = _name, "creating router strategy (passthrough)");
-    Box::new(PassthroughRouter)
+pub fn create_router(name: &str) -> Box<dyn RouterStrategy> {
+    match name {
+        "multi_layer" => {
+            tracing::info!(module = name, "creating router strategy (MultiLayerRouter)");
+            Box::new(MultiLayerRouter::new())
+        }
+        "passthrough" => {
+            tracing::info!(module = name, "creating router strategy (passthrough)");
+            Box::new(PassthroughRouter)
+        }
+        _ => {
+            tracing::warn!(module = name, "unknown router strategy, using passthrough");
+            Box::new(PassthroughRouter)
+        }
+    }
 }
 
 pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {

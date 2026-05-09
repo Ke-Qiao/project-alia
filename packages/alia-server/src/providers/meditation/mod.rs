@@ -1,8 +1,12 @@
+mod scheduled;
+
 use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::providers::adapter::{MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask};
 use crate::module::ModuleLifecycle;
+
+pub use scheduled::ScheduledMeditation;
 
 pub struct NoopMeditation;
 
