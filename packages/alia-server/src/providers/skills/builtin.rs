@@ -140,7 +140,7 @@ impl BuiltinSkills {
     }
 
     /// Calculate match score between intent and skill keywords
-    fn calculate_match_score(intent: &str, skill: &LoadedSkill) -> f32 {
+    pub fn calculate_match_score(intent: &str, skill: &LoadedSkill) -> f32 {
         let intent_lower = intent.to_lowercase();
         let mut matched_keywords = 0;
         let mut total_weight = 0.0;
@@ -399,7 +399,7 @@ impl SkillProvider for BuiltinSkills {
 }
 
 /// Generate seed data for all default built-in skills
-fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
+pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
     let now = Utc::now();
 
     vec![
@@ -664,55 +664,4 @@ fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             updated_at: Set(now),
         },
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Test that seed data generates valid skill models
-    #[test]
-    fn test_seed_data() {
-        let seeds = builtin_skill_seeds();
-        assert_eq!(seeds.len(), 8);
-
-        // Verify all expected skills are present
-        let names: Vec<String> = seeds
-            .iter()
-            .map(|s| s.name.clone().unwrap())
-            .collect();
-        assert!(names.contains(&"smart_light_control".to_string()));
-        assert!(names.contains(&"smart_ac_control".to_string()));
-        assert!(names.contains(&"smart_appliance".to_string()));
-        assert!(names.contains(&"timer_alarm".to_string()));
-        assert!(names.contains(&"weather_query".to_string()));
-        assert!(names.contains(&"device_status".to_string()));
-        assert!(names.contains(&"memory_query".to_string()));
-        assert!(names.contains(&"rule_management".to_string()));
-    }
-
-    /// Test keyword match scoring
-    #[test]
-    fn test_match_scoring() {
-        let skill = LoadedSkill {
-            info: SkillInfo {
-                name: "test".into(),
-                display_name: "Test".into(),
-                description: "Test skill".into(),
-                category: "test".into(),
-            },
-            keywords: vec!["灯".into(), "开灯".into(), "灯光".into()],
-            param_schema: serde_json::json!({}),
-            execution_config: None,
-            prompt_template: None,
-            cacheable: false,
-            priority: 0,
-        };
-
-        let score = BuiltinSkills::calculate_match_score("帮我开灯", &skill);
-        assert!(score > 0.0, "should match '开灯'");
-
-        let score = BuiltinSkills::calculate_match_score("今天心情不错", &skill);
-        assert_eq!(score, 0.0, "should not match irrelevant text");
-    }
 }

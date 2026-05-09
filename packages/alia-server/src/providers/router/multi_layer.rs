@@ -48,40 +48,40 @@ struct OllamaResponse {
 // ── Classification result ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
-struct Classification {
-    route: String,
+pub struct Classification {
+    pub route: String,
     #[serde(default)]
-    skill_name: Option<String>,
+    pub skill_name: Option<String>,
     #[serde(default)]
-    params: Option<serde_json::Value>,
+    pub params: Option<serde_json::Value>,
     #[serde(default)]
-    confidence: Option<f32>,
+    pub confidence: Option<f32>,
     #[serde(default)]
-    reasoning: Option<String>,
+    pub reasoning: Option<String>,
 }
 
 // ── Config ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-struct RouterConfig {
-    ollama_endpoint: String,
-    model: String,
-    temperature: f32,
-    timeout_sec: u64,
-    local_llm_enabled: bool,
-    remote_llm_enabled: bool,
+pub struct RouterConfig {
+    pub ollama_endpoint: String,
+    pub model: String,
+    pub temperature: f32,
+    pub timeout_sec: u64,
+    pub local_llm_enabled: bool,
+    pub remote_llm_enabled: bool,
 }
 
 /// Which LLM tiers are available for routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LlmMode {
+pub enum LlmMode {
     BothEnabled,
     LocalOnly,
     RemoteOnly,
 }
 
 impl RouterConfig {
-    fn llm_mode(&self) -> LlmMode {
+    pub fn llm_mode(&self) -> LlmMode {
         match (self.local_llm_enabled, self.remote_llm_enabled) {
             (true, true) => LlmMode::BothEnabled,
             (true, false) => LlmMode::LocalOnly,
@@ -349,7 +349,7 @@ impl MultiLayerRouter {
 
     /// Convert a Classification into a RouteDecision, attaching the appropriate
     /// system prompt for the target LLM based on which tiers are enabled.
-    fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
+    pub fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
         match classification.route.as_str() {
             "skill" => {
                 let skill_name = classification
@@ -487,7 +487,7 @@ impl RouterStrategy for MultiLayerRouter {
 
 /// Strip optional markdown code fences from LLM output.
 /// Handles ```json\n...\n```, ```\n...\n```, and bare JSON.
-fn strip_code_fences(s: &str) -> &str {
+pub fn strip_code_fences(s: &str) -> &str {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```") {
         // Skip optional language tag on first line
@@ -500,154 +500,5 @@ fn strip_code_fences(s: &str) -> &str {
         rest.strip_suffix("```").unwrap_or(rest).trim()
     } else {
         trimmed
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_strip_code_fences_bare_json() {
-        let input = r#"{"route": "remote_llm", "confidence": 0.9}"#;
-        assert_eq!(strip_code_fences(input), input);
-    }
-
-    #[test]
-    fn test_strip_code_fences_with_json_tag() {
-        let input = "```json\n{\"route\": \"local_llm\"}\n```";
-        assert_eq!(strip_code_fences(input), "{\"route\": \"local_llm\"}");
-    }
-
-    #[test]
-    fn test_strip_code_fences_without_tag() {
-        let input = "```\n{\"route\": \"skill\"}\n```";
-        assert_eq!(strip_code_fences(input), "{\"route\": \"skill\"}");
-    }
-
-    #[test]
-    fn test_to_decision_skill() {
-        let c = Classification {
-            route: "skill".to_string(),
-            skill_name: Some("smart_home".to_string()),
-            params: Some(serde_json::json!({"action": "turn_on", "device": "light"})),
-            confidence: Some(0.95),
-            reasoning: Some("deterministic command".to_string()),
-        };
-        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-            RouteDecision::Skill { skill_name, params } => {
-                assert_eq!(skill_name, "smart_home");
-                assert_eq!(params["action"], "turn_on");
-            }
-            other => panic!("expected Skill, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_to_decision_local_llm_both_mode() {
-        let c = Classification {
-            route: "local_llm".to_string(),
-            skill_name: None,
-            params: None,
-            confidence: Some(0.8),
-            reasoning: None,
-        };
-        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-            RouteDecision::LocalLlm { system_prompt } => {
-                let prompt = system_prompt.unwrap();
-                assert!(prompt.contains("[ESCALATE]"), "both-mode local prompt should mention escalation");
-            }
-            other => panic!("expected LocalLlm, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_to_decision_local_llm_solo_mode() {
-        let c = Classification {
-            route: "local_llm".to_string(),
-            skill_name: None,
-            params: None,
-            confidence: Some(0.8),
-            reasoning: None,
-        };
-        match MultiLayerRouter::to_decision(c, LlmMode::LocalOnly) {
-            RouteDecision::LocalLlm { system_prompt } => {
-                let prompt = system_prompt.unwrap();
-                assert!(!prompt.contains("[ESCALATE]"), "solo-mode local prompt should NOT mention escalation");
-                assert!(prompt.contains("primary and only"), "solo prompt should indicate it's the only model");
-            }
-            other => panic!("expected LocalLlm, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_to_decision_remote_llm_both_mode() {
-        let c = Classification {
-            route: "remote_llm".to_string(),
-            skill_name: None,
-            params: None,
-            confidence: Some(0.9),
-            reasoning: None,
-        };
-        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-            RouteDecision::RemoteLlm { system_prompt } => {
-                let prompt = system_prompt.unwrap();
-                assert!(prompt.contains("primary reasoning model"));
-            }
-            other => panic!("expected RemoteLlm, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_to_decision_remote_llm_solo_mode() {
-        let c = Classification {
-            route: "remote_llm".to_string(),
-            skill_name: None,
-            params: None,
-            confidence: Some(0.9),
-            reasoning: None,
-        };
-        match MultiLayerRouter::to_decision(c, LlmMode::RemoteOnly) {
-            RouteDecision::RemoteLlm { system_prompt } => {
-                let prompt = system_prompt.unwrap();
-                assert!(prompt.contains("all conversations"));
-            }
-            other => panic!("expected RemoteLlm, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_to_decision_unknown_falls_back() {
-        let c = Classification {
-            route: "unknown_thing".to_string(),
-            skill_name: None,
-            params: None,
-            confidence: None,
-            reasoning: None,
-        };
-        assert!(matches!(
-            MultiLayerRouter::to_decision(c, LlmMode::BothEnabled),
-            RouteDecision::RemoteLlm { .. }
-        ));
-    }
-
-    #[test]
-    fn test_llm_mode() {
-        let mut cfg = RouterConfig {
-            ollama_endpoint: String::new(),
-            model: String::new(),
-            temperature: 0.0,
-            timeout_sec: 5,
-            local_llm_enabled: true,
-            remote_llm_enabled: true,
-        };
-        assert_eq!(cfg.llm_mode(), LlmMode::BothEnabled);
-
-        cfg.remote_llm_enabled = false;
-        assert_eq!(cfg.llm_mode(), LlmMode::LocalOnly);
-
-        cfg.local_llm_enabled = false;
-        cfg.remote_llm_enabled = true;
-        assert_eq!(cfg.llm_mode(), LlmMode::RemoteOnly);
     }
 }

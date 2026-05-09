@@ -1,5 +1,5 @@
 #[cfg(feature = "llm-ollama")]
-mod multi_layer;
+pub mod multi_layer;
 
 use async_trait::async_trait;
 

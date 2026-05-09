@@ -9,7 +9,12 @@
     "server": "cargo run -p alia-server",
     "embedded": "cargo run -p alia-embedded",
     "dev:backend": "concurrently -k -n db,server,embedded -c blue,green,yellow \"pnpm db\" \"cargo run -p alia-server\" \"cargo run -p alia-embedded\"",
-    "dev": "concurrently -k -n db,server,embedded,frontend -c blue,green,yellow,magenta \"pnpm db\" \"cargo run -p alia-server\" \"cargo run -p alia-embedded\" \"pnpm frontend:web\""
+    "dev": "concurrently -k -n db,server,embedded,frontend -c blue,green,yellow,magenta \"pnpm db\" \"cargo run -p alia-server\" \"cargo run -p alia-embedded\" \"pnpm frontend:web\"",
+    "test": "cargo test --workspace --all-features",
+    "test:server": "cargo test -p alia-server --all-features",
+    "fmt": "cargo fmt --all",
+    "fmt:check": "cargo fmt --all -- --check",
+    "lint": "cargo clippy --workspace --all-features"
   },
   "author": "Zerlight",
   "packageManager": "pnpm@10.28.1",

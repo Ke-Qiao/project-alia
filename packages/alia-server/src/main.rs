@@ -13,27 +13,10 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
-mod providers;
-mod api;
-mod auth;
-mod channels;
-mod config;
-#[cfg(feature = "channel-embedded")]
-mod embedded;
-mod entity;
-mod error;
-mod event;
-mod module;
-mod openapi;
-mod rules;
-mod scheduler;
-mod state;
-mod tools;
-mod ws;
-
-use config::ServerConfig;
-use event::EventBus;
-use module::ServerBuilder;
+use alia_server::config::ServerConfig;
+use alia_server::event::EventBus;
+use alia_server::module::ServerBuilder;
+use alia_server::{api, openapi, ws};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

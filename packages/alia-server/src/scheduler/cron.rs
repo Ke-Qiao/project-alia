@@ -280,7 +280,7 @@ impl CronScheduler {
     }
 
     /// Simple pattern matching: checks if event contains all fields in pattern
-    fn matches_pattern(event: &serde_json::Value, pattern: &serde_json::Value) -> bool {
+    pub fn matches_pattern(event: &serde_json::Value, pattern: &serde_json::Value) -> bool {
         match (event, pattern) {
             (serde_json::Value::Object(ev), serde_json::Value::Object(pat)) => {
                 pat.iter().all(|(k, v)| {
@@ -679,42 +679,5 @@ impl SchedulerBackend for CronScheduler {
             .map(|state| state.sub.clone())
             .collect();
         Ok(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_matches_pattern() {
-        let event = serde_json::json!({
-            "type": "PluginEvent",
-            "payload": {
-                "plugin_name": "weather",
-                "event_type": "update"
-            }
-        });
-
-        // Match specific plugin
-        let pattern1 = serde_json::json!({
-            "type": "PluginEvent",
-            "payload": {
-                "plugin_name": "weather"
-            }
-        });
-        assert!(CronScheduler::matches_pattern(&event, &pattern1));
-
-        // Match any plugin event
-        let pattern2 = serde_json::json!({
-            "type": "PluginEvent"
-        });
-        assert!(CronScheduler::matches_pattern(&event, &pattern2));
-
-        // Non-matching
-        let pattern3 = serde_json::json!({
-            "type": "DeviceOnline"
-        });
-        assert!(!CronScheduler::matches_pattern(&event, &pattern3));
     }
 }

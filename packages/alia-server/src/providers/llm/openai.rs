@@ -29,9 +29,9 @@ struct ChatRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct OpenAiMessage {
-    role: String,
-    content: String,
+pub struct OpenAiMessage {
+    pub role: String,
+    pub content: String,
 }
 
 impl From<&ChatMessage> for OpenAiMessage {
@@ -223,21 +223,5 @@ impl LlmAdapter for OpenAiLlm {
         };
         
         Ok(Box::pin(stream))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_message_conversion() {
-        let msg = ChatMessage {
-            role: "user".to_string(),
-            content: "Hello".to_string(),
-        };
-        let openai_msg = OpenAiMessage::from(&msg);
-        assert_eq!(openai_msg.role, "user");
-        assert_eq!(openai_msg.content, "Hello");
     }
 }

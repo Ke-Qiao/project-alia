@@ -1,4 +1,4 @@
-pub(crate) mod builtin;
+pub mod builtin;
 pub mod markdown;
 pub mod tool_format;
 

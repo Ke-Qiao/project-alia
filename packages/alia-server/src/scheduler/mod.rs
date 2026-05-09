@@ -7,7 +7,7 @@
 //!   (built-in: sensor, time_range; plugins can register custom evaluators at runtime)
 
 pub mod condition;
-mod cron;
+pub mod cron;
 pub mod evaluators;
 
 pub use condition::ConditionRegistry;

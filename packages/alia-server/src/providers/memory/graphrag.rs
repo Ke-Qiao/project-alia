@@ -138,7 +138,7 @@ impl GraphRagMemory {
     }
 
     /// Convert adapter types to internal types
-    fn adapter_to_layer(layer: &str) -> MemoryLayer {
+    pub fn adapter_to_layer(layer: &str) -> MemoryLayer {
         match layer {
             "episodic" => MemoryLayer::Episodic,
             "core" => MemoryLayer::Core,
@@ -356,34 +356,5 @@ impl MemoryBackend for GraphRagMemory {
         tracing::info!(user_id = %user_id, "Community refresh requested (not yet implemented)");
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = GraphRagConfig::default();
-        assert_eq!(config.working_window_size, 20);
-        assert_eq!(config.episodic_ttl_days, 90);
-        assert_eq!(config.max_core_memories, 500);
-    }
-
-    #[test]
-    fn test_layer_conversion() {
-        assert!(matches!(
-            GraphRagMemory::adapter_to_layer("episodic"),
-            MemoryLayer::Episodic
-        ));
-        assert!(matches!(
-            GraphRagMemory::adapter_to_layer("core"),
-            MemoryLayer::Core
-        ));
-        assert!(matches!(
-            GraphRagMemory::adapter_to_layer("procedural"),
-            MemoryLayer::Procedural
-        ));
     }
 }
