@@ -296,7 +296,12 @@ impl ModuleLifecycle for BuiltinSkills {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.db = Some(ctx.db.clone());
-        self.skills_dir = ctx.config.skills.skills_dir.as_ref().map(PathBuf::from);
+        self.skills_dir = ctx
+            .config
+            .skills
+            .skills_dir
+            .as_ref()
+            .map(|d| ctx.config.resolve_path(d));
         self.seed_defaults().await?;
 
         // Sync markdown skill files into DB (if configured)

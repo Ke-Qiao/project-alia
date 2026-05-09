@@ -102,3 +102,6 @@ base64 = "0.22.1"
 
 # CLI REPL
 rustyline.workspace = true
+
+# Platform directories
+dirs = "6"

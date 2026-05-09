@@ -1,3 +1,15 @@
+# Alia Server Configuration
+# ─────────────────────────────────────────────────────────────────────
+# Config search order:
+#   1. ALIA_CONFIG_PATH env var
+#   2. ./config/server.toml  (relative to CWD)
+#   3. ~/.config/alia/server.toml  (XDG / macOS Library)
+#   4. /etc/alia/server.toml
+#
+# Relative paths in this file (e.g. skills_dir) are resolved relative
+# to this config file's directory, NOT the working directory.
+# ─────────────────────────────────────────────────────────────────────
+
 [server]
 host = "0.0.0.0"
 port = 3000
@@ -93,8 +105,10 @@ conditions = []
 
 [skills]
 # Directory containing .md skill definition files (TOML frontmatter).
-# Files are synced into DB on startup (upsert by name).
-skills_dir = "skills"
+# Relative paths resolve from this config file's directory.
+# e.g. "../skills" → <config_dir>/../skills/ (dev layout)
+#      "skills"    → <config_dir>/skills/     (deployed layout)
+skills_dir = "../skills"
 
 [rules]
 evaluation_interval_sec = 10

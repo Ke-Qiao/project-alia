@@ -112,6 +112,11 @@ pub enum ServerEvent {
         source: String,
         value: serde_json::Value,
     },
+
+    // Settings events
+    SettingsChanged {
+        keys: Vec<String>,
+    },
 }
 
 /// Event bus wrapping tokio broadcast channel

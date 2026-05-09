@@ -18,6 +18,7 @@ use crate::providers::adapter::{
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::scheduler::ConditionRegistry;
 use crate::scheduler::evaluators::{SensorConditionEvaluator, TimeRangeConditionEvaluator};
+use crate::settings::SettingsRegistry;
 use crate::state::AppState;
 
 pub struct ServerBuilder {
@@ -322,6 +323,15 @@ impl ServerBuilder {
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);
 
+        // Build settings registry and seed from config
+        let settings = SettingsRegistry::new();
+        settings.seed_from_config(&self.config).await;
+        let settings_path = self.config.resolve_path("settings.toml");
+        if let Err(e) = settings.load_persisted(&settings_path).await {
+            tracing::warn!(error = %e, "failed to load persisted settings (non-fatal)");
+        }
+        settings.set_persist_path(settings_path).await;
+
         // Start sensor auto-cleanup
         sensor_registry.spawn_cleanup_loop(self.cancel_token.clone());
 
@@ -334,6 +344,7 @@ impl ServerBuilder {
             conditions: condition_registry,
             config: self.config,
             jwt_keys: Arc::new(jwt_keys),
+            settings,
             cancel_token: self.cancel_token,
         };
 

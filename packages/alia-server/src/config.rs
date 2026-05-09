@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
@@ -17,6 +17,11 @@ pub struct ServerConfig {
     pub tools: ToolsSection,
     #[serde(default)]
     pub skills: SkillsSection,
+
+    /// Directory where the config file lives — set automatically by `load()`.
+    /// Used to resolve relative paths in the config (skills_dir, etc.).
+    #[serde(skip)]
+    pub config_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -280,15 +285,19 @@ fn default_allow_plugin_tools() -> bool {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SkillsSection {
     /// Directory containing `.md` skill definition files (TOML frontmatter).
-    /// Relative paths are resolved from the working directory.
+    /// Relative paths are resolved from the config file's parent directory.
     #[serde(default)]
     pub skills_dir: Option<String>,
 }
 
 impl ServerConfig {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let config_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
+
         let content = std::fs::read_to_string(path)?;
         let mut config: ServerConfig = toml::from_str(&content)?;
+        config.config_dir = config_dir;
 
         // Environment variable overrides for sensitive fields
         if let Ok(url) = std::env::var("DATABASE_URL") {
@@ -302,5 +311,48 @@ impl ServerConfig {
         }
 
         Ok(config)
+    }
+
+    /// Resolve a path that may be relative. Relative paths are resolved
+    /// against the config file's parent directory, so the binary can be
+    /// run from any working directory.
+    pub fn resolve_path(&self, path: &str) -> PathBuf {
+        let p = Path::new(path);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            self.config_dir.join(p)
+        }
+    }
+
+    /// Search for the config file in standard locations.
+    /// Priority: `ALIA_CONFIG_PATH` env > `./config/server.toml` > `~/.config/alia/server.toml` > `/etc/alia/server.toml`
+    pub fn discover_config_path() -> String {
+        if let Ok(p) = std::env::var("ALIA_CONFIG_PATH") {
+            return p;
+        }
+
+        let candidates = [
+            "config/server.toml".to_string(),
+            dirs::config_dir()
+                .map(|d| {
+                    d.join("alia")
+                        .join("server.toml")
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .unwrap_or_default(),
+            "/etc/alia/server.toml".to_string(),
+        ];
+
+        for c in &candidates {
+            if !c.is_empty() && Path::new(c).exists() {
+                return c.clone();
+            }
+        }
+
+        // Fall back to the first candidate even if it doesn't exist,
+        // so the error message is clear.
+        candidates[0].clone()
     }
 }
