@@ -16,6 +16,7 @@ use utoipa_scalar::{Scalar, Servable};
 mod providers;
 mod api;
 mod auth;
+mod channels;
 mod config;
 mod embedded;
 mod entity;
@@ -30,7 +31,6 @@ mod tools;
 mod ws;
 
 use config::ServerConfig;
-use embedded::EmbeddedClient;
 use event::EventBus;
 use module::ServerBuilder;
 
@@ -62,25 +62,20 @@ async fn main() -> anyhow::Result<()> {
     // 4. Create EventBus
     let event_bus = EventBus::new(1024);
 
-    // 5. Create EmbeddedClient (gRPC connection to alia-embedded)
-    let embedded = EmbeddedClient::new(&config.embedded.endpoint, event_bus.clone());
-    tracing::info!(endpoint = %config.embedded.endpoint, "embedded client created");
-
-    // 6. Create CancellationToken for graceful shutdown
+    // 5. Create CancellationToken for graceful shutdown
     let cancel_token = CancellationToken::new();
 
-    // 7. Build server via ServerBuilder (init + start all modules)
+    // 6. Build server via ServerBuilder (init + start all modules and channels)
     let state = ServerBuilder::new(
         config.clone(),
         db,
-        embedded,
         event_bus,
         cancel_token.clone(),
     )
     .build()
     .await
     .context("failed to initialize server modules")?;
-    tracing::info!("all modules initialized and started");
+    tracing::info!("all modules and channels initialized and started");
 
     // 8. Build Axum router
     let app = Router::new()
@@ -121,7 +116,8 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal)
         .await?;
 
-    // 11. Stop all modules in reverse order
+    // 11. Stop channels and modules in reverse order
+    state.channels.shutdown().await;
     state.modules.shutdown().await;
     tracing::info!("alia-server shutdown complete");
 

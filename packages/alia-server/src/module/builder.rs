@@ -8,8 +8,8 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
+use crate::channels::{ChannelAdapter, ChannelRegistry};
 use crate::config::ServerConfig;
-use crate::embedded::EmbeddedClient;
 use crate::event::EventBus;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
@@ -20,9 +20,11 @@ use crate::auth::JwtKeys;
 pub struct ServerBuilder {
     config: Arc<ServerConfig>,
     db: DatabaseConnection,
-    embedded: EmbeddedClient,
     event_bus: EventBus,
     cancel_token: CancellationToken,
+
+    // Channel adapters (multi-instance)
+    channels: Vec<Box<dyn ChannelAdapter>>,
 
     // Module slots (None = use config default)
     llm: Option<Box<dyn LlmAdapter>>,
@@ -46,16 +48,15 @@ impl ServerBuilder {
     pub fn new(
         config: Arc<ServerConfig>,
         db: DatabaseConnection,
-        embedded: EmbeddedClient,
         event_bus: EventBus,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
             config,
             db,
-            embedded,
             event_bus,
             cancel_token,
+            channels: Vec::new(),
             llm: None,
             stt: None,
             tts: None,
@@ -140,6 +141,11 @@ impl ServerBuilder {
 
     pub fn with_extension(mut self, ext: impl ModuleLifecycle + 'static) -> Self {
         self.extensions.push(Box::new(ext));
+        self
+    }
+
+    pub fn with_channel(mut self, channel: impl ChannelAdapter + 'static) -> Self {
+        self.channels.push(Box::new(channel));
         self
     }
 
@@ -228,6 +234,25 @@ impl ServerBuilder {
             extensions.push(Arc::from(ext));
         }
 
+        // Initialize channels from config + explicit with_channel() calls
+        let channel_registry = ChannelRegistry::new();
+        // Create channels from [[channels]] config
+        for ch_cfg in &self.config.channels {
+            if !ch_cfg.enabled() {
+                tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
+                continue;
+            }
+            let mut channel: Box<dyn ChannelAdapter> = factory::create_channel(ch_cfg, self.event_bus.clone());
+            channel.init(&ctx).await?;
+            channel_registry.register(Arc::from(channel)).await?;
+        }
+        // Register explicitly added channels
+        for mut channel in self.channels {
+            channel.init(&ctx).await?;
+            channel_registry.register(Arc::from(channel)).await?;
+        }
+        let channel_registry = Arc::new(channel_registry);
+
         // Build registry
         let registry = ModuleRegistry {
             llm: Arc::from(llm),
@@ -262,12 +287,22 @@ impl ServerBuilder {
         registry.rule_engine.start().await?;
         registry.tools.start().await?;
 
+        // Start channels
+        for channel in channel_registry.list().await {
+            channel.start().await?;
+            tracing::info!(
+                channel_type = channel.channel_type(),
+                channel_id = channel.channel_id(),
+                "channel started"
+            );
+        }
+
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);
 
         let state = AppState {
             db: self.db,
-            embedded: self.embedded,
+            channels: channel_registry,
             event_bus: self.event_bus,
             modules: Arc::new(registry),
             config: self.config,

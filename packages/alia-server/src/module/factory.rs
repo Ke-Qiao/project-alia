@@ -3,6 +3,11 @@ use crate::providers::adapter::{
     PersonaProvider, RouterStrategy, RuleEvaluator, SkillProvider, SttAdapter, TtsAdapter,
     SchedulerBackend, ToolRegistry,
 };
+use crate::channels::adapter::ChannelAdapter;
+use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
+use crate::channels::cli::CliChannel;
+use crate::config::ChannelConfig;
+use crate::event::EventBus;
 use crate::providers::cache::{DbCache, NoopCache, TwoLayerCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
@@ -268,6 +273,35 @@ pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
         _ => {
             tracing::warn!(module = name, "unknown tool registry, using noop");
             Box::new(NoopToolRegistry)
+        }
+    }
+}
+
+pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn ChannelAdapter> {
+    match config {
+        ChannelConfig::Embedded {
+            id,
+            endpoint,
+            reconnect_interval_sec,
+            reconnect_max_backoff_sec,
+            grpc_timeout_sec,
+            ..
+        } => {
+            tracing::info!(channel_id = %id, "creating EmbeddedChannel");
+            Box::new(EmbeddedChannel::new(
+                EmbeddedChannelConfig {
+                    id: id.clone(),
+                    endpoint: endpoint.clone(),
+                    reconnect_interval_sec: *reconnect_interval_sec,
+                    reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
+                    grpc_timeout_sec: *grpc_timeout_sec,
+                },
+                event_bus,
+            ))
+        }
+        ChannelConfig::Cli { id, .. } => {
+            tracing::info!(channel_id = %id, "creating CliChannel");
+            Box::new(CliChannel::new(id.clone(), event_bus))
         }
     }
 }

@@ -6,7 +6,8 @@ pub struct ServerConfig {
     pub server: ServerSection,
     pub database: DatabaseSection,
     pub auth: AuthSection,
-    pub embedded: EmbeddedSection,
+    #[serde(default)]
+    pub channels: Vec<ChannelConfig>,
     pub modules: ModulesSection,
     pub ai: AiSection,
     pub rules: RulesSection,
@@ -47,6 +48,53 @@ pub struct EmbeddedSection {
     pub reconnect_max_backoff_sec: u64,
     pub grpc_timeout_sec: u64,
 }
+
+/// Configuration for a single channel instance.
+/// The `type` field determines which adapter to create.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum ChannelConfig {
+    #[serde(rename = "embedded")]
+    Embedded {
+        id: String,
+        #[serde(default = "default_true")]
+        enabled: bool,
+        #[serde(default)]
+        endpoint: String,
+        #[serde(default = "default_reconnect_interval")]
+        reconnect_interval_sec: u64,
+        #[serde(default = "default_reconnect_max_backoff")]
+        reconnect_max_backoff_sec: u64,
+        #[serde(default = "default_grpc_timeout")]
+        grpc_timeout_sec: u64,
+    },
+    #[serde(rename = "cli")]
+    Cli {
+        id: String,
+        #[serde(default = "default_true")]
+        enabled: bool,
+    },
+}
+
+impl ChannelConfig {
+    pub fn id(&self) -> &str {
+        match self {
+            ChannelConfig::Embedded { id, .. } => id,
+            ChannelConfig::Cli { id, .. } => id,
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        match self {
+            ChannelConfig::Embedded { enabled, .. } => *enabled,
+            ChannelConfig::Cli { enabled, .. } => *enabled,
+        }
+    }
+}
+
+fn default_reconnect_interval() -> u64 { 5 }
+fn default_reconnect_max_backoff() -> u64 { 60 }
+fn default_grpc_timeout() -> u64 { 10 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {

@@ -4,8 +4,8 @@ use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::JwtKeys;
+use crate::channels::ChannelRegistry;
 use crate::config::ServerConfig;
-use crate::embedded::EmbeddedClient;
 use crate::event::EventBus;
 use crate::module::ModuleRegistry;
 
@@ -13,7 +13,7 @@ use crate::module::ModuleRegistry;
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
-    pub embedded: EmbeddedClient,
+    pub channels: Arc<ChannelRegistry>,
     pub event_bus: EventBus,
     pub modules: Arc<ModuleRegistry>,
     pub config: Arc<ServerConfig>,

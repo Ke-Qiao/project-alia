@@ -94,3 +94,7 @@ pgvector.workspace = true
 
 # HTTP client (optional, for AI adapters)
 reqwest = { workspace = true, optional = true }
+base64 = "0.22.1"
+
+# CLI REPL
+rustyline.workspace = true

@@ -16,7 +16,11 @@ argon2_memory_kib = 19456
 argon2_iterations = 2
 argon2_parallelism = 1
 
-[embedded]
+# Channel adapters (array, supports multiple instances)
+[[channels]]
+type = "embedded"
+id = "pi-living-room"
+enabled = true
 endpoint = ""
 reconnect_interval_sec = 5
 reconnect_max_backoff_sec = 60

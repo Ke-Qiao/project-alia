@@ -84,5 +84,8 @@ utoipa-scalar = { version = "0.3", features = ["axum"] }
 # Async utilities
 async-trait = "0.1"
 
+# CLI / REPL
+rustyline = { version = "15", features = ["derive"] }
+
 # Unix
 libc = "0.2"
