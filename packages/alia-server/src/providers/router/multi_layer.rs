@@ -68,28 +68,168 @@ struct RouterConfig {
     model: String,
     temperature: f32,
     timeout_sec: u64,
+    local_llm_enabled: bool,
+    remote_llm_enabled: bool,
 }
 
-// ── System prompt ──────────────────────────────────────────────────────
-
-const CLASSIFICATION_SYSTEM_PROMPT: &str = r#"You are a routing classifier for an AI assistant. Your job is to analyze the user's message and decide which execution path to use.
-
-You MUST respond with ONLY a JSON object (no markdown fences, no explanation). The JSON schema:
-
-{
-  "route": "skill" | "local_llm" | "remote_llm",
-  "skill_name": "<skill name if route=skill, else omit>",
-  "params": { "<extracted parameters if route=skill, else omit>" },
-  "confidence": <0.0 to 1.0>,
-  "reasoning": "<one-sentence explanation>"
+/// Which LLM tiers are available for routing
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LlmMode {
+    BothEnabled,
+    LocalOnly,
+    RemoteOnly,
 }
 
-Routing rules:
-- "skill": Deterministic commands like smart home control ("turn on lights", "set AC to 26°C"), timer/alarm setting, device queries. Extract the skill name and parameters.
-- "local_llm": Simple chit-chat, greetings, confirmations, short factual answers, one-line replies that don't need deep reasoning.
-- "remote_llm": Complex reasoning, multi-step analysis, creative writing, code generation, long context conversations, anything requiring deep understanding or personalization.
+impl RouterConfig {
+    fn llm_mode(&self) -> LlmMode {
+        match (self.local_llm_enabled, self.remote_llm_enabled) {
+            (true, true) => LlmMode::BothEnabled,
+            (true, false) => LlmMode::LocalOnly,
+            (false, true) => LlmMode::RemoteOnly,
+            // Should be caught at init, but fall back to remote
+            (false, false) => LlmMode::RemoteOnly,
+        }
+    }
+}
 
-When in doubt, prefer "remote_llm" over "local_llm"."#;
+// ── System prompts ─────────────────────────────────────────────────────
+
+/// Classification prompt when both LLMs are available
+const CLASSIFICATION_PROMPT_BOTH: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of three execution routes so the correct downstream system handles it.
+
+## Your output
+
+Respond with a single JSON object. No markdown fences, no explanation, no extra text.
+
+```
+{"route":"<route>","skill_name":"<if skill>","params":{<if skill>},"confidence":<0-1>,"reasoning":"<one line>"}
+```
+
+## Routes
+
+### "skill" — deterministic device/system commands
+Use when the user gives a clear, actionable command that maps to one of these skills:
+
+| skill_name | When to use | Key params |
+|---|---|---|
+| smart_light_control | Turn on/off lights, set brightness/color temp | action, device_name, value |
+| smart_ac_control | AC on/off, set temperature/mode | action, temperature, mode |
+| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. | action, device_name, device_type |
+| timer_alarm | Set timer, countdown, alarm, reminder | duration_seconds, message, type |
+| weather_query | Current weather, forecast, rain/snow check | location, days |
+| device_status | "Is the light on?", "What's the temperature?" | device_name, device_type |
+| memory_query | "Do you remember...", "What did I say last time?" | query, time_range |
+| rule_management | Create/edit/delete automation rules | action, rule_description |
+
+Extract parameters from the user's message. Use null for optional params you cannot determine.
+
+### "local_llm" — simple, short replies
+Use when a lightweight model can handle it in one turn:
+- Greetings ("Hi", "Good morning"), farewells, thanks, acknowledgments
+- Yes/no confirmations, simple follow-ups ("OK", "got it", "and then?")
+- Single-fact questions with short answers ("What day is it?", "What's 2+2?")
+- Casual chit-chat that doesn't reference user history or need personalization
+
+### "remote_llm" — complex reasoning (default when uncertain)
+Use for anything that needs deep thinking, creativity, or user context:
+- Multi-step reasoning, analysis, comparisons, advice
+- Creative writing, stories, code generation
+- Questions about user preferences, past conversations, personalized responses
+- Long or nuanced conversations, emotional support
+- Ambiguous requests that need interpretation
+- Anything referencing prior context deeply ("based on what we discussed...")
+
+## Decision priority
+
+1. If the message is a clear device/system command → "skill"
+2. If it's trivial small-talk or a one-word reply → "local_llm"
+3. Everything else → "remote_llm"
+
+When in doubt between "local_llm" and "remote_llm", always choose "remote_llm".
+When in doubt between "skill" and "remote_llm", choose "remote_llm" (let the LLM figure it out with tool use)."#;
+
+/// Classification prompt when only local LLM is available (no remote option)
+const CLASSIFICATION_PROMPT_LOCAL_ONLY: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
+
+## Your output
+
+Respond with a single JSON object. No markdown fences, no explanation, no extra text.
+
+```
+{"route":"<route>","skill_name":"<if skill>","params":{<if skill>},"confidence":<0-1>,"reasoning":"<one line>"}
+```
+
+## Routes
+
+### "skill" — deterministic device/system commands
+Use when the user gives a clear, actionable command that maps to one of these skills:
+
+| skill_name | When to use | Key params |
+|---|---|---|
+| smart_light_control | Turn on/off lights, set brightness/color temp | action, device_name, value |
+| smart_ac_control | AC on/off, set temperature/mode | action, temperature, mode |
+| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. | action, device_name, device_type |
+| timer_alarm | Set timer, countdown, alarm, reminder | duration_seconds, message, type |
+| weather_query | Current weather, forecast, rain/snow check | location, days |
+| device_status | "Is the light on?", "What's the temperature?" | device_name, device_type |
+| memory_query | "Do you remember...", "What did I say last time?" | query, time_range |
+| rule_management | Create/edit/delete automation rules | action, rule_description |
+
+Extract parameters from the user's message. Use null for optional params you cannot determine.
+
+### "local_llm" — all other messages
+Route everything that is not a skill command to the local LLM. This is the only general-purpose model available.
+
+## Decision priority
+
+1. If the message is a clear device/system command → "skill"
+2. Everything else → "local_llm""#;
+
+/// System prompt given to the **local LLM** when it handles a conversation (both-mode).
+/// Tells it to stay in scope and escalate complex tasks.
+const LOCAL_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, a friendly and concise smart home AI assistant running on a local model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
+
+Guidelines:
+- Keep responses brief (1-3 sentences).
+- Be warm and natural, not robotic.
+- Do NOT attempt complex reasoning, creative writing, code generation, or multi-step analysis.
+- If the user's request seems too complex, requires deep personalization, or involves long context reasoning, respond with exactly: [ESCALATE] followed by a one-sentence explanation of why.
+  Example: "[ESCALATE] This question requires analyzing your past conversations and preferences."
+- You do NOT have access to the user's memory, preferences, or conversation history. If asked about those, escalate.
+- Answer in the same language the user uses."#;
+
+/// System prompt given to the **local LLM** when it's the only model (local-only mode).
+/// No escalation — it handles everything.
+const LOCAL_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations — from simple greetings to complex reasoning.
+
+Guidelines:
+- Be warm, natural, and helpful.
+- Adapt response length to the complexity of the question.
+- Answer in the same language the user uses.
+- For complex tasks, think step by step.
+- You may not have full conversation history, so ask for clarification when needed."#;
+
+/// System prompt given to the **remote LLM** when handling a conversation.
+const REMOTE_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
+
+Guidelines:
+- Be warm, thoughtful, and personalized. Use the user's memory and context when available.
+- Adapt response length and depth to the question — short for simple follow-ups, thorough for complex topics.
+- Answer in the same language the user uses.
+- You have access to the user's memory, preferences, and conversation history via the system context.
+- For creative tasks, be expressive. For analytical tasks, be structured and clear.
+- When using tools or skills, explain what you're doing naturally."#;
+
+/// System prompt given to the **remote LLM** when it's the only model (remote-only mode).
+const REMOTE_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations — from casual greetings to complex reasoning and creative tasks.
+
+Guidelines:
+- Be warm, natural, and personalized. Use the user's memory and context when available.
+- Keep simple responses brief (1-2 sentences). Give thorough answers for complex topics.
+- Answer in the same language the user uses.
+- You have access to the user's memory, preferences, and conversation history via the system context.
+- For creative tasks, be expressive. For analytical tasks, be structured and clear.
+- When using tools or skills, explain what you're doing naturally."#;
 
 // ── Implementation ─────────────────────────────────────────────────────
 
@@ -115,10 +255,28 @@ impl MultiLayerRouter {
         config: &RouterConfig,
         input: &RouterInput,
     ) -> anyhow::Result<Classification> {
+        let mode = config.llm_mode();
+
+        // Pick classification prompt based on available LLM tiers
+        let classification_prompt = match mode {
+            LlmMode::RemoteOnly => {
+                // No local LLM — skip classification entirely, always remote
+                return Ok(Classification {
+                    route: "remote_llm".to_string(),
+                    skill_name: None,
+                    params: None,
+                    confidence: Some(1.0),
+                    reasoning: Some("remote-only mode, skipping classification".to_string()),
+                });
+            }
+            LlmMode::LocalOnly => CLASSIFICATION_PROMPT_LOCAL_ONLY,
+            LlmMode::BothEnabled => CLASSIFICATION_PROMPT_BOTH,
+        };
+
         // Build messages: system prompt + conversation context (last few) + user message
         let mut messages = vec![OllamaMessage {
             role: "system".to_string(),
-            content: CLASSIFICATION_SYSTEM_PROMPT.to_string(),
+            content: classification_prompt.to_string(),
         }];
 
         // Include recent conversation context (last 4 turns max) for better classification
@@ -189,8 +347,9 @@ impl MultiLayerRouter {
         Ok(classification)
     }
 
-    /// Convert a Classification into a RouteDecision
-    fn to_decision(classification: Classification) -> RouteDecision {
+    /// Convert a Classification into a RouteDecision, attaching the appropriate
+    /// system prompt for the target LLM based on which tiers are enabled.
+    fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
         match classification.route.as_str() {
             "skill" => {
                 let skill_name = classification
@@ -201,9 +360,25 @@ impl MultiLayerRouter {
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 RouteDecision::Skill { skill_name, params }
             }
-            "local_llm" => RouteDecision::LocalLlm,
+            "local_llm" => {
+                let prompt = match mode {
+                    LlmMode::LocalOnly => LOCAL_LLM_SYSTEM_PROMPT_SOLO,
+                    _ => LOCAL_LLM_SYSTEM_PROMPT,
+                };
+                RouteDecision::LocalLlm {
+                    system_prompt: Some(prompt.to_string()),
+                }
+            }
             // Default to remote for any unrecognized classification
-            _ => RouteDecision::RemoteLlm,
+            _ => {
+                let prompt = match mode {
+                    LlmMode::RemoteOnly => REMOTE_LLM_SYSTEM_PROMPT_SOLO,
+                    _ => REMOTE_LLM_SYSTEM_PROMPT,
+                };
+                RouteDecision::RemoteLlm {
+                    system_prompt: Some(prompt.to_string()),
+                }
+            }
         }
     }
 }
@@ -215,6 +390,16 @@ impl ModuleLifecycle for MultiLayerRouter {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+        let local_enabled = ctx.config.ai.router_local_llm_enabled;
+        let remote_enabled = ctx.config.ai.router_remote_llm_enabled;
+
+        if !local_enabled && !remote_enabled {
+            anyhow::bail!(
+                "invalid router config: both router_local_llm_enabled and \
+                 router_remote_llm_enabled are false — at least one must be true"
+            );
+        }
+
         let timeout_sec = ctx.config.ai.router_timeout_sec;
         self.client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_sec))
@@ -225,12 +410,17 @@ impl ModuleLifecycle for MultiLayerRouter {
             model: ctx.config.ai.router_model.clone(),
             temperature: ctx.config.ai.router_temperature,
             timeout_sec,
+            local_llm_enabled: local_enabled,
+            remote_llm_enabled: remote_enabled,
         };
         tracing::info!(
             model = %cfg.model,
             endpoint = %cfg.ollama_endpoint,
             temperature = cfg.temperature,
             timeout_sec = cfg.timeout_sec,
+            local_llm = local_enabled,
+            remote_llm = remote_enabled,
+            mode = ?cfg.llm_mode(),
             "MultiLayerRouter initialized"
         );
         *self.config.write().await = Some(cfg);
@@ -269,15 +459,25 @@ impl RouterStrategy for MultiLayerRouter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
 
+        let mode = cfg.llm_mode();
+
         match self.classify(cfg, input).await {
-            Ok(classification) => Ok(Self::to_decision(classification)),
+            Ok(classification) => Ok(Self::to_decision(classification, mode)),
             Err(e) => {
-                // On classification failure, fall back to remote LLM (safe default)
+                // On classification failure, fall back to the best available LLM
                 tracing::warn!(
                     error = %e,
-                    "router classification failed, falling back to remote_llm"
+                    "router classification failed, falling back"
                 );
-                Ok(RouteDecision::RemoteLlm)
+                let fallback = match mode {
+                    LlmMode::LocalOnly => RouteDecision::LocalLlm {
+                        system_prompt: Some(LOCAL_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                    },
+                    _ => RouteDecision::RemoteLlm {
+                        system_prompt: Some(REMOTE_LLM_SYSTEM_PROMPT.to_string()),
+                    },
+                };
+                Ok(fallback)
             }
         }
     }
@@ -334,7 +534,7 @@ mod tests {
             confidence: Some(0.95),
             reasoning: Some("deterministic command".to_string()),
         };
-        match MultiLayerRouter::to_decision(c) {
+        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
             RouteDecision::Skill { skill_name, params } => {
                 assert_eq!(skill_name, "smart_home");
                 assert_eq!(params["action"], "turn_on");
@@ -344,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_decision_local_llm() {
+    fn test_to_decision_local_llm_both_mode() {
         let c = Classification {
             route: "local_llm".to_string(),
             skill_name: None,
@@ -352,14 +552,36 @@ mod tests {
             confidence: Some(0.8),
             reasoning: None,
         };
-        assert!(matches!(
-            MultiLayerRouter::to_decision(c),
-            RouteDecision::LocalLlm
-        ));
+        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
+            RouteDecision::LocalLlm { system_prompt } => {
+                let prompt = system_prompt.unwrap();
+                assert!(prompt.contains("[ESCALATE]"), "both-mode local prompt should mention escalation");
+            }
+            other => panic!("expected LocalLlm, got {other:?}"),
+        }
     }
 
     #[test]
-    fn test_to_decision_remote_llm() {
+    fn test_to_decision_local_llm_solo_mode() {
+        let c = Classification {
+            route: "local_llm".to_string(),
+            skill_name: None,
+            params: None,
+            confidence: Some(0.8),
+            reasoning: None,
+        };
+        match MultiLayerRouter::to_decision(c, LlmMode::LocalOnly) {
+            RouteDecision::LocalLlm { system_prompt } => {
+                let prompt = system_prompt.unwrap();
+                assert!(!prompt.contains("[ESCALATE]"), "solo-mode local prompt should NOT mention escalation");
+                assert!(prompt.contains("primary and only"), "solo prompt should indicate it's the only model");
+            }
+            other => panic!("expected LocalLlm, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_decision_remote_llm_both_mode() {
         let c = Classification {
             route: "remote_llm".to_string(),
             skill_name: None,
@@ -367,10 +589,31 @@ mod tests {
             confidence: Some(0.9),
             reasoning: None,
         };
-        assert!(matches!(
-            MultiLayerRouter::to_decision(c),
-            RouteDecision::RemoteLlm
-        ));
+        match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
+            RouteDecision::RemoteLlm { system_prompt } => {
+                let prompt = system_prompt.unwrap();
+                assert!(prompt.contains("primary reasoning model"));
+            }
+            other => panic!("expected RemoteLlm, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_decision_remote_llm_solo_mode() {
+        let c = Classification {
+            route: "remote_llm".to_string(),
+            skill_name: None,
+            params: None,
+            confidence: Some(0.9),
+            reasoning: None,
+        };
+        match MultiLayerRouter::to_decision(c, LlmMode::RemoteOnly) {
+            RouteDecision::RemoteLlm { system_prompt } => {
+                let prompt = system_prompt.unwrap();
+                assert!(prompt.contains("all conversations"));
+            }
+            other => panic!("expected RemoteLlm, got {other:?}"),
+        }
     }
 
     #[test]
@@ -383,8 +626,28 @@ mod tests {
             reasoning: None,
         };
         assert!(matches!(
-            MultiLayerRouter::to_decision(c),
-            RouteDecision::RemoteLlm
+            MultiLayerRouter::to_decision(c, LlmMode::BothEnabled),
+            RouteDecision::RemoteLlm { .. }
         ));
+    }
+
+    #[test]
+    fn test_llm_mode() {
+        let mut cfg = RouterConfig {
+            ollama_endpoint: String::new(),
+            model: String::new(),
+            temperature: 0.0,
+            timeout_sec: 5,
+            local_llm_enabled: true,
+            remote_llm_enabled: true,
+        };
+        assert_eq!(cfg.llm_mode(), LlmMode::BothEnabled);
+
+        cfg.remote_llm_enabled = false;
+        assert_eq!(cfg.llm_mode(), LlmMode::LocalOnly);
+
+        cfg.local_llm_enabled = false;
+        cfg.remote_llm_enabled = true;
+        assert_eq!(cfg.llm_mode(), LlmMode::RemoteOnly);
     }
 }

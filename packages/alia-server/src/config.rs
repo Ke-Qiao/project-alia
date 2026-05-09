@@ -79,6 +79,10 @@ fn default_router_timeout() -> u64 {
     5
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AiSection {
     pub llm_adapter: String,
@@ -91,6 +95,10 @@ pub struct AiSection {
     pub router_temperature: f32,
     #[serde(default = "default_router_timeout")]
     pub router_timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub router_local_llm_enabled: bool,
+    #[serde(default = "default_true")]
+    pub router_remote_llm_enabled: bool,
     pub embedding_adapter: String,
     pub ollama_embedding_model: String,
     pub openai_embedding_model: String,

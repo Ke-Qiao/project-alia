@@ -289,8 +289,8 @@ pub struct RouterInput {
 pub enum RouteDecision {
     CacheHit { response: String },
     Skill { skill_name: String, params: serde_json::Value },
-    LocalLlm,
-    RemoteLlm,
+    LocalLlm { system_prompt: Option<String> },
+    RemoteLlm { system_prompt: Option<String> },
 }
 
 #[async_trait]

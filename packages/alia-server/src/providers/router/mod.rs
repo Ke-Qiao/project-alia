@@ -20,6 +20,6 @@ impl ModuleLifecycle for PassthroughRouter {
 #[async_trait]
 impl RouterStrategy for PassthroughRouter {
     async fn route(&self, _input: &RouterInput) -> anyhow::Result<RouteDecision> {
-        Ok(RouteDecision::RemoteLlm)
+        Ok(RouteDecision::RemoteLlm { system_prompt: None })
     }
 }
