@@ -4,6 +4,7 @@ use axum::{Json, Router};
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
@@ -14,7 +15,7 @@ use crate::state::AppState;
 
 // ========== Response types ==========
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SkillResponse {
     pub id: Uuid,
     pub name: String,
@@ -116,6 +117,15 @@ pub struct ExportToolsRequest {
 
 // ========== Handlers ==========
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/skills",
+    tag = "skills",
+    security(("bearer" = [])),
+    responses(
+        (status = 200, description = "List all skills", body = Vec<SkillResponse>)
+    )
+)]
 async fn list_skills(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -129,6 +139,17 @@ async fn list_skills(
     Ok(Json(skills.into_iter().map(SkillResponse::from).collect()))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/skills/{name}",
+    tag = "skills",
+    security(("bearer" = [])),
+    params(("name" = String, Path, description = "Skill name")),
+    responses(
+        (status = 200, description = "Skill details", body = SkillResponse),
+        (status = 404, description = "Skill not found")
+    )
+)]
 async fn get_skill(
     State(state): State<AppState>,
     _auth: AuthUser,

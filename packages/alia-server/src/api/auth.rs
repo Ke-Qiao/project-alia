@@ -2,47 +2,58 @@ use axum::extract::State;
 use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::error::{AppError, Result};
 use crate::state::AppState;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegisterRequest {
     pub email: String,
     pub name: String,
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RefreshRequest {
     pub refresh_token: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AuthResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub user: UserInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct UserInfo {
     pub id: String,
     pub name: String,
     pub role: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TokenResponse {
     pub access_token: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 401, description = "Invalid credentials")
+    )
+)]
 async fn login(
     State(_state): State<AppState>,
     Json(_req): Json<LoginRequest>,
@@ -51,6 +62,16 @@ async fn login(
     Err(AppError::Auth("Not implemented".into()))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "auth",
+    request_body = RegisterRequest,
+    responses(
+        (status = 200, description = "Registration successful", body = AuthResponse),
+        (status = 400, description = "Validation error")
+    )
+)]
 async fn register(
     State(_state): State<AppState>,
     Json(_req): Json<RegisterRequest>,
@@ -59,6 +80,16 @@ async fn register(
     Err(AppError::Internal(anyhow::anyhow!("Not implemented")))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "auth",
+    request_body = RefreshRequest,
+    responses(
+        (status = 200, description = "Token refreshed", body = TokenResponse),
+        (status = 401, description = "Invalid refresh token")
+    )
+)]
 async fn refresh(
     State(_state): State<AppState>,
     Json(_req): Json<RefreshRequest>,
