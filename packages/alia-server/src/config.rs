@@ -15,6 +15,8 @@ pub struct ServerConfig {
     pub scheduler: SchedulerSection,
     #[serde(default)]
     pub tools: ToolsSection,
+    #[serde(default)]
+    pub skills: SkillsSection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -191,7 +193,14 @@ pub struct AiMeditationSection {
     pub habit_detection_schedule: String,
     pub memory_threshold: u32,
     pub max_concurrent_meditations: u32,
-    pub presence_sensor_plugin: String,
+    /// Sensor ID for presence detection (e.g. "presence"); empty to disable sensor-triggered meditation
+    #[serde(default)]
+    pub presence_sensor_id: String,
+    /// Default conditions applied to meditation cron tasks (JSON condition objects).
+    /// Users can override per-user via API.
+    /// Example: [{"type": "time_range", "after": "00:00", "before": "06:00"}]
+    #[serde(default)]
+    pub conditions: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -241,6 +250,14 @@ pub struct ToolsSection {
 fn default_tool_call_depth() -> u32 { 5 }
 fn default_tool_timeout() -> u64 { 30 }
 fn default_allow_plugin_tools() -> bool { true }
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SkillsSection {
+    /// Directory containing `.md` skill definition files (TOML frontmatter).
+    /// Relative paths are resolved from the working directory.
+    #[serde(default)]
+    pub skills_dir: Option<String>,
+}
 
 impl ServerConfig {
     pub fn load(path: &Path) -> anyhow::Result<Self> {

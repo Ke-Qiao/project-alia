@@ -1,4 +1,5 @@
 pub(crate) mod builtin;
+pub mod markdown;
 pub mod tool_format;
 
 use async_trait::async_trait;

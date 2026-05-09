@@ -162,6 +162,7 @@ impl ServerBuilder {
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
             scheduler: None,
+            conditions: None,
         };
 
         // Create modules: use override or create from config
@@ -228,6 +229,7 @@ impl ServerBuilder {
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
             scheduler: Some(scheduler.clone()),
+            conditions: Some(condition_registry.clone()),
         };
 
         // Initialize remaining modules in dependency order

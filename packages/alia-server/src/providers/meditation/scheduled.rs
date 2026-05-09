@@ -26,6 +26,7 @@ use crate::providers::adapter::{
     MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask,
     ScheduleConfig, ScheduledTask, SchedulerBackend,
 };
+use crate::scheduler::ConditionRegistry;
 
 /// Well-known task name prefix for meditation cron tasks
 const TASK_NAME_REFLECTION: &str = "meditation_reflection";
@@ -36,6 +37,8 @@ struct MeditationState {
     last_phase: Option<String>,
     last_executed_at: Option<DateTime<Utc>>,
     last_interaction_at: Option<DateTime<Utc>>,
+    /// User-level condition overrides; None = use config defaults
+    conditions_override: Option<Vec<serde_json::Value>>,
 }
 
 pub struct ScheduledMeditation {
@@ -44,6 +47,7 @@ pub struct ScheduledMeditation {
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     scheduler: Mutex<Option<Arc<dyn SchedulerBackend>>>,
+    condition_registry: Mutex<Option<Arc<ConditionRegistry>>>,
     /// Task IDs registered with the scheduler (for cleanup on stop)
     reflection_task_id: Mutex<Option<Uuid>>,
     habit_task_id: Mutex<Option<Uuid>>,
@@ -61,6 +65,7 @@ impl ScheduledMeditation {
             event_bus: Mutex::new(None),
             cancel_token: Mutex::new(None),
             scheduler: Mutex::new(None),
+            condition_registry: Mutex::new(None),
             reflection_task_id: Mutex::new(None),
             habit_task_id: Mutex::new(None),
             enabled: AtomicBool::new(true),
@@ -70,6 +75,7 @@ impl ScheduledMeditation {
                 last_phase: None,
                 last_executed_at: None,
                 last_interaction_at: None,
+                conditions_override: None,
             }),
         }
     }
@@ -343,14 +349,21 @@ impl ScheduledMeditation {
                 pending_tasks.fetch_sub(1, Ordering::Relaxed);
             }
 
-            // Sensor-triggered meditation (presence sensor detects user left)
-            ServerEvent::PluginEvent { plugin_name, event_type, data }
-                if event_type == "presence_changed" =>
-            {
-                if plugin_name != &config.presence_sensor_plugin {
+            // Sensor-triggered meditation: presence sensor detects user left/returned
+            ServerEvent::SensorDataIngested { sensor_id, value, .. } => {
+                if config.presence_sensor_id.is_empty()
+                    || sensor_id != &config.presence_sensor_id
+                {
                     return;
                 }
-                let presence = data.get("presence").and_then(|v| v.as_bool()).unwrap_or(true);
+
+                let presence = value
+                    .get("presence")
+                    .and_then(|v| v.as_bool())
+                    .or_else(|| value.as_bool())
+                    .or_else(|| value.as_f64().map(|v| v > 0.0))
+                    .unwrap_or(true);
+
                 if presence {
                     // User returned — update interaction time
                     let mut s = state.lock().await;
@@ -444,7 +457,10 @@ impl ScheduledMeditation {
     async fn register_scheduler_tasks(
         scheduler: &dyn SchedulerBackend,
         config: &AiMeditationSection,
+        conditions: &[serde_json::Value],
     ) -> anyhow::Result<(Option<Uuid>, Option<Uuid>)> {
+        let conditions_json = serde_json::Value::Array(conditions.to_vec());
+
         // Phase 3: Reflection (e.g., "0 3 * * *")
         let reflection_task = ScheduledTask {
             id: Uuid::new_v4(),
@@ -457,7 +473,7 @@ impl ScheduledMeditation {
                 run_at: None,
                 every_sec: None,
             },
-            conditions: serde_json::json!([]),
+            conditions: conditions_json.clone(),
             action: serde_json::json!({
                 "type": "meditation",
                 "phase": "reflection",
@@ -485,7 +501,7 @@ impl ScheduledMeditation {
                 run_at: None,
                 every_sec: None,
             },
-            conditions: serde_json::json!([]),
+            conditions: conditions_json,
             action: serde_json::json!({
                 "type": "meditation",
                 "phase": "habit_detection",
@@ -568,6 +584,7 @@ impl ModuleLifecycle for ScheduledMeditation {
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
         *self.scheduler.lock().await = ctx.scheduler.clone();
+        *self.condition_registry.lock().await = ctx.conditions.clone();
 
         tracing::info!("ScheduledMeditation initialized");
         Ok(())
@@ -589,9 +606,10 @@ impl ModuleLifecycle for ScheduledMeditation {
         }
 
         // Register cron tasks with the scheduler for Phase 3 + 4
+        let conditions = config.conditions.clone();
         let (reflection_task_id, habit_task_id) =
             if let Some(scheduler) = self.scheduler.lock().await.as_ref() {
-                match Self::register_scheduler_tasks(scheduler.as_ref(), &config).await {
+                match Self::register_scheduler_tasks(scheduler.as_ref(), &config, &conditions).await {
                     Ok(ids) => ids,
                     Err(e) => {
                         tracing::error!(error = %e, "failed to register meditation cron tasks");
@@ -613,6 +631,7 @@ impl ModuleLifecycle for ScheduledMeditation {
             last_phase: None,
             last_executed_at: None,
             last_interaction_at: Some(Utc::now()),
+            conditions_override: None,
         }));
 
         // Spawn event listener (handles direct events + scheduler TaskTriggered)
@@ -760,5 +779,55 @@ impl MeditationStrategy for ScheduledMeditation {
         }
 
         result.map(|_| ())
+    }
+
+    async fn get_conditions(&self) -> Vec<serde_json::Value> {
+        let state = self.state.lock().await;
+        if let Some(overrides) = &state.conditions_override {
+            return overrides.clone();
+        }
+        // Fall back to config defaults
+        self.config
+            .lock()
+            .await
+            .as_ref()
+            .map(|c| c.conditions.clone())
+            .unwrap_or_default()
+    }
+
+    async fn set_conditions(&self, conditions: Vec<serde_json::Value>) -> anyhow::Result<()> {
+        // Store the override
+        {
+            let mut state = self.state.lock().await;
+            state.conditions_override = Some(conditions.clone());
+        }
+
+        // Re-register scheduler tasks with updated conditions
+        let scheduler = self.scheduler.lock().await;
+        let config = self.config.lock().await;
+        let (scheduler, config) = match (scheduler.as_ref(), config.as_ref()) {
+            (Some(s), Some(c)) => (s, c),
+            _ => return Ok(()), // No scheduler or config — nothing to update
+        };
+
+        // Delete old tasks
+        if let Some(id) = *self.reflection_task_id.lock().await {
+            let _ = scheduler.delete_task(id).await;
+        }
+        if let Some(id) = *self.habit_task_id.lock().await {
+            let _ = scheduler.delete_task(id).await;
+        }
+
+        // Re-register with new conditions
+        let (reflection_id, habit_id) =
+            Self::register_scheduler_tasks(scheduler.as_ref(), config, &conditions).await?;
+        *self.reflection_task_id.lock().await = reflection_id;
+        *self.habit_task_id.lock().await = habit_id;
+
+        tracing::info!(
+            num_conditions = conditions.len(),
+            "meditation conditions updated, scheduler tasks re-registered"
+        );
+        Ok(())
     }
 }

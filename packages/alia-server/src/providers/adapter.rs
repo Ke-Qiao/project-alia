@@ -273,6 +273,10 @@ pub trait MeditationStrategy: ModuleLifecycle {
     async fn schedule(&self, task: MeditationTask) -> anyhow::Result<()>;
     async fn status(&self, user_id: Uuid) -> anyhow::Result<MeditationStatus>;
     async fn trigger(&self, user_id: Uuid, phase: MeditationPhase) -> anyhow::Result<()>;
+    /// Get the current meditation trigger conditions (config defaults merged with user overrides)
+    async fn get_conditions(&self) -> Vec<serde_json::Value>;
+    /// Set user-level condition overrides (replaces config defaults at runtime)
+    async fn set_conditions(&self, conditions: Vec<serde_json::Value>) -> anyhow::Result<()>;
 }
 
 // ========== Router Strategy ==========

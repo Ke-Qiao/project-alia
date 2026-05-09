@@ -198,6 +198,37 @@ async fn trigger_meditation(
     })))
 }
 
+async fn get_conditions(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Result<Json<Vec<serde_json::Value>>> {
+    let conditions = state.modules.meditation.get_conditions().await;
+    Ok(Json(conditions))
+}
+
+#[derive(Deserialize)]
+pub struct SetConditionsRequest {
+    pub conditions: Vec<serde_json::Value>,
+}
+
+async fn set_conditions(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Json(body): Json<SetConditionsRequest>,
+) -> Result<Json<serde_json::Value>> {
+    state
+        .modules
+        .meditation
+        .set_conditions(body.conditions.clone())
+        .await
+        .map_err(|e| crate::error::AppError::Internal(e))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "conditions_count": body.conditions.len(),
+    })))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/meditation/status", get(get_status))
@@ -205,4 +236,5 @@ pub fn routes() -> Router<AppState> {
         .route("/meditation/logs", get(get_logs))
         .route("/meditation/insights", get(get_insights))
         .route("/meditation/trigger", post(trigger_meditation))
+        .route("/meditation/conditions", get(get_conditions).put(set_conditions))
 }

@@ -5,6 +5,7 @@
 //! Supports keyword-based intent matching with priority-based conflict resolution.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -19,6 +20,7 @@ use uuid::Uuid;
 use crate::entity::skill;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
+use super::markdown;
 
 /// A loaded skill with its metadata for in-memory matching
 #[derive(Clone)]
@@ -45,6 +47,8 @@ pub struct BuiltinSkills {
     skills: Arc<RwLock<HashMap<String, LoadedSkill>>>,
     /// Minimum confidence threshold for matching
     min_confidence: f32,
+    /// Optional directory for markdown skill files
+    skills_dir: Option<PathBuf>,
 }
 
 impl Default for BuiltinSkills {
@@ -59,6 +63,7 @@ impl BuiltinSkills {
             db: None,
             skills: Arc::new(RwLock::new(HashMap::new())),
             min_confidence: 0.3,
+            skills_dir: None,
         }
     }
 
@@ -163,6 +168,79 @@ impl BuiltinSkills {
         self.load_skills().await
     }
 
+    /// Sync markdown skill files into DB (upsert by name).
+    ///
+    /// File-defined skills overwrite DB rows with the same name on every init,
+    /// making the files the authoritative source. Skills created via API that
+    /// don't collide with file names are unaffected.
+    async fn sync_markdown_skills(&self, dir: &std::path::Path) -> anyhow::Result<()> {
+        let db = self.db()?;
+        let files = markdown::load_skill_files(dir).await?;
+
+        for parsed in files {
+            let fm = &parsed.frontmatter;
+            let now = Utc::now();
+
+            let intent_patterns =
+                serde_json::Value::Array(fm.intent_patterns.iter().map(|s| serde_json::json!(s)).collect());
+
+            let parameters = fm
+                .parameters
+                .as_ref()
+                .map(markdown::toml_to_json)
+                .unwrap_or_else(|| serde_json::json!({}));
+
+            let execution_config = fm.execution_config.as_ref().map(markdown::toml_to_json);
+
+            // Upsert: find by name → update or insert
+            let existing = skill::Entity::find()
+                .filter(skill::Column::Name.eq(&fm.name))
+                .one(db)
+                .await?;
+
+            match existing {
+                Some(row) => {
+                    let mut active: skill::ActiveModel = row.into();
+                    active.display_name = Set(fm.display_name.clone());
+                    active.description = Set(fm.description.clone());
+                    active.category = Set(fm.category.clone());
+                    active.intent_patterns = Set(intent_patterns);
+                    active.parameters = Set(parameters);
+                    active.execution_config = Set(execution_config);
+                    active.prompt_template = Set(parsed.prompt_template);
+                    active.cacheable = Set(fm.cacheable);
+                    active.enabled = Set(fm.enabled);
+                    active.priority = Set(fm.priority);
+                    active.updated_at = Set(now);
+                    active.update(db).await?;
+                    tracing::debug!(skill = %fm.name, "updated skill from markdown file");
+                }
+                None => {
+                    let active = skill::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        name: Set(fm.name.clone()),
+                        display_name: Set(fm.display_name.clone()),
+                        description: Set(fm.description.clone()),
+                        category: Set(fm.category.clone()),
+                        intent_patterns: Set(intent_patterns),
+                        parameters: Set(parameters),
+                        execution_config: Set(execution_config),
+                        prompt_template: Set(parsed.prompt_template),
+                        cacheable: Set(fm.cacheable),
+                        enabled: Set(fm.enabled),
+                        priority: Set(fm.priority),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                    };
+                    active.insert(db).await?;
+                    tracing::debug!(skill = %fm.name, "inserted skill from markdown file");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Get a skill by name from DB
     pub async fn get_by_name(&self, name: &str) -> anyhow::Result<Option<skill::Model>> {
         let db = self.db()?;
@@ -214,7 +292,16 @@ impl ModuleLifecycle for BuiltinSkills {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.db = Some(ctx.db.clone());
+        self.skills_dir = ctx.config.skills.skills_dir.as_ref().map(PathBuf::from);
         self.seed_defaults().await?;
+
+        // Sync markdown skill files into DB (if configured)
+        if let Some(dir) = &self.skills_dir {
+            if let Err(e) = self.sync_markdown_skills(dir).await {
+                tracing::warn!(error = %e, dir = %dir.display(), "failed to sync markdown skills");
+            }
+        }
+
         self.load_skills().await?;
         Ok(())
     }
