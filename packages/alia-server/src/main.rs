@@ -18,6 +18,7 @@ mod api;
 mod auth;
 mod channels;
 mod config;
+#[cfg(feature = "channel-embedded")]
 mod embedded;
 mod entity;
 mod error;

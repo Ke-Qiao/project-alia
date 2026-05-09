@@ -104,6 +104,35 @@ project-alia/
 - **Database**: PostgreSQL 17
 - **Tooling**: mise, pnpm, Docker
 
+## Feature Flags (alia-server)
+
+The server uses Cargo feature flags for conditional compilation. All features are enabled by default.
+
+| Feature | Description |
+|---------|-------------|
+| `channel-embedded` | gRPC channel adapter for communicating with alia-embedded |
+| `llm-openai` | OpenAI GPT backend |
+| `llm-ollama` | Local Ollama LLM backend + multi-layer intent router |
+| `stt-whisper` | Whisper speech-to-text |
+| `tts-sovits` | SoVITS text-to-speech |
+| `embed-ollama` | Ollama embedding backend |
+| `embed-openai` | OpenAI embedding backend |
+| `memory-graphrag` | GraphRAG memory system |
+| `cache-semantic` | Two-layer semantic cache |
+| `meditation` | Scheduled meditation system |
+
+Build a minimal server (no AI backends, no embedded channel):
+
+```bash
+cargo build -p alia-server --no-default-features
+```
+
+Build with only specific features:
+
+```bash
+cargo build -p alia-server --no-default-features --features "llm-ollama,stt-whisper"
+```
+
 ## License
 
 [MIT](LICENSE)

@@ -11,15 +11,23 @@
 //! - L2 Core: User profile, preferences, key facts (persistent)
 //! - L3 Procedural: Habits and behavior patterns (system-maintained)
 
+#[cfg(feature = "memory-graphrag")]
 pub mod core;
+#[cfg(feature = "memory-graphrag")]
 pub mod episodic;
+#[cfg(feature = "memory-graphrag")]
 pub mod graph;
+#[cfg(feature = "memory-graphrag")]
 pub mod graphrag;
+#[cfg(feature = "memory-graphrag")]
 pub mod procedural;
+#[cfg(feature = "memory-graphrag")]
 pub mod retrieval;
 pub mod simple;
+#[cfg(feature = "memory-graphrag")]
 pub mod working;
 
+#[cfg(feature = "memory-graphrag")]
 pub use graphrag::GraphRagMemory;
 pub use simple::SimpleMemory;
 

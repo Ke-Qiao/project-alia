@@ -140,13 +140,28 @@ cargo check -p alia-server --all-features
 
 ## Feature Flags
 
-| Flag | Description |
-|------|-------------|
-| `llm-openai` | OpenAI ChatGPT adapter |
-| `llm-ollama` | Ollama local LLM adapter |
-| `stt-whisper` | whisper.cpp STT adapter |
-| `tts-sovits` | GPT-SoVITS TTS adapter |
-| `embed-ollama` | Ollama embedding adapter |
-| `memory-graphrag` | GraphRAG memory backend |
-| `cache-semantic` | Two-layer semantic cache |
-| `meditation` | Background meditation/reflection |
+All features are enabled by default. Disable with `--no-default-features` and selectively enable what you need.
+
+| Flag | Description | Pulls in |
+|------|-------------|----------|
+| `channel-embedded` | gRPC channel adapter for alia-embedded devices | `alia-proto`, `tonic` |
+| `llm-openai` | OpenAI ChatGPT adapter | `reqwest` |
+| `llm-ollama` | Ollama local LLM adapter + multi-layer intent router | `reqwest` |
+| `stt-whisper` | whisper.cpp STT adapter | `reqwest` |
+| `tts-sovits` | GPT-SoVITS TTS adapter | `reqwest` |
+| `embed-ollama` | Ollama embedding adapter | `reqwest` |
+| `embed-openai` | OpenAI embedding adapter | `reqwest` |
+| `memory-graphrag` | GraphRAG memory backend | — |
+| `cache-semantic` | Two-layer semantic cache | — |
+| `meditation` | Background meditation/reflection | — |
+
+```bash
+# Minimal build (no AI backends, no embedded channel)
+cargo build -p alia-server --no-default-features
+
+# Only local AI + voice
+cargo build -p alia-server --no-default-features --features "llm-ollama,stt-whisper,tts-sovits"
+
+# Full build (default)
+cargo build -p alia-server
+```

@@ -5,11 +5,15 @@ edition.workspace = true
 
 [features]
 default = [
+    "channel-embedded",
     "llm-openai", "llm-ollama",
     "stt-whisper", "tts-sovits",
     "embed-ollama", "memory-graphrag",
     "cache-semantic", "meditation",
 ]
+
+# Channel adapters
+channel-embedded = ["dep:alia-proto", "dep:tonic"]
 
 # LLM backends
 llm-openai = ["dep:reqwest"]
@@ -33,7 +37,7 @@ cache-semantic = []
 meditation = []
 
 [dependencies]
-alia-proto.workspace = true
+alia-proto = { workspace = true, optional = true }
 alia-transport.workspace = true
 
 # Async runtime
@@ -47,8 +51,8 @@ async-trait.workspace = true
 axum.workspace = true
 tower-http.workspace = true
 
-# gRPC
-tonic.workspace = true
+# gRPC (optional, only for embedded channel)
+tonic = { workspace = true, optional = true }
 
 # Database
 sea-orm.workspace = true

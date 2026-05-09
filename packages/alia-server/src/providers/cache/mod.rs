@@ -6,9 +6,11 @@
 //! - `NoopCache`: No-op placeholder (no caching)
 
 pub mod db;
+#[cfg(feature = "cache-semantic")]
 pub mod two_layer;
 
 pub use db::DbCache;
+#[cfg(feature = "cache-semantic")]
 pub use two_layer::TwoLayerCache;
 
 use async_trait::async_trait;

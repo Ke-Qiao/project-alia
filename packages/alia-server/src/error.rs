@@ -25,6 +25,7 @@ pub enum AppError {
     #[error("database error")]
     Database(#[source] sea_orm::DbErr),
 
+    #[cfg(feature = "channel-embedded")]
     #[error("gRPC communication error")]
     Grpc(#[source] tonic::Status),
 
@@ -74,6 +75,7 @@ impl IntoResponse for AppError {
                     "internal error".into(),
                 )
             }
+            #[cfg(feature = "channel-embedded")]
             Self::Grpc(e) => {
                 tracing::error!(error = ?e, "gRPC error");
                 (
@@ -110,6 +112,7 @@ impl From<sea_orm::DbErr> for AppError {
     }
 }
 
+#[cfg(feature = "channel-embedded")]
 impl From<tonic::Status> for AppError {
     fn from(err: tonic::Status) -> Self {
         Self::Grpc(err)

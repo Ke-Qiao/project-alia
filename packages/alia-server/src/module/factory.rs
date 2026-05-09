@@ -4,17 +4,26 @@ use crate::providers::adapter::{
     SchedulerBackend, ToolRegistry,
 };
 use crate::channels::adapter::ChannelAdapter;
+#[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 use crate::channels::cli::CliChannel;
 use crate::config::ChannelConfig;
 use crate::event::EventBus;
-use crate::providers::cache::{DbCache, NoopCache, TwoLayerCache};
+use crate::providers::cache::{DbCache, NoopCache};
+#[cfg(feature = "cache-semantic")]
+use crate::providers::cache::TwoLayerCache;
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::providers::meditation::{NoopMeditation, ScheduledMeditation};
-use crate::providers::memory::{GraphRagMemory, NoopMemory, SimpleMemory};
+#[cfg(feature = "meditation")]
+use crate::providers::meditation::ScheduledMeditation;
+use crate::providers::meditation::NoopMeditation;
+#[cfg(feature = "memory-graphrag")]
+use crate::providers::memory::GraphRagMemory;
+use crate::providers::memory::{NoopMemory, SimpleMemory};
 use crate::providers::persona::{NoopPersona, TemplatePersona};
-use crate::providers::router::{MultiLayerRouter, PassthroughRouter};
+#[cfg(feature = "llm-ollama")]
+use crate::providers::router::MultiLayerRouter;
+use crate::providers::router::PassthroughRouter;
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
 use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
 use crate::scheduler::{NoopScheduler, CronScheduler};
@@ -117,6 +126,7 @@ pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
 
 pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
     match name {
+        #[cfg(feature = "memory-graphrag")]
         "graphrag" => {
             tracing::info!(module = name, "creating memory backend (GraphRagMemory)");
             Box::new(GraphRagMemory::new())
@@ -130,8 +140,8 @@ pub fn create_memory(name: &str) -> Box<dyn MemoryBackend> {
             Box::new(NoopMemory)
         }
         _ => {
-            tracing::warn!(module = name, "unknown memory backend, using graphrag");
-            Box::new(GraphRagMemory::new())
+            tracing::warn!(module = name, "unknown memory backend, using simple");
+            Box::new(SimpleMemory::new())
         }
     }
 }
@@ -142,6 +152,7 @@ pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
             tracing::info!(module = name, "creating cache backend (DbCache)");
             Box::new(DbCache::new())
         }
+        #[cfg(feature = "cache-semantic")]
         "two_layer" => {
             tracing::info!(module = name, "creating cache backend (TwoLayerCache)");
             Box::new(TwoLayerCache::new())
@@ -211,6 +222,7 @@ pub fn create_meditation(name: &str) -> Box<dyn MeditationStrategy> {
 
 pub fn create_router(name: &str) -> Box<dyn RouterStrategy> {
     match name {
+        #[cfg(feature = "llm-ollama")]
         "multi_layer" => {
             tracing::info!(module = name, "creating router strategy (MultiLayerRouter)");
             Box::new(MultiLayerRouter::new())
@@ -279,6 +291,7 @@ pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
 
 pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn ChannelAdapter> {
     match config {
+        #[cfg(feature = "channel-embedded")]
         ChannelConfig::Embedded {
             id,
             endpoint,
@@ -298,6 +311,14 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
                 },
                 event_bus,
             ))
+        }
+        #[cfg(not(feature = "channel-embedded"))]
+        ChannelConfig::Embedded { id, .. } => {
+            tracing::warn!(
+                channel_id = %id,
+                "embedded channel not available (compile without 'channel-embedded' feature)"
+            );
+            panic!("embedded channel requires 'channel-embedded' feature");
         }
         ChannelConfig::Cli { id, .. } => {
             tracing::info!(channel_id = %id, "creating CliChannel");
