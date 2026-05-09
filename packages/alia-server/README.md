@@ -1,6 +1,6 @@
 # alia-server
 
-The central server for the Alia personal AI assistant system. Handles API requests, WebSocket connections, AI pipeline orchestration, and communication with `alia-embedded` via gRPC.
+The central server for the Alia personal AI assistant system. Handles API requests, WebSocket connections, AI pipeline orchestration, and multi-channel communication (gRPC to `alia-embedded`, interactive CLI REPL, and more).
 
 ## Prerequisites
 
@@ -42,7 +42,26 @@ Individual values can also be overridden via environment variables:
 - `JWT_SECRET` — Secret key for JWT signing
 - `OPENAI_API_KEY` — OpenAI API key (if using OpenAI adapter)
 
-### 3. Build & Run
+### 3. Channel Configuration
+
+Channels are configured as an array in `server.toml`. Each entry creates a channel adapter instance:
+
+```toml
+# gRPC channel to a Raspberry Pi
+[[channels]]
+type = "embedded"
+id = "pi-living-room"
+enabled = true
+endpoint = "http://192.168.1.100:50051"
+
+# Interactive CLI for development
+[[channels]]
+type = "cli"
+id = "dev-cli"
+enabled = true
+```
+
+### 4. Build & Run
 
 ```bash
 # From workspace root
@@ -52,7 +71,7 @@ cargo run -p alia-server
 cargo run -p alia-server --features "llm-openai,stt-whisper,tts-sovits"
 ```
 
-### 4. Check It's Running
+### 5. Check It's Running
 
 ```bash
 curl http://localhost:3000/health
@@ -70,32 +89,41 @@ src/
 ├── error.rs           # Unified error type (AppError → HTTP responses)
 ├── event.rs           # Internal event bus (broadcast channel)
 ├── state.rs           # Shared application state (AppState)
+├── openapi.rs         # OpenAPI (utoipa) doc generation
 ├── api/               # HTTP route handlers (REST endpoints)
 ├── auth/              # JWT, password hashing, auth middleware
-├── embedded/          # gRPC client for alia-embedded
+├── channels/          # Channel adapter system
+│   ├── adapter.rs     # ChannelAdapter trait + types (Event, Response, Capabilities)
+│   ├── registry.rs    # ChannelRegistry (multi-instance, broadcast, health)
+│   ├── embedded.rs    # EmbeddedChannel (gRPC → alia-embedded, lazy connect + retry)
+│   └── cli.rs         # CliChannel (rustyline REPL, history, colored output)
+├── embedded/          # Legacy gRPC client (superseded by channels/embedded.rs)
 ├── module/            # Module lifecycle, registry, builder, factory
-├── providers/         # AI adapter trait definitions + noop implementations
+├── providers/         # AI adapter trait definitions + implementations
 │   ├── adapter.rs     # All trait definitions (LlmAdapter, SttAdapter, etc.)
-│   ├── llm/           # LLM, STT, TTS noop implementations
-│   ├── embedding/     # Embedding adapter
-│   ├── memory/        # Memory backend (GraphRAG)
-│   ├── cache/         # Cache backend (two-layer)
-│   ├── skills/        # Skill provider
-│   ├── persona/       # Persona/prompt provider
+│   ├── llm/           # LLM adapters (OpenAI, Ollama)
+│   ├── stt/           # Speech-to-text (whisper.cpp)
+│   ├── tts/           # Text-to-speech (GPT-SoVITS)
+│   ├── embedding/     # Embedding adapters (Ollama, OpenAI)
+│   ├── memory/        # Memory backend (GraphRAG + SimpleMemory)
+│   ├── cache/         # Cache backend (two-layer: exact + semantic)
+│   ├── skills/        # Skill provider (builtin skills engine)
+│   ├── persona/       # Persona/prompt provider (Handlebars templates)
 │   ├── meditation/    # Background meditation strategy
-│   └── router/        # Intent routing strategy
+│   └── router/        # Intent routing (MultiLayerRouter + Passthrough)
 ├── rules/             # Rule engine
-├── ws/                # WebSocket handler
-└── openapi.rs         # OpenAPI (utoipa) doc generation
+├── scheduler/         # Cron/interval task scheduler
+├── tools/             # Built-in tools + plugin tool registration
+└── ws/                # WebSocket handler + subscription/backpressure
 ```
 
 ## Architecture
 
-The server uses a **module-slot architecture** — all subsystems (LLM, STT, TTS, memory, etc.) are defined as `dyn Trait` objects, loaded at startup based on configuration. This enables:
+The server uses two complementary patterns:
 
-- Swapping implementations without code changes (e.g., OpenAI → Ollama)
-- Feature-gated compilation (only include what you need)
-- Clean separation between interface and implementation
+- **Module-slot architecture** — Single-instance subsystems (LLM, STT, TTS, memory, etc.) are defined as `dyn Trait` objects in a `ModuleRegistry`, loaded at startup based on `[modules]` configuration. Swapping implementations (e.g., OpenAI → Ollama) requires only a config change.
+
+- **Channel adapter architecture** — Multi-instance I/O channels (gRPC to embedded devices, CLI REPL, future: Telegram/Discord/Web) are registered in a `ChannelRegistry`. Each channel implements the `ChannelAdapter` trait and declares its capabilities (text, voice, streaming, sensors, etc.). Channels are configured as a `[[channels]]` array, allowing multiple instances of the same type.
 
 ## Development
 

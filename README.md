@@ -7,6 +7,7 @@ graph LR
     Frontend["alia-frontend<br/>(Expo, RN)"] <-->|"REST + WebSocket<br/>port 3000"| Server["alia-server<br/>(Axum, Rust)"]
     Server <-->|"gRPC (HTTP/2)<br/>port 50051"| Embedded["alia-embedded<br/>(Tonic, RPi)"]
     Server --- DB[("PostgreSQL<br/>(SeaORM)")]
+    Server -.-|"CLI REPL<br/>(rustyline)"| CLI["alia> prompt"]
     Embedded --- Proc["tokio::process<br/>(Python subprocesses)"]
 ```
 
@@ -14,7 +15,7 @@ graph LR
 
 | Package | Description |
 |---------|-------------|
-| [alia-server](packages/alia-server/) | Central server — API, AI pipeline, WebSocket, module orchestration |
+| [alia-server](packages/alia-server/) | Central server — API, AI pipeline, WebSocket, channel adapters, module orchestration |
 | [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — wake-word, process management, plugin sandbox, gRPC |
 | [alia-frontend](packages/alia-frontend/) | Cross-platform consumer app (React Native / Expo) |
 
@@ -87,6 +88,7 @@ project-alia/
 │   ├── alia-server/          # Server (Rust / Axum)
 │   ├── alia-embedded/        # Edge node (Rust / Tonic)
 │   └── alia-frontend/        # Frontend (React Native / Expo)
+├── docs/                     # Architecture & design documents
 ├── Cargo.toml                # Rust workspace root
 ├── package.json              # pnpm workspace root
 ├── mise.toml                 # Tool versions & dev tasks
@@ -95,10 +97,10 @@ project-alia/
 
 ## Tech Stack
 
-- **Server**: Rust, Axum, SeaORM, tokio, utoipa
+- **Server**: Rust, Axum, SeaORM, tokio, utoipa, rustyline
 - **Embedded**: Rust, Tonic (gRPC), tokio::process
 - **Frontend**: TypeScript, React Native, Expo
-- **Communication**: REST + WebSocket (frontend ↔ server), gRPC (server ↔ embedded)
+- **Communication**: REST + WebSocket (frontend ↔ server), gRPC (server ↔ embedded), CLI REPL (local dev)
 - **Database**: PostgreSQL 17
 - **Tooling**: mise, pnpm, Docker
 

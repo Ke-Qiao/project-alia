@@ -11,17 +11,14 @@ Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-w
 
 ```
 alia-embedded/
-├── config/
-│   └── embedded.toml       # Runtime configuration
 ├── src/
 │   ├── main.rs             # Entry point & gRPC server bootstrap
 │   ├── config/             # TOML config types
 │   ├── process/            # Python subprocess manager
 │   ├── plugin/             # Plugin registry (install, manifest, sandbox)
 │   ├── binding/            # Device binding state machine
+│   ├── module/             # Module lifecycle & registry
 │   └── grpc/               # tonic service implementations
-├── run/                    # Runtime PID files & binding state (git-ignored)
-└── plugins/                # Installed plugins (git-ignored)
 ```
 
 ## Quick Start
@@ -38,8 +35,6 @@ Copy the example and edit:
 ```sh
 cp config/embedded.example.toml config/embedded.toml
 ```
-
-Run from the workspace root:
 
 ```sh
 cargo run -p alia-embedded

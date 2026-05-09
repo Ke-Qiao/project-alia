@@ -1,73 +1,67 @@
-# Minimal Uniwind Template
+# alia-frontend
 
-This is a [React Native](https://reactnative.dev/) project built with [Expo](https://expo.dev/) and [React Native Reusables](https://reactnativereusables.com).
+Cross-platform consumer app for the Alia personal AI assistant. Built with React Native and Expo, communicates with `alia-server` via REST and WebSocket.
 
-It was initialized using the following command, then the `Minimal (Uniwind)` template was selected when prompted:
+## Prerequisites
 
-```bash
-npx @react-native-reusables/cli@latest init
-```
+- Node.js (managed via mise from workspace root)
+- pnpm
 
 ## Getting Started
 
-To run the development server:
-
 ```bash
-    npm run dev
-    # or
-    yarn dev
-    # or
-    pnpm dev
-    # or
-    bun dev
+# Install dependencies
+pnpm install
+
+# Start Expo dev server
+pnpm dev
 ```
 
-This will start the Expo Dev Server. Open the app in:
+Open the app in:
 
 - **iOS**: press `i` to launch in the iOS simulator _(Mac only)_
 - **Android**: press `a` to launch in the Android emulator
 - **Web**: press `w` to run in a browser
 
-You can also scan the QR code using the [Expo Go](https://expo.dev/go) app on your device. This project fully supports running in Expo Go for quick testing on physical devices.
+You can also scan the QR code using the [Expo Go](https://expo.dev/go) app on your device.
 
-## Adding components
+## Project Structure
 
-You can add more reusable components using the CLI:
-
-```bash
-npx react-native-reusables/cli@latest add [...components]
+```
+alia-frontend/
+├── app/                # Expo Router pages
+│   ├── _layout.tsx     # Root layout
+│   ├── index.tsx       # Home screen
+│   └── +not-found.tsx  # 404 page
+├── assets/             # Static assets (images, fonts)
+├── components/
+│   └── ui/             # Reusable UI components (React Native Reusables)
+├── lib/                # Utilities (theme, helpers)
+├── app.json            # Expo configuration
+├── metro.config.js     # Metro bundler config
+└── tsconfig.json       # TypeScript config
 ```
 
-> e.g. `npx react-native-reusables/cli@latest add input textarea`
+## Tech Stack
 
-If you don't specify any component names, you'll be prompted to select which components to add interactively. Use the `--all` flag to install all available components at once.
+- [Expo](https://expo.dev/) + [Expo Router](https://expo.dev/router)
+- [React Native](https://reactnative.dev/)
+- [Uniwind](https://uniwind.dev/) (Tailwind CSS for React Native)
+- [React Native Reusables](https://reactnativereusables.com) (UI component library)
+- TypeScript
 
-## Project Features
+## Adding UI Components
 
-- ⚛️ Built with [Expo Router](https://expo.dev/router)
-- 🎨 Styled with [Tailwind CSS](https://tailwindcss.com/) via [Uniwind](https://uniwind.dev/)
-- 📦 UI powered by [React Native Reusables](https://github.com/founded-labs/react-native-reusables)
-- 🚀 New Architecture enabled
-- 🔥 Edge to Edge enabled
-- 📱 Runs on iOS, Android, and Web
+```bash
+npx @react-native-reusables/cli@latest add [...components]
+```
 
-## Learn More
+## Deploy
 
-To dive deeper into the technologies used:
+Deploy via [EAS](https://expo.dev/eas):
 
-- [React Native Docs](https://reactnative.dev/docs/getting-started)
-- [Expo Docs](https://docs.expo.dev/)
-- [Uniwind Docs](https://docs.uniwind.dev/)
-- [React Native Reusables](https://reactnativereusables.com)
-
-## Deploy with EAS
-
-The easiest way to deploy your app is with [Expo Application Services (EAS)](https://expo.dev/eas).
-
-- [EAS Build](https://docs.expo.dev/build/introduction/)
-- [EAS Updates](https://docs.expo.dev/eas-update/introduction/)
-- [EAS Submit](https://docs.expo.dev/submit/introduction/)
-
----
-
-If you enjoy using React Native Reusables, please consider giving it a ⭐ on [GitHub](https://github.com/founded-labs/react-native-reusables). Your support means a lot!
+```bash
+eas build    # Build for iOS/Android
+eas update   # OTA updates
+eas submit   # Submit to App Store / Google Play
+```
