@@ -3,6 +3,11 @@
 //! DB-backed skill provider that loads skill definitions from PostgreSQL.
 //! On first init, seeds default built-in skills if the table is empty.
 //! Supports keyword-based intent matching with priority-based conflict resolution.
+//!
+//! Skills extend what the LLM **knows how to do well**. Each skill carries:
+//! - Intent patterns for matching user messages
+//! - A prompt template providing domain-specific LLM instructions
+//! - A list of tool names to make available during LLM execution
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,7 +25,9 @@ use uuid::Uuid;
 use super::markdown;
 use crate::entity::skill;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
+use crate::providers::adapter::{
+    PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
+};
 
 /// A loaded skill with its metadata for in-memory matching
 #[derive(Clone)]
@@ -30,9 +37,10 @@ pub struct LoadedSkill {
     pub keywords: Vec<String>,
     /// Parameter schema (JSON Schema)
     pub param_schema: serde_json::Value,
-    /// Internal execution routing config (plugin, action)
-    pub execution_config: Option<serde_json::Value>,
-    /// Response template for simple confirmations
+    /// Tool names to make available to the LLM during this skill's execution.
+    /// If empty, all tools are available.
+    pub tools: Vec<String>,
+    /// Response template / system prompt for LLM context
     pub prompt_template: Option<String>,
     /// Whether the response is cacheable
     pub cacheable: bool,
@@ -97,6 +105,14 @@ impl BuiltinSkills {
                 })
                 .unwrap_or_default();
 
+            // Prefer native `tools` column; fall back to parsing `execution_config`
+            let tools = parse_tools_from_json_column(&row.tools)
+                .or_else(|| {
+                    let t = parse_tools_from_execution_config(&row.execution_config);
+                    if t.is_empty() { None } else { Some(t) }
+                })
+                .unwrap_or_default();
+
             skills.insert(
                 row.name.clone(),
                 LoadedSkill {
@@ -108,7 +124,7 @@ impl BuiltinSkills {
                     },
                     keywords,
                     param_schema: row.parameters,
-                    execution_config: row.execution_config,
+                    tools,
                     prompt_template: row.prompt_template,
                     cacheable: row.cacheable,
                     priority: row.priority,
@@ -194,13 +210,28 @@ impl BuiltinSkills {
                 .map(markdown::toml_to_json)
                 .unwrap_or_else(|| serde_json::json!({}));
 
-            let execution_config = fm.execution_config.as_ref().map(markdown::toml_to_json);
+            // Convert tools list to execution_config (stored as JSON array in DB)
+            let execution_config = if fm.tools.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Array(
+                    fm.tools.iter().map(|t| serde_json::json!(t)).collect(),
+                ))
+            };
 
             // Upsert: find by name → update or insert
             let existing = skill::Entity::find()
                 .filter(skill::Column::Name.eq(&fm.name))
                 .one(db)
                 .await?;
+
+            let tools_col = if fm.tools.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Array(
+                    fm.tools.iter().map(|t| serde_json::json!(t)).collect(),
+                ))
+            };
 
             match existing {
                 Some(row) => {
@@ -211,6 +242,8 @@ impl BuiltinSkills {
                     active.intent_patterns = Set(intent_patterns);
                     active.parameters = Set(parameters);
                     active.execution_config = Set(execution_config);
+                    active.tools = Set(tools_col);
+                    active.source = Set("file".to_string());
                     active.prompt_template = Set(parsed.prompt_template);
                     active.cacheable = Set(fm.cacheable);
                     active.enabled = Set(fm.enabled);
@@ -229,6 +262,8 @@ impl BuiltinSkills {
                         intent_patterns: Set(intent_patterns),
                         parameters: Set(parameters),
                         execution_config: Set(execution_config),
+                        tools: Set(tools_col),
+                        source: Set("file".to_string()),
                         prompt_template: Set(parsed.prompt_template),
                         cacheable: Set(fm.cacheable),
                         enabled: Set(fm.enabled),
@@ -363,44 +398,21 @@ impl SkillProvider for BuiltinSkills {
         }
     }
 
-    async fn execute(
-        &self,
-        skill: &SkillMatch,
-        params: serde_json::Value,
-    ) -> anyhow::Result<SkillResult> {
+    async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
         let skills = self.skills.read().await;
 
         let loaded = match skills.get(&skill.name) {
             Some(s) => s,
             None => {
-                return Ok(SkillResult {
-                    success: false,
-                    output: serde_json::Value::Null,
-                    message: Some(format!("Skill '{}' not found", skill.name)),
-                });
+                anyhow::bail!("Skill '{}' not found", skill.name);
             }
         };
 
-        // If skill has a prompt_template, return it for template-based response
-        // (the caller can fill the template or pass to LLM)
-        let template = loaded.prompt_template.clone();
-        let exec_config = loaded.execution_config.clone();
-
-        Ok(SkillResult {
-            success: true,
-            output: serde_json::json!({
-                "skill": skill.name,
-                "category": loaded.info.category,
-                "parameters": params,
-                "param_schema": loaded.param_schema,
-                "execution_config": exec_config,
-                "prompt_template": template,
-                "cacheable": loaded.cacheable,
-            }),
-            message: Some(format!(
-                "Skill '{}' ready for execution",
-                loaded.info.display_name
-            )),
+        Ok(SkillResolution {
+            skill_name: skill.name.clone(),
+            system_prompt: loaded.prompt_template.clone(),
+            tools: loaded.tools.clone(),
+            cacheable: loaded.cacheable,
         })
     }
 
@@ -408,6 +420,153 @@ impl SkillProvider for BuiltinSkills {
         let skills = self.skills.read().await;
         Ok(skills.values().map(|s| s.info.clone()).collect())
     }
+
+    async fn register_plugin_skill(
+        &self,
+        plugin_name: &str,
+        def: PluginSkillDefinition,
+    ) -> anyhow::Result<()> {
+        let db = self.db()?;
+        let now = Utc::now();
+
+        let intent_patterns = serde_json::Value::Array(
+            def.intent_patterns
+                .iter()
+                .map(|s| serde_json::json!(s))
+                .collect(),
+        );
+
+        let execution_config = if def.tools.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Array(
+                def.tools.iter().map(|t| serde_json::json!(t)).collect(),
+            ))
+        };
+
+        let tools_col = if def.tools.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Array(
+                def.tools.iter().map(|t| serde_json::json!(t)).collect(),
+            ))
+        };
+
+        // Upsert by name
+        let existing = skill::Entity::find()
+            .filter(skill::Column::Name.eq(&def.name))
+            .one(db)
+            .await?;
+
+        match existing {
+            Some(row) => {
+                let mut active: skill::ActiveModel = row.into();
+                active.display_name = Set(def.display_name);
+                active.description = Set(def.description);
+                active.category = Set(def.category);
+                active.intent_patterns = Set(intent_patterns);
+                active.parameters = Set(def.parameters);
+                active.execution_config = Set(execution_config);
+                active.tools = Set(tools_col);
+                active.source = Set(plugin_name.to_string());
+                active.prompt_template = Set(def.prompt_template);
+                active.cacheable = Set(def.cacheable);
+                active.enabled = Set(true);
+                active.priority = Set(def.priority);
+                active.updated_at = Set(now);
+                active.update(db).await?;
+            }
+            None => {
+                let active = skill::ActiveModel {
+                    id: Set(Uuid::new_v4()),
+                    name: Set(def.name.clone()),
+                    display_name: Set(def.display_name),
+                    description: Set(def.description),
+                    category: Set(def.category),
+                    intent_patterns: Set(intent_patterns),
+                    parameters: Set(def.parameters),
+                    execution_config: Set(execution_config),
+                    tools: Set(tools_col),
+                    source: Set(plugin_name.to_string()),
+                    prompt_template: Set(def.prompt_template),
+                    cacheable: Set(def.cacheable),
+                    enabled: Set(true),
+                    priority: Set(def.priority),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                };
+                active.insert(db).await?;
+            }
+        }
+
+        tracing::info!(plugin = %plugin_name, skill = %def.name, "registered plugin skill");
+        self.load_skills().await?;
+        Ok(())
+    }
+
+    async fn unregister_plugin_skills(&self, plugin_name: &str) -> anyhow::Result<u64> {
+        let db = self.db()?;
+        let result = skill::Entity::delete_many()
+            .filter(skill::Column::Source.eq(plugin_name))
+            .exec(db)
+            .await?;
+
+        if result.rows_affected > 0 {
+            tracing::info!(
+                plugin = %plugin_name,
+                count = result.rows_affected,
+                "unregistered plugin skills"
+            );
+            self.load_skills().await?;
+        }
+
+        Ok(result.rows_affected)
+    }
+}
+
+/// Parse tool names from the `execution_config` JSON column.
+///
+/// Supports two formats for backward compatibility:
+/// - New format (JSON array of strings): `["device_control", "sensor_read"]`
+/// - Legacy format (nested object): `{"type": "function", "function": {"name": "send_plugin_command", ...}}`
+fn parse_tools_from_execution_config(config: &Option<serde_json::Value>) -> Vec<String> {
+    let Some(config) = config else {
+        return Vec::new();
+    };
+
+    // New format: JSON array of tool name strings
+    if let Some(arr) = config.as_array() {
+        return arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+    }
+
+    // Legacy format: {"type": "function", "function": {"name": "..."}}
+    if let Some(name) = config
+        .get("function")
+        .and_then(|f| f.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return vec![name.to_string()];
+    }
+
+    Vec::new()
+}
+
+/// Parse tool names from the native `tools` JSONB column.
+/// Returns `None` if the column is NULL or empty, `Some(vec)` otherwise.
+fn parse_tools_from_json_column(tools: &Option<serde_json::Value>) -> Option<Vec<String>> {
+    let tools = tools.as_ref()?;
+    let arr = tools.as_array()?;
+    if arr.is_empty() {
+        return None;
+    }
+    Some(
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect(),
+    )
 }
 
 /// Generate seed data for all default built-in skills
@@ -445,13 +604,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "value": {"type": "number", "description": "亮度(0-100)或色温(2700-6500K)"}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "send_plugin_command",
-                    "parameters": {"plugin_name": "zigbee-bridge", "action": "light_control"}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["device_control"]))),
+            tools: Set(Some(serde_json::json!(["device_control"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(Some(
                 "用户想要{action}{device_name}。请执行操作并用自然语言确认。".into(),
             )),
@@ -490,13 +645,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "mode": {"type": "string", "enum": ["cool", "heat", "auto", "dehumidify", "fan"]}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "send_plugin_command",
-                    "parameters": {"plugin_name": "ir-bridge", "action": "ac_control"}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["device_control"]))),
+            tools: Set(Some(serde_json::json!(["device_control"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(Some(
                 "用户想要{action}空调。温度: {temperature}°C，模式: {mode}。".into(),
             )),
@@ -539,13 +690,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "device_type": {"type": "string"}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "send_plugin_command",
-                    "parameters": {"plugin_name": "smart-home", "action": "device_control"}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["device_control"]))),
+            tools: Set(Some(serde_json::json!(["device_control"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(None),
             cacheable: Set(false),
             enabled: Set(true),
@@ -583,13 +730,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                 },
                 "required": ["duration_seconds"]
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "schedule_task",
-                    "parameters": {"trigger_type": "once"}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["schedule_task"]))),
+            tools: Set(Some(serde_json::json!(["schedule_task"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(Some("定时器已设置，{duration}后提醒: {message}".into())),
             cacheable: Set(false),
             enabled: Set(true),
@@ -625,13 +768,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "days": {"type": "integer", "minimum": 1, "maximum": 7}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "weather_query",
-                    "parameters": {}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["sensor_read"]))),
+            tools: Set(Some(serde_json::json!(["sensor_read"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(None),
             cacheable: Set(true),
             enabled: Set(true),
@@ -665,13 +804,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "device_type": {"type": "string"}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "device_control",
-                    "parameters": {"action": "query_status"}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["sensor_read", "sensor_list"]))),
+            tools: Set(Some(serde_json::json!(["sensor_read", "sensor_list"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(None),
             cacheable: Set(true),
             enabled: Set(true),
@@ -707,13 +842,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "all"]}
                 }
             })),
-            execution_config: Set(Some(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": "memory_search",
-                    "parameters": {}
-                }
-            }))),
+            execution_config: Set(Some(serde_json::json!(["memory_search"]))),
+            tools: Set(Some(serde_json::json!(["memory_search"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(None),
             cacheable: Set(false),
             enabled: Set(true),
@@ -749,7 +880,9 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
                     "rule_description": {"type": "string"}
                 }
             })),
-            execution_config: Set(None),
+            execution_config: Set(Some(serde_json::json!(["schedule_task"]))),
+            tools: Set(Some(serde_json::json!(["schedule_task"]))),
+            source: Set("builtin".to_string()),
             prompt_template: Set(None),
             cacheable: Set(false),
             enabled: Set(true),

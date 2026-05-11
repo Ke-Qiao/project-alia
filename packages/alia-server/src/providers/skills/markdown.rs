@@ -11,6 +11,7 @@
 //! display_name = "我的技能"
 //! category = "utility"
 //! intent_patterns = ["关键词1", "关键词2"]
+//! tools = ["device_control", "sensor_read"]
 //! priority = 5
 //!
 //! [parameters.properties.location]
@@ -36,8 +37,9 @@ pub struct SkillFrontmatter {
     pub intent_patterns: Vec<String>,
     #[serde(default)]
     pub parameters: Option<toml::Value>,
+    /// Tool names to make available to the LLM during this skill's execution.
     #[serde(default)]
-    pub execution_config: Option<toml::Value>,
+    pub tools: Vec<String>,
     #[serde(default)]
     pub cacheable: bool,
     #[serde(default = "default_enabled")]

@@ -11,5 +11,6 @@ pub mod memory_edge;
 pub mod memory_node;
 pub mod persona;
 pub mod skill;
+pub mod tool;
 pub mod user_active_persona;
 pub mod user_persona_override;

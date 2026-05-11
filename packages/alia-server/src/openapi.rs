@@ -49,9 +49,9 @@ use crate::api;
         (name = "memories", description = "Memory management"),
         (name = "personas", description = "Persona management"),
         (name = "meditation", description = "Meditation system"),
-        (name = "skills", description = "Skills"),
+        (name = "skills", description = "Skill definitions — extend what the LLM knows how to do well"),
         (name = "scheduler", description = "Task scheduler"),
-        (name = "tools", description = "Tool invocations"),
+        (name = "tools", description = "Tool invocations — extend what the LLM can do"),
     ),
     modifiers(&SecurityAddon)
 )]

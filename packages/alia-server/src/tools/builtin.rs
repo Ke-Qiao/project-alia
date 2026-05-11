@@ -17,9 +17,12 @@ use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use uuid::Uuid;
 
+use crate::entity::tool;
 use crate::event::{EventBus, ServerEvent};
-use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
+use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
 use crate::providers::sensor::SensorRegistry;
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
@@ -39,10 +42,12 @@ pub trait ToolExecutor: Send + Sync {
 pub struct BuiltinToolRegistry {
     /// Built-in tools (immutable after init)
     builtins: HashMap<String, Arc<dyn ToolExecutor>>,
-    /// Plugin-registered tools (mutable at runtime)
+    /// Plugin-registered tools (in-memory cache, backed by DB)
     plugins: Arc<RwLock<HashMap<String, ToolDefinition>>>,
     /// Event bus for publishing tool events
     event_bus: tokio::sync::Mutex<Option<EventBus>>,
+    /// DB connection for persisting plugin tools
+    db: Option<DatabaseConnection>,
 }
 
 impl BuiltinToolRegistry {
@@ -51,6 +56,7 @@ impl BuiltinToolRegistry {
             builtins: HashMap::new(),
             plugins: Arc::new(RwLock::new(HashMap::new())),
             event_bus: tokio::sync::Mutex::new(None),
+            db: None,
         }
     }
 
@@ -99,6 +105,33 @@ impl BuiltinToolRegistry {
         let name = executor.definition().name;
         self.builtins.insert(name, executor);
     }
+
+    /// Load plugin tools from DB into in-memory cache.
+    async fn load_plugin_tools_from_db(&self) -> anyhow::Result<()> {
+        let Some(db) = &self.db else { return Ok(()) };
+
+        let rows = tool::Entity::find()
+            .filter(tool::Column::Enabled.eq(true))
+            .all(db)
+            .await?;
+
+        let mut plugins = self.plugins.write().unwrap();
+        for row in rows {
+            plugins.insert(
+                row.name.clone(),
+                ToolDefinition {
+                    name: row.name,
+                    description: row.description,
+                    parameters: row.parameters,
+                    source: row.source,
+                    require_confirmation: row.require_confirmation,
+                    required_role: row.required_role,
+                },
+            );
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for BuiltinToolRegistry {
@@ -115,12 +148,25 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
+        self.db = Some(ctx.db.clone());
         self.register_builtins();
+
+        // Load plugin-registered tools from DB
+        if let Err(e) = self.load_plugin_tools_from_db().await {
+            tracing::warn!(error = %e, "failed to load plugin tools from DB");
+        }
+
+        let plugin_count = self.plugins.read().unwrap().len();
         tracing::info!(
-            count = self.builtins.len(),
+            builtin_count = self.builtins.len(),
+            plugin_count,
             "BuiltinToolRegistry initialized"
         );
         Ok(())
+    }
+
+    async fn health_check(&self) -> ModuleHealth {
+        ModuleHealth::Healthy
     }
 }
 
@@ -214,16 +260,66 @@ impl ToolRegistry for BuiltinToolRegistry {
             anyhow::bail!("cannot override builtin tool: {}", tool.name);
         }
 
+        // Persist to DB
+        if let Some(db) = &self.db {
+            let now = Utc::now();
+            let existing = tool::Entity::find()
+                .filter(tool::Column::Name.eq(&tool.name))
+                .one(db)
+                .await?;
+
+            match existing {
+                Some(row) => {
+                    let mut active: tool::ActiveModel = row.into();
+                    active.description = Set(tool.description.clone());
+                    active.parameters = Set(tool.parameters.clone());
+                    active.source = Set(tool.source.clone());
+                    active.require_confirmation = Set(tool.require_confirmation);
+                    active.required_role = Set(tool.required_role.clone());
+                    active.enabled = Set(true);
+                    active.updated_at = Set(now);
+                    active.update(db).await?;
+                }
+                None => {
+                    let active = tool::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        name: Set(tool.name.clone()),
+                        description: Set(tool.description.clone()),
+                        parameters: Set(tool.parameters.clone()),
+                        source: Set(tool.source.clone()),
+                        require_confirmation: Set(tool.require_confirmation),
+                        required_role: Set(tool.required_role.clone()),
+                        enabled: Set(true),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                    };
+                    active.insert(db).await?;
+                }
+            }
+        }
+
+        // Update in-memory cache
         let mut plugins = self.plugins.write().unwrap();
+        tracing::info!(tool = %tool.name, source = %tool.source, "registered plugin tool");
         plugins.insert(tool.name.clone(), tool);
         Ok(())
     }
 
     async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()> {
+        // Remove from DB
+        if let Some(db) = &self.db {
+            tool::Entity::delete_many()
+                .filter(tool::Column::Name.eq(tool_name))
+                .exec(db)
+                .await?;
+        }
+
+        // Remove from in-memory cache
         let mut plugins = self.plugins.write().unwrap();
         plugins
             .remove(tool_name)
             .ok_or_else(|| anyhow::anyhow!("plugin tool not found: {tool_name}"))?;
+        tracing::info!(tool = %tool_name, "unregistered plugin tool");
         Ok(())
     }
 }

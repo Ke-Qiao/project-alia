@@ -1,8 +1,6 @@
-use alia_server::entity::skill;
 use alia_server::providers::SkillInfo;
 use alia_server::providers::skills::builtin::{BuiltinSkills, LoadedSkill, builtin_skill_seeds};
-use alia_server::providers::skills::markdown::{parse_skill_file, toml_to_json};
-use alia_server::providers::skills::tool_format::{ToolFormat, to_tool_definition};
+use alia_server::providers::skills::markdown::parse_skill_file;
 
 // ── builtin seeds ──────────────────────────────────────────────────────
 
@@ -23,6 +21,22 @@ fn test_seed_data() {
 }
 
 #[test]
+fn test_seed_data_uses_tool_name_arrays() {
+    let seeds = builtin_skill_seeds();
+    for seed in &seeds {
+        if let Some(ref config) = seed.execution_config.clone().unwrap() {
+            // All seed data should use the new JSON array format
+            assert!(
+                config.is_array(),
+                "seed skill '{}' execution_config should be a JSON array of tool names, got: {}",
+                seed.name.clone().unwrap(),
+                config
+            );
+        }
+    }
+}
+
+#[test]
 fn test_match_scoring() {
     let skill = LoadedSkill {
         info: SkillInfo {
@@ -33,7 +47,7 @@ fn test_match_scoring() {
         },
         keywords: vec!["灯".into(), "开灯".into(), "灯光".into()],
         param_schema: serde_json::json!({}),
-        execution_config: None,
+        tools: vec!["device_control".to_string()],
         prompt_template: None,
         cacheable: false,
         priority: 0,
@@ -68,6 +82,7 @@ priority = 5
     assert_eq!(parsed.frontmatter.priority, 5);
     assert!(parsed.frontmatter.enabled);
     assert!(!parsed.frontmatter.cacheable);
+    assert!(parsed.frontmatter.tools.is_empty());
     assert_eq!(
         parsed.prompt_template.as_deref(),
         Some("这是 prompt template。")
@@ -75,12 +90,13 @@ priority = 5
 }
 
 #[test]
-fn test_parse_skill_file_with_parameters() {
+fn test_parse_skill_file_with_tools() {
     let content = r#"+++
 name = "weather"
 display_name = "天气查询"
 category = "information"
 intent_patterns = ["天气", "weather"]
+tools = ["sensor_read", "sensor_list"]
 cacheable = true
 
 [parameters]
@@ -89,12 +105,6 @@ type = "object"
 [parameters.properties.location]
 type = "string"
 description = "地点"
-
-[execution_config]
-type = "function"
-
-[execution_config.function]
-name = "weather_query"
 +++
 
 查询 {location} 的天气。
@@ -102,12 +112,8 @@ name = "weather_query"
     let parsed = parse_skill_file(content).unwrap();
     assert_eq!(parsed.frontmatter.name, "weather");
     assert!(parsed.frontmatter.cacheable);
+    assert_eq!(parsed.frontmatter.tools, vec!["sensor_read", "sensor_list"]);
     assert!(parsed.frontmatter.parameters.is_some());
-    assert!(parsed.frontmatter.execution_config.is_some());
-
-    let params_json = toml_to_json(parsed.frontmatter.parameters.as_ref().unwrap());
-    assert_eq!(params_json["type"], "object");
-    assert_eq!(params_json["properties"]["location"]["type"], "string");
 }
 
 #[test]
@@ -117,7 +123,8 @@ name = "no_body"
 display_name = "No Body"
 category = "test"
 intent_patterns = ["test"]
-+++"#;
++++
+"#;
     let parsed = parse_skill_file(content).unwrap();
     assert!(parsed.prompt_template.is_none());
 }
@@ -136,6 +143,8 @@ fn test_parse_skill_file_missing_closing() {
 
 #[test]
 fn test_toml_to_json() {
+    use alia_server::providers::skills::markdown::toml_to_json;
+
     let toml_val: toml::Value = toml::from_str(
         r#"
             type = "object"
@@ -149,79 +158,4 @@ fn test_toml_to_json() {
     let json = toml_to_json(&toml_val);
     assert_eq!(json["type"], "object");
     assert_eq!(json["properties"]["name"]["type"], "string");
-}
-
-// ── tool format ────────────────────────────────────────────────────────
-
-fn sample_skill() -> skill::Model {
-    skill::Model {
-        id: uuid::Uuid::new_v4(),
-        name: "smart_light_control".into(),
-        display_name: "智能灯光控制".into(),
-        description: Some("控制智能灯的开关、亮度、色温".into()),
-        category: "smart_home".into(),
-        intent_patterns: serde_json::json!(["灯", "开灯", "关灯"]),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "action": {"type": "string", "enum": ["on", "off"]},
-                "device_name": {"type": "string"}
-            },
-            "required": ["action"]
-        }),
-        execution_config: Some(serde_json::json!({
-            "plugin_name": "zigbee-bridge",
-            "action": "light_control"
-        })),
-        prompt_template: None,
-        cacheable: false,
-        enabled: true,
-        priority: 10,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    }
-}
-
-#[test]
-fn test_claude_format() {
-    let skill = sample_skill();
-    let result = to_tool_definition(&skill, ToolFormat::Claude);
-
-    let def = &result.definition;
-    assert_eq!(def["name"], "smart_light_control");
-    assert_eq!(def["description"], "控制智能灯的开关、亮度、色温");
-    assert_eq!(def["input_schema"]["type"], "object");
-    assert!(def["input_schema"]["properties"]["action"].is_object());
-    assert!(def.get("execution_config").is_none());
-}
-
-#[test]
-fn test_openai_format() {
-    let skill = sample_skill();
-    let result = to_tool_definition(&skill, ToolFormat::OpenAI);
-
-    let def = &result.definition;
-    assert_eq!(def["type"], "function");
-    assert_eq!(def["function"]["name"], "smart_light_control");
-    assert_eq!(
-        def["function"]["description"],
-        "控制智能灯的开关、亮度、色温"
-    );
-    assert_eq!(def["function"]["parameters"]["type"], "object");
-    assert!(def["function"].get("execution_config").is_none());
-}
-
-#[test]
-fn test_empty_params_normalized() {
-    let mut skill = sample_skill();
-    skill.parameters = serde_json::json!({});
-
-    let claude = to_tool_definition(&skill, ToolFormat::Claude);
-    assert_eq!(claude.definition["input_schema"]["type"], "object");
-
-    let openai = to_tool_definition(&skill, ToolFormat::OpenAI);
-    assert_eq!(
-        openai.definition["function"]["parameters"]["type"],
-        "object"
-    );
 }

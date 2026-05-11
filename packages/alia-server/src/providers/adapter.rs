@@ -177,6 +177,10 @@ pub trait CacheBackend: ModuleLifecycle {
 }
 
 // ========== Skill Provider ==========
+//
+// Skills extend what the LLM **knows how to do well**.
+// They provide domain knowledge (prompt templates) and specify which tools
+// are relevant. Skill execution goes through the LLM with tool access.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMatch {
@@ -185,11 +189,22 @@ pub struct SkillMatch {
     pub parameters: serde_json::Value,
 }
 
+/// Resolved skill context for LLM-driven execution.
+///
+/// When a skill is triggered, the pipeline sends this to the LLM:
+/// - `system_prompt` provides domain-specific instructions
+/// - `tools` lists which tools should be made available for function calling
+/// - The LLM decides which tools to call (if any)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillResult {
-    pub success: bool,
-    pub output: serde_json::Value,
-    pub message: Option<String>,
+pub struct SkillResolution {
+    pub skill_name: String,
+    /// Domain-specific system prompt (from the skill's prompt_template)
+    pub system_prompt: Option<String>,
+    /// Tool names to make available to the LLM during this skill execution.
+    /// Empty means all tools are available.
+    pub tools: Vec<String>,
+    /// Whether the LLM response can be cached
+    pub cacheable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,13 +217,37 @@ pub struct SkillInfo {
 
 #[async_trait]
 pub trait SkillProvider: ModuleLifecycle {
+    /// Match user intent to a skill.
     async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>>;
-    async fn execute(
-        &self,
-        skill: &SkillMatch,
-        params: serde_json::Value,
-    ) -> anyhow::Result<SkillResult>;
+    /// Resolve a matched skill into LLM-facing context (prompt + available tools).
+    async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution>;
+    /// List all available skills.
     async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>>;
+    /// Register a skill from a plugin. Persisted to DB with plugin name as source.
+    async fn register_plugin_skill(
+        &self,
+        plugin_name: &str,
+        skill: PluginSkillDefinition,
+    ) -> anyhow::Result<()>;
+    /// Unregister all skills provided by a plugin.
+    async fn unregister_plugin_skills(&self, plugin_name: &str) -> anyhow::Result<u64>;
+}
+
+/// Skill definition provided by a plugin at runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginSkillDefinition {
+    pub name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub intent_patterns: Vec<String>,
+    pub parameters: serde_json::Value,
+    pub tools: Vec<String>,
+    pub prompt_template: Option<String>,
+    #[serde(default)]
+    pub cacheable: bool,
+    #[serde(default)]
+    pub priority: i32,
 }
 
 // ========== Persona Provider ==========

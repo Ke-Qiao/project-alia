@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::auth::AuthUser;
 use crate::entity::skill;
 use crate::error::Result;
-use crate::providers::skills::tool_format::{self, ToolFormat};
 use crate::state::AppState;
 
 // ========== Response types ==========
@@ -24,17 +23,25 @@ pub struct SkillResponse {
     pub category: String,
     pub intent_patterns: serde_json::Value,
     pub parameters: serde_json::Value,
-    pub execution_config: Option<serde_json::Value>,
+    /// Tool names available to the LLM during this skill's execution
+    pub tools: Vec<String>,
     pub prompt_template: Option<String>,
     pub cacheable: bool,
     pub enabled: bool,
     pub priority: i32,
+    /// Source: 'builtin', 'file', 'api', or plugin name
+    pub source: String,
     pub created_at: String,
     pub updated_at: String,
 }
 
 impl From<skill::Model> for SkillResponse {
     fn from(m: skill::Model) -> Self {
+        // Prefer native `tools` column; fall back to parsing `execution_config`
+        let tools = parse_tools_for_api(&m.tools)
+            .or_else(|| parse_tools_for_api(&m.execution_config))
+            .unwrap_or_default();
+
         Self {
             id: m.id,
             name: m.name,
@@ -43,15 +50,43 @@ impl From<skill::Model> for SkillResponse {
             category: m.category,
             intent_patterns: m.intent_patterns,
             parameters: m.parameters,
-            execution_config: m.execution_config,
+            tools,
             prompt_template: m.prompt_template,
             cacheable: m.cacheable,
             enabled: m.enabled,
             priority: m.priority,
+            source: m.source,
             created_at: m.created_at.to_rfc3339(),
             updated_at: m.updated_at.to_rfc3339(),
         }
     }
+}
+
+/// Parse tool names from a JSONB column for API responses.
+/// Supports both new format (JSON array) and legacy format (nested object).
+fn parse_tools_for_api(config: &Option<serde_json::Value>) -> Option<Vec<String>> {
+    let config = config.as_ref()?;
+
+    if let Some(arr) = config.as_array() {
+        if arr.is_empty() {
+            return None;
+        }
+        return Some(
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+        );
+    }
+
+    if let Some(name) = config
+        .get("function")
+        .and_then(|f| f.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Some(vec![name.to_string()]);
+    }
+
+    None
 }
 
 // ========== Request types ==========
@@ -65,7 +100,9 @@ pub struct CreateSkillRequest {
     pub intent_patterns: serde_json::Value,
     #[serde(default = "default_params")]
     pub parameters: serde_json::Value,
-    pub execution_config: Option<serde_json::Value>,
+    /// Tool names to make available to the LLM during this skill's execution
+    #[serde(default)]
+    pub tools: Vec<String>,
     pub prompt_template: Option<String>,
     #[serde(default)]
     pub cacheable: bool,
@@ -89,7 +126,7 @@ pub struct UpdateSkillRequest {
     pub category: Option<String>,
     pub intent_patterns: Option<serde_json::Value>,
     pub parameters: Option<serde_json::Value>,
-    pub execution_config: Option<Option<serde_json::Value>>,
+    pub tools: Option<Vec<String>>,
     pub prompt_template: Option<Option<String>>,
     pub cacheable: Option<bool>,
     pub enabled: Option<bool>,
@@ -99,20 +136,6 @@ pub struct UpdateSkillRequest {
 #[derive(Deserialize)]
 pub struct MatchRequest {
     pub intent: String,
-}
-
-#[derive(Deserialize)]
-pub struct ExecuteRequest {
-    pub skill_name: String,
-    pub parameters: serde_json::Value,
-}
-
-#[derive(Deserialize)]
-pub struct ExportToolsRequest {
-    /// LLM format: "claude" or "openai"
-    pub format: ToolFormat,
-    /// Optional category filter
-    pub category: Option<String>,
 }
 
 // ========== Handlers ==========
@@ -177,6 +200,24 @@ async fn create_skill(
         ));
     }
 
+    // Convert tools list for native tools column
+    let tools_col = if body.tools.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Array(
+            body.tools.iter().map(|t| serde_json::json!(t)).collect(),
+        ))
+    };
+
+    // Convert tools list to execution_config JSON array for DB storage
+    let execution_config = if body.tools.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Array(
+            body.tools.iter().map(|t| serde_json::json!(t)).collect(),
+        ))
+    };
+
     let now = Utc::now();
     let model = skill::ActiveModel {
         id: Set(Uuid::new_v4()),
@@ -186,7 +227,9 @@ async fn create_skill(
         category: Set(body.category),
         intent_patterns: Set(body.intent_patterns),
         parameters: Set(body.parameters),
-        execution_config: Set(body.execution_config),
+        execution_config: Set(execution_config),
+        tools: Set(tools_col),
+        source: Set("api".to_string()),
         prompt_template: Set(body.prompt_template),
         cacheable: Set(body.cacheable),
         enabled: Set(body.enabled),
@@ -240,8 +283,23 @@ async fn update_skill(
     if let Some(parameters) = body.parameters {
         active.parameters = Set(parameters);
     }
-    if let Some(execution_config) = body.execution_config {
+    if let Some(tools) = body.tools {
+        let execution_config = if tools.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Array(
+                tools.iter().map(|t| serde_json::json!(t)).collect(),
+            ))
+        };
+        let tools_col = if tools.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Array(
+                tools.iter().map(|t| serde_json::json!(t)).collect(),
+            ))
+        };
         active.execution_config = Set(execution_config);
+        active.tools = Set(tools_col);
     }
     if let Some(prompt_template) = body.prompt_template {
         active.prompt_template = Set(prompt_template);
@@ -316,101 +374,13 @@ async fn match_skill(
     }
 }
 
-async fn execute_skill(
-    State(state): State<AppState>,
-    _auth: AuthUser,
-    Json(body): Json<ExecuteRequest>,
-) -> Result<Json<serde_json::Value>> {
-    use crate::providers::adapter::SkillMatch;
-
-    let skill_match = SkillMatch {
-        name: body.skill_name.clone(),
-        confidence: 1.0,
-        parameters: serde_json::Value::Object(serde_json::Map::new()),
-    };
-
-    let result = state
-        .modules
-        .skills
-        .execute(&skill_match, body.parameters)
-        .await
-        .map_err(crate::error::AppError::Internal)?;
-
-    Ok(Json(serde_json::json!({
-        "success": result.success,
-        "output": result.output,
-        "message": result.message,
-    })))
-}
-
-/// Export all enabled skills as LLM tool definitions in the requested format.
-/// Returns an array ready to pass directly to Claude's `tools` parameter or
-/// OpenAI's `tools` parameter.
-async fn export_tools(
-    State(state): State<AppState>,
-    _auth: AuthUser,
-    Json(body): Json<ExportToolsRequest>,
-) -> Result<Json<serde_json::Value>> {
-    let mut query = skill::Entity::find().filter(skill::Column::Enabled.eq(true));
-
-    if let Some(category) = &body.category {
-        query = query.filter(skill::Column::Category.eq(category));
-    }
-
-    let skills = query
-        .order_by_desc(skill::Column::Priority)
-        .all(&state.db)
-        .await
-        .map_err(crate::error::AppError::Database)?;
-
-    let tools: Vec<serde_json::Value> = tool_format::to_tool_definitions(&skills, body.format)
-        .into_iter()
-        .map(|t| t.definition)
-        .collect();
-
-    Ok(Json(serde_json::json!({
-        "format": body.format,
-        "tools": tools,
-        "count": tools.len(),
-    })))
-}
-
-/// Export a single skill as an LLM tool definition.
-async fn export_skill_tool(
-    State(state): State<AppState>,
-    _auth: AuthUser,
-    Path(name): Path<String>,
-    axum::extract::Query(params): axum::extract::Query<ExportToolQuery>,
-) -> Result<Json<serde_json::Value>> {
-    let s = skill::Entity::find()
-        .filter(skill::Column::Name.eq(&name))
-        .one(&state.db)
-        .await
-        .map_err(crate::error::AppError::Database)?
-        .ok_or_else(|| crate::error::AppError::NotFound(format!("Skill '{}' not found", name)))?;
-
-    let format = params.format.unwrap_or(ToolFormat::Claude);
-    let result = tool_format::to_tool_definition(&s, format);
-
-    Ok(Json(result.definition))
-}
-
-#[derive(Deserialize)]
-pub struct ExportToolQuery {
-    /// LLM format: "claude" or "openai" (defaults to claude)
-    pub format: Option<ToolFormat>,
-}
-
 pub fn routes() -> Router<AppState> {
     Router::new()
         // Fixed-path routes must come before parameterized routes
         .route("/skills/match", post(match_skill))
-        .route("/skills/execute", post(execute_skill))
-        .route("/skills/export", post(export_tools))
         .route("/skills", get(list_skills).post(create_skill))
         .route(
             "/skills/{name}",
             get(get_skill).put(update_skill).delete(delete_skill),
         )
-        .route("/skills/{name}/tool", get(export_skill_tool))
 }

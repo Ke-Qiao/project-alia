@@ -1,7 +1,14 @@
 //! SeaORM entity for skills table
 //!
-//! Represents structured skill definitions that map user intents
-//! to deterministic actions without full LLM reasoning.
+//! Skills extend what the LLM **knows how to do well**. Each skill carries
+//! intent patterns for matching, a prompt template for domain context, and
+//! a list of tool names available during LLM execution.
+//!
+//! Skills can be registered by:
+//! - Built-in seeds (source = "builtin")
+//! - Markdown files (source = "file")
+//! - Plugins at runtime (source = plugin name)
+//! - API (source = "api")
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -24,16 +31,23 @@ pub struct Model {
     /// Parameter definitions (JSON Schema)
     #[sea_orm(column_type = "JsonBinary")]
     pub parameters: serde_json::Value,
-    /// Internal execution routing config (plugin, action)
+    /// Legacy: internal execution routing config. Use `tools` column instead.
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub execution_config: Option<serde_json::Value>,
-    /// Response template for simple confirmations
+    /// Tool names to make available to the LLM during this skill's execution.
+    /// Stored as a JSON array of strings, e.g. ["device_control", "sensor_read"]
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub tools: Option<serde_json::Value>,
+    /// Response template / system prompt for LLM context
     #[sea_orm(column_type = "Text", nullable)]
     pub prompt_template: Option<String>,
     pub cacheable: bool,
     pub enabled: bool,
     /// Higher priority wins on conflict
     pub priority: i32,
+    /// Where this skill came from: 'builtin', 'file', 'api', or plugin name
+    #[sea_orm(column_type = "String(StringLen::N(100))")]
+    pub source: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

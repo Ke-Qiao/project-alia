@@ -1,4 +1,8 @@
-//! Tools module: Tool registry and built-in tools for AI function calling.
+//! Tools module: extend what the LLM **can do**.
+//!
+//! Tools are executable functions the LLM (or skills) can call via function
+//! calling. They provide the actual actions — reading sensors, controlling
+//! devices, managing memory, etc.
 //!
 //! This module provides:
 //! - `NoopToolRegistry`: A no-op implementation for disabled tools

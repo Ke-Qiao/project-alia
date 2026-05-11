@@ -250,18 +250,46 @@ async fn process_text(
         // Cache hit from router — never streamed
         RouteDecision::CacheHit { response } => (response, false),
 
-        // Skill execution — never streamed
+        // Skill execution — resolve skill, then send through LLM with tools.
+        // Skills extend what the LLM knows how to do well; the LLM decides
+        // which tools to call (if any) based on the skill's system prompt.
         RouteDecision::Skill { skill_name, params } => {
             let skill_match = crate::providers::adapter::SkillMatch {
                 name: skill_name,
                 confidence: 1.0,
                 parameters: params.clone(),
             };
-            let result = modules.skills.execute(&skill_match, params).await?;
-            let msg = result.message.unwrap_or_else(|| {
-                serde_json::to_string_pretty(&result.output).unwrap_or_default()
+            let resolution = modules.skills.resolve(&skill_match).await?;
+
+            // Build messages with the skill's domain-specific system prompt
+            let mut messages = Vec::new();
+            if let Some(sp) = &resolution.system_prompt {
+                messages.push(ChatMessage {
+                    role: "system".into(),
+                    content: sp.clone(),
+                    name: None,
+                });
+            }
+            messages.extend(history);
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: text.to_string(),
+                name: Some(user_id.to_string()),
             });
-            (msg, false)
+
+            // TODO: When the LLM adapter supports tool/function calling, filter
+            // available tools to `resolution.tools` and pass them alongside the
+            // messages. For now, use a standard LLM call.
+            if channel.capabilities().streaming {
+                let full = stream_llm_response(
+                    modules, channel, target, channel_id, user_id, event_bus, &messages,
+                )
+                .await?;
+                (full, true)
+            } else {
+                let full = modules.llm.chat(&messages).await?;
+                (full, false)
+            }
         }
 
         // LLM call — stream when the channel supports it

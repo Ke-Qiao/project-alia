@@ -1,11 +1,22 @@
+//! Skills module: extend what the LLM **knows how to do well**.
+//!
+//! Skills provide domain knowledge (prompt templates) and specify which tools
+//! are relevant for a given user intent. Skill execution goes through the LLM
+//! with the referenced tools made available for function calling.
+//!
+//! This module provides:
+//! - `NoopSkills`: A no-op implementation for disabled skills
+//! - `BuiltinSkills`: Full DB-backed implementation with markdown file support
+
 pub mod builtin;
 pub mod markdown;
-pub mod tool_format;
 
 use async_trait::async_trait;
 
 use crate::module::ModuleLifecycle;
-use crate::providers::adapter::{SkillInfo, SkillMatch, SkillProvider, SkillResult};
+use crate::providers::adapter::{
+    PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
+};
 pub use builtin::BuiltinSkills;
 
 pub struct NoopSkills;
@@ -23,19 +34,28 @@ impl SkillProvider for NoopSkills {
         Ok(None)
     }
 
-    async fn execute(
-        &self,
-        _skill: &SkillMatch,
-        _params: serde_json::Value,
-    ) -> anyhow::Result<SkillResult> {
-        Ok(SkillResult {
-            success: false,
-            output: serde_json::Value::Null,
-            message: Some("Skills module not configured".into()),
+    async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
+        Ok(SkillResolution {
+            skill_name: skill.name.clone(),
+            system_prompt: None,
+            tools: Vec::new(),
+            cacheable: false,
         })
     }
 
     async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {
         Ok(Vec::new())
+    }
+
+    async fn register_plugin_skill(
+        &self,
+        _plugin_name: &str,
+        _skill: PluginSkillDefinition,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("skills are disabled")
+    }
+
+    async fn unregister_plugin_skills(&self, _plugin_name: &str) -> anyhow::Result<u64> {
+        Ok(0)
     }
 }
