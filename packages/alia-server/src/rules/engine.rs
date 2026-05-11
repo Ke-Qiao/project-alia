@@ -88,6 +88,8 @@ impl SimpleRuleEngine {
             ServerEvent::ToolConfirmationRequired { .. } => "tool_confirmation_required",
             ServerEvent::ChannelInput(_) => "channel_input",
             ServerEvent::SensorDataIngested { .. } => "sensor_data_ingested",
+            ServerEvent::StreamChunk { .. } => "stream_chunk",
+            ServerEvent::StreamEnd { .. } => "stream_end",
             ServerEvent::SettingsChanged { .. } => "settings_changed",
         }
     }

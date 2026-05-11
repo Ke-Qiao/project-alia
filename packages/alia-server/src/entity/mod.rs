@@ -2,6 +2,8 @@
 //!
 //! This module contains SeaORM entity definitions for database tables.
 
+pub mod chat_message;
+pub mod chat_session;
 pub mod llm_cache;
 pub mod meditation_log;
 pub mod memory_community;

@@ -65,6 +65,7 @@ fn event_type_tag(event: &ServerEvent) -> &'static str {
         | ServerEvent::TaskTriggered { .. }
         | ServerEvent::TaskCompleted { .. }
         | ServerEvent::TaskFailed { .. } => "scheduler",
+        ServerEvent::StreamChunk { .. } | ServerEvent::StreamEnd { .. } => "stream",
         _ => "other",
     }
 }

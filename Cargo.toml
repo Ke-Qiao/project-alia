@@ -15,6 +15,7 @@ edition = "2024"
 # Shared crates
 alia-proto = { path = "crates/proto" }
 alia-transport = { path = "crates/transport" }
+network-interface = "1.1"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

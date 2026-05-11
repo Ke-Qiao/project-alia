@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod cache;
+pub mod conversation;
 pub mod embedding;
 pub mod llm;
 pub mod meditation;

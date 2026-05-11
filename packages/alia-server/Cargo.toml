@@ -105,3 +105,6 @@ rustyline.workspace = true
 
 # Platform directories
 dirs = "6"
+
+# Network
+network-interface.workspace = true

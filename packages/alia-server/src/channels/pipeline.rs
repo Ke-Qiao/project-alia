@@ -3,20 +3,36 @@
 //! Subscribes to `ServerEvent::ChannelInput` on the EventBus, routes each
 //! inbound `ChannelEvent` through: Router → Cache/Skill/LLM → ChannelResponse,
 //! then delivers the response back to the originating channel.
+//!
+//! When the originating channel has `capabilities().streaming == true` and the
+//! route decision is an LLM call, the pipeline uses `chat_stream` and delivers
+//! tokens incrementally via `begin_stream / send_stream_chunk / end_stream`.
+//! For non-streaming channels the pipeline calls `send_message` with the full
+//! response.
 
 use std::sync::Arc;
 
+use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{AudioPayload, ChannelEvent, ChannelTarget};
+use crate::channels::adapter::{AudioPayload, ChannelAdapter, ChannelEvent, ChannelTarget};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     AudioEncoding, CachedResponse, ChatMessage, RouteDecision, RouterInput,
 };
 use crate::providers::sensor::SensorRegistry;
+
+/// Result of `process_text` — carries the full response text and whether it
+/// was already delivered to the channel via streaming.
+struct TextResult {
+    text: String,
+    /// `true` when tokens were already delivered via `begin_stream / send_stream_chunk
+    /// / end_stream`.  Callers must NOT call `send_message` again.
+    streamed: bool,
+}
 
 /// Spawn the pipeline processing loop.
 ///
@@ -31,6 +47,7 @@ pub fn spawn_pipeline(
     cancel_token: CancellationToken,
 ) {
     let mut rx = event_bus.subscribe();
+    let bus = event_bus.clone();
 
     tokio::spawn(async move {
         loop {
@@ -45,9 +62,10 @@ pub fn spawn_pipeline(
                             let modules = modules.clone();
                             let channels = channels.clone();
                             let sensors = sensors.clone();
+                            let bus = bus.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus).await {
                                     tracing::error!(error = ?e, "pipeline processing failed");
                                 }
                             });
@@ -75,6 +93,7 @@ async fn process_event(
     modules: &ModuleRegistry,
     channels: &ChannelRegistry,
     sensors: &SensorRegistry,
+    event_bus: &EventBus,
 ) -> anyhow::Result<()> {
     match event {
         ChannelEvent::TextMessage {
@@ -82,8 +101,30 @@ async fn process_event(
             user_id,
             text,
         } => {
-            let response_text = process_text(&text, &user_id, modules).await?;
-            send_response(channels, &channel_id, &user_id, Some(response_text), None).await
+            let channel = channels.get(&channel_id).await.ok_or_else(|| {
+                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
+            })?;
+            let target = ChannelTarget {
+                user_id: user_id.clone(),
+            };
+
+            let result = process_text(
+                &text,
+                &user_id,
+                modules,
+                channel.as_ref(),
+                &target,
+                &channel_id,
+                event_bus,
+            )
+            .await?;
+
+            // Only call send_message when the text was NOT already streamed.
+            if !result.streamed {
+                channel.send_message(&target, &result.text).await?;
+            }
+
+            Ok(())
         }
         ChannelEvent::AudioInput {
             channel_id,
@@ -100,10 +141,31 @@ async fn process_event(
                 return Ok(());
             }
 
-            let response_text = process_text(&transcript, &user_id, modules).await?;
+            let channel = channels.get(&channel_id).await.ok_or_else(|| {
+                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
+            })?;
+            let target = ChannelTarget {
+                user_id: user_id.clone(),
+            };
 
-            // Synthesize TTS
-            let audio_bytes = modules.tts.synthesize(&response_text).await?;
+            let result = process_text(
+                &transcript,
+                &user_id,
+                modules,
+                channel.as_ref(),
+                &target,
+                &channel_id,
+                event_bus,
+            )
+            .await?;
+
+            // Text delivery: only if not already streamed
+            if !result.streamed {
+                channel.send_message(&target, &result.text).await?;
+            }
+
+            // Audio delivery: always send TTS regardless of streaming
+            let audio_bytes = modules.tts.synthesize(&result.text).await?;
             let audio_out = AudioPayload {
                 data: audio_bytes,
                 sample_rate: 24000,
@@ -111,14 +173,11 @@ async fn process_event(
                 format: crate::channels::adapter::AudioFormat::Pcm16,
             };
 
-            send_response(
-                channels,
-                &channel_id,
-                &user_id,
-                Some(response_text),
-                Some(audio_out),
-            )
-            .await
+            if channel.capabilities().voice_output {
+                channel.send_audio(&target, audio_out).await?;
+            }
+
+            Ok(())
         }
         ChannelEvent::SensorData {
             channel_id,
@@ -142,29 +201,56 @@ async fn process_event(
 }
 
 /// Core text processing: Router → Cache/Skill/LLM → response text.
+///
+/// Returns a [`TextResult`] containing the full response and a flag indicating
+/// whether the text was already delivered to the channel via streaming.
+///
+/// Streaming is used when ALL of these are true:
+/// 1. The route decision is an LLM call (not cache/skill)
+/// 2. The channel reports `capabilities().streaming == true`
+///
+/// For non-streaming paths (cache hit, skill, or non-streaming channel) the
+/// caller is responsible for calling `send_message` with the returned text.
 async fn process_text(
     text: &str,
     user_id: &str,
     modules: &ModuleRegistry,
-) -> anyhow::Result<String> {
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    channel_id: &str,
+    event_bus: &EventBus,
+) -> anyhow::Result<TextResult> {
     let uid = Uuid::parse_str(user_id).unwrap_or_else(|_| Uuid::nil());
 
-    // 1. Check cache first
+    // 1. Get active session and load history
+    let session_id = modules
+        .conversation
+        .get_or_create_active_session(channel_id, user_id)
+        .await?;
+    let history = modules.conversation.get_history(session_id, 20).await?;
+
+    // 2. Check cache first (never streamed)
     if let Some(CachedResponse { response_text, .. }) = modules.cache.get(Some(uid), text).await? {
         tracing::debug!(query = text, "pipeline cache hit");
-        return Ok(response_text);
+        return Ok(TextResult {
+            text: response_text,
+            streamed: false,
+        });
     }
 
-    // 2. Route the input
+    // 3. Route the input
     let route_input = RouterInput {
         text: text.to_string(),
         user_id: uid,
-        conversation_context: Vec::new(),
+        conversation_context: history.clone(),
     };
     let decision = modules.router.route(&route_input).await?;
 
-    let response = match decision {
-        RouteDecision::CacheHit { response } => response,
+    let (response, streamed) = match decision {
+        // Cache hit from router — never streamed
+        RouteDecision::CacheHit { response } => (response, false),
+
+        // Skill execution — never streamed
         RouteDecision::Skill { skill_name, params } => {
             let skill_match = crate::providers::adapter::SkillMatch {
                 name: skill_name,
@@ -172,10 +258,13 @@ async fn process_text(
                 parameters: params.clone(),
             };
             let result = modules.skills.execute(&skill_match, params).await?;
-            result
-                .message
-                .unwrap_or_else(|| serde_json::to_string_pretty(&result.output).unwrap_or_default())
+            let msg = result.message.unwrap_or_else(|| {
+                serde_json::to_string_pretty(&result.output).unwrap_or_default()
+            });
+            (msg, false)
         }
+
+        // LLM call — stream when the channel supports it
         RouteDecision::LocalLlm { system_prompt } | RouteDecision::RemoteLlm { system_prompt } => {
             let mut messages = Vec::new();
             if let Some(sp) = system_prompt {
@@ -184,15 +273,49 @@ async fn process_text(
                     content: sp,
                 });
             }
+            messages.extend(history);
             messages.push(ChatMessage {
                 role: "user".into(),
                 content: text.to_string(),
             });
-            modules.llm.chat(&messages).await?
+
+            if channel.capabilities().streaming {
+                let full = stream_llm_response(
+                    modules, channel, target, channel_id, user_id, event_bus, &messages,
+                )
+                .await?;
+                (full, true)
+            } else {
+                let full = modules.llm.chat(&messages).await?;
+                (full, false)
+            }
         }
     };
 
-    // 3. Store in cache for next time
+    // 4. Append to session history
+    let _ = modules
+        .conversation
+        .append_message(
+            session_id,
+            ChatMessage {
+                role: "user".into(),
+                content: text.to_string(),
+            },
+        )
+        .await;
+
+    let _ = modules
+        .conversation
+        .append_message(
+            session_id,
+            ChatMessage {
+                role: "assistant".into(),
+                content: response.clone(),
+            },
+        )
+        .await;
+
+    // 5. Store in cache for next time
     let _ = modules
         .cache
         .put(crate::providers::adapter::CacheEntry {
@@ -205,36 +328,62 @@ async fn process_text(
         })
         .await;
 
-    Ok(response)
+    Ok(TextResult {
+        text: response,
+        streamed,
+    })
 }
 
-/// Deliver a response back to the originating channel.
-async fn send_response(
-    channels: &ChannelRegistry,
+/// Stream an LLM response token-by-token to the channel.
+///
+/// Calls `begin_stream`, then forwards each token via `send_stream_chunk` and
+/// publishes `StreamChunk` events on the EventBus, then calls `end_stream` and
+/// publishes `StreamEnd`.  Returns the full concatenated response.
+async fn stream_llm_response(
+    modules: &ModuleRegistry,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
     channel_id: &str,
     user_id: &str,
-    text: Option<String>,
-    audio: Option<AudioPayload>,
-) -> anyhow::Result<()> {
-    let channel = channels.get(channel_id).await.ok_or_else(|| {
-        anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
-    })?;
+    event_bus: &EventBus,
+    messages: &[ChatMessage],
+) -> anyhow::Result<String> {
+    let mut token_stream = modules.llm.chat_stream(messages).await?;
 
-    let target = ChannelTarget {
-        user_id: user_id.to_string(),
-    };
+    channel.begin_stream(target).await?;
 
-    // Send text response
-    if let Some(ref msg) = text {
-        channel.send_message(&target, msg).await?;
-    }
+    let mut full_text = String::new();
 
-    // Send audio if channel supports it and we have audio
-    if let Some(audio_payload) = audio {
-        if channel.capabilities().voice_output {
-            channel.send_audio(&target, audio_payload).await?;
+    while let Some(chunk_result) = token_stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                full_text.push_str(&chunk);
+
+                // Deliver to the channel
+                if let Err(e) = channel.send_stream_chunk(target, &chunk).await {
+                    tracing::warn!(error = ?e, "stream chunk delivery failed");
+                }
+
+                // Publish on event bus for WS subscribers
+                event_bus.publish(ServerEvent::StreamChunk {
+                    channel_id: channel_id.to_string(),
+                    user_id: user_id.to_string(),
+                    chunk,
+                });
+            }
+            Err(e) => {
+                tracing::error!(error = ?e, "LLM stream error");
+                break;
+            }
         }
     }
 
-    Ok(())
+    channel.end_stream(target, &full_text).await?;
+
+    event_bus.publish(ServerEvent::StreamEnd {
+        channel_id: channel_id.to_string(),
+        user_id: user_id.to_string(),
+    });
+
+    Ok(full_text)
 }

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
 use crate::event::EventBus;
-use crate::providers::adapter::SchedulerBackend;
+use crate::providers::adapter::{ConversationBackend, SchedulerBackend};
 use crate::scheduler::ConditionRegistry;
 
 /// Health status of a module
@@ -27,6 +27,8 @@ pub struct ModuleContext {
     pub scheduler: Option<Arc<dyn SchedulerBackend>>,
     /// Condition registry for registering/evaluating task conditions.
     pub conditions: Option<Arc<ConditionRegistry>>,
+    /// Conversation backend for managing sessions (available to channels).
+    pub conversation: Option<Arc<dyn ConversationBackend>>,
 }
 
 /// Base trait for all pluggable modules

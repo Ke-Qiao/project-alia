@@ -113,6 +113,17 @@ pub enum ServerEvent {
         value: serde_json::Value,
     },
 
+    // Streaming LLM events
+    StreamChunk {
+        channel_id: String,
+        user_id: String,
+        chunk: String,
+    },
+    StreamEnd {
+        channel_id: String,
+        user_id: String,
+    },
+
     // Settings events
     SettingsChanged {
         keys: Vec<String>,

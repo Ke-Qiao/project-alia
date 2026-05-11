@@ -11,7 +11,7 @@ use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
     RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
     TtsAdapter,
 };
@@ -35,6 +35,7 @@ pub struct ServerBuilder {
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
+    conversation: Option<Box<dyn ConversationBackend>>,
     memory: Option<Box<dyn MemoryBackend>>,
     cache: Option<Box<dyn CacheBackend>>,
     skills: Option<Box<dyn SkillProvider>>,
@@ -65,6 +66,7 @@ impl ServerBuilder {
             stt: None,
             tts: None,
             embedding: None,
+            conversation: None,
             memory: None,
             cache: None,
             skills: None,
@@ -95,6 +97,11 @@ impl ServerBuilder {
 
     pub fn with_embedding(mut self, emb: impl EmbeddingAdapter + 'static) -> Self {
         self.embedding = Some(Box::new(emb));
+        self
+    }
+
+    pub fn with_conversation(mut self, conv: impl ConversationBackend + 'static) -> Self {
+        self.conversation = Some(Box::new(conv));
         self
     }
 
@@ -164,6 +171,7 @@ impl ServerBuilder {
             cancel_token: self.cancel_token.clone(),
             scheduler: None,
             conditions: None,
+            conversation: None,
         };
 
         // Create modules: use override or create from config
@@ -179,6 +187,9 @@ impl ServerBuilder {
         let mut embedding = self
             .embedding
             .unwrap_or_else(|| factory::create_embedding(&self.config.modules.embedding));
+        let mut conversation = self
+            .conversation
+            .unwrap_or_else(|| Box::new(crate::providers::conversation::PostgresConversationBackend::new()));
         let mut memory = self
             .memory
             .unwrap_or_else(|| factory::create_memory(&self.config.modules.memory));
@@ -233,10 +244,17 @@ impl ServerBuilder {
             cancel_token: self.cancel_token.clone(),
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
+            conversation: None, // Will be populated shortly but usually not needed in other modules init
         };
 
         // Initialize remaining modules in dependency order
         embedding.init(&ctx).await?;
+        conversation.init(&ctx).await?;
+        let conversation_arc: Arc<dyn ConversationBackend> = Arc::from(conversation);
+        let ctx = ModuleContext {
+            conversation: Some(conversation_arc.clone()),
+            ..ctx
+        };
         llm.init(&ctx).await?;
         stt.init(&ctx).await?;
         tts.init(&ctx).await?;
@@ -282,6 +300,7 @@ impl ServerBuilder {
             stt: Arc::from(stt),
             tts: Arc::from(tts),
             embedding: Arc::from(embedding),
+            conversation: conversation_arc,
             memory: Arc::from(memory),
             cache: Arc::from(cache),
             skills: Arc::from(skills),
@@ -301,6 +320,7 @@ impl ServerBuilder {
         registry.stt.start().await?;
         registry.tts.start().await?;
         registry.embedding.start().await?;
+        registry.conversation.start().await?;
         registry.memory.start().await?;
         registry.cache.start().await?;
         registry.skills.start().await?;

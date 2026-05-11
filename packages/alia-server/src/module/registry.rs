@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
     RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
     TtsAdapter,
 };
@@ -16,6 +16,7 @@ pub struct ModuleRegistry {
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
     // Intelligence core
+    pub conversation: Arc<dyn ConversationBackend>,
     pub memory: Arc<dyn MemoryBackend>,
     pub cache: Arc<dyn CacheBackend>,
     pub skills: Arc<dyn SkillProvider>,
@@ -51,6 +52,7 @@ impl ModuleRegistry {
             self.skills.as_ref(),
             self.cache.as_ref(),
             self.memory.as_ref(),
+            self.conversation.as_ref(),
             self.tts.as_ref(),
             self.stt.as_ref(),
             self.embedding.as_ref(),
@@ -70,6 +72,10 @@ impl ModuleRegistry {
         results.insert(self.stt.name(), self.stt.health_check().await);
         results.insert(self.tts.name(), self.tts.health_check().await);
         results.insert(self.embedding.name(), self.embedding.health_check().await);
+        results.insert(
+            self.conversation.name(),
+            self.conversation.health_check().await,
+        );
         results.insert(self.memory.name(), self.memory.health_check().await);
         results.insert(self.cache.name(), self.cache.health_check().await);
         results.insert(self.skills.name(), self.skills.health_check().await);

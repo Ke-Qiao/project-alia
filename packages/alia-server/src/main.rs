@@ -6,7 +6,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use axum::Router;
 use axum::routing::get;
-use sea_orm::{ConnectOptions, Database};
+use sea_orm::{
+    ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
+};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
@@ -22,9 +24,10 @@ use alia_server::{api, openapi, ws};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize tracing
+    let default_filter = "info,sqlx::query=warn,sqlx::postgres::notice=warn";
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter)))
         .init();
 
     // 2. Check if we need OOBE setup
@@ -118,6 +121,8 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
     ))?;
     tracing::info!("connected to database");
 
+    run_sql_migrations(&db).await?;
+
     // Create EventBus
     let event_bus = EventBus::new(1024);
 
@@ -177,4 +182,124 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
     tracing::info!("alia-server shutdown complete");
 
     Ok(())
+}
+
+async fn run_sql_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
+    // Keep migration tracking simple and local to this server crate.
+    db.execute(Statement::from_string(
+        DatabaseBackend::Postgres,
+        r#"
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        "#,
+    ))
+    .await
+    .context("failed to ensure schema_migrations table")?;
+
+    let mut files = std::fs::read_dir("packages/alia-server/migrations")
+        .or_else(|_| std::fs::read_dir("migrations"))
+        .context("failed to read migrations directory")?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|s| s.to_str()) == Some("sql"))
+        .collect::<Vec<_>>();
+    files.sort();
+
+    for path in files {
+        let version = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow::anyhow!("invalid migration filename: {}", path.display()))?
+            .to_string();
+
+        let check_sql = format!(
+            "SELECT 1 FROM schema_migrations WHERE version = '{}' LIMIT 1",
+            version.replace('\'', "''")
+        );
+        if db
+            .query_one(Statement::from_string(DatabaseBackend::Postgres, check_sql))
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+
+        let sql = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed reading migration {}", path.display()))?;
+
+        let statements = split_sql_statements(&sql);
+        if statements.is_empty() {
+            tracing::warn!(migration = %version, "migration file has no executable SQL statements");
+        }
+
+        for (idx, stmt) in statements.iter().enumerate() {
+            if let Err(e) = db
+                .execute(Statement::from_string(DatabaseBackend::Postgres, stmt.clone()))
+                .await
+            {
+                let err_text = e.to_string();
+                let stmt_lower = stmt.to_ascii_lowercase();
+                if stmt_lower.contains("create extension")
+                    && stmt_lower.contains("vector")
+                    && err_text.contains("extension \"vector\" is not available")
+                {
+                    anyhow::bail!(
+                        "pgvector extension is required but not installed on this PostgreSQL instance. \
+Install pgvector first (e.g. package 'postgresql-<version>-pgvector' or enable via your managed DB), \
+then run the server again."
+                    );
+                }
+
+                return Err(anyhow::Error::new(e).context(format!(
+                    "failed applying migration {} (statement #{})",
+                    path.display(),
+                    idx + 1
+                )));
+            }
+        }
+
+        let record_sql = format!(
+            "INSERT INTO schema_migrations (version) VALUES ('{}')",
+            version.replace('\'', "''")
+        );
+        db.execute(Statement::from_string(DatabaseBackend::Postgres, record_sql))
+            .await
+            .with_context(|| format!("failed recording migration {}", version))?;
+
+        tracing::info!(migration = %version, "applied SQL migration");
+    }
+
+    Ok(())
+}
+
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+
+    for line in sql.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("--") {
+            continue;
+        }
+
+        current.push_str(line);
+        current.push('\n');
+
+        if line.trim_end().ends_with(';') {
+            let stmt = current.trim();
+            if !stmt.is_empty() {
+                statements.push(stmt.to_string());
+            }
+            current.clear();
+        }
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        statements.push(tail.to_string());
+    }
+
+    statements
 }
