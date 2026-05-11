@@ -136,11 +136,7 @@ pub trait ChannelAdapter: ModuleLifecycle {
     /// Deliver a single streaming text chunk (token or small fragment).
     /// Only called when `capabilities().streaming` is `true`.
     /// Called repeatedly between `begin_stream` and `end_stream`.
-    async fn send_stream_chunk(
-        &self,
-        _target: &ChannelTarget,
-        _chunk: &str,
-    ) -> anyhow::Result<()> {
+    async fn send_stream_chunk(&self, _target: &ChannelTarget, _chunk: &str) -> anyhow::Result<()> {
         Ok(())
     }
 

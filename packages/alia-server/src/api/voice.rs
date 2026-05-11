@@ -111,6 +111,7 @@ async fn voice_chat(
     let messages = vec![crate::providers::adapter::ChatMessage {
         role: "user".into(),
         content: input_text.clone(),
+        name: None,
     }];
     let response_text = state
         .modules

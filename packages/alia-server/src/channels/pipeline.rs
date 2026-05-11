@@ -271,12 +271,14 @@ async fn process_text(
                 messages.push(ChatMessage {
                     role: "system".into(),
                     content: sp,
+                    name: None,
                 });
             }
             messages.extend(history);
             messages.push(ChatMessage {
                 role: "user".into(),
                 content: text.to_string(),
+                name: Some(user_id.to_string()),
             });
 
             if channel.capabilities().streaming {
@@ -300,6 +302,7 @@ async fn process_text(
             ChatMessage {
                 role: "user".into(),
                 content: text.to_string(),
+                name: Some(user_id.to_string()),
             },
         )
         .await;
@@ -311,6 +314,7 @@ async fn process_text(
             ChatMessage {
                 role: "assistant".into(),
                 content: response.clone(),
+                name: None,
             },
         )
         .await;

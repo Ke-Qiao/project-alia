@@ -32,6 +32,8 @@ struct ChatRequest {
 pub struct OpenAiMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl From<&ChatMessage> for OpenAiMessage {
@@ -39,6 +41,7 @@ impl From<&ChatMessage> for OpenAiMessage {
         Self {
             role: msg.role.clone(),
             content: msg.content.clone(),
+            name: msg.name.clone(),
         }
     }
 }

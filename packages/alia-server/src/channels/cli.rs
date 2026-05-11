@@ -181,7 +181,7 @@ impl ModuleLifecycle for CliChannel {
 
                         let mut parts = text.split_whitespace();
                         let cmd = parts.next().unwrap_or("");
-                        
+
                         match cmd {
                             "/quit" | "/exit" => {
                                 tracing::info!("CLI channel: user requested exit");
@@ -211,7 +211,7 @@ impl ModuleLifecycle for CliChannel {
                                     let rt = tokio::runtime::Handle::current();
                                     let ch_id = channel_id.clone();
                                     let u_id = "cli-user".to_string();
-                                    
+
                                     match subcmd {
                                         "new" => {
                                             match rt.block_on(async {
@@ -227,8 +227,13 @@ impl ModuleLifecycle for CliChannel {
                                                 conv.create_session(&ch_id, &u_id).await
                                             }) {
                                                 Ok(id) => {
-                                                    let _ = rt.block_on(conv.set_active_session(&ch_id, &u_id, id));
-                                                    println!("\x1b[32mStarted new session: {}\x1b[0m", id);
+                                                    let _ = rt.block_on(
+                                                        conv.set_active_session(&ch_id, &u_id, id),
+                                                    );
+                                                    println!(
+                                                        "\x1b[32mStarted new session: {}\x1b[0m",
+                                                        id
+                                                    );
                                                 }
                                                 Err(e) => println!("\x1b[31mError: {}\x1b[0m", e),
                                             }
@@ -237,11 +242,30 @@ impl ModuleLifecycle for CliChannel {
                                             match rt.block_on(conv.list_sessions(&ch_id, &u_id)) {
                                                 Ok(sessions) => {
                                                     println!("\x1b[33mRecent Sessions:\x1b[0m");
-                                                    let active_id = rt.block_on(conv.get_or_create_active_session(&ch_id, &u_id)).unwrap_or_default();
-                                                    for (id, name, updated_at) in sessions.iter().take(10) {
-                                                        let name_str = name.as_deref().unwrap_or("Unnamed");
-                                                        let marker = if *id == active_id { "*" } else { " " };
-                                                        println!("{} {} ({}) - {}", marker, id, name_str, updated_at.format("%Y-%m-%d %H:%M:%S"));
+                                                    let active_id = rt
+                                                        .block_on(
+                                                            conv.get_or_create_active_session(
+                                                                &ch_id, &u_id,
+                                                            ),
+                                                        )
+                                                        .unwrap_or_default();
+                                                    for (id, name, updated_at) in
+                                                        sessions.iter().take(10)
+                                                    {
+                                                        let name_str =
+                                                            name.as_deref().unwrap_or("Unnamed");
+                                                        let marker = if *id == active_id {
+                                                            "*"
+                                                        } else {
+                                                            " "
+                                                        };
+                                                        println!(
+                                                            "{} {} ({}) - {}",
+                                                            marker,
+                                                            id,
+                                                            name_str,
+                                                            updated_at.format("%Y-%m-%d %H:%M:%S")
+                                                        );
                                                     }
                                                 }
                                                 Err(e) => println!("\x1b[31mError: {}\x1b[0m", e),
@@ -250,18 +274,32 @@ impl ModuleLifecycle for CliChannel {
                                         "switch" => {
                                             if let Some(id_str) = parts.next() {
                                                 if let Ok(id) = uuid::Uuid::parse_str(id_str) {
-                                                    match rt.block_on(conv.set_active_session(&ch_id, &u_id, id)) {
-                                                        Ok(_) => println!("\x1b[32mSwitched to session {}\x1b[0m", id),
-                                                        Err(e) => println!("\x1b[31mFailed to switch: {}\x1b[0m", e),
+                                                    match rt.block_on(
+                                                        conv.set_active_session(&ch_id, &u_id, id),
+                                                    ) {
+                                                        Ok(_) => println!(
+                                                            "\x1b[32mSwitched to session {}\x1b[0m",
+                                                            id
+                                                        ),
+                                                        Err(e) => println!(
+                                                            "\x1b[31mFailed to switch: {}\x1b[0m",
+                                                            e
+                                                        ),
                                                     }
                                                 } else {
-                                                    println!("\x1b[31mInvalid session ID format.\x1b[0m");
+                                                    println!(
+                                                        "\x1b[31mInvalid session ID format.\x1b[0m"
+                                                    );
                                                 }
                                             } else {
-                                                println!("\x1b[31mUsage: /session switch <uuid>\x1b[0m");
+                                                println!(
+                                                    "\x1b[31mUsage: /session switch <uuid>\x1b[0m"
+                                                );
                                             }
                                         }
-                                        _ => println!("\x1b[31mUnknown session command. Try: new, list, switch\x1b[0m"),
+                                        _ => println!(
+                                            "\x1b[31mUnknown session command. Try: new, list, switch\x1b[0m"
+                                        ),
                                     }
                                 } else {
                                     println!("\x1b[31mConversation backend not available.\x1b[0m");
@@ -283,12 +321,7 @@ impl ModuleLifecycle for CliChannel {
                         event_bus.publish(crate::event::ServerEvent::ChannelInput(event));
 
                         // Block with a spinner until the response arrives.
-                        wait_for_response(
-                            &is_busy,
-                            &cancel,
-                            &pending_response,
-                            &is_streaming,
-                        );
+                        wait_for_response(&is_busy, &cancel, &pending_response, &is_streaming);
                     }
                     Err(ReadlineError::Interrupted) => {
                         // Ctrl+C — cancel current line, continue loop
@@ -353,7 +386,10 @@ impl ChannelAdapter for CliChannel {
     async fn send_message(&self, _target: &ChannelTarget, msg: &str) -> anyhow::Result<()> {
         // Deposit the response text for the read-loop thread to print.
         {
-            let mut slot = self.pending_response.lock().unwrap_or_else(|e| e.into_inner());
+            let mut slot = self
+                .pending_response
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             *slot = Some(msg.to_owned());
         }
         // Clear the busy flag so the spinner stops and the read-loop picks
@@ -380,11 +416,7 @@ impl ChannelAdapter for CliChannel {
         Ok(())
     }
 
-    async fn send_stream_chunk(
-        &self,
-        _target: &ChannelTarget,
-        chunk: &str,
-    ) -> anyhow::Result<()> {
+    async fn send_stream_chunk(&self, _target: &ChannelTarget, chunk: &str) -> anyhow::Result<()> {
         let mut stdout = io::stdout().lock();
         write!(stdout, "{chunk}")?;
         stdout.flush()?;

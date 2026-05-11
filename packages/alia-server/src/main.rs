@@ -236,7 +236,10 @@ async fn run_sql_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
 
         for (idx, stmt) in statements.iter().enumerate() {
             if let Err(e) = db
-                .execute(Statement::from_string(DatabaseBackend::Postgres, stmt.clone()))
+                .execute(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    stmt.clone(),
+                ))
                 .await
             {
                 let err_text = e.to_string();
@@ -264,9 +267,12 @@ then run the server again."
             "INSERT INTO schema_migrations (version) VALUES ('{}')",
             version.replace('\'', "''")
         );
-        db.execute(Statement::from_string(DatabaseBackend::Postgres, record_sql))
-            .await
-            .with_context(|| format!("failed recording migration {}", version))?;
+        db.execute(Statement::from_string(
+            DatabaseBackend::Postgres,
+            record_sql,
+        ))
+        .await
+        .with_context(|| format!("failed recording migration {}", version))?;
 
         tracing::info!(migration = %version, "applied SQL migration");
     }

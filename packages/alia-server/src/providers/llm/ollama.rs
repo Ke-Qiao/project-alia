@@ -42,9 +42,15 @@ struct OllamaMessage {
 
 impl From<&ChatMessage> for OllamaMessage {
     fn from(msg: &ChatMessage) -> Self {
+        let content = if let Some(ref name) = msg.name {
+            format!("{}: {}", name, msg.content)
+        } else {
+            msg.content.clone()
+        };
+
         Self {
             role: msg.role.clone(),
-            content: msg.content.clone(),
+            content,
         }
     }
 }

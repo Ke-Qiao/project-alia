@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
-    RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
-    TtsAdapter,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy,
+    MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
+    SttAdapter, ToolRegistry, TtsAdapter,
 };
 
 /// Runtime module registry — read-only after construction, shared via Arc

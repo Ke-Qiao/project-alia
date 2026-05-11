@@ -13,6 +13,8 @@ use crate::module::ModuleLifecycle;
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -243,16 +245,29 @@ pub trait PersonaProvider: ModuleLifecycle {
 #[async_trait]
 pub trait ConversationBackend: ModuleLifecycle {
     /// Get the active session ID for a channel/user combo, creating one if none exists.
-    async fn get_or_create_active_session(&self, channel_id: &str, user_id: &str) -> anyhow::Result<Uuid>;
+    async fn get_or_create_active_session(
+        &self,
+        channel_id: &str,
+        user_id: &str,
+    ) -> anyhow::Result<Uuid>;
 
     /// Create a new session explicitly and return its ID.
     async fn create_session(&self, channel_id: &str, user_id: &str) -> anyhow::Result<Uuid>;
 
     /// List all sessions for a channel/user, ordered by recency.
-    async fn list_sessions(&self, channel_id: &str, user_id: &str) -> anyhow::Result<Vec<(Uuid, Option<String>, chrono::DateTime<chrono::Utc>)>>;
+    async fn list_sessions(
+        &self,
+        channel_id: &str,
+        user_id: &str,
+    ) -> anyhow::Result<Vec<(Uuid, Option<String>, chrono::DateTime<chrono::Utc>)>>;
 
     /// Set the active session for a channel/user.
-    async fn set_active_session(&self, channel_id: &str, user_id: &str, session_id: Uuid) -> anyhow::Result<()>;
+    async fn set_active_session(
+        &self,
+        channel_id: &str,
+        user_id: &str,
+        session_id: Uuid,
+    ) -> anyhow::Result<()>;
 
     /// Fetch the last N messages from a session.
     async fn get_history(&self, session_id: Uuid, limit: u64) -> anyhow::Result<Vec<ChatMessage>>;

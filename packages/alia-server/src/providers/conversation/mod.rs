@@ -1,3 +1,3 @@
-pub mod postgres;
+pub mod database;
 
-pub use postgres::PostgresConversationBackend;
+pub use database::DatabaseConversationBackend;

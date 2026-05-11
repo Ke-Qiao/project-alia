@@ -11,9 +11,9 @@ use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
-    RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
-    TtsAdapter,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy,
+    MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
+    SttAdapter, ToolRegistry, TtsAdapter,
 };
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::scheduler::ConditionRegistry;
@@ -187,9 +187,9 @@ impl ServerBuilder {
         let mut embedding = self
             .embedding
             .unwrap_or_else(|| factory::create_embedding(&self.config.modules.embedding));
-        let mut conversation = self
-            .conversation
-            .unwrap_or_else(|| Box::new(crate::providers::conversation::PostgresConversationBackend::new()));
+        let mut conversation = self.conversation.unwrap_or_else(|| {
+            Box::new(crate::providers::conversation::DatabaseConversationBackend::new())
+        });
         let mut memory = self
             .memory
             .unwrap_or_else(|| factory::create_memory(&self.config.modules.memory));

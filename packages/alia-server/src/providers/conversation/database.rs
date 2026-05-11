@@ -12,13 +12,13 @@ use crate::entity::{chat_message, chat_session};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{ChatMessage, ConversationBackend};
 
-pub struct PostgresConversationBackend {
+pub struct DatabaseConversationBackend {
     db: Option<DatabaseConnection>,
-    // In-memory tracker for the active session ID per (channel_id, user_id) tuple
-    active_sessions: Arc<RwLock<HashMap<(String, String), Uuid>>>,
+    // In-memory tracker for the active session ID per channel_id
+    active_sessions: Arc<RwLock<HashMap<String, Uuid>>>,
 }
 
-impl PostgresConversationBackend {
+impl DatabaseConversationBackend {
     pub fn new() -> Self {
         Self {
             db: None,
@@ -29,19 +29,19 @@ impl PostgresConversationBackend {
     fn db(&self) -> anyhow::Result<&DatabaseConnection> {
         self.db
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("PostgresConversationBackend not initialized"))
+            .ok_or_else(|| anyhow::anyhow!("DatabaseConversationBackend not initialized"))
     }
 }
 
 #[async_trait]
-impl ModuleLifecycle for PostgresConversationBackend {
+impl ModuleLifecycle for DatabaseConversationBackend {
     fn name(&self) -> &'static str {
-        "postgres_conversation"
+        "database_conversation"
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.db = Some(ctx.db.clone());
-        tracing::info!("PostgresConversationBackend initialized");
+        tracing::info!("DatabaseConversationBackend initialized");
         Ok(())
     }
 
@@ -56,13 +56,13 @@ impl ModuleLifecycle for PostgresConversationBackend {
 }
 
 #[async_trait]
-impl ConversationBackend for PostgresConversationBackend {
+impl ConversationBackend for DatabaseConversationBackend {
     async fn get_or_create_active_session(
         &self,
         channel_id: &str,
         user_id: &str,
     ) -> anyhow::Result<Uuid> {
-        let key = (channel_id.to_string(), user_id.to_string());
+        let key = channel_id.to_string();
 
         // 1. Check in-memory map
         {
@@ -74,10 +74,9 @@ impl ConversationBackend for PostgresConversationBackend {
 
         let db = self.db()?;
 
-        // 2. Check latest from database
+        // 2. Check latest from database for this channel
         let latest = chat_session::Entity::find()
             .filter(chat_session::Column::ChannelId.eq(channel_id))
-            .filter(chat_session::Column::UserId.eq(user_id))
             .order_by_desc(chat_session::Column::UpdatedAt)
             .one(db)
             .await?;
@@ -93,7 +92,7 @@ impl ConversationBackend for PostgresConversationBackend {
         let session = chat_session::ActiveModel {
             id: Set(new_id),
             channel_id: Set(channel_id.to_string()),
-            user_id: Set(user_id.to_string()),
+            creator_id: Set(Some(user_id.to_string())),
             name: Set(Some("New Chat".to_string())),
             created_at: Set(chrono::Utc::now().into()),
             updated_at: Set(chrono::Utc::now().into()),
@@ -112,7 +111,7 @@ impl ConversationBackend for PostgresConversationBackend {
         let session = chat_session::ActiveModel {
             id: Set(new_id),
             channel_id: Set(channel_id.to_string()),
-            user_id: Set(user_id.to_string()),
+            creator_id: Set(Some(user_id.to_string())),
             name: Set(Some("New Chat".to_string())),
             created_at: Set(chrono::Utc::now().into()),
             updated_at: Set(chrono::Utc::now().into()),
@@ -124,12 +123,11 @@ impl ConversationBackend for PostgresConversationBackend {
     async fn list_sessions(
         &self,
         channel_id: &str,
-        user_id: &str,
+        _user_id: &str,
     ) -> anyhow::Result<Vec<(Uuid, Option<String>, chrono::DateTime<chrono::Utc>)>> {
         let db = self.db()?;
         let sessions = chat_session::Entity::find()
             .filter(chat_session::Column::ChannelId.eq(channel_id))
-            .filter(chat_session::Column::UserId.eq(user_id))
             .order_by_desc(chat_session::Column::UpdatedAt)
             .all(db)
             .await?;
@@ -143,23 +141,22 @@ impl ConversationBackend for PostgresConversationBackend {
     async fn set_active_session(
         &self,
         channel_id: &str,
-        user_id: &str,
+        _user_id: &str,
         session_id: Uuid,
     ) -> anyhow::Result<()> {
         let db = self.db()?;
-        // Validate session exists and belongs to user
+        // Validate session exists on the channel
         let exists = chat_session::Entity::find_by_id(session_id)
             .filter(chat_session::Column::ChannelId.eq(channel_id))
-            .filter(chat_session::Column::UserId.eq(user_id))
             .one(db)
             .await?
             .is_some();
 
         if !exists {
-            anyhow::bail!("Session {} not found or unauthorized", session_id);
+            anyhow::bail!("Session {} not found on this channel", session_id);
         }
 
-        let key = (channel_id.to_string(), user_id.to_string());
+        let key = channel_id.to_string();
         let mut map = self.active_sessions.write().await;
         map.insert(key, session_id);
 
@@ -186,17 +183,19 @@ impl ConversationBackend for PostgresConversationBackend {
             .map(|m| ChatMessage {
                 role: m.role.clone(),
                 content: m.content.clone(),
+                name: m.user_id.clone(),
             })
             .collect())
     }
 
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()> {
         let db = self.db()?;
-        
+
         // Insert message
         let msg = chat_message::ActiveModel {
             id: Set(Uuid::new_v4()),
             session_id: Set(session_id),
+            user_id: Set(message.name),
             role: Set(message.role),
             content: Set(message.content),
             created_at: Set(chrono::Utc::now().into()),
@@ -205,7 +204,12 @@ impl ConversationBackend for PostgresConversationBackend {
 
         // We must load it first to update just updated_at safely, or we can use update_many
         chat_session::Entity::update_many()
-            .col_expr(chat_session::Column::UpdatedAt, sea_orm::sea_query::Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(chrono::Utc::now())))))
+            .col_expr(
+                chat_session::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(
+                    chrono::Utc::now(),
+                )))),
+            )
             .filter(chat_session::Column::Id.eq(session_id))
             .exec(db)
             .await?;
