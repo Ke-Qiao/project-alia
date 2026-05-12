@@ -14,6 +14,7 @@ mod identity;
 mod module;
 mod plugin;
 mod process;
+mod settings;
 
 use std::path::PathBuf;
 
@@ -38,7 +39,7 @@ async fn main() -> Result<()> {
     let config_path = std::env::var("ALIA_EMBEDDED_CONFIG_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("config/embedded.toml"));
-    let config = config::load_config(&config_path)
+    let mut config = config::load_config(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
 
     let keypair =
@@ -48,6 +49,22 @@ async fn main() -> Result<()> {
                 config.identity.keypair_path.display()
             )
         })?;
+
+    let generated_device_id = if config.identity.device_id.is_empty() {
+        config.identity.device_id = derived_device_id(&keypair.public_key_bytes());
+        true
+    } else {
+        false
+    };
+
+    if generated_device_id || !config_path.exists() {
+        config::save_runtime_config(&config).with_context(|| {
+            format!(
+                "persisting embedded runtime settings to {}",
+                config.config_path.display()
+            )
+        })?;
+    }
 
     info!(device_id = %config.identity.device_id, device_name = %config.identity.device_name, "identity loaded");
     info!(
@@ -62,4 +79,12 @@ async fn main() -> Result<()> {
     node.run().await?;
 
     Ok(())
+}
+
+fn derived_device_id(public_key: &[u8; 32]) -> String {
+    let suffix = public_key[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("alia-embedded-{suffix}")
 }

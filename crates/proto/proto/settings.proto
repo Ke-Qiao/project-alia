@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package alia.settings;
+
+import "google/protobuf/empty.proto";
+
+service EmbeddedSettings {
+  rpc GetSettings(google.protobuf.Empty) returns (SettingsSnapshot);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (SettingsSnapshot);
+}
+
+message UpdateSettingsRequest {
+  string settings_json = 1;
+}
+
+message SettingsSnapshot {
+  string settings_json = 1;
+  bool provisioning_mode = 2;
+  bool requires_restart = 3;
+  string settings_path = 4;
+}

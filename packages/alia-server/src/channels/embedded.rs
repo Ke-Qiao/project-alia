@@ -2,14 +2,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alia_transport::{
-    DEFAULT_GRPC_AUTH_TTL, bind_payload, current_unix_timestamp, discover_service_endpoint,
-    handoff_completion_payload, handoff_intent_payload, mint_auth_token, sign_payload,
+    DEFAULT_GRPC_AUTH_TTL, bind_payload, current_unix_timestamp, discover_service,
+    discover_service_endpoint, handoff_completion_payload, handoff_intent_payload, mint_auth_token,
+    sign_payload,
 };
 use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tonic::Request;
 use tonic::transport::Channel;
 
@@ -18,9 +20,10 @@ use alia_proto::audio::{AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAud
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
+use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
 use crate::auth::load_server_keypair;
-use crate::event::EventBus;
+use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 
@@ -52,6 +55,17 @@ enum ConnectionStatus {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+struct DiscoveryCandidate {
+    endpoint: String,
+    device_id: Option<String>,
+    device_name: Option<String>,
+    status: String,
+    provisioning_mode: bool,
+    bind_required: bool,
+    metadata: serde_json::Value,
+}
+
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
 ///
 /// Wraps the gRPC client logic that was previously in `embedded::EmbeddedClient`.
@@ -63,6 +77,9 @@ pub struct EmbeddedChannel {
     process_client: Arc<RwLock<Option<ProcessManagerClient<Channel>>>>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
+    settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
+    discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
+    discovery_cancel: CancellationToken,
     signing_key: Option<SigningKey>,
     server_public_key: Vec<u8>,
     default_server_id: String,
@@ -89,6 +106,9 @@ impl EmbeddedChannel {
             process_client: Arc::new(RwLock::new(None)),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
+            settings_client: Arc::new(RwLock::new(None)),
+            discovered_candidate: Arc::new(RwLock::new(None)),
+            discovery_cancel: CancellationToken::new(),
             signing_key: None,
             server_public_key: Vec::new(),
             default_server_id: "alia-server".to_string(),
@@ -107,6 +127,86 @@ impl EmbeddedChannel {
             Duration::from_secs(self.config.discovery_timeout_sec),
         )
         .await
+    }
+
+    fn spawn_discovery_loop(&self) {
+        let cancel = self.discovery_cancel.child_token();
+        let status = self.status.clone();
+        let discovered_candidate = self.discovered_candidate.clone();
+        let event_bus = self.event_bus.clone();
+        let channel_id = self.config.id.clone();
+        let service_name = self.config.discovery_service_name.clone();
+        let timeout = self.config.discovery_timeout_sec;
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(15));
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = ticker.tick() => {
+                        let discovered = discover_service(&service_name, Duration::from_secs(timeout)).await;
+                        let next_candidate = match discovered {
+                            Ok(Some(service)) => {
+                                let status_value = service.properties.get("status").cloned().unwrap_or_else(|| "unknown".to_string());
+                                let provisioning_mode = service.properties.get("provisioning_mode").map(|value| value == "true").unwrap_or(false);
+                                let candidate = DiscoveryCandidate {
+                                    endpoint: service.endpoint,
+                                    device_id: service.properties.get("id").cloned(),
+                                    device_name: service.properties.get("name").cloned(),
+                                    status: status_value.clone(),
+                                    provisioning_mode,
+                                    bind_required: status_value == "unbound",
+                                    metadata: serde_json::to_value(service.properties).unwrap_or_else(|_| serde_json::json!({})),
+                                };
+                                Some(candidate)
+                            }
+                            Ok(None) => None,
+                            Err(error) => {
+                                tracing::warn!(channel_id = %channel_id, error = %error, "embedded discovery poll failed");
+                                None
+                            }
+                        };
+
+                        let mut stored = discovered_candidate.write().await;
+                        if *stored != next_candidate {
+                            match &next_candidate {
+                                Some(candidate) => {
+                                    tracing::info!(
+                                        channel_id = %channel_id,
+                                        endpoint = %candidate.endpoint,
+                                        device_id = candidate.device_id.as_deref().unwrap_or("unknown"),
+                                        device_name = candidate.device_name.as_deref().unwrap_or("unknown"),
+                                        status = %candidate.status,
+                                        provisioning_mode = candidate.provisioning_mode,
+                                        bind_required = candidate.bind_required,
+                                        "embedded accessory discovered"
+                                    );
+                                    event_bus.publish(ServerEvent::DeviceDiscovered {
+                                        channel_id: channel_id.clone(),
+                                        endpoint: candidate.endpoint.clone(),
+                                        device_id: candidate.device_id.clone(),
+                                        device_name: candidate.device_name.clone(),
+                                        status: candidate.status.clone(),
+                                        provisioning_mode: candidate.provisioning_mode,
+                                        bind_required: candidate.bind_required,
+                                    });
+                                    if candidate.bind_required {
+                                        *status.write().await = ConnectionStatus::Disconnected {
+                                            since: Utc::now(),
+                                            reason: "embedded discovered and awaiting user confirmation".to_string(),
+                                        };
+                                    }
+                                }
+                                None => {
+                                    tracing::info!(channel_id = %channel_id, "embedded accessory discovery cleared");
+                                }
+                            }
+                            *stored = next_candidate;
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /// Establish gRPC connection to alia-embedded.
@@ -139,7 +239,10 @@ impl EmbeddedChannel {
                         Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
-                    *self.binding_client.write().await = Some(DeviceBindingClient::new(channel));
+                    *self.binding_client.write().await =
+                        Some(DeviceBindingClient::new(channel.clone()));
+                    *self.settings_client.write().await =
+                        Some(EmbeddedSettingsClient::new(channel));
                     *self.status.write().await = ConnectionStatus::Connected;
                     tracing::info!(
                         endpoint = %endpoint,
@@ -216,6 +319,18 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
+    /// Get an EmbeddedSettingsClient, connecting lazily if needed.
+    pub async fn settings_client(&self) -> anyhow::Result<EmbeddedSettingsClient<Channel>> {
+        if self.settings_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        self.settings_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
     fn auth_request<T>(&self, message: T) -> anyhow::Result<Request<T>> {
         let signing_key = self
             .signing_key
@@ -252,16 +367,16 @@ impl ModuleLifecycle for EmbeddedChannel {
             "http://{}:{}",
             _ctx.config.server.host, _ctx.config.server.port
         );
-        self.connect().await?;
         Ok(())
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        // TODO: start listening for inbound gRPC streams (audio upload, sensor data)
+        self.spawn_discovery_loop();
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
+        self.discovery_cancel.cancel();
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
             reason: "shutdown".into(),
@@ -440,6 +555,9 @@ impl ChannelAdapter for EmbeddedChannel {
                     "state": resp.state,
                 }))
             }
+            "discovery_status" => Ok(serde_json::json!({
+                "candidate": self.discovered_candidate.read().await.clone(),
+            })),
             "bind_device" => {
                 let signing_key = self
                     .signing_key
@@ -454,6 +572,24 @@ impl ChannelAdapter for EmbeddedChannel {
                 let server_endpoint = action.params["server_endpoint"]
                     .as_str()
                     .unwrap_or(&self.default_server_endpoint);
+                if action.params["require_confirmation"]
+                    .as_bool()
+                    .unwrap_or(true)
+                {
+                    let candidate =
+                        self.discovered_candidate
+                            .read()
+                            .await
+                            .clone()
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "no discovered embedded accessory is awaiting confirmation"
+                                )
+                            })?;
+                    if !candidate.bind_required {
+                        anyhow::bail!("discovered embedded accessory is not available for binding");
+                    }
+                }
                 let issued_at = current_unix_timestamp()?;
                 let payload = bind_payload(
                     server_id,
@@ -606,6 +742,40 @@ impl ChannelAdapter for EmbeddedChannel {
                     "device_id": resp.device_id,
                     "device_name": resp.device_name,
                     "device_public_key": base64::engine::general_purpose::STANDARD.encode(resp.device_public_key),
+                }))
+            }
+            "get_settings" => {
+                let mut client = self.settings_client().await?;
+                let resp = client
+                    .get_settings(self.auth_request(())?)
+                    .await?
+                    .into_inner();
+                let settings = serde_json::from_str::<serde_json::Value>(&resp.settings_json)
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                Ok(serde_json::json!({
+                    "settings": settings,
+                    "provisioning_mode": resp.provisioning_mode,
+                    "requires_restart": resp.requires_restart,
+                    "settings_path": resp.settings_path,
+                }))
+            }
+            "update_settings" => {
+                let mut client = self.settings_client().await?;
+                let resp = client
+                    .update_settings(self.auth_request(
+                        alia_proto::settings::UpdateSettingsRequest {
+                            settings_json: serde_json::to_string(&action.params)?,
+                        },
+                    )?)
+                    .await?
+                    .into_inner();
+                let settings = serde_json::from_str::<serde_json::Value>(&resp.settings_json)
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                Ok(serde_json::json!({
+                    "settings": settings,
+                    "provisioning_mode": resp.provisioning_mode,
+                    "requires_restart": resp.requires_restart,
+                    "settings_path": resp.settings_path,
                 }))
             }
             _ => Err(anyhow::anyhow!(

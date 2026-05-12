@@ -1,25 +1,21 @@
-# config/embedded.toml — Example configuration for alia-embedded
+# config/embedded.toml — Runtime-editable settings for alia-embedded
+#
+# The device now boots with compiled defaults when this file is missing.
+# Server/frontend OOBE can create or update this file over the settings API.
+#
+# User-editable sections:
+# - [runtime]
+# - [identity]
+# - [audio]
+# - [discovery]
 
-[modules]
-wakeword = "sherpa_onnx"
-edge_stt = "sherpa_onnx"
-direct_response = "keyword"
-audio_capture = "cpal"
-audio_playback = "cpal"
-mixer = "priority"
-face_tracker = "mediapipe"
-discovery = "mdns"
+[runtime]
+provisioned = false
 
 [identity]
-device_id = "alia-pi-a1b2c3d4"
+device_id = "alia-embedded-a1b2c3d4e5f6"
 device_name = "客厅助手"
-keypair_path = "config/device.key"
-
-[wakeword]
-engine = "sherpa-onnx"
-model_path = "models/hey_alia.onnx"
-keywords = ["你好阿利亚", "Hey Alia"]
-sensitivity = 0.6
+keypair_path = "device.key"
 
 [audio]
 capture_device = "default"
@@ -45,19 +41,3 @@ max_bind_attempts = 3
 lockout_duration_sec = 600
 reconnect_interval_sec = 5
 reconnect_max_backoff_sec = 60
-
-[[process]]
-name = "mediapipe_face"
-command = "python3"
-args = ["scripts/mediapipe_face.py"]
-auto_restart = true
-
-[[direct_response]]
-keywords = ["现在几点", "几点了", "报时"]
-audio = "assets/responses/time.wav"
-action = "report_time"
-
-[[direct_response]]
-keywords = ["开灯", "打开灯"]
-audio = "assets/responses/light_on.wav"
-action = "gpio_light_on"

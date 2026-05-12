@@ -72,6 +72,7 @@ impl SimpleRuleEngine {
         match event {
             ServerEvent::DeviceOnline { .. } => "device_online",
             ServerEvent::DeviceOffline { .. } => "device_offline",
+            ServerEvent::DeviceDiscovered { .. } => "device_discovered",
             ServerEvent::PluginEvent { .. } => "plugin_event",
             ServerEvent::ProcessOutput { .. } => "process_output",
             ServerEvent::ProcessStateChanged { .. } => "process_state_changed",

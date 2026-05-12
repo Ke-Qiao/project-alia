@@ -1,8 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Top-level configuration, deserialized from `config/embedded.toml`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedConfig {
     pub modules: ModulesConfig,
     pub identity: IdentityConfig,
@@ -13,10 +13,14 @@ pub struct EmbeddedConfig {
     pub process: Vec<ProcessConfig>,
     #[serde(default)]
     pub direct_response: Vec<DirectResponseConfig>,
+    #[serde(skip)]
+    pub config_path: PathBuf,
+    #[serde(skip)]
+    pub provisioning_mode: bool,
 }
 
 /// Module slot selection: which implementation to use for each pluggable slot.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModulesConfig {
     #[serde(default = "default_wakeword_module")]
     pub wakeword: String,
@@ -34,6 +38,21 @@ pub struct ModulesConfig {
     pub face_tracker: String,
     #[serde(default = "default_discovery_module")]
     pub discovery: String,
+}
+
+impl Default for ModulesConfig {
+    fn default() -> Self {
+        Self {
+            wakeword: default_wakeword_module(),
+            edge_stt: default_edge_stt_module(),
+            direct_response: default_direct_response_module(),
+            audio_capture: default_audio_capture_module(),
+            audio_playback: default_audio_playback_module(),
+            mixer: default_mixer_module(),
+            face_tracker: default_face_tracker_module(),
+            discovery: default_discovery_module(),
+        }
+    }
 }
 
 fn default_wakeword_module() -> String {
@@ -61,14 +80,24 @@ fn default_discovery_module() -> String {
     "mdns".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityConfig {
     pub device_id: String,
     pub device_name: String,
     pub keypair_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl Default for IdentityConfig {
+    fn default() -> Self {
+        Self {
+            device_id: String::new(),
+            device_name: "Alia Accessory".to_string(),
+            keypair_path: PathBuf::from("device.key"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WakewordConfig {
     pub engine: String,
     pub model_path: PathBuf,
@@ -77,11 +106,22 @@ pub struct WakewordConfig {
     pub sensitivity: f32,
 }
 
+impl Default for WakewordConfig {
+    fn default() -> Self {
+        Self {
+            engine: "sherpa-onnx".to_string(),
+            model_path: PathBuf::from("models/hey_alia.onnx"),
+            keywords: vec!["你好阿利亚".to_string(), "Hey Alia".to_string()],
+            sensitivity: default_sensitivity(),
+        }
+    }
+}
+
 fn default_sensitivity() -> f32 {
     0.6
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     // Capture
     #[serde(default = "default_device")]
@@ -114,6 +154,24 @@ pub struct AudioConfig {
     pub jitter_buffer_ms: u32,
 }
 
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            capture_device: default_device(),
+            capture_sample_rate: default_capture_sample_rate(),
+            capture_channels: default_channels(),
+            playback_device: default_device(),
+            playback_sample_rate: default_playback_sample_rate(),
+            playback_channels: default_channels(),
+            playback_buffer_ms: default_playback_buffer_ms(),
+            opus_bitrate: default_opus_bitrate(),
+            opus_frame_ms: default_opus_frame_ms(),
+            upload_buffer_frames: default_upload_buffer_frames(),
+            jitter_buffer_ms: default_jitter_buffer_ms(),
+        }
+    }
+}
+
 fn default_device() -> String {
     "default".to_string()
 }
@@ -142,7 +200,7 @@ fn default_jitter_buffer_ms() -> u32 {
     60
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryConfig {
     #[serde(default = "default_true")]
     pub mdns_enabled: bool,
@@ -169,6 +227,23 @@ pub struct DiscoveryConfig {
     pub reconnect_max_backoff_sec: u64,
 }
 
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            mdns_enabled: default_true(),
+            mdns_service_name: default_mdns_service(),
+            mdns_instance_name: None,
+            ble_provision_enabled: true,
+            ble_provision_timeout_sec: default_ble_timeout(),
+            require_physical_confirm: default_true(),
+            max_bind_attempts: default_max_bind_attempts(),
+            lockout_duration_sec: default_lockout_duration(),
+            reconnect_interval_sec: default_reconnect_interval(),
+            reconnect_max_backoff_sec: default_reconnect_max_backoff(),
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -192,7 +267,7 @@ fn default_reconnect_max_backoff() -> u64 {
 }
 
 /// Configuration for a managed Python process.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessConfig {
     pub name: String,
     pub command: String,
@@ -203,10 +278,64 @@ pub struct ProcessConfig {
 }
 
 /// Configuration for a direct (keyword → local audio) response.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectResponseConfig {
     pub keywords: Vec<String>,
     pub audio: PathBuf,
     #[serde(default)]
     pub action: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RuntimeConfigMeta {
+    #[serde(default)]
+    pub provisioned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EmbeddedRuntimeSettings {
+    #[serde(default)]
+    pub runtime: RuntimeConfigMeta,
+    #[serde(default)]
+    pub identity: IdentityConfig,
+    #[serde(default)]
+    pub audio: AudioConfig,
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
+}
+
+impl Default for EmbeddedConfig {
+    fn default() -> Self {
+        Self {
+            modules: ModulesConfig::default(),
+            identity: IdentityConfig::default(),
+            wakeword: WakewordConfig::default(),
+            audio: AudioConfig::default(),
+            discovery: DiscoveryConfig::default(),
+            process: Vec::new(),
+            direct_response: Vec::new(),
+            config_path: PathBuf::new(),
+            provisioning_mode: true,
+        }
+    }
+}
+
+impl EmbeddedConfig {
+    pub fn apply_runtime_settings(&mut self, runtime: EmbeddedRuntimeSettings) {
+        self.identity = runtime.identity;
+        self.audio = runtime.audio;
+        self.discovery = runtime.discovery;
+        self.provisioning_mode = !runtime.runtime.provisioned;
+    }
+
+    pub fn runtime_settings(&self) -> EmbeddedRuntimeSettings {
+        EmbeddedRuntimeSettings {
+            runtime: RuntimeConfigMeta {
+                provisioned: !self.provisioning_mode,
+            },
+            identity: self.identity.clone(),
+            audio: self.audio.clone(),
+            discovery: self.discovery.clone(),
+        }
+    }
 }

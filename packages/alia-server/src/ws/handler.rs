@@ -53,7 +53,9 @@ const BACKPRESSURE_LIMIT: usize = 64;
 /// Extract the event type tag from a ServerEvent for filtering
 fn event_type_tag(event: &ServerEvent) -> &'static str {
     match event {
-        ServerEvent::DeviceOnline { .. } | ServerEvent::DeviceOffline { .. } => "device",
+        ServerEvent::DeviceOnline { .. }
+        | ServerEvent::DeviceOffline { .. }
+        | ServerEvent::DeviceDiscovered { .. } => "device",
         ServerEvent::PluginEvent { .. } => "plugin",
         ServerEvent::ProcessOutput { .. } | ServerEvent::ProcessStateChanged { .. } => "process",
         ServerEvent::VoiceStateChanged { .. } => "voice",

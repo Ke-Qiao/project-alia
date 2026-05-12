@@ -12,12 +12,14 @@ use alia_proto::plugin::{
 
 use super::auth::require_auth;
 use crate::plugin::{PluginRegistry, PluginState};
+use crate::settings::EmbeddedSettingsManager;
 use crate::{binding::BindingManager, module::traits::DiscoveryBackend};
 
 pub struct PluginManagerService {
     registry: Arc<PluginRegistry>,
     binding: Arc<BindingManager>,
     discovery: Arc<dyn DiscoveryBackend>,
+    settings: Arc<EmbeddedSettingsManager>,
 }
 
 impl PluginManagerService {
@@ -25,16 +27,22 @@ impl PluginManagerService {
         registry: Arc<PluginRegistry>,
         binding: Arc<BindingManager>,
         discovery: Arc<dyn DiscoveryBackend>,
+        settings: Arc<EmbeddedSettingsManager>,
     ) -> Self {
         Self {
             registry,
             binding,
             discovery,
+            settings,
         }
     }
 
     async fn refresh_discovery_metadata(&self) {
         let mut metadata = self.binding.status().await.discovery_metadata();
+        metadata.attributes.insert(
+            "provisioning_mode".to_string(),
+            self.settings.provisioning_mode().await.to_string(),
+        );
         self.registry.enrich_discovery_metadata(&mut metadata).await;
         if let Err(error) = self.discovery.update_metadata(&metadata).await {
             tracing::warn!(

@@ -13,12 +13,14 @@ use crate::binding::BindingManager;
 use crate::config::IdentityConfig;
 use crate::module::traits::DiscoveryBackend;
 use crate::plugin::PluginRegistry;
+use crate::settings::EmbeddedSettingsManager;
 
 pub struct DeviceBindingService {
     binding: Arc<BindingManager>,
     identity: IdentityConfig,
     discovery: Arc<dyn DiscoveryBackend>,
     plugins: Arc<PluginRegistry>,
+    settings: Arc<EmbeddedSettingsManager>,
     public_key: Vec<u8>,
 }
 
@@ -28,6 +30,7 @@ impl DeviceBindingService {
         identity: IdentityConfig,
         discovery: Arc<dyn DiscoveryBackend>,
         plugins: Arc<PluginRegistry>,
+        settings: Arc<EmbeddedSettingsManager>,
         public_key: Vec<u8>,
     ) -> Self {
         Self {
@@ -35,12 +38,17 @@ impl DeviceBindingService {
             identity,
             discovery,
             plugins,
+            settings,
             public_key,
         }
     }
 
     async fn refresh_discovery_metadata(&self) {
         let mut metadata = self.binding.status().await.discovery_metadata();
+        metadata.attributes.insert(
+            "provisioning_mode".to_string(),
+            self.settings.provisioning_mode().await.to_string(),
+        );
         self.plugins.enrich_discovery_metadata(&mut metadata).await;
         if let Err(error) = self.discovery.update_metadata(&metadata).await {
             tracing::warn!(error = %error, "failed to refresh discovery metadata");

@@ -1,6 +1,7 @@
 use tonic::{Request, Status, metadata::MetadataMap};
 
 use crate::binding::BindingManager;
+use crate::binding::BindingState;
 
 pub const EMBEDDED_CONTROL_SCOPE: &str = "embedded:control";
 
@@ -10,6 +11,18 @@ pub async fn require_auth<T>(binding: &BindingManager, request: &Request<T>) -> 
         .verify_grpc_auth(&token, EMBEDDED_CONTROL_SCOPE)
         .await
         .map_err(|err| Status::unauthenticated(err.to_string()))
+}
+
+pub async fn require_auth_if_bound<T>(
+    binding: &BindingManager,
+    request: &Request<T>,
+) -> Result<(), Status> {
+    let status = binding.status().await;
+    if status.state == BindingState::Unbound {
+        return Ok(());
+    }
+
+    require_auth(binding, request).await
 }
 
 fn bearer_token(metadata: &MetadataMap) -> Result<String, Status> {

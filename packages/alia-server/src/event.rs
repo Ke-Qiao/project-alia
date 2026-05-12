@@ -20,6 +20,15 @@ pub enum ServerEvent {
         device_id: String,
         reason: String,
     },
+    DeviceDiscovered {
+        channel_id: String,
+        endpoint: String,
+        device_id: Option<String>,
+        device_name: Option<String>,
+        status: String,
+        provisioning_mode: bool,
+        bind_required: bool,
+    },
 
     // Plugin events
     PluginEvent {

@@ -13,3 +13,7 @@ pub mod binding {
 pub mod plugin {
     tonic::include_proto!("alia.plugin");
 }
+
+pub mod settings {
+    tonic::include_proto!("alia.settings");
+}

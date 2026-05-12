@@ -28,17 +28,8 @@ alia-embedded/
 cargo run -p alia-embedded
 ```
 
-The binary expects `config/embedded.toml` relative to the workspace root.
-
-Copy the example and edit:
-
-```sh
-cp config/embedded.example.toml config/embedded.toml
-```
-
-```sh
-cargo run -p alia-embedded
-```
+The binary looks for `config/embedded.toml` relative to the workspace root, but it no longer requires the file to exist on first boot.
+If the file is missing, `alia-embedded` starts in provisioning mode, advertises discovery, generates a device keypair, and persists a runtime settings file automatically.
 
 Or override via environment variable:
 
@@ -48,16 +39,15 @@ export ALIA_EMBEDDED_CONFIG_PATH=config/embedded.toml
 
 ## Configuration
 
-All settings live in a single `config/embedded.toml` at the workspace root. See `config/embedded.example.toml` for all fields.
+Only user-editable runtime settings live in `config/embedded.toml`. Core module defaults remain compiled into the binary.
+The expected file shape is shown in [config/embedded.example.toml](../../config/embedded.example.toml), and the file can be created or updated by server/frontend OOBE through the embedded settings API.
 
 | Section | Purpose |
 |---------|---------|
+| `[runtime]` | Provisioning state (`false` means accessory-style OOBE mode) |
 | `[identity]` | Device ID, friendly name, keypair path |
-| `[wakeword]` | Wake-word engine, model, keywords, sensitivity |
 | `[audio]` | Capture/playback devices, Opus encoding params |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
-| `[[process]]` | Managed Python subprocesses |
-| `[[direct_response]]` | Keyword → local audio fast-path |
 
 ## Development
 

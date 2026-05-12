@@ -11,6 +11,7 @@ use crate::config::EmbeddedConfig;
 use crate::identity;
 use crate::plugin::PluginRegistry;
 use crate::process::ProcessManager;
+use crate::settings::EmbeddedSettingsManager;
 
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
@@ -23,6 +24,7 @@ pub struct EmbeddedNode {
     pub config: Arc<EmbeddedConfig>,
     pub cancel_token: CancellationToken,
     pub binding_manager: Arc<BindingManager>,
+    pub settings_manager: Arc<EmbeddedSettingsManager>,
 }
 
 impl EmbeddedNode {
@@ -31,9 +33,13 @@ impl EmbeddedNode {
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::process::process_manager_server::ProcessManagerServer;
+        use alia_proto::settings::embedded_settings_server::EmbeddedSettingsServer;
         use tonic::transport::Server;
 
-        use crate::grpc::{DeviceBindingService, PluginManagerService, ProcessManagerService};
+        use crate::grpc::{
+            DeviceBindingService, EmbeddedSettingsService, PluginManagerService,
+            ProcessManagerService,
+        };
 
         let process_svc = ProcessManagerServer::new(ProcessManagerService::new(
             self.registry.process_manager.clone(),
@@ -46,13 +52,21 @@ impl EmbeddedNode {
             self.registry.plugin_registry.clone(),
             self.binding_manager.clone(),
             self.registry.discovery.clone(),
+            self.settings_manager.clone(),
         ));
         let binding_svc = DeviceBindingServer::new(DeviceBindingService::new(
             self.binding_manager.clone(),
             self.config.identity.clone(),
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
+            self.settings_manager.clone(),
             device_public_key,
+        ));
+        let settings_svc = EmbeddedSettingsServer::new(EmbeddedSettingsService::new(
+            self.binding_manager.clone(),
+            self.settings_manager.clone(),
+            self.registry.discovery.clone(),
+            self.registry.plugin_registry.clone(),
         ));
 
         let addr: SocketAddr = "0.0.0.0:50051".parse()?;
@@ -63,6 +77,7 @@ impl EmbeddedNode {
             .add_service(process_svc)
             .add_service(plugin_svc)
             .add_service(binding_svc)
+            .add_service(settings_svc)
             .serve_with_shutdown(addr, async move {
                 cancel.cancelled().await;
             })
@@ -238,6 +253,8 @@ impl EmbeddedBuilder {
             error!(error = %e, "failed to scan plugins directory");
         }
 
+        let settings_manager = Arc::new(EmbeddedSettingsManager::new(&config));
+
         // Initialize binding manager
         let binding_path = PathBuf::from("run/binding.json");
         let binding_manager = Arc::new(BindingManager::new(
@@ -268,6 +285,10 @@ impl EmbeddedBuilder {
 
         let initial_discovery_metadata = binding_manager.status().await.discovery_metadata();
         let mut initial_discovery_metadata = initial_discovery_metadata;
+        initial_discovery_metadata.attributes.insert(
+            "provisioning_mode".to_string(),
+            settings_manager.provisioning_mode().await.to_string(),
+        );
         plugin_registry
             .enrich_discovery_metadata(&mut initial_discovery_metadata)
             .await;
@@ -295,6 +316,7 @@ impl EmbeddedBuilder {
             config,
             cancel_token: self.cancel_token,
             binding_manager,
+            settings_manager,
         })
     }
 }

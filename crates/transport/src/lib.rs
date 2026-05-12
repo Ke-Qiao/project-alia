@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,6 +13,15 @@ pub const DEFAULT_EMBEDDED_DISCOVERY_SERVICE: &str = "_alia-embedded._tcp.local.
 pub const DEFAULT_AUTH_MAX_SKEW: Duration = Duration::from_secs(300);
 pub const DEFAULT_GRPC_AUTH_TTL: Duration = Duration::from_secs(15 * 60);
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiscoveredService {
+    pub endpoint: String,
+    pub instance_name: String,
+    pub hostname: String,
+    pub port: u16,
+    pub properties: HashMap<String, String>,
+}
+
 pub async fn discover_embedded_endpoint(
     service_name: &str,
     timeout: Duration,
@@ -23,6 +33,15 @@ pub async fn discover_service_endpoint(
     service_name: &str,
     timeout: Duration,
 ) -> Result<Option<String>> {
+    Ok(discover_service(service_name, timeout)
+        .await?
+        .map(|service| service.endpoint))
+}
+
+pub async fn discover_service(
+    service_name: &str,
+    timeout: Duration,
+) -> Result<Option<DiscoveredService>> {
     let service_name = normalize_service_name(service_name);
     let mdns = ServiceDaemon::new().context("creating mDNS discovery daemon")?;
     let receiver = mdns
@@ -33,8 +52,8 @@ pub async fn discover_service_endpoint(
         loop {
             match receiver.recv_async().await {
                 Ok(ServiceEvent::ServiceResolved(info)) => {
-                    if let Some(endpoint) = resolved_service_endpoint(&info) {
-                        return Ok(Some(endpoint));
+                    if let Some(service) = resolved_service(&info) {
+                        return Ok(Some(service));
                     }
                 }
                 Ok(_) => {}
@@ -251,6 +270,23 @@ fn resolved_service_endpoint(info: &ResolvedService) -> Option<String> {
     Some(match address {
         IpAddr::V4(ip) => format!("http://{ip}:{}", info.get_port()),
         IpAddr::V6(ip) => format!("http://[{ip}]:{}", info.get_port()),
+    })
+}
+
+fn resolved_service(info: &ResolvedService) -> Option<DiscoveredService> {
+    let endpoint = resolved_service_endpoint(info)?;
+    let properties = info
+        .get_properties()
+        .iter()
+        .map(|property| (property.key().to_string(), property.val_str().to_string()))
+        .collect::<HashMap<_, _>>();
+
+    Some(DiscoveredService {
+        endpoint,
+        instance_name: info.get_fullname().to_string(),
+        hostname: info.get_hostname().to_string(),
+        port: info.get_port(),
+        properties,
     })
 }
 
