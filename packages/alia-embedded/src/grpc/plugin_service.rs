@@ -122,12 +122,20 @@ impl PluginManagerTrait for PluginManagerService {
         request: Request<StartPluginRequest>,
     ) -> Result<Response<StartPluginResponse>, Status> {
         require_auth(&self.binding, &request).await?;
-        // TODO: integrate with ProcessManager to start plugin subprocess
-        let _req = request.into_inner();
-        Ok(Response::new(StartPluginResponse {
-            success: false,
-            message: "not yet implemented".to_string(),
-        }))
+        let req = request.into_inner();
+        match self.registry.start(&req.name).await {
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(StartPluginResponse {
+                    success: true,
+                    message: "started".to_string(),
+                }))
+            }
+            Err(e) => Ok(Response::new(StartPluginResponse {
+                success: false,
+                message: e.to_string(),
+            })),
+        }
     }
 
     async fn stop_plugin(
@@ -135,12 +143,20 @@ impl PluginManagerTrait for PluginManagerService {
         request: Request<StopPluginRequest>,
     ) -> Result<Response<StopPluginResponse>, Status> {
         require_auth(&self.binding, &request).await?;
-        // TODO: integrate with ProcessManager to stop plugin subprocess
-        let _req = request.into_inner();
-        Ok(Response::new(StopPluginResponse {
-            success: false,
-            message: "not yet implemented".to_string(),
-        }))
+        let req = request.into_inner();
+        match self.registry.stop(&req.name).await {
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(StopPluginResponse {
+                    success: true,
+                    message: "stopping".to_string(),
+                }))
+            }
+            Err(e) => Ok(Response::new(StopPluginResponse {
+                success: false,
+                message: e.to_string(),
+            })),
+        }
     }
 
     async fn send_command(
@@ -148,12 +164,26 @@ impl PluginManagerTrait for PluginManagerService {
         request: Request<PluginCommandRequest>,
     ) -> Result<Response<PluginCommandResponse>, Status> {
         require_auth(&self.binding, &request).await?;
-        // TODO: route command to plugin's stdin
-        let _req = request.into_inner();
-        Ok(Response::new(PluginCommandResponse {
-            success: false,
-            message: "not yet implemented".to_string(),
-        }))
+        let req = request.into_inner();
+        match self
+            .registry
+            .send_command(
+                &req.plugin_name,
+                &req.command_id,
+                &req.action,
+                &req.payload_json,
+            )
+            .await
+        {
+            Ok(()) => Ok(Response::new(PluginCommandResponse {
+                success: true,
+                message: "sent".to_string(),
+            })),
+            Err(e) => Ok(Response::new(PluginCommandResponse {
+                success: false,
+                message: e.to_string(),
+            })),
+        }
     }
 
     type StreamEventsStream = tokio_stream::wrappers::ReceiverStream<Result<PluginEvent, Status>>;
@@ -163,10 +193,36 @@ impl PluginManagerTrait for PluginManagerService {
         request: Request<StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
         require_auth(&self.binding, &request).await?;
-        // TODO: stream plugin stdout events
-        let (_tx, rx) = tokio::sync::mpsc::channel(128);
+        let req = request.into_inner();
+        let mut rx = self.registry.subscribe_events();
+        let plugin_filter = req.plugin_names;
+        let event_filter = req.event_types;
+        let (tx, stream_rx) = tokio::sync::mpsc::channel(128);
+
+        tokio::spawn(async move {
+            while let Ok(event) = rx.recv().await {
+                if !plugin_filter.is_empty() && !plugin_filter.contains(&event.plugin_name) {
+                    continue;
+                }
+                if !event_filter.is_empty() && !event_filter.contains(&event.event_type) {
+                    continue;
+                }
+
+                let message = PluginEvent {
+                    plugin_name: event.plugin_name,
+                    event_type: event.event_type,
+                    payload_json: event.payload_json,
+                    timestamp_us: event.timestamp_us,
+                };
+
+                if tx.send(Ok(message)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
-            rx,
+            stream_rx,
         )))
     }
 }

@@ -449,17 +449,16 @@ impl ChannelAdapter for EmbeddedChannel {
             interrupt_current: false,
         };
 
-        // PlayAudio returns a server-stream of AudioChunks (ack from Pi).
-        // We send the request with the audio data as a single chunk first,
-        // then consume the response stream for confirmation.
+        // Prime the playback session on the embedded node before sending raw PCM bytes.
         let mut response_stream = client
             .play_audio(self.auth_request(request)?)
             .await?
             .into_inner();
 
-        // Send audio data via a separate UploadAudio call (Pi pulls from PlayAudio stream,
-        // but the proto defines PlayAudio as server-stream for chunked playback confirmation).
-        // For now, we chunk the audio into the UploadAudio client-stream:
+        if let Some(ack) = response_stream.message().await? {
+            tracing::trace!(seq = ack.sequence, "play_audio primed on Pi");
+        }
+
         let chunk = AudioChunk {
             opus_data: audio.data,
             sequence: 0,
@@ -467,12 +466,6 @@ impl ChannelAdapter for EmbeddedChannel {
             encoding,
         };
 
-        // Drain the response stream (Pi sends back ack chunks as it plays)
-        while let Some(ack) = response_stream.message().await? {
-            tracing::trace!(seq = ack.sequence, "play_audio ack from Pi");
-        }
-
-        // Also send raw chunk via UploadAudio for the actual data delivery
         let mut upload_client = self.audio_client().await?;
         let upload_stream = tokio_stream::once(chunk);
         upload_client
@@ -512,6 +505,134 @@ impl ChannelAdapter for EmbeddedChannel {
                     .stop_process(self.auth_request(alia_proto::process::StopProcessRequest {
                         name: name.to_string(),
                         force,
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                }))
+            }
+            "restart_process" => {
+                let name = action.params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("restart_process requires 'name' param"))?;
+                let mut client = self.process_client().await?;
+                let resp = client
+                    .restart_process(self.auth_request(
+                        alia_proto::process::RestartProcessRequest {
+                            name: name.to_string(),
+                        },
+                    )?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                    "pid": resp.pid,
+                }))
+            }
+            "list_processes" => {
+                let mut client = self.process_client().await?;
+                let resp = client
+                    .list_processes(
+                        self.auth_request(alia_proto::process::ListProcessesRequest {})?,
+                    )
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "processes": resp.processes.into_iter().map(|process| serde_json::json!({
+                        "name": process.name,
+                        "state": process.state,
+                        "pid": process.pid,
+                        "uptime_secs": process.uptime_secs,
+                        "restart_count": process.restart_count,
+                    })).collect::<Vec<_>>(),
+                }))
+            }
+            "list_plugins" => {
+                let mut client = self.plugin_client().await?;
+                let resp = client
+                    .list_plugins(self.auth_request(alia_proto::plugin::ListPluginsRequest {})?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "plugins": resp.plugins.into_iter().map(|plugin| serde_json::json!({
+                        "name": plugin.name,
+                        "version": plugin.version,
+                        "plugin_type": plugin.plugin_type,
+                        "state": plugin.state,
+                        "description": plugin.description,
+                    })).collect::<Vec<_>>(),
+                }))
+            }
+            "install_plugin" => {
+                let name = action.params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("install_plugin requires 'name' param"))?;
+                let version = action.params["version"].as_str().unwrap_or("");
+                let zip_base64 = action.params["zip_base64"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("install_plugin requires 'zip_base64' param"))?;
+                let zip_data = base64::engine::general_purpose::STANDARD.decode(zip_base64)?;
+                let mut client = self.plugin_client().await?;
+                let resp = client
+                    .install_plugin(self.auth_request(
+                        alia_proto::plugin::InstallPluginRequest {
+                            name: name.to_string(),
+                            version: version.to_string(),
+                            zip_data,
+                        },
+                    )?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                }))
+            }
+            "uninstall_plugin" => {
+                let name = action.params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("uninstall_plugin requires 'name' param"))?;
+                let mut client = self.plugin_client().await?;
+                let resp = client
+                    .uninstall_plugin(self.auth_request(
+                        alia_proto::plugin::UninstallPluginRequest {
+                            name: name.to_string(),
+                        },
+                    )?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                }))
+            }
+            "start_plugin" => {
+                let name = action.params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("start_plugin requires 'name' param"))?;
+                let mut client = self.plugin_client().await?;
+                let resp = client
+                    .start_plugin(self.auth_request(alia_proto::plugin::StartPluginRequest {
+                        name: name.to_string(),
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                }))
+            }
+            "stop_plugin" => {
+                let name = action.params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("stop_plugin requires 'name' param"))?;
+                let mut client = self.plugin_client().await?;
+                let resp = client
+                    .stop_plugin(self.auth_request(alia_proto::plugin::StopPluginRequest {
+                        name: name.to_string(),
                     })?)
                     .await?
                     .into_inner();

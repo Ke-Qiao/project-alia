@@ -25,11 +25,13 @@ pub struct EmbeddedNode {
     pub cancel_token: CancellationToken,
     pub binding_manager: Arc<BindingManager>,
     pub settings_manager: Arc<EmbeddedSettingsManager>,
+    pub event_bus: EventBus,
 }
 
 impl EmbeddedNode {
     /// Run the embedded node (starts gRPC server, blocks until cancellation).
     pub async fn run(self) -> Result<()> {
+        use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::process::process_manager_server::ProcessManagerServer;
@@ -37,10 +39,15 @@ impl EmbeddedNode {
         use tonic::transport::Server;
 
         use crate::grpc::{
-            DeviceBindingService, EmbeddedSettingsService, PluginManagerService,
-            ProcessManagerService,
+            AudioStreamService, DeviceBindingService, EmbeddedSettingsService,
+            PluginManagerService, ProcessManagerService,
         };
 
+        let audio_svc = AudioStreamServer::new(AudioStreamService::new(
+            self.registry.audio_playback.clone(),
+            self.binding_manager.clone(),
+            self.event_bus.clone(),
+        ));
         let process_svc = ProcessManagerServer::new(ProcessManagerService::new(
             self.registry.process_manager.clone(),
             self.binding_manager.clone(),
@@ -74,6 +81,7 @@ impl EmbeddedNode {
 
         let cancel = self.cancel_token.clone();
         Server::builder()
+            .add_service(audio_svc)
             .add_service(process_svc)
             .add_service(plugin_svc)
             .add_service(binding_svc)
@@ -317,6 +325,7 @@ impl EmbeddedBuilder {
             cancel_token: self.cancel_token,
             binding_manager,
             settings_manager,
+            event_bus: ctx.event_bus.clone(),
         })
     }
 }

@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use tokio::sync::RwLock;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStdin, Command};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use tracing::{info, warn};
 
 use crate::module::traits::DiscoveryMetadata;
@@ -24,11 +28,13 @@ pub struct PluginEntry {
     pub state: PluginState,
     pub dir: PathBuf,
     pub pid: Option<u32>,
+    pub stdin: Option<Arc<Mutex<ChildStdin>>>,
 }
 
 pub struct PluginRegistry {
-    plugins: RwLock<HashMap<String, PluginEntry>>,
+    plugins: Arc<RwLock<HashMap<String, PluginEntry>>>,
     plugins_dir: PathBuf,
+    event_tx: broadcast::Sender<PluginEventRecord>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -37,11 +43,21 @@ pub struct PluginDiscoverySummary {
     pub attributes: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PluginEventRecord {
+    pub plugin_name: String,
+    pub event_type: String,
+    pub payload_json: Vec<u8>,
+    pub timestamp_us: u64,
+}
+
 impl PluginRegistry {
     pub fn new(plugins_dir: PathBuf) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
         Self {
-            plugins: RwLock::new(HashMap::new()),
+            plugins: Arc::new(RwLock::new(HashMap::new())),
             plugins_dir,
+            event_tx,
         }
     }
 
@@ -76,6 +92,7 @@ impl PluginRegistry {
                             state: PluginState::Installed,
                             dir: path,
                             pid: None,
+                            stdin: None,
                         },
                     );
                 }
@@ -177,6 +194,7 @@ impl PluginRegistry {
                 state: PluginState::Installed,
                 dir: plugin_dir,
                 pid: None,
+                stdin: None,
             },
         );
 
@@ -202,6 +220,147 @@ impl PluginRegistry {
         tokio::fs::remove_dir_all(&dir).await?;
         info!(name, "plugin uninstalled");
         Ok(())
+    }
+
+    pub async fn start(&self, name: &str) -> Result<()> {
+        let (manifest, dir) = {
+            let mut plugins = self.plugins.write().await;
+            let entry = plugins
+                .get_mut(name)
+                .with_context(|| format!("plugin not found: {name}"))?;
+
+            if matches!(entry.state, PluginState::Running | PluginState::Starting) {
+                bail!("plugin already running: {name}");
+            }
+
+            entry.state = PluginState::Starting;
+            entry.pid = None;
+            entry.stdin = None;
+            (entry.manifest.clone(), entry.dir.clone())
+        };
+
+        let (command, args) = plugin_command(&dir, &manifest);
+        let mut child = Command::new(&command);
+        child
+            .args(&args)
+            .current_dir(&dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let mut child = child
+            .spawn()
+            .with_context(|| format!("spawning plugin '{}' with {}", name, command.display()))?;
+
+        let pid = child.id().unwrap_or_default();
+        let stdin = child
+            .stdin
+            .take()
+            .map(|handle| Arc::new(Mutex::new(handle)));
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        {
+            let mut plugins = self.plugins.write().await;
+            let entry = plugins
+                .get_mut(name)
+                .with_context(|| format!("plugin not found after spawn: {name}"))?;
+            entry.state = PluginState::Running;
+            entry.pid = Some(pid);
+            entry.stdin = stdin.clone();
+        }
+
+        self.emit_event(
+            name,
+            "lifecycle",
+            serde_json::json!({ "state": "running", "pid": pid }),
+        );
+
+        self.spawn_output_task(name.to_string(), "stdout", stdout);
+        self.spawn_output_task(name.to_string(), "stderr", stderr);
+        self.spawn_wait_task(name.to_string(), child);
+
+        info!(name, pid, "plugin started");
+        Ok(())
+    }
+
+    pub async fn stop(&self, name: &str) -> Result<()> {
+        let pid = {
+            let mut plugins = self.plugins.write().await;
+            let entry = plugins
+                .get_mut(name)
+                .with_context(|| format!("plugin not found: {name}"))?;
+
+            if !matches!(entry.state, PluginState::Running | PluginState::Starting) {
+                bail!("plugin is not running: {name}");
+            }
+
+            entry.state = PluginState::Stopping;
+            entry.stdin = None;
+            entry.pid
+        };
+
+        if let Some(pid) = pid {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+        }
+
+        self.emit_event(
+            name,
+            "lifecycle",
+            serde_json::json!({ "state": "stopping" }),
+        );
+        info!(name, pid, "plugin stop requested");
+        Ok(())
+    }
+
+    pub async fn send_command(
+        &self,
+        name: &str,
+        command_id: &str,
+        action: &str,
+        payload_json: &[u8],
+    ) -> Result<()> {
+        let stdin = {
+            let plugins = self.plugins.read().await;
+            let entry = plugins
+                .get(name)
+                .with_context(|| format!("plugin not found: {name}"))?;
+            if entry.state != PluginState::Running {
+                bail!("plugin is not running: {name}");
+            }
+            entry
+                .stdin
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("plugin stdin unavailable: {name}"))?
+        };
+
+        let payload = if payload_json.is_empty() {
+            serde_json::Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_slice(payload_json).context("parsing plugin command payload")?
+        };
+
+        let envelope = serde_json::json!({
+            "command_id": command_id,
+            "action": action,
+            "payload": payload,
+        });
+
+        let mut stdin = stdin.lock().await;
+        stdin
+            .write_all(serde_json::to_string(&envelope)?.as_bytes())
+            .await?;
+        stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
+
+        Ok(())
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<PluginEventRecord> {
+        self.event_tx.subscribe()
     }
 
     /// List all installed plugins.
@@ -302,6 +461,105 @@ impl PluginRegistry {
             None
         }
     }
+
+    fn emit_event(&self, plugin_name: &str, event_type: &str, payload: serde_json::Value) {
+        let payload_json = serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec());
+        let _ = self.event_tx.send(PluginEventRecord {
+            plugin_name: plugin_name.to_string(),
+            event_type: event_type.to_string(),
+            payload_json,
+            timestamp_us: timestamp_us(),
+        });
+    }
+
+    fn spawn_output_task(
+        &self,
+        plugin_name: String,
+        stream_name: &'static str,
+        stream: Option<impl tokio::io::AsyncRead + Unpin + Send + 'static>,
+    ) {
+        let Some(stream) = stream else {
+            return;
+        };
+        let event_tx = self.event_tx.clone();
+
+        tokio::spawn(async move {
+            let reader = BufReader::new(stream);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let (event_type, payload_json) =
+                    match serde_json::from_str::<serde_json::Value>(&line) {
+                        Ok(value) => {
+                            let event_type = value
+                                .get("event_type")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or(stream_name)
+                                .to_string();
+                            let payload = value.get("payload").cloned().unwrap_or(value);
+                            (
+                                event_type,
+                                serde_json::to_vec(&payload).unwrap_or_else(|_| b"{}".to_vec()),
+                            )
+                        }
+                        Err(_) => (
+                            stream_name.to_string(),
+                            serde_json::to_vec(&serde_json::json!({ "line": line }))
+                                .unwrap_or_else(|_| b"{}".to_vec()),
+                        ),
+                    };
+
+                let _ = event_tx.send(PluginEventRecord {
+                    plugin_name: plugin_name.clone(),
+                    event_type,
+                    payload_json,
+                    timestamp_us: timestamp_us(),
+                });
+            }
+        });
+    }
+
+    fn spawn_wait_task(&self, plugin_name: String, mut child: tokio::process::Child) {
+        let plugins = Arc::clone(&self.plugins);
+        let event_tx = self.event_tx.clone();
+        tokio::spawn(async move {
+            let status = child.wait().await;
+            let (next_state, exit_code) = match status {
+                Ok(status) if status.success() => (PluginState::Stopped, status.code()),
+                Ok(status) => (PluginState::Failed, status.code()),
+                Err(_) => (PluginState::Failed, None),
+            };
+
+            let mut map = plugins.write().await;
+            if let Some(entry) = map.get_mut(&plugin_name) {
+                entry.state = next_state;
+                entry.pid = None;
+                entry.stdin = None;
+            }
+            drop(map);
+
+            let state_name = match next_state {
+                PluginState::Stopped => "stopped",
+                PluginState::Failed => "failed",
+                PluginState::Installed => "installed",
+                PluginState::Starting => "starting",
+                PluginState::Running => "running",
+                PluginState::Stopping => "stopping",
+            };
+
+            let payload_json = serde_json::to_vec(&serde_json::json!({
+                "state": state_name,
+                "exit_code": exit_code,
+            }))
+            .unwrap_or_else(|_| b"{}".to_vec());
+
+            let _ = event_tx.send(PluginEventRecord {
+                plugin_name,
+                event_type: "lifecycle".to_string(),
+                payload_json,
+                timestamp_us: timestamp_us(),
+            });
+        });
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -311,4 +569,20 @@ pub struct PluginSnapshot {
     pub plugin_type: String,
     pub state: PluginState,
     pub description: String,
+}
+
+fn plugin_command(dir: &std::path::Path, manifest: &PluginManifest) -> (PathBuf, Vec<String>) {
+    let entry = dir.join(&manifest.plugin.entry);
+    match entry.extension().and_then(|ext| ext.to_str()) {
+        Some("py") => (PathBuf::from("python3"), vec![entry.display().to_string()]),
+        Some("sh") => (PathBuf::from("sh"), vec![entry.display().to_string()]),
+        _ => (entry, Vec::new()),
+    }
+}
+
+fn timestamp_us() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
 }
