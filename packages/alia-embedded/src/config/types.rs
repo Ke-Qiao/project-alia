@@ -7,6 +7,8 @@ pub struct EmbeddedConfig {
     pub modules: ModulesConfig,
     pub identity: IdentityConfig,
     pub wakeword: WakewordConfig,
+    #[serde(default)]
+    pub edge_stt: EdgeSttConfig,
     pub audio: AudioConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
@@ -101,9 +103,25 @@ impl Default for IdentityConfig {
 pub struct WakewordConfig {
     pub engine: String,
     pub model_path: PathBuf,
+    #[serde(default = "default_kws_encoder_path")]
+    pub encoder_path: PathBuf,
+    #[serde(default = "default_kws_decoder_path")]
+    pub decoder_path: PathBuf,
+    #[serde(default = "default_kws_joiner_path")]
+    pub joiner_path: PathBuf,
+    #[serde(default = "default_kws_tokens_path")]
+    pub tokens_path: PathBuf,
+    #[serde(default = "default_kws_keywords_file")]
+    pub keywords_file: PathBuf,
     pub keywords: Vec<String>,
     #[serde(default = "default_sensitivity")]
     pub sensitivity: f32,
+    #[serde(default = "default_sherpa_provider")]
+    pub provider: String,
+    #[serde(default = "default_kws_num_threads")]
+    pub num_threads: i32,
+    #[serde(default)]
+    pub debug: bool,
 }
 
 impl Default for WakewordConfig {
@@ -111,14 +129,100 @@ impl Default for WakewordConfig {
         Self {
             engine: "sherpa-onnx".to_string(),
             model_path: PathBuf::from("models/hey_alia.onnx"),
+            encoder_path: default_kws_encoder_path(),
+            decoder_path: default_kws_decoder_path(),
+            joiner_path: default_kws_joiner_path(),
+            tokens_path: default_kws_tokens_path(),
+            keywords_file: default_kws_keywords_file(),
             keywords: vec!["你好阿利亚".to_string(), "Hey Alia".to_string()],
             sensitivity: default_sensitivity(),
+            provider: default_sherpa_provider(),
+            num_threads: default_kws_num_threads(),
+            debug: false,
         }
     }
 }
 
+fn default_kws_encoder_path() -> PathBuf {
+    PathBuf::from("models/sherpa-kws/encoder.onnx")
+}
+fn default_kws_decoder_path() -> PathBuf {
+    PathBuf::from("models/sherpa-kws/decoder.onnx")
+}
+fn default_kws_joiner_path() -> PathBuf {
+    PathBuf::from("models/sherpa-kws/joiner.onnx")
+}
+fn default_kws_tokens_path() -> PathBuf {
+    PathBuf::from("models/sherpa-kws/tokens.txt")
+}
+fn default_kws_keywords_file() -> PathBuf {
+    PathBuf::from("models/sherpa-kws/keywords.txt")
+}
 fn default_sensitivity() -> f32 {
     0.6
+}
+fn default_sherpa_provider() -> String {
+    "cpu".to_string()
+}
+fn default_kws_num_threads() -> i32 {
+    1
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EdgeSttConfig {
+    #[serde(default = "default_edge_stt_model_path")]
+    pub model_path: PathBuf,
+    #[serde(default = "default_edge_stt_tokens_path")]
+    pub tokens_path: PathBuf,
+    #[serde(default = "default_edge_stt_language")]
+    pub language: String,
+    #[serde(default = "default_sherpa_provider")]
+    pub provider: String,
+    #[serde(default = "default_edge_stt_num_threads")]
+    pub num_threads: i32,
+    #[serde(default = "default_true")]
+    pub use_itn: bool,
+    #[serde(default = "default_edge_stt_max_duration_ms")]
+    pub max_duration_ms: u32,
+    #[serde(default = "default_post_wake_capture_ms")]
+    pub post_wake_capture_ms: u32,
+    #[serde(default)]
+    pub debug: bool,
+}
+
+impl Default for EdgeSttConfig {
+    fn default() -> Self {
+        Self {
+            model_path: default_edge_stt_model_path(),
+            tokens_path: default_edge_stt_tokens_path(),
+            language: default_edge_stt_language(),
+            provider: default_sherpa_provider(),
+            num_threads: default_edge_stt_num_threads(),
+            use_itn: true,
+            max_duration_ms: default_edge_stt_max_duration_ms(),
+            post_wake_capture_ms: default_post_wake_capture_ms(),
+            debug: false,
+        }
+    }
+}
+
+fn default_edge_stt_model_path() -> PathBuf {
+    PathBuf::from("models/sense-voice/model.int8.onnx")
+}
+fn default_edge_stt_tokens_path() -> PathBuf {
+    PathBuf::from("models/sense-voice/tokens.txt")
+}
+fn default_edge_stt_language() -> String {
+    "auto".to_string()
+}
+fn default_edge_stt_num_threads() -> i32 {
+    2
+}
+fn default_edge_stt_max_duration_ms() -> u32 {
+    5_000
+}
+fn default_post_wake_capture_ms() -> u32 {
+    2_500
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,6 +414,7 @@ impl Default for EmbeddedConfig {
             modules: ModulesConfig::default(),
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
+            edge_stt: EdgeSttConfig::default(),
             audio: AudioConfig::default(),
             discovery: DiscoveryConfig::default(),
             process: Vec::new(),

@@ -144,7 +144,7 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
 
     // Build server via ServerBuilder (init + start all modules and channels)
-    let state = ServerBuilder::new(config.clone(), db, event_bus, cancel_token.clone())
+    let state = ServerBuilder::new(config.clone(), db, event_bus.clone(), cancel_token.clone())
         .build()
         .await
         .context("failed to initialize server modules")?;
@@ -157,6 +157,33 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
         .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
+
+    #[cfg(feature = "channel-embedded")]
+    {
+        let grpc_addr = format!("{}:{}", config.server.host, config.server.port + 1)
+            .parse()
+            .context("failed to parse embedded audio ingress gRPC address")?;
+        let grpc_cancel = cancel_token.clone();
+        let grpc_event_bus = event_bus.clone();
+        tokio::spawn(async move {
+            use alia_proto::audio::server_audio_ingress_server::ServerAudioIngressServer;
+            use alia_server::grpc::audio_ingress::ServerAudioIngressService;
+            use tonic::transport::Server;
+
+            tracing::info!(addr = %grpc_addr, "embedded audio ingress gRPC listening");
+            if let Err(error) = Server::builder()
+                .add_service(ServerAudioIngressServer::new(
+                    ServerAudioIngressService::new(grpc_event_bus, "embedded"),
+                ))
+                .serve_with_shutdown(grpc_addr, async move {
+                    grpc_cancel.cancelled().await;
+                })
+                .await
+            {
+                tracing::error!(error = %error, "embedded audio ingress gRPC failed");
+            }
+        });
+    }
 
     // Bind and serve
     let addr = format!("{}:{}", config.server.host, config.server.port);

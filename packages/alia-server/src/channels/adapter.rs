@@ -52,6 +52,7 @@ pub struct AudioPayload {
 pub enum AudioFormat {
     Pcm16,
     Opus,
+    Wav,
 }
 
 /// Channel status.

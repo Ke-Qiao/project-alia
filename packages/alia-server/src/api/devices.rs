@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
-use axum::routing::{get, post};
+use axum::extract::{Path, Query, State};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde::Serialize;
@@ -214,6 +214,53 @@ async fn update_device_settings(
     Ok(Json(response))
 }
 
+async fn list_direct_responses(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Query(query): Query<DeviceQuery>,
+) -> Result<Json<serde_json::Value>> {
+    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let response = channel
+        .execute_action(ChannelAction {
+            name: "list_direct_responses".to_string(),
+            params: serde_json::json!({}),
+        })
+        .await?;
+    Ok(Json(response))
+}
+
+async fn upsert_direct_response(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Query(query): Query<DeviceQuery>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>> {
+    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let response = channel
+        .execute_action(ChannelAction {
+            name: "upsert_direct_response".to_string(),
+            params: body,
+        })
+        .await?;
+    Ok(Json(response))
+}
+
+async fn delete_direct_response(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Query(query): Query<DeviceQuery>,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>> {
+    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let response = channel
+        .execute_action(ChannelAction {
+            name: "delete_direct_response".to_string(),
+            params: serde_json::json!({ "id": id }),
+        })
+        .await?;
+    Ok(Json(response))
+}
+
 async fn resolve_embedded_channel(
     state: &AppState,
     channel_id: Option<&str>,
@@ -250,5 +297,13 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/device/settings",
             get(get_device_settings).patch(update_device_settings),
+        )
+        .route(
+            "/device/settings/direct-responses",
+            get(list_direct_responses).post(upsert_direct_response),
+        )
+        .route(
+            "/device/settings/direct-responses/{id}",
+            delete(delete_direct_response),
         )
 }

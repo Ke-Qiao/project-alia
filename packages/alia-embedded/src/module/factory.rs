@@ -7,18 +7,17 @@ use anyhow::{Result, bail};
 
 use crate::config::EmbeddedConfig;
 
+use super::direct_response::KeywordMatcher;
 use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::noop::*;
+#[cfg(feature = "sherpa-onnx")]
+use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt};
 use super::traits::*;
 
 /// Create the wake word engine based on config.
 pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
     match config.modules.wakeword.as_str() {
-        "sherpa_onnx" => {
-            // TODO: Replace with real SherpaOnnxKws once sherpa-onnx crate is integrated
-            tracing::warn!("sherpa_onnx wakeword not yet implemented, using noop");
-            Ok(Box::new(NoopWakeWord))
-        }
+        "sherpa_onnx" => create_sherpa_wakeword(config),
         "porcupine" => {
             // TODO: Replace with PorcupineKws once pv_porcupine crate is integrated
             tracing::warn!("porcupine wakeword not yet implemented, using noop");
@@ -32,11 +31,7 @@ pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine
 /// Create the edge STT engine based on config.
 pub fn create_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
     match config.modules.edge_stt.as_str() {
-        "sherpa_onnx" => {
-            // TODO: Replace with real SherpaOnnxStt
-            tracing::warn!("sherpa_onnx edge_stt not yet implemented, using noop");
-            Ok(Box::new(NoopEdgeStt))
-        }
+        "sherpa_onnx" => create_sherpa_edge_stt(config),
         "noop" => Ok(Box::new(NoopEdgeStt)),
         other => bail!("unknown edge_stt engine: {other}"),
     }
@@ -45,14 +40,30 @@ pub fn create_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>
 /// Create the direct response engine based on config.
 pub fn create_direct_response(config: &EmbeddedConfig) -> Result<Box<dyn DirectResponseEngine>> {
     match config.modules.direct_response.as_str() {
-        "keyword" => {
-            // TODO: Replace with KeywordMatcher that uses config.direct_response entries
-            tracing::warn!("keyword direct_response not yet implemented, using noop");
-            Ok(Box::new(NoopDirectResponse))
-        }
+        "keyword" => Ok(Box::new(KeywordMatcher::new(&config.direct_response))),
         "noop" => Ok(Box::new(NoopDirectResponse)),
         other => bail!("unknown direct_response engine: {other}"),
     }
+}
+
+#[cfg(feature = "sherpa-onnx")]
+fn create_sherpa_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
+    Ok(Box::new(SherpaOnnxKws::new(&config.wakeword)?))
+}
+
+#[cfg(not(feature = "sherpa-onnx"))]
+fn create_sherpa_wakeword(_config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
+    bail!("module wakeword='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
+}
+
+#[cfg(feature = "sherpa-onnx")]
+fn create_sherpa_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
+    Ok(Box::new(SherpaOnnxStt::new(&config.edge_stt)?))
+}
+
+#[cfg(not(feature = "sherpa-onnx"))]
+fn create_sherpa_edge_stt(_config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
+    bail!("module edge_stt='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
 }
 
 /// Create the audio capture backend based on config.

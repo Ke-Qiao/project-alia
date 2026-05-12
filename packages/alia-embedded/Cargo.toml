@@ -3,6 +3,13 @@ name = "alia-embedded"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["wakeword-sherpa", "stt-sherpa", "direct-response"]
+direct-response = []
+sherpa-onnx = ["dep:sherpa-onnx"]
+wakeword-sherpa = ["sherpa-onnx"]
+stt-sherpa = ["sherpa-onnx"]
+
 [dependencies]
 alia-proto.workspace = true
 alia-transport.workspace = true
@@ -15,6 +22,7 @@ prost.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sherpa-onnx = { workspace = true, optional = true }
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

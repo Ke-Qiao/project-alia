@@ -170,7 +170,7 @@ async fn process_event(
                 data: audio_bytes,
                 sample_rate: 24000,
                 channels: 1,
-                format: crate::channels::adapter::AudioFormat::Pcm16,
+                format: crate::channels::adapter::AudioFormat::Wav,
             };
 
             if channel.capabilities().voice_output {

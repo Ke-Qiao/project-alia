@@ -13,6 +13,11 @@ service AudioStream {
   rpc BiDirectionalAudio(stream AudioFrame) returns (stream AudioFrame);
 }
 
+// Server-hosted ingress: Pi captured speech → alia-server pipeline.
+service ServerAudioIngress {
+  rpc UploadCapturedAudio(stream CapturedAudioChunk) returns (AudioUploadResponse);
+}
+
 // Full-duplex frame supporting audio data and control signaling
 message AudioFrame {
   oneof payload {
@@ -37,6 +42,14 @@ message AudioChunk {
   uint64 sequence = 2;
   uint64 timestamp_us = 3;
   AudioEncoding encoding = 4;
+}
+
+message CapturedAudioChunk {
+  AudioChunk chunk = 1;
+  string channel_id = 2;
+  string user_id = 3;
+  uint32 sample_rate = 4;
+  uint32 channels = 5;
 }
 
 enum AudioEncoding {

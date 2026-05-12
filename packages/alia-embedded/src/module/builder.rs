@@ -16,7 +16,9 @@ use crate::storage::EmbeddedStore;
 
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
+use super::lifecycle::ModuleLifecycle;
 use super::registry::EmbeddedModuleRegistry;
+use super::speech::SpeechPipeline;
 use super::traits::*;
 
 /// The assembled embedded node, ready to run.
@@ -26,6 +28,7 @@ pub struct EmbeddedNode {
     pub cancel_token: CancellationToken,
     pub binding_manager: Arc<BindingManager>,
     pub settings_manager: Arc<EmbeddedSettingsManager>,
+    pub state_store: EmbeddedStore,
     pub event_bus: EventBus,
 }
 
@@ -73,6 +76,7 @@ impl EmbeddedNode {
         let settings_svc = EmbeddedSettingsServer::new(EmbeddedSettingsService::new(
             self.binding_manager.clone(),
             self.settings_manager.clone(),
+            self.state_store.clone(),
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
         ));
@@ -186,10 +190,15 @@ impl EmbeddedBuilder {
         let config = self.config.clone();
 
         // Create shared context resources
+        let run_dir = PathBuf::from("run");
+        let state_store = EmbeddedStore::open(run_dir.join("embedded-state.sqlite3"))
+            .await
+            .context("opening embedded SQLite state store")?;
         let event_bus = EventBus::new(256);
         let audio_bus = AudioBus::new(512);
         let ctx = ModuleContext {
             config: config.clone(),
+            state_store: state_store.clone(),
             event_bus,
             cancel_token: self.cancel_token.clone(),
             audio_bus,
@@ -250,7 +259,6 @@ impl EmbeddedBuilder {
         discovery.init(&ctx).await.context("init discovery")?;
 
         // Initialize core infrastructure
-        let run_dir = PathBuf::from("run");
         let process_manager =
             Arc::new(ProcessManager::new(config.process.clone(), run_dir.clone()));
         if let Err(e) = process_manager.cleanup_orphans().await {
@@ -266,9 +274,6 @@ impl EmbeddedBuilder {
         let settings_manager = Arc::new(EmbeddedSettingsManager::new(&config));
 
         // Initialize binding manager
-        let state_store = EmbeddedStore::open(run_dir.join("embedded-state.sqlite3"))
-            .await
-            .context("opening embedded SQLite state store")?;
         let binding_manager = Arc::new(BindingManager::new(
             state_store,
             config.discovery.max_bind_attempts,
@@ -277,6 +282,26 @@ impl EmbeddedBuilder {
         if let Err(e) = binding_manager.load().await {
             error!(error = %e, "failed to load binding state");
         }
+
+        let wakeword: Arc<dyn WakeWordEngine> = Arc::from(wakeword);
+        let edge_stt: Arc<dyn EdgeSttEngine> = Arc::from(edge_stt);
+        let direct_response: Arc<dyn DirectResponseEngine> = Arc::from(direct_response);
+        let audio_capture: Arc<dyn AudioCaptureBackend> = Arc::from(audio_capture);
+        let audio_playback: Arc<dyn AudioPlaybackBackend> = Arc::from(audio_playback);
+        let mixer: Arc<dyn AudioMixer> = Arc::from(mixer);
+        let face_tracker: Arc<dyn FaceTracker> = Arc::from(face_tracker);
+        let discovery: Arc<dyn DiscoveryBackend> = Arc::from(discovery);
+        let speech_pipeline = Arc::new(SpeechPipeline::new(
+            ctx.audio_bus.clone(),
+            ctx.event_bus.clone(),
+            wakeword.clone(),
+            edge_stt.clone(),
+            direct_response.clone(),
+            audio_playback.clone(),
+            binding_manager.clone(),
+            &config.edge_stt,
+            self.cancel_token.clone(),
+        ));
 
         // Start all modules
         info!("starting modules");
@@ -292,6 +317,13 @@ impl EmbeddedBuilder {
             .await
             .context("start audio_playback")?;
         mixer.start().await.context("start mixer")?;
+        speech_pipeline
+            .start()
+            .await
+            .context("start speech_pipeline")?;
+        audio_capture
+            .start_capture(&ctx.audio_bus)
+            .context("start audio capture stream")?;
         face_tracker.start().await.context("start face_tracker")?;
         discovery.start().await.context("start discovery")?;
 
@@ -311,14 +343,15 @@ impl EmbeddedBuilder {
 
         // Build registry
         let registry = EmbeddedModuleRegistry {
-            wakeword: Arc::from(wakeword),
-            edge_stt: Arc::from(edge_stt),
-            direct_response: Arc::from(direct_response),
-            audio_capture: Arc::from(audio_capture),
-            audio_playback: Arc::from(audio_playback),
-            mixer: Arc::from(mixer),
-            face_tracker: Arc::from(face_tracker),
-            discovery: Arc::from(discovery),
+            wakeword,
+            edge_stt,
+            direct_response,
+            audio_capture,
+            audio_playback,
+            mixer,
+            speech_pipeline,
+            face_tracker,
+            discovery,
             process_manager,
             plugin_registry,
         };
@@ -329,6 +362,7 @@ impl EmbeddedBuilder {
             cancel_token: self.cancel_token,
             binding_manager,
             settings_manager,
+            state_store: ctx.state_store.clone(),
             event_bus: ctx.event_bus.clone(),
         })
     }

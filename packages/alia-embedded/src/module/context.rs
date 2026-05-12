@@ -4,6 +4,7 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::EmbeddedConfig;
+use crate::storage::EmbeddedStore;
 
 /// Audio bus for zero-copy PCM distribution between modules.
 ///
@@ -74,6 +75,7 @@ impl EventBus {
 /// Lighter-weight than the server-side equivalent—tailored for Pi 5 resource constraints.
 pub struct ModuleContext {
     pub config: Arc<EmbeddedConfig>,
+    pub state_store: EmbeddedStore,
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
     pub audio_bus: AudioBus,

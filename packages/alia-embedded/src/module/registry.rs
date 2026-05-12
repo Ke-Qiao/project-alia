@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::lifecycle::ModuleHealth;
+use super::lifecycle::{ModuleHealth, ModuleLifecycle};
+use super::speech::SpeechPipeline;
 use super::traits::*;
 use crate::plugin::PluginRegistry;
 use crate::process::ProcessManager;
@@ -18,6 +19,7 @@ pub struct EmbeddedModuleRegistry {
     pub audio_capture: Arc<dyn AudioCaptureBackend>,
     pub audio_playback: Arc<dyn AudioPlaybackBackend>,
     pub mixer: Arc<dyn AudioMixer>,
+    pub speech_pipeline: Arc<SpeechPipeline>,
 
     // Vision
     pub face_tracker: Arc<dyn FaceTracker>,
@@ -38,6 +40,7 @@ impl EmbeddedModuleRegistry {
         let _ = self.face_tracker.stop().await;
         let _ = self.mixer.stop().await;
         let _ = self.audio_playback.stop().await;
+        let _ = self.speech_pipeline.stop().await;
         let _ = self.audio_capture.stop().await;
         let _ = self.direct_response.stop().await;
         let _ = self.edge_stt.stop().await;
@@ -62,6 +65,10 @@ impl EmbeddedModuleRegistry {
             self.audio_playback.health_check().await,
         );
         map.insert(self.mixer.name(), self.mixer.health_check().await);
+        map.insert(
+            self.speech_pipeline.name(),
+            self.speech_pipeline.health_check().await,
+        );
         map.insert(
             self.face_tracker.name(),
             self.face_tracker.health_check().await,

@@ -8,6 +8,17 @@ use sqlx::sqlite::{
     SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteSynchronous,
 };
 
+use crate::config::DirectResponseConfig;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectResponseRuleRecord {
+    pub id: i64,
+    pub keywords: Vec<String>,
+    pub audio_path: String,
+    pub action: Option<String>,
+    pub enabled: bool,
+}
+
 #[derive(Clone)]
 pub struct EmbeddedStore {
     pool: SqlitePool,
@@ -56,6 +67,22 @@ impl EmbeddedStore {
         .await
         .context("ensuring embedded_state table")?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS direct_responses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keywords_json TEXT NOT NULL,
+                audio_path TEXT NOT NULL,
+                action TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("ensuring direct_responses table")?;
+
         Ok(())
     }
 
@@ -103,6 +130,156 @@ impl EmbeddedStore {
 
         Ok(())
     }
+
+    pub async fn load_direct_responses(&self) -> Result<Vec<DirectResponseConfig>> {
+        Ok(self
+            .list_direct_responses(false)
+            .await?
+            .into_iter()
+            .map(|rule| DirectResponseConfig {
+                keywords: rule.keywords,
+                audio: rule.audio_path.into(),
+                action: rule.action,
+            })
+            .collect())
+    }
+
+    pub async fn list_direct_responses(
+        &self,
+        include_disabled: bool,
+    ) -> Result<Vec<DirectResponseRuleRecord>> {
+        let sql = if include_disabled {
+            r#"
+            SELECT id, keywords_json, audio_path, action, enabled
+            FROM direct_responses
+            ORDER BY id ASC
+            "#
+        } else {
+            r#"
+            SELECT id, keywords_json, audio_path, action, enabled
+            FROM direct_responses
+            WHERE enabled = 1
+            ORDER BY id ASC
+            "#
+        };
+
+        let rows = sqlx::query(sql)
+            .fetch_all(&self.pool)
+            .await
+            .with_context(|| format!("loading direct responses from {}", self.path.display()))?;
+
+        rows.into_iter()
+            .map(row_to_direct_response_record)
+            .collect()
+    }
+
+    pub async fn upsert_direct_response(
+        &self,
+        rule: &DirectResponseRuleRecord,
+    ) -> Result<DirectResponseRuleRecord> {
+        let keywords_json =
+            serde_json::to_string(&rule.keywords).context("serializing keywords")?;
+        let enabled = i64::from(rule.enabled);
+
+        if rule.id > 0 {
+            sqlx::query(
+                r#"
+                UPDATE direct_responses
+                SET keywords_json = ?, audio_path = ?, action = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                "#,
+            )
+            .bind(keywords_json)
+            .bind(&rule.audio_path)
+            .bind(&rule.action)
+            .bind(enabled)
+            .bind(rule.id)
+            .execute(&self.pool)
+            .await
+            .with_context(|| format!("updating direct response {}", rule.id))?;
+
+            return self
+                .get_direct_response(rule.id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("direct response {} not found", rule.id));
+        }
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO direct_responses (keywords_json, audio_path, action, enabled)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(keywords_json)
+        .bind(&rule.audio_path)
+        .bind(&rule.action)
+        .bind(enabled)
+        .execute(&self.pool)
+        .await
+        .context("inserting direct response")?;
+
+        let id = result.last_insert_rowid();
+        self.get_direct_response(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("inserted direct response {id} not found"))
+    }
+
+    pub async fn delete_direct_response(&self, id: i64) -> Result<bool> {
+        let result = sqlx::query("DELETE FROM direct_responses WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .with_context(|| format!("deleting direct response {id}"))?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn get_direct_response(&self, id: i64) -> Result<Option<DirectResponseRuleRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, keywords_json, audio_path, action, enabled
+            FROM direct_responses
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .with_context(|| format!("loading direct response {id}"))?;
+
+        row.map(row_to_direct_response_record).transpose()
+    }
+
+    #[cfg(test)]
+    pub async fn insert_direct_response(&self, response: &DirectResponseConfig) -> Result<()> {
+        let keywords_json =
+            serde_json::to_string(&response.keywords).context("serializing keywords")?;
+        sqlx::query(
+            r#"
+            INSERT INTO direct_responses (keywords_json, audio_path, action)
+            VALUES (?, ?, ?)
+            "#,
+        )
+        .bind(keywords_json)
+        .bind(response.audio.display().to_string())
+        .bind(response.action.clone())
+        .execute(&self.pool)
+        .await
+        .context("inserting direct response")?;
+        Ok(())
+    }
+}
+
+fn row_to_direct_response_record(row: sqlx::sqlite::SqliteRow) -> Result<DirectResponseRuleRecord> {
+    let keywords_json = row.get::<String, _>("keywords_json");
+    let keywords =
+        serde_json::from_str(&keywords_json).context("deserializing direct response keywords")?;
+    Ok(DirectResponseRuleRecord {
+        id: row.get::<i64, _>("id"),
+        keywords,
+        audio_path: row.get::<String, _>("audio_path"),
+        action: row.get::<Option<String>, _>("action"),
+        enabled: row.get::<i64, _>("enabled") != 0,
+    })
 }
 
 #[cfg(test)]
@@ -129,5 +306,63 @@ mod tests {
 
         let actual = store.load_json::<ExampleState>("example").await.unwrap();
         assert_eq!(actual, Some(expected));
+    }
+
+    #[tokio::test]
+    async fn loads_direct_response_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
+            .await
+            .unwrap();
+        store
+            .insert_direct_response(&DirectResponseConfig {
+                keywords: vec!["现在几点".to_string()],
+                audio: "assets/responses/time.wav".into(),
+                action: Some("report_time".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let responses = store.load_direct_responses().await.unwrap();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].keywords, vec!["现在几点"]);
+        assert_eq!(
+            responses[0].audio,
+            PathBuf::from("assets/responses/time.wav")
+        );
+        assert_eq!(responses[0].action.as_deref(), Some("report_time"));
+    }
+
+    #[tokio::test]
+    async fn upserts_and_deletes_direct_response_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
+            .await
+            .unwrap();
+
+        let inserted = store
+            .upsert_direct_response(&DirectResponseRuleRecord {
+                id: 0,
+                keywords: vec!["lights on".to_string()],
+                audio_path: "assets/responses/light_on.wav".to_string(),
+                action: Some("gpio_light_on".to_string()),
+                enabled: true,
+            })
+            .await
+            .unwrap();
+        assert!(inserted.id > 0);
+
+        let mut updated = inserted.clone();
+        updated.enabled = false;
+        let updated = store.upsert_direct_response(&updated).await.unwrap();
+        assert!(!updated.enabled);
+
+        let all = store.list_direct_responses(true).await.unwrap();
+        assert_eq!(all.len(), 1);
+        let enabled = store.list_direct_responses(false).await.unwrap();
+        assert!(enabled.is_empty());
+
+        assert!(store.delete_direct_response(inserted.id).await.unwrap());
+        assert!(!store.delete_direct_response(inserted.id).await.unwrap());
     }
 }

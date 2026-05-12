@@ -38,9 +38,27 @@ pub fn save_runtime_config(config: &EmbeddedConfig) -> Result<()> {
 }
 
 fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
-    if config.identity.keypair_path.is_relative() {
-        if let Some(parent) = path.parent() {
-            config.identity.keypair_path = parent.join(&config.identity.keypair_path);
-        }
+    let Some(parent) = path.parent() else {
+        return;
+    };
+
+    resolve_relative(parent, &mut config.identity.keypair_path);
+    resolve_relative(parent, &mut config.wakeword.model_path);
+    resolve_relative(parent, &mut config.wakeword.encoder_path);
+    resolve_relative(parent, &mut config.wakeword.decoder_path);
+    resolve_relative(parent, &mut config.wakeword.joiner_path);
+    resolve_relative(parent, &mut config.wakeword.tokens_path);
+    resolve_relative(parent, &mut config.wakeword.keywords_file);
+    resolve_relative(parent, &mut config.edge_stt.model_path);
+    resolve_relative(parent, &mut config.edge_stt.tokens_path);
+
+    for response in &mut config.direct_response {
+        resolve_relative(parent, &mut response.audio);
+    }
+}
+
+fn resolve_relative(base: &Path, path: &mut std::path::PathBuf) {
+    if path.is_relative() {
+        *path = base.join(&path);
     }
 }

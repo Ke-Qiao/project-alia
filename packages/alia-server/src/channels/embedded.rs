@@ -439,6 +439,26 @@ impl ChannelAdapter for EmbeddedChannel {
         let encoding = match audio.format {
             AudioFormat::Opus => ProtoAudioEncoding::Opus as i32,
             AudioFormat::Pcm16 => ProtoAudioEncoding::PcmS16le as i32,
+            AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
+        };
+
+        let audio = match audio.format {
+            AudioFormat::Wav => {
+                if let Some((pcm, sample_rate)) = pcm16_from_wav(&audio.data)? {
+                    AudioPayload {
+                        data: pcm16_to_le_bytes(&pcm),
+                        sample_rate,
+                        channels: 1,
+                        format: AudioFormat::Pcm16,
+                    }
+                } else {
+                    AudioPayload {
+                        format: AudioFormat::Pcm16,
+                        ..audio
+                    }
+                }
+            }
+            _ => audio,
         };
 
         let request = PlayAudioRequest {
@@ -899,10 +919,176 @@ impl ChannelAdapter for EmbeddedChannel {
                     "settings_path": resp.settings_path,
                 }))
             }
+            "list_direct_responses" => {
+                let mut client = self.settings_client().await?;
+                let resp = client
+                    .list_direct_responses(self.auth_request(())?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "rules": resp.rules.into_iter().map(direct_response_rule_to_json).collect::<Vec<_>>(),
+                    "requires_restart": resp.requires_restart,
+                }))
+            }
+            "upsert_direct_response" => {
+                let mut client = self.settings_client().await?;
+                let rule = direct_response_rule_from_json(&action.params)?;
+                let resp = client
+                    .upsert_direct_response(self.auth_request(rule)?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "rule": direct_response_rule_to_json(resp),
+                    "requires_restart": true,
+                }))
+            }
+            "delete_direct_response" => {
+                let id = action.params["id"].as_i64().ok_or_else(|| {
+                    anyhow::anyhow!("delete_direct_response requires numeric 'id'")
+                })?;
+                let mut client = self.settings_client().await?;
+                let resp =
+                    client
+                        .delete_direct_response(self.auth_request(
+                            alia_proto::settings::DeleteDirectResponseRequest { id },
+                        )?)
+                        .await?
+                        .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "requires_restart": resp.requires_restart,
+                }))
+            }
             _ => Err(anyhow::anyhow!(
                 "action '{}' not supported by embedded channel",
                 action.name
             )),
         }
     }
+}
+
+fn direct_response_rule_from_json(
+    value: &serde_json::Value,
+) -> anyhow::Result<alia_proto::settings::DirectResponseRule> {
+    let keywords = value
+        .get("keywords")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("direct response requires 'keywords' array"))?
+        .iter()
+        .map(|keyword| {
+            keyword
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| anyhow::anyhow!("direct response keywords must be strings"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let audio_path = value
+        .get("audio_path")
+        .or_else(|| value.get("audio"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("direct response requires 'audio_path'"))?
+        .to_string();
+
+    Ok(alia_proto::settings::DirectResponseRule {
+        id: value
+            .get("id")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0),
+        keywords,
+        audio_path,
+        action: value
+            .get("action")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        enabled: value
+            .get("enabled")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true),
+    })
+}
+
+fn direct_response_rule_to_json(
+    rule: alia_proto::settings::DirectResponseRule,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": rule.id,
+        "keywords": rule.keywords,
+        "audio_path": rule.audio_path,
+        "action": if rule.action.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(rule.action) },
+        "enabled": rule.enabled,
+    })
+}
+
+fn pcm16_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<i16>, u32)>> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Ok(None);
+    }
+
+    let mut offset = 12;
+    let mut sample_rate = None;
+    let mut channels = None;
+    let mut bits_per_sample = None;
+    let mut audio_format = None;
+    let mut pcm_bytes = None;
+
+    while offset + 8 <= bytes.len() {
+        let id = &bytes[offset..offset + 4];
+        let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into()?) as usize;
+        offset += 8;
+        if offset + size > bytes.len() {
+            anyhow::bail!("malformed WAV chunk");
+        }
+
+        match id {
+            b"fmt " => {
+                if size < 16 {
+                    anyhow::bail!("invalid WAV fmt chunk");
+                }
+                audio_format = Some(u16::from_le_bytes(bytes[offset..offset + 2].try_into()?));
+                channels = Some(u16::from_le_bytes(
+                    bytes[offset + 2..offset + 4].try_into()?,
+                ));
+                sample_rate = Some(u32::from_le_bytes(
+                    bytes[offset + 4..offset + 8].try_into()?,
+                ));
+                bits_per_sample = Some(u16::from_le_bytes(
+                    bytes[offset + 14..offset + 16].try_into()?,
+                ));
+            }
+            b"data" => pcm_bytes = Some(&bytes[offset..offset + size]),
+            _ => {}
+        }
+
+        offset += size + (size % 2);
+    }
+
+    if audio_format != Some(1) || bits_per_sample != Some(16) {
+        anyhow::bail!("expected 16-bit PCM WAV");
+    }
+
+    let channels = channels.unwrap_or(1).max(1) as usize;
+    let sample_rate = sample_rate.unwrap_or(24_000);
+    let samples: Vec<i16> = pcm_bytes
+        .ok_or_else(|| anyhow::anyhow!("missing WAV data chunk"))?
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    if channels == 1 {
+        return Ok(Some((samples, sample_rate)));
+    }
+
+    Ok(Some((
+        samples
+            .chunks_exact(channels)
+            .map(|frame| frame[0])
+            .collect(),
+        sample_rate,
+    )))
+}
+
+fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
+    pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect()
 }

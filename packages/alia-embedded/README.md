@@ -34,7 +34,7 @@ If the file is missing, `alia-embedded` starts in provisioning mode, advertises 
 Runtime-owned state now lives separately from the settings file:
 
 - `config/embedded.toml`: user-editable runtime settings
-- `run/embedded-state.sqlite3`: SQLite-backed runtime state (binding status today, extensible for more metadata later)
+- `run/embedded-state.sqlite3`: SQLite-backed runtime state and metadata (binding status, direct-response rules)
 - Disk directories such as `plugins/`, `run/*.pid`, key files, and future audio asset folders remain file-backed
 
 Or override via environment variable:
