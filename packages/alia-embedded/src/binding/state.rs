@@ -1,17 +1,19 @@
-use std::path::PathBuf;
 use std::time::Instant;
 
 use alia_transport::{
     DEFAULT_AUTH_MAX_SKEW, bind_payload, ensure_recent_timestamp, handoff_completion_payload,
     handoff_intent_payload, verify_auth_token, verify_payload,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::module::traits::DiscoveryMetadata;
+use crate::storage::EmbeddedStore;
+
+const BINDING_STATE_KEY: &str = "binding_state";
 
 /// Binding state machine: UNBOUND → BOUND, BOUND → HANDOFF_PENDING → BOUND (new server).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,7 +85,7 @@ impl Default for BindingData {
 
 pub struct BindingManager {
     data: RwLock<BindingData>,
-    persist_path: PathBuf,
+    store: EmbeddedStore,
     failed_attempts: RwLock<u32>,
     lockout_until: RwLock<Option<Instant>>,
     max_attempts: u32,
@@ -91,10 +93,10 @@ pub struct BindingManager {
 }
 
 impl BindingManager {
-    pub fn new(persist_path: PathBuf, max_attempts: u32, lockout_duration_secs: u64) -> Self {
+    pub fn new(store: EmbeddedStore, max_attempts: u32, lockout_duration_secs: u64) -> Self {
         Self {
             data: RwLock::new(BindingData::default()),
-            persist_path,
+            store,
             failed_attempts: RwLock::new(0),
             lockout_until: RwLock::new(None),
             max_attempts,
@@ -102,28 +104,22 @@ impl BindingManager {
         }
     }
 
-    /// Load binding state from disk, or start fresh.
+    /// Load binding state from SQLite, or start fresh if no state exists.
     pub async fn load(&self) -> Result<()> {
-        if self.persist_path.exists() {
-            let content = tokio::fs::read_to_string(&self.persist_path)
-                .await
-                .with_context(|| {
-                    format!("reading binding state: {}", self.persist_path.display())
-                })?;
-            let data: BindingData = serde_json::from_str(&content)?;
+        if let Some(data) = self
+            .store
+            .load_json::<BindingData>(BINDING_STATE_KEY)
+            .await?
+        {
             *self.data.write().await = data;
         }
+
         Ok(())
     }
 
     async fn persist(&self) -> Result<()> {
-        let data = self.data.read().await;
-        if let Some(parent) = self.persist_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let json = serde_json::to_string_pretty(&*data)?;
-        tokio::fs::write(&self.persist_path, json).await?;
-        Ok(())
+        let data = self.data.read().await.clone();
+        self.store.save_json(BINDING_STATE_KEY, &data).await
     }
 
     /// Check if currently locked out due to too many failed attempts.
@@ -382,5 +378,34 @@ impl BindingManager {
             DEFAULT_AUTH_MAX_SKEW,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_manager(dir: &tempfile::TempDir) -> BindingManager {
+        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
+            .await
+            .unwrap();
+        BindingManager::new(store, 3, 60)
+    }
+
+    #[tokio::test]
+    async fn persists_binding_state_to_sqlite() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = test_manager(&dir).await;
+
+        manager.data.write().await.state = BindingState::Bound;
+        manager.data.write().await.server_id = Some("server-1".to_string());
+        manager.persist().await.unwrap();
+
+        let reloaded = test_manager(&dir).await;
+        reloaded.load().await.unwrap();
+        let status = reloaded.status().await;
+
+        assert_eq!(status.state, BindingState::Bound);
+        assert_eq!(status.server_id.as_deref(), Some("server-1"));
     }
 }

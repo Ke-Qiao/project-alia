@@ -12,6 +12,7 @@ use crate::identity;
 use crate::plugin::PluginRegistry;
 use crate::process::ProcessManager;
 use crate::settings::EmbeddedSettingsManager;
+use crate::storage::EmbeddedStore;
 
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
@@ -250,7 +251,8 @@ impl EmbeddedBuilder {
 
         // Initialize core infrastructure
         let run_dir = PathBuf::from("run");
-        let process_manager = Arc::new(ProcessManager::new(config.process.clone(), run_dir));
+        let process_manager =
+            Arc::new(ProcessManager::new(config.process.clone(), run_dir.clone()));
         if let Err(e) = process_manager.cleanup_orphans().await {
             error!(error = %e, "failed to clean up orphan processes");
         }
@@ -264,9 +266,11 @@ impl EmbeddedBuilder {
         let settings_manager = Arc::new(EmbeddedSettingsManager::new(&config));
 
         // Initialize binding manager
-        let binding_path = PathBuf::from("run/binding.json");
+        let state_store = EmbeddedStore::open(run_dir.join("embedded-state.sqlite3"))
+            .await
+            .context("opening embedded SQLite state store")?;
         let binding_manager = Arc::new(BindingManager::new(
-            binding_path,
+            state_store,
             config.discovery.max_bind_attempts,
             config.discovery.lockout_duration_sec,
         ));

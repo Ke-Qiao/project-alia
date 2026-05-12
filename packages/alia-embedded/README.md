@@ -31,6 +31,12 @@ cargo run -p alia-embedded
 The binary looks for `config/embedded.toml` relative to the workspace root, but it no longer requires the file to exist on first boot.
 If the file is missing, `alia-embedded` starts in provisioning mode, advertises discovery, generates a device keypair, and persists a runtime settings file automatically.
 
+Runtime-owned state now lives separately from the settings file:
+
+- `config/embedded.toml`: user-editable runtime settings
+- `run/embedded-state.sqlite3`: SQLite-backed runtime state (binding status today, extensible for more metadata later)
+- Disk directories such as `plugins/`, `run/*.pid`, key files, and future audio asset folders remain file-backed
+
 Or override via environment variable:
 
 ```sh
@@ -40,6 +46,7 @@ export ALIA_EMBEDDED_CONFIG_PATH=config/embedded.toml
 ## Configuration
 
 Only user-editable runtime settings live in `config/embedded.toml`. Core module defaults remain compiled into the binary.
+Operational state that the system owns itself is stored in SQLite instead of being mixed into the config file.
 The expected file shape is shown in [config/embedded.example.toml](../../config/embedded.example.toml), and the file can be created or updated by server/frontend OOBE through the embedded settings API.
 
 | Section | Purpose |
@@ -108,8 +115,9 @@ grpcurl -plaintext -d '{"name":"mediapipe_face"}' \
 2. Load `config/embedded.toml`
 3. Create `ProcessManager`, clean orphan PIDs from `run/*.pid`
 4. Create `PluginRegistry`, scan `plugins/` for manifests
-5. Create `BindingManager`, restore state from `run/binding.json`
-6. Build & start gRPC server on `:50051`
+5. Open `run/embedded-state.sqlite3`
+6. Create `BindingManager`, restore state from SQLite
+7. Build & start gRPC server on `:50051`
 
 ## Architecture
 

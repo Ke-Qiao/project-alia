@@ -15,6 +15,7 @@ mod module;
 mod plugin;
 mod process;
 mod settings;
+mod storage;
 
 use std::path::PathBuf;
 

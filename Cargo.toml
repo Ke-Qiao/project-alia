@@ -35,6 +35,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 # Database
 sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
 sea-orm-migration = "1"
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
