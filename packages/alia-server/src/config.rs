@@ -26,9 +26,15 @@ pub struct ServerConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerSection {
+    #[serde(default = "default_server_id")]
+    pub id: String,
     pub host: String,
     pub port: u16,
     pub log_level: String,
+}
+
+fn default_server_id() -> String {
+    "alia-server".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,6 +47,7 @@ pub struct DatabaseSection {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthSection {
     pub jwt_secret: String,
+    pub server_keypair_path: PathBuf,
     pub jwt_expiry_hours: u64,
     pub refresh_expiry_days: u64,
     pub argon2_memory_kib: u32,
@@ -68,6 +75,10 @@ pub enum ChannelConfig {
         enabled: bool,
         #[serde(default)]
         endpoint: String,
+        #[serde(default = "default_embedded_discovery_service")]
+        discovery_service_name: String,
+        #[serde(default = "default_embedded_discovery_timeout")]
+        discovery_timeout_sec: u64,
         #[serde(default = "default_reconnect_interval")]
         reconnect_interval_sec: u64,
         #[serde(default = "default_reconnect_max_backoff")]
@@ -101,6 +112,12 @@ impl ChannelConfig {
 
 fn default_reconnect_interval() -> u64 {
     5
+}
+fn default_embedded_discovery_service() -> String {
+    "_alia-embedded._tcp".to_string()
+}
+fn default_embedded_discovery_timeout() -> u64 {
+    3
 }
 fn default_reconnect_max_backoff() -> u64 {
     60
@@ -308,6 +325,10 @@ impl ServerConfig {
         }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             config.ai.openai_api_key = key;
+        }
+        if config.auth.server_keypair_path.is_relative() {
+            config.auth.server_keypair_path =
+                config.config_dir.join(&config.auth.server_keypair_path);
         }
 
         Ok(config)

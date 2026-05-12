@@ -324,6 +324,8 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
         ChannelConfig::Embedded {
             id,
             endpoint,
+            discovery_service_name,
+            discovery_timeout_sec,
             reconnect_interval_sec,
             reconnect_max_backoff_sec,
             grpc_timeout_sec,
@@ -334,6 +336,8 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
                 EmbeddedChannelConfig {
                     id: id.clone(),
                     endpoint: endpoint.clone(),
+                    discovery_service_name: discovery_service_name.clone(),
+                    discovery_timeout_sec: *discovery_timeout_sec,
                     reconnect_interval_sec: *reconnect_interval_sec,
                     reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
                     grpc_timeout_sec: *grpc_timeout_sec,

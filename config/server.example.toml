@@ -11,6 +11,7 @@
 # ─────────────────────────────────────────────────────────────────────
 
 [server]
+id = "alia-main"
 host = "0.0.0.0"
 port = 3000
 log_level = "info"
@@ -22,6 +23,7 @@ min_connections = 2
 
 [auth]
 jwt_secret = "change-me-in-production"
+server_keypair_path = "server.key"
 jwt_expiry_hours = 24
 refresh_expiry_days = 30
 argon2_memory_kib = 19456
@@ -34,6 +36,8 @@ type = "embedded"
 id = "pi-living-room"
 enabled = true
 endpoint = ""
+discovery_service_name = "_alia-embedded._tcp"
+discovery_timeout_sec = 3
 reconnect_interval_sec = 5
 reconnect_max_backoff_sec = 60
 grpc_timeout_sec = 10

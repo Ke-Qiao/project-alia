@@ -13,7 +13,7 @@ default = [
 ]
 
 # Channel adapters
-channel-embedded = ["dep:alia-proto", "dep:tonic"]
+channel-embedded = ["dep:alia-proto", "dep:tonic", "dep:alia-transport"]
 
 # LLM backends
 llm-openai = ["dep:reqwest"]
@@ -38,7 +38,7 @@ meditation = []
 
 [dependencies]
 alia-proto = { workspace = true, optional = true }
-alia-transport.workspace = true
+alia-transport = { workspace = true, optional = true }
 
 # Async runtime
 tokio.workspace = true
@@ -67,6 +67,7 @@ uuid.workspace = true
 # Error handling
 anyhow.workspace = true
 thiserror.workspace = true
+ed25519-dalek = "2.2"
 
 # Logging
 tracing.workspace = true
@@ -99,6 +100,7 @@ pgvector.workspace = true
 # HTTP client (optional, for AI adapters)
 reqwest = { workspace = true, optional = true }
 base64 = "0.22.1"
+rand.workspace = true
 
 # CLI REPL
 rustyline.workspace = true

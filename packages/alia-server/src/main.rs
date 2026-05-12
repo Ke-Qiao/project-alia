@@ -15,6 +15,7 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
+use alia_server::auth::ensure_server_keypair;
 use alia_server::config::ServerConfig;
 use alia_server::event::EventBus;
 use alia_server::module::ServerBuilder;
@@ -43,6 +44,19 @@ async fn main() -> anyhow::Result<()> {
         .context(format!("failed to load config from '{config_path}'"))?;
     let config = Arc::new(config);
     tracing::info!(path = %config_path, config_dir = %config.config_dir.display(), "configuration loaded");
+
+    let server_keypair =
+        ensure_server_keypair(&config.auth.server_keypair_path).with_context(|| {
+            format!(
+                "failed to ensure server keypair at {}",
+                config.auth.server_keypair_path.display()
+            )
+        })?;
+    tracing::info!(
+        keypair_path = %config.auth.server_keypair_path.display(),
+        public_key_len = server_keypair.public_key_bytes().len(),
+        "server keypair ready"
+    );
 
     run_server(config).await
 }

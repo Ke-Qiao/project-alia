@@ -5,6 +5,8 @@ use anyhow::{Context, Result, bail};
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use crate::module::traits::DiscoveryMetadata;
+
 use super::manifest::PluginManifest;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +29,12 @@ pub struct PluginEntry {
 pub struct PluginRegistry {
     plugins: RwLock<HashMap<String, PluginEntry>>,
     plugins_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PluginDiscoverySummary {
+    pub capabilities: Vec<String>,
+    pub attributes: HashMap<String, String>,
 }
 
 impl PluginRegistry {
@@ -209,6 +217,77 @@ impl PluginRegistry {
                 description: e.manifest.plugin.description.clone().unwrap_or_default(),
             })
             .collect()
+    }
+
+    /// Build a discovery-friendly summary of installed plugins.
+    ///
+    /// This keeps discovery generic: future plugin runtime features can enrich
+    /// advertisements without changing the discovery backends themselves.
+    pub async fn discovery_summary(&self) -> PluginDiscoverySummary {
+        let plugins = self.plugins.read().await;
+        let mut names = Vec::new();
+        let mut types = Vec::new();
+        let mut capabilities = vec!["plugin.runtime".to_string()];
+
+        let mut gpio = false;
+        let mut network = false;
+        let mut usb = false;
+
+        for entry in plugins.values() {
+            names.push(entry.manifest.plugin.name.clone());
+            types.push(entry.manifest.plugin.plugin_type.to_string());
+            capabilities.push(format!("plugin.type.{}", entry.manifest.plugin.plugin_type));
+
+            if entry.manifest.plugin.capabilities.gpio {
+                gpio = true;
+            }
+            if entry.manifest.plugin.capabilities.network {
+                network = true;
+            }
+            if entry.manifest.plugin.capabilities.usb {
+                usb = true;
+            }
+        }
+
+        names.sort();
+        types.sort();
+        types.dedup();
+
+        if gpio {
+            capabilities.push("plugin.capability.gpio".to_string());
+        }
+        if network {
+            capabilities.push("plugin.capability.network".to_string());
+        }
+        if usb {
+            capabilities.push("plugin.capability.usb".to_string());
+        }
+
+        capabilities.sort();
+        capabilities.dedup();
+
+        let mut attributes = HashMap::new();
+        attributes.insert("plugin.count".to_string(), names.len().to_string());
+        if !names.is_empty() {
+            attributes.insert("plugin.names".to_string(), names.join(","));
+            attributes.insert("plugin.types".to_string(), types.join(","));
+        }
+        attributes.insert("plugin.cap.gpio".to_string(), gpio.to_string());
+        attributes.insert("plugin.cap.network".to_string(), network.to_string());
+        attributes.insert("plugin.cap.usb".to_string(), usb.to_string());
+
+        PluginDiscoverySummary {
+            capabilities,
+            attributes,
+        }
+    }
+
+    pub async fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
+        let summary = self.discovery_summary().await;
+        metadata.capabilities.extend(summary.capabilities);
+        metadata.attributes.extend(summary.attributes);
+        metadata.capabilities.sort();
+        metadata.capabilities.dedup();
     }
 
     /// Get mutable access to a plugin entry for state updates.

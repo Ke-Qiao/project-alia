@@ -8,17 +8,43 @@ use alia_proto::binding::{
     UnbindRequest, UnbindResponse,
 };
 
+use super::auth::require_auth;
 use crate::binding::BindingManager;
 use crate::config::IdentityConfig;
+use crate::module::traits::DiscoveryBackend;
+use crate::plugin::PluginRegistry;
 
 pub struct DeviceBindingService {
     binding: Arc<BindingManager>,
     identity: IdentityConfig,
+    discovery: Arc<dyn DiscoveryBackend>,
+    plugins: Arc<PluginRegistry>,
+    public_key: Vec<u8>,
 }
 
 impl DeviceBindingService {
-    pub fn new(binding: Arc<BindingManager>, identity: IdentityConfig) -> Self {
-        Self { binding, identity }
+    pub fn new(
+        binding: Arc<BindingManager>,
+        identity: IdentityConfig,
+        discovery: Arc<dyn DiscoveryBackend>,
+        plugins: Arc<PluginRegistry>,
+        public_key: Vec<u8>,
+    ) -> Self {
+        Self {
+            binding,
+            identity,
+            discovery,
+            plugins,
+            public_key,
+        }
+    }
+
+    async fn refresh_discovery_metadata(&self) {
+        let mut metadata = self.binding.status().await.discovery_metadata();
+        self.plugins.enrich_discovery_metadata(&mut metadata).await;
+        if let Err(error) = self.discovery.update_metadata(&metadata).await {
+            tracing::warn!(error = %error, "failed to refresh discovery metadata");
+        }
     }
 }
 
@@ -32,16 +58,21 @@ impl DeviceBindingTrait for DeviceBindingService {
                 &req.server_id,
                 &req.server_name,
                 &req.server_endpoint,
+                &req.server_public_key,
                 &req.auth_token,
+                req.issued_at,
             )
             .await
         {
-            Ok(()) => Ok(Response::new(BindResponse {
-                success: true,
-                device_id: self.identity.device_id.clone(),
-                device_name: self.identity.device_name.clone(),
-                device_public_key: Vec::new(), // TODO: load from keypair
-            })),
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(BindResponse {
+                    success: true,
+                    device_id: self.identity.device_id.clone(),
+                    device_name: self.identity.device_name.clone(),
+                    device_public_key: self.public_key.clone(),
+                }))
+            }
             Err(_e) => Ok(Response::new(BindResponse {
                 success: false,
                 device_id: String::new(),
@@ -55,12 +86,16 @@ impl DeviceBindingTrait for DeviceBindingService {
         &self,
         request: Request<UnbindRequest>,
     ) -> Result<Response<UnbindResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.binding.unbind(&req.server_id).await {
-            Ok(()) => Ok(Response::new(UnbindResponse {
-                success: true,
-                message: "unbound".to_string(),
-            })),
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(UnbindResponse {
+                    success: true,
+                    message: "unbound".to_string(),
+                }))
+            }
             Err(e) => Ok(Response::new(UnbindResponse {
                 success: false,
                 message: e.to_string(),
@@ -90,21 +125,29 @@ impl DeviceBindingTrait for DeviceBindingService {
         &self,
         request: Request<HandoffRequest>,
     ) -> Result<Response<HandoffToken>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self
             .binding
             .prepare_handoff(
                 &req.current_server_id,
                 &req.new_server_id,
+                &req.new_server_name,
                 &req.new_server_endpoint,
+                &req.new_server_public_key,
+                &req.authorization,
+                req.issued_at,
             )
             .await
         {
-            Ok((token, expires_at)) => Ok(Response::new(HandoffToken {
-                token,
-                device_id: self.identity.device_id.clone(),
-                expires_at,
-            })),
+            Ok((token, expires_at)) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(HandoffToken {
+                    token,
+                    device_id: self.identity.device_id.clone(),
+                    expires_at,
+                }))
+            }
             Err(e) => Err(Status::failed_precondition(e.to_string())),
         }
     }
@@ -114,20 +157,28 @@ impl DeviceBindingTrait for DeviceBindingService {
         request: Request<CompleteHandoffRequest>,
     ) -> Result<Response<BindResponse>, Status> {
         let req = request.into_inner();
-        // For complete_handoff we need the new server info.
-        // In production, this would be embedded in the signed token.
-        // For now, return a placeholder error.
         match self
             .binding
-            .complete_handoff(&req.token, "unknown", "unknown", "unknown")
+            .complete_handoff(
+                &req.token,
+                &req.new_server_id,
+                &req.new_server_name,
+                &req.new_server_endpoint,
+                &req.new_server_public_key,
+                &req.authorization,
+                req.issued_at,
+            )
             .await
         {
-            Ok(()) => Ok(Response::new(BindResponse {
-                success: true,
-                device_id: self.identity.device_id.clone(),
-                device_name: self.identity.device_name.clone(),
-                device_public_key: Vec::new(),
-            })),
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(BindResponse {
+                    success: true,
+                    device_id: self.identity.device_id.clone(),
+                    device_name: self.identity.device_name.clone(),
+                    device_public_key: self.public_key.clone(),
+                }))
+            }
             Err(_e) => Ok(Response::new(BindResponse {
                 success: false,
                 device_id: String::new(),

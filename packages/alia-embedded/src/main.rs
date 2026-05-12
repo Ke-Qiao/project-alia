@@ -10,6 +10,7 @@
 mod binding;
 mod config;
 mod grpc;
+mod identity;
 mod module;
 mod plugin;
 mod process;
@@ -40,7 +41,20 @@ async fn main() -> Result<()> {
     let config = config::load_config(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
 
+    let keypair =
+        identity::ensure_device_keypair(&config.identity.keypair_path).with_context(|| {
+            format!(
+                "ensuring device keypair at {}",
+                config.identity.keypair_path.display()
+            )
+        })?;
+
     info!(device_id = %config.identity.device_id, device_name = %config.identity.device_name, "identity loaded");
+    info!(
+        keypair_path = %config.identity.keypair_path.display(),
+        public_key_len = keypair.public_key_bytes().len(),
+        "device keypair ready"
+    );
 
     // Build and run the embedded node using the module builder
     let node = EmbeddedBuilder::from_config(config).await?.build().await?;

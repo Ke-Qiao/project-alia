@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 
 use crate::config::EmbeddedConfig;
 
+use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::noop::*;
 use super::traits::*;
 
@@ -109,16 +110,14 @@ pub fn create_face_tracker(config: &EmbeddedConfig) -> Result<Box<dyn FaceTracke
 /// Create the discovery backend based on config.
 pub fn create_discovery(config: &EmbeddedConfig) -> Result<Box<dyn DiscoveryBackend>> {
     match config.modules.discovery.as_str() {
-        "mdns" => {
-            // TODO: Replace with MdnsDiscovery once mdns-sd crate is integrated
-            tracing::warn!("mdns discovery not yet implemented, using noop");
-            Ok(Box::new(NoopDiscovery))
-        }
-        "ble" => {
-            // TODO: Replace with BleDiscovery once bluer crate is integrated
-            tracing::warn!("ble discovery not yet implemented, using noop");
-            Ok(Box::new(NoopDiscovery))
-        }
+        "mdns" => Ok(Box::new(MdnsDiscovery::new(
+            config.discovery.clone(),
+            config.identity.clone(),
+        ))),
+        "ble" => Ok(Box::new(BleDiscovery::new(
+            config.discovery.clone(),
+            config.identity.clone(),
+        ))),
         "noop" => Ok(Box::new(NoopDiscovery)),
         other => bail!("unknown discovery backend: {other}"),
     }

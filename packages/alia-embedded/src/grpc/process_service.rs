@@ -9,15 +9,18 @@ use alia_proto::process::{
     StopProcessResponse, StreamOutputRequest,
 };
 
+use super::auth::require_auth;
+use crate::binding::BindingManager;
 use crate::process::{self, ProcessManager};
 
 pub struct ProcessManagerService {
     manager: Arc<ProcessManager>,
+    binding: Arc<BindingManager>,
 }
 
 impl ProcessManagerService {
-    pub fn new(manager: Arc<ProcessManager>) -> Self {
-        Self { manager }
+    pub fn new(manager: Arc<ProcessManager>, binding: Arc<BindingManager>) -> Self {
+        Self { manager, binding }
     }
 }
 
@@ -27,6 +30,7 @@ impl ProcessManagerTrait for ProcessManagerService {
         &self,
         request: Request<StartProcessRequest>,
     ) -> Result<Response<StartProcessResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.manager.start(&req.name).await {
             Ok(pid) => Ok(Response::new(StartProcessResponse {
@@ -46,6 +50,7 @@ impl ProcessManagerTrait for ProcessManagerService {
         &self,
         request: Request<StopProcessRequest>,
     ) -> Result<Response<StopProcessResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.manager.stop(&req.name, req.force).await {
             Ok(()) => Ok(Response::new(StopProcessResponse {
@@ -63,6 +68,7 @@ impl ProcessManagerTrait for ProcessManagerService {
         &self,
         request: Request<RestartProcessRequest>,
     ) -> Result<Response<RestartProcessResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.manager.restart(&req.name).await {
             Ok(pid) => Ok(Response::new(RestartProcessResponse {
@@ -80,8 +86,9 @@ impl ProcessManagerTrait for ProcessManagerService {
 
     async fn list_processes(
         &self,
-        _request: Request<ListProcessesRequest>,
+        request: Request<ListProcessesRequest>,
     ) -> Result<Response<ListProcessesResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let snapshots = self.manager.list().await;
         let processes = snapshots
             .into_iter()
@@ -103,6 +110,7 @@ impl ProcessManagerTrait for ProcessManagerService {
         &self,
         request: Request<StreamOutputRequest>,
     ) -> Result<Response<Self::StreamOutputStream>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         let name_filter = req.name.clone();
 

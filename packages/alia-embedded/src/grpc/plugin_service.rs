@@ -10,15 +10,38 @@ use alia_proto::plugin::{
     UninstallPluginRequest, UninstallPluginResponse,
 };
 
+use super::auth::require_auth;
 use crate::plugin::{PluginRegistry, PluginState};
+use crate::{binding::BindingManager, module::traits::DiscoveryBackend};
 
 pub struct PluginManagerService {
     registry: Arc<PluginRegistry>,
+    binding: Arc<BindingManager>,
+    discovery: Arc<dyn DiscoveryBackend>,
 }
 
 impl PluginManagerService {
-    pub fn new(registry: Arc<PluginRegistry>) -> Self {
-        Self { registry }
+    pub fn new(
+        registry: Arc<PluginRegistry>,
+        binding: Arc<BindingManager>,
+        discovery: Arc<dyn DiscoveryBackend>,
+    ) -> Self {
+        Self {
+            registry,
+            binding,
+            discovery,
+        }
+    }
+
+    async fn refresh_discovery_metadata(&self) {
+        let mut metadata = self.binding.status().await.discovery_metadata();
+        self.registry.enrich_discovery_metadata(&mut metadata).await;
+        if let Err(error) = self.discovery.update_metadata(&metadata).await {
+            tracing::warn!(
+                error = %error,
+                "failed to refresh discovery metadata after plugin change"
+            );
+        }
     }
 }
 
@@ -28,12 +51,16 @@ impl PluginManagerTrait for PluginManagerService {
         &self,
         request: Request<InstallPluginRequest>,
     ) -> Result<Response<InstallPluginResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.registry.install(&req.name, &req.zip_data).await {
-            Ok(()) => Ok(Response::new(InstallPluginResponse {
-                success: true,
-                message: "installed".to_string(),
-            })),
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(InstallPluginResponse {
+                    success: true,
+                    message: "installed".to_string(),
+                }))
+            }
             Err(e) => Ok(Response::new(InstallPluginResponse {
                 success: false,
                 message: e.to_string(),
@@ -45,12 +72,16 @@ impl PluginManagerTrait for PluginManagerService {
         &self,
         request: Request<UninstallPluginRequest>,
     ) -> Result<Response<UninstallPluginResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
         match self.registry.uninstall(&req.name).await {
-            Ok(()) => Ok(Response::new(UninstallPluginResponse {
-                success: true,
-                message: "uninstalled".to_string(),
-            })),
+            Ok(()) => {
+                self.refresh_discovery_metadata().await;
+                Ok(Response::new(UninstallPluginResponse {
+                    success: true,
+                    message: "uninstalled".to_string(),
+                }))
+            }
             Err(e) => Ok(Response::new(UninstallPluginResponse {
                 success: false,
                 message: e.to_string(),
@@ -60,8 +91,9 @@ impl PluginManagerTrait for PluginManagerService {
 
     async fn list_plugins(
         &self,
-        _request: Request<ListPluginsRequest>,
+        request: Request<ListPluginsRequest>,
     ) -> Result<Response<ListPluginsResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         let snapshots = self.registry.list().await;
         let plugins = snapshots
             .into_iter()
@@ -81,6 +113,7 @@ impl PluginManagerTrait for PluginManagerService {
         &self,
         request: Request<StartPluginRequest>,
     ) -> Result<Response<StartPluginResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         // TODO: integrate with ProcessManager to start plugin subprocess
         let _req = request.into_inner();
         Ok(Response::new(StartPluginResponse {
@@ -93,6 +126,7 @@ impl PluginManagerTrait for PluginManagerService {
         &self,
         request: Request<StopPluginRequest>,
     ) -> Result<Response<StopPluginResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         // TODO: integrate with ProcessManager to stop plugin subprocess
         let _req = request.into_inner();
         Ok(Response::new(StopPluginResponse {
@@ -105,6 +139,7 @@ impl PluginManagerTrait for PluginManagerService {
         &self,
         request: Request<PluginCommandRequest>,
     ) -> Result<Response<PluginCommandResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
         // TODO: route command to plugin's stdin
         let _req = request.into_inner();
         Ok(Response::new(PluginCommandResponse {
@@ -117,8 +152,9 @@ impl PluginManagerTrait for PluginManagerService {
 
     async fn stream_events(
         &self,
-        _request: Request<StreamEventsRequest>,
+        request: Request<StreamEventsRequest>,
     ) -> Result<Response<Self::StreamEventsStream>, Status> {
+        require_auth(&self.binding, &request).await?;
         // TODO: stream plugin stdout events
         let (_tx, rx) = tokio::sync::mpsc::channel(128);
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(

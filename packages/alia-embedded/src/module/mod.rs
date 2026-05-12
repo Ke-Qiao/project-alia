@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod context;
+pub mod discovery;
 pub mod factory;
 pub mod lifecycle;
 pub mod noop;

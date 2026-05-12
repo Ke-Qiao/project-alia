@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 
 use super::context::AudioBus;
 use super::lifecycle::ModuleLifecycle;
@@ -147,6 +148,19 @@ pub struct DeviceInfo {
     pub device_name: String,
     pub version: String,
     pub port: u16,
+    pub endpoints: Vec<DiscoveryEndpoint>,
+    pub capabilities: Vec<String>,
+    pub attributes: HashMap<String, String>,
+}
+
+/// A discoverable endpoint exposed by the edge node.
+#[derive(Debug, Clone)]
+pub struct DiscoveryEndpoint {
+    pub name: String,
+    pub scheme: String,
+    pub port: u16,
+    pub path: Option<String>,
+    pub metadata: HashMap<String, String>,
 }
 
 /// Metadata updates for the discovery advertisement.
@@ -154,6 +168,8 @@ pub struct DeviceInfo {
 pub struct DiscoveryMetadata {
     pub status: String,
     pub server_id: Option<String>,
+    pub capabilities: Vec<String>,
+    pub attributes: HashMap<String, String>,
 }
 
 /// Device discovery and advertising backend (slot: `discovery`).

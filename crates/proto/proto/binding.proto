@@ -26,6 +26,8 @@ message BindRequest {
   string server_name = 2;
   string server_endpoint = 3;
   bytes auth_token = 4;
+  bytes server_public_key = 5;
+  uint64 issued_at = 6;
 }
 
 message BindResponse {
@@ -62,6 +64,10 @@ message HandoffRequest {
   string current_server_id = 1;
   string new_server_id = 2;
   string new_server_endpoint = 3;
+  string new_server_name = 4;
+  bytes new_server_public_key = 5;
+  bytes authorization = 6;
+  uint64 issued_at = 7;
 }
 
 message HandoffToken {
@@ -72,4 +78,10 @@ message HandoffToken {
 
 message CompleteHandoffRequest {
   bytes token = 1;
+  string new_server_id = 2;
+  string new_server_name = 3;
+  string new_server_endpoint = 4;
+  bytes new_server_public_key = 5;
+  bytes authorization = 6;
+  uint64 issued_at = 7;
 }

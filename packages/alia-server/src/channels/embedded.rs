@@ -1,8 +1,16 @@
 use std::sync::Arc;
+use std::time::Duration;
 
+use alia_transport::{
+    DEFAULT_GRPC_AUTH_TTL, bind_payload, current_unix_timestamp, discover_service_endpoint,
+    handoff_completion_payload, handoff_intent_payload, mint_auth_token, sign_payload,
+};
 use async_trait::async_trait;
+use base64::Engine;
 use chrono::{DateTime, Utc};
+use ed25519_dalek::SigningKey;
 use tokio::sync::RwLock;
+use tonic::Request;
 use tonic::transport::Channel;
 
 use alia_proto::audio::audio_stream_client::AudioStreamClient;
@@ -11,6 +19,7 @@ use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
 
+use crate::auth::load_server_keypair;
 use crate::event::EventBus;
 use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
@@ -24,6 +33,8 @@ use super::adapter::{
 pub struct EmbeddedChannelConfig {
     pub id: String,
     pub endpoint: String,
+    pub discovery_service_name: String,
+    pub discovery_timeout_sec: u64,
     pub reconnect_interval_sec: u64,
     pub reconnect_max_backoff_sec: u64,
     pub grpc_timeout_sec: u64,
@@ -52,6 +63,11 @@ pub struct EmbeddedChannel {
     process_client: Arc<RwLock<Option<ProcessManagerClient<Channel>>>>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
+    signing_key: Option<SigningKey>,
+    server_public_key: Vec<u8>,
+    default_server_id: String,
+    default_server_name: String,
+    default_server_endpoint: String,
 }
 
 impl EmbeddedChannel {
@@ -59,7 +75,7 @@ impl EmbeddedChannel {
         let status = if config.endpoint.is_empty() {
             ConnectionStatus::Disconnected {
                 since: Utc::now(),
-                reason: "no endpoint configured".into(),
+                reason: "awaiting embedded discovery".into(),
             }
         } else {
             ConnectionStatus::Reconnecting { attempt: 0 }
@@ -73,21 +89,45 @@ impl EmbeddedChannel {
             process_client: Arc::new(RwLock::new(None)),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
+            signing_key: None,
+            server_public_key: Vec::new(),
+            default_server_id: "alia-server".to_string(),
+            default_server_name: "alia-server".to_string(),
+            default_server_endpoint: String::new(),
         }
+    }
+
+    async fn resolve_endpoint(&self) -> anyhow::Result<Option<String>> {
+        if !self.config.endpoint.is_empty() {
+            return Ok(Some(self.config.endpoint.clone()));
+        }
+
+        discover_service_endpoint(
+            &self.config.discovery_service_name,
+            Duration::from_secs(self.config.discovery_timeout_sec),
+        )
+        .await
     }
 
     /// Establish gRPC connection to alia-embedded.
     async fn connect(&self) -> anyhow::Result<()> {
-        if self.config.endpoint.is_empty() {
+        let Some(endpoint) = self.resolve_endpoint().await? else {
+            *self.status.write().await = ConnectionStatus::Disconnected {
+                since: Utc::now(),
+                reason: format!(
+                    "no embedded endpoint discovered for {}",
+                    self.config.discovery_service_name
+                ),
+            };
             return Ok(());
-        }
+        };
 
         let mut attempts = 0u32;
         loop {
             attempts += 1;
             *self.status.write().await = ConnectionStatus::Reconnecting { attempt: attempts };
 
-            match Channel::from_shared(self.config.endpoint.clone())
+            match Channel::from_shared(endpoint.clone())
                 .map_err(|e| anyhow::anyhow!("invalid endpoint: {e}"))?
                 .connect()
                 .await
@@ -102,7 +142,7 @@ impl EmbeddedChannel {
                     *self.binding_client.write().await = Some(DeviceBindingClient::new(channel));
                     *self.status.write().await = ConnectionStatus::Connected;
                     tracing::info!(
-                        endpoint = %self.config.endpoint,
+                        endpoint = %endpoint,
                         channel_id = %self.config.id,
                         "connected to alia-embedded"
                     );
@@ -115,7 +155,7 @@ impl EmbeddedChannel {
                             reason: format!("failed after {attempts} attempts: {e}"),
                         };
                         tracing::warn!(
-                            endpoint = %self.config.endpoint,
+                            endpoint = %endpoint,
                             error = %e,
                             "failed to connect to alia-embedded, will retry lazily"
                         );
@@ -175,6 +215,25 @@ impl EmbeddedChannel {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
+
+    fn auth_request<T>(&self, message: T) -> anyhow::Result<Request<T>> {
+        let signing_key = self
+            .signing_key
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
+        let token = mint_auth_token(
+            signing_key,
+            &self.default_server_id,
+            "embedded:control",
+            DEFAULT_GRPC_AUTH_TTL,
+        )?;
+        let mut request = Request::new(message);
+        let header = format!("Bearer {token}")
+            .parse()
+            .map_err(|e| anyhow::anyhow!("invalid authorization metadata: {e}"))?;
+        request.metadata_mut().insert("authorization", header);
+        Ok(request)
+    }
 }
 
 #[async_trait]
@@ -184,6 +243,15 @@ impl ModuleLifecycle for EmbeddedChannel {
     }
 
     async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
+        let keypair = load_server_keypair(&_ctx.config.auth.server_keypair_path)?;
+        self.server_public_key = keypair.public_key_bytes().to_vec();
+        self.signing_key = Some(keypair.signing_key().clone());
+        self.default_server_id = _ctx.config.server.id.clone();
+        self.default_server_name = format!("alia-server@{}", _ctx.config.server.host);
+        self.default_server_endpoint = format!(
+            "http://{}:{}",
+            _ctx.config.server.host, _ctx.config.server.port
+        );
         self.connect().await?;
         Ok(())
     }
@@ -269,7 +337,10 @@ impl ChannelAdapter for EmbeddedChannel {
         // PlayAudio returns a server-stream of AudioChunks (ack from Pi).
         // We send the request with the audio data as a single chunk first,
         // then consume the response stream for confirmation.
-        let mut response_stream = client.play_audio(request).await?.into_inner();
+        let mut response_stream = client
+            .play_audio(self.auth_request(request)?)
+            .await?
+            .into_inner();
 
         // Send audio data via a separate UploadAudio call (Pi pulls from PlayAudio stream,
         // but the proto defines PlayAudio as server-stream for chunked playback confirmation).
@@ -289,7 +360,9 @@ impl ChannelAdapter for EmbeddedChannel {
         // Also send raw chunk via UploadAudio for the actual data delivery
         let mut upload_client = self.audio_client().await?;
         let upload_stream = tokio_stream::once(chunk);
-        upload_client.upload_audio(upload_stream).await?;
+        upload_client
+            .upload_audio(self.auth_request(upload_stream)?)
+            .await?;
 
         Ok(())
     }
@@ -303,9 +376,9 @@ impl ChannelAdapter for EmbeddedChannel {
                     .ok_or_else(|| anyhow::anyhow!("start_process requires 'name' param"))?;
                 let mut client = self.process_client().await?;
                 let resp = client
-                    .start_process(alia_proto::process::StartProcessRequest {
+                    .start_process(self.auth_request(alia_proto::process::StartProcessRequest {
                         name: name.to_string(),
-                    })
+                    })?)
                     .await?
                     .into_inner();
                 Ok(serde_json::json!({
@@ -321,10 +394,10 @@ impl ChannelAdapter for EmbeddedChannel {
                 let force = action.params["force"].as_bool().unwrap_or(false);
                 let mut client = self.process_client().await?;
                 let resp = client
-                    .stop_process(alia_proto::process::StopProcessRequest {
+                    .stop_process(self.auth_request(alia_proto::process::StopProcessRequest {
                         name: name.to_string(),
                         force,
-                    })
+                    })?)
                     .await?
                     .into_inner();
                 Ok(serde_json::json!({
@@ -340,17 +413,199 @@ impl ChannelAdapter for EmbeddedChannel {
                 let payload = action.params["payload"].as_str().unwrap_or("{}");
                 let mut client = self.plugin_client().await?;
                 let resp = client
-                    .send_command(alia_proto::plugin::PluginCommandRequest {
+                    .send_command(self.auth_request(alia_proto::plugin::PluginCommandRequest {
                         plugin_name: plugin.to_string(),
                         command_id: uuid::Uuid::new_v4().to_string(),
                         action: command_action.to_string(),
                         payload_json: payload.as_bytes().to_vec(),
-                    })
+                    })?)
                     .await?
                     .into_inner();
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "message": resp.message,
+                }))
+            }
+            "binding_status" => {
+                let mut client = self.binding_client().await?;
+                let resp = client
+                    .get_binding_status(self.auth_request(())?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "is_bound": resp.is_bound,
+                    "bound_server_id": resp.bound_server_id,
+                    "bound_server_name": resp.bound_server_name,
+                    "bound_since": resp.bound_since,
+                    "state": resp.state,
+                }))
+            }
+            "bind_device" => {
+                let signing_key = self
+                    .signing_key
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
+                let server_id = action.params["server_id"]
+                    .as_str()
+                    .unwrap_or(&self.default_server_id);
+                let server_name = action.params["server_name"]
+                    .as_str()
+                    .unwrap_or(&self.default_server_name);
+                let server_endpoint = action.params["server_endpoint"]
+                    .as_str()
+                    .unwrap_or(&self.default_server_endpoint);
+                let issued_at = current_unix_timestamp()?;
+                let payload = bind_payload(
+                    server_id,
+                    server_name,
+                    server_endpoint,
+                    &self.server_public_key,
+                    issued_at,
+                );
+                let auth_token = sign_payload(signing_key, &payload);
+
+                let mut client = self.binding_client().await?;
+                let resp = client
+                    .bind(alia_proto::binding::BindRequest {
+                        server_id: server_id.to_string(),
+                        server_name: server_name.to_string(),
+                        server_endpoint: server_endpoint.to_string(),
+                        auth_token,
+                        server_public_key: self.server_public_key.clone(),
+                        issued_at,
+                    })
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "device_id": resp.device_id,
+                    "device_name": resp.device_name,
+                    "device_public_key": base64::engine::general_purpose::STANDARD.encode(resp.device_public_key),
+                }))
+            }
+            "unbind_device" => {
+                let server_id = action.params["server_id"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("unbind_device requires 'server_id' param"))?;
+                let mut client = self.binding_client().await?;
+                let resp = client
+                    .unbind(self.auth_request(alia_proto::binding::UnbindRequest {
+                        server_id: server_id.to_string(),
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "message": resp.message,
+                }))
+            }
+            "prepare_handoff" => {
+                let signing_key = self
+                    .signing_key
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
+                let current_server_id =
+                    action.params["current_server_id"].as_str().ok_or_else(|| {
+                        anyhow::anyhow!("prepare_handoff requires 'current_server_id' param")
+                    })?;
+                let new_server_id = action.params["new_server_id"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("prepare_handoff requires 'new_server_id' param")
+                })?;
+                let new_server_name =
+                    action.params["new_server_name"].as_str().ok_or_else(|| {
+                        anyhow::anyhow!("prepare_handoff requires 'new_server_name' param")
+                    })?;
+                let new_server_endpoint = action.params["new_server_endpoint"]
+                    .as_str()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("prepare_handoff requires 'new_server_endpoint' param")
+                    })?;
+                let new_server_public_key_b64 = action.params["new_server_public_key"]
+                    .as_str()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("prepare_handoff requires 'new_server_public_key' param")
+                    })?;
+                let new_server_public_key =
+                    base64::engine::general_purpose::STANDARD.decode(new_server_public_key_b64)?;
+                let issued_at = current_unix_timestamp()?;
+                let payload = handoff_intent_payload(
+                    current_server_id,
+                    new_server_id,
+                    new_server_name,
+                    new_server_endpoint,
+                    &new_server_public_key,
+                    issued_at,
+                );
+                let authorization = sign_payload(signing_key, &payload);
+
+                let mut client = self.binding_client().await?;
+                let resp = client
+                    .prepare_handoff(self.auth_request(alia_proto::binding::HandoffRequest {
+                        current_server_id: current_server_id.to_string(),
+                        new_server_id: new_server_id.to_string(),
+                        new_server_endpoint: new_server_endpoint.to_string(),
+                        new_server_name: new_server_name.to_string(),
+                        new_server_public_key,
+                        authorization,
+                        issued_at,
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "token": base64::engine::general_purpose::STANDARD.encode(resp.token),
+                    "device_id": resp.device_id,
+                    "expires_at": resp.expires_at,
+                }))
+            }
+            "complete_handoff" => {
+                let signing_key = self
+                    .signing_key
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
+                let token_b64 = action.params["token"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("complete_handoff requires 'token' param"))?;
+                let token = base64::engine::general_purpose::STANDARD.decode(token_b64)?;
+                let new_server_id = action.params["new_server_id"].as_str().ok_or_else(|| {
+                    anyhow::anyhow!("complete_handoff requires 'new_server_id' param")
+                })?;
+                let new_server_name = action.params["new_server_name"]
+                    .as_str()
+                    .unwrap_or(&self.default_server_name);
+                let new_server_endpoint = action.params["new_server_endpoint"]
+                    .as_str()
+                    .unwrap_or(&self.default_server_endpoint);
+                let issued_at = current_unix_timestamp()?;
+                let payload = handoff_completion_payload(
+                    &token,
+                    new_server_id,
+                    new_server_name,
+                    new_server_endpoint,
+                    &self.server_public_key,
+                    issued_at,
+                );
+                let authorization = sign_payload(signing_key, &payload);
+
+                let mut client = self.binding_client().await?;
+                let resp = client
+                    .complete_handoff(self.auth_request(
+                        alia_proto::binding::CompleteHandoffRequest {
+                            token,
+                            new_server_id: new_server_id.to_string(),
+                            new_server_name: new_server_name.to_string(),
+                            new_server_endpoint: new_server_endpoint.to_string(),
+                            new_server_public_key: self.server_public_key.clone(),
+                            authorization,
+                            issued_at,
+                        },
+                    )?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "success": resp.success,
+                    "device_id": resp.device_id,
+                    "device_name": resp.device_name,
+                    "device_public_key": base64::engine::general_purpose::STANDARD.encode(resp.device_public_key),
                 }))
             }
             _ => Err(anyhow::anyhow!(

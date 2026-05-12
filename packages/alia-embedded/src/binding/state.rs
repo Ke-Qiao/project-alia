@@ -1,10 +1,17 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use alia_transport::{
+    DEFAULT_AUTH_MAX_SKEW, bind_payload, ensure_recent_timestamp, handoff_completion_payload,
+    handoff_intent_payload, verify_auth_token, verify_payload,
+};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+use crate::module::traits::DiscoveryMetadata;
 
 /// Binding state machine: UNBOUND → BOUND, BOUND → HANDOFF_PENDING → BOUND (new server).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,11 +29,37 @@ pub struct BindingData {
     pub server_id: Option<String>,
     pub server_name: Option<String>,
     pub server_endpoint: Option<String>,
+    pub server_public_key: Option<Vec<u8>>,
     pub bound_since: Option<String>,
     #[serde(skip)]
     pub handoff_token: Option<Vec<u8>>,
     #[serde(skip)]
     pub handoff_expires_at: Option<u64>,
+    #[serde(skip)]
+    pub pending_server_id: Option<String>,
+    #[serde(skip)]
+    pub pending_server_name: Option<String>,
+    #[serde(skip)]
+    pub pending_server_endpoint: Option<String>,
+    #[serde(skip)]
+    pub pending_server_public_key: Option<Vec<u8>>,
+}
+
+impl BindingData {
+    pub fn discovery_metadata(&self) -> DiscoveryMetadata {
+        let status = match self.state {
+            BindingState::Unbound => "unbound",
+            BindingState::Bound => "bound",
+            BindingState::HandoffPending => "handoff_pending",
+        };
+
+        DiscoveryMetadata {
+            status: status.to_string(),
+            server_id: self.server_id.clone(),
+            capabilities: Vec::new(),
+            attributes: HashMap::new(),
+        }
+    }
 }
 
 impl Default for BindingData {
@@ -36,9 +69,14 @@ impl Default for BindingData {
             server_id: None,
             server_name: None,
             server_endpoint: None,
+            server_public_key: None,
             bound_since: None,
             handoff_token: None,
             handoff_expires_at: None,
+            pending_server_id: None,
+            pending_server_name: None,
+            pending_server_endpoint: None,
+            pending_server_public_key: None,
         }
     }
 }
@@ -122,9 +160,21 @@ impl BindingManager {
         server_id: &str,
         server_name: &str,
         server_endpoint: &str,
-        _auth_token: &[u8],
+        server_public_key: &[u8],
+        auth_token: &[u8],
+        issued_at: u64,
     ) -> Result<()> {
         self.check_lockout().await?;
+        ensure_recent_timestamp(issued_at, DEFAULT_AUTH_MAX_SKEW)?;
+
+        let payload = bind_payload(
+            server_id,
+            server_name,
+            server_endpoint,
+            server_public_key,
+            issued_at,
+        );
+        verify_payload(server_public_key, &payload, auth_token)?;
 
         let mut data = self.data.write().await;
         if data.state == BindingState::Bound {
@@ -135,11 +185,11 @@ impl BindingManager {
             );
         }
 
-        // TODO: validate auth_token against physical confirmation
         data.state = BindingState::Bound;
         data.server_id = Some(server_id.to_string());
         data.server_name = Some(server_name.to_string());
         data.server_endpoint = Some(server_endpoint.to_string());
+        data.server_public_key = Some(server_public_key.to_vec());
         data.bound_since = Some(chrono::Utc::now().to_rfc3339());
 
         drop(data);
@@ -175,10 +225,15 @@ impl BindingManager {
     pub async fn prepare_handoff(
         &self,
         current_server_id: &str,
-        _new_server_id: &str,
-        _new_endpoint: &str,
+        new_server_id: &str,
+        new_server_name: &str,
+        new_endpoint: &str,
+        new_server_public_key: &[u8],
+        authorization: &[u8],
+        issued_at: u64,
     ) -> Result<(Vec<u8>, u64)> {
         let mut data = self.data.write().await;
+        ensure_recent_timestamp(issued_at, DEFAULT_AUTH_MAX_SKEW)?;
 
         if data.state != BindingState::Bound {
             bail!("not bound");
@@ -186,6 +241,19 @@ impl BindingManager {
         if data.server_id.as_deref() != Some(current_server_id) {
             bail!("server_id mismatch");
         }
+        let current_server_public_key = data
+            .server_public_key
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing bound server public key"))?;
+        let payload = handoff_intent_payload(
+            current_server_id,
+            new_server_id,
+            new_server_name,
+            new_endpoint,
+            new_server_public_key,
+            issued_at,
+        );
+        verify_payload(current_server_public_key, &payload, authorization)?;
 
         // Generate a random token (in production, sign with device key)
         let token: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -198,6 +266,10 @@ impl BindingManager {
         data.state = BindingState::HandoffPending;
         data.handoff_token = Some(token.clone());
         data.handoff_expires_at = Some(expires_at);
+        data.pending_server_id = Some(new_server_id.to_string());
+        data.pending_server_name = Some(new_server_name.to_string());
+        data.pending_server_endpoint = Some(new_endpoint.to_string());
+        data.pending_server_public_key = Some(new_server_public_key.to_vec());
 
         drop(data);
         self.persist().await?;
@@ -213,8 +285,12 @@ impl BindingManager {
         new_server_id: &str,
         new_server_name: &str,
         new_endpoint: &str,
+        new_server_public_key: &[u8],
+        authorization: &[u8],
+        issued_at: u64,
     ) -> Result<()> {
         let mut data = self.data.write().await;
+        ensure_recent_timestamp(issued_at, DEFAULT_AUTH_MAX_SKEW)?;
 
         if data.state != BindingState::HandoffPending {
             bail!("no handoff pending");
@@ -224,6 +300,18 @@ impl BindingManager {
         let stored_token = data.handoff_token.as_deref().unwrap_or_default();
         if stored_token != token {
             bail!("invalid handoff token");
+        }
+        if data.pending_server_id.as_deref() != Some(new_server_id) {
+            bail!("new_server_id mismatch");
+        }
+        if data.pending_server_name.as_deref() != Some(new_server_name) {
+            bail!("new_server_name mismatch");
+        }
+        if data.pending_server_endpoint.as_deref() != Some(new_endpoint) {
+            bail!("new_server_endpoint mismatch");
+        }
+        if data.pending_server_public_key.as_deref() != Some(new_server_public_key) {
+            bail!("new_server_public_key mismatch");
         }
 
         // Check expiry
@@ -240,13 +328,28 @@ impl BindingManager {
             }
         }
 
+        let payload = handoff_completion_payload(
+            token,
+            new_server_id,
+            new_server_name,
+            new_endpoint,
+            new_server_public_key,
+            issued_at,
+        );
+        verify_payload(new_server_public_key, &payload, authorization)?;
+
         data.state = BindingState::Bound;
         data.server_id = Some(new_server_id.to_string());
         data.server_name = Some(new_server_name.to_string());
         data.server_endpoint = Some(new_endpoint.to_string());
+        data.server_public_key = Some(new_server_public_key.to_vec());
         data.bound_since = Some(chrono::Utc::now().to_rfc3339());
         data.handoff_token = None;
         data.handoff_expires_at = None;
+        data.pending_server_id = None;
+        data.pending_server_name = None;
+        data.pending_server_endpoint = None;
+        data.pending_server_public_key = None;
 
         drop(data);
         self.persist().await?;
@@ -258,5 +361,26 @@ impl BindingManager {
     /// Get current binding status.
     pub async fn status(&self) -> BindingData {
         self.data.read().await.clone()
+    }
+
+    pub async fn verify_grpc_auth(&self, token: &str, required_scope: &str) -> Result<()> {
+        let data = self.data.read().await;
+        let server_id = data
+            .server_id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("device is not bound to a server"))?;
+        let server_public_key = data
+            .server_public_key
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing bound server public key"))?;
+
+        verify_auth_token(
+            token,
+            server_public_key,
+            server_id,
+            required_scope,
+            DEFAULT_AUTH_MAX_SKEW,
+        )?;
+        Ok(())
     }
 }

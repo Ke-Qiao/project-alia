@@ -8,6 +8,7 @@ use tracing::{error, info};
 
 use crate::binding::BindingManager;
 use crate::config::EmbeddedConfig;
+use crate::identity;
 use crate::plugin::PluginRegistry;
 use crate::process::ProcessManager;
 
@@ -36,13 +37,22 @@ impl EmbeddedNode {
 
         let process_svc = ProcessManagerServer::new(ProcessManagerService::new(
             self.registry.process_manager.clone(),
+            self.binding_manager.clone(),
         ));
+        let device_public_key =
+            identity::load_device_public_key(&self.config.identity.keypair_path)
+                .context("loading device public key")?;
         let plugin_svc = PluginManagerServer::new(PluginManagerService::new(
             self.registry.plugin_registry.clone(),
+            self.binding_manager.clone(),
+            self.registry.discovery.clone(),
         ));
         let binding_svc = DeviceBindingServer::new(DeviceBindingService::new(
             self.binding_manager.clone(),
             self.config.identity.clone(),
+            self.registry.discovery.clone(),
+            self.registry.plugin_registry.clone(),
+            device_public_key,
         ));
 
         let addr: SocketAddr = "0.0.0.0:50051".parse()?;
@@ -255,6 +265,16 @@ impl EmbeddedBuilder {
         mixer.start().await.context("start mixer")?;
         face_tracker.start().await.context("start face_tracker")?;
         discovery.start().await.context("start discovery")?;
+
+        let initial_discovery_metadata = binding_manager.status().await.discovery_metadata();
+        let mut initial_discovery_metadata = initial_discovery_metadata;
+        plugin_registry
+            .enrich_discovery_metadata(&mut initial_discovery_metadata)
+            .await;
+        discovery
+            .update_metadata(&initial_discovery_metadata)
+            .await
+            .context("sync discovery metadata")?;
 
         // Build registry
         let registry = EmbeddedModuleRegistry {

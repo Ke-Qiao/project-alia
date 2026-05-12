@@ -1,3 +1,4 @@
+mod auth;
 mod binding_service;
 mod plugin_service;
 mod process_service;
