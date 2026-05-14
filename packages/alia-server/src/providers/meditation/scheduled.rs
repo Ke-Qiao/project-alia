@@ -20,7 +20,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::config::AiMeditationSection;
+use crate::config::MeditationSection;
 use crate::entity::meditation_log;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
@@ -44,7 +44,7 @@ struct MeditationState {
 }
 
 pub struct ScheduledMeditation {
-    config: Mutex<Option<AiMeditationSection>>,
+    config: Mutex<Option<MeditationSection>>,
     db: Mutex<Option<DatabaseConnection>>,
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
@@ -233,7 +233,7 @@ impl ScheduledMeditation {
         pending_tasks: Arc<AtomicU32>,
         semaphore: Arc<Semaphore>,
         state: Arc<Mutex<MeditationState>>,
-        config: AiMeditationSection,
+        config: MeditationSection,
         reflection_task_id: Option<Uuid>,
         habit_task_id: Option<Uuid>,
     ) {
@@ -279,7 +279,7 @@ impl ScheduledMeditation {
         pending_tasks: &AtomicU32,
         semaphore: &Semaphore,
         state: &Mutex<MeditationState>,
-        config: &AiMeditationSection,
+        config: &MeditationSection,
         reflection_task_id: Option<Uuid>,
         habit_task_id: Option<Uuid>,
     ) {
@@ -474,7 +474,7 @@ impl ScheduledMeditation {
     /// Register cron-based meditation tasks with the SchedulerBackend
     async fn register_scheduler_tasks(
         scheduler: &dyn SchedulerBackend,
-        config: &AiMeditationSection,
+        config: &MeditationSection,
         conditions: &[serde_json::Value],
     ) -> anyhow::Result<(Option<Uuid>, Option<Uuid>)> {
         let conditions_json = serde_json::Value::Array(conditions.to_vec());
@@ -590,7 +590,7 @@ impl ModuleLifecycle for ScheduledMeditation {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let meditation_config = ctx.config.ai.meditation.clone();
+        let meditation_config = ctx.config.meditation.clone();
 
         self.enabled
             .store(meditation_config.enabled, Ordering::Relaxed);

@@ -71,7 +71,7 @@ pub fn create_llm(name: &str) -> Box<dyn LlmAdapter> {
 pub fn create_stt(name: &str) -> Box<dyn SttAdapter> {
     match name {
         #[cfg(feature = "stt-whisper")]
-        "whisper" => {
+        "whisper" | "whisper_cpp" => {
             tracing::info!(module = name, "creating STT adapter (Whisper)");
             Box::new(WhisperCppStt::new())
         }

@@ -57,30 +57,44 @@ rule_engine = "simple"
 scheduler = "cron"
 tools = "builtin"
 
-[ai]
-llm_adapter = "openai"
+[llm]
+adapter = "openai"
 openai_api_key = ""
-openai_model = "gpt-4o"
-openai_base_url = "https://api.openai.com/v1"
+openai_model = "qwen2.5-7b-instruct"
+openai_base_url = "http://127.0.0.1:1234/v1"
 ollama_endpoint = "http://localhost:11434"
 ollama_model = "qwen2.5:7b"
-router_model = "qwen3:4b"
-router_temperature = 0.1
-router_timeout_sec = 5
-router_local_llm_enabled = true
-router_remote_llm_enabled = true
-embedding_adapter = "ollama"
-ollama_embedding_model = "bge-m3"
-openai_embedding_model = "text-embedding-3-small"
-stt_adapter = "whisper_cpp"
+
+[router]
+model = "qwen3:4b"
+temperature = 0.1
+timeout_sec = 5
+local_llm_enabled = true
+remote_llm_enabled = true
+
+[embedding]
+adapter = "ollama"
+ollama_endpoint = "http://localhost:11434"
+ollama_model = "bge-m3"
+openai_model = "text-embedding-3-small"
+
+[stt]
+adapter = "whisper_cpp"
 whisper_cpp_endpoint = "http://localhost:8080"
 whisper_cpp_model = "large-v3"
-tts_adapter = "gpt_sovits"
-gpt_sovits_tts_endpoint = "http://localhost:9880"
-max_conversation_context = 20
+
+[tts]
+adapter = "gpt_sovits"
+gpt_sovits_endpoint = "http://localhost:9880/tts"
+gpt_sovits_ref_audio_path = ""
+gpt_sovits_prompt_text = ""
+gpt_sovits_language = "zh"
+
+[conversation]
+max_context_messages = 20
 streaming_enabled = true
 
-[ai.memory]
+[memory]
 enabled = true
 epidosic_ttl_days = 90
 max_core_memories = 500
@@ -88,7 +102,7 @@ max_retrieval_results = 10
 similarity_threshold = 0.75
 graph_community_algorithm = "leiden"
 
-[ai.cache]
+[cache]
 enabled = true
 exact_match_enabled = true
 semantic_match_enabled = true
@@ -96,7 +110,7 @@ semantic_threshold = 0.92
 default_ttl_seconds = 3600
 skill_cache_ttl_seconds = 300
 
-[ai.meditation]
+[meditation]
 enabled = true
 extraction_enabled = true
 consolidation_idle_minutes = 30

@@ -8,6 +8,7 @@ fn test_message_conversion() {
     let msg = ChatMessage {
         role: "user".to_string(),
         content: "Hello".to_string(),
+        name: None,
     };
     let openai_msg = OpenAiMessage::from(&msg);
     assert_eq!(openai_msg.role, "user");

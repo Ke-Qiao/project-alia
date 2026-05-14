@@ -9,7 +9,15 @@ pub struct ServerConfig {
     #[serde(default)]
     pub channels: Vec<ChannelConfig>,
     pub modules: ModulesSection,
-    pub ai: AiSection,
+    pub llm: LlmSection,
+    pub router: RouterSection,
+    pub embedding: EmbeddingSection,
+    pub stt: SttSection,
+    pub tts: TtsSection,
+    pub conversation: ConversationSection,
+    pub memory: MemorySection,
+    pub cache: CacheSection,
+    pub meditation: MeditationSection,
     pub rules: RulesSection,
     #[serde(default)]
     pub scheduler: SchedulerSection,
@@ -161,39 +169,67 @@ fn default_true() -> bool {
     true
 }
 
+fn default_gpt_sovits_language() -> String {
+    "zh".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
-pub struct AiSection {
-    pub llm_adapter: String,
+pub struct LlmSection {
+    pub adapter: String,
     pub openai_api_key: String,
     pub openai_model: String,
     pub openai_base_url: String,
     pub ollama_endpoint: String,
     pub ollama_model: String,
-    pub router_model: String,
-    pub router_temperature: f32,
-    #[serde(default = "default_router_timeout")]
-    pub router_timeout_sec: u64,
-    #[serde(default = "default_true")]
-    pub router_local_llm_enabled: bool,
-    #[serde(default = "default_true")]
-    pub router_remote_llm_enabled: bool,
-    pub embedding_adapter: String,
-    pub ollama_embedding_model: String,
-    pub openai_embedding_model: String,
-    pub stt_adapter: String,
-    pub whisper_cpp_endpoint: String,
-    pub whisper_cpp_model: String,
-    pub tts_adapter: String,
-    pub gpt_sovits_tts_endpoint: String,
-    pub max_conversation_context: usize,
-    pub streaming_enabled: bool,
-    pub memory: AiMemorySection,
-    pub cache: AiCacheSection,
-    pub meditation: AiMeditationSection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AiMemorySection {
+pub struct RouterSection {
+    pub model: String,
+    pub temperature: f32,
+    #[serde(default = "default_router_timeout")]
+    pub timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub local_llm_enabled: bool,
+    #[serde(default = "default_true")]
+    pub remote_llm_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmbeddingSection {
+    pub adapter: String,
+    pub ollama_endpoint: String,
+    pub ollama_model: String,
+    pub openai_model: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SttSection {
+    pub adapter: String,
+    pub whisper_cpp_endpoint: String,
+    pub whisper_cpp_model: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TtsSection {
+    pub adapter: String,
+    pub gpt_sovits_endpoint: String,
+    #[serde(default)]
+    pub gpt_sovits_ref_audio_path: Option<String>,
+    #[serde(default)]
+    pub gpt_sovits_prompt_text: Option<String>,
+    #[serde(default = "default_gpt_sovits_language")]
+    pub gpt_sovits_language: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConversationSection {
+    pub max_context_messages: usize,
+    pub streaming_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemorySection {
     pub enabled: bool,
     pub epidosic_ttl_days: u32,
     pub max_core_memories: u32,
@@ -203,7 +239,7 @@ pub struct AiMemorySection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AiCacheSection {
+pub struct CacheSection {
     pub enabled: bool,
     pub exact_match_enabled: bool,
     pub semantic_match_enabled: bool,
@@ -213,7 +249,7 @@ pub struct AiCacheSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AiMeditationSection {
+pub struct MeditationSection {
     pub enabled: bool,
     pub extraction_enabled: bool,
     pub consolidation_idle_minutes: u64,
@@ -324,7 +360,7 @@ impl ServerConfig {
             config.auth.jwt_secret = secret;
         }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            config.ai.openai_api_key = key;
+            config.llm.openai_api_key = key;
         }
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =

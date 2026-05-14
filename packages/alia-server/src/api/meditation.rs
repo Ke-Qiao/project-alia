@@ -89,10 +89,10 @@ async fn get_status(
 
 async fn toggle(State(state): State<AppState>, _auth: AuthUser) -> Result<Json<serde_json::Value>> {
     // Toggle is a config-level operation; for now we report current state
-    let config_enabled = state.config.ai.meditation.enabled;
+    let config_enabled = state.config.meditation.enabled;
     Ok(Json(serde_json::json!({
         "enabled": config_enabled,
-        "message": "meditation toggle is config-driven; update server.toml [ai.meditation].enabled"
+        "message": "meditation toggle is config-driven; update server.toml [meditation].enabled"
     })))
 }
 

@@ -29,7 +29,9 @@ struct SovitsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt_lang: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    streaming: Option<bool>,
+    media_type: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    streaming_mode: Option<bool>,
 }
 
 /// GPT-SoVITS TTS adapter
@@ -76,8 +78,20 @@ impl ModuleLifecycle for GptSovitsTts {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.endpoint = server_config.ai.gpt_sovits_tts_endpoint.clone();
-        // ref_audio_path and prompt_text can be added to config if needed
+        config.endpoint = server_config.tts.gpt_sovits_endpoint.clone();
+        config.ref_audio_path = server_config
+            .tts
+            .gpt_sovits_ref_audio_path
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .cloned();
+        config.prompt_text = server_config
+            .tts
+            .gpt_sovits_prompt_text
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .cloned();
+        config.language = server_config.tts.gpt_sovits_language.clone();
 
         tracing::info!(endpoint = %config.endpoint, "GPT-SoVITS TTS initialized");
         Ok(())
@@ -117,7 +131,8 @@ impl TtsAdapter for GptSovitsTts {
             ref_audio_path: config.ref_audio_path.clone(),
             prompt_text: config.prompt_text.clone(),
             prompt_lang: Some(config.language.clone()),
-            streaming: Some(false),
+            media_type: Some("wav"),
+            streaming_mode: Some(false),
         };
 
         let response = self
@@ -149,7 +164,8 @@ impl TtsAdapter for GptSovitsTts {
             ref_audio_path: config.ref_audio_path.clone(),
             prompt_text: config.prompt_text.clone(),
             prompt_lang: Some(config.language.clone()),
-            streaming: Some(true),
+            media_type: Some("wav"),
+            streaming_mode: Some(true),
         };
 
         let response = self

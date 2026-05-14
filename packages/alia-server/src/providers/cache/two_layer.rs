@@ -80,7 +80,7 @@ impl ModuleLifecycle for TwoLayerCache {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         // Load config
-        self.default_ttl = Duration::from_secs(ctx.config.ai.cache.default_ttl_seconds);
+        self.default_ttl = Duration::from_secs(ctx.config.cache.default_ttl_seconds);
 
         tracing::info!(
             ttl_seconds = self.default_ttl.as_secs(),

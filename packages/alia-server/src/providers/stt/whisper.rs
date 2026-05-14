@@ -55,9 +55,16 @@ impl WhisperCppStt {
 
     fn encoding_to_mime(encoding: AudioEncoding) -> &'static str {
         match encoding {
-            AudioEncoding::Pcm16kMono => "audio/pcm",
+            AudioEncoding::Pcm16kMono => "audio/wav",
             AudioEncoding::Opus => "audio/opus",
             AudioEncoding::Wav => "audio/wav",
+        }
+    }
+
+    fn normalize_audio_for_upload(audio: &[u8], encoding: AudioEncoding) -> Vec<u8> {
+        match encoding {
+            AudioEncoding::Pcm16kMono => pcm16le_to_wav(audio, 16_000, 1),
+            AudioEncoding::Opus | AudioEncoding::Wav => audio.to_vec(),
         }
     }
 }
@@ -78,7 +85,7 @@ impl ModuleLifecycle for WhisperCppStt {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.endpoint = server_config.ai.whisper_cpp_endpoint.clone();
+        config.endpoint = server_config.stt.whisper_cpp_endpoint.clone();
 
         tracing::info!(endpoint = %config.endpoint, "Whisper STT initialized");
         Ok(())
@@ -109,11 +116,12 @@ impl SttAdapter for WhisperCppStt {
     async fn transcribe(&self, audio: &[u8], encoding: AudioEncoding) -> anyhow::Result<String> {
         let config = self.config.read().await;
 
+        let upload_audio = Self::normalize_audio_for_upload(audio, encoding);
         let form = reqwest::multipart::Form::new()
             .part(
                 "file",
-                reqwest::multipart::Part::bytes(audio.to_vec())
-                    .file_name("audio")
+                reqwest::multipart::Part::bytes(upload_audio)
+                    .file_name("audio.wav")
                     .mime_str(Self::encoding_to_mime(encoding))?,
             )
             .text("language", config.language.clone())
@@ -157,8 +165,8 @@ impl SttAdapter for WhisperCppStt {
                     let form = reqwest::multipart::Form::new()
                         .part(
                             "file",
-                            reqwest::multipart::Part::bytes(accumulated.clone())
-                                .file_name("audio")
+                            reqwest::multipart::Part::bytes(Self::normalize_audio_for_upload(&accumulated, encoding))
+                                .file_name("audio.wav")
                                 .mime_str(Self::encoding_to_mime(encoding))
                                 .unwrap(),
                         )
@@ -197,8 +205,8 @@ impl SttAdapter for WhisperCppStt {
                 let form = reqwest::multipart::Form::new()
                     .part(
                         "file",
-                        reqwest::multipart::Part::bytes(accumulated)
-                            .file_name("audio")
+                        reqwest::multipart::Part::bytes(Self::normalize_audio_for_upload(&accumulated, encoding))
+                            .file_name("audio.wav")
                             .mime_str(Self::encoding_to_mime(encoding))
                             .unwrap(),
                     )
@@ -232,4 +240,28 @@ impl SttAdapter for WhisperCppStt {
 
         Ok(Box::pin(stream))
     }
+}
+
+fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+    let data_len = pcm.len() as u32;
+    let byte_rate = sample_rate * channels as u32 * 2;
+    let block_align = channels * 2;
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend_from_slice(pcm);
+
+    wav
 }

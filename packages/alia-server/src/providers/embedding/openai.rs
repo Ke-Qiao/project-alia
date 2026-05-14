@@ -78,9 +78,9 @@ impl ModuleLifecycle for OpenAiEmbedding {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.api_key = server_config.ai.openai_api_key.clone();
-        config.base_url = server_config.ai.openai_base_url.clone();
-        config.model = server_config.ai.openai_embedding_model.clone();
+        config.api_key = server_config.llm.openai_api_key.clone();
+        config.base_url = server_config.llm.openai_base_url.clone();
+        config.model = server_config.embedding.openai_model.clone();
 
         // Set dimension based on model
         config.dimension = match config.model.as_str() {

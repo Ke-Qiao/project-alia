@@ -396,8 +396,8 @@ impl ModuleLifecycle for MultiLayerRouter {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let local_enabled = ctx.config.ai.router_local_llm_enabled;
-        let remote_enabled = ctx.config.ai.router_remote_llm_enabled;
+        let local_enabled = ctx.config.router.local_llm_enabled;
+        let remote_enabled = ctx.config.router.remote_llm_enabled;
 
         if !local_enabled && !remote_enabled {
             anyhow::bail!(
@@ -406,15 +406,15 @@ impl ModuleLifecycle for MultiLayerRouter {
             );
         }
 
-        let timeout_sec = ctx.config.ai.router_timeout_sec;
+        let timeout_sec = ctx.config.router.timeout_sec;
         self.client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_sec))
             .build()
             .unwrap_or_default();
         let cfg = RouterConfig {
-            ollama_endpoint: ctx.config.ai.ollama_endpoint.clone(),
-            model: ctx.config.ai.router_model.clone(),
-            temperature: ctx.config.ai.router_temperature,
+            ollama_endpoint: ctx.config.llm.ollama_endpoint.clone(),
+            model: ctx.config.router.model.clone(),
+            temperature: ctx.config.router.temperature,
             timeout_sec,
             local_llm_enabled: local_enabled,
             remote_llm_enabled: remote_enabled,
