@@ -1,3 +1,0 @@
-[conversation]
-max_context_messages = 20
-streaming_enabled = true

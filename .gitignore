@@ -21,3 +21,4 @@ skills-lock.json
 # configurations
 config/*.toml
 !config/*.example.toml
+config/server.d/
