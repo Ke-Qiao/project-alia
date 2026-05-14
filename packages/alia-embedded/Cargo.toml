@@ -15,6 +15,7 @@ alia-proto.workspace = true
 alia-transport.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
+cpal.workspace = true
 ed25519-dalek = "2.2"
 futures.workspace = true
 libc.workspace = true

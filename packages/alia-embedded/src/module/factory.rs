@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 
 use crate::config::EmbeddedConfig;
 
+use super::cpal_audio::{CpalAudioCapture, CpalAudioPlayback};
 use super::direct_response::KeywordMatcher;
 use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::noop::*;
@@ -69,11 +70,7 @@ fn create_sherpa_edge_stt(_config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEng
 /// Create the audio capture backend based on config.
 pub fn create_audio_capture(config: &EmbeddedConfig) -> Result<Box<dyn AudioCaptureBackend>> {
     match config.modules.audio_capture.as_str() {
-        "cpal" => {
-            // TODO: Replace with CpalCapture once cpal crate is integrated
-            tracing::warn!("cpal audio_capture not yet implemented, using noop");
-            Ok(Box::new(NoopAudioCapture))
-        }
+        "cpal" => Ok(Box::new(CpalAudioCapture::new(config.audio.clone()))),
         "noop" => Ok(Box::new(NoopAudioCapture)),
         other => bail!("unknown audio_capture backend: {other}"),
     }
@@ -82,11 +79,7 @@ pub fn create_audio_capture(config: &EmbeddedConfig) -> Result<Box<dyn AudioCapt
 /// Create the audio playback backend based on config.
 pub fn create_audio_playback(config: &EmbeddedConfig) -> Result<Box<dyn AudioPlaybackBackend>> {
     match config.modules.audio_playback.as_str() {
-        "cpal" => {
-            // TODO: Replace with CpalPlayback once cpal crate is integrated
-            tracing::warn!("cpal audio_playback not yet implemented, using noop");
-            Ok(Box::new(NoopAudioPlayback))
-        }
+        "cpal" => Ok(Box::new(CpalAudioPlayback::new(config.audio.clone()))),
         "noop" => Ok(Box::new(NoopAudioPlayback)),
         other => bail!("unknown audio_playback backend: {other}"),
     }

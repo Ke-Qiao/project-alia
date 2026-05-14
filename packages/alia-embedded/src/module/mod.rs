@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod context;
+pub mod cpal_audio;
 pub mod direct_response;
 pub mod discovery;
 pub mod factory;
