@@ -41,3 +41,11 @@ max_bind_attempts = 3
 lockout_duration_sec = 600
 reconnect_interval_sec = 5
 reconnect_max_backoff_sec = 60
+
+[dev]
+# Local development only: seed binding state so embedded can upload captured
+# audio to alia-server without completing the normal binding handshake.
+skip_binding = false
+server_id = "alia-local-dev"
+server_name = "alia-local-dev"
+server_endpoint = "http://127.0.0.1:3000"

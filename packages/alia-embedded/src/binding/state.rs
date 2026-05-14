@@ -34,6 +34,8 @@ pub struct BindingData {
     pub server_public_key: Option<Vec<u8>>,
     pub bound_since: Option<String>,
     #[serde(skip)]
+    pub dev_skip_auth: bool,
+    #[serde(skip)]
     pub handoff_token: Option<Vec<u8>>,
     #[serde(skip)]
     pub handoff_expires_at: Option<u64>,
@@ -73,6 +75,7 @@ impl Default for BindingData {
             server_endpoint: None,
             server_public_key: None,
             bound_since: None,
+            dev_skip_auth: false,
             handoff_token: None,
             handoff_expires_at: None,
             pending_server_id: None,
@@ -359,8 +362,35 @@ impl BindingManager {
         self.data.read().await.clone()
     }
 
+    /// Seed a local development binding without cryptographic handshaking.
+    /// This is intentionally explicit and config-gated for same-machine testing.
+    pub async fn seed_dev_binding(
+        &self,
+        server_id: &str,
+        server_name: &str,
+        server_endpoint: &str,
+    ) -> Result<()> {
+        let mut data = self.data.write().await;
+        data.state = BindingState::Bound;
+        data.server_id = Some(server_id.to_string());
+        data.server_name = Some(server_name.to_string());
+        data.server_endpoint = Some(server_endpoint.to_string());
+        data.server_public_key = None;
+        data.bound_since = Some(chrono::Utc::now().to_rfc3339());
+        data.dev_skip_auth = true;
+
+        drop(data);
+        self.persist().await?;
+        info!(server_id, server_endpoint, "dev binding seeded");
+        Ok(())
+    }
+
     pub async fn verify_grpc_auth(&self, token: &str, required_scope: &str) -> Result<()> {
         let data = self.data.read().await;
+        if data.dev_skip_auth {
+            warn!(required_scope, "skipping gRPC auth for local dev binding");
+            return Ok(());
+        }
         let server_id = data
             .server_id
             .as_deref()

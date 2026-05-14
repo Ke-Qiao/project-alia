@@ -282,6 +282,27 @@ impl EmbeddedBuilder {
         if let Err(e) = binding_manager.load().await {
             error!(error = %e, "failed to load binding state");
         }
+        if config.dev.skip_binding {
+            let endpoint = if config.dev.server_endpoint.trim().is_empty() {
+                "http://127.0.0.1:3000"
+            } else {
+                config.dev.server_endpoint.trim()
+            };
+            let server_id = if config.dev.server_id.trim().is_empty() {
+                "alia-local-dev"
+            } else {
+                config.dev.server_id.trim()
+            };
+            let server_name = if config.dev.server_name.trim().is_empty() {
+                "alia-local-dev"
+            } else {
+                config.dev.server_name.trim()
+            };
+            binding_manager
+                .seed_dev_binding(server_id, server_name, endpoint)
+                .await
+                .context("seeding dev binding")?;
+        }
 
         let wakeword: Arc<dyn WakeWordEngine> = Arc::from(wakeword);
         let edge_stt: Arc<dyn EdgeSttEngine> = Arc::from(edge_stt);

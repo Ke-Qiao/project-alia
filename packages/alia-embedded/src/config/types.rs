@@ -12,6 +12,8 @@ pub struct EmbeddedConfig {
     pub audio: AudioConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
+    pub dev: DevConfig,
+    #[serde(default)]
     pub process: Vec<ProcessConfig>,
     #[serde(default)]
     pub direct_response: Vec<DirectResponseConfig>,
@@ -19,6 +21,18 @@ pub struct EmbeddedConfig {
     pub config_path: PathBuf,
     #[serde(skip)]
     pub provisioning_mode: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DevConfig {
+    #[serde(default)]
+    pub skip_binding: bool,
+    #[serde(default)]
+    pub server_id: String,
+    #[serde(default)]
+    pub server_name: String,
+    #[serde(default)]
+    pub server_endpoint: String,
 }
 
 /// Module slot selection: which implementation to use for each pluggable slot.
@@ -417,6 +431,7 @@ impl Default for EmbeddedConfig {
             edge_stt: EdgeSttConfig::default(),
             audio: AudioConfig::default(),
             discovery: DiscoveryConfig::default(),
+            dev: DevConfig::default(),
             process: Vec::new(),
             direct_response: Vec::new(),
             config_path: PathBuf::new(),
