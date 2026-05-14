@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sqlx::Row;
 use sqlx::sqlite::{
     SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions, SqliteSynchronous,
@@ -10,13 +10,20 @@ use sqlx::sqlite::{
 
 use crate::config::DirectResponseConfig;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DirectResponseRuleRecord {
     pub id: i64,
     pub keywords: Vec<String>,
     pub audio_path: String,
+    pub audio_variants: Vec<DirectResponseAudioRecord>,
     pub action: Option<String>,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DirectResponseAudioRecord {
+    pub audio_path: String,
+    pub weight: f32,
 }
 
 #[derive(Clone)]
@@ -73,6 +80,7 @@ impl EmbeddedStore {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 keywords_json TEXT NOT NULL,
                 audio_path TEXT NOT NULL,
+                audio_variants_json TEXT NOT NULL DEFAULT '[]',
                 action TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -82,6 +90,31 @@ impl EmbeddedStore {
         .execute(&self.pool)
         .await
         .context("ensuring direct_responses table")?;
+        self.ensure_direct_response_columns().await?;
+
+        Ok(())
+    }
+
+    async fn ensure_direct_response_columns(&self) -> Result<()> {
+        let rows = sqlx::query("PRAGMA table_info(direct_responses)")
+            .fetch_all(&self.pool)
+            .await
+            .context("reading direct_responses table info")?;
+        let has_audio_variants = rows
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "audio_variants_json");
+
+        if !has_audio_variants {
+            sqlx::query(
+                r#"
+                ALTER TABLE direct_responses
+                ADD COLUMN audio_variants_json TEXT NOT NULL DEFAULT '[]'
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .context("adding direct_responses.audio_variants_json")?;
+        }
 
         Ok(())
     }
@@ -139,6 +172,14 @@ impl EmbeddedStore {
             .map(|rule| DirectResponseConfig {
                 keywords: rule.keywords,
                 audio: rule.audio_path.into(),
+                audio_variants: rule
+                    .audio_variants
+                    .into_iter()
+                    .map(|variant| crate::config::DirectResponseAudioConfig {
+                        audio: variant.audio_path.into(),
+                        weight: variant.weight,
+                    })
+                    .collect(),
                 action: rule.action,
             })
             .collect())
@@ -150,13 +191,13 @@ impl EmbeddedStore {
     ) -> Result<Vec<DirectResponseRuleRecord>> {
         let sql = if include_disabled {
             r#"
-            SELECT id, keywords_json, audio_path, action, enabled
+            SELECT id, keywords_json, audio_path, audio_variants_json, action, enabled
             FROM direct_responses
             ORDER BY id ASC
             "#
         } else {
             r#"
-            SELECT id, keywords_json, audio_path, action, enabled
+            SELECT id, keywords_json, audio_path, audio_variants_json, action, enabled
             FROM direct_responses
             WHERE enabled = 1
             ORDER BY id ASC
@@ -179,18 +220,22 @@ impl EmbeddedStore {
     ) -> Result<DirectResponseRuleRecord> {
         let keywords_json =
             serde_json::to_string(&rule.keywords).context("serializing keywords")?;
+        let audio_variants = normalize_audio_variants(rule);
+        let audio_variants_json =
+            serde_json::to_string(&audio_variants).context("serializing audio variants")?;
         let enabled = i64::from(rule.enabled);
 
         if rule.id > 0 {
             sqlx::query(
                 r#"
                 UPDATE direct_responses
-                SET keywords_json = ?, audio_path = ?, action = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                SET keywords_json = ?, audio_path = ?, audio_variants_json = ?, action = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 "#,
             )
             .bind(keywords_json)
             .bind(&rule.audio_path)
+            .bind(&audio_variants_json)
             .bind(&rule.action)
             .bind(enabled)
             .bind(rule.id)
@@ -206,12 +251,13 @@ impl EmbeddedStore {
 
         let result = sqlx::query(
             r#"
-            INSERT INTO direct_responses (keywords_json, audio_path, action, enabled)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO direct_responses (keywords_json, audio_path, audio_variants_json, action, enabled)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(keywords_json)
         .bind(&rule.audio_path)
+        .bind(&audio_variants_json)
         .bind(&rule.action)
         .bind(enabled)
         .execute(&self.pool)
@@ -236,7 +282,7 @@ impl EmbeddedStore {
     async fn get_direct_response(&self, id: i64) -> Result<Option<DirectResponseRuleRecord>> {
         let row = sqlx::query(
             r#"
-            SELECT id, keywords_json, audio_path, action, enabled
+            SELECT id, keywords_json, audio_path, audio_variants_json, action, enabled
             FROM direct_responses
             WHERE id = ?
             "#,
@@ -255,12 +301,25 @@ impl EmbeddedStore {
             serde_json::to_string(&response.keywords).context("serializing keywords")?;
         sqlx::query(
             r#"
-            INSERT INTO direct_responses (keywords_json, audio_path, action)
-            VALUES (?, ?, ?)
+            INSERT INTO direct_responses (keywords_json, audio_path, audio_variants_json, action)
+            VALUES (?, ?, ?, ?)
             "#,
         )
         .bind(keywords_json)
         .bind(response.audio.display().to_string())
+        .bind(
+            serde_json::to_string(
+                &response
+                    .audio_variants
+                    .iter()
+                    .map(|variant| DirectResponseAudioRecord {
+                        audio_path: variant.audio.display().to_string(),
+                        weight: variant.weight,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .context("serializing test audio variants")?,
+        )
         .bind(response.action.clone())
         .execute(&self.pool)
         .await
@@ -273,13 +332,47 @@ fn row_to_direct_response_record(row: sqlx::sqlite::SqliteRow) -> Result<DirectR
     let keywords_json = row.get::<String, _>("keywords_json");
     let keywords =
         serde_json::from_str(&keywords_json).context("deserializing direct response keywords")?;
+    let audio_path = row.get::<String, _>("audio_path");
+    let variants_json = row
+        .try_get::<String, _>("audio_variants_json")
+        .unwrap_or_else(|_| "[]".to_string());
+    let mut audio_variants: Vec<DirectResponseAudioRecord> =
+        serde_json::from_str(&variants_json).unwrap_or_default();
+    if audio_variants.is_empty() && !audio_path.trim().is_empty() {
+        audio_variants.push(DirectResponseAudioRecord {
+            audio_path: audio_path.clone(),
+            weight: 1.0,
+        });
+    }
     Ok(DirectResponseRuleRecord {
         id: row.get::<i64, _>("id"),
         keywords,
-        audio_path: row.get::<String, _>("audio_path"),
+        audio_path,
+        audio_variants,
         action: row.get::<Option<String>, _>("action"),
         enabled: row.get::<i64, _>("enabled") != 0,
     })
+}
+
+fn normalize_audio_variants(rule: &DirectResponseRuleRecord) -> Vec<DirectResponseAudioRecord> {
+    let mut variants = rule
+        .audio_variants
+        .iter()
+        .filter(|variant| !variant.audio_path.trim().is_empty())
+        .map(|variant| DirectResponseAudioRecord {
+            audio_path: variant.audio_path.clone(),
+            weight: variant.weight.max(0.0),
+        })
+        .collect::<Vec<_>>();
+
+    if variants.is_empty() && !rule.audio_path.trim().is_empty() {
+        variants.push(DirectResponseAudioRecord {
+            audio_path: rule.audio_path.clone(),
+            weight: 1.0,
+        });
+    }
+
+    variants
 }
 
 #[cfg(test)]
@@ -318,6 +411,7 @@ mod tests {
             .insert_direct_response(&DirectResponseConfig {
                 keywords: vec!["现在几点".to_string()],
                 audio: "assets/responses/time.wav".into(),
+                audio_variants: Vec::new(),
                 action: Some("report_time".to_string()),
             })
             .await
@@ -345,6 +439,7 @@ mod tests {
                 id: 0,
                 keywords: vec!["lights on".to_string()],
                 audio_path: "assets/responses/light_on.wav".to_string(),
+                audio_variants: Vec::new(),
                 action: Some("gpio_light_on".to_string()),
                 enabled: true,
             })

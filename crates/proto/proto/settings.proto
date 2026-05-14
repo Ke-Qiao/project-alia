@@ -29,6 +29,13 @@ message DirectResponseRule {
   string audio_path = 3;
   string action = 4;
   bool enabled = 5;
+  repeated DirectResponseAudioVariant audio_variants = 6;
+}
+
+message DirectResponseAudioVariant {
+  string audio_path = 1;
+  float weight = 2;
+  bytes audio_data = 3;
 }
 
 message DirectResponseList {

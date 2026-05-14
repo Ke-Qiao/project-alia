@@ -12,6 +12,8 @@ pub struct EmbeddedConfig {
     pub audio: AudioConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
+    pub direct_response_defaults: DirectResponseDefaultsConfig,
+    #[serde(default)]
     pub dev: DevConfig,
     #[serde(default)]
     pub process: Vec<ProcessConfig>,
@@ -401,7 +403,45 @@ pub struct DirectResponseConfig {
     pub keywords: Vec<String>,
     pub audio: PathBuf,
     #[serde(default)]
+    pub audio_variants: Vec<DirectResponseAudioConfig>,
+    #[serde(default)]
     pub action: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectResponseAudioConfig {
+    pub audio: PathBuf,
+    #[serde(default = "default_direct_response_weight")]
+    pub weight: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectResponseDefaultsConfig {
+    #[serde(default = "default_direct_response_audio_dir")]
+    pub audio_dir: PathBuf,
+    #[serde(default = "default_wakeword_response_content")]
+    pub default_wakeword_response_content: String,
+}
+
+impl Default for DirectResponseDefaultsConfig {
+    fn default() -> Self {
+        Self {
+            audio_dir: default_direct_response_audio_dir(),
+            default_wakeword_response_content: default_wakeword_response_content(),
+        }
+    }
+}
+
+fn default_direct_response_audio_dir() -> PathBuf {
+    PathBuf::from("../run/direct-responses")
+}
+
+fn default_wakeword_response_content() -> String {
+    "Hello! How can I help you?".to_string()
+}
+
+fn default_direct_response_weight() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -421,6 +461,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
+    pub direct_response_defaults: DirectResponseDefaultsConfig,
+    #[serde(default)]
     pub dev: DevConfig,
 }
 
@@ -433,6 +475,7 @@ impl Default for EmbeddedConfig {
             edge_stt: EdgeSttConfig::default(),
             audio: AudioConfig::default(),
             discovery: DiscoveryConfig::default(),
+            direct_response_defaults: DirectResponseDefaultsConfig::default(),
             dev: DevConfig::default(),
             process: Vec::new(),
             direct_response: Vec::new(),
@@ -447,6 +490,7 @@ impl EmbeddedConfig {
         self.identity = runtime.identity;
         self.audio = runtime.audio;
         self.discovery = runtime.discovery;
+        self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
         self.provisioning_mode = !runtime.runtime.provisioned;
     }
@@ -459,6 +503,7 @@ impl EmbeddedConfig {
             identity: self.identity.clone(),
             audio: self.audio.clone(),
             discovery: self.discovery.clone(),
+            direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),
         }
     }

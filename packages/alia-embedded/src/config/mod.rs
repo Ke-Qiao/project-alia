@@ -73,9 +73,13 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.wakeword.keywords_file);
     resolve_relative(parent, &mut config.edge_stt.model_path);
     resolve_relative(parent, &mut config.edge_stt.tokens_path);
+    resolve_relative(parent, &mut config.direct_response_defaults.audio_dir);
 
     for response in &mut config.direct_response {
         resolve_relative(parent, &mut response.audio);
+        for variant in &mut response.audio_variants {
+            resolve_relative(parent, &mut variant.audio);
+        }
     }
 }
 
@@ -104,6 +108,7 @@ fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSe
         return;
     };
     relativize_path(base, &mut settings.identity.keypair_path);
+    relativize_path(base, &mut settings.direct_response_defaults.audio_dir);
 }
 
 fn relativize_path(base: &Path, path: &mut PathBuf) {

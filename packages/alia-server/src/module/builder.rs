@@ -4,7 +4,9 @@ use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::JwtKeys;
-use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
+use crate::channels::{
+    ChannelAdapter, ChannelRegistry, ensure_default_wakeword_response, spawn_pipeline,
+};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::factory;
@@ -365,6 +367,9 @@ impl ServerBuilder {
                 channel_id = %channel_id,
                 "channel started"
             );
+            if channel.channel_type() == "embedded" {
+                ensure_default_wakeword_response(channel.as_ref(), registry.tts.as_ref()).await;
+            }
         }
 
         // Build JWT keys
