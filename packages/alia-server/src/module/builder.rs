@@ -233,7 +233,7 @@ impl ServerBuilder {
 
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
-        scheduler.init(&base_ctx).await?;
+        init_module(scheduler.as_mut(), &base_ctx).await;
         let scheduler: Arc<dyn SchedulerBackend> = Arc::from(scheduler);
 
         // Context with scheduler for modules that need it
@@ -248,29 +248,37 @@ impl ServerBuilder {
         };
 
         // Initialize remaining modules in dependency order
-        embedding.init(&ctx).await?;
-        conversation.init(&ctx).await?;
+        init_module(embedding.as_mut(), &ctx).await;
+        init_module(conversation.as_mut(), &ctx).await;
         let conversation_arc: Arc<dyn ConversationBackend> = Arc::from(conversation);
         let ctx = ModuleContext {
             conversation: Some(conversation_arc.clone()),
             ..ctx
         };
-        llm.init(&ctx).await?;
-        stt.init(&ctx).await?;
-        tts.init(&ctx).await?;
-        memory.init(&ctx).await?;
-        cache.init(&ctx).await?;
-        skills.init(&ctx).await?;
-        persona.init(&ctx).await?;
-        router.init(&ctx).await?;
-        meditation.init(&ctx).await?;
-        rule_engine.init(&ctx).await?;
-        tools.init(&ctx).await?;
+        init_module(llm.as_mut(), &ctx).await;
+        init_module(stt.as_mut(), &ctx).await;
+        init_module(tts.as_mut(), &ctx).await;
+        init_module(memory.as_mut(), &ctx).await;
+        init_module(cache.as_mut(), &ctx).await;
+        init_module(skills.as_mut(), &ctx).await;
+        init_module(persona.as_mut(), &ctx).await;
+        init_module(router.as_mut(), &ctx).await;
+        init_module(meditation.as_mut(), &ctx).await;
+        init_module(rule_engine.as_mut(), &ctx).await;
+        init_module(tools.as_mut(), &ctx).await;
 
         // Initialize extensions
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
         for mut ext in self.extensions {
-            ext.init(&ctx).await?;
+            let name = ext.name();
+            if let Err(error) = ext.init(&ctx).await {
+                tracing::warn!(
+                    module = name,
+                    error = ?error,
+                    "extension init failed; extension disabled"
+                );
+                continue;
+            }
             extensions.push(Arc::from(ext));
         }
 
@@ -282,15 +290,13 @@ impl ServerBuilder {
                 tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
                 continue;
             }
-            let mut channel: Box<dyn ChannelAdapter> =
+            let channel: Box<dyn ChannelAdapter> =
                 factory::create_channel(ch_cfg, self.event_bus.clone());
-            channel.init(&ctx).await?;
-            channel_registry.register(Arc::from(channel)).await?;
+            register_initialized_channel(channel, &ctx, &channel_registry).await;
         }
         // Register explicitly added channels
-        for mut channel in self.channels {
-            channel.init(&ctx).await?;
-            channel_registry.register(Arc::from(channel)).await?;
+        for channel in self.channels {
+            register_initialized_channel(channel, &ctx, &channel_registry).await;
         }
         let channel_registry = Arc::new(channel_registry);
 
@@ -315,27 +321,55 @@ impl ServerBuilder {
 
         // Start modules (scheduler first since it was init'd first)
         tracing::info!("starting modules...");
-        registry.scheduler.start().await?;
-        registry.llm.start().await?;
-        registry.stt.start().await?;
-        registry.tts.start().await?;
-        registry.embedding.start().await?;
-        registry.conversation.start().await?;
-        registry.memory.start().await?;
-        registry.cache.start().await?;
-        registry.skills.start().await?;
-        registry.persona.start().await?;
-        registry.router.start().await?;
-        registry.meditation.start().await?;
-        registry.rule_engine.start().await?;
-        registry.tools.start().await?;
+        start_module(registry.scheduler.as_ref()).await;
+        start_module(registry.llm.as_ref()).await;
+        start_module(registry.stt.as_ref()).await;
+        start_module(registry.tts.as_ref()).await;
+        start_module(registry.embedding.as_ref()).await;
+        start_module(registry.conversation.as_ref()).await;
+        start_module(registry.memory.as_ref()).await;
+        start_module(registry.cache.as_ref()).await;
+        start_module(registry.skills.as_ref()).await;
+        start_module(registry.persona.as_ref()).await;
+        start_module(registry.router.as_ref()).await;
+        start_module(registry.meditation.as_ref()).await;
+        start_module(registry.rule_engine.as_ref()).await;
+        start_module(registry.tools.as_ref()).await;
+        for ext in &registry.extensions {
+            start_module(ext.as_ref()).await;
+        }
 
         // Start channels
         for channel in channel_registry.list().await {
-            channel.start().await?;
+            let channel_id = channel.channel_id().to_string();
+            if let Err(error) = channel.start().await {
+                tracing::warn!(
+                    channel_type = channel.channel_type(),
+                    channel_id = %channel_id,
+                    error = ?error,
+                    "channel start failed; channel disabled"
+                );
+                if let Err(stop_error) = channel.stop().await {
+                    tracing::warn!(
+                        channel_type = channel.channel_type(),
+                        channel_id = %channel_id,
+                        error = ?stop_error,
+                        "failed to stop disabled channel"
+                    );
+                }
+                if let Err(unregister_error) = channel_registry.unregister(&channel_id).await {
+                    tracing::warn!(
+                        channel_type = channel.channel_type(),
+                        channel_id = %channel_id,
+                        error = ?unregister_error,
+                        "failed to unregister disabled channel"
+                    );
+                }
+                continue;
+            }
             tracing::info!(
                 channel_type = channel.channel_type(),
-                channel_id = channel.channel_id(),
+                channel_id = %channel_id,
                 "channel started"
             );
         }
@@ -378,5 +412,56 @@ impl ServerBuilder {
         );
 
         Ok(state)
+    }
+}
+
+async fn init_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
+    let name = module.name();
+    if let Err(error) = module.init(ctx).await {
+        tracing::warn!(
+            module = name,
+            error = ?error,
+            "module init failed; continuing in degraded mode"
+        );
+    }
+}
+
+async fn start_module(module: &dyn ModuleLifecycle) {
+    let name = module.name();
+    if let Err(error) = module.start().await {
+        tracing::warn!(
+            module = name,
+            error = ?error,
+            "module start failed; continuing in degraded mode"
+        );
+    }
+}
+
+async fn register_initialized_channel(
+    mut channel: Box<dyn ChannelAdapter>,
+    ctx: &ModuleContext,
+    channel_registry: &ChannelRegistry,
+) {
+    let channel_type = channel.channel_type();
+    let channel_id = channel.channel_id().to_string();
+
+    if let Err(error) = channel.init(ctx).await {
+        tracing::warn!(
+            channel_type,
+            channel_id = %channel_id,
+            error = ?error,
+            "channel init failed; channel disabled"
+        );
+        return;
+    }
+
+    let channel: Arc<dyn ChannelAdapter> = Arc::from(channel);
+    if let Err(error) = channel_registry.register(channel).await {
+        tracing::warn!(
+            channel_type,
+            channel_id = %channel_id,
+            error = ?error,
+            "channel registration failed; channel disabled"
+        );
     }
 }

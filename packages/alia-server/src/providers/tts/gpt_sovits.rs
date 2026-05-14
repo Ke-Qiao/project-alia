@@ -258,7 +258,14 @@ impl ModuleLifecycle for GptSovitsTts {
         config.overlap_length = server_config.tts.gpt_sovits_overlap_length;
         config.min_chunk_length = server_config.tts.gpt_sovits_min_chunk_length;
 
-        configure_remote_weights(&self.client, &config).await?;
+        if let Err(error) = configure_remote_weights(&self.client, &config).await {
+            tracing::warn!(
+                error = %error,
+                endpoint = %config.endpoint,
+                model = config.model_name.as_deref().unwrap_or("unspecified"),
+                "GPT-SoVITS remote weight setup failed; continuing with the model already loaded by the TTS server"
+            );
+        }
 
         tracing::info!(
             endpoint = %config.endpoint,

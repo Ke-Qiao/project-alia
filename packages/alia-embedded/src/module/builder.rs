@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::binding::BindingManager;
 use crate::config::EmbeddedConfig;
@@ -17,6 +17,10 @@ use crate::storage::EmbeddedStore;
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
 use super::lifecycle::ModuleLifecycle;
+use super::noop::{
+    NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
+    NoopFaceTracker, NoopMixer, NoopWakeWord,
+};
 use super::registry::EmbeddedModuleRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
@@ -207,56 +211,71 @@ impl EmbeddedBuilder {
         // Resolve modules: use overrides or fall back to factory
         let mut wakeword: Box<dyn WakeWordEngine> = match self.wakeword {
             Some(m) => m,
-            None => factory::create_wakeword(&config)?,
+            None => factory::create_wakeword(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "wakeword module creation failed; using noop");
+                Box::new(NoopWakeWord)
+            }),
         };
         let mut edge_stt: Box<dyn EdgeSttEngine> = match self.edge_stt {
             Some(m) => m,
-            None => factory::create_edge_stt(&config)?,
+            None => factory::create_edge_stt(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "edge STT module creation failed; using noop");
+                Box::new(NoopEdgeStt)
+            }),
         };
         let mut direct_response: Box<dyn DirectResponseEngine> = match self.direct_response {
             Some(m) => m,
-            None => factory::create_direct_response(&config)?,
+            None => factory::create_direct_response(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "direct response module creation failed; using noop");
+                Box::new(NoopDirectResponse)
+            }),
         };
         let mut audio_capture: Box<dyn AudioCaptureBackend> = match self.audio_capture {
             Some(m) => m,
-            None => factory::create_audio_capture(&config)?,
+            None => factory::create_audio_capture(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "audio capture module creation failed; using noop");
+                Box::new(NoopAudioCapture)
+            }),
         };
         let mut audio_playback: Box<dyn AudioPlaybackBackend> = match self.audio_playback {
             Some(m) => m,
-            None => factory::create_audio_playback(&config)?,
+            None => factory::create_audio_playback(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "audio playback module creation failed; using noop");
+                Box::new(NoopAudioPlayback)
+            }),
         };
         let mut mixer: Box<dyn AudioMixer> = match self.mixer {
             Some(m) => m,
-            None => factory::create_mixer(&config)?,
+            None => factory::create_mixer(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "mixer module creation failed; using noop");
+                Box::new(NoopMixer)
+            }),
         };
         let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
             Some(m) => m,
-            None => factory::create_face_tracker(&config)?,
+            None => factory::create_face_tracker(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "face tracker module creation failed; using noop");
+                Box::new(NoopFaceTracker)
+            }),
         };
         let mut discovery: Box<dyn DiscoveryBackend> = match self.discovery {
             Some(m) => m,
-            None => factory::create_discovery(&config)?,
+            None => factory::create_discovery(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "discovery module creation failed; using noop");
+                Box::new(NoopDiscovery)
+            }),
         };
 
         // Initialize all modules
         info!("initializing modules");
-        wakeword.init(&ctx).await.context("init wakeword")?;
-        edge_stt.init(&ctx).await.context("init edge_stt")?;
-        direct_response
-            .init(&ctx)
-            .await
-            .context("init direct_response")?;
-        audio_capture
-            .init(&ctx)
-            .await
-            .context("init audio_capture")?;
-        audio_playback
-            .init(&ctx)
-            .await
-            .context("init audio_playback")?;
-        mixer.init(&ctx).await.context("init mixer")?;
-        face_tracker.init(&ctx).await.context("init face_tracker")?;
-        discovery.init(&ctx).await.context("init discovery")?;
+        init_embedded_module(wakeword.as_mut(), &ctx).await;
+        init_embedded_module(edge_stt.as_mut(), &ctx).await;
+        init_embedded_module(direct_response.as_mut(), &ctx).await;
+        init_embedded_module(audio_capture.as_mut(), &ctx).await;
+        init_embedded_module(audio_playback.as_mut(), &ctx).await;
+        init_embedded_module(mixer.as_mut(), &ctx).await;
+        init_embedded_module(face_tracker.as_mut(), &ctx).await;
+        init_embedded_module(discovery.as_mut(), &ctx).await;
 
         // Initialize core infrastructure
         let process_manager =
@@ -326,27 +345,22 @@ impl EmbeddedBuilder {
 
         // Start all modules
         info!("starting modules");
-        wakeword.start().await.context("start wakeword")?;
-        edge_stt.start().await.context("start edge_stt")?;
-        direct_response
-            .start()
-            .await
-            .context("start direct_response")?;
-        audio_capture.start().await.context("start audio_capture")?;
-        audio_playback
-            .start()
-            .await
-            .context("start audio_playback")?;
-        mixer.start().await.context("start mixer")?;
-        speech_pipeline
-            .start()
-            .await
-            .context("start speech_pipeline")?;
-        audio_capture
-            .start_capture(&ctx.audio_bus)
-            .context("start audio capture stream")?;
-        face_tracker.start().await.context("start face_tracker")?;
-        discovery.start().await.context("start discovery")?;
+        start_embedded_module(wakeword.as_ref()).await;
+        start_embedded_module(edge_stt.as_ref()).await;
+        start_embedded_module(direct_response.as_ref()).await;
+        start_embedded_module(audio_capture.as_ref()).await;
+        start_embedded_module(audio_playback.as_ref()).await;
+        start_embedded_module(mixer.as_ref()).await;
+        start_embedded_module(speech_pipeline.as_ref()).await;
+        if let Err(error) = audio_capture.start_capture(&ctx.audio_bus) {
+            warn!(
+                module = audio_capture.name(),
+                error = ?error,
+                "audio capture stream failed to start; continuing without microphone capture"
+            );
+        }
+        start_embedded_module(face_tracker.as_ref()).await;
+        start_embedded_module(discovery.as_ref()).await;
 
         let initial_discovery_metadata = binding_manager.status().await.discovery_metadata();
         let mut initial_discovery_metadata = initial_discovery_metadata;
@@ -360,7 +374,9 @@ impl EmbeddedBuilder {
         discovery
             .update_metadata(&initial_discovery_metadata)
             .await
-            .context("sync discovery metadata")?;
+            .unwrap_or_else(
+                |error| warn!(error = ?error, "failed to sync discovery metadata; continuing"),
+            );
 
         // Build registry
         let registry = EmbeddedModuleRegistry {
@@ -386,5 +402,27 @@ impl EmbeddedBuilder {
             state_store: ctx.state_store.clone(),
             event_bus: ctx.event_bus.clone(),
         })
+    }
+}
+
+async fn init_embedded_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
+    let name = module.name();
+    if let Err(error) = module.init(ctx).await {
+        warn!(
+            module = name,
+            error = ?error,
+            "embedded module init failed; continuing in degraded mode"
+        );
+    }
+}
+
+async fn start_embedded_module(module: &dyn ModuleLifecycle) {
+    let name = module.name();
+    if let Err(error) = module.start().await {
+        warn!(
+            module = name,
+            error = ?error,
+            "embedded module start failed; continuing in degraded mode"
+        );
     }
 }

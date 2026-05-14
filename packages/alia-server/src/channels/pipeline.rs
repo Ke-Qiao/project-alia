@@ -121,7 +121,9 @@ async fn process_event(
 
             // Only call send_message when the text was NOT already streamed.
             if !result.streamed {
-                channel.send_message(&target, &result.text).await?;
+                if let Err(error) = channel.send_message(&target, &result.text).await {
+                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                }
             }
 
             Ok(())
@@ -161,7 +163,10 @@ async fn process_event(
 
             // Text delivery: only if not already streamed
             if !result.streamed {
-                channel.send_message(&target, &result.text).await?;
+                if let Err(error) = channel.send_message(&target, &result.text).await {
+                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                    return Ok(());
+                }
             }
 
             // Audio delivery: always send TTS regardless of streaming
@@ -174,7 +179,9 @@ async fn process_event(
             };
 
             if channel.capabilities().voice_output {
-                channel.send_audio(&target, audio_out).await?;
+                if let Err(error) = channel.send_audio(&target, audio_out).await {
+                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                }
             }
 
             Ok(())
@@ -382,7 +389,9 @@ async fn stream_llm_response(
 ) -> anyhow::Result<String> {
     let mut token_stream = modules.llm.chat_stream(messages).await?;
 
-    channel.begin_stream(target).await?;
+    if let Err(error) = channel.begin_stream(target).await {
+        tracing::warn!(channel_id, error = ?error, "stream begin delivery failed");
+    }
 
     let mut full_text = String::new();
 
@@ -410,7 +419,9 @@ async fn stream_llm_response(
         }
     }
 
-    channel.end_stream(target, &full_text).await?;
+    if let Err(error) = channel.end_stream(target, &full_text).await {
+        tracing::warn!(channel_id, error = ?error, "stream end delivery failed");
+    }
 
     event_bus.publish(ServerEvent::StreamEnd {
         channel_id: channel_id.to_string(),
@@ -418,4 +429,38 @@ async fn stream_llm_response(
     });
 
     Ok(full_text)
+}
+
+async fn disable_channel_after_failure(
+    channels: &ChannelRegistry,
+    channel: &dyn ChannelAdapter,
+    error: anyhow::Error,
+) {
+    let channel_type = channel.channel_type();
+    let channel_id = channel.channel_id().to_string();
+
+    tracing::warn!(
+        channel_type,
+        channel_id = %channel_id,
+        error = ?error,
+        "channel delivery failed; disabling channel"
+    );
+
+    if let Err(stop_error) = channel.stop().await {
+        tracing::warn!(
+            channel_type,
+            channel_id = %channel_id,
+            error = ?stop_error,
+            "failed to stop disabled channel"
+        );
+    }
+
+    if let Err(unregister_error) = channels.unregister(&channel_id).await {
+        tracing::warn!(
+            channel_type,
+            channel_id = %channel_id,
+            error = ?unregister_error,
+            "failed to unregister disabled channel"
+        );
+    }
 }
