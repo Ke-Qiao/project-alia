@@ -67,7 +67,8 @@ struct SovitsConfig {
     ref_audio_path: Option<String>,
     aux_ref_audio_paths: Vec<String>,
     prompt_text: Option<String>,
-    language: String,
+    text_lang: String,
+    prompt_lang: String,
     text_split_method: String,
     batch_size: u32,
     batch_threshold: f32,
@@ -95,7 +96,8 @@ impl GptSovitsTts {
                 ref_audio_path: None,
                 aux_ref_audio_paths: Vec::new(),
                 prompt_text: None,
-                language: "zh".to_string(),
+                text_lang: "zh".to_string(),
+                prompt_lang: "zh".to_string(),
                 text_split_method: "cut5".to_string(),
                 batch_size: 1,
                 batch_threshold: 0.75,
@@ -124,11 +126,11 @@ impl SovitsConfig {
     fn request(&self, text: &str, streaming_mode: u8) -> SovitsRequest {
         SovitsRequest {
             text: text.to_string(),
-            text_lang: Some(self.language.clone()),
+            text_lang: Some(self.text_lang.clone()),
             ref_audio_path: self.ref_audio_path.clone(),
             aux_ref_audio_paths: self.aux_ref_audio_paths.clone(),
             prompt_text: self.prompt_text.clone(),
-            prompt_lang: Some(self.language.clone()),
+            prompt_lang: Some(self.prompt_lang.clone()),
             top_k: 15,
             top_p: 1.0,
             temperature: 1.0,
@@ -240,7 +242,8 @@ impl ModuleLifecycle for GptSovitsTts {
             .as_ref()
             .filter(|value| !value.trim().is_empty())
             .cloned();
-        config.language = server_config.tts.gpt_sovits_language.clone();
+        config.text_lang = server_config.tts.gpt_sovits_text_lang.clone();
+        config.prompt_lang = server_config.tts.gpt_sovits_prompt_lang.clone();
         config.text_split_method = server_config.tts.gpt_sovits_text_split_method.clone();
         config.batch_size = server_config.tts.gpt_sovits_batch_size;
         config.batch_threshold = server_config.tts.gpt_sovits_batch_threshold;

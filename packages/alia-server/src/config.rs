@@ -172,6 +172,9 @@ fn default_true() -> bool {
 fn default_gpt_sovits_language() -> String {
     "zh".to_string()
 }
+fn default_gpt_sovits_prompt_language() -> String {
+    default_gpt_sovits_language()
+}
 fn default_gpt_sovits_text_split_method() -> String {
     "cut5".to_string()
 }
@@ -257,7 +260,9 @@ pub struct TtsSection {
     #[serde(default)]
     pub gpt_sovits_prompt_text: Option<String>,
     #[serde(default = "default_gpt_sovits_language")]
-    pub gpt_sovits_language: String,
+    pub gpt_sovits_text_lang: String,
+    #[serde(default = "default_gpt_sovits_prompt_language")]
+    pub gpt_sovits_prompt_lang: String,
     #[serde(default = "default_gpt_sovits_text_split_method")]
     pub gpt_sovits_text_split_method: String,
     #[serde(default = "default_gpt_sovits_batch_size")]
