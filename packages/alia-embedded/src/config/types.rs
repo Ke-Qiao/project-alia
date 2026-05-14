@@ -420,6 +420,8 @@ pub struct EmbeddedRuntimeSettings {
     pub audio: AudioConfig,
     #[serde(default)]
     pub discovery: DiscoveryConfig,
+    #[serde(default)]
+    pub dev: DevConfig,
 }
 
 impl Default for EmbeddedConfig {
@@ -445,6 +447,7 @@ impl EmbeddedConfig {
         self.identity = runtime.identity;
         self.audio = runtime.audio;
         self.discovery = runtime.discovery;
+        self.dev = runtime.dev;
         self.provisioning_mode = !runtime.runtime.provisioned;
     }
 
@@ -456,6 +459,7 @@ impl EmbeddedConfig {
             identity: self.identity.clone(),
             audio: self.audio.clone(),
             discovery: self.discovery.clone(),
+            dev: self.dev.clone(),
         }
     }
 }

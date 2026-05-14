@@ -22,3 +22,10 @@ skills-lock.json
 config/*.toml
 !config/*.example.toml
 config/server.d/
+config/models/
+
+# runtime folders
+run/
+
+# secrets and keys
+*.key

@@ -3,7 +3,23 @@ mod types;
 pub use types::*;
 
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
+
+pub fn default_config_path() -> PathBuf {
+    let default = PathBuf::from("config/embedded.toml");
+    normalize_config_path(default)
+}
+
+pub fn normalize_config_path(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+
+    let Ok(cwd) = std::env::current_dir() else {
+        return path;
+    };
+    normalize_config_path_for_cwd(path, &cwd)
+}
 
 pub fn load_config(path: &Path) -> Result<EmbeddedConfig> {
     let mut config = EmbeddedConfig::default();
@@ -34,7 +50,13 @@ pub fn save_runtime_settings(path: &Path, settings: &EmbeddedRuntimeSettings) ->
 }
 
 pub fn save_runtime_config(config: &EmbeddedConfig) -> Result<()> {
-    save_runtime_settings(&config.config_path, &config.runtime_settings())
+    save_runtime_settings(&config.config_path, &runtime_settings_for_path(config))
+}
+
+pub fn runtime_settings_for_path(config: &EmbeddedConfig) -> EmbeddedRuntimeSettings {
+    let mut settings = config.runtime_settings();
+    relativize_runtime_paths(&config.config_path, &mut settings);
+    settings
 }
 
 fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
@@ -60,5 +82,79 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
 fn resolve_relative(base: &Path, path: &mut std::path::PathBuf) {
     if path.is_relative() {
         *path = base.join(&path);
+    }
+}
+
+fn normalize_config_path_for_cwd(path: PathBuf, cwd: &Path) -> PathBuf {
+    if cwd.file_name().is_some_and(|name| name == "config")
+        && path.starts_with("config")
+        && path.components().next() == Some(Component::Normal("config".as_ref()))
+    {
+        return path
+            .strip_prefix("config")
+            .map(Path::to_path_buf)
+            .unwrap_or(path);
+    }
+
+    path
+}
+
+fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSettings) {
+    let Some(base) = config_path.parent() else {
+        return;
+    };
+    relativize_path(base, &mut settings.identity.keypair_path);
+}
+
+fn relativize_path(base: &Path, path: &mut PathBuf) {
+    if base.as_os_str().is_empty() {
+        return;
+    }
+
+    if let Ok(stripped) = path.strip_prefix(base) {
+        *path = stripped.to_path_buf();
+        return;
+    }
+
+    if path.is_absolute()
+        && let Ok(base) = std::fs::canonicalize(base)
+        && let Ok(stripped) = path.strip_prefix(base)
+    {
+        *path = stripped.to_path_buf();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_duplicate_config_prefix_when_cwd_is_config_dir() {
+        let normalized = normalize_config_path_for_cwd(
+            PathBuf::from("config/embedded.toml"),
+            Path::new("config"),
+        );
+
+        assert_eq!(normalized, PathBuf::from("embedded.toml"));
+    }
+
+    #[test]
+    fn keeps_config_prefix_when_cwd_is_project_root() {
+        let normalized = normalize_config_path_for_cwd(
+            PathBuf::from("config/embedded.toml"),
+            Path::new("project-alia"),
+        );
+
+        assert_eq!(normalized, PathBuf::from("config/embedded.toml"));
+    }
+
+    #[test]
+    fn saves_keypair_path_relative_to_config_file() {
+        let mut settings = EmbeddedRuntimeSettings::default();
+        settings.identity.keypair_path = PathBuf::from("config/device.key");
+
+        relativize_runtime_paths(Path::new("config/embedded.toml"), &mut settings);
+
+        assert_eq!(settings.identity.keypair_path, PathBuf::from("device.key"));
     }
 }

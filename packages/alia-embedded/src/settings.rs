@@ -4,7 +4,9 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use tokio::sync::RwLock;
 
-use crate::config::{EmbeddedConfig, EmbeddedRuntimeSettings, save_runtime_settings};
+use crate::config::{
+    EmbeddedConfig, EmbeddedRuntimeSettings, runtime_settings_for_path, save_runtime_settings,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SettingsSnapshot {
@@ -23,7 +25,7 @@ impl EmbeddedSettingsManager {
     pub fn new(config: &EmbeddedConfig) -> Self {
         Self {
             path: config.config_path.clone(),
-            settings: RwLock::new(config.runtime_settings()),
+            settings: RwLock::new(runtime_settings_for_path(config)),
         }
     }
 

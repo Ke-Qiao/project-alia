@@ -39,7 +39,8 @@ async fn main() -> Result<()> {
     // Load configuration
     let config_path = std::env::var("ALIA_EMBEDDED_CONFIG_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("config/embedded.toml"));
+        .map(config::normalize_config_path)
+        .unwrap_or_else(|_| config::default_config_path());
     let mut config = config::load_config(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
 

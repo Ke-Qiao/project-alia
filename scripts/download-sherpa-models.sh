@@ -39,9 +39,6 @@ link_or_copy() {
   local source="$1"
   local dest="$2"
   rm -f "$dest"
-  if ln -s "$(basename "$source")" "$dest" 2>/dev/null; then
-    return
-  fi
   cp "$source" "$dest"
 }
 

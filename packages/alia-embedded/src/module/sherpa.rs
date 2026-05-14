@@ -24,6 +24,12 @@ struct KwsState {
 
 impl SherpaOnnxKws {
     pub fn new(config: &WakewordConfig) -> Result<Self> {
+        validate_file(&config.encoder_path, "wakeword encoder")?;
+        validate_file(&config.decoder_path, "wakeword decoder")?;
+        validate_file(&config.joiner_path, "wakeword joiner")?;
+        validate_file(&config.tokens_path, "wakeword tokens")?;
+        validate_file(&config.keywords_file, "wakeword keywords")?;
+
         let mut kws_config = KeywordSpotterConfig::default();
         kws_config.model_config.transducer.encoder =
             Some(config.encoder_path.display().to_string());
@@ -99,6 +105,9 @@ pub struct SherpaOnnxStt {
 
 impl SherpaOnnxStt {
     pub fn new(config: &EdgeSttConfig) -> Result<Self> {
+        validate_file(&config.model_path, "edge STT model")?;
+        validate_file(&config.tokens_path, "edge STT tokens")?;
+
         let mut recognizer_config = OfflineRecognizerConfig::default();
         recognizer_config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
             model: Some(config.model_path.display().to_string()),
@@ -177,4 +186,15 @@ fn timestamp_us() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_micros() as u64
+}
+
+fn validate_file(path: &std::path::Path, label: &str) -> Result<()> {
+    if path.is_file() {
+        return Ok(());
+    }
+
+    bail!(
+        "{label} file does not exist: {}. Run scripts/download-sherpa-models.sh from the project root, or update the embedded model paths in config/embedded.toml.",
+        path.display()
+    )
 }
