@@ -43,6 +43,7 @@ docker compose up -d
 
 # 3. Copy and edit config files
 cp config/server.example.toml config/server.toml
+cp -R config/server.example.d config/server.d
 cp config/embedded.example.toml config/embedded.toml
 
 # 4. Run the server

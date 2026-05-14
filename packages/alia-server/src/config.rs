@@ -26,8 +26,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub skills: SkillsSection,
 
-    /// Directory where the config file lives — set automatically by `load()`.
-    /// Used to resolve relative paths in the config (skills_dir, etc.).
+    /// Directory where the base config file lives — set automatically by `load()`.
+    /// Used to resolve relative paths in config fragments (skills_dir, etc.).
     #[serde(skip)]
     pub config_dir: PathBuf,
 }
@@ -172,6 +172,36 @@ fn default_true() -> bool {
 fn default_gpt_sovits_language() -> String {
     "zh".to_string()
 }
+fn default_gpt_sovits_text_split_method() -> String {
+    "cut5".to_string()
+}
+fn default_gpt_sovits_batch_size() -> u32 {
+    1
+}
+fn default_gpt_sovits_batch_threshold() -> f32 {
+    0.75
+}
+fn default_gpt_sovits_speed_factor() -> f32 {
+    1.0
+}
+fn default_gpt_sovits_fragment_interval() -> f32 {
+    0.3
+}
+fn default_gpt_sovits_seed() -> i32 {
+    -1
+}
+fn default_gpt_sovits_repetition_penalty() -> f32 {
+    1.35
+}
+fn default_gpt_sovits_sample_steps() -> u32 {
+    32
+}
+fn default_gpt_sovits_overlap_length() -> u32 {
+    2
+}
+fn default_gpt_sovits_min_chunk_length() -> u32 {
+    16
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct LlmSection {
@@ -215,11 +245,45 @@ pub struct TtsSection {
     pub adapter: String,
     pub gpt_sovits_endpoint: String,
     #[serde(default)]
+    pub gpt_sovits_model_name: Option<String>,
+    #[serde(default)]
+    pub gpt_sovits_gpt_weights_path: Option<String>,
+    #[serde(default)]
+    pub gpt_sovits_sovits_weights_path: Option<String>,
+    #[serde(default)]
     pub gpt_sovits_ref_audio_path: Option<String>,
+    #[serde(default)]
+    pub gpt_sovits_aux_ref_audio_paths: Vec<String>,
     #[serde(default)]
     pub gpt_sovits_prompt_text: Option<String>,
     #[serde(default = "default_gpt_sovits_language")]
     pub gpt_sovits_language: String,
+    #[serde(default = "default_gpt_sovits_text_split_method")]
+    pub gpt_sovits_text_split_method: String,
+    #[serde(default = "default_gpt_sovits_batch_size")]
+    pub gpt_sovits_batch_size: u32,
+    #[serde(default = "default_gpt_sovits_batch_threshold")]
+    pub gpt_sovits_batch_threshold: f32,
+    #[serde(default = "default_true")]
+    pub gpt_sovits_split_bucket: bool,
+    #[serde(default = "default_gpt_sovits_speed_factor")]
+    pub gpt_sovits_speed_factor: f32,
+    #[serde(default = "default_gpt_sovits_fragment_interval")]
+    pub gpt_sovits_fragment_interval: f32,
+    #[serde(default = "default_gpt_sovits_seed")]
+    pub gpt_sovits_seed: i32,
+    #[serde(default = "default_true")]
+    pub gpt_sovits_parallel_infer: bool,
+    #[serde(default = "default_gpt_sovits_repetition_penalty")]
+    pub gpt_sovits_repetition_penalty: f32,
+    #[serde(default = "default_gpt_sovits_sample_steps")]
+    pub gpt_sovits_sample_steps: u32,
+    #[serde(default)]
+    pub gpt_sovits_super_sampling: bool,
+    #[serde(default = "default_gpt_sovits_overlap_length")]
+    pub gpt_sovits_overlap_length: u32,
+    #[serde(default = "default_gpt_sovits_min_chunk_length")]
+    pub gpt_sovits_min_chunk_length: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -348,7 +412,7 @@ impl ServerConfig {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let config_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
 
-        let content = std::fs::read_to_string(path)?;
+        let content = load_config_with_fragments(&canonical)?;
         let mut config: ServerConfig = toml::from_str(&content)?;
         config.config_dir = config_dir;
 
@@ -411,5 +475,88 @@ impl ServerConfig {
         // Fall back to the first candidate even if it doesn't exist,
         // so the error message is clear.
         candidates[0].clone()
+    }
+}
+
+fn load_config_with_fragments(path: &Path) -> anyhow::Result<String> {
+    let mut content = std::fs::read_to_string(path)?;
+    for fragment in config_fragments(path)? {
+        content.push_str("\n\n");
+        content.push_str(&std::fs::read_to_string(&fragment)?);
+    }
+    Ok(content)
+}
+
+fn config_fragments(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let fragment_dir = path.with_extension("d");
+    let mut fragments = Vec::new();
+    collect_toml_fragments(&fragment_dir, &mut fragments)?;
+    fragments.sort();
+    Ok(fragments)
+}
+
+fn collect_toml_fragments(dir: &Path, fragments: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_toml_fragments(&path, fragments)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("toml") {
+            fragments.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loads_config_fragments_recursively_in_sorted_order() {
+        let root = std::env::temp_dir().join(format!(
+            "alia-config-fragments-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config_path = root.join("server.toml");
+        let fragment_dir = root.join("server.d");
+        let nested_dir = fragment_dir.join("plugins");
+
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        std::fs::write(&config_path, "base = true\n").unwrap();
+        std::fs::write(fragment_dir.join("20-second.toml"), "second = true\n").unwrap();
+        std::fs::write(fragment_dir.join("10-first.toml"), "first = true\n").unwrap();
+        std::fs::write(nested_dir.join("30-plugin.toml"), "plugin = true\n").unwrap();
+        std::fs::write(fragment_dir.join("ignore.md"), "ignored = true\n").unwrap();
+
+        let loaded = load_config_with_fragments(&config_path).unwrap();
+        assert!(loaded.contains("base = true"));
+        assert!(loaded.contains("first = true"));
+        assert!(loaded.contains("second = true"));
+        assert!(loaded.contains("plugin = true"));
+        assert!(!loaded.contains("ignored = true"));
+        assert!(loaded.find("first = true") < loaded.find("second = true"));
+        assert!(loaded.find("second = true") < loaded.find("plugin = true"));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parses_split_example_config() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
+
+        assert_eq!(config.modules.llm, "openai");
+        assert_eq!(config.llm.adapter, "openai");
+        assert_eq!(config.stt.adapter, "whisper_cpp");
+        assert_eq!(config.tts.adapter, "gpt_sovits");
+        assert_eq!(config.conversation.max_context_messages, 20);
     }
 }

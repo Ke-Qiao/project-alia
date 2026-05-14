@@ -26,8 +26,13 @@ Copy the example and edit:
 ```bash
 # From workspace root
 cp config/server.example.toml config/server.toml
-# Edit config/server.toml with your settings (API keys, DB URL, etc.)
+cp -R config/server.example.d config/server.d
+# Edit config/server.toml and config/server.d/*.toml with your settings.
 ```
+
+`server.toml` is the base config. Files under `server.d/**/*.toml` are loaded
+recursively in sorted order, which keeps LLM, STT/TTS, memory, and future plugin
+settings out of one monolithic file.
 
 The `mise.toml` at the workspace root automatically sets `ALIA_CONFIG_PATH=config/server.toml`.
 To override manually:

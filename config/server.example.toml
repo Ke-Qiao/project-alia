@@ -6,8 +6,10 @@
 #   3. ~/.config/alia/server.toml  (XDG / macOS Library)
 #   4. /etc/alia/server.toml
 #
-# Relative paths in this file (e.g. skills_dir) are resolved relative
-# to this config file's directory, NOT the working directory.
+# This base file is loaded first, then fragments from ./server.example.d/**/*.toml
+# are loaded in sorted order. For a runtime config named server.toml, fragments
+# live in ./server.d/**/*.toml. Relative paths are resolved from the base config
+# file's directory, NOT the working directory.
 # ─────────────────────────────────────────────────────────────────────
 
 [server]
@@ -56,70 +58,6 @@ router = "multi_layer"
 rule_engine = "simple"
 scheduler = "cron"
 tools = "builtin"
-
-[llm]
-adapter = "openai"
-openai_api_key = ""
-openai_model = "qwen2.5-7b-instruct"
-openai_base_url = "http://127.0.0.1:1234/v1"
-ollama_endpoint = "http://localhost:11434"
-ollama_model = "qwen2.5:7b"
-
-[router]
-model = "qwen3:4b"
-temperature = 0.1
-timeout_sec = 5
-local_llm_enabled = true
-remote_llm_enabled = true
-
-[embedding]
-adapter = "ollama"
-ollama_endpoint = "http://localhost:11434"
-ollama_model = "bge-m3"
-openai_model = "text-embedding-3-small"
-
-[stt]
-adapter = "whisper_cpp"
-whisper_cpp_endpoint = "http://localhost:8080"
-whisper_cpp_model = "large-v3"
-
-[tts]
-adapter = "gpt_sovits"
-gpt_sovits_endpoint = "http://localhost:9880/tts"
-gpt_sovits_ref_audio_path = ""
-gpt_sovits_prompt_text = ""
-gpt_sovits_language = "zh"
-
-[conversation]
-max_context_messages = 20
-streaming_enabled = true
-
-[memory]
-enabled = true
-epidosic_ttl_days = 90
-max_core_memories = 500
-max_retrieval_results = 10
-similarity_threshold = 0.75
-graph_community_algorithm = "leiden"
-
-[cache]
-enabled = true
-exact_match_enabled = true
-semantic_match_enabled = true
-semantic_threshold = 0.92
-default_ttl_seconds = 3600
-skill_cache_ttl_seconds = 300
-
-[meditation]
-enabled = true
-extraction_enabled = true
-consolidation_idle_minutes = 30
-reflection_schedule = "0 3 * * *"
-habit_detection_schedule = "0 4 * * *"
-memory_threshold = 50
-max_concurrent_meditations = 1
-presence_sensor_id = "presence"
-conditions = []
 
 [skills]
 # Directory containing .md skill definition files (TOML frontmatter).

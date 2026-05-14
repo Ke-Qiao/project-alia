@@ -1,0 +1,20 @@
+[llm]
+adapter = "openai"
+openai_api_key = "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"
+openai_model = "google/gemini-3.1-flash-lite"
+openai_base_url = "https://openrouter.ai/api/v1"
+ollama_endpoint = "http://localhost:11434"
+ollama_model = "qwen2.5:7b"
+
+[router]
+model = "qwen3:4b"
+temperature = 0.1
+timeout_sec = 5
+local_llm_enabled = false
+remote_llm_enabled = true
+
+[embedding]
+adapter = "ollama"
+ollama_endpoint = "http://localhost:11434"
+ollama_model = "bge-m3"
+openai_model = "text-embedding-3-small"
