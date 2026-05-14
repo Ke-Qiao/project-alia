@@ -116,6 +116,13 @@ impl ChannelConfig {
             ChannelConfig::Cli { enabled, .. } => *enabled,
         }
     }
+
+    pub fn channel_type(&self) -> &'static str {
+        match self {
+            ChannelConfig::Embedded { .. } => "embedded",
+            ChannelConfig::Cli { .. } => "cli",
+        }
+    }
 }
 
 fn default_reconnect_interval() -> u64 {

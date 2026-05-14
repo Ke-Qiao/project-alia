@@ -11,6 +11,7 @@ use sea_orm::{
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
+use tracing_subscriber::filter::ParseError;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
@@ -25,10 +26,9 @@ use alia_server::{api, openapi, ws};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize tracing
-    let default_filter = "info,sqlx::query=warn,sqlx::postgres::notice=warn";
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter)))
+        .with(default_env_filter()?)
         .init();
 
     // 2. Check if we need OOBE setup
@@ -59,6 +59,13 @@ async fn main() -> anyhow::Result<()> {
     );
 
     run_server(config).await
+}
+
+fn default_env_filter() -> Result<EnvFilter, ParseError> {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    Ok(filter
+        .add_directive("sqlx::query=warn".parse()?)
+        .add_directive("sqlx::postgres::notice=warn".parse()?))
 }
 
 /// OOBE flow: start a minimal setup server and CLI listener.

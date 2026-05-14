@@ -343,26 +343,19 @@ impl ServerBuilder {
         for channel in channel_registry.list().await {
             let channel_id = channel.channel_id().to_string();
             if let Err(error) = channel.start().await {
+                let reason = error.to_string();
                 tracing::warn!(
                     channel_type = channel.channel_type(),
                     channel_id = %channel_id,
                     error = ?error,
                     "channel start failed; channel disabled"
                 );
-                if let Err(stop_error) = channel.stop().await {
+                if let Err(disable_error) = channel_registry.disable(&channel_id, reason).await {
                     tracing::warn!(
                         channel_type = channel.channel_type(),
                         channel_id = %channel_id,
-                        error = ?stop_error,
-                        "failed to stop disabled channel"
-                    );
-                }
-                if let Err(unregister_error) = channel_registry.unregister(&channel_id).await {
-                    tracing::warn!(
-                        channel_type = channel.channel_type(),
-                        channel_id = %channel_id,
-                        error = ?unregister_error,
-                        "failed to unregister disabled channel"
+                        error = ?disable_error,
+                        "failed to disable channel"
                     );
                 }
                 continue;
@@ -446,22 +439,30 @@ async fn register_initialized_channel(
     let channel_id = channel.channel_id().to_string();
 
     if let Err(error) = channel.init(ctx).await {
+        let reason = error.to_string();
         tracing::warn!(
             channel_type,
             channel_id = %channel_id,
             error = ?error,
             "channel init failed; channel disabled"
         );
+        channel_registry
+            .mark_disabled(&channel_id, channel_type, reason)
+            .await;
         return;
     }
 
     let channel: Arc<dyn ChannelAdapter> = Arc::from(channel);
     if let Err(error) = channel_registry.register(channel).await {
+        let reason = error.to_string();
         tracing::warn!(
             channel_type,
             channel_id = %channel_id,
             error = ?error,
             "channel registration failed; channel disabled"
         );
+        channel_registry
+            .mark_disabled(&channel_id, channel_type, reason)
+            .await;
     }
 }

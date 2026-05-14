@@ -21,6 +21,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 use crate::module::EmbeddedBuilder;
 
@@ -28,10 +29,7 @@ use crate::module::EmbeddedBuilder;
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
+        .with_env_filter(default_env_filter())
         .init();
 
     info!("alia-embedded starting");
@@ -81,6 +79,12 @@ async fn main() -> Result<()> {
     node.run().await?;
 
     Ok(())
+}
+
+fn default_env_filter() -> EnvFilter {
+    EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .add_directive("sqlx::query=warn".parse().expect("valid sqlx query filter"))
 }
 
 fn derived_device_id(public_key: &[u8; 32]) -> String {

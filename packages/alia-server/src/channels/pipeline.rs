@@ -59,6 +59,7 @@ pub fn spawn_pipeline(
                 result = rx.recv() => {
                     match result {
                         Ok(ServerEvent::ChannelInput(event)) => {
+                            let channel_id = channel_event_id(&event).map(ToOwned::to_owned);
                             let modules = modules.clone();
                             let channels = channels.clone();
                             let sensors = sensors.clone();
@@ -67,6 +68,9 @@ pub fn spawn_pipeline(
                             tokio::spawn(async move {
                                 if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus).await {
                                     tracing::error!(error = ?e, "pipeline processing failed");
+                                    if let Some(channel_id) = channel_id {
+                                        disable_channel_by_id(&channels, &channel_id, e).await;
+                                    }
                                 }
                             });
                         }
@@ -204,6 +208,15 @@ async fn process_event(
             Ok(())
         }
         ChannelEvent::StatusChange { .. } => Ok(()),
+    }
+}
+
+fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
+    match event {
+        ChannelEvent::TextMessage { channel_id, .. }
+        | ChannelEvent::AudioInput { channel_id, .. }
+        | ChannelEvent::SensorData { channel_id, .. }
+        | ChannelEvent::StatusChange { channel_id, .. } => Some(channel_id),
     }
 }
 
@@ -446,21 +459,25 @@ async fn disable_channel_after_failure(
         "channel delivery failed; disabling channel"
     );
 
-    if let Err(stop_error) = channel.stop().await {
-        tracing::warn!(
-            channel_type,
-            channel_id = %channel_id,
-            error = ?stop_error,
-            "failed to stop disabled channel"
-        );
-    }
-
-    if let Err(unregister_error) = channels.unregister(&channel_id).await {
+    if let Err(unregister_error) = channels.disable(&channel_id, error.to_string()).await {
         tracing::warn!(
             channel_type,
             channel_id = %channel_id,
             error = ?unregister_error,
-            "failed to unregister disabled channel"
+            "failed to disable channel"
         );
     }
+}
+
+async fn disable_channel_by_id(channels: &ChannelRegistry, channel_id: &str, error: anyhow::Error) {
+    if let Some(channel) = channels.get(channel_id).await {
+        disable_channel_after_failure(channels, channel.as_ref(), error).await;
+        return;
+    }
+
+    tracing::warn!(
+        channel_id,
+        error = ?error,
+        "pipeline failed for channel, but channel was already unavailable"
+    );
 }
