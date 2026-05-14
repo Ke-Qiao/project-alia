@@ -698,6 +698,8 @@ where
         let converter = lock_mutex(&converter, "capture converter")?;
         converter.target_channels
     };
+    let level_peak = Arc::new(AtomicU64::new(0));
+    let silence_warned = Arc::new(AtomicBool::new(false));
     device
         .build_input_stream(
             config,
@@ -714,6 +716,26 @@ where
                 }
                 let frames = (pcm.len() / channels.max(1)) as u64;
                 let start_frame = emitted_frames.fetch_add(frames, Ordering::Relaxed);
+                let peak = pcm
+                    .iter()
+                    .map(|sample| sample.unsigned_abs() as u64)
+                    .max()
+                    .unwrap_or(0);
+                level_peak.fetch_max(peak, Ordering::Relaxed);
+                let end_frame = start_frame.saturating_add(frames);
+                if end_frame >= sample_rate as u64 * 5
+                    && !silence_warned.swap(true, Ordering::Relaxed)
+                {
+                    let peak = level_peak.load(Ordering::Relaxed);
+                    if peak < 256 {
+                        warn!(
+                            peak,
+                            "microphone input appears silent; check macOS microphone permission and selected input device"
+                        );
+                    } else {
+                        debug!(peak, "microphone input level observed");
+                    }
+                }
                 bus.publish(AudioFrame {
                     pcm,
                     sample_rate,

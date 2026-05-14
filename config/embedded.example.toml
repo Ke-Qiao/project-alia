@@ -31,8 +31,7 @@ upload_buffer_frames = 5
 jitter_buffer_ms = 60
 
 [direct_response_defaults]
-audio_dir = "../run/direct-responses"
-default_wakeword_response_content = "Hello! How can I help you?"
+audio_dir = "run/direct_response"
 
 [discovery]
 mdns_enabled = true

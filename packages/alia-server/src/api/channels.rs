@@ -7,7 +7,6 @@ use serde::Serialize;
 
 use crate::auth::AuthUser;
 use crate::channels::adapter::ChannelAdapter;
-use crate::channels::ensure_default_wakeword_response;
 use crate::channels::registry::DisabledChannelInfo;
 use crate::error::{AppError, Result};
 use crate::module::factory;
@@ -120,9 +119,6 @@ async fn restart_channel(
         return Err(AppError::AiService(format!(
             "channel '{channel_id}' start failed: {error}"
         )));
-    }
-    if channel.channel_type() == "embedded" {
-        ensure_default_wakeword_response(channel.as_ref(), state.modules.tts.as_ref()).await;
     }
 
     Ok(Json(RestartChannelResponse {

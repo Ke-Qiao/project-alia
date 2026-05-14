@@ -73,7 +73,7 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.wakeword.keywords_file);
     resolve_relative(parent, &mut config.edge_stt.model_path);
     resolve_relative(parent, &mut config.edge_stt.tokens_path);
-    resolve_relative(parent, &mut config.direct_response_defaults.audio_dir);
+    resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
 
     for response in &mut config.direct_response {
         resolve_relative(parent, &mut response.audio);
@@ -87,6 +87,26 @@ fn resolve_relative(base: &Path, path: &mut std::path::PathBuf) {
     if path.is_relative() {
         *path = base.join(&path);
     }
+}
+
+fn resolve_runtime_relative(path: &mut PathBuf) {
+    if path.is_relative() {
+        *path = normalize_relative_components(path);
+    }
+}
+
+fn normalize_relative_components(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
 }
 
 fn normalize_config_path_for_cwd(path: PathBuf, cwd: &Path) -> PathBuf {
@@ -108,7 +128,14 @@ fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSe
         return;
     };
     relativize_path(base, &mut settings.identity.keypair_path);
-    relativize_path(base, &mut settings.direct_response_defaults.audio_dir);
+    normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);
+}
+
+fn normalize_runtime_path_for_settings(path: &mut PathBuf) {
+    if path.is_absolute() {
+        return;
+    }
+    *path = normalize_relative_components(path);
 }
 
 fn relativize_path(base: &Path, path: &mut PathBuf) {
@@ -161,5 +188,18 @@ mod tests {
         relativize_runtime_paths(Path::new("config/embedded.toml"), &mut settings);
 
         assert_eq!(settings.identity.keypair_path, PathBuf::from("device.key"));
+    }
+
+    #[test]
+    fn keeps_runtime_asset_dirs_relative_to_runtime_root() {
+        let mut settings = EmbeddedRuntimeSettings::default();
+        settings.direct_response_defaults.audio_dir = PathBuf::from("run/direct_response");
+
+        relativize_runtime_paths(Path::new("config/embedded.toml"), &mut settings);
+
+        assert_eq!(
+            settings.direct_response_defaults.audio_dir,
+            PathBuf::from("run/direct_response")
+        );
     }
 }

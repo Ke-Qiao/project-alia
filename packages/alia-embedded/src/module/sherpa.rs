@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail};
@@ -29,6 +31,7 @@ impl SherpaOnnxKws {
         validate_file(&config.joiner_path, "wakeword joiner")?;
         validate_file(&config.tokens_path, "wakeword tokens")?;
         validate_file(&config.keywords_file, "wakeword keywords")?;
+        warn_if_keywords_look_unconverted(&config.keywords_file, &config.tokens_path);
 
         let mut kws_config = KeywordSpotterConfig::default();
         kws_config.model_config.transducer.encoder =
@@ -47,6 +50,13 @@ impl SherpaOnnxKws {
         let spotter = KeywordSpotter::create(&kws_config)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx keyword spotter"))?;
         let stream = spotter.create_stream();
+        tracing::info!(
+            keywords_file = %config.keywords_file.display(),
+            threshold = kws_config.keywords_threshold,
+            score = kws_config.keywords_score,
+            provider = %config.provider,
+            "created sherpa-onnx keyword spotter"
+        );
 
         Ok(Self {
             state: Mutex::new(KwsState { spotter, stream }),
@@ -188,7 +198,7 @@ fn timestamp_us() -> u64 {
         .as_micros() as u64
 }
 
-fn validate_file(path: &std::path::Path, label: &str) -> Result<()> {
+fn validate_file(path: &Path, label: &str) -> Result<()> {
     if path.is_file() {
         return Ok(());
     }
@@ -197,4 +207,60 @@ fn validate_file(path: &std::path::Path, label: &str) -> Result<()> {
         "{label} file does not exist: {}. Run scripts/download-sherpa-models.sh from the project root, or update the embedded model paths in config/embedded.toml.",
         path.display()
     )
+}
+
+fn warn_if_keywords_look_unconverted(keywords_file: &Path, tokens_file: &Path) {
+    let tokens = match std::fs::read_to_string(tokens_file) {
+        Ok(content) => content
+            .lines()
+            .filter_map(|line| line.split_once(' ').map(|(token, _)| token.to_string()))
+            .collect::<HashSet<_>>(),
+        Err(error) => {
+            tracing::warn!(
+                error = ?error,
+                tokens_file = %tokens_file.display(),
+                "failed to validate sherpa keyword tokens"
+            );
+            return;
+        }
+    };
+
+    let content = match std::fs::read_to_string(keywords_file) {
+        Ok(content) => content,
+        Err(error) => {
+            tracing::warn!(
+                error = ?error,
+                keywords_file = %keywords_file.display(),
+                "failed to validate sherpa keyword file"
+            );
+            return;
+        }
+    };
+
+    for (line_index, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((token_part, _label)) = line.rsplit_once('@') else {
+            tracing::warn!(
+                keywords_file = %keywords_file.display(),
+                line = line_index + 1,
+                "sherpa keyword line has no @label"
+            );
+            continue;
+        };
+
+        let unknown = token_part
+            .split_whitespace()
+            .find(|token| !tokens.contains(*token));
+        if let Some(token) = unknown {
+            tracing::warn!(
+                keywords_file = %keywords_file.display(),
+                line = line_index + 1,
+                token,
+                "sherpa keyword line contains a token not present in tokens.txt; regenerate keywords.txt"
+            );
+        }
+    }
 }

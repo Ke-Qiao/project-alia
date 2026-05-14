@@ -1000,6 +1000,11 @@ fn direct_response_rule_from_json(
             .get("id")
             .and_then(serde_json::Value::as_i64)
             .unwrap_or(0),
+        slug: value
+            .get("slug")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         keywords,
         audio_path,
         action: value
@@ -1031,6 +1036,7 @@ fn direct_response_rule_to_json(
 
     serde_json::json!({
         "id": rule.id,
+        "slug": rule.slug,
         "keywords": rule.keywords,
         "audio_path": rule.audio_path,
         "audio_variants": audio_variants,

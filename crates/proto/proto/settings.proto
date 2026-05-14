@@ -30,6 +30,7 @@ message DirectResponseRule {
   string action = 4;
   bool enabled = 5;
   repeated DirectResponseAudioVariant audio_variants = 6;
+  string slug = 7;
 }
 
 message DirectResponseAudioVariant {

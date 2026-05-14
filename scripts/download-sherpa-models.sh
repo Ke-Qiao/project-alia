@@ -44,6 +44,12 @@ link_or_copy() {
 
 mkdir -p "$MODELS_DIR" "$DOWNLOAD_DIR"
 
+KEYWORDS_RAW_BACKUP=""
+if [[ -f "$KWS_TARGET/keywords_raw.txt" ]]; then
+  KEYWORDS_RAW_BACKUP="$(mktemp)"
+  cp "$KWS_TARGET/keywords_raw.txt" "$KEYWORDS_RAW_BACKUP"
+fi
+
 KWS_ARCHIVE="$DOWNLOAD_DIR/${KWS_NAME}.tar.bz2"
 SENSE_ARCHIVE="$DOWNLOAD_DIR/${SENSE_NAME}.tar.bz2"
 
@@ -65,25 +71,62 @@ link_or_copy "$MODELS_DIR/$KWS_NAME/joiner-epoch-13-avg-2-chunk-8-left-64.int8.o
 cp "$MODELS_DIR/$SENSE_NAME/model.int8.onnx" "$SENSE_TARGET/model.int8.onnx"
 cp "$MODELS_DIR/$SENSE_NAME/tokens.txt" "$SENSE_TARGET/tokens.txt"
 
-cat > "$KWS_TARGET/keywords_raw.txt" <<'EOF'
+if [[ -n "$KEYWORDS_RAW_BACKUP" && -f "$KEYWORDS_RAW_BACKUP" ]]; then
+  cp "$KEYWORDS_RAW_BACKUP" "$KWS_TARGET/keywords_raw.txt"
+  rm -f "$KEYWORDS_RAW_BACKUP"
+else
+  cat > "$KWS_TARGET/keywords_raw.txt" <<'EOF'
 HEY ALIA @HEY_ALIA
 你好阿利亚 @你好阿利亚
 EOF
+fi
 
-if command -v sherpa-onnx-cli >/dev/null 2>&1; then
-  sherpa-onnx-cli text2token \
-    --tokens "$KWS_TARGET/tokens.txt" \
-    --tokens-type phone+ppinyin \
-    --lexicon "$KWS_TARGET/en.phone" \
-    "$KWS_TARGET/keywords_raw.txt" \
-    "$KWS_TARGET/keywords.txt"
-  echo "Generated $KWS_TARGET/keywords.txt"
-else
-  cp "$MODELS_DIR/$KWS_NAME/test_wavs/keywords.txt" "$KWS_TARGET/keywords.txt"
+validate_keywords() {
+  local tokens_file="$1"
+  local keywords_file="$2"
+  awk '
+    FNR == NR {
+      known[$1] = 1
+      next
+    }
+    /^[[:space:]]*$/ { next }
+    {
+      label_index = 0
+      for (i = 1; i <= NF; i++) {
+        if (substr($i, 1, 1) == "@") {
+          label_index = i
+          break
+        }
+      }
+      if (label_index == 0) {
+        printf("line %d has no @label: %s\n", FNR, $0) > "/dev/stderr"
+        bad = 1
+        next
+      }
+      for (i = 1; i < label_index; i++) {
+        if (!($i in known)) {
+          printf("line %d token %s is not in tokens.txt: %s\n", FNR, $i, $0) > "/dev/stderr"
+          bad = 1
+        }
+      }
+    }
+    END { exit bad ? 1 : 0 }
+  ' "$tokens_file" "$keywords_file"
+}
+
+if ! command -v sherpa-onnx-cli >/dev/null 2>&1; then
   cat >&2 <<EOF
-warning: sherpa-onnx-cli was not found, so the sample upstream keywords.txt was copied.
-Install sherpa-onnx-cli and regenerate project keywords with:
+error: sherpa-onnx-cli was not found, so keywords.txt cannot be generated.
 
+Install/activate sherpa-onnx first, then rerun this script. Example:
+  python3 -m venv .venv-sherpa
+  source .venv-sherpa/bin/activate
+  python -m pip install --upgrade pip sherpa-onnx
+  ./scripts/download-sherpa-models.sh
+
+To customize wake words, edit:
+  $KWS_TARGET/keywords_raw.txt
+and regenerate with:
   sherpa-onnx-cli text2token \\
     --tokens "$KWS_TARGET/tokens.txt" \\
     --tokens-type phone+ppinyin \\
@@ -91,7 +134,18 @@ Install sherpa-onnx-cli and regenerate project keywords with:
     "$KWS_TARGET/keywords_raw.txt" \\
     "$KWS_TARGET/keywords.txt"
 EOF
+  exit 1
 fi
+
+sherpa-onnx-cli text2token \
+  --tokens "$KWS_TARGET/tokens.txt" \
+  --tokens-type phone+ppinyin \
+  --lexicon "$KWS_TARGET/en.phone" \
+  "$KWS_TARGET/keywords_raw.txt" \
+  "$KWS_TARGET/keywords.txt"
+
+validate_keywords "$KWS_TARGET/tokens.txt" "$KWS_TARGET/keywords.txt"
+echo "Generated $KWS_TARGET/keywords.txt from $KWS_TARGET/keywords_raw.txt"
 
 cat <<EOF
 

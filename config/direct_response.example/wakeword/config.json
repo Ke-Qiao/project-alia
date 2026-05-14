@@ -1,0 +1,19 @@
+{
+  "slug": "wakeword",
+  "keywords": [
+    "hey alia",
+    "你好阿利亚"
+  ],
+  "action": "wakeword",
+  "enabled": true,
+  "audio_variants": [
+    {
+      "audio": "hello.wav",
+      "weight": 1.0
+    },
+    {
+      "audio": "how-can-i-help.wav",
+      "weight": 0.35
+    }
+  ]
+}

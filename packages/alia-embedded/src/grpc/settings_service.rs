@@ -156,29 +156,16 @@ impl EmbeddedSettingsService {
         rule: DirectResponseRule,
     ) -> Result<DirectResponseRuleRecord, Status> {
         let snapshot = self.settings.snapshot(false).await;
-        let audio_dir = resolve_settings_path(
-            &snapshot.settings_path,
-            snapshot.settings.direct_response_defaults.audio_dir,
-        );
+        let audio_dir = snapshot.settings.direct_response_defaults.audio_dir;
         proto_to_record(rule, &audio_dir).await
     }
-}
-
-fn resolve_settings_path(settings_path: &str, path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        return path;
-    }
-
-    Path::new(settings_path)
-        .parent()
-        .map(|parent| parent.join(&path))
-        .unwrap_or(path)
 }
 
 async fn proto_to_record(
     rule: DirectResponseRule,
     audio_dir: &Path,
 ) -> Result<DirectResponseRuleRecord, Status> {
+    let slug = direct_response_slug(&rule);
     let keywords: Vec<String> = rule
         .keywords
         .into_iter()
@@ -190,7 +177,12 @@ async fn proto_to_record(
             "direct response requires at least one keyword",
         ));
     }
-    let audio_variants = write_audio_variants(rule.audio_variants, audio_dir).await?;
+    let variant_audio_dir = if slug.is_empty() {
+        audio_dir.to_path_buf()
+    } else {
+        audio_dir.join(&slug)
+    };
+    let audio_variants = write_audio_variants(rule.audio_variants, &variant_audio_dir).await?;
     let audio_path = if rule.audio_path.trim().is_empty() {
         audio_variants
             .first()
@@ -208,6 +200,7 @@ async fn proto_to_record(
 
     Ok(DirectResponseRuleRecord {
         id: rule.id,
+        slug,
         keywords,
         audio_path,
         audio_variants,
@@ -219,6 +212,7 @@ async fn proto_to_record(
 fn record_to_proto(record: DirectResponseRuleRecord) -> DirectResponseRule {
     DirectResponseRule {
         id: record.id,
+        slug: record.slug,
         keywords: record.keywords,
         audio_path: record.audio_path,
         action: record.action.unwrap_or_default(),
@@ -233,6 +227,43 @@ fn record_to_proto(record: DirectResponseRuleRecord) -> DirectResponseRule {
             })
             .collect(),
     }
+}
+
+fn direct_response_slug(rule: &DirectResponseRule) -> String {
+    let explicit = sanitize_slug(&rule.slug);
+    if !explicit.is_empty() {
+        return explicit;
+    }
+
+    let action = sanitize_slug(&rule.action);
+    if !action.is_empty() {
+        return action;
+    }
+
+    rule.keywords
+        .iter()
+        .map(|keyword| sanitize_slug(keyword))
+        .find(|slug| !slug.is_empty())
+        .unwrap_or_else(|| format!("direct-response-{}", Uuid::new_v4()))
+}
+
+fn sanitize_slug(input: &str) -> String {
+    input
+        .trim()
+        .chars()
+        .flat_map(char::to_lowercase)
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 async fn write_audio_variants(

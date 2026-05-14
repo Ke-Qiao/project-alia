@@ -400,6 +400,8 @@ pub struct ProcessConfig {
 /// Configuration for a direct (keyword → local audio) response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectResponseConfig {
+    #[serde(default)]
+    pub slug: String,
     pub keywords: Vec<String>,
     pub audio: PathBuf,
     #[serde(default)]
@@ -419,25 +421,18 @@ pub struct DirectResponseAudioConfig {
 pub struct DirectResponseDefaultsConfig {
     #[serde(default = "default_direct_response_audio_dir")]
     pub audio_dir: PathBuf,
-    #[serde(default = "default_wakeword_response_content")]
-    pub default_wakeword_response_content: String,
 }
 
 impl Default for DirectResponseDefaultsConfig {
     fn default() -> Self {
         Self {
             audio_dir: default_direct_response_audio_dir(),
-            default_wakeword_response_content: default_wakeword_response_content(),
         }
     }
 }
 
 fn default_direct_response_audio_dir() -> PathBuf {
-    PathBuf::from("../run/direct-responses")
-}
-
-fn default_wakeword_response_content() -> String {
-    "Hello! How can I help you?".to_string()
+    PathBuf::from("run/direct_response")
 }
 
 fn default_direct_response_weight() -> f32 {

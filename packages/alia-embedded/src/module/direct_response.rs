@@ -66,6 +66,18 @@ impl ModuleLifecycle for KeywordMatcher {
     }
 
     async fn init(&mut self, ctx: &super::context::ModuleContext) -> Result<()> {
+        if let Err(error) = ctx
+            .state_store
+            .import_direct_response_bundles(&ctx.config.direct_response_defaults.audio_dir)
+            .await
+        {
+            tracing::warn!(
+                error = ?error,
+                root = %ctx.config.direct_response_defaults.audio_dir.display(),
+                "direct response bundle import failed; continuing with existing SQLite rules"
+            );
+        }
+
         let stored_rules = ctx
             .state_store
             .load_direct_responses()
@@ -174,6 +186,7 @@ mod tests {
     #[test]
     fn matches_normalized_keyword() {
         let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: String::new(),
             keywords: vec!["现在几点".to_string(), "what time".to_string()],
             audio: PathBuf::from("assets/responses/time.wav"),
             audio_variants: Vec::new(),
@@ -188,6 +201,7 @@ mod tests {
     #[test]
     fn supports_weighted_audio_variants() {
         let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: String::new(),
             keywords: vec!["hello".to_string()],
             audio: PathBuf::from("fallback.wav"),
             audio_variants: vec![DirectResponseAudioConfig {
