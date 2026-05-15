@@ -17,6 +17,7 @@ id = "alia-main"
 host = "0.0.0.0"
 port = 3000
 log_level = "info"
+debug_output = false
 
 [database]
 url = "postgres://alia:alia_dev@localhost/alia?sslmode=disable"

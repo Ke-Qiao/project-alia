@@ -39,6 +39,8 @@ pub struct ServerSection {
     pub host: String,
     pub port: u16,
     pub log_level: String,
+    #[serde(default)]
+    pub debug_output: bool,
 }
 
 fn default_server_id() -> String {

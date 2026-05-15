@@ -25,23 +25,40 @@ use alia_server::{api, openapi, ws};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Initialize tracing
+    let needs_setup = oobe::bootstrap::needs_setup();
+    let config_path = ServerConfig::discover_config_path();
+    let preloaded_config = if needs_setup {
+        None
+    } else {
+        Some(
+            ServerConfig::load(Path::new(&config_path))
+                .context(format!("failed to load config from '{config_path}'"))?,
+        )
+    };
+
+    // 1. Initialize tracing. RUST_LOG still wins over server.log_level.
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(default_env_filter()?)
+        .with(default_env_filter(
+            preloaded_config
+                .as_ref()
+                .map(|config| config.server.log_level.as_str()),
+        )?)
         .init();
 
     // 2. Check if we need OOBE setup
-    if oobe::bootstrap::needs_setup() {
+    if needs_setup {
         run_oobe().await?;
         // After OOBE completes we restart into normal mode.
         // In production this would re-exec; for now just fall through.
     }
 
     // 3. Load configuration (now guaranteed to exist)
-    let config_path = ServerConfig::discover_config_path();
-    let config = ServerConfig::load(Path::new(&config_path))
-        .context(format!("failed to load config from '{config_path}'"))?;
+    let config = match preloaded_config {
+        Some(config) => config,
+        None => ServerConfig::load(Path::new(&config_path))
+            .context(format!("failed to load config from '{config_path}'"))?,
+    };
     let config = Arc::new(config);
     tracing::info!(path = %config_path, config_dir = %config.config_dir.display(), "configuration loaded");
 
@@ -61,8 +78,10 @@ async fn main() -> anyhow::Result<()> {
     run_server(config).await
 }
 
-fn default_env_filter() -> Result<EnvFilter, ParseError> {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+fn default_env_filter(config_log_level: Option<&str>) -> Result<EnvFilter, ParseError> {
+    let base_filter =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| config_log_level.unwrap_or("info").to_owned());
+    let filter = EnvFilter::new(base_filter);
     Ok(filter
         .add_directive("sqlx::query=warn".parse()?)
         .add_directive("sqlx::postgres::notice=warn".parse()?))

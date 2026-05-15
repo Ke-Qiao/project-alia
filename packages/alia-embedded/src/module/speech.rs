@@ -111,7 +111,8 @@ impl ModuleLifecycle for SpeechPipeline {
                         if let Some(event) = pending_wakeword.take() {
                             event_bus.publish(ModuleEvent::SpeechStart);
                             let vad_enabled = prepare_vad_for_capture(vad.as_ref());
-                            info!(
+                            info!("started post-wake speech capture");
+                            debug!(
                                 keyword = %event.keyword,
                                 vad_enabled,
                                 capture_ms = post_wake_capture_ms,
@@ -134,7 +135,8 @@ impl ModuleLifecycle for SpeechPipeline {
                                 match vad.accept(&frame.pcm, frame.sample_rate) {
                                     Ok(state) => active.observe_vad(state),
                                     Err(error) => {
-                                        warn!(error = ?error, "VAD failed during speech capture; falling back to fixed capture window");
+                                        warn!(error = %error, "VAD failed during speech capture; falling back to fixed capture window");
+                                        debug!(error = ?error, "VAD failure details");
                                         active.disable_vad();
                                     }
                                 }
@@ -144,9 +146,11 @@ impl ModuleLifecycle for SpeechPipeline {
                                 if vad.is_available()
                                     && let Err(error) = vad.reset()
                                 {
-                                    warn!(error = ?error, "failed to reset VAD after speech capture");
+                                    warn!(error = %error, "failed to reset VAD after speech capture");
+                                    debug!(error = ?error, "VAD reset failure details");
                                 }
-                                info!(
+                                info!("finished post-wake speech capture");
+                                debug!(
                                     reason = reason.as_str(),
                                     duration_ms = finished.duration_ms(),
                                     samples = finished.pcm.len(),
@@ -168,10 +172,11 @@ impl ModuleLifecycle for SpeechPipeline {
                         }
 
                         if let Some(event) = wakeword.detect(&frame.pcm) {
-                            info!(
+                            info!("wakeword detected");
+                            debug!(
                                 keyword = %event.keyword,
                                 confidence = event.confidence,
-                                "wakeword detected"
+                                "wakeword detection details"
                             );
                             event_bus.publish(ModuleEvent::WakeWordDetected {
                                 keyword: event.keyword.clone(),
@@ -335,7 +340,8 @@ fn prepare_vad_for_capture(vad: &dyn VoiceActivityEngine) -> bool {
     match vad.reset() {
         Ok(()) => true,
         Err(error) => {
-            warn!(error = ?error, "failed to reset VAD before speech capture; using fixed capture window");
+            warn!(error = %error, "failed to reset VAD before speech capture; using fixed capture window");
+            debug!(error = ?error, "VAD reset failure details");
             false
         }
     }
@@ -359,7 +365,8 @@ async fn handle_utterance(
         .await
     {
         Ok(Some(text)) if !text.trim().is_empty() => {
-            info!(transcript = %text, "edge STT produced transcript");
+            info!("edge STT produced transcript");
+            debug!(transcript = %text, "edge STT transcript details");
             text
         }
         Ok(_) => {

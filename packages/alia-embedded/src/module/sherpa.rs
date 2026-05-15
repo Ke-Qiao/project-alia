@@ -53,12 +53,13 @@ impl SherpaOnnxKws {
         let spotter = KeywordSpotter::create(&kws_config)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx keyword spotter"))?;
         let stream = spotter.create_stream();
-        tracing::info!(
+        tracing::info!("created sherpa-onnx keyword spotter");
+        tracing::debug!(
             keywords_file = %config.keywords_file.display(),
             threshold = kws_config.keywords_threshold,
             score = kws_config.keywords_score,
             provider = %config.provider,
-            "created sherpa-onnx keyword spotter"
+            "sherpa-onnx keyword spotter details"
         );
 
         Ok(Self {
@@ -134,12 +135,13 @@ impl SherpaOnnxStt {
 
         let recognizer = OfflineRecognizer::create(&recognizer_config)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx offline recognizer"))?;
-        tracing::info!(
+        tracing::info!("created sherpa-onnx edge STT");
+        tracing::debug!(
             model = %config.model_path.display(),
             tokens = %config.tokens_path.display(),
             language = %config.language,
             provider = %config.provider,
-            "created sherpa-onnx edge STT"
+            "sherpa-onnx edge STT details"
         );
 
         Ok(Self {
@@ -239,13 +241,14 @@ impl SherpaOnnxVad {
 
         let detector = VoiceActivityDetector::create(&vad_config, config.buffer_size_sec)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx VAD"))?;
-        tracing::info!(
+        tracing::info!("created sherpa-onnx VAD");
+        tracing::debug!(
             model = %config.model_path.display(),
             sample_rate = config.sample_rate,
             threshold = config.threshold,
             min_silence_ms = config.min_silence_duration_ms,
             provider = %config.provider,
-            "created sherpa-onnx VAD"
+            "sherpa-onnx VAD details"
         );
 
         Ok(Self {

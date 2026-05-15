@@ -433,8 +433,13 @@ async fn init_embedded_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleCont
     if let Err(error) = module.init(ctx).await {
         warn!(
             module = name,
-            error = ?error,
+            error = %error,
             "embedded module init failed; continuing in degraded mode"
+        );
+        tracing::debug!(
+            module = name,
+            error = ?error,
+            "embedded module init failure details"
         );
     }
 }
@@ -444,8 +449,13 @@ async fn start_embedded_module(module: &dyn ModuleLifecycle) {
     if let Err(error) = module.start().await {
         warn!(
             module = name,
-            error = ?error,
+            error = %error,
             "embedded module start failed; continuing in degraded mode"
+        );
+        tracing::debug!(
+            module = name,
+            error = ?error,
+            "embedded module start failure details"
         );
     }
 }

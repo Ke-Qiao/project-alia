@@ -402,6 +402,7 @@ impl ServerBuilder {
             state.channels.clone(),
             state.sensors.clone(),
             state.cancel_token.clone(),
+            state.config.server.debug_output,
         );
 
         Ok(state)
@@ -413,8 +414,13 @@ async fn init_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
     if let Err(error) = module.init(ctx).await {
         tracing::warn!(
             module = name,
-            error = ?error,
+            error = %error,
             "module init failed; continuing in degraded mode"
+        );
+        tracing::debug!(
+            module = name,
+            error = ?error,
+            "module init failure details"
         );
     }
 }
@@ -424,8 +430,13 @@ async fn start_module(module: &dyn ModuleLifecycle) {
     if let Err(error) = module.start().await {
         tracing::warn!(
             module = name,
-            error = ?error,
+            error = %error,
             "module start failed; continuing in degraded mode"
+        );
+        tracing::debug!(
+            module = name,
+            error = ?error,
+            "module start failure details"
         );
     }
 }
