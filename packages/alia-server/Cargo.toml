@@ -10,6 +10,7 @@ default = [
     "stt-whisper", "tts-sovits",
     "embed-ollama", "memory-graphrag",
     "cache-semantic", "meditation",
+    "tools-http",
 ]
 
 # Channel adapters
@@ -26,6 +27,9 @@ tts-sovits = ["dep:reqwest"]
 # Embedding backends
 embed-ollama = ["dep:reqwest"]
 embed-openai = ["dep:reqwest"]
+
+# Built-in tools
+tools-http = ["dep:reqwest"]
 
 # Memory backend
 memory-graphrag = []

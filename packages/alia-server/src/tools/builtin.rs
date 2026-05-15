@@ -2,6 +2,8 @@
 //!
 //! ## Built-in Tools
 //! - `get_current_time`: Get current date/time in specified timezone
+//! - `fetch`: Fetch a public HTTP(S) URL and return bounded text content
+//! - `calculate`: Evaluate a basic arithmetic expression
 //! - `get_weather`: Get weather for a location (stub, requires plugin)
 //! - `memory_search`: Search user's memory graph
 //! - `memory_store`: Store information to memory
@@ -14,10 +16,16 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+#[cfg(feature = "tools-http")]
+use std::{net::IpAddr, time::Duration};
 
 use async_trait::async_trait;
 use chrono::Utc;
+#[cfg(feature = "tools-http")]
+use futures::StreamExt;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+#[cfg(feature = "tools-http")]
+use tokio::net::lookup_host;
 use uuid::Uuid;
 
 use crate::entity::tool;
@@ -26,6 +34,11 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
 use crate::providers::sensor::SensorRegistry;
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
+
+const FETCH_DEFAULT_MAX_BYTES: usize = 64 * 1024;
+const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
+const FETCH_DEFAULT_TIMEOUT_SEC: u64 = 10;
+const FETCH_HARD_TIMEOUT_SEC: u64 = 30;
 
 /// Trait for implementing tool executors
 #[async_trait]
@@ -78,6 +91,15 @@ impl BuiltinToolRegistry {
         // get_current_time
         self.builtins
             .insert("get_current_time".to_string(), Arc::new(GetCurrentTime));
+
+        // fetch
+        #[cfg(feature = "tools-http")]
+        self.builtins
+            .insert("fetch".to_string(), Arc::new(FetchUrl));
+
+        // calculate
+        self.builtins
+            .insert("calculate".to_string(), Arc::new(Calculate));
 
         // memory_search
         self.builtins
@@ -389,6 +411,190 @@ impl ToolExecutor for GetCurrentTime {
                 "timestamp": now.timestamp()
             }),
             display: Some(time_str),
+        })
+    }
+}
+
+/// Fetch a public HTTP(S) URL.
+#[cfg(feature = "tools-http")]
+pub struct FetchUrl;
+
+#[cfg(feature = "tools-http")]
+#[async_trait]
+impl ToolExecutor for FetchUrl {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "fetch".to_string(),
+            description: "Fetch a public HTTP(S) URL and return bounded response text. Local/private network addresses are blocked.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Public http:// or https:// URL to fetch"
+                    },
+                    "max_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": FETCH_HARD_MAX_BYTES,
+                        "description": "Maximum response bytes to read. Defaults to 65536 and is capped at 1048576."
+                    },
+                    "timeout_sec": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": FETCH_HARD_TIMEOUT_SEC,
+                        "description": "Request timeout in seconds. Defaults to 10 and is capped at 30."
+                    },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                        "description": "Optional request headers. Do not include secrets."
+                    }
+                },
+                "required": ["url"]
+            }),
+            source: "builtin".to_string(),
+            require_confirmation: false,
+            required_role: None,
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        _ctx: &ToolContext,
+    ) -> anyhow::Result<ToolResult> {
+        let raw_url = required_str(&arguments, "url")?;
+        let url = reqwest::Url::parse(raw_url)
+            .map_err(|error| anyhow::anyhow!("invalid url: {error}"))?;
+        validate_fetch_url(&url).await?;
+
+        let max_bytes = arguments
+            .get("max_bytes")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(FETCH_DEFAULT_MAX_BYTES as u64)
+            .clamp(1, FETCH_HARD_MAX_BYTES as u64) as usize;
+        let timeout_sec = arguments
+            .get("timeout_sec")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(FETCH_DEFAULT_TIMEOUT_SEC)
+            .clamp(1, FETCH_HARD_TIMEOUT_SEC);
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(timeout_sec))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("alia-server builtin fetch/0.1")
+            .build()?;
+        let mut request = client.get(url.clone());
+
+        if let Some(headers) = arguments
+            .get("headers")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, value) in headers {
+                let Some(value) = value.as_str() else {
+                    anyhow::bail!("header '{name}' must be a string");
+                };
+                request = request.header(name, value);
+            }
+        }
+
+        let response = request.send().await?;
+        let status = response.status();
+        let final_url = response.url().to_string();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        let mut bytes = Vec::with_capacity(max_bytes.min(8192));
+        let mut stream = response.bytes_stream();
+        let mut truncated = false;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            let remaining = max_bytes.saturating_sub(bytes.len());
+            if chunk.len() > remaining {
+                bytes.extend_from_slice(&chunk[..remaining]);
+                truncated = true;
+                break;
+            }
+            bytes.extend_from_slice(&chunk);
+            if bytes.len() >= max_bytes {
+                truncated = true;
+                break;
+            }
+        }
+
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        let display = if status.is_success() {
+            format!("Fetched {final_url} ({status}, {} bytes)", bytes.len())
+        } else {
+            format!("Fetched {final_url} with HTTP status {status}")
+        };
+
+        Ok(ToolResult {
+            call_id: String::new(),
+            success: status.is_success(),
+            output: serde_json::json!({
+                "url": raw_url,
+                "final_url": final_url,
+                "status": status.as_u16(),
+                "content_type": content_type,
+                "text": text,
+                "bytes_read": bytes.len(),
+                "truncated": truncated,
+            }),
+            display: Some(display),
+        })
+    }
+}
+
+/// Evaluate a basic arithmetic expression.
+pub struct Calculate;
+
+#[async_trait]
+impl ToolExecutor for Calculate {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "calculate".to_string(),
+            description:
+                "Evaluate a basic arithmetic expression using +, -, *, /, ^, and parentheses."
+                    .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "Arithmetic expression to evaluate, for example '(2 + 3) * 4'."
+                    }
+                },
+                "required": ["expression"]
+            }),
+            source: "builtin".to_string(),
+            require_confirmation: false,
+            required_role: None,
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        _ctx: &ToolContext,
+    ) -> anyhow::Result<ToolResult> {
+        let expression = required_str(&arguments, "expression")?;
+        let result = eval_arithmetic(expression)?;
+        let display = format_number(result);
+
+        Ok(ToolResult {
+            call_id: String::new(),
+            success: true,
+            output: serde_json::json!({
+                "expression": expression,
+                "result": result,
+                "display": display,
+            }),
+            display: Some(display),
         })
     }
 }
@@ -706,6 +912,260 @@ impl ToolExecutor for DeviceControl {
             }),
             display: Some(format!("Device {} action '{}' pending", device_id, action)),
         })
+    }
+}
+
+fn required_str<'a>(arguments: &'a serde_json::Value, name: &str) -> anyhow::Result<&'a str> {
+    arguments
+        .get(name)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{name} is required"))
+}
+
+#[cfg(feature = "tools-http")]
+async fn validate_fetch_url(url: &reqwest::Url) -> anyhow::Result<()> {
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            anyhow::bail!("unsupported url scheme '{scheme}'; only http and https are allowed")
+        }
+    }
+
+    if !url.username().is_empty() || url.password().is_some() {
+        anyhow::bail!("credentials in fetch URLs are not allowed");
+    }
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("url host is required"))?;
+    let normalized_host = host.trim_end_matches('.').to_ascii_lowercase();
+    if normalized_host == "localhost" || normalized_host.ends_with(".localhost") {
+        anyhow::bail!("localhost URLs are not allowed");
+    }
+    if let Ok(ip) = normalized_host.parse::<IpAddr>() {
+        ensure_public_ip(ip)?;
+        return Ok(());
+    }
+
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| anyhow::anyhow!("url port could not be inferred"))?;
+    let addresses = lookup_host((host, port)).await?;
+    let mut saw_address = false;
+    for address in addresses {
+        saw_address = true;
+        ensure_public_ip(address.ip())?;
+    }
+    if !saw_address {
+        anyhow::bail!("url host did not resolve");
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "tools-http")]
+fn ensure_public_ip(ip: IpAddr) -> anyhow::Result<()> {
+    let blocked = match ip {
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+                || ip.octets()[0] == 0
+        }
+        IpAddr::V6(ip) => {
+            ip.is_loopback()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+                || is_ipv6_unique_local(ip)
+                || is_ipv6_unicast_link_local(ip)
+        }
+    };
+
+    if blocked {
+        anyhow::bail!("fetch blocked non-public address {ip}");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "tools-http")]
+fn is_ipv6_unique_local(ip: std::net::Ipv6Addr) -> bool {
+    (ip.segments()[0] & 0xfe00) == 0xfc00
+}
+
+#[cfg(feature = "tools-http")]
+fn is_ipv6_unicast_link_local(ip: std::net::Ipv6Addr) -> bool {
+    (ip.segments()[0] & 0xffc0) == 0xfe80
+}
+
+fn eval_arithmetic(expression: &str) -> anyhow::Result<f64> {
+    let mut parser = ArithmeticParser::new(expression);
+    let value = parser.parse_expression()?;
+    parser.skip_whitespace();
+    if !parser.is_done() {
+        anyhow::bail!("unexpected token '{}'", parser.peek().unwrap_or('\0'));
+    }
+    if !value.is_finite() {
+        anyhow::bail!("calculation result is not finite");
+    }
+    Ok(value)
+}
+
+fn format_number(value: f64) -> String {
+    if (value.fract()).abs() < f64::EPSILON {
+        return format!("{value:.0}");
+    }
+    let formatted = format!("{value:.12}");
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
+
+struct ArithmeticParser {
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl ArithmeticParser {
+    fn new(input: &str) -> Self {
+        Self {
+            chars: input.chars().collect(),
+            pos: 0,
+        }
+    }
+
+    fn parse_expression(&mut self) -> anyhow::Result<f64> {
+        let mut value = self.parse_term()?;
+        loop {
+            self.skip_whitespace();
+            if self.consume('+') {
+                value += self.parse_term()?;
+            } else if self.consume('-') {
+                value -= self.parse_term()?;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_term(&mut self) -> anyhow::Result<f64> {
+        let mut value = self.parse_power()?;
+        loop {
+            self.skip_whitespace();
+            if self.consume('*') {
+                value *= self.parse_power()?;
+            } else if self.consume('/') {
+                let divisor = self.parse_power()?;
+                if divisor == 0.0 {
+                    anyhow::bail!("division by zero");
+                }
+                value /= divisor;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_power(&mut self) -> anyhow::Result<f64> {
+        let base = self.parse_unary()?;
+        self.skip_whitespace();
+        if self.consume('^') {
+            let exponent = self.parse_power()?;
+            return Ok(base.powf(exponent));
+        }
+        Ok(base)
+    }
+
+    fn parse_unary(&mut self) -> anyhow::Result<f64> {
+        self.skip_whitespace();
+        if self.consume('+') {
+            return self.parse_unary();
+        }
+        if self.consume('-') {
+            return Ok(-self.parse_unary()?);
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> anyhow::Result<f64> {
+        self.skip_whitespace();
+        if self.consume('(') {
+            let value = self.parse_expression()?;
+            self.skip_whitespace();
+            if !self.consume(')') {
+                anyhow::bail!("missing closing parenthesis");
+            }
+            return Ok(value);
+        }
+        self.parse_number()
+    }
+
+    fn parse_number(&mut self) -> anyhow::Result<f64> {
+        self.skip_whitespace();
+        let start = self.pos;
+        let mut has_digit = false;
+
+        while let Some(ch) = self.peek() {
+            if ch.is_ascii_digit() {
+                has_digit = true;
+                self.pos += 1;
+            } else if ch == '.' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+
+        if matches!(self.peek(), Some('e' | 'E')) {
+            self.pos += 1;
+            if matches!(self.peek(), Some('+' | '-')) {
+                self.pos += 1;
+            }
+            let exponent_start = self.pos;
+            while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
+                self.pos += 1;
+            }
+            if self.pos == exponent_start {
+                anyhow::bail!("invalid exponent");
+            }
+        }
+
+        if !has_digit {
+            anyhow::bail!("expected number");
+        }
+
+        self.chars[start..self.pos]
+            .iter()
+            .collect::<String>()
+            .parse::<f64>()
+            .map_err(|error| anyhow::anyhow!("invalid number: {error}"))
+    }
+
+    fn skip_whitespace(&mut self) {
+        while matches!(self.peek(), Some(ch) if ch.is_whitespace()) {
+            self.pos += 1;
+        }
+    }
+
+    fn consume(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.pos).copied()
+    }
+
+    fn is_done(&self) -> bool {
+        self.pos >= self.chars.len()
     }
 }
 

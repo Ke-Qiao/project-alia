@@ -1,6 +1,8 @@
-use alia_server::providers::adapter::{ToolCall, ToolContext, ToolDefinition};
+use alia_server::providers::adapter::{ToolContext, ToolDefinition};
+#[cfg(feature = "tools-http")]
+use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
-    GetCurrentTime, ToolExecutor, parse_openai_tool_call, to_openai_functions,
+    Calculate, GetCurrentTime, ToolExecutor, parse_openai_tool_call, to_openai_functions,
 };
 use uuid::Uuid;
 
@@ -21,6 +23,49 @@ async fn test_get_current_time() {
     assert!(result.success);
     assert!(result.output.get("datetime").is_some());
     assert!(result.output.get("timestamp").is_some());
+}
+
+#[tokio::test]
+async fn test_calculate_expression() {
+    let tool = Calculate;
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+    };
+
+    let result = tool
+        .execute(serde_json::json!({"expression": "(2 + 3) * 4 - 2^3"}), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.output["display"], "12");
+}
+
+#[tokio::test]
+async fn test_calculate_rejects_division_by_zero() {
+    let tool = Calculate;
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+    };
+
+    let result = tool
+        .execute(serde_json::json!({"expression": "1 / 0"}), &ctx)
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[cfg(feature = "tools-http")]
+#[test]
+fn test_fetch_definition() {
+    let definition = FetchUrl.definition();
+    assert_eq!(definition.name, "fetch");
+    assert!(!definition.require_confirmation);
+    assert_eq!(definition.parameters["required"][0], "url");
 }
 
 #[test]
