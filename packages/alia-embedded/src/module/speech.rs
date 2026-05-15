@@ -401,13 +401,20 @@ async fn play_direct_response(
     }
 
     match read_pcm16_wav(Path::new(&action.audio_path)).await {
-        Ok((pcm, sample_rate)) => {
+        Ok(wav) => {
+            info!(
+                audio = %action.audio_path,
+                source_sample_rate = wav.sample_rate,
+                source_channels = wav.source_channels,
+                pcm_samples = wav.pcm.len(),
+                "playing direct response audio"
+            );
             event_bus.publish(ModuleEvent::PlaybackStarted {
                 source: action.audio_path.clone(),
             });
-            if let Err(error) = playback.play(&pcm, sample_rate) {
+            if let Err(error) = playback.play(&wav.pcm, wav.sample_rate) {
                 warn!(error = %error, audio = %action.audio_path, "direct response playback failed");
-            } else if let Some(duration) = pcm_duration(&pcm, sample_rate) {
+            } else if let Some(duration) = pcm_duration(&wav.pcm, wav.sample_rate) {
                 tokio::time::sleep(duration).await;
             }
             event_bus.publish(ModuleEvent::PlaybackFinished {
@@ -525,14 +532,21 @@ fn timestamp_us() -> u64 {
         .as_micros() as u64
 }
 
-async fn read_pcm16_wav(path: &Path) -> Result<(Vec<i16>, u32)> {
+#[derive(Debug)]
+struct DecodedPcmWav {
+    pcm: Vec<i16>,
+    sample_rate: u32,
+    source_channels: u16,
+}
+
+async fn read_pcm16_wav(path: &Path) -> Result<DecodedPcmWav> {
     let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || read_pcm16_wav_blocking(&path))
         .await
         .context("joining WAV reader task")?
 }
 
-fn read_pcm16_wav_blocking(path: &Path) -> Result<(Vec<i16>, u32)> {
+fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
     let data = std::fs::read(path).with_context(|| format!("reading WAV: {}", path.display()))?;
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         bail!("{} is not a RIFF/WAVE file", path.display());
@@ -596,14 +610,22 @@ fn read_pcm16_wav_blocking(path: &Path) -> Result<(Vec<i16>, u32)> {
         .collect();
 
     if channels <= 1 {
-        return Ok((samples, sample_rate));
+        return Ok(DecodedPcmWav {
+            pcm: samples,
+            sample_rate,
+            source_channels: channels,
+        });
     }
 
     let mono = samples
         .chunks_exact(channels as usize)
         .map(|frame| frame[0])
         .collect();
-    Ok((mono, sample_rate))
+    Ok(DecodedPcmWav {
+        pcm: mono,
+        sample_rate,
+        source_channels: channels,
+    })
 }
 
 #[cfg(test)]
@@ -631,9 +653,10 @@ mod tests {
         bytes.extend_from_slice(&(-2i16).to_le_bytes());
         std::fs::write(&path, bytes).unwrap();
 
-        let (pcm, sample_rate) = read_pcm16_wav_blocking(&path).unwrap();
-        assert_eq!(sample_rate, 16_000);
-        assert_eq!(pcm, vec![1, -2]);
+        let wav = read_pcm16_wav_blocking(&path).unwrap();
+        assert_eq!(wav.sample_rate, 16_000);
+        assert_eq!(wav.source_channels, 1);
+        assert_eq!(wav.pcm, vec![1, -2]);
     }
 
     #[test]

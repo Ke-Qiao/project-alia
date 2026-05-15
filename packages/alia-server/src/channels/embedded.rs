@@ -451,24 +451,7 @@ impl ChannelAdapter for EmbeddedChannel {
             AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
         };
 
-        let audio = match audio.format {
-            AudioFormat::Wav => {
-                if let Some((pcm, sample_rate)) = pcm16_from_wav(&audio.data)? {
-                    AudioPayload {
-                        data: pcm16_to_le_bytes(&pcm),
-                        sample_rate,
-                        channels: 1,
-                        format: AudioFormat::Pcm16,
-                    }
-                } else {
-                    AudioPayload {
-                        format: AudioFormat::Pcm16,
-                        ..audio
-                    }
-                }
-            }
-            _ => audio,
-        };
+        let audio = normalize_embedded_playback_payload(audio)?;
 
         let request = PlayAudioRequest {
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -523,7 +506,7 @@ impl ChannelAdapter for EmbeddedChannel {
         let Some(first) = audio.next().await else {
             return Ok(());
         };
-        let first = first?;
+        let first = normalize_embedded_playback_payload(first?)?;
         let encoding = match first.format {
             AudioFormat::Opus => ProtoAudioEncoding::Opus as i32,
             AudioFormat::Pcm16 | AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
@@ -1048,7 +1031,12 @@ async fn produce_streaming_audio_chunks(
 
     process_stream_payload(first, &mut chunker, &mut wav_decoder).await?;
     while let Some(payload) = rest.next().await {
-        process_stream_payload(payload?, &mut chunker, &mut wav_decoder).await?;
+        process_stream_payload(
+            normalize_embedded_playback_payload(payload?)?,
+            &mut chunker,
+            &mut wav_decoder,
+        )
+        .await?;
     }
 
     chunker.flush().await
@@ -1320,6 +1308,36 @@ fn configure_audio_client(client: AudioStreamClient<Channel>) -> AudioStreamClie
         .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
 }
 
+fn normalize_embedded_playback_payload(audio: AudioPayload) -> anyhow::Result<AudioPayload> {
+    match audio.format {
+        AudioFormat::Wav => {
+            if let Some((pcm, sample_rate)) = pcm16_from_wav(&audio.data)? {
+                Ok(AudioPayload {
+                    data: pcm16_to_le_bytes(&pcm),
+                    sample_rate,
+                    channels: 1,
+                    format: AudioFormat::Pcm16,
+                })
+            } else {
+                Ok(AudioPayload {
+                    format: AudioFormat::Pcm16,
+                    ..audio
+                })
+            }
+        }
+        AudioFormat::Pcm16 if audio.channels > 1 => {
+            let pcm = pcm16le_bytes_to_samples(&audio.data)?;
+            let mono = downmix_pcm16(&pcm, audio.channels as usize);
+            Ok(AudioPayload {
+                data: pcm16_to_le_bytes(&mono),
+                channels: 1,
+                ..audio
+            })
+        }
+        _ => Ok(audio),
+    }
+}
+
 fn pcm16_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<i16>, u32)>> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Ok(None);
@@ -1390,4 +1408,54 @@ fn pcm16_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<i16>, u32)>> {
 
 fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
     pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect()
+}
+
+fn pcm16le_bytes_to_samples(bytes: &[u8]) -> anyhow::Result<Vec<i16>> {
+    if bytes.len() % 2 != 0 {
+        anyhow::bail!("PCM16LE byte payload must have even length");
+    }
+
+    Ok(bytes
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect())
+}
+
+fn downmix_pcm16(samples: &[i16], channels: usize) -> Vec<i16> {
+    if channels <= 1 {
+        return samples.to_vec();
+    }
+
+    samples
+        .chunks_exact(channels)
+        .map(|frame| {
+            let sum: i32 = frame.iter().map(|sample| i32::from(*sample)).sum();
+            (sum / frame.len() as i32) as i16
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_stereo_pcm16_payload_to_mono() {
+        let payload = AudioPayload {
+            data: pcm16_to_le_bytes(&[100, 300, -200, -400]),
+            sample_rate: 24_000,
+            channels: 2,
+            format: AudioFormat::Pcm16,
+        };
+
+        let normalized = normalize_embedded_playback_payload(payload).unwrap();
+
+        assert_eq!(normalized.sample_rate, 24_000);
+        assert_eq!(normalized.channels, 1);
+        assert_eq!(normalized.format, AudioFormat::Pcm16);
+        assert_eq!(
+            pcm16le_bytes_to_samples(&normalized.data).unwrap(),
+            vec![200, -300]
+        );
+    }
 }
