@@ -10,8 +10,12 @@ KWS_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/${KW
 SENSE_NAME="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09"
 SENSE_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${SENSE_NAME}.tar.bz2"
 
+VAD_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
+VAD_MODEL="silero_vad.onnx"
+
 KWS_TARGET="$MODELS_DIR/sherpa-kws"
 SENSE_TARGET="$MODELS_DIR/sense-voice"
+VAD_TARGET="$MODELS_DIR/silero-vad"
 DOWNLOAD_DIR="$MODELS_DIR/.downloads"
 
 fetch() {
@@ -52,15 +56,17 @@ fi
 
 KWS_ARCHIVE="$DOWNLOAD_DIR/${KWS_NAME}.tar.bz2"
 SENSE_ARCHIVE="$DOWNLOAD_DIR/${SENSE_NAME}.tar.bz2"
+VAD_DOWNLOAD="$DOWNLOAD_DIR/$VAD_MODEL"
 
 fetch "$KWS_URL" "$KWS_ARCHIVE"
 fetch "$SENSE_URL" "$SENSE_ARCHIVE"
+fetch "$VAD_URL" "$VAD_DOWNLOAD"
 
 extract "$KWS_ARCHIVE" "$MODELS_DIR/$KWS_NAME"
 extract "$SENSE_ARCHIVE" "$MODELS_DIR/$SENSE_NAME"
 
-rm -rf "$KWS_TARGET" "$SENSE_TARGET"
-mkdir -p "$KWS_TARGET" "$SENSE_TARGET"
+rm -rf "$KWS_TARGET" "$SENSE_TARGET" "$VAD_TARGET"
+mkdir -p "$KWS_TARGET" "$SENSE_TARGET" "$VAD_TARGET"
 
 cp "$MODELS_DIR/$KWS_NAME/tokens.txt" "$KWS_TARGET/tokens.txt"
 cp "$MODELS_DIR/$KWS_NAME/en.phone" "$KWS_TARGET/en.phone"
@@ -70,6 +76,7 @@ link_or_copy "$MODELS_DIR/$KWS_NAME/joiner-epoch-13-avg-2-chunk-8-left-64.int8.o
 
 cp "$MODELS_DIR/$SENSE_NAME/model.int8.onnx" "$SENSE_TARGET/model.int8.onnx"
 cp "$MODELS_DIR/$SENSE_NAME/tokens.txt" "$SENSE_TARGET/tokens.txt"
+cp "$VAD_DOWNLOAD" "$VAD_TARGET/$VAD_MODEL"
 
 if [[ -n "$KEYWORDS_RAW_BACKUP" && -f "$KEYWORDS_RAW_BACKUP" ]]; then
   cp "$KEYWORDS_RAW_BACKUP" "$KWS_TARGET/keywords_raw.txt"
@@ -152,8 +159,10 @@ cat <<EOF
 Sherpa-ONNX models are ready:
   KWS:        $KWS_TARGET
   SenseVoice: $SENSE_TARGET
+  VAD:        $VAD_TARGET
 
 These paths match alia-embedded defaults:
   models/sherpa-kws/{encoder.onnx,decoder.onnx,joiner.onnx,tokens.txt,keywords.txt}
   models/sense-voice/{model.int8.onnx,tokens.txt}
+  models/silero-vad/silero_vad.onnx
 EOF

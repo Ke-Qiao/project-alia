@@ -9,6 +9,8 @@ pub struct EmbeddedConfig {
     pub wakeword: WakewordConfig,
     #[serde(default)]
     pub edge_stt: EdgeSttConfig,
+    #[serde(default)]
+    pub vad: VadConfig,
     pub audio: AudioConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
@@ -44,6 +46,8 @@ pub struct ModulesConfig {
     pub wakeword: String,
     #[serde(default = "default_edge_stt_module")]
     pub edge_stt: String,
+    #[serde(default = "default_vad_module")]
+    pub vad: String,
     #[serde(default = "default_direct_response_module")]
     pub direct_response: String,
     #[serde(default = "default_audio_capture_module")]
@@ -63,6 +67,7 @@ impl Default for ModulesConfig {
         Self {
             wakeword: default_wakeword_module(),
             edge_stt: default_edge_stt_module(),
+            vad: default_vad_module(),
             direct_response: default_direct_response_module(),
             audio_capture: default_audio_capture_module(),
             audio_playback: default_audio_playback_module(),
@@ -77,6 +82,9 @@ fn default_wakeword_module() -> String {
     "sherpa_onnx".to_string()
 }
 fn default_edge_stt_module() -> String {
+    "sherpa_onnx".to_string()
+}
+fn default_vad_module() -> String {
     "sherpa_onnx".to_string()
 }
 fn default_direct_response_module() -> String {
@@ -202,6 +210,8 @@ pub struct EdgeSttConfig {
     pub max_duration_ms: u32,
     #[serde(default = "default_post_wake_capture_ms")]
     pub post_wake_capture_ms: u32,
+    #[serde(default = "default_post_wake_response_delay_ms")]
+    pub post_wake_response_delay_ms: u32,
     #[serde(default)]
     pub debug: bool,
 }
@@ -217,6 +227,7 @@ impl Default for EdgeSttConfig {
             use_itn: true,
             max_duration_ms: default_edge_stt_max_duration_ms(),
             post_wake_capture_ms: default_post_wake_capture_ms(),
+            post_wake_response_delay_ms: default_post_wake_response_delay_ms(),
             debug: false,
         }
     }
@@ -239,6 +250,81 @@ fn default_edge_stt_max_duration_ms() -> u32 {
 }
 fn default_post_wake_capture_ms() -> u32 {
     2_500
+}
+fn default_post_wake_response_delay_ms() -> u32 {
+    700
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VadConfig {
+    #[serde(default = "default_vad_model_path")]
+    pub model_path: PathBuf,
+    #[serde(default = "default_vad_sample_rate")]
+    pub sample_rate: u32,
+    #[serde(default = "default_vad_threshold")]
+    pub threshold: f32,
+    #[serde(default = "default_vad_min_silence_duration_ms")]
+    pub min_silence_duration_ms: u32,
+    #[serde(default = "default_vad_min_speech_duration_ms")]
+    pub min_speech_duration_ms: u32,
+    #[serde(default = "default_vad_window_size")]
+    pub window_size: i32,
+    #[serde(default = "default_vad_max_speech_duration_ms")]
+    pub max_speech_duration_ms: u32,
+    #[serde(default = "default_vad_buffer_size_sec")]
+    pub buffer_size_sec: f32,
+    #[serde(default = "default_sherpa_provider")]
+    pub provider: String,
+    #[serde(default = "default_vad_num_threads")]
+    pub num_threads: i32,
+    #[serde(default)]
+    pub debug: bool,
+}
+
+impl Default for VadConfig {
+    fn default() -> Self {
+        Self {
+            model_path: default_vad_model_path(),
+            sample_rate: default_vad_sample_rate(),
+            threshold: default_vad_threshold(),
+            min_silence_duration_ms: default_vad_min_silence_duration_ms(),
+            min_speech_duration_ms: default_vad_min_speech_duration_ms(),
+            window_size: default_vad_window_size(),
+            max_speech_duration_ms: default_vad_max_speech_duration_ms(),
+            buffer_size_sec: default_vad_buffer_size_sec(),
+            provider: default_sherpa_provider(),
+            num_threads: default_vad_num_threads(),
+            debug: false,
+        }
+    }
+}
+
+fn default_vad_model_path() -> PathBuf {
+    PathBuf::from("models/silero-vad/silero_vad.onnx")
+}
+fn default_vad_sample_rate() -> u32 {
+    16_000
+}
+fn default_vad_threshold() -> f32 {
+    0.5
+}
+fn default_vad_min_silence_duration_ms() -> u32 {
+    700
+}
+fn default_vad_min_speech_duration_ms() -> u32 {
+    250
+}
+fn default_vad_window_size() -> i32 {
+    512
+}
+fn default_vad_max_speech_duration_ms() -> u32 {
+    5_000
+}
+fn default_vad_buffer_size_sec() -> f32 {
+    10.0
+}
+fn default_vad_num_threads() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -454,6 +540,10 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
+    pub edge_stt: EdgeSttConfig,
+    #[serde(default)]
+    pub vad: VadConfig,
+    #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
@@ -468,6 +558,7 @@ impl Default for EmbeddedConfig {
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
             edge_stt: EdgeSttConfig::default(),
+            vad: VadConfig::default(),
             audio: AudioConfig::default(),
             discovery: DiscoveryConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
@@ -484,6 +575,8 @@ impl EmbeddedConfig {
     pub fn apply_runtime_settings(&mut self, runtime: EmbeddedRuntimeSettings) {
         self.identity = runtime.identity;
         self.audio = runtime.audio;
+        self.edge_stt = runtime.edge_stt;
+        self.vad = runtime.vad;
         self.discovery = runtime.discovery;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
@@ -497,6 +590,8 @@ impl EmbeddedConfig {
             },
             identity: self.identity.clone(),
             audio: self.audio.clone(),
+            edge_stt: self.edge_stt.clone(),
+            vad: self.vad.clone(),
             discovery: self.discovery.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),

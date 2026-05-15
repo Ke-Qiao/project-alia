@@ -12,7 +12,7 @@ use super::direct_response::KeywordMatcher;
 use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::noop::*;
 #[cfg(feature = "sherpa-onnx")]
-use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt};
+use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt, SherpaOnnxVad};
 use super::traits::*;
 
 /// Create the wake word engine based on config.
@@ -35,6 +35,15 @@ pub fn create_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>
         "sherpa_onnx" => create_sherpa_edge_stt(config),
         "noop" => Ok(Box::new(NoopEdgeStt)),
         other => bail!("unknown edge_stt engine: {other}"),
+    }
+}
+
+/// Create the voice activity detector based on config.
+pub fn create_vad(config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
+    match config.modules.vad.as_str() {
+        "sherpa_onnx" => create_sherpa_vad(config),
+        "noop" => Ok(Box::new(NoopVad)),
+        other => bail!("unknown vad engine: {other}"),
     }
 }
 
@@ -65,6 +74,16 @@ fn create_sherpa_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngi
 #[cfg(not(feature = "sherpa-onnx"))]
 fn create_sherpa_edge_stt(_config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
     bail!("module edge_stt='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
+}
+
+#[cfg(feature = "sherpa-onnx")]
+fn create_sherpa_vad(config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
+    Ok(Box::new(SherpaOnnxVad::new(&config.vad)?))
+}
+
+#[cfg(not(feature = "sherpa-onnx"))]
+fn create_sherpa_vad(_config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEngine>> {
+    bail!("module vad='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
 }
 
 /// Create the audio capture backend based on config.

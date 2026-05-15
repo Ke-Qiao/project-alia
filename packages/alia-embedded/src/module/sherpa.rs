@@ -5,14 +5,17 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, bail};
 use sherpa_onnx::{
     KeywordSpotter, KeywordSpotterConfig, OfflineRecognizer, OfflineRecognizerConfig,
-    OfflineSenseVoiceModelConfig, OnlineStream,
+    OfflineSenseVoiceModelConfig, OnlineStream, SileroVadModelConfig, VadModelConfig,
+    VoiceActivityDetector,
 };
 
-use crate::config::{EdgeSttConfig, WakewordConfig};
+use crate::config::{EdgeSttConfig, VadConfig, WakewordConfig};
 
 use super::context::ModuleContext;
 use super::lifecycle::ModuleLifecycle;
-use super::traits::{EdgeSttEngine, WakeWordEngine, WakeWordEvent};
+use super::traits::{
+    EdgeSttEngine, VoiceActivityEngine, VoiceActivityState, WakeWordEngine, WakeWordEvent,
+};
 
 pub struct SherpaOnnxKws {
     state: Mutex<KwsState>,
@@ -185,6 +188,115 @@ impl EdgeSttEngine for SherpaOnnxStt {
         .await
         .context("joining sherpa STT task")?
     }
+}
+
+pub struct SherpaOnnxVad {
+    detector: Mutex<VoiceActivityDetector>,
+    sample_rate: u32,
+}
+
+impl SherpaOnnxVad {
+    pub fn new(config: &VadConfig) -> Result<Self> {
+        validate_file(&config.model_path, "VAD model")?;
+
+        let mut vad_config = VadModelConfig::default();
+        vad_config.silero_vad = SileroVadModelConfig {
+            model: Some(config.model_path.display().to_string()),
+            threshold: config.threshold,
+            min_silence_duration: millis_to_seconds(config.min_silence_duration_ms),
+            min_speech_duration: millis_to_seconds(config.min_speech_duration_ms),
+            window_size: config.window_size,
+            max_speech_duration: millis_to_seconds(config.max_speech_duration_ms),
+        };
+        vad_config.sample_rate = config.sample_rate as i32;
+        vad_config.num_threads = config.num_threads;
+        vad_config.provider = Some(config.provider.clone());
+        vad_config.debug = config.debug;
+
+        let detector = VoiceActivityDetector::create(&vad_config, config.buffer_size_sec)
+            .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx VAD"))?;
+        tracing::info!(
+            model = %config.model_path.display(),
+            sample_rate = config.sample_rate,
+            threshold = config.threshold,
+            min_silence_ms = config.min_silence_duration_ms,
+            provider = %config.provider,
+            "created sherpa-onnx VAD"
+        );
+
+        Ok(Self {
+            detector: Mutex::new(detector),
+            sample_rate: config.sample_rate,
+        })
+    }
+}
+
+#[tonic::async_trait]
+impl ModuleLifecycle for SherpaOnnxVad {
+    fn name(&self) -> &'static str {
+        "sherpa_onnx_vad"
+    }
+
+    async fn init(&mut self, ctx: &ModuleContext) -> Result<()> {
+        if ctx.config.audio.capture_sample_rate != self.sample_rate {
+            tracing::warn!(
+                expected = self.sample_rate,
+                actual = ctx.config.audio.capture_sample_rate,
+                "audio.capture_sample_rate differs from VAD sample_rate; VAD endpointing may be inaccurate"
+            );
+        }
+        Ok(())
+    }
+}
+
+impl VoiceActivityEngine for SherpaOnnxVad {
+    fn reset(&self) -> Result<()> {
+        let detector = self
+            .detector
+            .lock()
+            .map_err(|_| anyhow::anyhow!("sherpa VAD mutex poisoned"))?;
+        detector.reset();
+        detector.clear();
+        Ok(())
+    }
+
+    fn accept(&self, pcm: &[i16], sample_rate: u32) -> Result<VoiceActivityState> {
+        if pcm.is_empty() {
+            return Ok(VoiceActivityState::Silence);
+        }
+        if sample_rate != self.sample_rate {
+            bail!(
+                "VAD expected {expected}Hz audio, got {actual}Hz",
+                expected = self.sample_rate,
+                actual = sample_rate
+            );
+        }
+
+        let samples = pcm16_to_f32(pcm);
+        let detector = self
+            .detector
+            .lock()
+            .map_err(|_| anyhow::anyhow!("sherpa VAD mutex poisoned"))?;
+        detector.accept_waveform(&samples);
+        if let Some(segment) = detector.front() {
+            tracing::debug!(
+                start = segment.start(),
+                samples = segment.n(),
+                "sherpa VAD finished speech segment"
+            );
+            drop(segment);
+            detector.pop();
+            return Ok(VoiceActivityState::Finished);
+        }
+        if detector.detected() {
+            return Ok(VoiceActivityState::Speech);
+        }
+        Ok(VoiceActivityState::Silence)
+    }
+}
+
+fn millis_to_seconds(value: u32) -> f32 {
+    value as f32 / 1_000.0
 }
 
 fn pcm16_to_f32(pcm: &[i16]) -> Vec<f32> {

@@ -19,7 +19,7 @@ use super::factory;
 use super::lifecycle::ModuleLifecycle;
 use super::noop::{
     NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
-    NoopFaceTracker, NoopMixer, NoopWakeWord,
+    NoopFaceTracker, NoopMixer, NoopVad, NoopWakeWord,
 };
 use super::registry::EmbeddedModuleRegistry;
 use super::speech::SpeechPipeline;
@@ -119,6 +119,7 @@ pub struct EmbeddedBuilder {
     // Module slot overrides (None = use factory default from config)
     wakeword: Option<Box<dyn WakeWordEngine>>,
     edge_stt: Option<Box<dyn EdgeSttEngine>>,
+    vad: Option<Box<dyn VoiceActivityEngine>>,
     direct_response: Option<Box<dyn DirectResponseEngine>>,
     audio_capture: Option<Box<dyn AudioCaptureBackend>>,
     audio_playback: Option<Box<dyn AudioPlaybackBackend>>,
@@ -135,6 +136,7 @@ impl EmbeddedBuilder {
             cancel_token: CancellationToken::new(),
             wakeword: None,
             edge_stt: None,
+            vad: None,
             direct_response: None,
             audio_capture: None,
             audio_playback: None,
@@ -156,6 +158,11 @@ impl EmbeddedBuilder {
 
     pub fn with_edge_stt(mut self, engine: impl EdgeSttEngine + 'static) -> Self {
         self.edge_stt = Some(Box::new(engine));
+        self
+    }
+
+    pub fn with_vad(mut self, engine: impl VoiceActivityEngine + 'static) -> Self {
+        self.vad = Some(Box::new(engine));
         self
     }
 
@@ -223,6 +230,13 @@ impl EmbeddedBuilder {
                 Box::new(NoopEdgeStt)
             }),
         };
+        let mut vad: Box<dyn VoiceActivityEngine> = match self.vad {
+            Some(m) => m,
+            None => factory::create_vad(&config).unwrap_or_else(|error| {
+                warn!(error = ?error, "VAD module creation failed; using noop");
+                Box::new(NoopVad)
+            }),
+        };
         let mut direct_response: Box<dyn DirectResponseEngine> = match self.direct_response {
             Some(m) => m,
             None => factory::create_direct_response(&config).unwrap_or_else(|error| {
@@ -270,6 +284,7 @@ impl EmbeddedBuilder {
         info!("initializing modules");
         init_embedded_module(wakeword.as_mut(), &ctx).await;
         init_embedded_module(edge_stt.as_mut(), &ctx).await;
+        init_embedded_module(vad.as_mut(), &ctx).await;
         init_embedded_module(direct_response.as_mut(), &ctx).await;
         init_embedded_module(audio_capture.as_mut(), &ctx).await;
         init_embedded_module(audio_playback.as_mut(), &ctx).await;
@@ -325,6 +340,7 @@ impl EmbeddedBuilder {
 
         let wakeword: Arc<dyn WakeWordEngine> = Arc::from(wakeword);
         let edge_stt: Arc<dyn EdgeSttEngine> = Arc::from(edge_stt);
+        let vad: Arc<dyn VoiceActivityEngine> = Arc::from(vad);
         let direct_response: Arc<dyn DirectResponseEngine> = Arc::from(direct_response);
         let audio_capture: Arc<dyn AudioCaptureBackend> = Arc::from(audio_capture);
         let audio_playback: Arc<dyn AudioPlaybackBackend> = Arc::from(audio_playback);
@@ -336,6 +352,7 @@ impl EmbeddedBuilder {
             ctx.event_bus.clone(),
             wakeword.clone(),
             edge_stt.clone(),
+            vad.clone(),
             direct_response.clone(),
             audio_playback.clone(),
             binding_manager.clone(),
@@ -347,6 +364,7 @@ impl EmbeddedBuilder {
         info!("starting modules");
         start_embedded_module(wakeword.as_ref()).await;
         start_embedded_module(edge_stt.as_ref()).await;
+        start_embedded_module(vad.as_ref()).await;
         start_embedded_module(direct_response.as_ref()).await;
         start_embedded_module(audio_capture.as_ref()).await;
         start_embedded_module(audio_playback.as_ref()).await;
@@ -382,6 +400,7 @@ impl EmbeddedBuilder {
         let registry = EmbeddedModuleRegistry {
             wakeword,
             edge_stt,
+            vad,
             direct_response,
             audio_capture,
             audio_playback,

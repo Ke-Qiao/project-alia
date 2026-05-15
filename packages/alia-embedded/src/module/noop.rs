@@ -32,6 +32,32 @@ impl EdgeSttEngine for NoopEdgeStt {
     }
 }
 
+// ─── NoopVad ─────────────────────────────────────────────────────────────────
+
+/// Noop VAD: reports unavailable so speech capture uses fixed-duration fallback.
+pub struct NoopVad;
+
+#[tonic::async_trait]
+impl ModuleLifecycle for NoopVad {
+    fn name(&self) -> &'static str {
+        "noop_vad"
+    }
+}
+
+impl VoiceActivityEngine for NoopVad {
+    fn reset(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn accept(&self, _pcm: &[i16], _sample_rate: u32) -> Result<VoiceActivityState> {
+        Ok(VoiceActivityState::Unavailable)
+    }
+
+    fn is_available(&self) -> bool {
+        false
+    }
+}
+
 // ─── NoopDirectResponse ──────────────────────────────────────────────────────
 
 /// Noop direct response: never matches any keyword.

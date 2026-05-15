@@ -35,6 +35,38 @@ pub trait EdgeSttEngine: ModuleLifecycle {
     async fn transcribe_short(&self, pcm: &[i16], max_duration_ms: u32) -> Result<Option<String>>;
 }
 
+// ─── Voice Activity Detection ────────────────────────────────────────────────
+
+/// Streaming voice activity state for post-wake command endpointing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceActivityState {
+    /// VAD is not available; callers should use fixed-duration fallback.
+    Unavailable,
+    /// No active speech is currently detected.
+    Silence,
+    /// Speech is currently active.
+    Speech,
+    /// A speech segment has ended and is ready for downstream processing.
+    Finished,
+}
+
+/// Voice activity detector (slot: `vad`).
+///
+/// Used only for endpointing short post-wake captures. It does not replace
+/// wake-word detection or STT.
+pub trait VoiceActivityEngine: ModuleLifecycle {
+    /// Reset detector state before a new post-wake command capture.
+    fn reset(&self) -> Result<()>;
+
+    /// Feed PCM frames and return the latest endpointing state.
+    fn accept(&self, pcm: &[i16], sample_rate: u32) -> Result<VoiceActivityState>;
+
+    /// Whether this implementation can currently perform VAD.
+    fn is_available(&self) -> bool {
+        true
+    }
+}
+
 // ─── Direct Response Engine ──────────────────────────────────────────────────
 
 /// Action to execute when a keyword is matched locally.

@@ -15,6 +15,7 @@ pub struct EmbeddedModuleRegistry {
     // Audio pipeline
     pub wakeword: Arc<dyn WakeWordEngine>,
     pub edge_stt: Arc<dyn EdgeSttEngine>,
+    pub vad: Arc<dyn VoiceActivityEngine>,
     pub direct_response: Arc<dyn DirectResponseEngine>,
     pub audio_capture: Arc<dyn AudioCaptureBackend>,
     pub audio_playback: Arc<dyn AudioPlaybackBackend>,
@@ -43,6 +44,7 @@ impl EmbeddedModuleRegistry {
         let _ = self.speech_pipeline.stop().await;
         let _ = self.audio_capture.stop().await;
         let _ = self.direct_response.stop().await;
+        let _ = self.vad.stop().await;
         let _ = self.edge_stt.stop().await;
         let _ = self.wakeword.stop().await;
     }
@@ -52,6 +54,7 @@ impl EmbeddedModuleRegistry {
         let mut map = HashMap::new();
         map.insert(self.wakeword.name(), self.wakeword.health_check().await);
         map.insert(self.edge_stt.name(), self.edge_stt.health_check().await);
+        map.insert(self.vad.name(), self.vad.health_check().await);
         map.insert(
             self.direct_response.name(),
             self.direct_response.health_check().await,

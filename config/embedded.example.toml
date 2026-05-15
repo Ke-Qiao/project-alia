@@ -7,6 +7,8 @@
 # - [runtime]
 # - [identity]
 # - [audio]
+# - [edge_stt]
+# - [vad]
 # - [discovery]
 
 [runtime]
@@ -29,6 +31,24 @@ opus_bitrate = 24000
 opus_frame_ms = 20
 upload_buffer_frames = 5
 jitter_buffer_ms = 60
+
+[edge_stt]
+max_duration_ms = 5000
+post_wake_capture_ms = 2500
+post_wake_response_delay_ms = 700
+
+[vad]
+model_path = "models/silero-vad/silero_vad.onnx"
+sample_rate = 16000
+threshold = 0.5
+min_silence_duration_ms = 700
+min_speech_duration_ms = 250
+window_size = 512
+max_speech_duration_ms = 5000
+buffer_size_sec = 10.0
+provider = "cpu"
+num_threads = 1
+debug = false
 
 [direct_response_defaults]
 audio_dir = "run/direct_response"

@@ -73,6 +73,7 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.wakeword.keywords_file);
     resolve_relative(parent, &mut config.edge_stt.model_path);
     resolve_relative(parent, &mut config.edge_stt.tokens_path);
+    resolve_relative(parent, &mut config.vad.model_path);
     resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
 
     for response in &mut config.direct_response {
@@ -128,6 +129,9 @@ fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSe
         return;
     };
     relativize_path(base, &mut settings.identity.keypair_path);
+    relativize_path(base, &mut settings.edge_stt.model_path);
+    relativize_path(base, &mut settings.edge_stt.tokens_path);
+    relativize_path(base, &mut settings.vad.model_path);
     normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);
 }
 
@@ -200,6 +204,23 @@ mod tests {
         assert_eq!(
             settings.direct_response_defaults.audio_dir,
             PathBuf::from("run/direct_response")
+        );
+    }
+
+    #[test]
+    fn has_post_wake_response_delay_default() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert_eq!(settings.edge_stt.post_wake_response_delay_ms, 700);
+    }
+
+    #[test]
+    fn has_vad_model_path_default() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert_eq!(
+            settings.vad.model_path,
+            PathBuf::from("models/silero-vad/silero_vad.onnx")
         );
     }
 }

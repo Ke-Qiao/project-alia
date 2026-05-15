@@ -13,7 +13,8 @@ use tracing::{debug, info, warn};
 use super::context::{AudioBus, AudioFrame, EventBus, ModuleEvent};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{
-    AudioPlaybackBackend, DirectResponseEngine, EdgeSttEngine, WakeWordEngine, WakeWordEvent,
+    AudioPlaybackBackend, DirectResponseEngine, EdgeSttEngine, VoiceActivityEngine,
+    VoiceActivityState, WakeWordEngine, WakeWordEvent,
 };
 use crate::binding::BindingManager;
 use crate::config::EdgeSttConfig;
@@ -23,11 +24,13 @@ pub struct SpeechPipeline {
     event_bus: EventBus,
     wakeword: Arc<dyn WakeWordEngine>,
     edge_stt: Arc<dyn EdgeSttEngine>,
+    vad: Arc<dyn VoiceActivityEngine>,
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<dyn AudioPlaybackBackend>,
     binding: Arc<BindingManager>,
     max_duration_ms: u32,
     post_wake_capture_ms: u32,
+    post_wake_response_delay_ms: u32,
     cancel_token: CancellationToken,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -38,6 +41,7 @@ impl SpeechPipeline {
         event_bus: EventBus,
         wakeword: Arc<dyn WakeWordEngine>,
         edge_stt: Arc<dyn EdgeSttEngine>,
+        vad: Arc<dyn VoiceActivityEngine>,
         direct_response: Arc<dyn DirectResponseEngine>,
         playback: Arc<dyn AudioPlaybackBackend>,
         binding: Arc<BindingManager>,
@@ -49,11 +53,13 @@ impl SpeechPipeline {
             event_bus,
             wakeword,
             edge_stt,
+            vad,
             direct_response,
             playback,
             binding,
             max_duration_ms: edge_stt_config.max_duration_ms,
             post_wake_capture_ms: edge_stt_config.post_wake_capture_ms,
+            post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
             cancel_token,
             task: Mutex::new(None),
         }
@@ -76,15 +82,18 @@ impl ModuleLifecycle for SpeechPipeline {
         let event_bus = self.event_bus.clone();
         let wakeword = Arc::clone(&self.wakeword);
         let edge_stt = Arc::clone(&self.edge_stt);
+        let vad = Arc::clone(&self.vad);
         let direct_response = Arc::clone(&self.direct_response);
         let playback = Arc::clone(&self.playback);
         let binding = Arc::clone(&self.binding);
         let max_duration_ms = self.max_duration_ms;
         let post_wake_capture_ms = self.post_wake_capture_ms;
+        let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
         let cancel = self.cancel_token.child_token();
 
         *task = Some(tokio::spawn(async move {
             let mut capture: Option<SpeechCapture> = None;
+            let mut pending_wakeword: Option<WakeWordEvent> = None;
 
             loop {
                 tokio::select! {
@@ -99,10 +108,37 @@ impl ModuleLifecycle for SpeechPipeline {
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                         };
 
+                        if let Some(event) = pending_wakeword.take() {
+                            event_bus.publish(ModuleEvent::SpeechStart);
+                            let vad_enabled = prepare_vad_for_capture(vad.as_ref());
+                            capture = Some(SpeechCapture::new(
+                                event,
+                                frame.sample_rate,
+                                frame.timestamp_us,
+                                Duration::from_millis(post_wake_capture_ms as u64),
+                                Duration::from_millis(max_duration_ms as u64),
+                                vad_enabled,
+                            ));
+                        }
+
                         if let Some(active) = capture.as_mut() {
                             active.push(&frame);
+                            if active.vad_enabled() {
+                                match vad.accept(&frame.pcm, frame.sample_rate) {
+                                    Ok(state) => active.observe_vad(state),
+                                    Err(error) => {
+                                        warn!(error = ?error, "VAD failed during speech capture; falling back to fixed capture window");
+                                        active.disable_vad();
+                                    }
+                                }
+                            }
                             if active.is_complete(frame.timestamp_us) {
                                 let finished = capture.take().expect("capture is active");
+                                if vad.is_available()
+                                    && let Err(error) = vad.reset()
+                                {
+                                    warn!(error = ?error, "failed to reset VAD after speech capture");
+                                }
                                 event_bus.publish(ModuleEvent::SpeechEnd);
                                 handle_utterance(
                                     finished,
@@ -124,19 +160,17 @@ impl ModuleLifecycle for SpeechPipeline {
                                 timestamp_us: event.timestamp_us,
                             });
                             if let Some(action) = direct_response.match_keyword(&event.keyword) {
-                                tokio::spawn(play_direct_response(
-                                    action,
-                                    Arc::clone(&playback),
-                                    event_bus.clone(),
-                                ));
+                                play_direct_response(action, Arc::clone(&playback), event_bus.clone())
+                                    .await;
+                                if post_wake_response_delay_ms > 0 {
+                                    tokio::time::sleep(Duration::from_millis(
+                                        post_wake_response_delay_ms as u64,
+                                    ))
+                                    .await;
+                                }
+                                rx = rx.resubscribe();
                             }
-                            event_bus.publish(ModuleEvent::SpeechStart);
-                            capture = Some(SpeechCapture::new(
-                                event,
-                                frame.sample_rate,
-                                frame.timestamp_us,
-                                Duration::from_millis(post_wake_capture_ms as u64),
-                            ));
+                            pending_wakeword = Some(event);
                         }
                     }
                 }
@@ -166,7 +200,11 @@ impl ModuleLifecycle for SpeechPipeline {
 struct SpeechCapture {
     wakeword: WakeWordEvent,
     sample_rate: u32,
-    deadline_us: u64,
+    fallback_deadline_us: u64,
+    max_deadline_us: u64,
+    vad_enabled: bool,
+    vad_saw_speech: bool,
+    vad_finished: bool,
     pcm: Vec<i16>,
 }
 
@@ -175,13 +213,21 @@ impl SpeechCapture {
         wakeword: WakeWordEvent,
         sample_rate: u32,
         started_at_us: u64,
-        duration: Duration,
+        fallback_duration: Duration,
+        max_duration: Duration,
+        vad_enabled: bool,
     ) -> Self {
-        let deadline_us = started_at_us.saturating_add(duration.as_micros() as u64);
+        let fallback_deadline_us =
+            started_at_us.saturating_add(fallback_duration.as_micros() as u64);
+        let max_deadline_us = started_at_us.saturating_add(max_duration.as_micros() as u64);
         Self {
             wakeword,
             sample_rate,
-            deadline_us,
+            fallback_deadline_us,
+            max_deadline_us,
+            vad_enabled,
+            vad_saw_speech: false,
+            vad_finished: false,
             pcm: Vec::new(),
         }
     }
@@ -198,8 +244,48 @@ impl SpeechCapture {
         self.pcm.extend_from_slice(&frame.pcm);
     }
 
+    fn vad_enabled(&self) -> bool {
+        self.vad_enabled
+    }
+
+    fn disable_vad(&mut self) {
+        self.vad_enabled = false;
+    }
+
+    fn observe_vad(&mut self, state: VoiceActivityState) {
+        match state {
+            VoiceActivityState::Unavailable => self.disable_vad(),
+            VoiceActivityState::Silence => {}
+            VoiceActivityState::Speech => self.vad_saw_speech = true,
+            VoiceActivityState::Finished => {
+                self.vad_saw_speech = true;
+                self.vad_finished = true;
+            }
+        }
+    }
+
     fn is_complete(&self, timestamp_us: u64) -> bool {
-        timestamp_us >= self.deadline_us
+        if !self.vad_enabled {
+            return timestamp_us >= self.fallback_deadline_us;
+        }
+
+        self.vad_finished
+            || timestamp_us >= self.max_deadline_us
+            || (!self.vad_saw_speech && timestamp_us >= self.fallback_deadline_us)
+    }
+}
+
+fn prepare_vad_for_capture(vad: &dyn VoiceActivityEngine) -> bool {
+    if !vad.is_available() {
+        return false;
+    }
+
+    match vad.reset() {
+        Ok(()) => true,
+        Err(error) => {
+            warn!(error = ?error, "failed to reset VAD before speech capture; using fixed capture window");
+            false
+        }
     }
 }
 
@@ -258,6 +344,8 @@ async fn play_direct_response(
             });
             if let Err(error) = playback.play(&pcm, sample_rate) {
                 warn!(error = %error, audio = %action.audio_path, "direct response playback failed");
+            } else if let Some(duration) = pcm_duration(&pcm, sample_rate) {
+                tokio::time::sleep(duration).await;
             }
             event_bus.publish(ModuleEvent::PlaybackFinished {
                 source: action.audio_path,
@@ -267,6 +355,16 @@ async fn play_direct_response(
             warn!(error = %error, audio = %action.audio_path, "failed to read direct response audio")
         }
     }
+}
+
+fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
+    if pcm.is_empty() || sample_rate == 0 {
+        return None;
+    }
+
+    Some(Duration::from_secs_f64(
+        pcm.len() as f64 / sample_rate as f64,
+    ))
 }
 
 async fn upload_to_server(capture: &SpeechCapture, binding: &BindingManager) {
@@ -469,8 +567,74 @@ mod tests {
     }
 
     #[test]
+    fn computes_pcm_duration() {
+        assert_eq!(
+            pcm_duration(&vec![0; 16_000], 16_000),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(pcm_duration(&[], 16_000), None);
+        assert_eq!(pcm_duration(&[0], 0), None);
+    }
+
+    #[test]
+    fn vad_capture_waits_for_silence_until_max_duration() {
+        let mut capture = SpeechCapture::new(
+            wakeword_event(),
+            16_000,
+            1_000,
+            Duration::from_millis(2_500),
+            Duration::from_millis(5_000),
+            true,
+        );
+
+        capture.observe_vad(VoiceActivityState::Speech);
+
+        assert!(!capture.is_complete(1_000 + 2_600_000));
+        capture.observe_vad(VoiceActivityState::Finished);
+        assert!(capture.is_complete(1_000 + 2_700_000));
+    }
+
+    #[test]
+    fn vad_capture_uses_no_speech_timeout_before_speech_starts() {
+        let capture = SpeechCapture::new(
+            wakeword_event(),
+            16_000,
+            1_000,
+            Duration::from_millis(2_500),
+            Duration::from_millis(5_000),
+            true,
+        );
+
+        assert!(!capture.is_complete(1_000 + 2_400_000));
+        assert!(capture.is_complete(1_000 + 2_500_000));
+    }
+
+    #[test]
+    fn fixed_capture_fallback_uses_post_wake_capture_window() {
+        let capture = SpeechCapture::new(
+            wakeword_event(),
+            16_000,
+            1_000,
+            Duration::from_millis(2_500),
+            Duration::from_millis(5_000),
+            false,
+        );
+
+        assert!(!capture.is_complete(1_000 + 2_400_000));
+        assert!(capture.is_complete(1_000 + 2_500_000));
+    }
+
+    #[test]
     fn derives_audio_ingress_from_bound_server_endpoint() {
         let endpoint = derive_audio_ingress_endpoint("http://192.168.1.10:3000").unwrap();
         assert_eq!(endpoint, "http://192.168.1.10:3001");
+    }
+
+    fn wakeword_event() -> WakeWordEvent {
+        WakeWordEvent {
+            keyword: "HEY_ALIA".to_string(),
+            confidence: 1.0,
+            timestamp_us: 1_000,
+        }
     }
 }
