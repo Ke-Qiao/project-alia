@@ -329,6 +329,8 @@ fn default_vad_num_threads() -> i32 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
+    #[serde(default)]
+    pub capture_backend: AudioBackend,
     // Capture
     #[serde(default = "default_device")]
     pub capture_device: String,
@@ -337,6 +339,8 @@ pub struct AudioConfig {
     #[serde(default = "default_channels")]
     pub capture_channels: u16,
 
+    #[serde(default)]
+    pub playback_backend: AudioBackend,
     // Playback
     #[serde(default = "default_device")]
     pub playback_device: String,
@@ -363,9 +367,11 @@ pub struct AudioConfig {
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
+            capture_backend: AudioBackend::default(),
             capture_device: default_device(),
             capture_sample_rate: default_capture_sample_rate(),
             capture_channels: default_channels(),
+            playback_backend: AudioBackend::default(),
             playback_device: default_device(),
             playback_sample_rate: default_playback_sample_rate(),
             playback_channels: default_channels(),
@@ -404,6 +410,15 @@ fn default_upload_buffer_frames() -> u32 {
 }
 fn default_jitter_buffer_ms() -> u32 {
     60
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioBackend {
+    #[default]
+    Auto,
+    Cpal,
+    Alsa,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

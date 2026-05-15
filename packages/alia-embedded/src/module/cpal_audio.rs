@@ -19,7 +19,7 @@ use cpal::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::config::AudioConfig;
+use crate::config::{AudioBackend, AudioConfig};
 
 use super::context::{AudioBus, AudioFrame};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
@@ -113,8 +113,37 @@ impl AudioCaptureBackend for CpalAudioCapture {
     }
 
     fn is_available(&self) -> bool {
+        if matches!(
+            resolved_capture_backend(&self.config),
+            ResolvedAudioBackend::Alsa
+        ) {
+            #[cfg(target_os = "linux")]
+            {
+                return resolved_alsa_capture_device(&self.config)
+                    .is_some_and(|device| alsa_capture_device_available(&device));
+            }
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                return false;
+            }
+        }
+
         let host = cpal::default_host();
-        select_input_device(&host, &self.config.capture_device).is_ok()
+        if select_input_device(&host, &self.config.capture_device).is_ok() {
+            return true;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            return resolved_alsa_capture_device(&self.config)
+                .is_some_and(|device| alsa_capture_device_available(&device));
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
     }
 }
 
@@ -229,6 +258,22 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
     }
 
     fn is_available(&self) -> bool {
+        if matches!(
+            resolved_playback_backend(&self.config),
+            ResolvedAudioBackend::Alsa
+        ) {
+            #[cfg(target_os = "linux")]
+            {
+                return resolved_alsa_playback_device(&self.config)
+                    .is_some_and(|device| alsa_playback_device_available(&device));
+            }
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                return false;
+            }
+        }
+
         let host = cpal::default_host();
         if select_output_device(&host, &self.config.playback_device).is_ok() {
             return true;
@@ -236,7 +281,8 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
 
         #[cfg(target_os = "linux")]
         {
-            return alsa_playback_device_available(&self.config.playback_device);
+            return resolved_alsa_playback_device(&self.config)
+                .is_some_and(|device| alsa_playback_device_available(&device));
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -252,12 +298,34 @@ enum PlaybackCommand {
     Shutdown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResolvedAudioBackend {
+    Cpal,
+    Alsa,
+}
+
 fn run_capture_thread(
     config: AudioConfig,
     bus: AudioBus,
     control_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
 ) -> Result<()> {
+    if matches!(
+        resolved_capture_backend(&config),
+        ResolvedAudioBackend::Alsa
+    ) {
+        #[cfg(target_os = "linux")]
+        if let Some(alsa_device) = resolved_alsa_capture_device(&config) {
+            return run_alsa_capture_thread(config, bus, control_rx, ready_tx, &alsa_device);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = ready_tx.send(Err("ALSA capture backend is only supported on Linux".into()));
+            bail!("ALSA capture backend is only supported on Linux");
+        }
+    }
+
     let started = (|| {
         let host = cpal::default_host();
         let device = select_input_device(&host, &config.capture_device)?;
@@ -391,6 +459,16 @@ fn run_capture_thread(
             stream
         }
         Err(error) => {
+            #[cfg(target_os = "linux")]
+            if let Some(alsa_device) = resolved_alsa_capture_device(&config) {
+                warn!(
+                    cpal_error = %error,
+                    alsa_device = %alsa_device,
+                    "cpal capture unavailable; trying ALSA capture fallback"
+                );
+                return run_alsa_capture_thread(config, bus, control_rx, ready_tx, &alsa_device);
+            }
+
             let message = error.to_string();
             let _ = ready_tx.send(Err(message));
             return Err(error);
@@ -403,11 +481,194 @@ fn run_capture_thread(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn run_alsa_capture_thread(
+    config: AudioConfig,
+    bus: AudioBus,
+    control_rx: mpsc::Receiver<()>,
+    ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
+    alsa_device: &str,
+) -> Result<()> {
+    let started = start_alsa_capture_runtime(&config, alsa_device);
+    let (pcm, input_sample_rate, input_channels, chunk_frames) = match started {
+        Ok(started) => {
+            let _ = ready_tx.send(Ok(()));
+            started
+        }
+        Err(error) => {
+            let message = error.to_string();
+            let _ = ready_tx.send(Err(message));
+            return Err(error);
+        }
+    };
+
+    let target_channels = config.capture_channels.max(1) as usize;
+    let target_sample_rate = config.capture_sample_rate.max(1);
+    let mut converter = CaptureConverter::new(
+        input_channels,
+        input_sample_rate,
+        target_channels,
+        target_sample_rate,
+    );
+    let mut emitted_frames = 0_u64;
+    let mut level_peak = 0_u64;
+    let mut silence_warned = false;
+    let mut raw_buffer = vec![0_i16; chunk_frames.saturating_mul(input_channels.max(1))];
+
+    loop {
+        if control_rx.try_recv().is_ok() {
+            break;
+        }
+
+        let ready = pcm
+            .wait(Some(100))
+            .context("waiting for ALSA capture data")?;
+        if !ready {
+            continue;
+        }
+
+        let frames_read = {
+            let io = pcm.io_i16().context("opening ALSA i16 capture IO")?;
+            match io.readi(&mut raw_buffer) {
+                Ok(frames) => frames,
+                Err(error) if error.errno() == libc::EAGAIN => continue,
+                Err(error) => {
+                    pcm.try_recover(error, true)
+                        .context("recovering ALSA capture stream")?;
+                    continue;
+                }
+            }
+        };
+
+        let samples_read = frames_read.saturating_mul(input_channels);
+        if samples_read == 0 {
+            continue;
+        }
+
+        let pcm = converter.convert(&raw_buffer[..samples_read]);
+        if pcm.is_empty() {
+            continue;
+        }
+
+        let frames = (pcm.len() / target_channels.max(1)) as u64;
+        let start_frame = emitted_frames;
+        emitted_frames = emitted_frames.saturating_add(frames);
+        let peak = pcm
+            .iter()
+            .map(|sample| sample.unsigned_abs() as u64)
+            .max()
+            .unwrap_or(0);
+        level_peak = level_peak.max(peak);
+        if emitted_frames >= target_sample_rate as u64 * 5 && !silence_warned {
+            silence_warned = true;
+            if level_peak < 256 {
+                warn!(
+                    peak = level_peak,
+                    "microphone input appears silent; check ALSA capture source and selected input device"
+                );
+            } else {
+                debug!(peak = level_peak, "microphone input level observed");
+            }
+        }
+
+        bus.publish(AudioFrame {
+            pcm,
+            sample_rate: target_sample_rate,
+            timestamp_us: start_frame.saturating_mul(1_000_000) / target_sample_rate as u64,
+        });
+    }
+
+    let _ = pcm.drop();
+    info!("stopped ALSA audio capture");
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn start_alsa_capture_runtime(
+    config: &AudioConfig,
+    alsa_device: &str,
+) -> Result<(AlsaPcm, u32, usize, usize)> {
+    let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Capture, true)
+        .with_context(|| format!("opening ALSA capture PCM '{alsa_device}'"))?;
+    let requested_channels = u32::from(config.capture_channels.max(1));
+    let requested_rate = config.capture_sample_rate.max(1);
+    let (actual_channels, actual_sample_rate) = {
+        let hwp = AlsaHwParams::any(&pcm).context("reading ALSA capture hardware params")?;
+        hwp.set_access(AlsaAccess::RWInterleaved)
+            .context("setting ALSA capture interleaved access")?;
+        hwp.set_format(AlsaFormat::s16())
+            .context("setting ALSA capture sample format")?;
+        let _ = hwp.set_rate_resample(true);
+
+        let actual_channels = hwp
+            .set_channels_near(requested_channels)
+            .context("setting ALSA capture channels")?;
+        let actual_sample_rate = hwp
+            .set_rate_near(requested_rate, AlsaValueOr::Nearest)
+            .context("setting ALSA capture sample rate")?;
+
+        let requested_period_frames =
+            buffer_frames_for_ms(actual_sample_rate, config.opus_frame_ms.max(10));
+        let _ =
+            hwp.set_period_size_near(requested_period_frames as AlsaFrames, AlsaValueOr::Nearest);
+        let requested_buffer_frames = requested_period_frames.saturating_mul(4);
+        let _ = hwp.set_buffer_size_near(requested_buffer_frames as AlsaFrames);
+
+        pcm.hw_params(&hwp)
+            .context("applying ALSA capture hardware params")?;
+        (actual_channels, actual_sample_rate)
+    };
+
+    let chunk_frames = {
+        let hw_params = pcm
+            .hw_params_current()
+            .context("reading ALSA capture params")?;
+        hw_params
+            .get_period_size()
+            .context("reading ALSA capture period size")?
+            .max(1) as usize
+    };
+
+    pcm.prepare().context("preparing ALSA capture stream")?;
+    info!(
+        alsa_device,
+        input_sample_rate = actual_sample_rate,
+        input_channels = actual_channels,
+        target_sample_rate = config.capture_sample_rate,
+        target_channels = config.capture_channels,
+        "started ALSA audio capture"
+    );
+    Ok((
+        pcm,
+        actual_sample_rate,
+        actual_channels as usize,
+        chunk_frames,
+    ))
+}
+
 fn run_playback_thread(
     config: AudioConfig,
     command_rx: mpsc::Receiver<PlaybackCommand>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
 ) -> Result<()> {
+    if matches!(
+        resolved_playback_backend(&config),
+        ResolvedAudioBackend::Alsa
+    ) {
+        #[cfg(target_os = "linux")]
+        if let Some(alsa_device) = resolved_alsa_playback_device(&config) {
+            return run_alsa_playback_thread(config, command_rx, ready_tx, &alsa_device);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = ready_tx.send(Err(
+                "ALSA playback backend is only supported on Linux".into()
+            ));
+            bail!("ALSA playback backend is only supported on Linux");
+        }
+    }
+
     let started = start_cpal_playback_runtime(&config);
 
     let (stream, buffer, output_sample_rate, output_channels) = match started {
@@ -417,7 +678,7 @@ fn run_playback_thread(
         }
         Err(error) => {
             #[cfg(target_os = "linux")]
-            if let Some(alsa_device) = alsa_playback_device_name(&config.playback_device) {
+            if let Some(alsa_device) = resolved_alsa_playback_device(&config) {
                 warn!(
                     cpal_error = %error,
                     alsa_device = %alsa_device,
@@ -1020,6 +1281,44 @@ where
         .context("building cpal output stream")
 }
 
+fn resolved_capture_backend(config: &AudioConfig) -> ResolvedAudioBackend {
+    resolve_backend(config.capture_backend, &config.capture_device)
+}
+
+fn resolved_playback_backend(config: &AudioConfig) -> ResolvedAudioBackend {
+    resolve_backend(config.playback_backend, &config.playback_device)
+}
+
+#[cfg(target_os = "linux")]
+fn resolved_alsa_capture_device(config: &AudioConfig) -> Option<String> {
+    alsa_device_name(
+        &config.capture_device,
+        matches!(config.capture_backend, AudioBackend::Alsa),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn resolved_alsa_playback_device(config: &AudioConfig) -> Option<String> {
+    alsa_device_name(
+        &config.playback_device,
+        matches!(config.playback_backend, AudioBackend::Alsa),
+    )
+}
+
+fn resolve_backend(configured: AudioBackend, device: &str) -> ResolvedAudioBackend {
+    match configured {
+        AudioBackend::Cpal => ResolvedAudioBackend::Cpal,
+        AudioBackend::Alsa => ResolvedAudioBackend::Alsa,
+        AudioBackend::Auto => {
+            if is_explicit_alsa_device(device) {
+                ResolvedAudioBackend::Alsa
+            } else {
+                ResolvedAudioBackend::Cpal
+            }
+        }
+    }
+}
+
 fn select_input_device(host: &cpal::Host, configured: &str) -> Result<Device> {
     if configured == "default" || configured.trim().is_empty() {
         return host
@@ -1178,16 +1477,17 @@ fn device_name(device: &Device) -> String {
 }
 
 #[cfg(target_os = "linux")]
-fn alsa_playback_device_available(configured: &str) -> bool {
-    let Some(device_name) = alsa_playback_device_name(configured) else {
-        return false;
-    };
-
-    AlsaPcm::new(&device_name, AlsaDirection::Playback, true).is_ok()
+fn alsa_capture_device_available(device_name: &str) -> bool {
+    AlsaPcm::new(device_name, AlsaDirection::Capture, true).is_ok()
 }
 
 #[cfg(target_os = "linux")]
-fn alsa_playback_device_name(configured: &str) -> Option<String> {
+fn alsa_playback_device_available(device_name: &str) -> bool {
+    AlsaPcm::new(device_name, AlsaDirection::Playback, true).is_ok()
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_device_name(configured: &str, allow_raw: bool) -> Option<String> {
     let trimmed = configured.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
         return Some("default".to_string());
@@ -1206,10 +1506,20 @@ fn alsa_playback_device_name(configured: &str) -> Option<String> {
         return Some(trimmed.to_string());
     }
 
+    if allow_raw {
+        return Some(trimmed.to_string());
+    }
+
     None
 }
 
-#[cfg(target_os = "linux")]
+fn is_explicit_alsa_device(device: &str) -> bool {
+    let trimmed = device.trim();
+    !trimmed.is_empty()
+        && !trimmed.eq_ignore_ascii_case("default")
+        && looks_like_alsa_pcm_name(trimmed)
+}
+
 fn looks_like_alsa_pcm_name(device: &str) -> bool {
     [
         "default",
@@ -1248,13 +1558,49 @@ mod tests {
     #[test]
     fn detects_alsa_pcm_names() {
         assert_eq!(
-            alsa_playback_device_name("alsa:plughw:0,0"),
+            alsa_device_name("alsa:plughw:0,0", false),
             Some("plughw:0,0".to_string())
         );
         assert_eq!(
-            alsa_playback_device_name("default"),
+            alsa_device_name("default", false),
             Some("default".to_string())
         );
-        assert_eq!(alsa_playback_device_name("MAX98375A"), None);
+        assert_eq!(alsa_device_name("MAX98375A", false), None);
+        assert_eq!(
+            alsa_device_name("I2S-Duplex", true),
+            Some("I2S-Duplex".to_string())
+        );
+    }
+
+    #[test]
+    fn resolves_explicit_alsa_backend_from_device_name() {
+        let mut config = AudioConfig::default();
+        config.capture_device = "alsa:plughw:2,0".to_string();
+        config.playback_device = "plughw:0,1".to_string();
+
+        assert_eq!(
+            resolved_capture_backend(&config),
+            ResolvedAudioBackend::Alsa
+        );
+        assert_eq!(
+            resolved_playback_backend(&config),
+            ResolvedAudioBackend::Alsa
+        );
+    }
+
+    #[test]
+    fn respects_explicit_backend_selection() {
+        let mut config = AudioConfig::default();
+        config.capture_backend = AudioBackend::Alsa;
+        config.playback_backend = AudioBackend::Cpal;
+
+        assert_eq!(
+            resolved_capture_backend(&config),
+            ResolvedAudioBackend::Alsa
+        );
+        assert_eq!(
+            resolved_playback_backend(&config),
+            ResolvedAudioBackend::Cpal
+        );
     }
 }
