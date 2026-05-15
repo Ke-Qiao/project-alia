@@ -663,6 +663,7 @@ fn start_alsa_capture_runtime(
     };
 
     pcm.prepare().context("preparing ALSA capture stream")?;
+    pcm.start().context("starting ALSA capture stream")?;
     info!(
         alsa_device,
         ?sample_format,
