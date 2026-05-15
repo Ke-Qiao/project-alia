@@ -1,7 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+detect_script_path() {
+  if [[ -n "${BASH_SOURCE:-}" ]]; then
+    printf '%s\n' "${BASH_SOURCE[0]}"
+    return
+  fi
+
+  if [[ -n "${ZSH_VERSION:-}" ]]; then
+    printf '%s\n' "${(%):-%x}"
+    return
+  fi
+
+  printf '%s\n' "$0"
+}
+
+SCRIPT_PATH="$(detect_script_path)"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+if [[ ! -f "$ROOT_DIR/Cargo.toml" ]]; then
+  cat >&2 <<EOF
+error: could not locate the project root from script path:
+  $SCRIPT_PATH
+
+Run this script from the project root with either:
+  ./scripts/download-sherpa-models.sh
+  bash scripts/download-sherpa-models.sh
+  zsh scripts/download-sherpa-models.sh
+EOF
+  exit 1
+fi
+
 MODELS_DIR="${MODELS_DIR:-$ROOT_DIR/config/models}"
 
 KWS_NAME="sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"

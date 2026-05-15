@@ -111,6 +111,13 @@ impl ModuleLifecycle for SpeechPipeline {
                         if let Some(event) = pending_wakeword.take() {
                             event_bus.publish(ModuleEvent::SpeechStart);
                             let vad_enabled = prepare_vad_for_capture(vad.as_ref());
+                            info!(
+                                keyword = %event.keyword,
+                                vad_enabled,
+                                capture_ms = post_wake_capture_ms,
+                                max_ms = max_duration_ms,
+                                "started post-wake speech capture"
+                            );
                             capture = Some(SpeechCapture::new(
                                 event,
                                 frame.sample_rate,
@@ -132,13 +139,19 @@ impl ModuleLifecycle for SpeechPipeline {
                                     }
                                 }
                             }
-                            if active.is_complete(frame.timestamp_us) {
+                            if let Some(reason) = active.completion_reason(frame.timestamp_us) {
                                 let finished = capture.take().expect("capture is active");
                                 if vad.is_available()
                                     && let Err(error) = vad.reset()
                                 {
                                     warn!(error = ?error, "failed to reset VAD after speech capture");
                                 }
+                                info!(
+                                    reason = reason.as_str(),
+                                    duration_ms = finished.duration_ms(),
+                                    samples = finished.pcm.len(),
+                                    "finished post-wake speech capture"
+                                );
                                 event_bus.publish(ModuleEvent::SpeechEnd);
                                 handle_utterance(
                                     finished,
@@ -155,6 +168,11 @@ impl ModuleLifecycle for SpeechPipeline {
                         }
 
                         if let Some(event) = wakeword.detect(&frame.pcm) {
+                            info!(
+                                keyword = %event.keyword,
+                                confidence = event.confidence,
+                                "wakeword detected"
+                            );
                             event_bus.publish(ModuleEvent::WakeWordDetected {
                                 keyword: event.keyword.clone(),
                                 timestamp_us: event.timestamp_us,
@@ -264,14 +282,48 @@ impl SpeechCapture {
         }
     }
 
-    fn is_complete(&self, timestamp_us: u64) -> bool {
+    fn completion_reason(&self, timestamp_us: u64) -> Option<SpeechCompletionReason> {
         if !self.vad_enabled {
-            return timestamp_us >= self.fallback_deadline_us;
+            return (timestamp_us >= self.fallback_deadline_us)
+                .then_some(SpeechCompletionReason::FixedWindow);
         }
 
-        self.vad_finished
-            || timestamp_us >= self.max_deadline_us
-            || (!self.vad_saw_speech && timestamp_us >= self.fallback_deadline_us)
+        if self.vad_finished {
+            return Some(SpeechCompletionReason::VadFinished);
+        }
+        if timestamp_us >= self.max_deadline_us {
+            return Some(SpeechCompletionReason::MaxDuration);
+        }
+        if !self.vad_saw_speech && timestamp_us >= self.fallback_deadline_us {
+            return Some(SpeechCompletionReason::NoSpeechTimeout);
+        }
+        None
+    }
+
+    fn duration_ms(&self) -> u64 {
+        if self.sample_rate == 0 {
+            return 0;
+        }
+        (self.pcm.len() as u64 * 1_000) / self.sample_rate as u64
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpeechCompletionReason {
+    FixedWindow,
+    VadFinished,
+    MaxDuration,
+    NoSpeechTimeout,
+}
+
+impl SpeechCompletionReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FixedWindow => "fixed_window",
+            Self::VadFinished => "vad_finished",
+            Self::MaxDuration => "max_duration",
+            Self::NoSpeechTimeout => "no_speech_timeout",
+        }
     }
 }
 
@@ -306,7 +358,10 @@ async fn handle_utterance(
         .transcribe_short(&capture.pcm, max_duration_ms)
         .await
     {
-        Ok(Some(text)) if !text.trim().is_empty() => text,
+        Ok(Some(text)) if !text.trim().is_empty() => {
+            info!(transcript = %text, "edge STT produced transcript");
+            text
+        }
         Ok(_) => {
             debug!(keyword = %capture.wakeword.keyword, "edge STT produced no transcript");
             upload_to_server(&capture, &binding).await;
@@ -589,9 +644,12 @@ mod tests {
 
         capture.observe_vad(VoiceActivityState::Speech);
 
-        assert!(!capture.is_complete(1_000 + 2_600_000));
+        assert_eq!(capture.completion_reason(1_000 + 2_600_000), None);
         capture.observe_vad(VoiceActivityState::Finished);
-        assert!(capture.is_complete(1_000 + 2_700_000));
+        assert_eq!(
+            capture.completion_reason(1_000 + 2_700_000),
+            Some(SpeechCompletionReason::VadFinished)
+        );
     }
 
     #[test]
@@ -605,8 +663,11 @@ mod tests {
             true,
         );
 
-        assert!(!capture.is_complete(1_000 + 2_400_000));
-        assert!(capture.is_complete(1_000 + 2_500_000));
+        assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
+        assert_eq!(
+            capture.completion_reason(1_000 + 2_500_000),
+            Some(SpeechCompletionReason::NoSpeechTimeout)
+        );
     }
 
     #[test]
@@ -620,8 +681,11 @@ mod tests {
             false,
         );
 
-        assert!(!capture.is_complete(1_000 + 2_400_000));
-        assert!(capture.is_complete(1_000 + 2_500_000));
+        assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
+        assert_eq!(
+            capture.completion_reason(1_000 + 2_500_000),
+            Some(SpeechCompletionReason::FixedWindow)
+        );
     }
 
     #[test]

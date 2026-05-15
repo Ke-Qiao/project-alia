@@ -1523,6 +1523,7 @@ fn is_explicit_alsa_device(device: &str) -> bool {
 
 fn looks_like_alsa_pcm_name(device: &str) -> bool {
     [
+        "alsa:",
         "default",
         "hw:",
         "plughw:",

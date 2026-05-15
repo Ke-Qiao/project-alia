@@ -191,8 +191,14 @@ impl EdgeSttEngine for SherpaOnnxStt {
 }
 
 pub struct SherpaOnnxVad {
-    detector: Mutex<VoiceActivityDetector>,
+    state: Mutex<VadState>,
     sample_rate: u32,
+    window_size: usize,
+}
+
+struct VadState {
+    detector: VoiceActivityDetector,
+    pending_samples: Vec<f32>,
 }
 
 impl SherpaOnnxVad {
@@ -225,8 +231,12 @@ impl SherpaOnnxVad {
         );
 
         Ok(Self {
-            detector: Mutex::new(detector),
+            state: Mutex::new(VadState {
+                detector,
+                pending_samples: Vec::with_capacity(config.window_size.max(1) as usize),
+            }),
             sample_rate: config.sample_rate,
+            window_size: config.window_size.max(1) as usize,
         })
     }
 }
@@ -251,12 +261,13 @@ impl ModuleLifecycle for SherpaOnnxVad {
 
 impl VoiceActivityEngine for SherpaOnnxVad {
     fn reset(&self) -> Result<()> {
-        let detector = self
-            .detector
+        let mut state = self
+            .state
             .lock()
             .map_err(|_| anyhow::anyhow!("sherpa VAD mutex poisoned"))?;
-        detector.reset();
-        detector.clear();
+        state.detector.reset();
+        state.detector.clear();
+        state.pending_samples.clear();
         Ok(())
     }
 
@@ -273,22 +284,31 @@ impl VoiceActivityEngine for SherpaOnnxVad {
         }
 
         let samples = pcm16_to_f32(pcm);
-        let detector = self
-            .detector
+        let mut state = self
+            .state
             .lock()
             .map_err(|_| anyhow::anyhow!("sherpa VAD mutex poisoned"))?;
-        detector.accept_waveform(&samples);
-        if let Some(segment) = detector.front() {
+        state.pending_samples.extend(samples);
+
+        while state.pending_samples.len() >= self.window_size {
+            let window = state
+                .pending_samples
+                .drain(..self.window_size)
+                .collect::<Vec<_>>();
+            state.detector.accept_waveform(&window);
+        }
+
+        if let Some(segment) = state.detector.front() {
             tracing::debug!(
                 start = segment.start(),
                 samples = segment.n(),
                 "sherpa VAD finished speech segment"
             );
             drop(segment);
-            detector.pop();
+            state.detector.pop();
             return Ok(VoiceActivityState::Finished);
         }
-        if detector.detected() {
+        if state.detector.detected() {
             return Ok(VoiceActivityState::Speech);
         }
         Ok(VoiceActivityState::Silence)
