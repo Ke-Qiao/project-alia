@@ -5,6 +5,7 @@ use std::time::Duration;
 use alia_proto::audio::server_audio_ingress_client::ServerAudioIngressClient;
 use alia_proto::audio::{AudioChunk, AudioEncoding, CapturedAudioChunk};
 use anyhow::{Context, Result, bail};
+use futures::stream;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -482,25 +483,32 @@ async fn upload_pcm16_to_server(
         .await
         .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
 
-    let frames = pcm
-        .chunks(1600)
-        .enumerate()
-        .map(move |(sequence, samples)| CapturedAudioChunk {
-            chunk: Some(AudioChunk {
-                opus_data: pcm16_to_le_bytes(samples),
-                sequence: sequence as u64,
-                timestamp_us: timestamp_us(),
-                encoding: AudioEncoding::PcmS16le as i32,
-            }),
-            channel_id: channel_id.clone(),
-            user_id: user_id.clone(),
-            sample_rate,
-            channels: 1,
-        })
-        .collect::<Vec<_>>();
+    let upload_stream = stream::unfold(
+        (pcm, 0usize, 0u64, channel_id, user_id),
+        move |(pcm, offset, sequence, channel_id, user_id)| async move {
+            if offset >= pcm.len() {
+                return None;
+            }
+
+            let end = offset.saturating_add(1600).min(pcm.len());
+            let frame = CapturedAudioChunk {
+                chunk: Some(AudioChunk {
+                    opus_data: pcm16_to_le_bytes(&pcm[offset..end]),
+                    sequence,
+                    timestamp_us: timestamp_us(),
+                    encoding: AudioEncoding::PcmS16le as i32,
+                }),
+                channel_id: channel_id.clone(),
+                user_id: user_id.clone(),
+                sample_rate,
+                channels: 1,
+            };
+            Some((frame, (pcm, end, sequence + 1, channel_id, user_id)))
+        },
+    );
 
     client
-        .upload_captured_audio(tokio_stream::iter(frames))
+        .upload_captured_audio(upload_stream)
         .await
         .context("uploading captured speech to server")?;
     Ok(())

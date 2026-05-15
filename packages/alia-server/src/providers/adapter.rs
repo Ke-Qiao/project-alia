@@ -9,12 +9,51 @@ use crate::module::ModuleLifecycle;
 
 // ========== Common types ==========
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LlmToolCall {
+    pub id: String,
+    pub tool_name: String,
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LlmResponse {
+    pub content: String,
+    #[serde(default)]
+    pub tool_calls: Vec<LlmToolCall>,
+}
+
+impl LlmResponse {
+    pub fn text(content: String) -> Self {
+        Self {
+            content,
+            tool_calls: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<LlmToolCall>,
+}
+
+impl ChatMessage {
+    pub fn new(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            content: content.into(),
+            name: None,
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -37,6 +76,18 @@ pub struct TranscribeChunk {
 pub trait LlmAdapter: ModuleLifecycle {
     /// Single-turn chat (non-streaming)
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String>;
+
+    /// Single-turn chat with native tool definitions when the provider supports
+    /// function/tool calling. Providers that do not support tool calling fall
+    /// back to plain text so the pipeline can still use its text protocol
+    /// parser.
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        _tools: &[ToolDefinition],
+    ) -> anyhow::Result<LlmResponse> {
+        Ok(LlmResponse::text(self.chat(messages).await?))
+    }
 
     /// Streaming chat, returns a token stream
     async fn chat_stream(

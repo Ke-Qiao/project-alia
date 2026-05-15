@@ -245,14 +245,19 @@ impl ToolRegistry for BuiltinToolRegistry {
         // Publish completion event
         if let Some(event_bus) = self.event_bus.lock().await.as_ref() {
             event_bus.publish(ServerEvent::ToolCallCompleted {
-                call_id,
+                call_id: call_id.clone(),
                 tool_name,
                 success: result.as_ref().map_or(false, |r| r.success),
                 duration_ms,
             });
         }
 
-        result
+        result.map(|mut result| {
+            if result.call_id.is_empty() {
+                result.call_id = call_id;
+            }
+            result
+        })
     }
 
     async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()> {

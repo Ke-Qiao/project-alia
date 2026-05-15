@@ -15,6 +15,11 @@ use crate::entity::{persona, user_active_persona, user_persona_override};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{Persona, PersonaProvider, PromptVars};
 
+const TOOL_USE_GUIDELINES: &str = r#"## 工具与技能
+- 如果系统提供了工具调用，请通过工具调用完成操作或查询，不要把工具调用 JSON、函数名或内部参数直接说给用户。
+- 工具返回结果后，只用自然语言总结用户需要知道的结果。
+- 如果工具需要用户确认，请先请求确认，不要声称已经执行。"#;
+
 /// Default system prompt template with Handlebars variables
 const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 Alia，一个贴心的智能家居助手。你性格温和、有耐心，喜欢帮助用户解决日常生活中的问题。
 
@@ -59,6 +64,8 @@ const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 Alia，一个贴心的智能家居
 - {{this}}
 {{/each}}
 {{/if}}
+
+{{{tool_use_guidelines}}}
 
 请用自然、亲切的方式回应用户。
 "#;
@@ -245,21 +252,26 @@ impl PersonaProvider for TemplatePersona {
             "device_status_summary": vars.device_status_summary,
             "available_skills": vars.available_skills,
             "behavior_guidelines": persona.behavior_guidelines,
+            "tool_use_guidelines": TOOL_USE_GUIDELINES,
         });
 
         let handlebars = self.handlebars.read().await;
 
-        // Try to render from DB-registered template, fallback to default
-        let template_name = if let Some(db) = &self.db {
-            match self.find_active_persona(db, user_id).await {
-                Ok(p) if handlebars.has_template(&p.name) => p.name,
-                _ => "default".to_string(),
+        let rendered = match handlebars.render_template(&persona.system_prompt_template, &data) {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                tracing::warn!(
+                    persona = %persona.name,
+                    error = ?error,
+                    "failed to render persona template from database, falling back to default"
+                );
+                handlebars.render("default", &data)?
             }
-        } else {
-            "default".to_string()
         };
-
-        let rendered = handlebars.render(&template_name, &data)?;
-        Ok(rendered)
+        if rendered.contains("## 工具与技能") {
+            Ok(rendered)
+        } else {
+            Ok(format!("{rendered}\n\n{TOOL_USE_GUIDELINES}"))
+        }
     }
 }

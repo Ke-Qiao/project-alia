@@ -25,6 +25,8 @@ use super::context::{AudioBus, AudioFrame};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{AudioCaptureBackend, AudioPlaybackBackend};
 
+const MAX_PLAYBACK_BUFFER_MS: u64 = 10_000;
+
 pub struct CpalAudioCapture {
     config: AudioConfig,
     control_tx: Mutex<Option<mpsc::Sender<()>>>,
@@ -701,6 +703,12 @@ fn run_playback_thread(
                     render_playback_pcm(&pcm, sample_rate, output_sample_rate, output_channels);
                 let mut buffer = lock_mutex(&buffer, "playback buffer")?;
                 buffer.extend(rendered);
+                clamp_playback_buffer(
+                    &mut buffer,
+                    output_sample_rate,
+                    output_channels,
+                    MAX_PLAYBACK_BUFFER_MS,
+                );
                 debug!(queued_samples = buffer.len(), "queued playback audio");
             }
             PlaybackCommand::Stop => {
@@ -944,6 +952,12 @@ fn apply_playback_command(
             let rendered =
                 render_playback_pcm(&input, sample_rate, output_sample_rate, output_channels);
             buffer.extend(rendered);
+            clamp_playback_buffer(
+                buffer,
+                output_sample_rate,
+                output_channels,
+                MAX_PLAYBACK_BUFFER_MS,
+            );
             debug!(queued_samples = buffer.len(), "queued playback audio");
             Ok(false)
         }
@@ -1545,6 +1559,29 @@ fn buffer_frames_for_ms(sample_rate: u32, buffer_ms: u32) -> usize {
         .saturating_mul(buffer_ms.max(1))
         .saturating_div(1_000)
         .max(1) as usize
+}
+
+fn clamp_playback_buffer(
+    buffer: &mut VecDeque<i16>,
+    sample_rate: u32,
+    channels: usize,
+    max_buffer_ms: u64,
+) {
+    let max_samples = u64::from(sample_rate)
+        .saturating_mul(channels.max(1) as u64)
+        .saturating_mul(max_buffer_ms.max(1))
+        .saturating_div(1_000)
+        .max(1) as usize;
+    if buffer.len() <= max_samples {
+        return;
+    }
+
+    let dropped = buffer.len() - max_samples;
+    buffer.truncate(max_samples);
+    warn!(
+        dropped_samples = dropped,
+        max_buffer_ms, "playback buffer full; dropping queued tail"
+    );
 }
 
 #[cfg(test)]

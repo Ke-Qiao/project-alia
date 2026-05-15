@@ -14,7 +14,9 @@ use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ChatMessage, LlmAdapter};
+use crate::providers::adapter::{
+    ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolDefinition,
+};
 
 /// OpenAI chat completion request
 #[derive(Debug, Serialize)]
@@ -26,23 +28,105 @@ struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAiTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAiMessage {
     pub role: String,
-    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<OpenAiToolCall>,
 }
 
 impl From<&ChatMessage> for OpenAiMessage {
     fn from(msg: &ChatMessage) -> Self {
         Self {
             role: msg.role.clone(),
-            content: msg.content.clone(),
-            name: msg.name.clone(),
+            content: (!msg.content.is_empty()).then(|| msg.content.clone()),
+            name: (msg.role != "tool").then(|| msg.name.clone()).flatten(),
+            tool_call_id: msg.tool_call_id.clone(),
+            tool_calls: msg.tool_calls.iter().map(OpenAiToolCall::from).collect(),
         }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiTool {
+    r#type: &'static str,
+    function: OpenAiFunctionDefinition,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAiFunctionDefinition {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+impl From<&ToolDefinition> for OpenAiTool {
+    fn from(tool: &ToolDefinition) -> Self {
+        Self {
+            r#type: "function",
+            function: OpenAiFunctionDefinition {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.parameters.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiToolCall {
+    pub id: String,
+    pub r#type: String,
+    pub function: OpenAiToolFunctionCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAiToolFunctionCall {
+    pub name: String,
+    pub arguments: String,
+}
+
+impl From<&LlmToolCall> for OpenAiToolCall {
+    fn from(call: &LlmToolCall) -> Self {
+        Self {
+            id: call.id.clone(),
+            r#type: "function".to_string(),
+            function: OpenAiToolFunctionCall {
+                name: call.tool_name.clone(),
+                arguments: call.arguments.to_string(),
+            },
+        }
+    }
+}
+
+impl TryFrom<&OpenAiToolCall> for LlmToolCall {
+    type Error = anyhow::Error;
+
+    fn try_from(call: &OpenAiToolCall) -> Result<Self, Self::Error> {
+        let raw_arguments = if call.function.arguments.trim().is_empty() {
+            "{}"
+        } else {
+            &call.function.arguments
+        };
+        let arguments = serde_json::from_str(raw_arguments)
+            .map_err(|error| anyhow::anyhow!("invalid OpenAI tool call arguments: {error}"))?;
+        Ok(Self {
+            id: call.id.clone(),
+            tool_name: call.function.name.clone(),
+            arguments,
+        })
     }
 }
 
@@ -105,8 +189,12 @@ impl OpenAiLlm {
         &self,
         messages: &[ChatMessage],
         stream: bool,
+        tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
         let config = self.config.read().await;
+        let tools = tools
+            .filter(|tools| !tools.is_empty())
+            .map(|tools| tools.iter().map(OpenAiTool::from).collect::<Vec<_>>());
 
         let request = ChatRequest {
             model: config.model.clone(),
@@ -114,6 +202,8 @@ impl OpenAiLlm {
             temperature: Some(config.temperature),
             max_tokens: None,
             stream,
+            tool_choice: tools.as_ref().map(|_| "auto"),
+            tools,
         };
 
         let response = self
@@ -176,21 +266,45 @@ impl ModuleLifecycle for OpenAiLlm {
 #[async_trait]
 impl LlmAdapter for OpenAiLlm {
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        let response = self.chat_internal(messages, false).await?;
+        let response = self.chat_internal(messages, false, None).await?;
         let chat_response: ChatResponse = response.json().await?;
 
         chat_response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
+            .map(|c| c.message.content.clone().unwrap_or_default())
             .ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))
+    }
+
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> anyhow::Result<LlmResponse> {
+        let response = self.chat_internal(messages, false, Some(tools)).await?;
+        let chat_response: ChatResponse = response.json().await?;
+        let message = chat_response
+            .choices
+            .first()
+            .map(|c| &c.message)
+            .ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))?;
+
+        let mut tool_calls = Vec::with_capacity(message.tool_calls.len());
+        for call in &message.tool_calls {
+            tool_calls.push(LlmToolCall::try_from(call)?);
+        }
+
+        Ok(LlmResponse {
+            content: message.content.clone().unwrap_or_default(),
+            tool_calls,
+        })
     }
 
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        let response = self.chat_internal(messages, true).await?;
+        let response = self.chat_internal(messages, true, None).await?;
 
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();

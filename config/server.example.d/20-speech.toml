@@ -2,10 +2,13 @@
 adapter = "whisper_cpp"
 whisper_cpp_endpoint = "http://localhost:8080"
 whisper_cpp_model = "large-v3"
+request_timeout_sec = 30
 
 [tts]
 adapter = "gpt_sovits"
 gpt_sovits_endpoint = "http://localhost:9880/tts"
+request_timeout_sec = 60
+stream_idle_timeout_sec = 10
 # Model names and paths are resolved on the remote GPT-SoVITS server.
 gpt_sovits_model_name = "default"
 gpt_sovits_gpt_weights_path = ""

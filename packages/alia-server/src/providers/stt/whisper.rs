@@ -5,6 +5,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
@@ -40,6 +41,7 @@ pub struct WhisperCppStt {
 struct WhisperConfig {
     endpoint: String,
     language: String,
+    request_timeout_sec: u64,
 }
 
 impl WhisperCppStt {
@@ -49,6 +51,7 @@ impl WhisperCppStt {
             config: Arc::new(RwLock::new(WhisperConfig {
                 endpoint: "http://localhost:8080".to_string(),
                 language: "auto".to_string(),
+                request_timeout_sec: 30,
             })),
         }
     }
@@ -86,13 +89,14 @@ impl ModuleLifecycle for WhisperCppStt {
 
         let mut config = self.config.write().await;
         config.endpoint = server_config.stt.whisper_cpp_endpoint.clone();
+        config.request_timeout_sec = server_config.stt.request_timeout_sec;
 
         tracing::info!(endpoint = %config.endpoint, "Whisper STT initialized");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
 
         // Try to connect to whisper.cpp server
         match self
@@ -114,7 +118,7 @@ impl ModuleLifecycle for WhisperCppStt {
 #[async_trait]
 impl SttAdapter for WhisperCppStt {
     async fn transcribe(&self, audio: &[u8], encoding: AudioEncoding) -> anyhow::Result<String> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
 
         let upload_audio = Self::normalize_audio_for_upload(audio, encoding);
         let form = reqwest::multipart::Form::new()
@@ -131,6 +135,7 @@ impl SttAdapter for WhisperCppStt {
             .client
             .post(format!("{}/inference", config.endpoint))
             .multipart(form)
+            .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
             .send()
             .await?;
 
@@ -151,6 +156,7 @@ impl SttAdapter for WhisperCppStt {
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<TranscribeChunk>> + Send>>> {
         let config = self.config.read().await.clone();
         let client = self.client.clone();
+        let request_timeout = Duration::from_secs(config.request_timeout_sec.max(1));
 
         let stream = async_stream::stream! {
             let mut audio_stream = audio_stream;
@@ -176,6 +182,7 @@ impl SttAdapter for WhisperCppStt {
                     match client
                         .post(format!("{}/inference", config.endpoint))
                         .multipart(form)
+                        .timeout(request_timeout)
                         .send()
                         .await
                     {
@@ -216,6 +223,7 @@ impl SttAdapter for WhisperCppStt {
                 match client
                     .post(format!("{}/inference", config.endpoint))
                     .multipart(form)
+                    .timeout(request_timeout)
                     .send()
                     .await
                 {

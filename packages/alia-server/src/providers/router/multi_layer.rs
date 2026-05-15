@@ -196,6 +196,7 @@ Guidelines:
 - If the user's request seems too complex, requires deep personalization, or involves long context reasoning, respond with exactly: [ESCALATE] followed by a one-sentence explanation of why.
   Example: "[ESCALATE] This question requires analyzing your past conversations and preferences."
 - You do NOT have access to the user's memory, preferences, or conversation history. If asked about those, escalate.
+- If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer.
 - Answer in the same language the user uses."#;
 
 /// System prompt given to the **local LLM** when it's the only model (local-only mode).
@@ -207,7 +208,8 @@ Guidelines:
 - Adapt response length to the complexity of the question.
 - Answer in the same language the user uses.
 - For complex tasks, think step by step.
-- You may not have full conversation history, so ask for clarification when needed."#;
+- You may not have full conversation history, so ask for clarification when needed.
+- If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer."#;
 
 /// System prompt given to the **remote LLM** when handling a conversation.
 const REMOTE_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
@@ -218,7 +220,8 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When using tools or skills, explain what you're doing naturally."#;
+- When using tools or skills, explain what you're doing naturally.
+- Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 /// System prompt given to the **remote LLM** when it's the only model (remote-only mode).
 const REMOTE_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations — from casual greetings to complex reasoning and creative tasks.
@@ -229,7 +232,8 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When using tools or skills, explain what you're doing naturally."#;
+- When using tools or skills, explain what you're doing naturally.
+- Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 // ── Implementation ─────────────────────────────────────────────────────
 

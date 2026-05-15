@@ -14,7 +14,9 @@ use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ChatMessage, LlmAdapter};
+use crate::providers::adapter::{
+    ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolDefinition,
+};
 
 /// Ollama chat request
 #[derive(Debug, Serialize)]
@@ -22,6 +24,8 @@ struct OllamaRequest {
     model: String,
     messages: Vec<OllamaMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OllamaTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
 }
@@ -38,6 +42,8 @@ struct OllamaOptions {
 struct OllamaMessage {
     role: String,
     content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_calls: Vec<OllamaToolCall>,
 }
 
 impl From<&ChatMessage> for OllamaMessage {
@@ -51,6 +57,76 @@ impl From<&ChatMessage> for OllamaMessage {
         Self {
             role: msg.role.clone(),
             content,
+            tool_calls: msg.tool_calls.iter().map(OllamaToolCall::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaTool {
+    r#type: &'static str,
+    function: OllamaFunctionDefinition,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaFunctionDefinition {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+impl From<&ToolDefinition> for OllamaTool {
+    fn from(tool: &ToolDefinition) -> Self {
+        Self {
+            r#type: "function",
+            function: OllamaFunctionDefinition {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.parameters.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OllamaToolCall {
+    #[serde(default)]
+    id: String,
+    function: OllamaToolFunctionCall,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OllamaToolFunctionCall {
+    name: String,
+    #[serde(default)]
+    arguments: serde_json::Value,
+}
+
+impl From<&LlmToolCall> for OllamaToolCall {
+    fn from(call: &LlmToolCall) -> Self {
+        Self {
+            id: call.id.clone(),
+            function: OllamaToolFunctionCall {
+                name: call.tool_name.clone(),
+                arguments: call.arguments.clone(),
+            },
+        }
+    }
+}
+
+impl From<&OllamaToolCall> for LlmToolCall {
+    fn from(call: &OllamaToolCall) -> Self {
+        let arguments = match &call.function.arguments {
+            serde_json::Value::String(raw) => {
+                serde_json::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.clone()))
+            }
+            value => value.clone(),
+        };
+
+        Self {
+            id: call.id.clone(),
+            tool_name: call.function.name.clone(),
+            arguments,
         }
     }
 }
@@ -98,13 +174,18 @@ impl OllamaLlm {
         &self,
         messages: &[ChatMessage],
         stream: bool,
+        tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
         let config = self.config.read().await;
+        let tools = tools
+            .filter(|tools| !tools.is_empty())
+            .map(|tools| tools.iter().map(OllamaTool::from).collect::<Vec<_>>());
 
         let request = OllamaRequest {
             model: config.model.clone(),
             messages: messages.iter().map(OllamaMessage::from).collect(),
             stream,
+            tools,
             options: Some(OllamaOptions {
                 temperature: Some(config.temperature),
                 num_ctx: None,
@@ -174,16 +255,34 @@ impl ModuleLifecycle for OllamaLlm {
 #[async_trait]
 impl LlmAdapter for OllamaLlm {
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        let response = self.chat_internal(messages, false).await?;
+        let response = self.chat_internal(messages, false, None).await?;
         let ollama_response: OllamaResponse = response.json().await?;
         Ok(ollama_response.message.content)
+    }
+
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> anyhow::Result<LlmResponse> {
+        let response = self.chat_internal(messages, false, Some(tools)).await?;
+        let ollama_response: OllamaResponse = response.json().await?;
+        Ok(LlmResponse {
+            content: ollama_response.message.content,
+            tool_calls: ollama_response
+                .message
+                .tool_calls
+                .iter()
+                .map(LlmToolCall::from)
+                .collect(),
+        })
     }
 
     async fn chat_stream(
         &self,
         messages: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        let response = self.chat_internal(messages, true).await?;
+        let response = self.chat_internal(messages, true, None).await?;
 
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();

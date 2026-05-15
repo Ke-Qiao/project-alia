@@ -9,8 +9,9 @@ fn test_message_conversion() {
         role: "user".to_string(),
         content: "Hello".to_string(),
         name: None,
+        ..ChatMessage::default()
     };
     let openai_msg = OpenAiMessage::from(&msg);
     assert_eq!(openai_msg.role, "user");
-    assert_eq!(openai_msg.content, "Hello");
+    assert_eq!(openai_msg.content.as_deref(), Some("Hello"));
 }

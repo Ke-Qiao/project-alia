@@ -10,7 +10,8 @@ use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
-use tokio::sync::RwLock;
+use futures::StreamExt;
+use tokio::sync::{RwLock, mpsc};
 use tokio_util::sync::CancellationToken;
 use tonic::Request;
 use tonic::transport::Channel;
@@ -28,10 +29,13 @@ use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 
 use super::adapter::{
-    AudioFormat, AudioPayload, ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
+    AudioFormat, AudioPayload, AudioPayloadStream, ChannelAction, ChannelAdapter,
+    ChannelCapabilities, ChannelTarget,
 };
 
 const AUDIO_GRPC_CHUNK_BYTES: usize = 64 * 1024;
+const AUDIO_STREAM_GRPC_CHUNK_BYTES: usize = 8 * 1024;
+const AUDIO_STREAM_BACKPRESSURE_CHUNKS: usize = 8;
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 /// Configuration for a single EmbeddedChannel instance.
@@ -419,6 +423,7 @@ impl ChannelAdapter for EmbeddedChannel {
             images: false,
             rich_messages: false,
             streaming: true,
+            audio_streaming: true,
             sensors: true,
             hardware_control: true,
             presence: true,
@@ -484,30 +489,79 @@ impl ChannelAdapter for EmbeddedChannel {
         }
 
         let mut upload_client = self.audio_client().await?;
-        let chunk_count = audio.data.len().div_ceil(AUDIO_GRPC_CHUNK_BYTES);
+        let data = audio.data;
+        let chunk_count = data.len().div_ceil(AUDIO_GRPC_CHUNK_BYTES);
         tracing::debug!(
             channel_id = %self.config.id,
-            bytes = audio.data.len(),
+            bytes = data.len(),
             chunks = chunk_count,
             sample_rate = audio.sample_rate,
             "uploading embedded playback audio in gRPC chunks"
         );
-        let chunks = audio
-            .data
-            .chunks(AUDIO_GRPC_CHUNK_BYTES)
-            .enumerate()
-            .map(|(sequence, bytes)| AudioChunk {
+        let upload_stream = async_stream::stream! {
+            for (sequence, bytes) in data.chunks(AUDIO_GRPC_CHUNK_BYTES).enumerate() {
+                yield AudioChunk {
                 opus_data: bytes.to_vec(),
                 sequence: sequence as u64,
                 timestamp_us: chrono::Utc::now().timestamp_micros() as u64,
                 encoding,
-            })
-            .collect::<Vec<_>>();
-        let upload_stream = tokio_stream::iter(chunks);
+                };
+            }
+        };
         upload_client
             .upload_audio(self.auth_request(upload_stream)?)
             .await?;
 
+        Ok(())
+    }
+
+    async fn send_audio_stream(
+        &self,
+        _target: &ChannelTarget,
+        mut audio: AudioPayloadStream,
+    ) -> anyhow::Result<()> {
+        let Some(first) = audio.next().await else {
+            return Ok(());
+        };
+        let first = first?;
+        let encoding = match first.format {
+            AudioFormat::Opus => ProtoAudioEncoding::Opus as i32,
+            AudioFormat::Pcm16 | AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
+        };
+
+        let request = PlayAudioRequest {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            source: "tts".into(),
+            encoding,
+            sample_rate: first.sample_rate,
+            interrupt_current: false,
+        };
+
+        let mut client = self.audio_client().await?;
+        let mut response_stream = client
+            .play_audio(self.auth_request(request)?)
+            .await?
+            .into_inner();
+
+        if let Some(ack) = response_stream.message().await? {
+            tracing::trace!(seq = ack.sequence, "streaming play_audio primed on Pi");
+        }
+
+        let (tx, rx) = mpsc::channel(AUDIO_STREAM_BACKPRESSURE_CHUNKS);
+        let producer = tokio::spawn(async move {
+            produce_streaming_audio_chunks(first, audio, tx, encoding).await
+        });
+
+        let mut upload_client = self.audio_client().await?;
+        let upload_result = upload_client
+            .upload_audio(self.auth_request(tokio_stream::wrappers::ReceiverStream::new(rx))?)
+            .await;
+
+        let producer_result = producer
+            .await
+            .map_err(|error| anyhow::anyhow!("audio stream producer join failed: {error}"));
+        upload_result?;
+        producer_result??;
         Ok(())
     }
 
@@ -981,6 +1035,164 @@ impl ChannelAdapter for EmbeddedChannel {
             )),
         }
     }
+}
+
+async fn produce_streaming_audio_chunks(
+    first: AudioPayload,
+    mut rest: AudioPayloadStream,
+    tx: mpsc::Sender<AudioChunk>,
+    encoding: i32,
+) -> anyhow::Result<()> {
+    let mut chunker = StreamingAudioChunker::new(tx, encoding, AUDIO_STREAM_GRPC_CHUNK_BYTES);
+    let mut wav_decoder = StreamingWavPcmDecoder::default();
+
+    process_stream_payload(first, &mut chunker, &mut wav_decoder).await?;
+    while let Some(payload) = rest.next().await {
+        process_stream_payload(payload?, &mut chunker, &mut wav_decoder).await?;
+    }
+
+    chunker.flush().await
+}
+
+async fn process_stream_payload(
+    payload: AudioPayload,
+    chunker: &mut StreamingAudioChunker,
+    wav_decoder: &mut StreamingWavPcmDecoder,
+) -> anyhow::Result<()> {
+    match payload.format {
+        AudioFormat::Wav => {
+            let pcm = wav_decoder.push(&payload.data)?;
+            if !pcm.is_empty() {
+                chunker.push(&pcm).await?;
+            }
+        }
+        AudioFormat::Pcm16 | AudioFormat::Opus => {
+            chunker.push(&payload.data).await?;
+        }
+    }
+    Ok(())
+}
+
+struct StreamingAudioChunker {
+    tx: mpsc::Sender<AudioChunk>,
+    encoding: i32,
+    max_bytes: usize,
+    sequence: u64,
+    pending: Vec<u8>,
+}
+
+impl StreamingAudioChunker {
+    fn new(tx: mpsc::Sender<AudioChunk>, encoding: i32, max_bytes: usize) -> Self {
+        Self {
+            tx,
+            encoding,
+            max_bytes,
+            sequence: 0,
+            pending: Vec::with_capacity(max_bytes),
+        }
+    }
+
+    async fn push(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+        self.pending.extend_from_slice(bytes);
+        while self.pending.len() >= self.max_bytes {
+            let tail = self.pending.split_off(self.max_bytes);
+            let chunk = std::mem::replace(&mut self.pending, tail);
+            self.send(chunk).await?;
+        }
+        Ok(())
+    }
+
+    async fn flush(&mut self) -> anyhow::Result<()> {
+        if !self.pending.is_empty() {
+            let chunk = std::mem::take(&mut self.pending);
+            self.send(chunk).await?;
+        }
+        Ok(())
+    }
+
+    async fn send(&mut self, bytes: Vec<u8>) -> anyhow::Result<()> {
+        let chunk = AudioChunk {
+            opus_data: bytes,
+            sequence: self.sequence,
+            timestamp_us: chrono::Utc::now().timestamp_micros() as u64,
+            encoding: self.encoding,
+        };
+        self.sequence += 1;
+        self.tx
+            .send(chunk)
+            .await
+            .map_err(|_| anyhow::anyhow!("embedded audio upload stream closed"))
+    }
+}
+
+#[derive(Default)]
+struct StreamingWavPcmDecoder {
+    header: Vec<u8>,
+    data_started: bool,
+    pending_odd: Option<u8>,
+}
+
+impl StreamingWavPcmDecoder {
+    fn push(&mut self, bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+        if self.data_started && bytes.starts_with(b"RIFF") {
+            *self = Self::default();
+        }
+
+        let mut pcm = if self.data_started {
+            bytes.to_vec()
+        } else {
+            self.header.extend_from_slice(bytes);
+            let Some(data_start) = wav_data_start(&self.header)? else {
+                return Ok(Vec::new());
+            };
+            let pcm = self.header[data_start..].to_vec();
+            self.header.clear();
+            self.data_started = true;
+            pcm
+        };
+
+        if let Some(odd) = self.pending_odd.take() {
+            let mut with_odd = Vec::with_capacity(pcm.len() + 1);
+            with_odd.push(odd);
+            with_odd.extend_from_slice(&pcm);
+            pcm = with_odd;
+        }
+        if pcm.len() % 2 != 0 {
+            self.pending_odd = pcm.pop();
+        }
+
+        Ok(pcm)
+    }
+}
+
+fn wav_data_start(buffer: &[u8]) -> anyhow::Result<Option<usize>> {
+    if buffer.len() < 12 {
+        return Ok(None);
+    }
+    if &buffer[0..4] != b"RIFF" || &buffer[8..12] != b"WAVE" {
+        anyhow::bail!("streaming WAV payload missing RIFF/WAVE header");
+    }
+
+    let mut pos = 12usize;
+    while pos + 8 <= buffer.len() {
+        let chunk_id = &buffer[pos..pos + 4];
+        let size = u32::from_le_bytes(buffer[pos + 4..pos + 8].try_into()?) as usize;
+        let data_start = pos + 8;
+        if chunk_id == b"data" {
+            return Ok(Some(data_start));
+        }
+        let padded = size + (size % 2);
+        let next = data_start.saturating_add(padded);
+        if next > buffer.len() {
+            return Ok(None);
+        }
+        pos = next;
+    }
+
+    if buffer.len() > 128 * 1024 {
+        anyhow::bail!("streaming WAV header exceeded 128 KiB without data chunk");
+    }
+    Ok(None)
 }
 
 fn direct_response_rule_from_json(

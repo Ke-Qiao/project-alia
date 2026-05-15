@@ -184,6 +184,7 @@ impl ConversationBackend for DatabaseConversationBackend {
                 role: m.role.clone(),
                 content: m.content.clone(),
                 name: m.user_id.clone(),
+                ..ChatMessage::default()
             })
             .collect())
     }

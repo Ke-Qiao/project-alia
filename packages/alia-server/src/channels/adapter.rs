@@ -1,4 +1,7 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use futures::{Stream, StreamExt};
 use serde::Serialize;
 
 use crate::module::ModuleLifecycle;
@@ -21,6 +24,9 @@ pub struct ChannelCapabilities {
     /// `begin_stream / send_stream_chunk / end_stream` methods instead of
     /// waiting for the full response and calling `send_message`.
     pub streaming: bool,
+    /// When `true`, the channel can consume TTS audio chunks incrementally.
+    /// Channels that leave this false use a safe full-buffer fallback.
+    pub audio_streaming: bool,
     pub sensors: bool,
     pub hardware_control: bool,
     pub presence: bool,
@@ -48,7 +54,10 @@ pub struct AudioPayload {
     pub format: AudioFormat,
 }
 
-#[derive(Debug, Clone, Serialize)]
+pub type AudioPayloadStream =
+    Pin<Box<dyn Stream<Item = anyhow::Result<AudioPayload>> + Send + 'static>>;
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum AudioFormat {
     Pcm16,
     Opus,
@@ -125,6 +134,43 @@ pub trait ChannelAdapter: ModuleLifecycle {
             "audio not supported by channel '{}'",
             self.channel_type()
         ))
+    }
+
+    /// Send a stream of audio chunks to the channel.
+    ///
+    /// The default implementation preserves correctness by buffering chunks and
+    /// delegating to `send_audio`. Low-latency channels should override this to
+    /// apply backpressure and start playback as soon as enough audio is ready.
+    async fn send_audio_stream(
+        &self,
+        target: &ChannelTarget,
+        mut audio: AudioPayloadStream,
+    ) -> anyhow::Result<()> {
+        let Some(first) = audio.next().await else {
+            return Ok(());
+        };
+        let mut combined = first?;
+
+        while let Some(next) = audio.next().await {
+            let next = next?;
+            if next.sample_rate != combined.sample_rate
+                || next.channels != combined.channels
+                || next.format != combined.format
+            {
+                anyhow::bail!(
+                    "audio stream changed format from {:?}/{}Hz/{}ch to {:?}/{}Hz/{}ch",
+                    combined.format,
+                    combined.sample_rate,
+                    combined.channels,
+                    next.format,
+                    next.sample_rate,
+                    next.channels
+                );
+            }
+            combined.data.extend(next.data);
+        }
+
+        self.send_audio(target, combined).await
     }
 
     /// Begin a streaming response. Called once before the first chunk.

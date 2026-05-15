@@ -5,6 +5,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
@@ -82,6 +83,8 @@ struct SovitsConfig {
     super_sampling: bool,
     overlap_length: u32,
     min_chunk_length: u32,
+    request_timeout_sec: u64,
+    stream_idle_timeout_sec: u64,
 }
 
 impl GptSovitsTts {
@@ -111,6 +114,8 @@ impl GptSovitsTts {
                 super_sampling: false,
                 overlap_length: 2,
                 min_chunk_length: 16,
+                request_timeout_sec: 60,
+                stream_idle_timeout_sec: 10,
             })),
         }
     }
@@ -161,6 +166,7 @@ fn non_empty(value: Option<&str>) -> Option<String> {
 }
 
 async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> anyhow::Result<()> {
+    let timeout = Duration::from_secs(config.request_timeout_sec.max(1));
     if let Some(path) = &config.gpt_weights_path {
         set_remote_weights(
             client,
@@ -168,6 +174,7 @@ async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> any
             "set_gpt_weights",
             "weights_path",
             path,
+            timeout,
         )
         .await?;
     }
@@ -178,6 +185,7 @@ async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> any
             "set_sovits_weights",
             "weights_path",
             path,
+            timeout,
         )
         .await?;
     }
@@ -190,11 +198,13 @@ async fn set_remote_weights(
     path: &str,
     param: &str,
     value: &str,
+    timeout: Duration,
 ) -> anyhow::Result<()> {
     let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
     let response = client
         .get(format!("{base}/{path}"))
         .query(&[(param, value)])
+        .timeout(timeout)
         .send()
         .await?;
 
@@ -216,67 +226,72 @@ impl ModuleLifecycle for GptSovitsTts {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
 
-        let mut config = self.config.write().await;
-        config.endpoint = server_config.tts.gpt_sovits_endpoint.clone();
-        config.model_name = non_empty(server_config.tts.gpt_sovits_model_name.as_deref());
-        config.gpt_weights_path =
-            non_empty(server_config.tts.gpt_sovits_gpt_weights_path.as_deref());
-        config.sovits_weights_path =
-            non_empty(server_config.tts.gpt_sovits_sovits_weights_path.as_deref());
-        config.ref_audio_path = server_config
-            .tts
-            .gpt_sovits_ref_audio_path
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-            .cloned();
-        config.aux_ref_audio_paths = server_config
-            .tts
-            .gpt_sovits_aux_ref_audio_paths
-            .iter()
-            .filter(|value| !value.trim().is_empty())
-            .cloned()
-            .collect();
-        config.prompt_text = server_config
-            .tts
-            .gpt_sovits_prompt_text
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-            .cloned();
-        config.text_lang = server_config.tts.gpt_sovits_text_lang.clone();
-        config.prompt_lang = server_config.tts.gpt_sovits_prompt_lang.clone();
-        config.text_split_method = server_config.tts.gpt_sovits_text_split_method.clone();
-        config.batch_size = server_config.tts.gpt_sovits_batch_size;
-        config.batch_threshold = server_config.tts.gpt_sovits_batch_threshold;
-        config.split_bucket = server_config.tts.gpt_sovits_split_bucket;
-        config.speed_factor = server_config.tts.gpt_sovits_speed_factor;
-        config.fragment_interval = server_config.tts.gpt_sovits_fragment_interval;
-        config.seed = server_config.tts.gpt_sovits_seed;
-        config.parallel_infer = server_config.tts.gpt_sovits_parallel_infer;
-        config.repetition_penalty = server_config.tts.gpt_sovits_repetition_penalty;
-        config.sample_steps = server_config.tts.gpt_sovits_sample_steps;
-        config.super_sampling = server_config.tts.gpt_sovits_super_sampling;
-        config.overlap_length = server_config.tts.gpt_sovits_overlap_length;
-        config.min_chunk_length = server_config.tts.gpt_sovits_min_chunk_length;
+        let configured = {
+            let mut config = self.config.write().await;
+            config.endpoint = server_config.tts.gpt_sovits_endpoint.clone();
+            config.model_name = non_empty(server_config.tts.gpt_sovits_model_name.as_deref());
+            config.gpt_weights_path =
+                non_empty(server_config.tts.gpt_sovits_gpt_weights_path.as_deref());
+            config.sovits_weights_path =
+                non_empty(server_config.tts.gpt_sovits_sovits_weights_path.as_deref());
+            config.ref_audio_path = server_config
+                .tts
+                .gpt_sovits_ref_audio_path
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())
+                .cloned();
+            config.aux_ref_audio_paths = server_config
+                .tts
+                .gpt_sovits_aux_ref_audio_paths
+                .iter()
+                .filter(|value| !value.trim().is_empty())
+                .cloned()
+                .collect();
+            config.prompt_text = server_config
+                .tts
+                .gpt_sovits_prompt_text
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())
+                .cloned();
+            config.text_lang = server_config.tts.gpt_sovits_text_lang.clone();
+            config.prompt_lang = server_config.tts.gpt_sovits_prompt_lang.clone();
+            config.text_split_method = server_config.tts.gpt_sovits_text_split_method.clone();
+            config.batch_size = server_config.tts.gpt_sovits_batch_size;
+            config.batch_threshold = server_config.tts.gpt_sovits_batch_threshold;
+            config.split_bucket = server_config.tts.gpt_sovits_split_bucket;
+            config.speed_factor = server_config.tts.gpt_sovits_speed_factor;
+            config.fragment_interval = server_config.tts.gpt_sovits_fragment_interval;
+            config.seed = server_config.tts.gpt_sovits_seed;
+            config.parallel_infer = server_config.tts.gpt_sovits_parallel_infer;
+            config.repetition_penalty = server_config.tts.gpt_sovits_repetition_penalty;
+            config.sample_steps = server_config.tts.gpt_sovits_sample_steps;
+            config.super_sampling = server_config.tts.gpt_sovits_super_sampling;
+            config.overlap_length = server_config.tts.gpt_sovits_overlap_length;
+            config.min_chunk_length = server_config.tts.gpt_sovits_min_chunk_length;
+            config.request_timeout_sec = server_config.tts.request_timeout_sec;
+            config.stream_idle_timeout_sec = server_config.tts.stream_idle_timeout_sec;
+            config.clone()
+        };
 
-        if let Err(error) = configure_remote_weights(&self.client, &config).await {
+        if let Err(error) = configure_remote_weights(&self.client, &configured).await {
             tracing::warn!(
                 error = %error,
-                endpoint = %config.endpoint,
-                model = config.model_name.as_deref().unwrap_or("unspecified"),
+                endpoint = %configured.endpoint,
+                model = configured.model_name.as_deref().unwrap_or("unspecified"),
                 "GPT-SoVITS remote weight setup failed; continuing with the model already loaded by the TTS server"
             );
         }
 
         tracing::info!(
-            endpoint = %config.endpoint,
-            model = config.model_name.as_deref().unwrap_or("unspecified"),
+            endpoint = %configured.endpoint,
+            model = configured.model_name.as_deref().unwrap_or("unspecified"),
             "GPT-SoVITS TTS initialized"
         );
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
 
         // Try to connect to GPT-SoVITS server
         match self
@@ -301,7 +316,7 @@ impl ModuleLifecycle for GptSovitsTts {
 #[async_trait]
 impl TtsAdapter for GptSovitsTts {
     async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
 
         let request = config.request(text, 0);
 
@@ -309,6 +324,7 @@ impl TtsAdapter for GptSovitsTts {
             .client
             .post(&config.endpoint)
             .json(&request)
+            .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
             .send()
             .await?;
 
@@ -326,7 +342,7 @@ impl TtsAdapter for GptSovitsTts {
         &self,
         text: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
 
         let request = config.request(text, 1);
 
@@ -334,6 +350,7 @@ impl TtsAdapter for GptSovitsTts {
             .client
             .post(&config.endpoint)
             .json(&request)
+            .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
             .send()
             .await?;
 
@@ -343,16 +360,25 @@ impl TtsAdapter for GptSovitsTts {
             anyhow::bail!("GPT-SoVITS API error {}: {}", status, body);
         }
 
+        let idle_timeout = Duration::from_secs(config.stream_idle_timeout_sec.max(1));
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();
 
-            while let Some(chunk_result) = byte_stream.next().await {
-                match chunk_result {
-                    Ok(chunk) => {
+            loop {
+                match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
+                    Ok(Some(Ok(chunk))) => {
                         yield Ok(chunk.to_vec());
                     }
-                    Err(e) => {
+                    Ok(Some(Err(e))) => {
                         yield Err(anyhow::anyhow!("Stream error: {}", e));
+                        break;
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        yield Err(anyhow::anyhow!(
+                            "GPT-SoVITS stream idle timeout after {}s",
+                            idle_timeout.as_secs()
+                        ));
                         break;
                     }
                 }

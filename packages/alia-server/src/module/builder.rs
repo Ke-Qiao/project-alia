@@ -403,6 +403,7 @@ impl ServerBuilder {
             state.sensors.clone(),
             state.cancel_token.clone(),
             state.config.server.debug_output,
+            state.config.tools.clone(),
         );
 
         Ok(state)

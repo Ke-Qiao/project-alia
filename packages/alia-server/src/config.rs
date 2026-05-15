@@ -173,6 +173,15 @@ fn default_tools_module() -> String {
 fn default_router_timeout() -> u64 {
     5
 }
+fn default_stt_request_timeout() -> u64 {
+    30
+}
+fn default_tts_request_timeout() -> u64 {
+    60
+}
+fn default_tts_stream_idle_timeout() -> u64 {
+    10
+}
 
 fn default_true() -> bool {
     true
@@ -250,12 +259,18 @@ pub struct SttSection {
     pub adapter: String,
     pub whisper_cpp_endpoint: String,
     pub whisper_cpp_model: String,
+    #[serde(default = "default_stt_request_timeout")]
+    pub request_timeout_sec: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TtsSection {
     pub adapter: String,
     pub gpt_sovits_endpoint: String,
+    #[serde(default = "default_tts_request_timeout")]
+    pub request_timeout_sec: u64,
+    #[serde(default = "default_tts_stream_idle_timeout")]
+    pub stream_idle_timeout_sec: u64,
     #[serde(default)]
     pub gpt_sovits_model_name: Option<String>,
     #[serde(default)]
