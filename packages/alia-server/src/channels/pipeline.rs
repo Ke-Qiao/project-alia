@@ -42,6 +42,7 @@ const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
   {"tool_calls":[{"name":"tool_name","arguments":{}}]}
 "#;
 const TTS_SENTENCE_MAX_CHARS: usize = 80;
+const TTS_SENTENCE_GAP_MS: u32 = 80;
 
 /// Result of `process_text` — carries the full response text and whether it
 /// was already delivered to the channel via streaming.
@@ -1265,43 +1266,144 @@ async fn stream_tts_sentences(
         debug_component_text(
             debug_output,
             "tts",
-            "sentence_stream_call",
+            "sentence_call",
             sentence,
             Some((&channel_id, &user_id)),
         );
-        let mut stream = match tts.synthesize_stream(sentence).await {
-            Ok(stream) => stream,
+        let audio_bytes = match tts.synthesize(sentence).await {
+            Ok(audio_bytes) => audio_bytes,
             Err(error) => {
-                let message = format!("TTS stream setup failed: {error}");
+                let message = format!("TTS sentence synthesis failed: {error}");
                 let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
                 return Err(error);
             }
         };
 
-        while let Some(chunk) = stream.next().await {
-            match chunk {
-                Ok(data) => {
-                    audio_started.store(true, Ordering::Relaxed);
-                    let payload = AudioPayload {
-                        data,
-                        sample_rate: 24000,
-                        channels: 1,
-                        format: AudioFormat::Wav,
-                    };
-                    if audio_tx.send(Ok(payload)).await.is_err() {
-                        return Ok(());
-                    }
-                }
-                Err(error) => {
-                    let message = format!("TTS stream chunk failed: {error}");
-                    let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
-                    return Err(error);
-                }
+        let payload = match tts_bytes_to_pcm_payload(audio_bytes) {
+            Ok(payload) => payload,
+            Err(error) => {
+                let message = format!("TTS sentence audio decode failed: {error}");
+                let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
+                return Err(error);
             }
+        };
+
+        if payload.data.is_empty() {
+            continue;
+        }
+
+        let silence =
+            pcm16_silence_payload(payload.sample_rate, payload.channels, TTS_SENTENCE_GAP_MS);
+        if audio_tx.send(Ok(payload)).await.is_err() {
+            return Ok(());
+        }
+        audio_started.store(true, Ordering::Relaxed);
+        if audio_tx.send(Ok(silence)).await.is_err() {
+            return Ok(());
         }
     }
 
     Ok(())
+}
+
+fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> {
+    if let Some((data, sample_rate, channels)) = pcm16_payload_from_wav(&bytes)? {
+        return Ok(AudioPayload {
+            data,
+            sample_rate,
+            channels,
+            format: AudioFormat::Pcm16,
+        });
+    }
+
+    // The TTS adapter contract historically returned WAV bytes, but keep a
+    // conservative raw-PCM fallback for test/noop/custom adapters.
+    Ok(AudioPayload {
+        data: bytes,
+        sample_rate: 24000,
+        channels: 1,
+        format: AudioFormat::Pcm16,
+    })
+}
+
+fn pcm16_payload_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<u8>, u32, u16)>> {
+    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Ok(None);
+    }
+
+    let mut pos = 12usize;
+    let mut channels = None;
+    let mut sample_rate = None;
+    let mut bits_per_sample = None;
+    let mut audio_format = None;
+    let mut data_range = None;
+
+    while pos + 8 <= bytes.len() {
+        let chunk_id = &bytes[pos..pos + 4];
+        let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into()?) as usize;
+        let data_start = pos + 8;
+        let data_end = data_start.saturating_add(size);
+        if data_end > bytes.len() {
+            break;
+        }
+
+        match chunk_id {
+            b"fmt " if size >= 16 => {
+                audio_format = Some(u16::from_le_bytes(
+                    bytes[data_start..data_start + 2].try_into()?,
+                ));
+                channels = Some(u16::from_le_bytes(
+                    bytes[data_start + 2..data_start + 4].try_into()?,
+                ));
+                sample_rate = Some(u32::from_le_bytes(
+                    bytes[data_start + 4..data_start + 8].try_into()?,
+                ));
+                bits_per_sample = Some(u16::from_le_bytes(
+                    bytes[data_start + 14..data_start + 16].try_into()?,
+                ));
+            }
+            b"data" => data_range = Some((data_start, data_end)),
+            _ => {}
+        }
+
+        let padded = size + (size % 2);
+        pos = data_start.saturating_add(padded);
+    }
+
+    let Some((data_start, data_end)) = data_range else {
+        anyhow::bail!("WAV missing data chunk");
+    };
+    let channels = channels.unwrap_or(1);
+    let sample_rate = sample_rate.unwrap_or(24_000);
+    let bits_per_sample = bits_per_sample.unwrap_or(16);
+    let audio_format = audio_format.unwrap_or(1);
+
+    if audio_format != 1 || bits_per_sample != 16 {
+        anyhow::bail!(
+            "unsupported WAV format: audio_format={}, bits_per_sample={}",
+            audio_format,
+            bits_per_sample
+        );
+    }
+
+    let mut data = bytes[data_start..data_end].to_vec();
+    if data.len() % 2 != 0 {
+        data.pop();
+    }
+    Ok(Some((data, sample_rate, channels.max(1))))
+}
+
+fn pcm16_silence_payload(sample_rate: u32, channels: u16, duration_ms: u32) -> AudioPayload {
+    let sample_count = sample_rate
+        .saturating_mul(u32::from(channels.max(1)))
+        .saturating_mul(duration_ms)
+        .saturating_div(1_000) as usize;
+    AudioPayload {
+        data: vec![0u8; sample_count * 2],
+        sample_rate,
+        channels: channels.max(1),
+        format: AudioFormat::Pcm16,
+    }
 }
 
 fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<String> {
@@ -1840,5 +1942,51 @@ mod tests {
     fn ignores_plain_assistant_text() {
         let calls = parse_text_tool_calls("Sure, I can help with that.").unwrap();
         assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn decodes_tts_wav_to_pcm_payload() {
+        let pcm = [1i16, -2i16, 3i16, -4i16]
+            .into_iter()
+            .flat_map(i16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let wav = test_wav(&pcm, 16_000, 2);
+
+        let payload = tts_bytes_to_pcm_payload(wav).unwrap();
+
+        assert_eq!(payload.format, AudioFormat::Pcm16);
+        assert_eq!(payload.sample_rate, 16_000);
+        assert_eq!(payload.channels, 2);
+        assert_eq!(payload.data, pcm);
+    }
+
+    #[test]
+    fn builds_pcm_silence_gap() {
+        let payload = pcm16_silence_payload(16_000, 1, 80);
+        assert_eq!(payload.format, AudioFormat::Pcm16);
+        assert_eq!(payload.data.len(), 16_000 * 80 / 1_000 * 2);
+        assert!(payload.data.iter().all(|byte| *byte == 0));
+    }
+
+    fn test_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+        let mut wav = Vec::new();
+        let data_len = pcm.len() as u32;
+        let byte_rate = sample_rate * u32::from(channels) * 2;
+        let block_align = channels * 2;
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&channels.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&byte_rate.to_le_bytes());
+        wav.extend_from_slice(&block_align.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        wav.extend_from_slice(pcm);
+        wav
     }
 }
