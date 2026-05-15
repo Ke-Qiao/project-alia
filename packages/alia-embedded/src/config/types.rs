@@ -518,7 +518,7 @@ impl Default for DirectResponseDefaultsConfig {
 }
 
 fn default_direct_response_audio_dir() -> PathBuf {
-    PathBuf::from("run/direct_response")
+    PathBuf::from("run/direct-responses")
 }
 
 fn default_direct_response_weight() -> f32 {

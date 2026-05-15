@@ -197,13 +197,13 @@ mod tests {
     #[test]
     fn keeps_runtime_asset_dirs_relative_to_runtime_root() {
         let mut settings = EmbeddedRuntimeSettings::default();
-        settings.direct_response_defaults.audio_dir = PathBuf::from("run/direct_response");
+        settings.direct_response_defaults.audio_dir = PathBuf::from("run/direct-responses");
 
         relativize_runtime_paths(Path::new("config/embedded.toml"), &mut settings);
 
         assert_eq!(
             settings.direct_response_defaults.audio_dir,
-            PathBuf::from("run/direct_response")
+            PathBuf::from("run/direct-responses")
         );
     }
 

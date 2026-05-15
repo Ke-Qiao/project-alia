@@ -182,17 +182,17 @@ async fn proto_to_record(
     } else {
         audio_dir.join(&slug)
     };
-    let audio_variants = write_audio_variants(rule.audio_variants, &variant_audio_dir).await?;
-    let audio_path = if rule.audio_path.trim().is_empty() {
-        audio_variants
-            .first()
-            .map(|variant| variant.audio_path.clone())
-            .unwrap_or_default()
-    } else {
-        rule.audio_path
-    };
+    let mut variants = rule.audio_variants;
+    if variants.is_empty() && !rule.audio_path.trim().is_empty() {
+        variants.push(DirectResponseAudioVariant {
+            audio_path: rule.audio_path,
+            weight: 1.0,
+            audio_data: Vec::new(),
+        });
+    }
+    let audio_variants = write_audio_variants(variants, &variant_audio_dir).await?;
 
-    if audio_path.trim().is_empty() {
+    if audio_variants.is_empty() {
         return Err(Status::invalid_argument(
             "direct response requires audio_path or at least one audio variant",
         ));
@@ -202,7 +202,6 @@ async fn proto_to_record(
         id: rule.id,
         slug,
         keywords,
-        audio_path,
         audio_variants,
         action: (!rule.action.trim().is_empty()).then_some(rule.action),
         enabled: rule.enabled,
@@ -214,7 +213,11 @@ fn record_to_proto(record: DirectResponseRuleRecord) -> DirectResponseRule {
         id: record.id,
         slug: record.slug,
         keywords: record.keywords,
-        audio_path: record.audio_path,
+        audio_path: record
+            .audio_variants
+            .first()
+            .map(|variant| variant.audio_path.clone())
+            .unwrap_or_default(),
         action: record.action.unwrap_or_default(),
         enabled: record.enabled,
         audio_variants: record

@@ -54,7 +54,7 @@ num_threads = 1
 debug = false
 
 [direct_response_defaults]
-audio_dir = "run/direct_response"
+audio_dir = "run/direct-responses"
 
 [discovery]
 mdns_enabled = true
