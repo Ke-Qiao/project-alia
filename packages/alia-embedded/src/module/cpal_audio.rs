@@ -595,52 +595,61 @@ fn start_alsa_playback_runtime(
 ) -> Result<(AlsaPcm, u32, usize, usize)> {
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
         .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
-    let hwp = AlsaHwParams::any(&pcm).context("reading ALSA hardware params")?;
-    hwp.set_access(AlsaAccess::RWInterleaved)
-        .context("setting ALSA interleaved access")?;
-    hwp.set_format(AlsaFormat::s16())
-        .context("setting ALSA sample format")?;
-    let _ = hwp.set_rate_resample(true);
-
     let requested_channels = u32::from(config.playback_channels.max(1));
-    let actual_channels = hwp
-        .set_channels_near(requested_channels)
-        .context("setting ALSA playback channels")?;
     let requested_rate = config.playback_sample_rate.max(1);
-    let actual_sample_rate = hwp
-        .set_rate_near(requested_rate, AlsaValueOr::Nearest)
-        .context("setting ALSA playback sample rate")?;
+    let (actual_channels, actual_sample_rate) = {
+        let hwp = AlsaHwParams::any(&pcm).context("reading ALSA hardware params")?;
+        hwp.set_access(AlsaAccess::RWInterleaved)
+            .context("setting ALSA interleaved access")?;
+        hwp.set_format(AlsaFormat::s16())
+            .context("setting ALSA sample format")?;
+        let _ = hwp.set_rate_resample(true);
 
-    let requested_buffer_frames =
-        buffer_frames_for_ms(actual_sample_rate, config.playback_buffer_ms);
-    let _ = hwp.set_buffer_size_near(requested_buffer_frames as AlsaFrames);
-    let requested_period_frames = (requested_buffer_frames / 2).max(1);
-    let _ = hwp.set_period_size_near(requested_period_frames as AlsaFrames, AlsaValueOr::Nearest);
+        let actual_channels = hwp
+            .set_channels_near(requested_channels)
+            .context("setting ALSA playback channels")?;
+        let actual_sample_rate = hwp
+            .set_rate_near(requested_rate, AlsaValueOr::Nearest)
+            .context("setting ALSA playback sample rate")?;
 
-    pcm.hw_params(&hwp)
-        .context("applying ALSA hardware params")?;
+        let requested_buffer_frames =
+            buffer_frames_for_ms(actual_sample_rate, config.playback_buffer_ms);
+        let _ = hwp.set_buffer_size_near(requested_buffer_frames as AlsaFrames);
+        let requested_period_frames = (requested_buffer_frames / 2).max(1);
+        let _ =
+            hwp.set_period_size_near(requested_period_frames as AlsaFrames, AlsaValueOr::Nearest);
 
-    let hw_params = pcm
-        .hw_params_current()
-        .context("reading ALSA playback params")?;
-    let chunk_frames = hw_params
-        .get_period_size()
-        .context("reading ALSA playback period size")?
-        .max(1) as usize;
-    let start_threshold = hw_params
-        .get_buffer_size()
-        .context("reading ALSA playback buffer size")?
-        .max(1);
+        pcm.hw_params(&hwp)
+            .context("applying ALSA hardware params")?;
+        (actual_channels, actual_sample_rate)
+    };
 
-    let swp = pcm
-        .sw_params_current()
-        .context("reading ALSA software params")?;
-    swp.set_start_threshold(start_threshold)
-        .context("setting ALSA start threshold")?;
-    swp.set_avail_min(chunk_frames as AlsaFrames)
-        .context("setting ALSA minimum available frames")?;
-    pcm.sw_params(&swp)
-        .context("applying ALSA software params")?;
+    let (chunk_frames, start_threshold) = {
+        let hw_params = pcm
+            .hw_params_current()
+            .context("reading ALSA playback params")?;
+        let chunk_frames = hw_params
+            .get_period_size()
+            .context("reading ALSA playback period size")?
+            .max(1) as usize;
+        let start_threshold = hw_params
+            .get_buffer_size()
+            .context("reading ALSA playback buffer size")?
+            .max(1);
+        (chunk_frames, start_threshold)
+    };
+
+    {
+        let swp = pcm
+            .sw_params_current()
+            .context("reading ALSA software params")?;
+        swp.set_start_threshold(start_threshold)
+            .context("setting ALSA start threshold")?;
+        swp.set_avail_min(chunk_frames as AlsaFrames)
+            .context("setting ALSA minimum available frames")?;
+        pcm.sw_params(&swp)
+            .context("applying ALSA software params")?;
+    }
     pcm.prepare().context("preparing ALSA playback stream")?;
 
     info!(
