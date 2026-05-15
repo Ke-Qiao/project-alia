@@ -39,4 +39,5 @@ mdns-sd = "0.19"
 tempfile = "3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.9"
 bluer = { version = "0.17", features = ["bluetoothd"] }

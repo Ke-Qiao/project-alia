@@ -53,7 +53,7 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 |---------|---------|
 | `[runtime]` | Provisioning state (`false` means accessory-style OOBE mode) |
 | `[identity]` | Device ID, friendly name, keypair path |
-| `[audio]` | Capture/playback devices, Opus encoding params |
+| `[audio]` | Capture/playback devices, Opus encoding params, and Linux ALSA fallback names such as `alsa:plughw:0,0` |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
 
 ## Development

@@ -4,6 +4,13 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+#[cfg(target_os = "linux")]
+use alsa::pcm::{
+    Access as AlsaAccess, Format as AlsaFormat, Frames as AlsaFrames, HwParams as AlsaHwParams,
+    PCM as AlsaPcm, State as AlsaState,
+};
+#[cfg(target_os = "linux")]
+use alsa::{Direction as AlsaDirection, ValueOr as AlsaValueOr};
 use anyhow::{Context, Result, anyhow, bail};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -223,7 +230,19 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
 
     fn is_available(&self) -> bool {
         let host = cpal::default_host();
-        select_output_device(&host, &self.config.playback_device).is_ok()
+        if select_output_device(&host, &self.config.playback_device).is_ok() {
+            return true;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            return alsa_playback_device_available(&self.config.playback_device);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
     }
 }
 
@@ -389,76 +408,7 @@ fn run_playback_thread(
     command_rx: mpsc::Receiver<PlaybackCommand>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
 ) -> Result<()> {
-    let started = (|| {
-        let host = cpal::default_host();
-        let device = select_output_device(&host, &config.playback_device)?;
-        let selected = select_stream_config(
-            device.supported_output_configs()?,
-            config.playback_channels,
-            config.playback_sample_rate,
-        )
-        .or_else(|error| {
-            warn!(%error, "falling back to default output config");
-            device
-                .default_output_config()
-                .context("default output config")
-        })?;
-        let stream_config = with_buffer_size(
-            selected.config(),
-            selected.buffer_size(),
-            config.playback_buffer_ms,
-        );
-        let sample_rate = stream_config.sample_rate.0;
-        let channels = stream_config.channels.max(1) as usize;
-        let buffer = Arc::new(Mutex::new(VecDeque::new()));
-        let err_fn = |error| warn!(%error, "cpal output stream error");
-
-        let stream = match selected.sample_format() {
-            SampleFormat::I8 => {
-                build_output_stream::<i8>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::I16 => {
-                build_output_stream::<i16>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::I32 => {
-                build_output_stream::<i32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::I64 => {
-                build_output_stream::<i64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::U8 => {
-                build_output_stream::<u8>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::U16 => {
-                build_output_stream::<u16>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::U32 => {
-                build_output_stream::<u32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::U64 => {
-                build_output_stream::<u64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::F32 => {
-                build_output_stream::<f32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            SampleFormat::F64 => {
-                build_output_stream::<f64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
-            }
-            _ => bail!(
-                "unsupported output sample format: {:?}",
-                selected.sample_format()
-            ),
-        };
-
-        stream.play().context("starting cpal output stream")?;
-        info!(
-            device = %device_name(&device),
-            sample_rate,
-            channels,
-            "started cpal audio playback"
-        );
-        Ok::<_, anyhow::Error>((stream, buffer, sample_rate, channels))
-    })();
+    let started = start_cpal_playback_runtime(&config);
 
     let (stream, buffer, output_sample_rate, output_channels) = match started {
         Ok(started) => {
@@ -466,6 +416,16 @@ fn run_playback_thread(
             started
         }
         Err(error) => {
+            #[cfg(target_os = "linux")]
+            if let Some(alsa_device) = alsa_playback_device_name(&config.playback_device) {
+                warn!(
+                    cpal_error = %error,
+                    alsa_device = %alsa_device,
+                    "cpal playback unavailable; trying ALSA playback fallback"
+                );
+                return run_alsa_playback_thread(config, command_rx, ready_tx, &alsa_device);
+            }
+
             let message = error.to_string();
             let _ = ready_tx.send(Err(message));
             return Err(error);
@@ -491,6 +451,277 @@ fn run_playback_thread(
     drop(stream);
     info!("stopped cpal audio playback");
     Ok(())
+}
+
+fn start_cpal_playback_runtime(
+    config: &AudioConfig,
+) -> Result<(Stream, Arc<Mutex<VecDeque<i16>>>, u32, usize)> {
+    let host = cpal::default_host();
+    let device = select_output_device(&host, &config.playback_device)?;
+    let selected = select_stream_config(
+        device.supported_output_configs()?,
+        config.playback_channels,
+        config.playback_sample_rate,
+    )
+    .or_else(|error| {
+        warn!(%error, "falling back to default output config");
+        device
+            .default_output_config()
+            .context("default output config")
+    })?;
+    let stream_config = with_buffer_size(
+        selected.config(),
+        selected.buffer_size(),
+        config.playback_buffer_ms,
+    );
+    let sample_rate = stream_config.sample_rate.0;
+    let channels = stream_config.channels.max(1) as usize;
+    let buffer = Arc::new(Mutex::new(VecDeque::new()));
+    let err_fn = |error| warn!(%error, "cpal output stream error");
+
+    let stream = match selected.sample_format() {
+        SampleFormat::I8 => {
+            build_output_stream::<i8>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::I16 => {
+            build_output_stream::<i16>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::I32 => {
+            build_output_stream::<i32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::I64 => {
+            build_output_stream::<i64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::U8 => {
+            build_output_stream::<u8>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::U16 => {
+            build_output_stream::<u16>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::U32 => {
+            build_output_stream::<u32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::U64 => {
+            build_output_stream::<u64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::F32 => {
+            build_output_stream::<f32>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        SampleFormat::F64 => {
+            build_output_stream::<f64>(&device, &stream_config, Arc::clone(&buffer), err_fn)?
+        }
+        _ => bail!(
+            "unsupported output sample format: {:?}",
+            selected.sample_format()
+        ),
+    };
+
+    stream.play().context("starting cpal output stream")?;
+    info!(
+        device = %device_name(&device),
+        sample_rate,
+        channels,
+        "started cpal audio playback"
+    );
+    Ok((stream, buffer, sample_rate, channels))
+}
+
+#[cfg(target_os = "linux")]
+fn run_alsa_playback_thread(
+    config: AudioConfig,
+    command_rx: mpsc::Receiver<PlaybackCommand>,
+    ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
+    alsa_device: &str,
+) -> Result<()> {
+    let started = start_alsa_playback_runtime(&config, alsa_device);
+    let (pcm, output_sample_rate, output_channels, chunk_frames) = match started {
+        Ok(started) => {
+            let _ = ready_tx.send(Ok(()));
+            started
+        }
+        Err(error) => {
+            let message = error.to_string();
+            let _ = ready_tx.send(Err(message));
+            return Err(error);
+        }
+    };
+
+    let mut buffer = VecDeque::new();
+
+    loop {
+        if buffer.is_empty() {
+            let command = match command_rx.recv() {
+                Ok(command) => command,
+                Err(_) => break,
+            };
+            if apply_playback_command(
+                command,
+                &mut buffer,
+                output_sample_rate,
+                output_channels,
+                Some(&pcm),
+            )? {
+                break;
+            }
+            continue;
+        }
+
+        while let Ok(command) = command_rx.try_recv() {
+            if apply_playback_command(
+                command,
+                &mut buffer,
+                output_sample_rate,
+                output_channels,
+                Some(&pcm),
+            )? {
+                let _ = pcm.drop();
+                info!("stopped ALSA audio playback");
+                return Ok(());
+            }
+        }
+
+        write_alsa_chunk(&pcm, &mut buffer, output_channels, chunk_frames)?;
+    }
+
+    let _ = pcm.drop();
+    info!("stopped ALSA audio playback");
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn start_alsa_playback_runtime(
+    config: &AudioConfig,
+    alsa_device: &str,
+) -> Result<(AlsaPcm, u32, usize, usize)> {
+    let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
+        .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
+    let hwp = AlsaHwParams::any(&pcm).context("reading ALSA hardware params")?;
+    hwp.set_access(AlsaAccess::RWInterleaved)
+        .context("setting ALSA interleaved access")?;
+    hwp.set_format(AlsaFormat::s16())
+        .context("setting ALSA sample format")?;
+    let _ = hwp.set_rate_resample(true);
+
+    let requested_channels = u32::from(config.playback_channels.max(1));
+    let actual_channels = hwp
+        .set_channels_near(requested_channels)
+        .context("setting ALSA playback channels")?;
+    let requested_rate = config.playback_sample_rate.max(1);
+    let actual_sample_rate = hwp
+        .set_rate_near(requested_rate, AlsaValueOr::Nearest)
+        .context("setting ALSA playback sample rate")?;
+
+    let requested_buffer_frames =
+        buffer_frames_for_ms(actual_sample_rate, config.playback_buffer_ms);
+    let _ = hwp.set_buffer_size_near(requested_buffer_frames as AlsaFrames);
+    let requested_period_frames = (requested_buffer_frames / 2).max(1);
+    let _ = hwp.set_period_size_near(requested_period_frames as AlsaFrames, AlsaValueOr::Nearest);
+
+    pcm.hw_params(&hwp)
+        .context("applying ALSA hardware params")?;
+
+    let hw_params = pcm
+        .hw_params_current()
+        .context("reading ALSA playback params")?;
+    let chunk_frames = hw_params
+        .get_period_size()
+        .context("reading ALSA playback period size")?
+        .max(1) as usize;
+    let start_threshold = hw_params
+        .get_buffer_size()
+        .context("reading ALSA playback buffer size")?
+        .max(1);
+
+    let swp = pcm
+        .sw_params_current()
+        .context("reading ALSA software params")?;
+    swp.set_start_threshold(start_threshold)
+        .context("setting ALSA start threshold")?;
+    swp.set_avail_min(chunk_frames as AlsaFrames)
+        .context("setting ALSA minimum available frames")?;
+    pcm.sw_params(&swp)
+        .context("applying ALSA software params")?;
+    pcm.prepare().context("preparing ALSA playback stream")?;
+
+    info!(
+        alsa_device,
+        sample_rate = actual_sample_rate,
+        channels = actual_channels,
+        "started ALSA audio playback fallback"
+    );
+    Ok((
+        pcm,
+        actual_sample_rate,
+        actual_channels as usize,
+        chunk_frames,
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn apply_playback_command(
+    command: PlaybackCommand,
+    buffer: &mut VecDeque<i16>,
+    output_sample_rate: u32,
+    output_channels: usize,
+    pcm: Option<&AlsaPcm>,
+) -> Result<bool> {
+    match command {
+        PlaybackCommand::Play {
+            pcm: input,
+            sample_rate,
+        } => {
+            let rendered =
+                render_playback_pcm(&input, sample_rate, output_sample_rate, output_channels);
+            buffer.extend(rendered);
+            debug!(queued_samples = buffer.len(), "queued playback audio");
+            Ok(false)
+        }
+        PlaybackCommand::Stop => {
+            buffer.clear();
+            if let Some(pcm) = pcm {
+                let _ = pcm.drop();
+                let _ = pcm.prepare();
+            }
+            Ok(false)
+        }
+        PlaybackCommand::Shutdown => Ok(true),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn write_alsa_chunk(
+    pcm: &AlsaPcm,
+    buffer: &mut VecDeque<i16>,
+    channels: usize,
+    chunk_frames: usize,
+) -> Result<()> {
+    let channels = channels.max(1);
+    let available_frames = buffer.len() / channels;
+    if available_frames == 0 {
+        return Ok(());
+    }
+
+    let frames_to_write = available_frames.min(chunk_frames.max(1));
+    let sample_count = frames_to_write * channels;
+    let chunk: Vec<i16> = buffer.iter().take(sample_count).copied().collect();
+    let io = pcm.io_i16().context("opening ALSA i16 playback IO")?;
+
+    match io.writei(&chunk) {
+        Ok(written_frames) => {
+            for _ in 0..written_frames.saturating_mul(channels) {
+                let _ = buffer.pop_front();
+            }
+            if pcm.state() != AlsaState::Running {
+                let _ = pcm.start();
+            }
+            Ok(())
+        }
+        Err(error) => {
+            pcm.try_recover(error, true)
+                .context("recovering ALSA playback stream")?;
+            Ok(())
+        }
+    }
 }
 
 trait ToI16Sample {
@@ -935,4 +1166,86 @@ fn lock_mutex<'a, T>(mutex: &'a Mutex<T>, name: &str) -> Result<std::sync::Mutex
 
 fn device_name(device: &Device) -> String {
     device.name().unwrap_or_else(|_| "<unknown>".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_playback_device_available(configured: &str) -> bool {
+    let Some(device_name) = alsa_playback_device_name(configured) else {
+        return false;
+    };
+
+    AlsaPcm::new(&device_name, AlsaDirection::Playback, true).is_ok()
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_playback_device_name(configured: &str) -> Option<String> {
+    let trimmed = configured.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+        return Some("default".to_string());
+    }
+
+    if let Some(device) = trimmed.strip_prefix("alsa:") {
+        let device = device.trim();
+        return Some(if device.is_empty() {
+            "default".to_string()
+        } else {
+            device.to_string()
+        });
+    }
+
+    if looks_like_alsa_pcm_name(trimmed) {
+        return Some(trimmed.to_string());
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn looks_like_alsa_pcm_name(device: &str) -> bool {
+    [
+        "default",
+        "hw:",
+        "plughw:",
+        "plug:",
+        "sysdefault:",
+        "front:",
+        "surround",
+        "iec958:",
+        "dmix:",
+        "dsnoop:",
+        "usbstream:",
+    ]
+    .iter()
+    .any(|prefix| device.starts_with(prefix))
+}
+
+fn buffer_frames_for_ms(sample_rate: u32, buffer_ms: u32) -> usize {
+    sample_rate
+        .saturating_mul(buffer_ms.max(1))
+        .saturating_div(1_000)
+        .max(1) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn computes_buffer_frames_for_milliseconds() {
+        assert_eq!(buffer_frames_for_ms(24_000, 60), 1_440);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detects_alsa_pcm_names() {
+        assert_eq!(
+            alsa_playback_device_name("alsa:plughw:0,0"),
+            Some("plughw:0,0".to_string())
+        );
+        assert_eq!(
+            alsa_playback_device_name("default"),
+            Some("default".to_string())
+        );
+        assert_eq!(alsa_playback_device_name("MAX98375A"), None);
+    }
 }

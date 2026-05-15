@@ -23,6 +23,9 @@ keypair_path = "device.key"
 capture_device = "default"
 capture_sample_rate = 16000
 capture_channels = 1
+# On Linux boards with fixed I2S/ALSA sinks, `default` now falls back to a
+# direct ALSA PCM open when CPAL cannot enumerate the speaker. You can also use
+# explicit ALSA names like `alsa:plughw:0,0`.
 playback_device = "default"
 playback_sample_rate = 24000
 playback_channels = 1
