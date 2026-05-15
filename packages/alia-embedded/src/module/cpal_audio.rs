@@ -327,6 +327,7 @@ fn run_capture_thread(
     }
 
     let started = (|| {
+        let bus = bus.clone();
         let host = cpal::default_host();
         let device = select_input_device(&host, &config.capture_device)?;
         let selected = select_stream_config(
