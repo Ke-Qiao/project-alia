@@ -83,8 +83,7 @@ if [[ -n "$KEYWORDS_RAW_BACKUP" && -f "$KEYWORDS_RAW_BACKUP" ]]; then
   rm -f "$KEYWORDS_RAW_BACKUP"
 else
   cat > "$KWS_TARGET/keywords_raw.txt" <<'EOF'
-HEY ALIA @HEY_ALIA
-你好阿利亚 @你好阿利亚
+玲珑 @玲珑
 EOF
 fi
 
