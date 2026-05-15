@@ -69,7 +69,11 @@ pub fn spawn_pipeline(
                                 if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus).await {
                                     tracing::error!(error = ?e, "pipeline processing failed");
                                     if let Some(channel_id) = channel_id {
-                                        disable_channel_by_id(&channels, &channel_id, e).await;
+                                        tracing::warn!(
+                                            channel_id = %channel_id,
+                                            error = ?e,
+                                            "channel pipeline run failed; keeping channel enabled"
+                                        );
                                     }
                                 }
                             });
@@ -126,7 +130,7 @@ async fn process_event(
             // Only call send_message when the text was NOT already streamed.
             if !result.streamed {
                 if let Err(error) = channel.send_message(&target, &result.text).await {
-                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                    log_channel_delivery_failure(channel.as_ref(), error).await;
                 }
             }
 
@@ -168,7 +172,7 @@ async fn process_event(
             // Text delivery: only if not already streamed
             if !result.streamed {
                 if let Err(error) = channel.send_message(&target, &result.text).await {
-                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                    log_channel_delivery_failure(channel.as_ref(), error).await;
                     return Ok(());
                 }
             }
@@ -184,7 +188,7 @@ async fn process_event(
 
             if channel.capabilities().voice_output {
                 if let Err(error) = channel.send_audio(&target, audio_out).await {
-                    disable_channel_after_failure(channels, channel.as_ref(), error).await;
+                    log_channel_delivery_failure(channel.as_ref(), error).await;
                 }
             }
 
@@ -444,11 +448,7 @@ async fn stream_llm_response(
     Ok(full_text)
 }
 
-async fn disable_channel_after_failure(
-    channels: &ChannelRegistry,
-    channel: &dyn ChannelAdapter,
-    error: anyhow::Error,
-) {
+async fn log_channel_delivery_failure(channel: &dyn ChannelAdapter, error: anyhow::Error) {
     let channel_type = channel.channel_type();
     let channel_id = channel.channel_id().to_string();
 
@@ -456,28 +456,6 @@ async fn disable_channel_after_failure(
         channel_type,
         channel_id = %channel_id,
         error = ?error,
-        "channel delivery failed; disabling channel"
-    );
-
-    if let Err(unregister_error) = channels.disable(&channel_id, error.to_string()).await {
-        tracing::warn!(
-            channel_type,
-            channel_id = %channel_id,
-            error = ?unregister_error,
-            "failed to disable channel"
-        );
-    }
-}
-
-async fn disable_channel_by_id(channels: &ChannelRegistry, channel_id: &str, error: anyhow::Error) {
-    if let Some(channel) = channels.get(channel_id).await {
-        disable_channel_after_failure(channels, channel.as_ref(), error).await;
-        return;
-    }
-
-    tracing::warn!(
-        channel_id,
-        error = ?error,
-        "pipeline failed for channel, but channel was already unavailable"
+        "channel delivery failed; keeping channel enabled"
     );
 }
