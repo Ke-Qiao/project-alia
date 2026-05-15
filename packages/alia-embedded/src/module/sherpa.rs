@@ -47,8 +47,8 @@ impl SherpaOnnxKws {
         kws_config.model_config.num_threads = config.num_threads;
         kws_config.model_config.debug = config.debug;
         kws_config.keywords_file = Some(config.keywords_file.display().to_string());
-        kws_config.keywords_score = 1.0 + config.sensitivity.clamp(0.0, 1.0);
-        kws_config.keywords_threshold = config.sensitivity.clamp(0.0, 1.0);
+        kws_config.keywords_score = config.keywords_score.max(0.0);
+        kws_config.keywords_threshold = config.keywords_threshold.clamp(0.0, 1.0);
 
         let spotter = KeywordSpotter::create(&kws_config)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx keyword spotter"))?;
@@ -134,6 +134,13 @@ impl SherpaOnnxStt {
 
         let recognizer = OfflineRecognizer::create(&recognizer_config)
             .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx offline recognizer"))?;
+        tracing::info!(
+            model = %config.model_path.display(),
+            tokens = %config.tokens_path.display(),
+            language = %config.language,
+            provider = %config.provider,
+            "created sherpa-onnx edge STT"
+        );
 
         Ok(Self {
             recognizer: Arc::new(Mutex::new(recognizer)),
@@ -164,12 +171,23 @@ impl EdgeSttEngine for SherpaOnnxStt {
 
         let duration_ms = (pcm.len() as u64 * 1_000) / self.sample_rate.max(1) as u64;
         let max_duration_ms = max_duration_ms.min(self.max_duration_ms) as u64;
-        if duration_ms > max_duration_ms {
-            bail!("utterance is {duration_ms}ms, over local STT limit of {max_duration_ms}ms");
+        let max_samples = ((self.sample_rate.max(1) as u64 * max_duration_ms) / 1_000) as usize;
+        let pcm = if duration_ms > max_duration_ms {
+            tracing::warn!(
+                duration_ms,
+                max_duration_ms,
+                "trimming utterance to local STT limit"
+            );
+            &pcm[..pcm.len().min(max_samples)]
+        } else {
+            pcm
+        };
+        if pcm.is_empty() {
+            return Ok(None);
         }
 
         let recognizer = Arc::clone(&self.recognizer);
-        let samples = pcm16_to_f32(pcm);
+        let samples = with_leading_silence(pcm16_to_f32(pcm), self.sample_rate);
         let sample_rate = self.sample_rate as i32;
 
         tokio::task::spawn_blocking(move || {
@@ -321,6 +339,18 @@ fn millis_to_seconds(value: u32) -> f32 {
 
 fn pcm16_to_f32(pcm: &[i16]) -> Vec<f32> {
     pcm.iter().map(|sample| *sample as f32 / 32768.0).collect()
+}
+
+fn with_leading_silence(mut samples: Vec<f32>, sample_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || sample_rate == 0 {
+        return samples;
+    }
+
+    let silence_samples = (sample_rate as usize * 200) / 1_000;
+    let mut padded = Vec::with_capacity(silence_samples + samples.len());
+    padded.resize(silence_samples, 0.0);
+    padded.append(&mut samples);
+    padded
 }
 
 fn timestamp_us() -> u64 {

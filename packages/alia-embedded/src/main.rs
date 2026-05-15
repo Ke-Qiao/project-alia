@@ -24,6 +24,8 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::module::EmbeddedBuilder;
+#[cfg(feature = "sherpa-onnx")]
+use crate::module::traits::{EdgeSttEngine, WakeWordEngine};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,6 +43,16 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| config::default_config_path());
     let mut config = config::load_config(&config_path)
         .with_context(|| format!("loading config from {}", config_path.display()))?;
+
+    #[cfg(feature = "sherpa-onnx")]
+    if let Some(path) = std::env::var_os("ALIA_EMBEDDED_CHECK_STT_WAV") {
+        return check_sherpa_stt(config.edge_stt.clone(), PathBuf::from(path)).await;
+    }
+
+    #[cfg(feature = "sherpa-onnx")]
+    if let Some(path) = std::env::var_os("ALIA_EMBEDDED_CHECK_KWS_WAV") {
+        return check_sherpa_kws(config.wakeword.clone(), PathBuf::from(path));
+    }
 
     let keypair =
         identity::ensure_device_keypair(&config.identity.keypair_path).with_context(|| {
@@ -85,6 +97,68 @@ fn default_env_filter() -> EnvFilter {
     EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"))
         .add_directive("sqlx::query=warn".parse().expect("valid sqlx query filter"))
+}
+
+#[cfg(feature = "sherpa-onnx")]
+async fn check_sherpa_stt(config: config::EdgeSttConfig, wav_path: PathBuf) -> Result<()> {
+    let wav_path_display = wav_path.display().to_string();
+    let wave = sherpa_onnx::Wave::read(&wav_path_display)
+        .ok_or_else(|| anyhow::anyhow!("failed to read STT check WAV {wav_path_display}"))?;
+    let samples = wave
+        .samples()
+        .iter()
+        .map(|sample| {
+            let scaled = (*sample * 32768.0).round();
+            scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        })
+        .collect::<Vec<_>>();
+    let max_duration_ms = config
+        .max_duration_ms
+        .max(((samples.len() as u64 * 1_000) / wave.sample_rate().max(1) as u64) as u32 + 1_000);
+    let mut config = config;
+    config.max_duration_ms = max_duration_ms;
+    if let Ok(language) = std::env::var("ALIA_EMBEDDED_CHECK_STT_LANGUAGE")
+        && !language.trim().is_empty()
+    {
+        config.language = language;
+    }
+    let stt = module::sherpa::SherpaOnnxStt::new(&config).context("creating sherpa edge STT")?;
+    let transcript = stt
+        .transcribe_short(&samples, max_duration_ms)
+        .await
+        .context("running sherpa edge STT")?
+        .unwrap_or_default();
+
+    println!("{transcript}");
+    Ok(())
+}
+
+#[cfg(feature = "sherpa-onnx")]
+fn check_sherpa_kws(config: config::WakewordConfig, wav_path: PathBuf) -> Result<()> {
+    let wav_path_display = wav_path.display().to_string();
+    let wave = sherpa_onnx::Wave::read(&wav_path_display)
+        .ok_or_else(|| anyhow::anyhow!("failed to read KWS check WAV {wav_path_display}"))?;
+    let kws =
+        module::sherpa::SherpaOnnxKws::new(&config).context("creating sherpa wakeword KWS")?;
+    let pcm = wave
+        .samples()
+        .iter()
+        .map(|sample| {
+            let scaled = (*sample * 32768.0).round();
+            scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16
+        })
+        .collect::<Vec<_>>();
+
+    let chunk_samples = (wave.sample_rate().max(1) as usize / 10).max(1);
+    for chunk in pcm.chunks(chunk_samples) {
+        if let Some(event) = kws.detect(chunk) {
+            println!("{}", event.keyword);
+            return Ok(());
+        }
+    }
+
+    println!("NO_WAKEWORD");
+    Ok(())
 }
 
 fn derived_device_id(public_key: &[u8; 32]) -> String {

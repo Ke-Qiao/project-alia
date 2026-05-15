@@ -129,6 +129,12 @@ fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSe
         return;
     };
     relativize_path(base, &mut settings.identity.keypair_path);
+    relativize_path(base, &mut settings.wakeword.model_path);
+    relativize_path(base, &mut settings.wakeword.encoder_path);
+    relativize_path(base, &mut settings.wakeword.decoder_path);
+    relativize_path(base, &mut settings.wakeword.joiner_path);
+    relativize_path(base, &mut settings.wakeword.tokens_path);
+    relativize_path(base, &mut settings.wakeword.keywords_file);
     relativize_path(base, &mut settings.edge_stt.model_path);
     relativize_path(base, &mut settings.edge_stt.tokens_path);
     relativize_path(base, &mut settings.vad.model_path);

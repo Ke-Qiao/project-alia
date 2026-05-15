@@ -140,6 +140,10 @@ pub struct WakewordConfig {
     pub keywords: Vec<String>,
     #[serde(default = "default_sensitivity")]
     pub sensitivity: f32,
+    #[serde(default = "default_kws_keywords_score")]
+    pub keywords_score: f32,
+    #[serde(default = "default_kws_keywords_threshold")]
+    pub keywords_threshold: f32,
     #[serde(default = "default_sherpa_provider")]
     pub provider: String,
     #[serde(default = "default_kws_num_threads")]
@@ -160,6 +164,8 @@ impl Default for WakewordConfig {
             keywords_file: default_kws_keywords_file(),
             keywords: vec!["你好阿利亚".to_string(), "Hey Alia".to_string()],
             sensitivity: default_sensitivity(),
+            keywords_score: default_kws_keywords_score(),
+            keywords_threshold: default_kws_keywords_threshold(),
             provider: default_sherpa_provider(),
             num_threads: default_kws_num_threads(),
             debug: false,
@@ -184,6 +190,12 @@ fn default_kws_keywords_file() -> PathBuf {
 }
 fn default_sensitivity() -> f32 {
     0.6
+}
+fn default_kws_keywords_score() -> f32 {
+    1.0
+}
+fn default_kws_keywords_threshold() -> f32 {
+    0.25
 }
 fn default_sherpa_provider() -> String {
     "cpu".to_string()
@@ -553,6 +565,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub identity: IdentityConfig,
     #[serde(default)]
+    pub wakeword: WakewordConfig,
+    #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
     pub edge_stt: EdgeSttConfig,
@@ -589,6 +603,7 @@ impl Default for EmbeddedConfig {
 impl EmbeddedConfig {
     pub fn apply_runtime_settings(&mut self, runtime: EmbeddedRuntimeSettings) {
         self.identity = runtime.identity;
+        self.wakeword = runtime.wakeword;
         self.audio = runtime.audio;
         self.edge_stt = runtime.edge_stt;
         self.vad = runtime.vad;
@@ -604,6 +619,7 @@ impl EmbeddedConfig {
                 provisioned: !self.provisioning_mode,
             },
             identity: self.identity.clone(),
+            wakeword: self.wakeword.clone(),
             audio: self.audio.clone(),
             edge_stt: self.edge_stt.clone(),
             vad: self.vad.clone(),

@@ -25,6 +25,8 @@ use super::registry::EmbeddedModuleRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
 
+const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+
 /// The assembled embedded node, ready to run.
 pub struct EmbeddedNode {
     pub registry: EmbeddedModuleRegistry,
@@ -55,7 +57,9 @@ impl EmbeddedNode {
             self.registry.audio_playback.clone(),
             self.binding_manager.clone(),
             self.event_bus.clone(),
-        ));
+        ))
+        .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
+        .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES);
         let process_svc = ProcessManagerServer::new(ProcessManagerService::new(
             self.registry.process_manager.clone(),
             self.binding_manager.clone(),

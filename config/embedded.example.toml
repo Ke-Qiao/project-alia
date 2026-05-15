@@ -19,6 +19,22 @@ device_id = "alia-embedded-a1b2c3d4e5f6"
 device_name = "客厅助手"
 keypair_path = "device.key"
 
+[wakeword]
+engine = "sherpa-onnx"
+model_path = "models/hey_alia.onnx"
+encoder_path = "models/sherpa-kws/encoder.onnx"
+decoder_path = "models/sherpa-kws/decoder.onnx"
+joiner_path = "models/sherpa-kws/joiner.onnx"
+tokens_path = "models/sherpa-kws/tokens.txt"
+keywords_file = "models/sherpa-kws/keywords.txt"
+keywords = ["玲珑"]
+sensitivity = 0.6
+keywords_score = 1.0
+keywords_threshold = 0.25
+provider = "cpu"
+num_threads = 1
+debug = false
+
 [audio]
 capture_backend = "auto"
 capture_device = "default"
@@ -38,6 +54,7 @@ upload_buffer_frames = 5
 jitter_buffer_ms = 60
 
 [edge_stt]
+language = "zh"
 max_duration_ms = 5000
 post_wake_capture_ms = 2500
 post_wake_response_delay_ms = 700

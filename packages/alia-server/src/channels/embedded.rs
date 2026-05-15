@@ -31,6 +31,9 @@ use super::adapter::{
     AudioFormat, AudioPayload, ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
 };
 
+const AUDIO_GRPC_CHUNK_BYTES: usize = 64 * 1024;
+const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+
 /// Configuration for a single EmbeddedChannel instance.
 #[derive(Debug, Clone)]
 pub struct EmbeddedChannelConfig {
@@ -233,8 +236,9 @@ impl EmbeddedChannel {
                 .await
             {
                 Ok(channel) => {
-                    *self.audio_client.write().await =
-                        Some(AudioStreamClient::new(channel.clone()));
+                    *self.audio_client.write().await = Some(configure_audio_client(
+                        AudioStreamClient::new(channel.clone()),
+                    ));
                     *self.process_client.write().await =
                         Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
@@ -479,15 +483,27 @@ impl ChannelAdapter for EmbeddedChannel {
             tracing::trace!(seq = ack.sequence, "play_audio primed on Pi");
         }
 
-        let chunk = AudioChunk {
-            opus_data: audio.data,
-            sequence: 0,
-            timestamp_us: chrono::Utc::now().timestamp_micros() as u64,
-            encoding,
-        };
-
         let mut upload_client = self.audio_client().await?;
-        let upload_stream = tokio_stream::once(chunk);
+        let chunk_count = audio.data.len().div_ceil(AUDIO_GRPC_CHUNK_BYTES);
+        tracing::debug!(
+            channel_id = %self.config.id,
+            bytes = audio.data.len(),
+            chunks = chunk_count,
+            sample_rate = audio.sample_rate,
+            "uploading embedded playback audio in gRPC chunks"
+        );
+        let chunks = audio
+            .data
+            .chunks(AUDIO_GRPC_CHUNK_BYTES)
+            .enumerate()
+            .map(|(sequence, bytes)| AudioChunk {
+                opus_data: bytes.to_vec(),
+                sequence: sequence as u64,
+                timestamp_us: chrono::Utc::now().timestamp_micros() as u64,
+                encoding,
+            })
+            .collect::<Vec<_>>();
+        let upload_stream = tokio_stream::iter(chunks);
         upload_client
             .upload_audio(self.auth_request(upload_stream)?)
             .await?;
@@ -1084,6 +1100,12 @@ fn direct_response_audio_variants_from_json(
             })
         })
         .collect()
+}
+
+fn configure_audio_client(client: AudioStreamClient<Channel>) -> AudioStreamClient<Channel> {
+    client
+        .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
+        .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
 }
 
 fn pcm16_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<i16>, u32)>> {
