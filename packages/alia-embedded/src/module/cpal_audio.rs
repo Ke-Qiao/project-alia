@@ -306,6 +306,13 @@ enum ResolvedAudioBackend {
     Alsa,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AlsaCaptureSampleFormat {
+    S16,
+    S32,
+}
+
 fn run_capture_thread(
     config: AudioConfig,
     bus: AudioBus,
@@ -493,7 +500,7 @@ fn run_alsa_capture_thread(
     alsa_device: &str,
 ) -> Result<()> {
     let started = start_alsa_capture_runtime(&config, alsa_device);
-    let (pcm, input_sample_rate, input_channels, chunk_frames) = match started {
+    let (pcm, input_sample_rate, input_channels, chunk_frames, sample_format) = match started {
         Ok(started) => {
             let _ = ready_tx.send(Ok(()));
             started
@@ -516,7 +523,9 @@ fn run_alsa_capture_thread(
     let mut emitted_frames = 0_u64;
     let mut level_peak = 0_u64;
     let mut silence_warned = false;
-    let mut raw_buffer = vec![0_i16; chunk_frames.saturating_mul(input_channels.max(1))];
+    let sample_count = chunk_frames.saturating_mul(input_channels.max(1));
+    let mut raw_buffer_i16 = vec![0_i16; sample_count];
+    let mut raw_buffer_i32 = vec![0_i32; sample_count];
 
     loop {
         if control_rx.try_recv().is_ok() {
@@ -530,15 +539,35 @@ fn run_alsa_capture_thread(
             continue;
         }
 
-        let frames_read = {
-            let io = pcm.io_i16().context("opening ALSA i16 capture IO")?;
-            match io.readi(&mut raw_buffer) {
-                Ok(frames) => frames,
-                Err(error) if error.errno() == libc::EAGAIN => continue,
-                Err(error) => {
-                    pcm.try_recover(error, true)
-                        .context("recovering ALSA capture stream")?;
-                    continue;
+        let (frames_read, captured_pcm) = match sample_format {
+            AlsaCaptureSampleFormat::S16 => {
+                let io = pcm.io_i16().context("opening ALSA i16 capture IO")?;
+                match io.readi(&mut raw_buffer_i16) {
+                    Ok(frames) => {
+                        let samples_read = frames.saturating_mul(input_channels);
+                        (frames, converter.convert(&raw_buffer_i16[..samples_read]))
+                    }
+                    Err(error) if error.errno() == libc::EAGAIN => continue,
+                    Err(error) => {
+                        pcm.try_recover(error, true)
+                            .context("recovering ALSA capture stream")?;
+                        continue;
+                    }
+                }
+            }
+            AlsaCaptureSampleFormat::S32 => {
+                let io = pcm.io_i32().context("opening ALSA i32 capture IO")?;
+                match io.readi(&mut raw_buffer_i32) {
+                    Ok(frames) => {
+                        let samples_read = frames.saturating_mul(input_channels);
+                        (frames, converter.convert(&raw_buffer_i32[..samples_read]))
+                    }
+                    Err(error) if error.errno() == libc::EAGAIN => continue,
+                    Err(error) => {
+                        pcm.try_recover(error, true)
+                            .context("recovering ALSA capture stream")?;
+                        continue;
+                    }
                 }
             }
         };
@@ -548,7 +577,7 @@ fn run_alsa_capture_thread(
             continue;
         }
 
-        let pcm = converter.convert(&raw_buffer[..samples_read]);
+        let pcm = captured_pcm;
         if pcm.is_empty() {
             continue;
         }
@@ -590,16 +619,17 @@ fn run_alsa_capture_thread(
 fn start_alsa_capture_runtime(
     config: &AudioConfig,
     alsa_device: &str,
-) -> Result<(AlsaPcm, u32, usize, usize)> {
+) -> Result<(AlsaPcm, u32, usize, usize, AlsaCaptureSampleFormat)> {
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Capture, true)
         .with_context(|| format!("opening ALSA capture PCM '{alsa_device}'"))?;
     let requested_channels = u32::from(config.capture_channels.max(1));
     let requested_rate = config.capture_sample_rate.max(1);
-    let (actual_channels, actual_sample_rate) = {
+    let (actual_channels, actual_sample_rate, sample_format) = {
         let hwp = AlsaHwParams::any(&pcm).context("reading ALSA capture hardware params")?;
         hwp.set_access(AlsaAccess::RWInterleaved)
             .context("setting ALSA capture interleaved access")?;
-        hwp.set_format(AlsaFormat::s16())
+        let sample_format = preferred_alsa_capture_format(&hwp);
+        hwp.set_format(alsa_capture_format(sample_format))
             .context("setting ALSA capture sample format")?;
         let _ = hwp.set_rate_resample(true);
 
@@ -619,7 +649,7 @@ fn start_alsa_capture_runtime(
 
         pcm.hw_params(&hwp)
             .context("applying ALSA capture hardware params")?;
-        (actual_channels, actual_sample_rate)
+        (actual_channels, actual_sample_rate, sample_format)
     };
 
     let chunk_frames = {
@@ -635,6 +665,7 @@ fn start_alsa_capture_runtime(
     pcm.prepare().context("preparing ALSA capture stream")?;
     info!(
         alsa_device,
+        ?sample_format,
         input_sample_rate = actual_sample_rate,
         input_channels = actual_channels,
         target_sample_rate = config.capture_sample_rate,
@@ -646,6 +677,7 @@ fn start_alsa_capture_runtime(
         actual_sample_rate,
         actual_channels as usize,
         chunk_frames,
+        sample_format,
     ))
 }
 
@@ -1331,6 +1363,23 @@ fn resolve_backend(configured: AudioBackend, device: &str) -> ResolvedAudioBacke
                 ResolvedAudioBackend::Cpal
             }
         }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn preferred_alsa_capture_format(hwp: &AlsaHwParams<'_>) -> AlsaCaptureSampleFormat {
+    if hwp.test_format(AlsaFormat::s32()).is_ok() {
+        AlsaCaptureSampleFormat::S32
+    } else {
+        AlsaCaptureSampleFormat::S16
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_capture_format(sample_format: AlsaCaptureSampleFormat) -> AlsaFormat {
+    match sample_format {
+        AlsaCaptureSampleFormat::S16 => AlsaFormat::s16(),
+        AlsaCaptureSampleFormat::S32 => AlsaFormat::s32(),
     }
 }
 
