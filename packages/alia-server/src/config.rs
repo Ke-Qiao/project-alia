@@ -95,6 +95,12 @@ pub enum ChannelConfig {
         reconnect_max_backoff_sec: u64,
         #[serde(default = "default_grpc_timeout")]
         grpc_timeout_sec: u64,
+        #[serde(default = "default_true")]
+        voice_turn_interrupt_enabled: bool,
+        #[serde(default = "default_true")]
+        cancel_streaming_tts_on_interrupt: bool,
+        #[serde(default = "default_true")]
+        discard_interrupted_turn_history: bool,
     },
     #[serde(rename = "cli")]
     Cli {

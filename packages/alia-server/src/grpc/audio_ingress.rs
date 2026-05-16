@@ -1,6 +1,7 @@
 use alia_proto::audio::server_audio_ingress_server::ServerAudioIngress;
 use alia_proto::audio::{
     AudioEncoding as ProtoAudioEncoding, AudioUploadResponse, CapturedAudioChunk,
+    InterruptActiveTurnRequest, TurnInterruptResponse,
 };
 use tonic::{Request, Response, Status};
 
@@ -79,5 +80,40 @@ impl ServerAudioIngress for ServerAudioIngressService {
             }));
 
         Ok(Response::new(AudioUploadResponse { accepted: true }))
+    }
+
+    async fn interrupt_active_turn(
+        &self,
+        request: Request<InterruptActiveTurnRequest>,
+    ) -> Result<Response<TurnInterruptResponse>, Status> {
+        let req = request.into_inner();
+        let channel_id = if req.channel_id.trim().is_empty() {
+            self.default_channel_id.clone()
+        } else {
+            req.channel_id
+        };
+        let user_id = if req.user_id.trim().is_empty() {
+            self.default_user_id.clone()
+        } else {
+            req.user_id
+        };
+        let reason = if req.reason.trim().is_empty() {
+            "embedded_interrupt".to_string()
+        } else {
+            req.reason
+        };
+
+        self.event_bus.publish(ServerEvent::ChannelInput(
+            ChannelEvent::InterruptActiveTurn {
+                channel_id,
+                user_id,
+                reason,
+            },
+        ));
+
+        Ok(Response::new(TurnInterruptResponse {
+            accepted: true,
+            interrupted: true,
+        }))
     }
 }

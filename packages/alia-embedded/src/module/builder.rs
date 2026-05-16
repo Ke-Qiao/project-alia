@@ -361,6 +361,7 @@ impl EmbeddedBuilder {
             audio_playback.clone(),
             binding_manager.clone(),
             &config.edge_stt,
+            &config.interrupt,
             self.cancel_token.clone(),
         ));
 

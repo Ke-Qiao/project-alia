@@ -44,6 +44,9 @@ discovery_timeout_sec = 3
 reconnect_interval_sec = 5
 reconnect_max_backoff_sec = 60
 grpc_timeout_sec = 10
+voice_turn_interrupt_enabled = true
+cancel_streaming_tts_on_interrupt = true
+discard_interrupted_turn_history = true
 
 [modules]
 llm = "openai"

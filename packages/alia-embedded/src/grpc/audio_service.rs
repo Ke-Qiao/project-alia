@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status};
 use alia_proto::audio::audio_stream_server::AudioStream as AudioStreamTrait;
 use alia_proto::audio::{
     AudioChunk, AudioEncoding, AudioFrame, AudioUploadResponse, PlayAudioRequest,
+    PlaybackControlResponse, StopPlaybackRequest,
 };
 
 use super::auth::{extract_bearer_token, require_auth, require_auth_token};
@@ -68,24 +69,31 @@ impl AudioStreamTrait for AudioStreamService {
         let token = extract_bearer_token(request.metadata())?;
         require_auth_token(&self.binding, &token).await?;
         let mut stream = request.into_inner();
-        let pending = self.pending_playback.lock().await.clone();
+        let initial = self.pending_playback.lock().await.clone();
+        let initial_request_id = initial.as_ref().map(|pending| pending.request_id.clone());
 
-        if let Some(pending) = &pending {
+        if let Some(pending) = &initial {
             self.event_bus.publish(ModuleEvent::PlaybackStarted {
                 source: pending.source.clone(),
             });
         }
 
         while let Some(chunk) = stream.message().await? {
-            if let Some(pending) = &pending {
-                self.playback_chunk(&chunk, pending.sample_rate)?;
+            let current = self.pending_playback.lock().await.clone();
+            let Some(current) = current else {
+                break;
+            };
+            if initial_request_id
+                .as_ref()
+                .map(|request_id| request_id != &current.request_id)
+                .unwrap_or(false)
+            {
+                break;
             }
+            self.playback_chunk(&chunk, current.sample_rate)?;
         }
 
-        if let Some(pending) = pending {
-            self.event_bus.publish(ModuleEvent::PlaybackFinished {
-                source: pending.source,
-            });
+        if let Some(pending) = initial {
             let mut slot = self.pending_playback.lock().await;
             if slot
                 .as_ref()
@@ -93,6 +101,9 @@ impl AudioStreamTrait for AudioStreamService {
                 .unwrap_or(false)
             {
                 *slot = None;
+                self.event_bus.publish(ModuleEvent::PlaybackFinished {
+                    source: pending.source,
+                });
             }
         }
 
@@ -136,6 +147,35 @@ impl AudioStreamTrait for AudioStreamService {
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
             rx,
         )))
+    }
+
+    async fn stop_playback(
+        &self,
+        request: Request<StopPlaybackRequest>,
+    ) -> Result<Response<PlaybackControlResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
+        let req = request.into_inner();
+        let pending = {
+            let mut slot = self.pending_playback.lock().await;
+            slot.take()
+        };
+
+        self.playback
+            .stop_playback()
+            .map_err(|error| Status::internal(error.to_string()))?;
+
+        if let Some(pending) = pending {
+            self.event_bus.publish(ModuleEvent::PlaybackFinished {
+                source: pending.source,
+            });
+        }
+        tracing::debug!(
+            request_id = %req.request_id,
+            reason = %req.reason,
+            "playback stopped by control RPC"
+        );
+
+        Ok(Response::new(PlaybackControlResponse { accepted: true }))
     }
 
     type BiDirectionalAudioStream =

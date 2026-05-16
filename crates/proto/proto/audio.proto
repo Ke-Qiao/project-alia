@@ -9,6 +9,9 @@ service AudioStream {
   // Downstream: Server TTS → Pi playback
   rpc PlayAudio(PlayAudioRequest) returns (stream AudioChunk);
 
+  // Control: stop whatever is currently being played on the Pi.
+  rpc StopPlayback(StopPlaybackRequest) returns (PlaybackControlResponse);
+
   // Full-duplex: real-time conversation after wake word
   rpc BiDirectionalAudio(stream AudioFrame) returns (stream AudioFrame);
 }
@@ -16,6 +19,7 @@ service AudioStream {
 // Server-hosted ingress: Pi captured speech → alia-server pipeline.
 service ServerAudioIngress {
   rpc UploadCapturedAudio(stream CapturedAudioChunk) returns (AudioUploadResponse);
+  rpc InterruptActiveTurn(InterruptActiveTurnRequest) returns (TurnInterruptResponse);
 }
 
 // Full-duplex frame supporting audio data and control signaling
@@ -67,4 +71,25 @@ message PlayAudioRequest {
 
 message AudioUploadResponse {
   bool accepted = 1;
+}
+
+message StopPlaybackRequest {
+  string request_id = 1;
+  string reason = 2;
+}
+
+message PlaybackControlResponse {
+  bool accepted = 1;
+}
+
+message InterruptActiveTurnRequest {
+  string channel_id = 1;
+  string user_id = 2;
+  string reason = 3;
+  uint64 timestamp_us = 4;
+}
+
+message TurnInterruptResponse {
+  bool accepted = 1;
+  bool interrupted = 2;
 }

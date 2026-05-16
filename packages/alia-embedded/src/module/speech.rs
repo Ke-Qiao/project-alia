@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alia_proto::audio::server_audio_ingress_client::ServerAudioIngressClient;
-use alia_proto::audio::{AudioChunk, AudioEncoding, CapturedAudioChunk};
+use alia_proto::audio::{
+    AudioChunk, AudioEncoding, CapturedAudioChunk, InterruptActiveTurnRequest,
+};
 use anyhow::{Context, Result, bail};
 use futures::stream;
 use tokio::sync::Mutex;
@@ -18,7 +20,7 @@ use super::traits::{
     VoiceActivityState, WakeWordEngine, WakeWordEvent,
 };
 use crate::binding::BindingManager;
-use crate::config::EdgeSttConfig;
+use crate::config::{EdgeSttConfig, InterruptConfig};
 
 pub struct SpeechPipeline {
     audio_bus: AudioBus,
@@ -32,6 +34,7 @@ pub struct SpeechPipeline {
     max_duration_ms: u32,
     post_wake_capture_ms: u32,
     post_wake_response_delay_ms: u32,
+    interrupt_config: InterruptConfig,
     cancel_token: CancellationToken,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -47,6 +50,7 @@ impl SpeechPipeline {
         playback: Arc<dyn AudioPlaybackBackend>,
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
+        interrupt_config: &InterruptConfig,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -61,6 +65,7 @@ impl SpeechPipeline {
             max_duration_ms: edge_stt_config.max_duration_ms,
             post_wake_capture_ms: edge_stt_config.post_wake_capture_ms,
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
+            interrupt_config: interrupt_config.clone(),
             cancel_token,
             task: Mutex::new(None),
         }
@@ -80,6 +85,7 @@ impl ModuleLifecycle for SpeechPipeline {
         }
 
         let mut rx = self.audio_bus.subscribe();
+        let mut event_rx = self.event_bus.subscribe();
         let event_bus = self.event_bus.clone();
         let wakeword = Arc::clone(&self.wakeword);
         let edge_stt = Arc::clone(&self.edge_stt);
@@ -90,15 +96,29 @@ impl ModuleLifecycle for SpeechPipeline {
         let max_duration_ms = self.max_duration_ms;
         let post_wake_capture_ms = self.post_wake_capture_ms;
         let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
+        let interrupt_config = self.interrupt_config.clone();
         let cancel = self.cancel_token.child_token();
 
         *task = Some(tokio::spawn(async move {
             let mut capture: Option<SpeechCapture> = None;
             let mut pending_wakeword: Option<WakeWordEvent> = None;
+            let mut playback_active = false;
+            let mut last_interrupt_at_us = 0u64;
 
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
+                    event = event_rx.recv() => {
+                        match event {
+                            Ok(ModuleEvent::PlaybackStarted { .. }) => playback_active = true,
+                            Ok(ModuleEvent::PlaybackFinished { .. }) => playback_active = false,
+                            Ok(_) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                                debug!(skipped, "speech pipeline lagged behind module event bus");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
                     frame = rx.recv() => {
                         let frame = match frame {
                             Ok(frame) => frame,
@@ -183,7 +203,47 @@ impl ModuleLifecycle for SpeechPipeline {
                                 keyword: event.keyword.clone(),
                                 timestamp_us: event.timestamp_us,
                             });
-                            if let Some(action) = direct_response.match_keyword(&event.keyword) {
+                            let interrupting_playback = interrupt_config.interrupt_on_wakeword_during_playback
+                                && playback_active
+                                && event.timestamp_us.saturating_sub(last_interrupt_at_us)
+                                    >= u64::from(interrupt_config.interrupt_debounce_ms) * 1_000;
+
+                            if interrupting_playback {
+                                last_interrupt_at_us = event.timestamp_us;
+                                playback_active = false;
+                                if let Err(error) = playback.stop_playback() {
+                                    warn!(error = %error, "failed to stop local playback after wakeword interrupt");
+                                    debug!(error = ?error, "local playback stop failure details");
+                                }
+                                event_bus.publish(ModuleEvent::PlaybackFinished {
+                                    source: "wakeword_interrupt".to_string(),
+                                });
+
+                                let binding = Arc::clone(&binding);
+                                let timestamp_us = event.timestamp_us;
+                                tokio::spawn(async move {
+                                    interrupt_server_active_turn(
+                                        binding,
+                                        "embedded".to_string(),
+                                        "embedded-user".to_string(),
+                                        "wakeword_during_playback".to_string(),
+                                        timestamp_us,
+                                    )
+                                    .await;
+                                });
+                            } else if interrupt_config.interrupt_on_wakeword_during_playback
+                                && playback_active
+                            {
+                                debug!(
+                                    debounce_ms = interrupt_config.interrupt_debounce_ms,
+                                    "wakeword interrupt ignored by debounce"
+                                );
+                            }
+
+                            if !(interrupting_playback
+                                && interrupt_config.interrupt_skip_direct_response)
+                                && let Some(action) = direct_response.match_keyword(&event.keyword)
+                            {
                                 play_direct_response(action, Arc::clone(&playback), event_bus.clone())
                                     .await;
                                 if post_wake_response_delay_ms > 0 {
@@ -462,6 +522,34 @@ async fn upload_to_server(capture: &SpeechCapture, binding: &BindingManager) {
     }
 }
 
+async fn interrupt_server_active_turn(
+    binding: Arc<BindingManager>,
+    channel_id: String,
+    user_id: String,
+    reason: String,
+    timestamp_us: u64,
+) {
+    let status = binding.status().await;
+    let Some(server_endpoint) = status.server_endpoint.as_deref() else {
+        debug!("cannot interrupt server turn before device is bound");
+        return;
+    };
+    let endpoint = match derive_audio_ingress_endpoint(server_endpoint) {
+        Ok(endpoint) => endpoint,
+        Err(error) => {
+            warn!(error = %error, server_endpoint, "failed to derive server audio ingress endpoint for interrupt");
+            return;
+        }
+    };
+
+    if let Err(error) =
+        interrupt_active_turn(endpoint, channel_id, user_id, reason, timestamp_us).await
+    {
+        warn!(error = %error, "failed to interrupt active server voice turn");
+        debug!(error = ?error, "server turn interrupt failure details");
+    }
+}
+
 fn derive_audio_ingress_endpoint(server_endpoint: &str) -> Result<String> {
     let (scheme, rest) = server_endpoint
         .split_once("://")
@@ -518,6 +606,29 @@ async fn upload_pcm16_to_server(
         .upload_captured_audio(upload_stream)
         .await
         .context("uploading captured speech to server")?;
+    Ok(())
+}
+
+async fn interrupt_active_turn(
+    endpoint: String,
+    channel_id: String,
+    user_id: String,
+    reason: String,
+    timestamp_us: u64,
+) -> Result<()> {
+    let mut client = ServerAudioIngressClient::connect(endpoint.clone())
+        .await
+        .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
+
+    client
+        .interrupt_active_turn(InterruptActiveTurnRequest {
+            channel_id,
+            user_id,
+            reason,
+            timestamp_us,
+        })
+        .await
+        .context("interrupting active server voice turn")?;
     Ok(())
 }
 

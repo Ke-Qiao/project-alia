@@ -329,6 +329,9 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
             reconnect_interval_sec,
             reconnect_max_backoff_sec,
             grpc_timeout_sec,
+            voice_turn_interrupt_enabled,
+            cancel_streaming_tts_on_interrupt,
+            discard_interrupted_turn_history,
             ..
         } => {
             tracing::info!(channel_id = %id, "creating EmbeddedChannel");
@@ -341,6 +344,9 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
                     reconnect_interval_sec: *reconnect_interval_sec,
                     reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
                     grpc_timeout_sec: *grpc_timeout_sec,
+                    voice_turn_interrupt_enabled: *voice_turn_interrupt_enabled,
+                    cancel_streaming_tts_on_interrupt: *cancel_streaming_tts_on_interrupt,
+                    discard_interrupted_turn_history: *discard_interrupted_turn_history,
                 },
                 event_bus,
             ))

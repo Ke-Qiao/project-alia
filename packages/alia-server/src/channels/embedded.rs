@@ -17,7 +17,9 @@ use tonic::Request;
 use tonic::transport::Channel;
 
 use alia_proto::audio::audio_stream_client::AudioStreamClient;
-use alia_proto::audio::{AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest};
+use alia_proto::audio::{
+    AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest, StopPlaybackRequest,
+};
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
@@ -30,7 +32,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 
 use super::adapter::{
     AudioFormat, AudioPayload, AudioPayloadStream, ChannelAction, ChannelAdapter,
-    ChannelCapabilities, ChannelTarget,
+    ChannelCapabilities, ChannelInterruptConfig, ChannelTarget,
 };
 
 const AUDIO_GRPC_CHUNK_BYTES: usize = 64 * 1024;
@@ -48,6 +50,9 @@ pub struct EmbeddedChannelConfig {
     pub reconnect_interval_sec: u64,
     pub reconnect_max_backoff_sec: u64,
     pub grpc_timeout_sec: u64,
+    pub voice_turn_interrupt_enabled: bool,
+    pub cancel_streaming_tts_on_interrupt: bool,
+    pub discard_interrupted_turn_history: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -430,6 +435,14 @@ impl ChannelAdapter for EmbeddedChannel {
         }
     }
 
+    fn interrupt_config(&self) -> ChannelInterruptConfig {
+        ChannelInterruptConfig {
+            enabled: self.config.voice_turn_interrupt_enabled,
+            cancel_streaming_tts_on_interrupt: self.config.cancel_streaming_tts_on_interrupt,
+            discard_interrupted_turn_history: self.config.discard_interrupted_turn_history,
+        }
+    }
+
     async fn send_message(&self, _target: &ChannelTarget, msg: &str) -> anyhow::Result<()> {
         // For the embedded channel, text messages are sent as TTS audio.
         // The AI pipeline calls send_audio() directly for voice_output channels,
@@ -545,6 +558,21 @@ impl ChannelAdapter for EmbeddedChannel {
             .map_err(|error| anyhow::anyhow!("audio stream producer join failed: {error}"));
         upload_result?;
         producer_result??;
+        Ok(())
+    }
+
+    async fn stop_current_playback(
+        &self,
+        _target: &ChannelTarget,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        let mut client = self.audio_client().await?;
+        client
+            .stop_playback(self.auth_request(StopPlaybackRequest {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                reason: reason.to_string(),
+            })?)
+            .await?;
         Ok(())
     }
 

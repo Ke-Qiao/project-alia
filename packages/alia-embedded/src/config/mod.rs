@@ -229,4 +229,13 @@ mod tests {
             PathBuf::from("models/silero-vad/silero_vad.onnx")
         );
     }
+
+    #[test]
+    fn has_interrupt_defaults() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert!(settings.interrupt.interrupt_on_wakeword_during_playback);
+        assert!(settings.interrupt.interrupt_skip_direct_response);
+        assert_eq!(settings.interrupt.interrupt_debounce_ms, 300);
+    }
 }

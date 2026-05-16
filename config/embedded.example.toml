@@ -9,6 +9,7 @@
 # - [audio]
 # - [edge_stt]
 # - [vad]
+# - [interrupt]
 # - [discovery]
 
 [runtime]
@@ -48,6 +49,18 @@ playback_device = "default"
 playback_sample_rate = 24000
 playback_channels = 1
 playback_buffer_ms = 60
+# Playback queue tuning. Keep the target cushion small for lower latency, and
+# let the max cap guard against runaway buffering when the network outruns the
+# speaker.
+playback_target_buffer_ms = 300
+playback_max_buffer_ms = 2000
+playback_command_queue_capacity = 8
+# When `true`, ALSA playback retunes to the source clip/stream sample rate
+# instead of pinning everything to `playback_sample_rate`.
+alsa_playback_follow_source_rate = true
+# I2S mics often expose 24-bit samples inside S32_LE. `auto` detects whether
+# those bits are left- or right-justified; set explicitly if a board needs it.
+alsa_capture_s32_alignment = "auto"
 opus_bitrate = 24000
 opus_frame_ms = 20
 upload_buffer_frames = 5
@@ -71,6 +84,11 @@ buffer_size_sec = 10.0
 provider = "cpu"
 num_threads = 1
 debug = false
+
+[interrupt]
+interrupt_on_wakeword_during_playback = true
+interrupt_skip_direct_response = true
+interrupt_debounce_ms = 300
 
 [direct_response_defaults]
 audio_dir = "run/direct-responses"

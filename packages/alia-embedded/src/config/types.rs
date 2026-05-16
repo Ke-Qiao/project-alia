@@ -11,6 +11,8 @@ pub struct EmbeddedConfig {
     pub edge_stt: EdgeSttConfig,
     #[serde(default)]
     pub vad: VadConfig,
+    #[serde(default)]
+    pub interrupt: InterruptConfig,
     pub audio: AudioConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
@@ -340,6 +342,30 @@ fn default_vad_num_threads() -> i32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterruptConfig {
+    #[serde(default = "default_true")]
+    pub interrupt_on_wakeword_during_playback: bool,
+    #[serde(default = "default_true")]
+    pub interrupt_skip_direct_response: bool,
+    #[serde(default = "default_interrupt_debounce_ms")]
+    pub interrupt_debounce_ms: u32,
+}
+
+impl Default for InterruptConfig {
+    fn default() -> Self {
+        Self {
+            interrupt_on_wakeword_during_playback: true,
+            interrupt_skip_direct_response: true,
+            interrupt_debounce_ms: default_interrupt_debounce_ms(),
+        }
+    }
+}
+
+fn default_interrupt_debounce_ms() -> u32 {
+    300
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     #[serde(default)]
     pub capture_backend: AudioBackend,
@@ -362,6 +388,16 @@ pub struct AudioConfig {
     pub playback_channels: u16,
     #[serde(default = "default_playback_buffer_ms")]
     pub playback_buffer_ms: u32,
+    #[serde(default = "default_playback_target_buffer_ms")]
+    pub playback_target_buffer_ms: u32,
+    #[serde(default = "default_playback_max_buffer_ms")]
+    pub playback_max_buffer_ms: u32,
+    #[serde(default = "default_playback_command_queue_capacity")]
+    pub playback_command_queue_capacity: usize,
+    #[serde(default = "default_true")]
+    pub alsa_playback_follow_source_rate: bool,
+    #[serde(default)]
+    pub alsa_capture_s32_alignment: AlsaCaptureS32Alignment,
 
     // Opus encoding
     #[serde(default = "default_opus_bitrate")]
@@ -388,6 +424,11 @@ impl Default for AudioConfig {
             playback_sample_rate: default_playback_sample_rate(),
             playback_channels: default_channels(),
             playback_buffer_ms: default_playback_buffer_ms(),
+            playback_target_buffer_ms: default_playback_target_buffer_ms(),
+            playback_max_buffer_ms: default_playback_max_buffer_ms(),
+            playback_command_queue_capacity: default_playback_command_queue_capacity(),
+            alsa_playback_follow_source_rate: default_true(),
+            alsa_capture_s32_alignment: AlsaCaptureS32Alignment::default(),
             opus_bitrate: default_opus_bitrate(),
             opus_frame_ms: default_opus_frame_ms(),
             upload_buffer_frames: default_upload_buffer_frames(),
@@ -411,6 +452,15 @@ fn default_channels() -> u16 {
 fn default_playback_buffer_ms() -> u32 {
     60
 }
+fn default_playback_target_buffer_ms() -> u32 {
+    300
+}
+fn default_playback_max_buffer_ms() -> u32 {
+    2_000
+}
+fn default_playback_command_queue_capacity() -> usize {
+    8
+}
 fn default_opus_bitrate() -> u32 {
     24000
 }
@@ -431,6 +481,15 @@ pub enum AudioBackend {
     Auto,
     Cpal,
     Alsa,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AlsaCaptureS32Alignment {
+    #[default]
+    Auto,
+    LeftJustified,
+    RightJustified,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -573,6 +632,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub vad: VadConfig,
     #[serde(default)]
+    pub interrupt: InterruptConfig,
+    #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
@@ -588,6 +649,7 @@ impl Default for EmbeddedConfig {
             wakeword: WakewordConfig::default(),
             edge_stt: EdgeSttConfig::default(),
             vad: VadConfig::default(),
+            interrupt: InterruptConfig::default(),
             audio: AudioConfig::default(),
             discovery: DiscoveryConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
@@ -607,6 +669,7 @@ impl EmbeddedConfig {
         self.audio = runtime.audio;
         self.edge_stt = runtime.edge_stt;
         self.vad = runtime.vad;
+        self.interrupt = runtime.interrupt;
         self.discovery = runtime.discovery;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
@@ -623,6 +686,7 @@ impl EmbeddedConfig {
             audio: self.audio.clone(),
             edge_stt: self.edge_stt.clone(),
             vad: self.vad.clone(),
+            interrupt: self.interrupt.clone(),
             discovery: self.discovery.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),

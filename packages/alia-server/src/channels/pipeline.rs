@@ -10,39 +10,29 @@
 //! For non-streaming channels the pipeline calls `send_message` with the full
 //! response.
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
-use futures::StreamExt;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{
-    AudioFormat, AudioPayload, AudioPayloadStream, ChannelAdapter, ChannelEvent, ChannelTarget,
-};
+use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
 use crate::config::ToolsSection;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    AudioEncoding, CachedResponse, ChatMessage, LlmToolCall, PromptVars, RouteDecision,
-    RouterInput, ToolCall, ToolContext, ToolDefinition, ToolResult, TtsAdapter,
+    AudioEncoding, CachedResponse, ChatMessage, PromptVars, RouteDecision, RouterInput,
 };
 use crate::providers::sensor::SensorRegistry;
 
-const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
-- When an appropriate tool is available, call the tool instead of describing imaginary results.
-- Never put raw tool-call JSON, function names, or hidden arguments in the final user-facing answer.
-- After tool results are provided, produce only a natural-language answer for the user.
-- If a tool result says confirmation is required, ask the user to confirm before claiming the action was done.
-- If native tool calling is unavailable, request tools by replying only with JSON:
-  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
-"#;
-const TTS_SENTENCE_MAX_CHARS: usize = 80;
-const TTS_SENTENCE_GAP_MS: u32 = 80;
+mod debug;
+mod streaming;
+mod tools;
+mod turn;
+use debug::*;
+use streaming::*;
+use tools::*;
+use turn::*;
 
 /// Result of `process_text` — carries the full response text and whether it
 /// was already delivered to the channel via streaming.
@@ -54,6 +44,20 @@ struct TextResult {
     /// `true` when voice audio was already streamed while text was generated.
     /// Callers must NOT synthesize and send the same answer again.
     audio_streamed: bool,
+    /// `true` when processing stopped because the active voice turn was interrupted.
+    interrupted: bool,
+    /// Persist this interaction after downstream delivery if the caller deferred
+    /// history/cache writes to avoid storing interrupted assistant output.
+    pending_persistence: Option<PendingTextPersistence>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingTextPersistence {
+    session_id: Uuid,
+    user_id: Uuid,
+    user_id_text: String,
+    query_text: String,
+    response_text: String,
 }
 
 /// Spawn the pipeline processing loop.
@@ -72,6 +76,7 @@ pub fn spawn_pipeline(
 ) {
     let mut rx = event_bus.subscribe();
     let bus = event_bus.clone();
+    let voice_turns = Arc::new(VoiceTurnRegistry::default());
 
     tokio::spawn(async move {
         loop {
@@ -89,9 +94,10 @@ pub fn spawn_pipeline(
                             let sensors = sensors.clone();
                             let bus = bus.clone();
                             let tools_config = tools_config.clone();
+                            let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, debug_output, &tools_config).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -128,6 +134,7 @@ async fn process_event(
     channels: &ChannelRegistry,
     sensors: &SensorRegistry,
     event_bus: &EventBus,
+    voice_turns: &VoiceTurnRegistry,
     debug_output: bool,
     tools_config: &ToolsSection,
 ) -> anyhow::Result<()> {
@@ -162,6 +169,8 @@ async fn process_event(
                 debug_output,
                 false,
                 tools_config,
+                None,
+                false,
             )
             .await?;
 
@@ -181,11 +190,60 @@ async fn process_event(
 
             Ok(())
         }
+        ChannelEvent::InterruptActiveTurn {
+            channel_id,
+            user_id,
+            reason,
+        } => {
+            let interrupted = voice_turns.interrupt(&channel_id, &user_id).await;
+            if interrupted {
+                tracing::info!(channel_id, user_id, reason, "active voice turn interrupted");
+                if let Some(channel) = channels.get(&channel_id).await {
+                    let config = channel.interrupt_config();
+                    if config.enabled {
+                        let target = ChannelTarget {
+                            user_id: user_id.clone(),
+                        };
+                        if let Err(error) = channel.stop_current_playback(&target, &reason).await {
+                            tracing::warn!(
+                                channel_type = channel.channel_type(),
+                                channel_id = channel.channel_id(),
+                                error = %error,
+                                "failed to stop channel playback after interrupt"
+                            );
+                            tracing::debug!(error = ?error, "stop playback failure details");
+                        }
+                    }
+                }
+            } else {
+                tracing::debug!(
+                    channel_id,
+                    user_id,
+                    reason,
+                    "interrupt requested but no active voice turn was registered"
+                );
+            }
+            Ok(())
+        }
         ChannelEvent::AudioInput {
             channel_id,
             user_id,
             audio,
         } => {
+            let channel = channels.get(&channel_id).await.ok_or_else(|| {
+                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
+            })?;
+            let target = ChannelTarget {
+                user_id: user_id.clone(),
+            };
+            let turn = voice_turns
+                .begin(
+                    channel_id.clone(),
+                    user_id.clone(),
+                    channel.interrupt_config(),
+                )
+                .await;
+
             // STT → Router → LLM → TTS
             debug_component_audio(
                 debug_output,
@@ -194,10 +252,25 @@ async fn process_event(
                 audio.data.len(),
                 Some((&channel_id, &user_id)),
             );
-            let transcript = modules
-                .stt
-                .transcribe(&audio.data, AudioEncoding::Pcm16kMono)
-                .await?;
+            let transcript = match cancellable_stage(
+                Some(&turn),
+                "stt",
+                modules
+                    .stt
+                    .transcribe(&audio.data, AudioEncoding::Pcm16kMono),
+            )
+            .await
+            {
+                Ok(Some(transcript)) => transcript,
+                Ok(None) => {
+                    voice_turns.finish(&turn).await;
+                    return Ok(());
+                }
+                Err(error) => {
+                    voice_turns.finish(&turn).await;
+                    return Err(error);
+                }
+            };
             debug_component_text(
                 debug_output,
                 "stt",
@@ -213,17 +286,11 @@ async fn process_event(
                     "empty_result",
                     Some((&channel_id, &user_id)),
                 );
+                voice_turns.finish(&turn).await;
                 return Ok(());
             }
 
-            let channel = channels.get(&channel_id).await.ok_or_else(|| {
-                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
-            })?;
-            let target = ChannelTarget {
-                user_id: user_id.clone(),
-            };
-
-            let result = process_text(
+            let result = match process_text(
                 &transcript,
                 &user_id,
                 modules,
@@ -234,8 +301,22 @@ async fn process_event(
                 debug_output,
                 channel.capabilities().voice_output && channel.capabilities().audio_streaming,
                 tools_config,
+                Some(&turn),
+                turn.interrupt_config.discard_interrupted_turn_history,
             )
-            .await?;
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    voice_turns.finish(&turn).await;
+                    return Err(error);
+                }
+            };
+
+            if result.interrupted {
+                voice_turns.finish(&turn).await;
+                return Ok(());
+            }
 
             // Text delivery: only if not already streamed
             if !result.streamed {
@@ -248,6 +329,7 @@ async fn process_event(
                 );
                 if let Err(error) = channel.send_message(&target, &result.text).await {
                     log_channel_delivery_failure(channel.as_ref(), error).await;
+                    voice_turns.finish(&turn).await;
                     return Ok(());
                 }
             }
@@ -261,10 +343,21 @@ async fn process_event(
                     &user_id,
                     &result.text,
                     debug_output,
+                    Some(&turn),
                 )
                 .await;
             }
 
+            if turn_is_interrupted(Some(&turn)) {
+                voice_turns.finish(&turn).await;
+                return Ok(());
+            }
+
+            if let Some(pending) = result.pending_persistence {
+                persist_text_interaction(modules, pending).await;
+            }
+
+            voice_turns.finish(&turn).await;
             Ok(())
         }
         ChannelEvent::SensorData {
@@ -288,121 +381,11 @@ async fn process_event(
     }
 }
 
-async fn deliver_tts_audio(
-    modules: &ModuleRegistry,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    channel_id: &str,
-    user_id: &str,
-    text: &str,
-    debug_output: bool,
-) {
-    if channel.capabilities().audio_streaming {
-        debug_component_text(
-            debug_output,
-            "tts",
-            "stream_call",
-            text,
-            Some((channel_id, user_id)),
-        );
-
-        match modules.tts.synthesize_stream(text).await {
-            Ok(tts_stream) => {
-                let audio_started = Arc::new(AtomicBool::new(false));
-                let audio_started_marker = audio_started.clone();
-                let audio_stream = tts_stream.map(move |chunk| {
-                    chunk
-                        .map(|data| AudioPayload {
-                            data,
-                            sample_rate: 24000,
-                            channels: 1,
-                            format: AudioFormat::Wav,
-                        })
-                        .inspect(|_| {
-                            audio_started_marker.store(true, Ordering::Relaxed);
-                        })
-                });
-
-                if let Err(error) = channel
-                    .send_audio_stream(target, Box::pin(audio_stream))
-                    .await
-                {
-                    log_channel_delivery_failure(channel, error).await;
-                    if audio_started.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    tracing::warn!(
-                        channel_type = channel.channel_type(),
-                        channel_id = channel.channel_id(),
-                        "streaming TTS failed before audio playback; falling back to buffered TTS"
-                    );
-                } else {
-                    return;
-                }
-            }
-            Err(error) => {
-                tracing::warn!(
-                    channel_type = channel.channel_type(),
-                    channel_id = channel.channel_id(),
-                    error = %error,
-                    "streaming TTS failed; falling back to buffered TTS"
-                );
-                tracing::debug!(error = ?error, "streaming TTS failure details");
-            }
-        }
-    }
-
-    debug_component_text(
-        debug_output,
-        "tts",
-        "call",
-        text,
-        Some((channel_id, user_id)),
-    );
-    let audio_bytes = match modules.tts.synthesize(text).await {
-        Ok(audio_bytes) => audio_bytes,
-        Err(error) => {
-            tracing::error!(
-                channel_type = channel.channel_type(),
-                channel_id = channel.channel_id(),
-                error = %error,
-                "TTS synthesis failed; keeping channel enabled"
-            );
-            tracing::debug!(error = ?error, "TTS synthesis failure details");
-            return;
-        }
-    };
-    debug_component_audio(
-        debug_output,
-        "tts",
-        "result",
-        audio_bytes.len(),
-        Some((channel_id, user_id)),
-    );
-
-    let audio_out = AudioPayload {
-        data: audio_bytes,
-        sample_rate: 24000,
-        channels: 1,
-        format: AudioFormat::Wav,
-    };
-
-    debug_component_audio(
-        debug_output,
-        "channel",
-        "send_audio",
-        audio_out.data.len(),
-        Some((channel_id, user_id)),
-    );
-    if let Err(error) = channel.send_audio(target, audio_out).await {
-        log_channel_delivery_failure(channel, error).await;
-    }
-}
-
 fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
     match event {
         ChannelEvent::TextMessage { channel_id, .. }
         | ChannelEvent::AudioInput { channel_id, .. }
+        | ChannelEvent::InterruptActiveTurn { channel_id, .. }
         | ChannelEvent::SensorData { channel_id, .. }
         | ChannelEvent::StatusChange { channel_id, .. } => Some(channel_id),
     }
@@ -430,6 +413,8 @@ async fn process_text(
     debug_output: bool,
     audio_response: bool,
     tools_config: &ToolsSection,
+    turn: Option<&VoiceTurn>,
+    defer_persistence: bool,
 ) -> anyhow::Result<TextResult> {
     let uid = Uuid::parse_str(user_id).unwrap_or_else(|_| Uuid::nil());
     let persona_prompt = build_persona_system_prompt(uid, modules).await?;
@@ -455,6 +440,8 @@ async fn process_text(
             text: response_text,
             streamed: false,
             audio_streamed: false,
+            interrupted: false,
+            pending_persistence: None,
         });
     }
     debug_component(debug_output, "cache", "miss", Some((channel_id, user_id)));
@@ -472,7 +459,19 @@ async fn process_text(
         user_id: uid,
         conversation_context: history.clone(),
     };
-    let decision = modules.router.route(&route_input).await?;
+    let decision =
+        match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
+            Some(decision) => decision,
+            None => {
+                return Ok(TextResult {
+                    text: String::new(),
+                    streamed: false,
+                    audio_streamed: false,
+                    interrupted: true,
+                    pending_persistence: None,
+                });
+            }
+        };
     debug_component_route(
         debug_output,
         "router",
@@ -551,6 +550,7 @@ async fn process_text(
                     "skill",
                     tools_config,
                     debug_output,
+                    turn,
                 )
                 .await?;
                 debug_component_text(
@@ -580,6 +580,7 @@ async fn process_text(
                         event_bus,
                         &messages,
                         debug_output,
+                        turn,
                     )
                     .await?
                 } else {
@@ -593,6 +594,7 @@ async fn process_text(
                             event_bus,
                             &messages,
                             debug_output,
+                            turn,
                         )
                         .await?,
                         false,
@@ -615,15 +617,23 @@ async fn process_text(
                     &messages,
                     Some((channel_id, user_id)),
                 );
-                let full = modules.llm.chat(&messages).await?;
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, false, false)
+                let full = match cancellable_stage(turn, "llm", modules.llm.chat(&messages)).await?
+                {
+                    Some(full) => full,
+                    None => String::new(),
+                };
+                if turn_is_interrupted(turn) {
+                    (full, false, false)
+                } else {
+                    debug_component_text(
+                        debug_output,
+                        "llm",
+                        "result",
+                        &full,
+                        Some((channel_id, user_id)),
+                    );
+                    (full, false, false)
+                }
             }
         }
 
@@ -673,6 +683,7 @@ async fn process_text(
                         event_bus,
                         &messages,
                         debug_output,
+                        turn,
                     )
                     .await?
                 } else {
@@ -686,6 +697,7 @@ async fn process_text(
                             event_bus,
                             &messages,
                             debug_output,
+                            turn,
                         )
                         .await?,
                         false,
@@ -708,28 +720,67 @@ async fn process_text(
                     &messages,
                     Some((channel_id, user_id)),
                 );
-                let full = modules.llm.chat(&messages).await?;
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, false, false)
+                let full = match cancellable_stage(turn, "llm", modules.llm.chat(&messages)).await?
+                {
+                    Some(full) => full,
+                    None => String::new(),
+                };
+                if turn_is_interrupted(turn) {
+                    (full, false, false)
+                } else {
+                    debug_component_text(
+                        debug_output,
+                        "llm",
+                        "result",
+                        &full,
+                        Some((channel_id, user_id)),
+                    );
+                    (full, false, false)
+                }
             }
         }
     };
 
-    // 4. Append to session history
+    if turn_is_interrupted(turn) {
+        return Ok(TextResult {
+            text: response,
+            streamed,
+            audio_streamed,
+            interrupted: true,
+            pending_persistence: None,
+        });
+    }
+
+    let pending_persistence = PendingTextPersistence {
+        session_id,
+        user_id: uid,
+        user_id_text: user_id.to_string(),
+        query_text: text.to_string(),
+        response_text: response.clone(),
+    };
+
+    if !defer_persistence {
+        persist_text_interaction(modules, pending_persistence.clone()).await;
+    }
+
+    Ok(TextResult {
+        text: response,
+        streamed,
+        audio_streamed,
+        interrupted: false,
+        pending_persistence: defer_persistence.then_some(pending_persistence),
+    })
+}
+
+async fn persist_text_interaction(modules: &ModuleRegistry, pending: PendingTextPersistence) {
     let _ = modules
         .conversation
         .append_message(
-            session_id,
+            pending.session_id,
             ChatMessage {
                 role: "user".into(),
-                content: text.to_string(),
-                name: Some(user_id.to_string()),
+                content: pending.query_text.clone(),
+                name: Some(pending.user_id_text),
                 ..ChatMessage::default()
             },
         )
@@ -738,352 +789,27 @@ async fn process_text(
     let _ = modules
         .conversation
         .append_message(
-            session_id,
+            pending.session_id,
             ChatMessage {
                 role: "assistant".into(),
-                content: response.clone(),
+                content: pending.response_text.clone(),
                 name: None,
                 ..ChatMessage::default()
             },
         )
         .await;
 
-    // 5. Store in cache for next time
     let _ = modules
         .cache
         .put(crate::providers::adapter::CacheEntry {
-            user_id: Some(uid),
+            user_id: Some(pending.user_id),
             scope: "pipeline".into(),
-            query_text: text.to_string(),
-            response_text: response.clone(),
+            query_text: pending.query_text,
+            response_text: pending.response_text,
             metadata: serde_json::Value::Null,
             ttl_seconds: 3600,
         })
         .await;
-
-    Ok(TextResult {
-        text: response,
-        streamed,
-        audio_streamed,
-    })
-}
-
-async fn run_llm_tool_loop(
-    modules: &ModuleRegistry,
-    base_messages: Vec<ChatMessage>,
-    tools: Vec<ToolDefinition>,
-    user_id: Uuid,
-    session_id: Option<Uuid>,
-    channel_id: &str,
-    user_id_text: &str,
-    route: &'static str,
-    tools_config: &ToolsSection,
-    debug_output: bool,
-) -> anyhow::Result<String> {
-    let mut messages = inject_tool_prompt(base_messages, &tools)?;
-    let tool_map = tools
-        .iter()
-        .map(|tool| (tool.name.clone(), tool.clone()))
-        .collect::<HashMap<_, _>>();
-    let ctx = ToolContext {
-        user_id,
-        conversation_id: session_id,
-        source: "ai".to_string(),
-    };
-    let max_depth = tools_config.max_tool_call_depth.max(1);
-
-    for depth in 0..max_depth {
-        debug_component_llm_call(
-            debug_output,
-            "llm",
-            "tool_call",
-            route,
-            &messages,
-            Some((channel_id, user_id_text)),
-        );
-
-        let mut response = modules.llm.chat_with_tools(&messages, &tools).await?;
-        if response.tool_calls.is_empty() {
-            response.tool_calls = parse_text_tool_calls(&response.content)?;
-        }
-
-        if response.tool_calls.is_empty() {
-            return Ok(response.content);
-        }
-
-        debug_component_tool_calls(
-            debug_output,
-            depth + 1,
-            &response.tool_calls,
-            Some((channel_id, user_id_text)),
-        );
-
-        messages.push(ChatMessage {
-            role: "assistant".into(),
-            content: response.content.clone(),
-            name: None,
-            tool_calls: response.tool_calls.clone(),
-            ..ChatMessage::default()
-        });
-
-        for (index, call) in response.tool_calls.iter().enumerate() {
-            let call = normalize_tool_call(call, depth, index);
-            let result =
-                execute_pipeline_tool_call(modules, &call, &tool_map, tools_config, &ctx).await;
-            debug_component_tool_result(
-                debug_output,
-                &call.tool_name,
-                &result,
-                Some((channel_id, user_id_text)),
-            );
-            messages.push(tool_result_message(&call.tool_name, result)?);
-        }
-    }
-
-    tracing::warn!(
-        depth = max_depth,
-        "LLM tool loop reached max_tool_call_depth; asking model for final answer"
-    );
-    messages.push(ChatMessage::new(
-        "system",
-        "Tool-call depth limit reached. Stop calling tools and give the user a concise final answer based on the tool results already available.",
-    ));
-
-    let final_response = modules.llm.chat(&messages).await?;
-    Ok(final_response)
-}
-
-async fn select_tools_for_skill(
-    modules: &ModuleRegistry,
-    allowed_names: &[String],
-    tools_config: &ToolsSection,
-) -> anyhow::Result<Vec<ToolDefinition>> {
-    let all_tools = modules.tools.list_tools().await?;
-    let allowed = (!allowed_names.is_empty()).then(|| {
-        allowed_names
-            .iter()
-            .map(|name| name.as_str())
-            .collect::<HashSet<_>>()
-    });
-
-    let tools = all_tools
-        .into_iter()
-        .filter(|tool| {
-            if !tools_config.allow_plugin_tools && tool.source != "builtin" {
-                return false;
-            }
-            allowed
-                .as_ref()
-                .is_none_or(|allowed| allowed.contains(tool.name.as_str()))
-        })
-        .collect::<Vec<_>>();
-
-    if let Some(allowed) = allowed {
-        let found = tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect::<HashSet<_>>();
-        for name in allowed.difference(&found) {
-            tracing::warn!(tool = %name, "skill requested unavailable tool");
-        }
-    }
-
-    Ok(tools)
-}
-
-fn inject_tool_prompt(
-    mut messages: Vec<ChatMessage>,
-    tools: &[ToolDefinition],
-) -> anyhow::Result<Vec<ChatMessage>> {
-    let tool_summary = tools
-        .iter()
-        .map(|tool| {
-            serde_json::json!({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-                "requires_confirmation": tool.require_confirmation,
-            })
-        })
-        .collect::<Vec<_>>();
-    let prompt = format!(
-        "{TOOL_USE_SYSTEM_PROMPT}\nAvailable tools:\n{}",
-        serde_json::to_string_pretty(&tool_summary)?
-    );
-
-    let insert_at = messages
-        .iter()
-        .rposition(|message| message.role == "system")
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    messages.insert(insert_at, ChatMessage::new("system", prompt));
-    Ok(messages)
-}
-
-async fn execute_pipeline_tool_call(
-    modules: &ModuleRegistry,
-    call: &LlmToolCall,
-    tool_map: &HashMap<String, ToolDefinition>,
-    tools_config: &ToolsSection,
-    ctx: &ToolContext,
-) -> ToolResult {
-    let Some(definition) = tool_map.get(&call.tool_name) else {
-        return ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "error": "tool_not_available",
-                "tool": call.tool_name,
-            }),
-            display: Some(format!("Tool '{}' is not available", call.tool_name)),
-        };
-    };
-
-    if tool_requires_confirmation(definition, tools_config) {
-        return ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "requires_confirmation": true,
-                "tool": call.tool_name,
-                "arguments": call.arguments.clone(),
-                "message": "This tool requires user confirmation before execution.",
-            }),
-            display: Some(format!("Please confirm before I run '{}'.", call.tool_name)),
-        };
-    }
-
-    let tool_call = ToolCall {
-        tool_name: call.tool_name.clone(),
-        arguments: call.arguments.clone(),
-        call_id: call.id.clone(),
-    };
-    let timeout = Duration::from_secs(tools_config.tool_call_timeout_sec.max(1));
-
-    match tokio::time::timeout(timeout, modules.tools.execute(tool_call, ctx)).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "error": error.to_string(),
-            }),
-            display: Some(format!("Tool '{}' failed: {}", call.tool_name, error)),
-        },
-        Err(_) => ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "error": "tool_timeout",
-                "timeout_sec": tools_config.tool_call_timeout_sec,
-            }),
-            display: Some(format!("Tool '{}' timed out", call.tool_name)),
-        },
-    }
-}
-
-fn tool_requires_confirmation(tool: &ToolDefinition, tools_config: &ToolsSection) -> bool {
-    tool.require_confirmation
-        || tools_config
-            .require_confirmation
-            .iter()
-            .any(|name| name == &tool.name)
-}
-
-fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolCall {
-    let id = if call.id.trim().is_empty() {
-        format!("call_{depth}_{index}")
-    } else {
-        call.id.clone()
-    };
-    LlmToolCall {
-        id,
-        tool_name: call.tool_name.clone(),
-        arguments: call.arguments.clone(),
-    }
-}
-
-fn tool_result_message(tool_name: &str, result: ToolResult) -> anyhow::Result<ChatMessage> {
-    let content = serde_json::to_string(&serde_json::json!({
-        "tool": tool_name,
-        "success": result.success,
-        "output": result.output,
-        "display": result.display,
-    }))?;
-
-    Ok(ChatMessage {
-        role: "tool".into(),
-        content,
-        name: Some(tool_name.to_string()),
-        tool_call_id: Some(result.call_id),
-        ..ChatMessage::default()
-    })
-}
-
-fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
-    let candidate = strip_tool_call_json(content);
-    if !candidate.contains("\"tool_calls\"") {
-        return Ok(Vec::new());
-    }
-
-    let value: serde_json::Value = serde_json::from_str(&candidate)
-        .map_err(|error| anyhow::anyhow!("failed to parse text tool call JSON: {error}"))?;
-    let Some(calls) = value.get("tool_calls").and_then(|value| value.as_array()) else {
-        return Ok(Vec::new());
-    };
-
-    let parsed = calls
-        .iter()
-        .enumerate()
-        .map(|(index, call)| {
-            let name = call
-                .get("name")
-                .or_else(|| call.get("tool_name"))
-                .and_then(|value| value.as_str())
-                .ok_or_else(|| anyhow::anyhow!("tool call {index} missing name"))?;
-            let arguments = call
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
-            let arguments = match arguments {
-                serde_json::Value::String(raw) => serde_json::from_str(&raw).map_err(|error| {
-                    anyhow::anyhow!("tool call {index} invalid arguments: {error}")
-                })?,
-                value => value,
-            };
-            let id = call
-                .get("id")
-                .and_then(|value| value.as_str())
-                .map(ToOwned::to_owned)
-                .unwrap_or_default();
-            Ok(LlmToolCall {
-                id,
-                tool_name: name.to_string(),
-                arguments,
-            })
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    Ok(parsed)
-}
-
-fn strip_tool_call_json(content: &str) -> String {
-    let trimmed = content.trim();
-    let trimmed = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .unwrap_or(trimmed)
-        .trim();
-    let trimmed = trimmed.strip_suffix("```").unwrap_or(trimmed).trim();
-
-    if trimmed.starts_with('{') {
-        return trimmed.to_string();
-    }
-
-    match (trimmed.find('{'), trimmed.rfind('}')) {
-        (Some(start), Some(end)) if start < end => trimmed[start..=end].to_string(),
-        _ => trimmed.to_string(),
-    }
 }
 
 async fn build_persona_system_prompt(
@@ -1113,807 +839,11 @@ async fn build_persona_system_prompt(
     }
 }
 
-async fn stream_llm_response_with_sentence_tts(
-    modules: &ModuleRegistry,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    channel_id: &str,
-    user_id: &str,
-    event_bus: &EventBus,
-    messages: &[ChatMessage],
-    debug_output: bool,
-) -> anyhow::Result<(String, bool)> {
-    let (sentence_tx, sentence_rx) = mpsc::channel::<String>(4);
-    let (audio_tx, audio_rx) = mpsc::channel::<anyhow::Result<AudioPayload>>(8);
-    let audio_started = Arc::new(AtomicBool::new(false));
-    let tts_worker = tokio::spawn(stream_tts_sentences(
-        modules.tts.clone(),
-        sentence_rx,
-        audio_tx,
-        audio_started.clone(),
-        debug_output,
-        channel_id.to_string(),
-        user_id.to_string(),
-    ));
-
-    let audio_stream: AudioPayloadStream =
-        Box::pin(tokio_stream::wrappers::ReceiverStream::new(audio_rx));
-    let audio_delivery = channel.send_audio_stream(target, audio_stream);
-
-    let llm_delivery = async move {
-        let mut token_stream = modules.llm.chat_stream(messages).await?;
-
-        debug_component(
-            debug_output,
-            "channel",
-            "begin_stream",
-            Some((channel_id, user_id)),
-        );
-        if let Err(error) = channel.begin_stream(target).await {
-            tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
-            tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
-        }
-
-        let mut full_text = String::new();
-        let mut sentence_buffer = String::new();
-        let mut sentence_tx = Some(sentence_tx);
-
-        while let Some(chunk_result) = token_stream.next().await {
-            match chunk_result {
-                Ok(chunk) => {
-                    full_text.push_str(&chunk);
-                    sentence_buffer.push_str(&chunk);
-                    debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
-
-                    if let Err(e) = channel.send_stream_chunk(target, &chunk).await {
-                        tracing::warn!(error = %e, "stream chunk delivery failed");
-                        tracing::debug!(error = ?e, "stream chunk delivery failure details");
-                    }
-
-                    event_bus.publish(ServerEvent::StreamChunk {
-                        channel_id: channel_id.to_string(),
-                        user_id: user_id.to_string(),
-                        chunk,
-                    });
-
-                    while let Some(segment) = drain_speakable_segment(&mut sentence_buffer, false) {
-                        let Some(tx) = sentence_tx.as_ref() else {
-                            break;
-                        };
-                        if tx.send(segment).await.is_err() {
-                            sentence_tx = None;
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "LLM stream error");
-                    tracing::debug!(error = ?e, "LLM stream error details");
-                    break;
-                }
-            }
-        }
-
-        while let Some(segment) = drain_speakable_segment(&mut sentence_buffer, true) {
-            let Some(tx) = sentence_tx.as_ref() else {
-                break;
-            };
-            if tx.send(segment).await.is_err() {
-                sentence_tx = None;
-                break;
-            }
-        }
-        drop(sentence_tx);
-
-        if let Err(error) = channel.end_stream(target, &full_text).await {
-            tracing::warn!(channel_id, error = %error, "stream end delivery failed");
-            tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
-        }
-        debug_component_text(
-            debug_output,
-            "channel",
-            "end_stream",
-            &full_text,
-            Some((channel_id, user_id)),
-        );
-
-        event_bus.publish(ServerEvent::StreamEnd {
-            channel_id: channel_id.to_string(),
-            user_id: user_id.to_string(),
-        });
-
-        Ok::<_, anyhow::Error>(full_text)
-    };
-
-    let (llm_result, audio_result) = futures::join!(llm_delivery, audio_delivery);
-    let tts_result = tts_worker
-        .await
-        .map_err(|error| anyhow::anyhow!("sentence TTS worker join failed: {error}"));
-    let audio_streamed = audio_started.load(Ordering::Relaxed);
-
-    if let Err(error) = audio_result {
-        tracing::warn!(
-            channel_type = channel.channel_type(),
-            channel_id = channel.channel_id(),
-            error = %error,
-            "sentence-level TTS audio delivery failed"
-        );
-        tracing::debug!(error = ?error, "sentence-level TTS audio delivery failure details");
-    }
-    if let Err(error) = tts_result.and_then(|result| result) {
-        tracing::warn!(error = %error, "sentence-level TTS worker failed");
-        tracing::debug!(error = ?error, "sentence-level TTS worker failure details");
-    }
-
-    Ok((llm_result?, audio_streamed))
-}
-
-async fn stream_tts_sentences(
-    tts: Arc<dyn TtsAdapter>,
-    mut sentence_rx: mpsc::Receiver<String>,
-    audio_tx: mpsc::Sender<anyhow::Result<AudioPayload>>,
-    audio_started: Arc<AtomicBool>,
-    debug_output: bool,
-    channel_id: String,
-    user_id: String,
-) -> anyhow::Result<()> {
-    while let Some(sentence) = sentence_rx.recv().await {
-        let sentence = sentence.trim();
-        if sentence.is_empty() {
-            continue;
-        }
-
-        debug_component_text(
-            debug_output,
-            "tts",
-            "sentence_call",
-            sentence,
-            Some((&channel_id, &user_id)),
-        );
-        let audio_bytes = match tts.synthesize(sentence).await {
-            Ok(audio_bytes) => audio_bytes,
-            Err(error) => {
-                let message = format!("TTS sentence synthesis failed: {error}");
-                let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
-                return Err(error);
-            }
-        };
-
-        let payload = match tts_bytes_to_pcm_payload(audio_bytes) {
-            Ok(payload) => payload,
-            Err(error) => {
-                let message = format!("TTS sentence audio decode failed: {error}");
-                let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
-                return Err(error);
-            }
-        };
-
-        if payload.data.is_empty() {
-            continue;
-        }
-
-        let silence =
-            pcm16_silence_payload(payload.sample_rate, payload.channels, TTS_SENTENCE_GAP_MS);
-        if audio_tx.send(Ok(payload)).await.is_err() {
-            return Ok(());
-        }
-        audio_started.store(true, Ordering::Relaxed);
-        if audio_tx.send(Ok(silence)).await.is_err() {
-            return Ok(());
-        }
-    }
-
-    Ok(())
-}
-
-fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> {
-    if let Some((data, sample_rate, channels)) = pcm16_payload_from_wav(&bytes)? {
-        return Ok(AudioPayload {
-            data,
-            sample_rate,
-            channels,
-            format: AudioFormat::Pcm16,
-        });
-    }
-
-    // The TTS adapter contract historically returned WAV bytes, but keep a
-    // conservative raw-PCM fallback for test/noop/custom adapters.
-    Ok(AudioPayload {
-        data: bytes,
-        sample_rate: 24000,
-        channels: 1,
-        format: AudioFormat::Pcm16,
-    })
-}
-
-fn pcm16_payload_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<u8>, u32, u16)>> {
-    if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Ok(None);
-    }
-
-    let mut pos = 12usize;
-    let mut channels = None;
-    let mut sample_rate = None;
-    let mut bits_per_sample = None;
-    let mut audio_format = None;
-    let mut data_range = None;
-
-    while pos + 8 <= bytes.len() {
-        let chunk_id = &bytes[pos..pos + 4];
-        let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into()?) as usize;
-        let data_start = pos + 8;
-        let data_end = data_start.saturating_add(size);
-        if data_end > bytes.len() {
-            break;
-        }
-
-        match chunk_id {
-            b"fmt " if size >= 16 => {
-                audio_format = Some(u16::from_le_bytes(
-                    bytes[data_start..data_start + 2].try_into()?,
-                ));
-                channels = Some(u16::from_le_bytes(
-                    bytes[data_start + 2..data_start + 4].try_into()?,
-                ));
-                sample_rate = Some(u32::from_le_bytes(
-                    bytes[data_start + 4..data_start + 8].try_into()?,
-                ));
-                bits_per_sample = Some(u16::from_le_bytes(
-                    bytes[data_start + 14..data_start + 16].try_into()?,
-                ));
-            }
-            b"data" => data_range = Some((data_start, data_end)),
-            _ => {}
-        }
-
-        let padded = size + (size % 2);
-        pos = data_start.saturating_add(padded);
-    }
-
-    let Some((data_start, data_end)) = data_range else {
-        anyhow::bail!("WAV missing data chunk");
-    };
-    let channels = channels.unwrap_or(1);
-    let sample_rate = sample_rate.unwrap_or(24_000);
-    let bits_per_sample = bits_per_sample.unwrap_or(16);
-    let audio_format = audio_format.unwrap_or(1);
-
-    if audio_format != 1 || bits_per_sample != 16 {
-        anyhow::bail!(
-            "unsupported WAV format: audio_format={}, bits_per_sample={}",
-            audio_format,
-            bits_per_sample
-        );
-    }
-
-    let mut data = bytes[data_start..data_end].to_vec();
-    if data.len() % 2 != 0 {
-        data.pop();
-    }
-    Ok(Some((data, sample_rate, channels.max(1))))
-}
-
-fn pcm16_silence_payload(sample_rate: u32, channels: u16, duration_ms: u32) -> AudioPayload {
-    let sample_count = sample_rate
-        .saturating_mul(u32::from(channels.max(1)))
-        .saturating_mul(duration_ms)
-        .saturating_div(1_000) as usize;
-    AudioPayload {
-        data: vec![0u8; sample_count * 2],
-        sample_rate,
-        channels: channels.max(1),
-        format: AudioFormat::Pcm16,
-    }
-}
-
-fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<String> {
-    let sentence_boundary = buffer
-        .char_indices()
-        .find(|(_, ch)| matches!(ch, '.' | '!' | '?' | '。' | '！' | '？' | '\n'))
-        .map(|(idx, ch)| idx + ch.len_utf8());
-
-    let boundary = sentence_boundary.or_else(|| {
-        if final_flush {
-            return Some(buffer.len());
-        }
-        if buffer.chars().count() < TTS_SENTENCE_MAX_CHARS {
-            return None;
-        }
-
-        let max_byte = buffer
-            .char_indices()
-            .nth(TTS_SENTENCE_MAX_CHARS)
-            .map(|(idx, _)| idx)
-            .unwrap_or(buffer.len());
-        buffer[..max_byte]
-            .char_indices()
-            .rev()
-            .find(|(_, ch)| matches!(ch, ',' | ';' | ':' | '，' | '；' | '：' | ' '))
-            .map(|(idx, ch)| idx + ch.len_utf8())
-            .or(Some(max_byte))
-    })?;
-
-    let segment = buffer[..boundary].trim().to_string();
-    let rest = buffer[boundary..].to_string();
-    *buffer = rest;
-
-    if segment.is_empty() {
-        None
-    } else {
-        Some(segment)
-    }
-}
-
-/// Stream an LLM response token-by-token to the channel.
-///
-/// Calls `begin_stream`, then forwards each token via `send_stream_chunk` and
-/// publishes `StreamChunk` events on the EventBus, then calls `end_stream` and
-/// publishes `StreamEnd`.  Returns the full concatenated response.
-async fn stream_llm_response(
-    modules: &ModuleRegistry,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    channel_id: &str,
-    user_id: &str,
-    event_bus: &EventBus,
-    messages: &[ChatMessage],
-    debug_output: bool,
-) -> anyhow::Result<String> {
-    let mut token_stream = modules.llm.chat_stream(messages).await?;
-
-    debug_component(
-        debug_output,
-        "channel",
-        "begin_stream",
-        Some((channel_id, user_id)),
-    );
-    if let Err(error) = channel.begin_stream(target).await {
-        tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
-        tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
-    }
-
-    let mut full_text = String::new();
-
-    while let Some(chunk_result) = token_stream.next().await {
-        match chunk_result {
-            Ok(chunk) => {
-                full_text.push_str(&chunk);
-                debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
-
-                // Deliver to the channel
-                if let Err(e) = channel.send_stream_chunk(target, &chunk).await {
-                    tracing::warn!(error = %e, "stream chunk delivery failed");
-                    tracing::debug!(error = ?e, "stream chunk delivery failure details");
-                }
-
-                // Publish on event bus for WS subscribers
-                event_bus.publish(ServerEvent::StreamChunk {
-                    channel_id: channel_id.to_string(),
-                    user_id: user_id.to_string(),
-                    chunk,
-                });
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "LLM stream error");
-                tracing::debug!(error = ?e, "LLM stream error details");
-                break;
-            }
-        }
-    }
-
-    if let Err(error) = channel.end_stream(target, &full_text).await {
-        tracing::warn!(channel_id, error = %error, "stream end delivery failed");
-        tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
-    }
-    debug_component_text(
-        debug_output,
-        "channel",
-        "end_stream",
-        &full_text,
-        Some((channel_id, user_id)),
-    );
-
-    event_bus.publish(ServerEvent::StreamEnd {
-        channel_id: channel_id.to_string(),
-        user_id: user_id.to_string(),
-    });
-
-    Ok(full_text)
-}
-
-async fn log_channel_delivery_failure(channel: &dyn ChannelAdapter, error: anyhow::Error) {
-    let channel_type = channel.channel_type();
-    let channel_id = channel.channel_id().to_string();
-
-    tracing::warn!(
-        channel_type,
-        channel_id = %channel_id,
-        error = %error,
-        "channel delivery failed; keeping channel enabled"
-    );
-    tracing::debug!(
-        channel_type,
-        channel_id = %channel_id,
-        error = ?error,
-        "channel delivery failure details"
-    );
-}
-
-fn route_decision_name(decision: &RouteDecision) -> &'static str {
-    match decision {
-        RouteDecision::CacheHit { .. } => "cache_hit",
-        RouteDecision::Skill { .. } => "skill",
-        RouteDecision::LocalLlm { .. } => "local_llm",
-        RouteDecision::RemoteLlm { .. } => "remote_llm",
-    }
-}
-
-fn debug_component(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            channel_id,
-            user_id,
-            "component event"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            "component event"
-        ),
-    }
-}
-
-fn debug_component_text(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    content: &str,
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            content = %preview_text(content, 120),
-            "component text"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            channel_id,
-            user_id,
-            content = %preview_text(content, 240),
-            "component text"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            content = %preview_text(content, 240),
-            "component text"
-        ),
-    }
-}
-
-fn debug_component_audio(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    bytes: usize,
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            bytes,
-            "component audio"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            channel_id,
-            user_id,
-            bytes,
-            "component audio"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            bytes,
-            "component audio"
-        ),
-    }
-}
-
-fn debug_component_route(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    decision: &'static str,
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            decision,
-            "component route"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            channel_id,
-            user_id,
-            decision,
-            "component route"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            decision,
-            "component route"
-        ),
-    }
-}
-
-fn debug_component_llm_call(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    route: &'static str,
-    messages: &[ChatMessage],
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            route,
-            messages = messages.len(),
-            prompt = %last_user_message_preview(messages),
-            "component LLM call"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            route,
-            channel_id,
-            user_id,
-            messages = messages.len(),
-            prompt = %last_user_message_preview(messages),
-            "component LLM call"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            route,
-            messages = messages.len(),
-            prompt = %last_user_message_preview(messages),
-            "component LLM call"
-        ),
-    }
-}
-
-fn debug_component_tools(
-    enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    tools: &[ToolDefinition],
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            channel_id,
-            user_id,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component,
-            event,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
-        ),
-    }
-}
-
-fn debug_component_tool_calls(
-    enabled: bool,
-    depth: u32,
-    calls: &[LlmToolCall],
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "calls",
-            depth,
-            calls = %calls.iter().map(|call| call.tool_name.as_str()).collect::<Vec<_>>().join(","),
-            "component tool calls"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "calls",
-            channel_id,
-            user_id,
-            depth,
-            calls = %calls.iter().map(|call| call.tool_name.as_str()).collect::<Vec<_>>().join(","),
-            "component tool calls"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "calls",
-            depth,
-            calls = %calls.iter().map(|call| call.tool_name.as_str()).collect::<Vec<_>>().join(","),
-            "component tool calls"
-        ),
-    }
-}
-
-fn debug_component_tool_result(
-    enabled: bool,
-    tool_name: &str,
-    result: &ToolResult,
-    channel: Option<(&str, &str)>,
-) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "result",
-            tool = tool_name,
-            success = result.success,
-            display = %result.display.as_deref().unwrap_or(""),
-            "component tool result"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::info!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "result",
-            channel_id,
-            user_id,
-            tool = tool_name,
-            success = result.success,
-            display = %result.display.as_deref().unwrap_or(""),
-            "component tool result"
-        ),
-        None => tracing::info!(
-            target: "alia_server::debug_output",
-            component = "tools",
-            event = "result",
-            tool = tool_name,
-            success = result.success,
-            display = %result.display.as_deref().unwrap_or(""),
-            "component tool result"
-        ),
-    }
-}
-
-fn debug_component_stream_chunk(enabled: bool, chunk: &str, channel: Option<(&str, &str)>) {
-    if !enabled {
-        tracing::debug!(
-            target: "alia_server::debug_output",
-            component = "llm",
-            event = "stream_chunk",
-            chars = chunk.chars().count(),
-            content = %preview_text(chunk, 80),
-            "component stream chunk"
-        );
-        return;
-    }
-
-    match channel {
-        Some((channel_id, user_id)) => tracing::debug!(
-            target: "alia_server::debug_output",
-            component = "llm",
-            event = "stream_chunk",
-            channel_id,
-            user_id,
-            chars = chunk.chars().count(),
-            content = %preview_text(chunk, 80),
-            "component stream chunk"
-        ),
-        None => tracing::debug!(
-            target: "alia_server::debug_output",
-            component = "llm",
-            event = "stream_chunk",
-            chars = chunk.chars().count(),
-            content = %preview_text(chunk, 80),
-            "component stream chunk"
-        ),
-    }
-}
-
-fn last_user_message_preview(messages: &[ChatMessage]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find(|message| message.role == "user")
-        .map(|message| preview_text(&message.content, 180))
-        .unwrap_or_else(|| "<no user message>".to_string())
-}
-
-fn preview_text(value: &str, max_chars: usize) -> String {
-    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut chars = normalized.chars();
-    let preview = chars.by_ref().take(max_chars).collect::<String>();
-    if chars.next().is_some() {
-        format!("{preview}...")
-    } else {
-        preview
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
+    use super::tools::parse_text_tool_calls;
+    use crate::channels::adapter::AudioFormat;
 
     #[test]
     fn parses_text_tool_call_envelope() {

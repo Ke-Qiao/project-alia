@@ -32,6 +32,28 @@ pub struct ChannelCapabilities {
     pub presence: bool,
 }
 
+/// Channel-local voice turn interruption behavior.
+///
+/// Channels opt in by overriding [`ChannelAdapter::interrupt_config`].  This is
+/// intentionally not global because plugin channels may have different turn,
+/// playback, or safety semantics.
+#[derive(Debug, Clone)]
+pub struct ChannelInterruptConfig {
+    pub enabled: bool,
+    pub cancel_streaming_tts_on_interrupt: bool,
+    pub discard_interrupted_turn_history: bool,
+}
+
+impl Default for ChannelInterruptConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cancel_streaming_tts_on_interrupt: true,
+            discard_interrupted_turn_history: true,
+        }
+    }
+}
+
 /// Identifies a target within a channel (user / device / chat).
 #[derive(Debug, Clone)]
 pub struct ChannelTarget {
@@ -85,6 +107,11 @@ pub enum ChannelEvent {
         user_id: String,
         audio: AudioPayload,
     },
+    InterruptActiveTurn {
+        channel_id: String,
+        user_id: String,
+        reason: String,
+    },
     SensorData {
         channel_id: String,
         sensor_type: String,
@@ -120,6 +147,11 @@ pub trait ChannelAdapter: ModuleLifecycle {
 
     /// Declare what this channel supports.
     fn capabilities(&self) -> ChannelCapabilities;
+
+    /// Declare channel-local interrupt behavior.
+    fn interrupt_config(&self) -> ChannelInterruptConfig {
+        ChannelInterruptConfig::default()
+    }
 
     /// Send a text message to the channel.
     async fn send_message(&self, target: &ChannelTarget, msg: &str) -> anyhow::Result<()>;
@@ -171,6 +203,15 @@ pub trait ChannelAdapter: ModuleLifecycle {
         }
 
         self.send_audio(target, combined).await
+    }
+
+    /// Best-effort channel control hook used by channels that can stop active playback.
+    async fn stop_current_playback(
+        &self,
+        _target: &ChannelTarget,
+        _reason: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
     /// Begin a streaming response. Called once before the first chunk.
