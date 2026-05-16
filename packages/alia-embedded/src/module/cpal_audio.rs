@@ -921,12 +921,35 @@ fn create_alsa_playback_runtime(
 ) -> Result<AlsaPlaybackRuntime> {
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
         .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
+    let requested_rate = requested_sample_rate.unwrap_or(config.playback_sample_rate).max(1);
+    let (actual_sample_rate, output_channels, chunk_frames) =
+        configure_alsa_playback_pcm(&pcm, config, requested_rate)?;
+
+    info!(
+        alsa_device,
+        requested_rate,
+        sample_rate = actual_sample_rate,
+        channels = output_channels,
+        "started ALSA audio playback fallback"
+    );
+    Ok(AlsaPlaybackRuntime {
+        pcm,
+        output_sample_rate: actual_sample_rate,
+        output_channels,
+        chunk_frames,
+        requested_sample_rate: requested_rate,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn configure_alsa_playback_pcm(
+    pcm: &AlsaPcm,
+    config: &AudioConfig,
+    requested_rate: u32,
+) -> Result<(u32, usize, usize)> {
     let requested_channels = u32::from(config.playback_channels.max(1));
-    let requested_rate = requested_sample_rate
-        .unwrap_or(config.playback_sample_rate)
-        .max(1);
     let (actual_channels, actual_sample_rate) = {
-        let hwp = AlsaHwParams::any(&pcm).context("reading ALSA hardware params")?;
+        let hwp = AlsaHwParams::any(pcm).context("reading ALSA hardware params")?;
         hwp.set_access(AlsaAccess::RWInterleaved)
             .context("setting ALSA interleaved access")?;
         hwp.set_format(AlsaFormat::s16())
@@ -980,20 +1003,7 @@ fn create_alsa_playback_runtime(
     }
     pcm.prepare().context("preparing ALSA playback stream")?;
 
-    info!(
-        alsa_device,
-        requested_rate,
-        sample_rate = actual_sample_rate,
-        channels = actual_channels,
-        "started ALSA audio playback fallback"
-    );
-    Ok(AlsaPlaybackRuntime {
-        pcm,
-        output_sample_rate: actual_sample_rate,
-        output_channels: actual_channels as usize,
-        chunk_frames,
-        requested_sample_rate: requested_rate,
-    })
+    Ok((actual_sample_rate, actual_channels as usize, chunk_frames))
 }
 
 #[cfg(target_os = "linux")]
@@ -1017,7 +1027,19 @@ fn apply_playback_command(
                     "reconfiguring ALSA playback runtime for source sample rate"
                 );
                 let _ = runtime.pcm.drop();
-                *runtime = create_alsa_playback_runtime(config, alsa_device, Some(sample_rate))?;
+                let (actual_sample_rate, output_channels, chunk_frames) =
+                    configure_alsa_playback_pcm(&runtime.pcm, config, sample_rate)?;
+                runtime.output_sample_rate = actual_sample_rate;
+                runtime.output_channels = output_channels;
+                runtime.chunk_frames = chunk_frames;
+                runtime.requested_sample_rate = sample_rate;
+                info!(
+                    alsa_device,
+                    requested_rate = sample_rate,
+                    sample_rate = runtime.output_sample_rate,
+                    channels = runtime.output_channels,
+                    "reconfigured ALSA playback runtime"
+                );
             }
 
             let rendered = render_playback_pcm(
