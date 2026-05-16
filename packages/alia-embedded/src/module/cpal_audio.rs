@@ -830,14 +830,23 @@ fn start_cpal_playback_runtime(
 }
 
 #[cfg(target_os = "linux")]
+struct AlsaPlaybackRuntime {
+    pcm: AlsaPcm,
+    output_sample_rate: u32,
+    output_channels: usize,
+    chunk_frames: usize,
+    requested_sample_rate: u32,
+}
+
+#[cfg(target_os = "linux")]
 fn run_alsa_playback_thread(
     config: AudioConfig,
     command_rx: mpsc::Receiver<PlaybackCommand>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     alsa_device: &str,
 ) -> Result<()> {
-    let started = start_alsa_playback_runtime(&config, alsa_device);
-    let (pcm, output_sample_rate, output_channels, chunk_frames) = match started {
+    let started = create_alsa_playback_runtime(&config, alsa_device, None);
+    let mut runtime = match started {
         Ok(started) => {
             let _ = ready_tx.send(Ok(()));
             started
@@ -860,9 +869,9 @@ fn run_alsa_playback_thread(
             if apply_playback_command(
                 command,
                 &mut buffer,
-                output_sample_rate,
-                output_channels,
-                Some(&pcm),
+                &mut runtime,
+                &config,
+                alsa_device,
             )? {
                 break;
             }
@@ -873,20 +882,25 @@ fn run_alsa_playback_thread(
             if apply_playback_command(
                 command,
                 &mut buffer,
-                output_sample_rate,
-                output_channels,
-                Some(&pcm),
+                &mut runtime,
+                &config,
+                alsa_device,
             )? {
-                let _ = pcm.drop();
+                let _ = runtime.pcm.drop();
                 info!("stopped ALSA audio playback");
                 return Ok(());
             }
         }
 
-        write_alsa_chunk(&pcm, &mut buffer, output_channels, chunk_frames)?;
+        write_alsa_chunk(
+            &runtime.pcm,
+            &mut buffer,
+            runtime.output_channels,
+            runtime.chunk_frames,
+        )?;
     }
 
-    let _ = pcm.drop();
+    let _ = runtime.pcm.drop();
     info!("stopped ALSA audio playback");
     Ok(())
 }
@@ -895,11 +909,22 @@ fn run_alsa_playback_thread(
 fn start_alsa_playback_runtime(
     config: &AudioConfig,
     alsa_device: &str,
-) -> Result<(AlsaPcm, u32, usize, usize)> {
+) -> Result<AlsaPlaybackRuntime> {
+    create_alsa_playback_runtime(config, alsa_device, Some(config.playback_sample_rate))
+}
+
+#[cfg(target_os = "linux")]
+fn create_alsa_playback_runtime(
+    config: &AudioConfig,
+    alsa_device: &str,
+    requested_sample_rate: Option<u32>,
+) -> Result<AlsaPlaybackRuntime> {
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
         .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
     let requested_channels = u32::from(config.playback_channels.max(1));
-    let requested_rate = config.playback_sample_rate.max(1);
+    let requested_rate = requested_sample_rate
+        .unwrap_or(config.playback_sample_rate)
+        .max(1);
     let (actual_channels, actual_sample_rate) = {
         let hwp = AlsaHwParams::any(&pcm).context("reading ALSA hardware params")?;
         hwp.set_access(AlsaAccess::RWInterleaved)
@@ -957,38 +982,55 @@ fn start_alsa_playback_runtime(
 
     info!(
         alsa_device,
+        requested_rate,
         sample_rate = actual_sample_rate,
         channels = actual_channels,
         "started ALSA audio playback fallback"
     );
-    Ok((
+    Ok(AlsaPlaybackRuntime {
         pcm,
-        actual_sample_rate,
-        actual_channels as usize,
+        output_sample_rate: actual_sample_rate,
+        output_channels: actual_channels as usize,
         chunk_frames,
-    ))
+        requested_sample_rate: requested_rate,
+    })
 }
 
 #[cfg(target_os = "linux")]
 fn apply_playback_command(
     command: PlaybackCommand,
     buffer: &mut VecDeque<i16>,
-    output_sample_rate: u32,
-    output_channels: usize,
-    pcm: Option<&AlsaPcm>,
+    runtime: &mut AlsaPlaybackRuntime,
+    config: &AudioConfig,
+    alsa_device: &str,
 ) -> Result<bool> {
     match command {
         PlaybackCommand::Play {
             pcm: input,
             sample_rate,
         } => {
-            let rendered =
-                render_playback_pcm(&input, sample_rate, output_sample_rate, output_channels);
+            if buffer.is_empty() && sample_rate > 0 && runtime.requested_sample_rate != sample_rate {
+                debug!(
+                    alsa_device,
+                    previous_rate = runtime.requested_sample_rate,
+                    requested_rate = sample_rate,
+                    "reconfiguring ALSA playback runtime for source sample rate"
+                );
+                let _ = runtime.pcm.drop();
+                *runtime = create_alsa_playback_runtime(config, alsa_device, Some(sample_rate))?;
+            }
+
+            let rendered = render_playback_pcm(
+                &input,
+                sample_rate,
+                runtime.output_sample_rate,
+                runtime.output_channels,
+            );
             buffer.extend(rendered);
             clamp_playback_buffer(
                 buffer,
-                output_sample_rate,
-                output_channels,
+                runtime.output_sample_rate,
+                runtime.output_channels,
                 MAX_PLAYBACK_BUFFER_MS,
             );
             debug!(queued_samples = buffer.len(), "queued playback audio");
@@ -996,10 +1038,8 @@ fn apply_playback_command(
         }
         PlaybackCommand::Stop => {
             buffer.clear();
-            if let Some(pcm) = pcm {
-                let _ = pcm.drop();
-                let _ = pcm.prepare();
-            }
+            let _ = runtime.pcm.drop();
+            let _ = runtime.pcm.prepare();
             Ok(false)
         }
         PlaybackCommand::Shutdown => Ok(true),
