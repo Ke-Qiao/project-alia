@@ -418,6 +418,8 @@ pub struct ToolsSection {
     pub max_tool_call_depth: u32,
     #[serde(default = "default_tool_timeout")]
     pub tool_call_timeout_sec: u64,
+    #[serde(default = "default_max_tools_per_turn")]
+    pub max_tools_per_turn: usize,
     #[serde(default = "default_allow_plugin_tools")]
     pub allow_plugin_tools: bool,
     #[serde(default)]
@@ -429,6 +431,9 @@ fn default_tool_call_depth() -> u32 {
 }
 fn default_tool_timeout() -> u64 {
     30
+}
+fn default_max_tools_per_turn() -> usize {
+    8
 }
 fn default_allow_plugin_tools() -> bool {
     true

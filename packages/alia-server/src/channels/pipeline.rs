@@ -531,7 +531,8 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tools = select_tools_for_skill(modules, &resolution.tools, tools_config).await?;
+            let tools =
+                select_tools_for_skill(modules, &resolution.tools, text, tools_config).await?;
             if !tools.is_empty() {
                 debug_component_tools(
                     debug_output,
@@ -657,7 +658,7 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tools = select_all_tools(modules, tools_config).await?;
+            let tools = select_all_tools(modules, text, tools_config).await?;
             if !tools.is_empty() {
                 debug_component_tools(
                     debug_output,
@@ -1044,6 +1045,30 @@ This is an example, not a call."#,
         .unwrap();
 
         assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn parses_pseudo_function_text_tool_call() {
+        let calls = parse_text_tool_calls(
+            r#"memory_store(content="KeQiao likes tsukuyomi", importance:1.0, layer: "core") I remembered it."#,
+        )
+        .unwrap();
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "memory_store");
+        assert_eq!(calls[0].arguments["content"], "KeQiao likes tsukuyomi");
+        assert_eq!(calls[0].arguments["layer"], "core");
+        assert_eq!(calls[0].arguments["importance"], 1.0);
+    }
+
+    #[test]
+    fn parses_pseudo_function_search_call() {
+        let calls =
+            parse_text_tool_calls(r#"memory_search(query="KeQiao favorite musician")"#).unwrap();
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "memory_search");
+        assert_eq!(calls[0].arguments["query"], "KeQiao favorite musician");
     }
 
     #[test]

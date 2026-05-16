@@ -92,6 +92,7 @@ async fn restart_channel(
         scheduler: Some(state.modules.scheduler.clone()),
         conditions: Some(state.conditions.clone()),
         conversation: Some(state.modules.conversation.clone()),
+        memory: Some(state.modules.memory.clone()),
     };
 
     if let Err(error) = channel.init(&ctx).await {

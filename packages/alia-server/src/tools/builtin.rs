@@ -35,7 +35,8 @@ use crate::entity::tool;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+    MemoryBackend, MemoryNode, RetrievalOpts, ToolCall, ToolContext, ToolDefinition, ToolExecutor,
+    ToolRegistry, ToolResult,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
@@ -59,6 +60,8 @@ pub struct BuiltinToolRegistry {
     db: Option<DatabaseConnection>,
     /// Unified artifact/dependency graph manager.
     artifacts: Option<Arc<ArtifactRegistry>>,
+    /// Memory backend used by memory_search and memory_store built-in tools.
+    memory: Option<Arc<dyn MemoryBackend>>,
 }
 
 impl BuiltinToolRegistry {
@@ -69,6 +72,7 @@ impl BuiltinToolRegistry {
             event_bus: tokio::sync::Mutex::new(None),
             db: None,
             artifacts: None,
+            memory: None,
         }
     }
 
@@ -101,16 +105,16 @@ impl BuiltinToolRegistry {
             .insert("calculate".to_string(), Arc::new(Calculate));
 
         // memory_search
-        self.executors
-            .write()
-            .unwrap()
-            .insert("memory_search".to_string(), Arc::new(MemorySearch));
+        self.executors.write().unwrap().insert(
+            "memory_search".to_string(),
+            Arc::new(MemorySearch::new(self.memory.clone())),
+        );
 
         // memory_store
-        self.executors
-            .write()
-            .unwrap()
-            .insert("memory_store".to_string(), Arc::new(MemoryStore));
+        self.executors.write().unwrap().insert(
+            "memory_store".to_string(),
+            Arc::new(MemoryStore::new(self.memory.clone())),
+        );
 
         // schedule_task
         self.executors
@@ -251,6 +255,7 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         self.db = Some(ctx.db.clone());
         self.artifacts = Some(ctx.artifacts.clone());
+        self.memory = ctx.memory.clone();
         self.register_builtins();
 
         if let Err(e) = self.upsert_executor_tools_to_db().await {
@@ -822,7 +827,15 @@ impl ToolExecutor for Calculate {
 }
 
 /// Search user's memory
-struct MemorySearch;
+struct MemorySearch {
+    memory: Option<Arc<dyn MemoryBackend>>,
+}
+
+impl MemorySearch {
+    fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+        Self { memory }
+    }
+}
 
 #[async_trait]
 impl ToolExecutor for MemorySearch {
@@ -844,7 +857,7 @@ impl ToolExecutor for MemorySearch {
                     "layers": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Memory layers to search: 'core', 'episodic', 'semantic'. Defaults to all."
+                        "description": "Memory layers to search: 'core', 'episodic', 'procedural'. Defaults to all."
                     }
                 },
                 "required": ["query"]
@@ -858,30 +871,79 @@ impl ToolExecutor for MemorySearch {
     async fn execute(
         &self,
         arguments: serde_json::Value,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let query = arguments
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("query is required"))?;
+        let query = required_str(&arguments, "query")?;
+        let Some(memory) = &self.memory else {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: false,
+                output: serde_json::json!({"error": "memory_backend_unavailable"}),
+                display: Some("Memory backend is not available".to_string()),
+            });
+        };
 
-        // TODO: Integrate with MemoryBackend
-        tracing::info!(%query, "memory_search called (stub)");
+        let max_results = arguments
+            .get("max_results")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(5)
+            .clamp(1, 20) as u32;
+        let layers = parse_memory_layers(arguments.get("layers"))?;
+        let opts = RetrievalOpts {
+            max_results: Some(max_results),
+            min_similarity: None,
+            layers,
+        };
+        let mut results = memory.retrieve(ctx.user_id, query, opts.clone()).await?;
+        if results.is_empty() {
+            results = retrieve_memory_by_terms(memory.as_ref(), ctx.user_id, query, &opts).await?;
+        }
+        let result_count = results.len();
+        let output_results = results
+            .iter()
+            .map(|node| {
+                serde_json::json!({
+                    "id": node.id,
+                    "layer": node.memory_layer,
+                    "type": node.node_type,
+                    "content": node.content,
+                    "importance": node.importance,
+                    "metadata": node.metadata,
+                })
+            })
+            .collect::<Vec<_>>();
+        let display = if result_count == 0 {
+            "No matching memories found".to_string()
+        } else {
+            format!(
+                "Found {result_count} matching memor{}",
+                if result_count == 1 { "y" } else { "ies" }
+            )
+        };
 
         Ok(ToolResult {
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
-                "results": [],
-                "message": "Memory search not yet integrated with MemoryBackend"
+                "query": query,
+                "results": output_results,
+                "count": result_count,
             }),
-            display: Some("No memories found (integration pending)".to_string()),
+            display: Some(display),
         })
     }
 }
 
 /// Store information to memory
-struct MemoryStore;
+struct MemoryStore {
+    memory: Option<Arc<dyn MemoryBackend>>,
+}
+
+impl MemoryStore {
+    fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+        Self { memory }
+    }
+}
 
 #[async_trait]
 impl ToolExecutor for MemoryStore {
@@ -898,12 +960,16 @@ impl ToolExecutor for MemoryStore {
                     },
                     "layer": {
                         "type": "string",
-                        "enum": ["core", "episodic", "semantic"],
+                        "enum": ["core", "episodic", "procedural"],
                         "description": "Memory layer to store in. Defaults to 'episodic'."
                     },
                     "importance": {
                         "type": "number",
                         "description": "Importance score from 0.0 to 1.0. Defaults to 0.5."
+                    },
+                    "node_type": {
+                        "type": "string",
+                        "description": "Memory node type, for example 'fact', 'preference', or 'event'. Defaults to 'fact'."
                     }
                 },
                 "required": ["content"]
@@ -917,24 +983,67 @@ impl ToolExecutor for MemoryStore {
     async fn execute(
         &self,
         arguments: serde_json::Value,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        let content = arguments
-            .get("content")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("content is required"))?;
+        let content = required_str(&arguments, "content")?.trim().to_string();
+        let Some(memory) = &self.memory else {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: false,
+                output: serde_json::json!({"error": "memory_backend_unavailable"}),
+                display: Some("Memory backend is not available".to_string()),
+            });
+        };
 
-        // TODO: Integrate with MemoryBackend
-        tracing::info!(content_len = content.len(), "memory_store called (stub)");
+        let layer = arguments
+            .get("layer")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("episodic")
+            .trim()
+            .to_lowercase();
+        let layer = normalize_memory_layer(&layer);
+        let importance = arguments
+            .get("importance")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0) as f32;
+        let node_type = arguments
+            .get("node_type")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("fact")
+            .trim()
+            .to_string();
+        let node_id = memory
+            .store(
+                ctx.user_id,
+                MemoryNode {
+                    id: None,
+                    memory_layer: layer.clone(),
+                    node_type: node_type.clone(),
+                    content: content.clone(),
+                    metadata: serde_json::json!({
+                        "source": ctx.source,
+                        "channel_id": ctx.channel_id,
+                        "conversation_id": ctx.conversation_id,
+                        "stored_by": "memory_store_tool",
+                    }),
+                    importance,
+                },
+            )
+            .await?;
 
         Ok(ToolResult {
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
-                "stored": false,
-                "message": "Memory store not yet integrated with MemoryBackend"
+                "stored": true,
+                "id": node_id,
+                "layer": layer,
+                "type": node_type,
+                "content": content,
+                "importance": importance,
             }),
-            display: Some("Memory storage pending integration".to_string()),
+            display: Some("Memory stored".to_string()),
         })
     }
 }
@@ -1143,6 +1252,79 @@ fn required_str<'a>(arguments: &'a serde_json::Value, name: &str) -> anyhow::Res
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| anyhow::anyhow!("{name} is required"))
+}
+
+fn parse_memory_layers(value: Option<&serde_json::Value>) -> anyhow::Result<Option<Vec<String>>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    let layers = match value {
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(|layer| normalize_memory_layer(layer.trim()))
+            .collect::<Vec<_>>(),
+        serde_json::Value::String(layer) => vec![normalize_memory_layer(layer.trim())],
+        _ => anyhow::bail!("layers must be a string or an array of strings"),
+    };
+
+    let layers = layers
+        .into_iter()
+        .filter(|layer| !layer.is_empty())
+        .collect::<Vec<_>>();
+    if layers.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(layers))
+    }
+}
+
+fn normalize_memory_layer(layer: &str) -> String {
+    match layer {
+        "core" | "episodic" | "procedural" => layer.to_string(),
+        "semantic" => "procedural".to_string(),
+        "" => "episodic".to_string(),
+        _ => "episodic".to_string(),
+    }
+}
+
+async fn retrieve_memory_by_terms(
+    memory: &dyn MemoryBackend,
+    user_id: Uuid,
+    query: &str,
+    opts: &RetrievalOpts,
+) -> anyhow::Result<Vec<MemoryNode>> {
+    let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for term in memory_query_terms(query) {
+        for node in memory.retrieve(user_id, &term, opts.clone()).await? {
+            let key = node
+                .id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| node.content.clone());
+            if seen.insert(key) {
+                results.push(node);
+            }
+            if let Some(limit) = opts.max_results
+                && results.len() >= limit as usize
+            {
+                return Ok(results);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+fn memory_query_terms(query: &str) -> Vec<String> {
+    query
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, ',' | '，' | '?' | '？'))
+        .map(str::trim)
+        .filter(|term| term.chars().count() >= 2)
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 #[cfg(feature = "tools-http")]
@@ -1434,4 +1616,60 @@ pub fn parse_openai_tool_call(function_call: &serde_json::Value) -> anyhow::Resu
         arguments,
         call_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::memory::simple::SimpleMemory;
+
+    fn test_tool_context() -> ToolContext {
+        ToolContext {
+            user_id: Uuid::new_v4(),
+            conversation_id: None,
+            source: "test".to_string(),
+            channel_id: Some("test".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn memory_store_and_search_use_memory_backend() {
+        let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+        let ctx = test_tool_context();
+        let store = MemoryStore::new(Some(memory.clone()));
+        let search = MemorySearch::new(Some(memory));
+
+        let stored = store
+            .execute(
+                serde_json::json!({
+                    "content": "KeQiao likes tsukuyomi",
+                    "layer": "core",
+                    "importance": 1.0
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(stored.success);
+        assert_eq!(stored.output["stored"], true);
+
+        let found = search
+            .execute(
+                serde_json::json!({
+                    "query": "tsukuyomi",
+                    "layers": ["core"]
+                }),
+                &ctx,
+            )
+            .await
+            .unwrap();
+
+        assert!(found.success);
+        assert_eq!(found.output["count"], 1);
+        assert_eq!(
+            found.output["results"][0]["content"],
+            "KeQiao likes tsukuyomi"
+        );
+    }
 }

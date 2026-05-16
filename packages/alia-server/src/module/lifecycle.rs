@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
 use crate::event::EventBus;
-use crate::providers::adapter::{ConversationBackend, SchedulerBackend};
+use crate::providers::adapter::{ConversationBackend, MemoryBackend, SchedulerBackend};
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
 
@@ -32,6 +32,8 @@ pub struct ModuleContext {
     pub conditions: Option<Arc<ConditionRegistry>>,
     /// Conversation backend for managing sessions (available to channels).
     pub conversation: Option<Arc<dyn ConversationBackend>>,
+    /// Memory backend for tools/components initialized after memory.
+    pub memory: Option<Arc<dyn MemoryBackend>>,
 }
 
 /// Base trait for all pluggable modules

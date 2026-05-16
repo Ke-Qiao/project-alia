@@ -176,6 +176,7 @@ impl ServerBuilder {
             scheduler: None,
             conditions: None,
             conversation: None,
+            memory: None,
         };
 
         // Create modules: use override or create from config
@@ -254,6 +255,7 @@ impl ServerBuilder {
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
             conversation: None, // Will be populated shortly but usually not needed in other modules init
+            memory: None,
         };
 
         // Initialize remaining modules in dependency order
@@ -268,6 +270,11 @@ impl ServerBuilder {
         init_module(stt.as_mut(), &ctx).await;
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
+        let memory_arc: Arc<dyn MemoryBackend> = Arc::from(memory);
+        let ctx = ModuleContext {
+            memory: Some(memory_arc.clone()),
+            ..ctx
+        };
         init_module(cache.as_mut(), &ctx).await;
         init_module(tools.as_mut(), &ctx).await;
         init_module(skills.as_mut(), &ctx).await;
@@ -314,7 +321,7 @@ impl ServerBuilder {
             tts: Arc::from(tts),
             embedding: Arc::from(embedding),
             conversation: conversation_arc,
-            memory: Arc::from(memory),
+            memory: memory_arc,
             cache: Arc::from(cache),
             skills: Arc::from(skills),
             persona: Arc::from(persona),
