@@ -1,4 +1,4 @@
-use alia_server::providers::adapter::{Persona, PersonaProvider, PromptVars};
+use alia_server::providers::adapter::{PersonaProvider, PromptVars};
 use alia_server::providers::persona::template::TemplatePersona;
 use uuid::Uuid;
 

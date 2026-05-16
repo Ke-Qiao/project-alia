@@ -27,7 +27,7 @@ async fn test_condition_evaluation() {
 
 #[tokio::test]
 async fn test_rule_matching() {
-    let mut engine = SimpleRuleEngine::new();
+    let engine = SimpleRuleEngine::new();
 
     {
         let mut rules = engine.rules.write().await;
