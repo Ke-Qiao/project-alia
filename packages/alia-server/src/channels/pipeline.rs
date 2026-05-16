@@ -34,6 +34,8 @@ use streaming::*;
 use tools::*;
 use turn::*;
 
+const EMPTY_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
+
 /// Result of `process_text` — carries the full response text and whether it
 /// was already delivered to the channel via streaming.
 struct TextResult {
@@ -490,7 +492,7 @@ async fn process_text(
         Some((channel_id, user_id)),
     );
 
-    let (response, streamed, audio_streamed) = match decision {
+    let (mut response, mut streamed, mut audio_streamed) = match decision {
         // Cache hit from router — never streamed
         RouteDecision::CacheHit { response } => {
             debug_component_text(
@@ -775,6 +777,17 @@ async fn process_text(
             interrupted: true,
             pending_persistence: None,
         });
+    }
+
+    if response.trim().is_empty() {
+        tracing::warn!(
+            channel_id,
+            user_id,
+            "pipeline produced an empty assistant response; using fallback text"
+        );
+        response = EMPTY_RESPONSE_FALLBACK.to_string();
+        streamed = false;
+        audio_streamed = false;
     }
 
     let pending_persistence = PendingTextPersistence {

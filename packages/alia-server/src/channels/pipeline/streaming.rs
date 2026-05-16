@@ -33,6 +33,14 @@ pub(super) async fn deliver_tts_audio(
     if turn_is_interrupted(turn) {
         return;
     }
+    if text.trim().is_empty() {
+        tracing::warn!(
+            channel_type = channel.channel_type(),
+            channel_id = channel.channel_id(),
+            "skipping TTS for empty response text"
+        );
+        return;
+    }
 
     if channel.capabilities().audio_streaming {
         debug_component_text(

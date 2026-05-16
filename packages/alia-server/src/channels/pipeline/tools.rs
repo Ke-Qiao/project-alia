@@ -10,12 +10,17 @@ use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::config::ToolsSection;
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    ChatMessage, LlmToolCall, ToolCall, ToolContext, ToolDefinition, ToolResult,
+    ChatMessage, LlmResponse, LlmToolCall, ToolCall, ToolContext, ToolDefinition, ToolResult,
 };
 use crate::registry::is_plugin_source;
 
 const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
 const MAX_TEXT_TOOL_CALLS: usize = 8;
+const EMPTY_TOOL_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
+const TOOL_TEXT_PROTOCOL_RETRY_PROMPT: &str = r#"The previous provider tool-call response was empty.
+If a tool is needed, reply with exactly one JSON object using the `alia.tool_calls.v1` text tool-call protocol.
+If no tool is needed, answer the user concisely in natural language.
+Do not return an empty message."#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolCallProtocol {
@@ -64,6 +69,7 @@ pub(super) async fn run_llm_tool_loop(
         channel_id: Some(channel_id.to_string()),
     };
     let max_depth = tools_config.max_tool_call_depth.max(1);
+    let mut last_tool_display: Option<String> = None;
 
     for depth in 0..max_depth {
         debug_component_llm_call(
@@ -85,17 +91,51 @@ pub(super) async fn run_llm_tool_loop(
             Some(response) => response,
             None => return Ok(String::new()),
         };
-        let protocol = if response.tool_calls.is_empty() {
-            response.tool_calls = parse_text_tool_calls(&response.content)?;
-            if !response.tool_calls.is_empty() {
-                response.content.clear();
-            }
-            ToolCallProtocol::TextFallback
-        } else {
-            ToolCallProtocol::Native
-        };
+        let mut protocol = normalize_tool_response(&mut response)?;
+        if response.tool_calls.is_empty()
+            && response.content.trim().is_empty()
+            && !turn_is_interrupted(turn)
+        {
+            tracing::warn!(
+                depth,
+                channel_id,
+                user_id = user_id_text,
+                "LLM returned empty tool response; retrying with text tool protocol"
+            );
+            let mut retry_messages = messages.clone();
+            retry_messages.push(ChatMessage::new("system", TOOL_TEXT_PROTOCOL_RETRY_PROMPT));
+            debug_component_llm_call(
+                debug_output,
+                "llm",
+                "tool_call_retry",
+                route,
+                &retry_messages,
+                Some((channel_id, user_id_text)),
+            );
+            let retry_text = match cancellable_stage(
+                turn,
+                "llm_tool_call_text_retry",
+                modules.llm.chat(&retry_messages),
+            )
+            .await?
+            {
+                Some(retry_text) => retry_text,
+                None => return Ok(String::new()),
+            };
+            response = LlmResponse::text(retry_text);
+            protocol = normalize_tool_response(&mut response)?;
+        }
 
         if response.tool_calls.is_empty() {
+            if response.content.trim().is_empty() {
+                tracing::warn!(
+                    depth,
+                    channel_id,
+                    user_id = user_id_text,
+                    "LLM returned empty response after tool retry"
+                );
+                return Ok(non_empty_tool_fallback(last_tool_display.as_deref()));
+            }
             return Ok(response.content);
         }
 
@@ -137,6 +177,14 @@ pub(super) async fn run_llm_tool_loop(
                 &result,
                 Some((channel_id, user_id_text)),
             );
+            if let Some(display) = result
+                .display
+                .as_ref()
+                .map(|display| display.trim())
+                .filter(|display| !display.is_empty())
+            {
+                last_tool_display = Some(display.to_string());
+            }
             messages.push(tool_result_message(protocol, &call.tool_name, result)?);
         }
     }
@@ -155,6 +203,26 @@ pub(super) async fn run_llm_tool_loop(
         None => String::new(),
     };
     Ok(final_response)
+}
+
+fn normalize_tool_response(response: &mut LlmResponse) -> anyhow::Result<ToolCallProtocol> {
+    if response.tool_calls.is_empty() {
+        response.tool_calls = parse_text_tool_calls(&response.content)?;
+        if !response.tool_calls.is_empty() {
+            response.content.clear();
+        }
+        Ok(ToolCallProtocol::TextFallback)
+    } else {
+        Ok(ToolCallProtocol::Native)
+    }
+}
+
+fn non_empty_tool_fallback(last_tool_display: Option<&str>) -> String {
+    last_tool_display
+        .map(str::trim)
+        .filter(|display| !display.is_empty())
+        .unwrap_or(EMPTY_TOOL_RESPONSE_FALLBACK)
+        .to_string()
 }
 
 pub(super) async fn select_tools_for_skill(
@@ -1300,5 +1368,19 @@ mod tests {
         assert_eq!(result.role, "system");
         assert!(result.tool_call_id.is_none());
         assert!(result.content.contains("requires_confirmation"));
+    }
+
+    #[test]
+    fn empty_tool_response_falls_back_to_last_tool_display() {
+        assert_eq!(
+            non_empty_tool_fallback(Some("Updated embedded volume: mic 1.00")),
+            "Updated embedded volume: mic 1.00"
+        );
+    }
+
+    #[test]
+    fn empty_tool_response_has_non_empty_generic_fallback() {
+        assert!(!non_empty_tool_fallback(None).trim().is_empty());
+        assert!(!non_empty_tool_fallback(Some("   ")).trim().is_empty());
     }
 }
