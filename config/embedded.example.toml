@@ -62,9 +62,12 @@ playback_target_buffer_ms = 300
 playback_max_buffer_ms = 2000
 playback_command_queue_capacity = 8
 # When `true`, ALSA playback retunes to the source clip/stream sample rate.
-# Many Pi I2S DAC/amp boards sound wrong when forced through software resample,
-# so this defaults to true.
+# If the speaker amp and mic share the same Pi I2S card/clock, set
+# `alsa_playback_lock_to_capture_rate = true` below instead so playback cannot
+# retune the clock while capture is active. When enabled, source-rate following
+# is ignored and playback audio is resampled into `capture_sample_rate`.
 alsa_playback_follow_source_rate = true
+alsa_playback_lock_to_capture_rate = false
 # I2S mics often expose 24-bit samples inside S32_LE. `auto` detects whether
 # those bits are left- or right-justified; set explicitly if a board needs it.
 alsa_capture_s32_alignment = "auto"

@@ -409,6 +409,8 @@ pub struct AudioConfig {
     #[serde(default = "default_alsa_playback_follow_source_rate")]
     pub alsa_playback_follow_source_rate: bool,
     #[serde(default)]
+    pub alsa_playback_lock_to_capture_rate: bool,
+    #[serde(default)]
     pub alsa_capture_s32_alignment: AlsaCaptureS32Alignment,
 
     // Opus encoding
@@ -442,6 +444,7 @@ impl Default for AudioConfig {
             playback_max_buffer_ms: default_playback_max_buffer_ms(),
             playback_command_queue_capacity: default_playback_command_queue_capacity(),
             alsa_playback_follow_source_rate: default_alsa_playback_follow_source_rate(),
+            alsa_playback_lock_to_capture_rate: false,
             alsa_capture_s32_alignment: AlsaCaptureS32Alignment::default(),
             opus_bitrate: default_opus_bitrate(),
             opus_frame_ms: default_opus_frame_ms(),

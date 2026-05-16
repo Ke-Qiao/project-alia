@@ -343,6 +343,21 @@ fn playback_command_queue_capacity(config: &AudioConfig) -> usize {
 }
 
 #[cfg(target_os = "linux")]
+fn alsa_playback_idle_sample_rate(config: &AudioConfig) -> u32 {
+    if config.alsa_playback_lock_to_capture_rate {
+        config.capture_sample_rate
+    } else {
+        config.playback_sample_rate
+    }
+    .max(1)
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_playback_should_follow_source_rate(config: &AudioConfig) -> bool {
+    config.alsa_playback_follow_source_rate && !config.alsa_playback_lock_to_capture_rate
+}
+
+#[cfg(target_os = "linux")]
 fn alsa_capture_s32_shift_override(config: &AudioConfig) -> Option<u8> {
     match config.alsa_capture_s32_alignment {
         AlsaCaptureS32Alignment::Auto => None,
@@ -919,7 +934,11 @@ fn start_alsa_playback_runtime(
     config: &AudioConfig,
     alsa_device: &str,
 ) -> Result<AlsaPlaybackRuntime> {
-    create_alsa_playback_runtime(config, alsa_device, Some(config.playback_sample_rate))
+    create_alsa_playback_runtime(
+        config,
+        alsa_device,
+        Some(alsa_playback_idle_sample_rate(config)),
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -931,7 +950,7 @@ fn create_alsa_playback_runtime(
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
         .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
     let requested_rate = requested_sample_rate
-        .unwrap_or(config.playback_sample_rate)
+        .unwrap_or_else(|| alsa_playback_idle_sample_rate(config))
         .max(1);
     let (actual_sample_rate, output_channels, chunk_frames) =
         configure_alsa_playback_pcm(&pcm, config, requested_rate)?;
@@ -1030,7 +1049,10 @@ fn apply_playback_command(
             pcm: input,
             sample_rate,
         } => {
-            if buffer.is_empty() && sample_rate > 0 && runtime.requested_sample_rate != sample_rate
+            if alsa_playback_should_follow_source_rate(config)
+                && buffer.is_empty()
+                && sample_rate > 0
+                && runtime.requested_sample_rate != sample_rate
             {
                 debug!(
                     alsa_device,

@@ -330,7 +330,7 @@ fn create_alsa_playback_runtime(
     let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Playback, false)
         .with_context(|| format!("opening ALSA playback PCM '{alsa_device}'"))?;
     let requested_rate = requested_sample_rate
-        .unwrap_or(config.playback_sample_rate)
+        .unwrap_or_else(|| alsa_playback_idle_sample_rate(config))
         .max(1);
     let (actual_sample_rate, output_channels, chunk_frames) =
         configure_alsa_playback_pcm(&pcm, config, requested_rate)?;
@@ -428,7 +428,7 @@ fn apply_playback_command(
             pcm: input,
             sample_rate,
         } => {
-            if config.alsa_playback_follow_source_rate
+            if alsa_playback_should_follow_source_rate(config)
                 && buffer.is_empty()
                 && sample_rate > 0
                 && runtime.requested_sample_rate != sample_rate
