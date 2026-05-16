@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::providers::adapter::{ConversationBackend, SchedulerBackend};
+use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
 
 /// Health status of a module
@@ -23,6 +24,8 @@ pub struct ModuleContext {
     pub config: Arc<ServerConfig>,
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
+    /// Shared artifact graph for registering ownership/dependencies.
+    pub artifacts: Arc<ArtifactRegistry>,
     /// Scheduler reference, available for modules initialized after the scheduler.
     pub scheduler: Option<Arc<dyn SchedulerBackend>>,
     /// Condition registry for registering/evaluating task conditions.

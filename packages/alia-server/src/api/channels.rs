@@ -88,6 +88,7 @@ async fn restart_channel(
         config: state.config.clone(),
         event_bus: state.event_bus.clone(),
         cancel_token: state.cancel_token.clone(),
+        artifacts: state.artifacts.clone(),
         scheduler: Some(state.modules.scheduler.clone()),
         conditions: Some(state.conditions.clone()),
         conversation: Some(state.modules.conversation.clone()),

@@ -16,6 +16,7 @@ use crate::providers::adapter::{
     SttAdapter, ToolRegistry, TtsAdapter,
 };
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
+use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
 use crate::scheduler::evaluators::{SensorConditionEvaluator, TimeRangeConditionEvaluator};
 use crate::settings::SettingsRegistry;
@@ -164,12 +165,14 @@ impl ServerBuilder {
         // Create sensor registry early so tools and modules can reference it
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
+        let artifact_registry = Arc::new(ArtifactRegistry::new(self.db.clone()));
 
         let base_ctx = ModuleContext {
             db: self.db.clone(),
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
+            artifacts: artifact_registry.clone(),
             scheduler: None,
             conditions: None,
             conversation: None,
@@ -247,6 +250,7 @@ impl ServerBuilder {
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
+            artifacts: artifact_registry.clone(),
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
             conversation: None, // Will be populated shortly but usually not needed in other modules init
@@ -265,12 +269,12 @@ impl ServerBuilder {
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
         init_module(cache.as_mut(), &ctx).await;
+        init_module(tools.as_mut(), &ctx).await;
         init_module(skills.as_mut(), &ctx).await;
         init_module(persona.as_mut(), &ctx).await;
         init_module(router.as_mut(), &ctx).await;
         init_module(meditation.as_mut(), &ctx).await;
         init_module(rule_engine.as_mut(), &ctx).await;
-        init_module(tools.as_mut(), &ctx).await;
 
         // Initialize extensions
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
@@ -389,6 +393,7 @@ impl ServerBuilder {
             db: self.db,
             channels: channel_registry,
             event_bus: self.event_bus,
+            artifacts: artifact_registry,
             modules: Arc::new(registry),
             sensors: sensor_registry,
             conditions: condition_registry,

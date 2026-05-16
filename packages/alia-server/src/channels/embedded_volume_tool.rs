@@ -4,8 +4,7 @@ use async_trait::async_trait;
 
 use crate::channels::adapter::ChannelAction;
 use crate::channels::registry::ChannelRegistry;
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolResult};
-use crate::tools::builtin::ToolExecutor;
+use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
 
 pub struct EmbeddedVolumeTool {
     channels: Arc<ChannelRegistry>,
@@ -50,7 +49,7 @@ impl ToolExecutor for EmbeddedVolumeTool {
                 },
                 "required": ["operation"]
             }),
-            source: "builtin".to_string(),
+            source: "component:embedded".to_string(),
             require_confirmation: false,
             required_role: None,
         }

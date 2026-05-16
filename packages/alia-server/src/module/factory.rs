@@ -316,7 +316,7 @@ pub fn create_tools_with_sensors(
                 module = name,
                 "creating tool registry with sensors (BuiltinToolRegistry)"
             );
-            let mut registry = BuiltinToolRegistry::with_sensors(sensors);
+            let registry = BuiltinToolRegistry::with_sensors(sensors);
             #[cfg(feature = "channel-embedded")]
             registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
             #[cfg(not(feature = "channel-embedded"))]

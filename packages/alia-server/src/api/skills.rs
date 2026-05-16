@@ -2,14 +2,19 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::entity::skill;
+use crate::entity::{skill, skill_tool, tool};
 use crate::error::Result;
+use crate::registry::{ArtifactRef, ArtifactRegistry};
 use crate::state::AppState;
 
 // ========== Response types ==========
@@ -22,7 +27,6 @@ pub struct SkillResponse {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: serde_json::Value,
-    pub parameters: serde_json::Value,
     /// Tool names available to the LLM during this skill's execution
     pub tools: Vec<String>,
     pub prompt_template: Option<String>,
@@ -35,58 +39,27 @@ pub struct SkillResponse {
     pub updated_at: String,
 }
 
-impl From<skill::Model> for SkillResponse {
-    fn from(m: skill::Model) -> Self {
-        // Prefer native `tools` column; fall back to parsing `execution_config`
-        let tools = parse_tools_for_api(&m.tools)
-            .or_else(|| parse_tools_for_api(&m.execution_config))
-            .unwrap_or_default();
-
-        Self {
-            id: m.id,
-            name: m.name,
-            display_name: m.display_name,
-            description: m.description,
-            category: m.category,
-            intent_patterns: m.intent_patterns,
-            parameters: m.parameters,
-            tools,
-            prompt_template: m.prompt_template,
-            cacheable: m.cacheable,
-            enabled: m.enabled,
-            priority: m.priority,
-            source: m.source,
-            created_at: m.created_at.to_rfc3339(),
-            updated_at: m.updated_at.to_rfc3339(),
-        }
-    }
-}
-
-/// Parse tool names from a JSONB column for API responses.
-/// Supports both new format (JSON array) and legacy format (nested object).
-fn parse_tools_for_api(config: &Option<serde_json::Value>) -> Option<Vec<String>> {
-    let config = config.as_ref()?;
-
-    if let Some(arr) = config.as_array() {
-        if arr.is_empty() {
-            return None;
-        }
-        return Some(
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect(),
-        );
-    }
-
-    if let Some(name) = config
-        .get("function")
-        .and_then(|f| f.get("name"))
-        .and_then(|n| n.as_str())
-    {
-        return Some(vec![name.to_string()]);
-    }
-
-    None
+async fn skill_response(
+    db: &sea_orm::DatabaseConnection,
+    m: skill::Model,
+) -> Result<SkillResponse> {
+    let tools = tool_names_for_skill(db, m.id).await?;
+    Ok(SkillResponse {
+        id: m.id,
+        name: m.name,
+        display_name: m.display_name,
+        description: m.description,
+        category: m.category,
+        intent_patterns: m.intent_patterns,
+        tools,
+        prompt_template: m.prompt_template,
+        cacheable: m.cacheable,
+        enabled: m.enabled,
+        priority: m.priority,
+        source: m.source,
+        created_at: m.created_at.to_rfc3339(),
+        updated_at: m.updated_at.to_rfc3339(),
+    })
 }
 
 // ========== Request types ==========
@@ -98,8 +71,6 @@ pub struct CreateSkillRequest {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: serde_json::Value,
-    #[serde(default = "default_params")]
-    pub parameters: serde_json::Value,
     /// Tool names to make available to the LLM during this skill's execution
     #[serde(default)]
     pub tools: Vec<String>,
@@ -112,11 +83,88 @@ pub struct CreateSkillRequest {
     pub priority: i32,
 }
 
-fn default_params() -> serde_json::Value {
-    serde_json::json!({})
-}
 fn default_enabled() -> bool {
     true
+}
+
+async fn tool_names_for_skill(db: &impl ConnectionTrait, skill_id: Uuid) -> Result<Vec<String>> {
+    let bindings = skill_tool::Entity::find()
+        .filter(skill_tool::Column::SkillId.eq(skill_id))
+        .all(db)
+        .await
+        .map_err(crate::error::AppError::Database)?;
+    let mut names = Vec::with_capacity(bindings.len());
+
+    for binding in bindings {
+        if let Some(row) = tool::Entity::find_by_id(binding.tool_id)
+            .one(db)
+            .await
+            .map_err(crate::error::AppError::Database)?
+            && row.enabled
+        {
+            names.push(row.name);
+        }
+    }
+
+    Ok(names)
+}
+
+async fn replace_skill_tools(
+    artifacts: &ArtifactRegistry,
+    db: &impl ConnectionTrait,
+    skill_id: Uuid,
+    skill_name: &str,
+    tool_names: &[String],
+) -> Result<()> {
+    skill_tool::Entity::delete_many()
+        .filter(skill_tool::Column::SkillId.eq(skill_id))
+        .exec(db)
+        .await
+        .map_err(crate::error::AppError::Database)?;
+
+    let now = Utc::now();
+    let mut seen = HashSet::new();
+    let mut dependencies = Vec::new();
+    for name in tool_names {
+        if !seen.insert(name.as_str()) {
+            continue;
+        }
+        let tool = tool::Entity::find()
+            .filter(tool::Column::Name.eq(name))
+            .one(db)
+            .await
+            .map_err(crate::error::AppError::Database)?
+            .ok_or_else(|| {
+                crate::error::AppError::Validation(format!(
+                    "unknown tool referenced by skill: {name}"
+                ))
+            })?;
+        artifacts
+            .upsert_artifact_in(db, &ArtifactRef::tool(tool.name.clone()), &tool.source)
+            .await
+            .map_err(crate::error::AppError::Internal)?;
+        dependencies.push(ArtifactRef::tool(tool.name.clone()));
+
+        skill_tool::ActiveModel {
+            skill_id: Set(skill_id),
+            tool_id: Set(tool.id),
+            created_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .map_err(crate::error::AppError::Database)?;
+    }
+
+    artifacts
+        .replace_dependencies_in(
+            db,
+            &ArtifactRef::skill(skill_name.to_string()),
+            &dependencies,
+        )
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -125,7 +173,6 @@ pub struct UpdateSkillRequest {
     pub description: Option<String>,
     pub category: Option<String>,
     pub intent_patterns: Option<serde_json::Value>,
-    pub parameters: Option<serde_json::Value>,
     pub tools: Option<Vec<String>>,
     pub prompt_template: Option<Option<String>>,
     pub cacheable: Option<bool>,
@@ -159,7 +206,12 @@ async fn list_skills(
         .await
         .map_err(crate::error::AppError::Database)?;
 
-    Ok(Json(skills.into_iter().map(SkillResponse::from).collect()))
+    let mut response = Vec::with_capacity(skills.len());
+    for skill in skills {
+        response.push(skill_response(&state.db, skill).await?);
+    }
+
+    Ok(Json(response))
 }
 
 #[utoipa::path(
@@ -185,7 +237,7 @@ async fn get_skill(
         .map_err(crate::error::AppError::Database)?
         .ok_or_else(|| crate::error::AppError::NotFound(format!("Skill '{}' not found", name)))?;
 
-    Ok(Json(SkillResponse::from(s)))
+    Ok(Json(skill_response(&state.db, s).await?))
 }
 
 async fn create_skill(
@@ -200,35 +252,21 @@ async fn create_skill(
         ));
     }
 
-    // Convert tools list for native tools column
-    let tools_col = if body.tools.is_empty() {
-        None
-    } else {
-        Some(serde_json::Value::Array(
-            body.tools.iter().map(|t| serde_json::json!(t)).collect(),
-        ))
-    };
-
-    // Convert tools list to execution_config JSON array for DB storage
-    let execution_config = if body.tools.is_empty() {
-        None
-    } else {
-        Some(serde_json::Value::Array(
-            body.tools.iter().map(|t| serde_json::json!(t)).collect(),
-        ))
-    };
-
     let now = Utc::now();
+    let skill_id = Uuid::new_v4();
+    let skill_name = body.name;
+    let tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::error::AppError::Database)?;
     let model = skill::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        name: Set(body.name),
+        id: Set(skill_id),
+        name: Set(skill_name.clone()),
         display_name: Set(body.display_name),
         description: Set(body.description),
         category: Set(body.category),
         intent_patterns: Set(body.intent_patterns),
-        parameters: Set(body.parameters),
-        execution_config: Set(execution_config),
-        tools: Set(tools_col),
         source: Set("api".to_string()),
         prompt_template: Set(body.prompt_template),
         cacheable: Set(body.cacheable),
@@ -239,13 +277,22 @@ async fn create_skill(
     };
 
     let result = model
-        .insert(&state.db)
+        .insert(&tx)
+        .await
+        .map_err(crate::error::AppError::Database)?;
+    state
+        .artifacts
+        .upsert_artifact_in(&tx, &ArtifactRef::skill(skill_name.clone()), "api")
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+    replace_skill_tools(&state.artifacts, &tx, skill_id, &skill_name, &body.tools).await?;
+    tx.commit()
         .await
         .map_err(crate::error::AppError::Database)?;
 
     // TODO: trigger skills reload in SkillProvider module
 
-    Ok(Json(SkillResponse::from(result)))
+    Ok(Json(skill_response(&state.db, result).await?))
 }
 
 async fn update_skill(
@@ -261,7 +308,9 @@ async fn update_skill(
         .map_err(crate::error::AppError::Database)?
         .ok_or_else(|| crate::error::AppError::NotFound(format!("Skill '{}' not found", name)))?;
 
+    let skill_id = existing.id;
     let mut active: skill::ActiveModel = existing.into();
+    let tools_update = body.tools;
 
     if let Some(display_name) = body.display_name {
         active.display_name = Set(display_name);
@@ -280,27 +329,6 @@ async fn update_skill(
         }
         active.intent_patterns = Set(intent_patterns);
     }
-    if let Some(parameters) = body.parameters {
-        active.parameters = Set(parameters);
-    }
-    if let Some(tools) = body.tools {
-        let execution_config = if tools.is_empty() {
-            None
-        } else {
-            Some(serde_json::Value::Array(
-                tools.iter().map(|t| serde_json::json!(t)).collect(),
-            ))
-        };
-        let tools_col = if tools.is_empty() {
-            None
-        } else {
-            Some(serde_json::Value::Array(
-                tools.iter().map(|t| serde_json::json!(t)).collect(),
-            ))
-        };
-        active.execution_config = Set(execution_config);
-        active.tools = Set(tools_col);
-    }
     if let Some(prompt_template) = body.prompt_template {
         active.prompt_template = Set(prompt_template);
     }
@@ -316,14 +344,30 @@ async fn update_skill(
 
     active.updated_at = Set(Utc::now());
 
+    let tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::error::AppError::Database)?;
     let result = active
-        .update(&state.db)
+        .update(&tx)
+        .await
+        .map_err(crate::error::AppError::Database)?;
+    state
+        .artifacts
+        .upsert_artifact_in(&tx, &ArtifactRef::skill(name.clone()), &result.source)
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+    if let Some(tools) = tools_update {
+        replace_skill_tools(&state.artifacts, &tx, skill_id, &name, &tools).await?;
+    }
+    tx.commit()
         .await
         .map_err(crate::error::AppError::Database)?;
 
     // TODO: trigger skills reload in SkillProvider module
 
-    Ok(Json(SkillResponse::from(result)))
+    Ok(Json(skill_response(&state.db, result).await?))
 }
 
 async fn delete_skill(
@@ -331,9 +375,20 @@ async fn delete_skill(
     _auth: AuthUser,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
+    let tx = state
+        .db
+        .begin()
+        .await
+        .map_err(crate::error::AppError::Database)?;
+    let artifact = ArtifactRef::skill(name.clone());
+    state
+        .artifacts
+        .ensure_no_external_dependents_in(&tx, std::slice::from_ref(&artifact))
+        .await
+        .map_err(crate::error::AppError::Internal)?;
     let result = skill::Entity::delete_many()
         .filter(skill::Column::Name.eq(&name))
-        .exec(&state.db)
+        .exec(&tx)
         .await
         .map_err(crate::error::AppError::Database)?;
 
@@ -343,6 +398,14 @@ async fn delete_skill(
             name
         )));
     }
+    state
+        .artifacts
+        .delete_artifact_in(&tx, &artifact)
+        .await
+        .map_err(crate::error::AppError::Internal)?;
+    tx.commit()
+        .await
+        .map_err(crate::error::AppError::Database)?;
 
     // TODO: trigger skills reload in SkillProvider module
 
@@ -366,7 +429,6 @@ async fn match_skill(
             "matched": true,
             "skill": m.name,
             "confidence": m.confidence,
-            "parameters": m.parameters,
         }))),
         None => Ok(Json(serde_json::json!({
             "matched": false,

@@ -15,6 +15,7 @@ pub mod module;
 pub mod oobe;
 pub mod openapi;
 pub mod providers;
+pub mod registry;
 pub mod rules;
 pub mod scheduler;
 pub mod settings;

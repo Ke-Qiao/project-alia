@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -237,7 +238,6 @@ pub trait CacheBackend: ModuleLifecycle {
 pub struct SkillMatch {
     pub name: String,
     pub confidence: f32,
-    pub parameters: serde_json::Value,
 }
 
 /// Resolved skill context for LLM-driven execution.
@@ -252,7 +252,7 @@ pub struct SkillResolution {
     /// Domain-specific system prompt (from the skill's prompt_template)
     pub system_prompt: Option<String>,
     /// Tool names to make available to the LLM during this skill execution.
-    /// Empty means all tools are available.
+    /// Empty means this skill has no bound tools.
     pub tools: Vec<String>,
     /// Whether the LLM response can be cached
     pub cacheable: bool,
@@ -292,7 +292,6 @@ pub struct PluginSkillDefinition {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: Vec<String>,
-    pub parameters: serde_json::Value,
     pub tools: Vec<String>,
     pub prompt_template: Option<String>,
     #[serde(default)]
@@ -416,19 +415,10 @@ pub struct RouterInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteDecision {
-    CacheHit {
-        response: String,
-    },
-    Skill {
-        skill_name: String,
-        params: serde_json::Value,
-    },
-    LocalLlm {
-        system_prompt: Option<String>,
-    },
-    RemoteLlm {
-        system_prompt: Option<String>,
-    },
+    CacheHit { response: String },
+    Skill { skill_name: String },
+    LocalLlm { system_prompt: Option<String> },
+    RemoteLlm { system_prompt: Option<String> },
 }
 
 #[async_trait]
@@ -553,7 +543,8 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value, // JSON Schema
-    pub source: String,                // "builtin" | plugin name
+    /// Owner source. Use "builtin", "component:<name>", "api", or a plugin name.
+    pub source: String,
     pub require_confirmation: bool,
     pub required_role: Option<String>,
 }
@@ -582,6 +573,16 @@ pub struct ToolContext {
 }
 
 #[async_trait]
+pub trait ToolExecutor: Send + Sync {
+    fn definition(&self) -> ToolDefinition;
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        ctx: &ToolContext,
+    ) -> anyhow::Result<ToolResult>;
+}
+
+#[async_trait]
 pub trait ToolRegistry: ModuleLifecycle {
     /// List all available tools
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>>;
@@ -591,6 +592,17 @@ pub trait ToolRegistry: ModuleLifecycle {
     async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult>;
     /// Register a plugin tool
     async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()>;
+    /// Register a code-backed tool executor. This is the preferred path for
+    /// Rust plugins/components because tools are executable units, not only DB
+    /// metadata. `owner_source` should be "builtin", "component:<name>", or a
+    /// plugin name and must match `executor.definition().source`.
+    async fn register_tool_executor(
+        &self,
+        owner_source: &str,
+        executor: Arc<dyn ToolExecutor>,
+    ) -> anyhow::Result<()>;
     /// Unregister a plugin tool
     async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()>;
+    /// Unregister all tools owned by a plugin.
+    async fn unregister_plugin_tools(&self, plugin_name: &str) -> anyhow::Result<u64>;
 }

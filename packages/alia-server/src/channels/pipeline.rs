@@ -496,11 +496,10 @@ async fn process_text(
         // Skill execution — resolve skill, then send through LLM with tools.
         // Skills extend what the LLM knows how to do well; the LLM decides
         // which tools to call (if any) based on the skill's system prompt.
-        RouteDecision::Skill { skill_name, params } => {
+        RouteDecision::Skill { skill_name } => {
             let skill_match = crate::providers::adapter::SkillMatch {
                 name: skill_name,
                 confidence: 1.0,
-                parameters: params.clone(),
             };
             let resolution = modules.skills.resolve(&skill_match).await?;
 
@@ -664,7 +663,38 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            if channel.capabilities().streaming {
+            let tools = select_all_tools(modules, tools_config).await?;
+            if !tools.is_empty() {
+                debug_component_tools(
+                    debug_output,
+                    "tools",
+                    "available",
+                    &tools,
+                    Some((channel_id, user_id)),
+                );
+                let full = run_llm_tool_loop(
+                    modules,
+                    messages,
+                    tools,
+                    uid,
+                    Some(session_id),
+                    channel_id,
+                    user_id,
+                    "llm",
+                    tools_config,
+                    debug_output,
+                    turn,
+                )
+                .await?;
+                debug_component_text(
+                    debug_output,
+                    "llm",
+                    "tool_loop_result",
+                    &full,
+                    Some((channel_id, user_id)),
+                );
+                (full, false, false)
+            } else if channel.capabilities().streaming {
                 debug_component_llm_call(
                     debug_output,
                     "llm",

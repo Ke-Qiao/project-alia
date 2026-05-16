@@ -1,8 +1,8 @@
 //! SeaORM entity for skills table
 //!
 //! Skills extend what the LLM **knows how to do well**. Each skill carries
-//! intent patterns for matching, a prompt template for domain context, and
-//! a list of tool names available during LLM execution.
+//! intent patterns for matching and a prompt template for domain context.
+//! Executable tool bindings live in the `skill_tools` junction table.
 //!
 //! Skills can be registered by:
 //! - Built-in seeds (source = "builtin")
@@ -28,16 +28,6 @@ pub struct Model {
     /// Intent matching patterns/keywords
     #[sea_orm(column_type = "JsonBinary")]
     pub intent_patterns: serde_json::Value,
-    /// Parameter definitions (JSON Schema)
-    #[sea_orm(column_type = "JsonBinary")]
-    pub parameters: serde_json::Value,
-    /// Legacy: internal execution routing config. Use `tools` column instead.
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub execution_config: Option<serde_json::Value>,
-    /// Tool names to make available to the LLM during this skill's execution.
-    /// Stored as a JSON array of strings, e.g. ["device_control", "sensor_read"]
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub tools: Option<serde_json::Value>,
     /// Response template / system prompt for LLM context
     #[sea_orm(column_type = "Text", nullable)]
     pub prompt_template: Option<String>,

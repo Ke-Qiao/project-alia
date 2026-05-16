@@ -13,10 +13,6 @@
 //! intent_patterns = ["关键词1", "关键词2"]
 //! tools = ["device_control", "sensor_read"]
 //! priority = 5
-//!
-//! [parameters.properties.location]
-//! type = "string"
-//! description = "位置"
 //! +++
 //!
 //! Prompt template content here...
@@ -35,8 +31,6 @@ pub struct SkillFrontmatter {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: Vec<String>,
-    #[serde(default)]
-    pub parameters: Option<toml::Value>,
     /// Tool names to make available to the LLM during this skill's execution.
     #[serde(default)]
     pub tools: Vec<String>,
@@ -139,23 +133,4 @@ pub async fn load_skill_files(dir: &Path) -> anyhow::Result<Vec<ParsedSkillFile>
 
     tracing::info!(count = skills.len(), dir = %dir.display(), "loaded markdown skill files");
     Ok(skills)
-}
-
-/// Convert a `toml::Value` to `serde_json::Value`.
-pub fn toml_to_json(value: &toml::Value) -> serde_json::Value {
-    match value {
-        toml::Value::String(s) => serde_json::Value::String(s.clone()),
-        toml::Value::Integer(i) => serde_json::json!(i),
-        toml::Value::Float(f) => serde_json::json!(f),
-        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
-        toml::Value::Datetime(d) => serde_json::Value::String(d.to_string()),
-        toml::Value::Array(arr) => serde_json::Value::Array(arr.iter().map(toml_to_json).collect()),
-        toml::Value::Table(table) => {
-            let map: serde_json::Map<String, serde_json::Value> = table
-                .iter()
-                .map(|(k, v)| (k.clone(), toml_to_json(v)))
-                .collect();
-            serde_json::Value::Object(map)
-        }
-    }
 }

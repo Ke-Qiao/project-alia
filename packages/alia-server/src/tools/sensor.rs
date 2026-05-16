@@ -7,9 +7,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolResult};
+use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
 use crate::providers::sensor::SensorRegistry;
-use crate::tools::builtin::ToolExecutor;
 
 /// Tool: read the latest value from a sensor.
 pub struct SensorReadTool {

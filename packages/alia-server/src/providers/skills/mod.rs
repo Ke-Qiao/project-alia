@@ -1,8 +1,7 @@
 //! Skills module: extend what the LLM **knows how to do well**.
 //!
-//! Skills provide domain knowledge (prompt templates) and specify which tools
-//! are relevant for a given user intent. Skill execution goes through the LLM
-//! with the referenced tools made available for function calling.
+//! Skills provide domain knowledge and routing context. Tool bindings are
+//! injected into the LLM separately; skills are never executable functions.
 //!
 //! This module provides:
 //! - `NoopSkills`: A no-op implementation for disabled skills

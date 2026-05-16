@@ -1,8 +1,8 @@
-use alia_server::providers::adapter::{ToolContext, ToolDefinition};
+use alia_server::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor};
 #[cfg(feature = "tools-http")]
 use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
-    Calculate, GetCurrentTime, ToolExecutor, parse_openai_tool_call, to_openai_functions,
+    Calculate, GetCurrentTime, parse_openai_tool_call, to_openai_functions,
 };
 use uuid::Uuid;
 

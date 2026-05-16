@@ -23,7 +23,10 @@ use async_trait::async_trait;
 use chrono::Utc;
 #[cfg(feature = "tools-http")]
 use futures::StreamExt;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    TransactionTrait,
+};
 #[cfg(feature = "tools-http")]
 use tokio::net::lookup_host;
 use uuid::Uuid;
@@ -31,8 +34,11 @@ use uuid::Uuid;
 use crate::entity::tool;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
+use crate::providers::adapter::{
+    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+};
 use crate::providers::sensor::SensorRegistry;
+use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
 
 const FETCH_DEFAULT_MAX_BYTES: usize = 64 * 1024;
@@ -40,92 +46,101 @@ const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
 const FETCH_DEFAULT_TIMEOUT_SEC: u64 = 10;
 const FETCH_HARD_TIMEOUT_SEC: u64 = 30;
 
-/// Trait for implementing tool executors
-#[async_trait]
-pub trait ToolExecutor: Send + Sync {
-    fn definition(&self) -> ToolDefinition;
-    async fn execute(
-        &self,
-        arguments: serde_json::Value,
-        ctx: &ToolContext,
-    ) -> anyhow::Result<ToolResult>;
-}
-
 /// BuiltinToolRegistry: Full implementation of ToolRegistry
 pub struct BuiltinToolRegistry {
-    /// Built-in tools (immutable after init)
-    builtins: HashMap<String, Arc<dyn ToolExecutor>>,
+    /// Code-backed tools. Built-ins, Rust components, and in-process Rust
+    /// plugins all live here; DB rows are only the discoverable catalog.
+    executors: Arc<RwLock<HashMap<String, Arc<dyn ToolExecutor>>>>,
     /// Plugin-registered tools (in-memory cache, backed by DB)
     plugins: Arc<RwLock<HashMap<String, ToolDefinition>>>,
     /// Event bus for publishing tool events
     event_bus: tokio::sync::Mutex<Option<EventBus>>,
     /// DB connection for persisting plugin tools
     db: Option<DatabaseConnection>,
+    /// Unified artifact/dependency graph manager.
+    artifacts: Option<Arc<ArtifactRegistry>>,
 }
 
 impl BuiltinToolRegistry {
     pub fn new() -> Self {
         Self {
-            builtins: HashMap::new(),
+            executors: Arc::new(RwLock::new(HashMap::new())),
             plugins: Arc::new(RwLock::new(HashMap::new())),
             event_bus: tokio::sync::Mutex::new(None),
             db: None,
+            artifacts: None,
         }
     }
 
     /// Create with sensor registry integration (sensor_read + sensor_list tools).
     pub fn with_sensors(sensors: Arc<SensorRegistry>) -> Self {
-        let mut this = Self::new();
-        this.builtins.insert(
-            "sensor_read".to_string(),
-            Arc::new(SensorReadTool::new(sensors.clone())),
-        );
-        this.builtins.insert(
-            "sensor_list".to_string(),
-            Arc::new(SensorListTool::new(sensors)),
-        );
+        let this = Self::new();
+        this.register_executor(Arc::new(SensorReadTool::new(sensors.clone())));
+        this.register_executor(Arc::new(SensorListTool::new(sensors)));
         this
     }
 
-    fn register_builtins(&mut self) {
+    fn register_builtins(&self) {
         // get_current_time
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("get_current_time".to_string(), Arc::new(GetCurrentTime));
 
         // fetch
         #[cfg(feature = "tools-http")]
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("fetch".to_string(), Arc::new(FetchUrl));
 
         // calculate
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("calculate".to_string(), Arc::new(Calculate));
 
         // memory_search
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("memory_search".to_string(), Arc::new(MemorySearch));
 
         // memory_store
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("memory_store".to_string(), Arc::new(MemoryStore));
 
         // schedule_task
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("schedule_task".to_string(), Arc::new(ScheduleTask));
 
         // send_notification
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("send_notification".to_string(), Arc::new(SendNotification));
 
         // device_control
-        self.builtins
+        self.executors
+            .write()
+            .unwrap()
             .insert("device_control".to_string(), Arc::new(DeviceControl));
     }
 
     /// Register an additional tool executor at runtime (for tools that need external state).
-    pub fn register_executor(&mut self, executor: Arc<dyn ToolExecutor>) {
+    pub fn register_executor(&self, executor: Arc<dyn ToolExecutor>) {
         let name = executor.definition().name;
-        self.builtins.insert(name, executor);
+        self.executors.write().unwrap().insert(name, executor);
+    }
+
+    fn artifacts(&self) -> anyhow::Result<&ArtifactRegistry> {
+        self.artifacts
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("BuiltinToolRegistry not initialized"))
     }
 
     /// Load plugin tools from DB into in-memory cache.
@@ -134,11 +149,15 @@ impl BuiltinToolRegistry {
 
         let rows = tool::Entity::find()
             .filter(tool::Column::Enabled.eq(true))
+            .filter(tool::Column::Source.ne("builtin"))
             .all(db)
             .await?;
 
         let mut plugins = self.plugins.write().unwrap();
         for row in rows {
+            if !is_plugin_source(&row.source) {
+                continue;
+            }
             plugins.insert(
                 row.name.clone(),
                 ToolDefinition {
@@ -152,6 +171,66 @@ impl BuiltinToolRegistry {
             );
         }
 
+        Ok(())
+    }
+
+    /// Persist built-in tool definitions so skills can bind to them through
+    /// `skill_tools` with real foreign keys. The in-memory executor remains
+    /// authoritative for execution.
+    async fn upsert_executor_tools_to_db(&self) -> anyhow::Result<()> {
+        let Some(db) = &self.db else { return Ok(()) };
+        let now = Utc::now();
+
+        let definitions = self
+            .executors
+            .read()
+            .unwrap()
+            .values()
+            .map(|executor| executor.definition())
+            .collect::<Vec<_>>();
+
+        for definition in definitions {
+            let artifact = ArtifactRef::tool(definition.name.clone());
+            let existing = tool::Entity::find()
+                .filter(tool::Column::Name.eq(&definition.name))
+                .one(db)
+                .await?;
+
+            match existing {
+                Some(row) => {
+                    let mut active: tool::ActiveModel = row.into();
+                    active.description = Set(definition.description.clone());
+                    active.parameters = Set(definition.parameters.clone());
+                    active.source = Set(definition.source.clone());
+                    active.require_confirmation = Set(definition.require_confirmation);
+                    active.required_role = Set(definition.required_role.clone());
+                    active.enabled = Set(true);
+                    active.updated_at = Set(now);
+                    active.update(db).await?;
+                }
+                None => {
+                    tool::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        name: Set(definition.name),
+                        description: Set(definition.description),
+                        parameters: Set(definition.parameters),
+                        source: Set(definition.source.clone()),
+                        require_confirmation: Set(definition.require_confirmation),
+                        required_role: Set(definition.required_role),
+                        enabled: Set(true),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                    }
+                    .insert(db)
+                    .await?;
+                }
+            }
+            self.artifacts()?
+                .upsert_artifact_in(db, &artifact, &definition.source)
+                .await?;
+        }
+
+        self.artifacts()?.sync_existing_tool_artifacts().await?;
         Ok(())
     }
 }
@@ -171,7 +250,12 @@ impl ModuleLifecycle for BuiltinToolRegistry {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         self.db = Some(ctx.db.clone());
+        self.artifacts = Some(ctx.artifacts.clone());
         self.register_builtins();
+
+        if let Err(e) = self.upsert_executor_tools_to_db().await {
+            tracing::warn!(error = %e, "failed to persist executor tool definitions");
+        }
 
         // Load plugin-registered tools from DB
         if let Err(e) = self.load_plugin_tools_from_db().await {
@@ -180,7 +264,7 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 
         let plugin_count = self.plugins.read().unwrap().len();
         tracing::info!(
-            builtin_count = self.builtins.len(),
+            executor_count = self.executors.read().unwrap().len(),
             plugin_count,
             "BuiltinToolRegistry initialized"
         );
@@ -196,7 +280,9 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 impl ToolRegistry for BuiltinToolRegistry {
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>> {
         let mut tools: Vec<ToolDefinition> = self
-            .builtins
+            .executors
+            .read()
+            .unwrap()
             .values()
             .map(|executor| executor.definition())
             .collect();
@@ -209,8 +295,8 @@ impl ToolRegistry for BuiltinToolRegistry {
     }
 
     async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>> {
-        // Check builtins first
-        if let Some(executor) = self.builtins.get(name) {
+        // Check code-backed executors first
+        if let Some(executor) = self.executors.read().unwrap().get(name) {
             return Ok(Some(executor.definition()));
         }
 
@@ -235,7 +321,8 @@ impl ToolRegistry for BuiltinToolRegistry {
         let start = std::time::Instant::now();
 
         // Execute
-        let result = if let Some(executor) = self.builtins.get(&call.tool_name) {
+        let executor = self.executors.read().unwrap().get(&call.tool_name).cloned();
+        let result = if let Some(executor) = executor {
             executor.execute(call.arguments, ctx).await
         } else {
             // Check if it's a plugin tool
@@ -283,13 +370,21 @@ impl ToolRegistry for BuiltinToolRegistry {
     }
 
     async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()> {
-        if self.builtins.contains_key(&tool.name) {
-            anyhow::bail!("cannot override builtin tool: {}", tool.name);
+        if self.executors.read().unwrap().contains_key(&tool.name) {
+            anyhow::bail!("cannot override code-backed tool: {}", tool.name);
+        }
+        if !is_plugin_source(&tool.source) {
+            anyhow::bail!(
+                "plugin tool '{}' must use its plugin name as source, got '{}'",
+                tool.name,
+                tool.source
+            );
         }
 
         // Persist to DB
         if let Some(db) = &self.db {
             let now = Utc::now();
+            let artifact = ArtifactRef::tool(tool.name.clone());
             let existing = tool::Entity::find()
                 .filter(tool::Column::Name.eq(&tool.name))
                 .one(db)
@@ -323,6 +418,9 @@ impl ToolRegistry for BuiltinToolRegistry {
                     active.insert(db).await?;
                 }
             }
+            self.artifacts()?
+                .upsert_artifact_in(db, &artifact, &tool.source)
+                .await?;
         }
 
         // Update in-memory cache
@@ -332,22 +430,146 @@ impl ToolRegistry for BuiltinToolRegistry {
         Ok(())
     }
 
-    async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()> {
-        // Remove from DB
+    async fn register_tool_executor(
+        &self,
+        owner_source: &str,
+        executor: Arc<dyn ToolExecutor>,
+    ) -> anyhow::Result<()> {
+        let definition = executor.definition();
+        if definition.source != owner_source {
+            anyhow::bail!(
+                "tool executor '{}' source mismatch: definition has '{}', owner source is '{}'",
+                definition.name,
+                definition.source,
+                owner_source
+            );
+        }
+
         if let Some(db) = &self.db {
+            let now = Utc::now();
+            let artifact = ArtifactRef::tool(definition.name.clone());
+            let existing = tool::Entity::find()
+                .filter(tool::Column::Name.eq(&definition.name))
+                .one(db)
+                .await?;
+
+            match existing {
+                Some(row) => {
+                    let mut active: tool::ActiveModel = row.into();
+                    active.description = Set(definition.description.clone());
+                    active.parameters = Set(definition.parameters.clone());
+                    active.source = Set(definition.source.clone());
+                    active.require_confirmation = Set(definition.require_confirmation);
+                    active.required_role = Set(definition.required_role.clone());
+                    active.enabled = Set(true);
+                    active.updated_at = Set(now);
+                    active.update(db).await?;
+                }
+                None => {
+                    tool::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        name: Set(definition.name.clone()),
+                        description: Set(definition.description.clone()),
+                        parameters: Set(definition.parameters.clone()),
+                        source: Set(definition.source.clone()),
+                        require_confirmation: Set(definition.require_confirmation),
+                        required_role: Set(definition.required_role.clone()),
+                        enabled: Set(true),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                    }
+                    .insert(db)
+                    .await?;
+                }
+            }
+            self.artifacts()?
+                .upsert_artifact_in(db, &artifact, &definition.source)
+                .await?;
+        }
+
+        self.plugins.write().unwrap().remove(&definition.name);
+        self.executors
+            .write()
+            .unwrap()
+            .insert(definition.name.clone(), executor);
+        tracing::info!(
+            tool = %definition.name,
+            source = %definition.source,
+            "registered code-backed tool executor"
+        );
+        Ok(())
+    }
+
+    async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()> {
+        let executor_source = self
+            .executors
+            .read()
+            .unwrap()
+            .get(tool_name)
+            .map(|executor| executor.definition().source);
+        if let Some(source) = &executor_source
+            && !is_plugin_source(source)
+        {
+            anyhow::bail!("cannot unregister non-plugin executor-backed tool: {tool_name}");
+        }
+
+        if let Some(db) = &self.db {
+            let tx = db.begin().await?;
+            let artifact = ArtifactRef::tool(tool_name.to_string());
+            self.artifacts()?
+                .ensure_no_external_dependents_in(&tx, std::slice::from_ref(&artifact))
+                .await?;
             tool::Entity::delete_many()
                 .filter(tool::Column::Name.eq(tool_name))
-                .exec(db)
+                .exec(&tx)
                 .await?;
+            self.artifacts()?.delete_artifact_in(&tx, &artifact).await?;
+            tx.commit().await?;
         }
 
         // Remove from in-memory cache
         let mut plugins = self.plugins.write().unwrap();
-        plugins
-            .remove(tool_name)
-            .ok_or_else(|| anyhow::anyhow!("plugin tool not found: {tool_name}"))?;
+        let metadata_removed = plugins.remove(tool_name).is_some();
+        let executor_removed = self.executors.write().unwrap().remove(tool_name).is_some();
+        if !metadata_removed && !executor_removed {
+            anyhow::bail!("plugin tool not found: {tool_name}");
+        }
         tracing::info!(tool = %tool_name, "unregistered plugin tool");
         Ok(())
+    }
+
+    async fn unregister_plugin_tools(&self, plugin_name: &str) -> anyhow::Result<u64> {
+        let Some(db) = &self.db else { return Ok(0) };
+        let tx = db.begin().await?;
+        let artifacts = self
+            .artifacts()?
+            .owned_artifacts_in(&tx, "plugin", plugin_name, Some(KIND_TOOL))
+            .await?;
+
+        self.artifacts()?
+            .ensure_no_external_dependents_in(&tx, &artifacts)
+            .await?;
+
+        let mut removed = 0;
+        for artifact in &artifacts {
+            let result = tool::Entity::delete_many()
+                .filter(tool::Column::Name.eq(&artifact.name))
+                .exec(&tx)
+                .await?;
+            removed += result.rows_affected;
+            self.artifacts()?.delete_artifact_in(&tx, artifact).await?;
+        }
+
+        tx.commit().await?;
+
+        let mut plugins = self.plugins.write().unwrap();
+        for artifact in &artifacts {
+            plugins.remove(&artifact.name);
+            self.executors.write().unwrap().remove(&artifact.name);
+        }
+
+        tracing::info!(plugin = %plugin_name, removed, "unregistered plugin tools");
+        Ok(removed)
     }
 }
 

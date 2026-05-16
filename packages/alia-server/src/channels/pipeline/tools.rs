@@ -12,14 +12,18 @@ use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     ChatMessage, LlmToolCall, ToolCall, ToolContext, ToolDefinition, ToolResult,
 };
+use crate::registry::is_plugin_source;
 
 const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
-- When an appropriate tool is available, call the tool instead of describing imaginary results.
+- Skills are cognitive context only. Never try to call a skill by name.
+- Tools are the only executable units. When an appropriate tool is available, call the tool instead of describing imaginary results.
+- Use native tool/function calling whenever the provider supports it. Tool arguments must be valid JSON matching the tool's parameter schema.
+- If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
+  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
+- If no tool is needed, answer normally in natural language.
 - Never put raw tool-call JSON, function names, or hidden arguments in the final user-facing answer.
 - After tool results are provided, produce only a natural-language answer for the user.
 - If a tool result says confirmation is required, ask the user to confirm before claiming the action was done.
-- If native tool calling is unavailable, request tools by replying only with JSON:
-  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
 "#;
 
 pub(super) async fn run_llm_tool_loop(
@@ -135,8 +139,27 @@ pub(super) async fn select_tools_for_skill(
     allowed_names: &[String],
     tools_config: &ToolsSection,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
+    if allowed_names.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    select_tools(modules, Some(allowed_names), tools_config).await
+}
+
+pub(super) async fn select_all_tools(
+    modules: &ModuleRegistry,
+    tools_config: &ToolsSection,
+) -> anyhow::Result<Vec<ToolDefinition>> {
+    select_tools(modules, None, tools_config).await
+}
+
+async fn select_tools(
+    modules: &ModuleRegistry,
+    allowed_names: Option<&[String]>,
+    tools_config: &ToolsSection,
+) -> anyhow::Result<Vec<ToolDefinition>> {
     let all_tools = modules.tools.list_tools().await?;
-    let allowed = (!allowed_names.is_empty()).then(|| {
+    let allowed = allowed_names.map(|allowed_names| {
         allowed_names
             .iter()
             .map(|name| name.as_str())
@@ -146,7 +169,7 @@ pub(super) async fn select_tools_for_skill(
     let tools = all_tools
         .into_iter()
         .filter(|tool| {
-            if !tools_config.allow_plugin_tools && tool.source != "builtin" {
+            if !tools_config.allow_plugin_tools && is_plugin_source(&tool.source) {
                 return false;
             }
             allowed

@@ -8,13 +8,6 @@ tools = ["get_current_time", "sensor_read"]
 priority = 3
 cacheable = false
 enabled = true
-
-[parameters]
-type = "object"
-
-[parameters.properties.user_name]
-type = "string"
-description = "用户称呼"
 +++
 
 用户说了早安。请根据当前时间和用户习惯，生成一段温暖的早安问候。

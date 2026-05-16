@@ -29,14 +29,12 @@ fn test_to_decision_skill() {
     let c = Classification {
         route: "skill".to_string(),
         skill_name: Some("smart_home".to_string()),
-        params: Some(serde_json::json!({"action": "turn_on", "device": "light"})),
         confidence: Some(0.95),
         reasoning: Some("deterministic command".to_string()),
     };
     match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-        RouteDecision::Skill { skill_name, params } => {
+        RouteDecision::Skill { skill_name } => {
             assert_eq!(skill_name, "smart_home");
-            assert_eq!(params["action"], "turn_on");
         }
         other => panic!("expected Skill, got {other:?}"),
     }
@@ -47,7 +45,6 @@ fn test_to_decision_local_llm_both_mode() {
     let c = Classification {
         route: "local_llm".to_string(),
         skill_name: None,
-        params: None,
         confidence: Some(0.8),
         reasoning: None,
     };
@@ -68,7 +65,6 @@ fn test_to_decision_local_llm_solo_mode() {
     let c = Classification {
         route: "local_llm".to_string(),
         skill_name: None,
-        params: None,
         confidence: Some(0.8),
         reasoning: None,
     };
@@ -93,7 +89,6 @@ fn test_to_decision_remote_llm_both_mode() {
     let c = Classification {
         route: "remote_llm".to_string(),
         skill_name: None,
-        params: None,
         confidence: Some(0.9),
         reasoning: None,
     };
@@ -111,7 +106,6 @@ fn test_to_decision_remote_llm_solo_mode() {
     let c = Classification {
         route: "remote_llm".to_string(),
         skill_name: None,
-        params: None,
         confidence: Some(0.9),
         reasoning: None,
     };
@@ -129,7 +123,6 @@ fn test_to_decision_unknown_falls_back() {
     let c = Classification {
         route: "unknown_thing".to_string(),
         skill_name: None,
-        params: None,
         confidence: None,
         reasoning: None,
     };

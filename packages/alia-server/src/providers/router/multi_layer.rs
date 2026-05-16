@@ -2,7 +2,7 @@
 //!
 //! Uses a lightweight local model (e.g. Qwen3-4B) to classify user intent,
 //! then routes to the appropriate execution path:
-//!   - SKILL → matched skill with extracted parameters
+//!   - SKILL → matched skill context and bound tools
 //!   - LOCAL_LLM → simple chat handled by local Ollama model
 //!   - REMOTE_LLM → complex reasoning forwarded to remote LLM (GPT-4o / Claude)
 
@@ -53,8 +53,6 @@ pub struct Classification {
     #[serde(default)]
     pub skill_name: Option<String>,
     #[serde(default)]
-    pub params: Option<serde_json::Value>,
-    #[serde(default)]
     pub confidence: Option<f32>,
     #[serde(default)]
     pub reasoning: Option<String>,
@@ -102,7 +100,7 @@ const CLASSIFICATION_PROMPT_BOTH: &str = r#"You are an intent classifier inside 
 Respond with a single JSON object. No markdown fences, no explanation, no extra text.
 
 ```
-{"route":"<route>","skill_name":"<if skill>","params":{<if skill>},"confidence":<0-1>,"reasoning":"<one line>"}
+{"route":"<route>","skill_name":"<if skill>","confidence":<0-1>,"reasoning":"<one line>"}
 ```
 
 ## Routes
@@ -110,18 +108,18 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 ### "skill" — deterministic device/system commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
-| skill_name | When to use | Key params |
-|---|---|---|
-| smart_light_control | Turn on/off lights, set brightness/color temp | action, device_name, value |
-| smart_ac_control | AC on/off, set temperature/mode | action, temperature, mode |
-| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. | action, device_name, device_type |
-| timer_alarm | Set timer, countdown, alarm, reminder | duration_seconds, message, type |
-| weather_query | Current weather, forecast, rain/snow check | location, days |
-| device_status | "Is the light on?", "What's the temperature?" | device_name, device_type |
-| memory_query | "Do you remember...", "What did I say last time?" | query, time_range |
-| rule_management | Create/edit/delete automation rules | action, rule_description |
+| skill_name | When to use |
+|---|---|
+| smart_light_control | Turn on/off lights, set brightness/color temp |
+| smart_ac_control | AC on/off, set temperature/mode |
+| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. |
+| timer_alarm | Set timer, countdown, alarm, reminder |
+| weather_query | Current weather, forecast, rain/snow check |
+| device_status | "Is the light on?", "What's the temperature?" |
+| memory_query | "Do you remember...", "What did I say last time?" |
+| rule_management | Create/edit/delete automation rules |
 
-Extract parameters from the user's message. Use null for optional params you cannot determine.
+Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
 ### "local_llm" — simple, short replies
 Use when a lightweight model can handle it in one turn:
@@ -156,7 +154,7 @@ const CLASSIFICATION_PROMPT_LOCAL_ONLY: &str = r#"You are an intent classifier i
 Respond with a single JSON object. No markdown fences, no explanation, no extra text.
 
 ```
-{"route":"<route>","skill_name":"<if skill>","params":{<if skill>},"confidence":<0-1>,"reasoning":"<one line>"}
+{"route":"<route>","skill_name":"<if skill>","confidence":<0-1>,"reasoning":"<one line>"}
 ```
 
 ## Routes
@@ -164,18 +162,18 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 ### "skill" — deterministic device/system commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
-| skill_name | When to use | Key params |
-|---|---|---|
-| smart_light_control | Turn on/off lights, set brightness/color temp | action, device_name, value |
-| smart_ac_control | AC on/off, set temperature/mode | action, temperature, mode |
-| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. | action, device_name, device_type |
-| timer_alarm | Set timer, countdown, alarm, reminder | duration_seconds, message, type |
-| weather_query | Current weather, forecast, rain/snow check | location, days |
-| device_status | "Is the light on?", "What's the temperature?" | device_name, device_type |
-| memory_query | "Do you remember...", "What did I say last time?" | query, time_range |
-| rule_management | Create/edit/delete automation rules | action, rule_description |
+| skill_name | When to use |
+|---|---|
+| smart_light_control | Turn on/off lights, set brightness/color temp |
+| smart_ac_control | AC on/off, set temperature/mode |
+| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. |
+| timer_alarm | Set timer, countdown, alarm, reminder |
+| weather_query | Current weather, forecast, rain/snow check |
+| device_status | "Is the light on?", "What's the temperature?" |
+| memory_query | "Do you remember...", "What did I say last time?" |
+| rule_management | Create/edit/delete automation rules |
 
-Extract parameters from the user's message. Use null for optional params you cannot determine.
+Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
 ### "local_llm" — all other messages
 Route everything that is not a skill command to the local LLM. This is the only general-purpose model available.
@@ -220,7 +218,7 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When using tools or skills, explain what you're doing naturally.
+- When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 /// System prompt given to the **remote LLM** when it's the only model (remote-only mode).
@@ -232,7 +230,7 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When using tools or skills, explain what you're doing naturally.
+- When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 // ── Implementation ─────────────────────────────────────────────────────
@@ -268,7 +266,6 @@ impl MultiLayerRouter {
                 return Ok(Classification {
                     route: "remote_llm".to_string(),
                     skill_name: None,
-                    params: None,
                     confidence: Some(1.0),
                     reasoning: Some("remote-only mode, skipping classification".to_string()),
                 });
@@ -365,10 +362,7 @@ impl MultiLayerRouter {
                 let skill_name = classification
                     .skill_name
                     .unwrap_or_else(|| "unknown".to_string());
-                let params = classification
-                    .params
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                RouteDecision::Skill { skill_name, params }
+                RouteDecision::Skill { skill_name }
             }
             "local_llm" => {
                 let prompt = match mode {

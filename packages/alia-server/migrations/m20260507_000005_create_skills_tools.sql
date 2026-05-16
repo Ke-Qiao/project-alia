@@ -1,8 +1,7 @@
 -- Migration: Create skills and tools tables
 --
 -- Skills extend what the LLM **knows how to do well**.
--- Each skill carries intent patterns for matching, a prompt template for
--- domain context, and a list of tool names available during LLM execution.
+-- Each skill carries intent patterns and a prompt template for domain context.
 --
 -- Tools extend what the LLM **can do**.
 -- Each tool is an executable function the LLM can call via function calling.
@@ -16,9 +15,6 @@ CREATE TABLE skills (
     description TEXT,
     category VARCHAR(50) NOT NULL,              -- 'smart_home' | 'utility' | 'information' | 'memory' | 'automation'
     intent_patterns JSONB NOT NULL,             -- Intent matching patterns/keywords
-    parameters JSONB DEFAULT '{}',              -- Parameter definitions (JSON Schema)
-    execution_config JSONB,                     -- Legacy: kept for backward compat
-    tools JSONB DEFAULT '[]',                   -- Tool names available to the LLM (e.g. ["device_control", "sensor_read"])
     prompt_template TEXT,                       -- System prompt / domain context for LLM
     cacheable BOOLEAN DEFAULT FALSE,
     enabled BOOLEAN DEFAULT TRUE,
@@ -50,3 +46,14 @@ CREATE TABLE tools (
 
 CREATE INDEX idx_tools_source ON tools(source);
 CREATE INDEX idx_tools_enabled ON tools(enabled) WHERE enabled = TRUE;
+
+-- ── Skill/Tool Bindings ───────────────────────────────────────────────
+
+CREATE TABLE skill_tools (
+    skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    tool_id UUID NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (skill_id, tool_id)
+);
+
+CREATE INDEX idx_skill_tools_tool_id ON skill_tools(tool_id);

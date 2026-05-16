@@ -1,7 +1,8 @@
 //! Tools module: extend what the LLM **can do**.
 //!
-//! Tools are executable functions the LLM (or skills) can call via function
-//! calling. They provide the actual actions — reading sensors, controlling
+//! Tools are executable functions the LLM can call via function calling.
+//! Skills can bind tools as context, but do not execute them directly. Tools
+//! provide the actual actions — reading sensors, controlling
 //! devices, managing memory, etc.
 //!
 //! This module provides:
@@ -17,7 +18,9 @@ pub use builtin::BuiltinToolRegistry;
 use async_trait::async_trait;
 
 use crate::module::ModuleLifecycle;
-use crate::providers::adapter::{ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult};
+use crate::providers::adapter::{
+    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+};
 
 /// No-op tool registry implementation for disabled state.
 pub struct NoopToolRegistry;
@@ -52,7 +55,19 @@ impl ToolRegistry for NoopToolRegistry {
         anyhow::bail!("tools are disabled")
     }
 
+    async fn register_tool_executor(
+        &self,
+        _owner_source: &str,
+        _executor: std::sync::Arc<dyn ToolExecutor>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("tools are disabled")
+    }
+
     async fn unregister_plugin_tool(&self, _tool_name: &str) -> anyhow::Result<()> {
+        anyhow::bail!("tools are disabled")
+    }
+
+    async fn unregister_plugin_tools(&self, _plugin_name: &str) -> anyhow::Result<u64> {
         anyhow::bail!("tools are disabled")
     }
 }

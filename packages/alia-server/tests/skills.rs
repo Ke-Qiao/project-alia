@@ -1,5 +1,7 @@
 use alia_server::providers::SkillInfo;
-use alia_server::providers::skills::builtin::{BuiltinSkills, LoadedSkill, builtin_skill_seeds};
+use alia_server::providers::skills::builtin::{
+    BuiltinSkills, LoadedSkill, builtin_skill_seeds, builtin_skill_tool_bindings,
+};
 use alia_server::providers::skills::markdown::parse_skill_file;
 
 // ── builtin seeds ──────────────────────────────────────────────────────
@@ -21,19 +23,12 @@ fn test_seed_data() {
 }
 
 #[test]
-fn test_seed_data_uses_tool_name_arrays() {
-    let seeds = builtin_skill_seeds();
-    for seed in &seeds {
-        if let Some(ref config) = seed.execution_config.clone().unwrap() {
-            // All seed data should use the new JSON array format
-            assert!(
-                config.is_array(),
-                "seed skill '{}' execution_config should be a JSON array of tool names, got: {}",
-                seed.name.clone().unwrap(),
-                config
-            );
-        }
-    }
+fn test_seed_data_uses_skill_tool_bindings() {
+    let bindings = builtin_skill_tool_bindings();
+    assert_eq!(bindings.len(), 8);
+    assert!(bindings.iter().any(|(skill, tools)| {
+        *skill == "device_status" && tools == &["sensor_read", "sensor_list"]
+    }));
 }
 
 #[test]
@@ -46,7 +41,6 @@ fn test_match_scoring() {
             category: "test".into(),
         },
         keywords: vec!["灯".into(), "开灯".into(), "灯光".into()],
-        param_schema: serde_json::json!({}),
         tools: vec!["device_control".to_string()],
         prompt_template: None,
         cacheable: false,
@@ -98,13 +92,6 @@ category = "information"
 intent_patterns = ["天气", "weather"]
 tools = ["sensor_read", "sensor_list"]
 cacheable = true
-
-[parameters]
-type = "object"
-
-[parameters.properties.location]
-type = "string"
-description = "地点"
 +++
 
 查询 {location} 的天气。
@@ -113,7 +100,6 @@ description = "地点"
     assert_eq!(parsed.frontmatter.name, "weather");
     assert!(parsed.frontmatter.cacheable);
     assert_eq!(parsed.frontmatter.tools, vec!["sensor_read", "sensor_list"]);
-    assert!(parsed.frontmatter.parameters.is_some());
 }
 
 #[test]
@@ -139,23 +125,4 @@ fn test_parse_skill_file_missing_delimiter() {
 fn test_parse_skill_file_missing_closing() {
     let result = parse_skill_file("+++\nname = \"x\"\n");
     assert!(result.is_err());
-}
-
-#[test]
-fn test_toml_to_json() {
-    use alia_server::providers::skills::markdown::toml_to_json;
-
-    let toml_val: toml::Value = toml::from_str(
-        r#"
-            type = "object"
-            [properties.name]
-            type = "string"
-            description = "test"
-            "#,
-    )
-    .unwrap();
-
-    let json = toml_to_json(&toml_val);
-    assert_eq!(json["type"], "object");
-    assert_eq!(json["properties"]["name"]["type"], "string");
 }

@@ -9,6 +9,7 @@ use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::ModuleRegistry;
 use crate::providers::sensor::SensorRegistry;
+use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
 use crate::settings::SettingsRegistry;
 
@@ -18,6 +19,7 @@ pub struct AppState {
     pub db: DatabaseConnection,
     pub channels: Arc<ChannelRegistry>,
     pub event_bus: EventBus,
+    pub artifacts: Arc<ArtifactRegistry>,
     pub modules: Arc<ModuleRegistry>,
     pub sensors: Arc<SensorRegistry>,
     pub conditions: Arc<ConditionRegistry>,
