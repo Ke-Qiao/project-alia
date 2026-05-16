@@ -17,6 +17,12 @@ use crate::registry::is_plugin_source;
 const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
 const MAX_TEXT_TOOL_CALLS: usize = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolCallProtocol {
+    Native,
+    TextFallback,
+}
+
 const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
 - Skills are cognitive context only. Never try to call a skill by name.
 - Tools are the only executable units. When an appropriate tool is available, call the tool instead of describing imaginary results.
@@ -79,34 +85,41 @@ pub(super) async fn run_llm_tool_loop(
             Some(response) => response,
             None => return Ok(String::new()),
         };
-        if response.tool_calls.is_empty() {
+        let protocol = if response.tool_calls.is_empty() {
             response.tool_calls = parse_text_tool_calls(&response.content)?;
             if !response.tool_calls.is_empty() {
                 response.content.clear();
             }
-        }
+            ToolCallProtocol::TextFallback
+        } else {
+            ToolCallProtocol::Native
+        };
 
         if response.tool_calls.is_empty() {
             return Ok(response.content);
         }
 
+        let tool_calls = response
+            .tool_calls
+            .iter()
+            .enumerate()
+            .map(|(index, call)| normalize_tool_call(call, depth, index))
+            .collect::<Vec<_>>();
+
         debug_component_tool_calls(
             debug_output,
             depth + 1,
-            &response.tool_calls,
+            &tool_calls,
             Some((channel_id, user_id_text)),
         );
 
-        messages.push(ChatMessage {
-            role: "assistant".into(),
-            content: response.content.clone(),
-            name: None,
-            tool_calls: response.tool_calls.clone(),
-            ..ChatMessage::default()
-        });
+        messages.push(tool_call_request_message(
+            protocol,
+            &response.content,
+            &tool_calls,
+        ));
 
-        for (index, call) in response.tool_calls.iter().enumerate() {
-            let call = normalize_tool_call(call, depth, index);
+        for call in &tool_calls {
             let result =
                 execute_pipeline_tool_call(modules, &call, &tool_map, tools_config, &ctx).await;
             if turn_is_interrupted(turn) {
@@ -124,7 +137,7 @@ pub(super) async fn run_llm_tool_loop(
                 &result,
                 Some((channel_id, user_id_text)),
             );
-            messages.push(tool_result_message(&call.tool_name, result)?);
+            messages.push(tool_result_message(protocol, &call.tool_name, result)?);
         }
     }
 
@@ -149,20 +162,29 @@ pub(super) async fn select_tools_for_skill(
     allowed_names: &[String],
     user_text: &str,
     tools_config: &ToolsSection,
+    channel_id: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
     if allowed_names.is_empty() {
         return Ok(Vec::new());
     }
 
-    select_tools(modules, Some(allowed_names), user_text, tools_config).await
+    select_tools(
+        modules,
+        Some(allowed_names),
+        user_text,
+        tools_config,
+        channel_id,
+    )
+    .await
 }
 
 pub(super) async fn select_all_tools(
     modules: &ModuleRegistry,
     user_text: &str,
     tools_config: &ToolsSection,
+    channel_id: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
-    select_tools(modules, None, user_text, tools_config).await
+    select_tools(modules, None, user_text, tools_config, channel_id).await
 }
 
 async fn select_tools(
@@ -170,6 +192,7 @@ async fn select_tools(
     allowed_names: Option<&[String]>,
     user_text: &str,
     tools_config: &ToolsSection,
+    channel_id: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
     let all_tools = modules.tools.list_tools().await?;
     let skill_scoped = allowed_names.is_some();
@@ -208,6 +231,7 @@ async fn select_tools(
         user_text,
         tools_config.max_tools_per_turn,
         skill_scoped,
+        channel_id,
     );
     if selected.len() < total {
         tracing::debug!(
@@ -226,6 +250,7 @@ fn rank_and_limit_tools(
     user_text: &str,
     max_tools_per_turn: usize,
     skill_scoped: bool,
+    channel_id: &str,
 ) -> Vec<ToolDefinition> {
     if tools.is_empty() || max_tools_per_turn == 0 {
         return Vec::new();
@@ -241,7 +266,7 @@ fn rank_and_limit_tools(
         .into_iter()
         .enumerate()
         .map(|(index, tool)| {
-            let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped);
+            let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
             (score, index, tool)
         })
         .filter(|(score, _, _)| skill_scoped || *score > 0)
@@ -272,6 +297,7 @@ fn score_tool_candidate(
     query: &str,
     query_terms: &HashSet<String>,
     skill_scoped: bool,
+    channel_id: &str,
 ) -> i32 {
     let mut score = if skill_scoped { 1 } else { 0 };
     let name = tool.name.to_lowercase();
@@ -312,6 +338,15 @@ fn score_tool_candidate(
     if looks_like_arithmetic(query) && name == "calculate" {
         score += 18;
     }
+    if channel_id == "embedded" && name == "embedded_volume_control" {
+        score += 8;
+    }
+    if name == "embedded_volume_control" && looks_like_embedded_volume_request(query) {
+        score += 28;
+    }
+    if name == "device_control" && looks_like_embedded_volume_request(query) {
+        score -= 8;
+    }
 
     score
 }
@@ -341,8 +376,36 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "几点", "今天", "明天", "现在", "日期",
         ],
         "fetch" => &[
-            "fetch", "url", "http", "https", "website", "web", "page", "link", "download", "网页",
-            "链接", "网址", "访问", "抓取",
+            "fetch",
+            "url",
+            "http",
+            "https",
+            "website",
+            "web",
+            "page",
+            "link",
+            "download",
+            "search",
+            "lookup",
+            "look up",
+            "research",
+            "latest",
+            "current",
+            "news",
+            "网页",
+            "链接",
+            "网址",
+            "访问",
+            "抓取",
+            "搜索",
+            "查一下",
+            "查询",
+            "检索",
+            "查找",
+            "最新",
+            "新闻",
+            "资料",
+            "当前",
         ],
         "calculate" => &[
             "calculate",
@@ -423,6 +486,33 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "扬声器",
             "温度",
         ],
+        "embedded_volume_control" => &[
+            "embedded",
+            "pi",
+            "raspberry",
+            "mic",
+            "microphone",
+            "capture volume",
+            "speaker",
+            "playback volume",
+            "louder",
+            "quieter",
+            "volume",
+            "麦克风",
+            "话筒",
+            "拾音",
+            "收音",
+            "输入音量",
+            "喇叭",
+            "扬声器",
+            "播放音量",
+            "音量",
+            "声音",
+            "调大",
+            "调小",
+            "放大",
+            "小声",
+        ],
         "sensor_read" => &[
             "sensor",
             "temperature",
@@ -448,6 +538,34 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
         ],
         _ => &[],
     }
+}
+
+fn looks_like_embedded_volume_request(query: &str) -> bool {
+    let has_volume = [
+        "volume", "louder", "quieter", "音量", "声音", "调大", "调小", "放大", "小声",
+    ]
+    .iter()
+    .any(|hint| query.contains(hint));
+    let has_embedded_audio_target = [
+        "mic",
+        "microphone",
+        "speaker",
+        "capture",
+        "playback",
+        "pi",
+        "raspberry",
+        "embedded",
+        "麦克风",
+        "话筒",
+        "拾音",
+        "收音",
+        "扬声器",
+        "喇叭",
+    ]
+    .iter()
+    .any(|hint| query.contains(hint));
+
+    has_volume && has_embedded_audio_target
 }
 
 fn looks_like_arithmetic(query: &str) -> bool {
@@ -571,7 +689,38 @@ fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolC
     }
 }
 
-fn tool_result_message(tool_name: &str, result: ToolResult) -> anyhow::Result<ChatMessage> {
+fn tool_call_request_message(
+    protocol: ToolCallProtocol,
+    content: &str,
+    calls: &[LlmToolCall],
+) -> ChatMessage {
+    match protocol {
+        ToolCallProtocol::Native => ChatMessage {
+            role: "assistant".into(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: calls.to_vec(),
+            ..ChatMessage::default()
+        },
+        ToolCallProtocol::TextFallback => {
+            let names = calls
+                .iter()
+                .map(|call| call.tool_name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            ChatMessage::new(
+                "assistant",
+                format!("Tool call requested through text protocol: {names}"),
+            )
+        }
+    }
+}
+
+fn tool_result_message(
+    protocol: ToolCallProtocol,
+    tool_name: &str,
+    result: ToolResult,
+) -> anyhow::Result<ChatMessage> {
     let content = serde_json::to_string(&serde_json::json!({
         "tool": tool_name,
         "success": result.success,
@@ -579,13 +728,22 @@ fn tool_result_message(tool_name: &str, result: ToolResult) -> anyhow::Result<Ch
         "display": result.display,
     }))?;
 
-    Ok(ChatMessage {
-        role: "tool".into(),
-        content,
-        name: Some(tool_name.to_string()),
-        tool_call_id: Some(result.call_id),
-        ..ChatMessage::default()
-    })
+    match protocol {
+        ToolCallProtocol::Native => Ok(ChatMessage {
+            role: "tool".into(),
+            content,
+            name: Some(tool_name.to_string()),
+            tool_call_id: Some(result.call_id),
+            ..ChatMessage::default()
+        }),
+        ToolCallProtocol::TextFallback => Ok(ChatMessage::new(
+            "system",
+            format!(
+                "Tool result for text-protocol call `{}` (call_id `{}`): {}\nUse this result to answer the user. If confirmation is required, ask the user to confirm before claiming the action was done.",
+                tool_name, result.call_id, content
+            ),
+        )),
+    }
 }
 
 pub(super) fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
@@ -984,6 +1142,7 @@ mod tests {
             "what time is it now?",
             2,
             false,
+            "cli",
         );
 
         assert_eq!(selected.len(), 1);
@@ -1000,6 +1159,7 @@ mod tests {
             "tell me a bedtime story",
             8,
             false,
+            "cli",
         );
 
         assert!(selected.is_empty());
@@ -1016,6 +1176,7 @@ mod tests {
             "unrelated input",
             2,
             true,
+            "cli",
         );
 
         assert_eq!(selected.len(), 2);
@@ -1034,8 +1195,110 @@ mod tests {
             "KeQiao 非常喜欢日本音乐家 tsukuyomi",
             8,
             false,
+            "cli",
         );
 
         assert!(selected.iter().any(|tool| tool.name == "memory_store"));
+    }
+
+    #[test]
+    fn routes_embedded_mic_volume_to_embedded_volume_tool() {
+        let selected = rank_and_limit_tools(
+            vec![
+                tool("device_control", "Control smart home devices"),
+                tool(
+                    "embedded_volume_control",
+                    "Get or set microphone and speaker volume for an alia-embedded channel",
+                ),
+            ],
+            "把麦克风音量调整到2",
+            1,
+            false,
+            "embedded",
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].name, "embedded_volume_control");
+    }
+
+    #[test]
+    fn routes_search_language_to_fetch_candidate() {
+        let selected = rank_and_limit_tools(
+            vec![
+                tool("device_control", "Control smart home devices"),
+                tool("fetch", "Fetch a public HTTP URL"),
+            ],
+            "帮我搜索一下 sherpa onnx 最新版本",
+            8,
+            false,
+            "cli",
+        );
+
+        assert!(selected.iter().any(|tool| tool.name == "fetch"));
+    }
+
+    #[test]
+    fn native_tool_history_uses_normalized_call_ids() {
+        let call = normalize_tool_call(
+            &LlmToolCall {
+                id: String::new(),
+                tool_name: "device_control".to_string(),
+                arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
+            },
+            0,
+            0,
+        );
+        let request =
+            tool_call_request_message(ToolCallProtocol::Native, "", std::slice::from_ref(&call));
+        let result = tool_result_message(
+            ToolCallProtocol::Native,
+            "device_control",
+            ToolResult {
+                call_id: call.id.clone(),
+                success: false,
+                output: serde_json::json!({"requires_confirmation": true}),
+                display: Some("Please confirm".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.tool_calls[0].id, "call_0_0");
+        assert_eq!(result.role, "tool");
+        assert_eq!(result.tool_call_id.as_deref(), Some("call_0_0"));
+    }
+
+    #[test]
+    fn text_fallback_tool_history_does_not_use_native_tool_roles() {
+        let call = normalize_tool_call(
+            &LlmToolCall {
+                id: String::new(),
+                tool_name: "device_control".to_string(),
+                arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
+            },
+            0,
+            0,
+        );
+        let request = tool_call_request_message(
+            ToolCallProtocol::TextFallback,
+            "",
+            std::slice::from_ref(&call),
+        );
+        let result = tool_result_message(
+            ToolCallProtocol::TextFallback,
+            "device_control",
+            ToolResult {
+                call_id: call.id,
+                success: false,
+                output: serde_json::json!({"requires_confirmation": true}),
+                display: Some("Please confirm".to_string()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.role, "assistant");
+        assert!(request.tool_calls.is_empty());
+        assert_eq!(result.role, "system");
+        assert!(result.tool_call_id.is_none());
+        assert!(result.content.contains("requires_confirmation"));
     }
 }

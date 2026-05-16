@@ -532,7 +532,8 @@ async fn process_text(
             });
 
             let tools =
-                select_tools_for_skill(modules, &resolution.tools, text, tools_config).await?;
+                select_tools_for_skill(modules, &resolution.tools, text, tools_config, channel_id)
+                    .await?;
             if !tools.is_empty() {
                 debug_component_tools(
                     debug_output,
@@ -658,7 +659,7 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tools = select_all_tools(modules, text, tools_config).await?;
+            let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
             if !tools.is_empty() {
                 debug_component_tools(
                     debug_output,
