@@ -41,6 +41,10 @@ capture_backend = "auto"
 capture_device = "default"
 capture_sample_rate = 16000
 capture_channels = 1
+# Runtime volume defaults. Live values are persisted in embedded SQLite and can
+# be changed over gRPC without restarting. Values are linear gain, where 1.0 is
+# unchanged and values above 1.0 amplify with clipping protection.
+capture_volume = 1.0
 # Set `capture_backend` / `playback_backend` to `alsa` to skip CPAL entirely on
 # Linux boards with fixed I2S/I2C audio devices. `auto` also switches to ALSA
 # immediately when the device name uses ALSA syntax like `alsa:plughw:0,0`.
@@ -48,6 +52,7 @@ playback_backend = "auto"
 playback_device = "default"
 playback_sample_rate = 24000
 playback_channels = 1
+playback_volume = 1.0
 playback_buffer_ms = 60
 # Playback queue tuning. Keep the target cushion small for lower latency, and
 # let the max cap guard against runaway buffering when the network outruns the

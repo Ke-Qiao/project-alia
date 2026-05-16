@@ -163,6 +163,7 @@ impl ServerBuilder {
     pub async fn build(self) -> anyhow::Result<AppState> {
         // Create sensor registry early so tools and modules can reference it
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
+        let channel_registry = Arc::new(ChannelRegistry::new());
 
         let base_ctx = ModuleContext {
             db: self.db.clone(),
@@ -228,7 +229,11 @@ impl ServerBuilder {
         });
 
         let mut tools = self.tools.unwrap_or_else(|| {
-            factory::create_tools_with_sensors(&self.config.modules.tools, sensor_registry.clone())
+            factory::create_tools_with_sensors(
+                &self.config.modules.tools,
+                sensor_registry.clone(),
+                channel_registry.clone(),
+            )
         });
 
         // Initialize scheduler early so other modules can reference it
@@ -283,7 +288,6 @@ impl ServerBuilder {
         }
 
         // Initialize channels from config + explicit with_channel() calls
-        let channel_registry = ChannelRegistry::new();
         // Create channels from [[channels]] config
         for ch_cfg in &self.config.channels {
             if !ch_cfg.enabled() {
@@ -292,13 +296,12 @@ impl ServerBuilder {
             }
             let channel: Box<dyn ChannelAdapter> =
                 factory::create_channel(ch_cfg, self.event_bus.clone());
-            register_initialized_channel(channel, &ctx, &channel_registry).await;
+            register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
         }
         // Register explicitly added channels
         for channel in self.channels {
-            register_initialized_channel(channel, &ctx, &channel_registry).await;
+            register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
         }
-        let channel_registry = Arc::new(channel_registry);
 
         // Build registry
         let registry = ModuleRegistry {

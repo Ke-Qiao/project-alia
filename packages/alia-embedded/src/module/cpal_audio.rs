@@ -26,6 +26,7 @@ use crate::config::{AudioBackend, AudioConfig};
 use super::context::{AudioBus, AudioFrame};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{AudioCaptureBackend, AudioPlaybackBackend};
+use super::volume::{AudioVolumeState, apply_gain_in_place};
 
 #[cfg(target_os = "linux")]
 mod alsa_backend;
@@ -33,15 +34,17 @@ mod cpal_backend;
 
 pub struct CpalAudioCapture {
     config: AudioConfig,
+    volume: AudioVolumeState,
     control_tx: Mutex<Option<mpsc::Sender<()>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
     active: AtomicBool,
 }
 
 impl CpalAudioCapture {
-    pub fn new(config: AudioConfig) -> Self {
+    pub fn new(config: AudioConfig, volume: AudioVolumeState) -> Self {
         Self {
             config,
+            volume,
             control_tx: Mutex::new(None),
             thread: Mutex::new(None),
             active: AtomicBool::new(false),
@@ -78,12 +81,13 @@ impl AudioCaptureBackend for CpalAudioCapture {
         let (control_tx, control_rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let config = self.config.clone();
+        let volume = self.volume.clone();
         let bus = bus.clone();
 
         let handle = thread::Builder::new()
             .name("alia-cpal-capture".to_string())
             .spawn(move || {
-                let result = run_capture_thread(config, bus, control_rx, ready_tx);
+                let result = run_capture_thread(config, bus, control_rx, ready_tx, volume);
                 if let Err(error) = result {
                     error!(%error, "cpal capture thread stopped with error");
                 }
@@ -155,15 +159,17 @@ impl AudioCaptureBackend for CpalAudioCapture {
 
 pub struct CpalAudioPlayback {
     config: AudioConfig,
+    volume: AudioVolumeState,
     command_tx: Mutex<Option<mpsc::SyncSender<PlaybackCommand>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
     active: AtomicBool,
 }
 
 impl CpalAudioPlayback {
-    pub fn new(config: AudioConfig) -> Self {
+    pub fn new(config: AudioConfig, volume: AudioVolumeState) -> Self {
         Self {
             config,
+            volume,
             command_tx: Mutex::new(None),
             thread: Mutex::new(None),
             active: AtomicBool::new(false),
@@ -180,11 +186,12 @@ impl CpalAudioPlayback {
             mpsc::sync_channel(playback_command_queue_capacity(&self.config));
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let config = self.config.clone();
+        let volume = self.volume.clone();
 
         let handle = thread::Builder::new()
             .name("alia-cpal-playback".to_string())
             .spawn(move || {
-                let result = run_playback_thread(config, command_rx, ready_tx);
+                let result = run_playback_thread(config, command_rx, ready_tx, volume);
                 if let Err(error) = result {
                     error!(%error, "cpal playback thread stopped with error");
                 }
@@ -349,6 +356,7 @@ fn run_capture_thread(
     bus: AudioBus,
     control_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
+    volume: AudioVolumeState,
 ) -> Result<()> {
     if matches!(
         resolved_capture_backend(&config),
@@ -356,7 +364,14 @@ fn run_capture_thread(
     ) {
         #[cfg(target_os = "linux")]
         if let Some(alsa_device) = resolved_alsa_capture_device(&config) {
-            return run_alsa_capture_thread(config, bus, control_rx, ready_tx, &alsa_device);
+            return run_alsa_capture_thread(
+                config,
+                bus,
+                control_rx,
+                ready_tx,
+                &alsa_device,
+                volume,
+            );
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -366,7 +381,7 @@ fn run_capture_thread(
         }
     }
 
-    let started = cpal_backend::start_cpal_capture_runtime(&config, bus.clone());
+    let started = cpal_backend::start_cpal_capture_runtime(&config, bus.clone(), volume.clone());
 
     let stream = match started {
         Ok(stream) => {
@@ -387,6 +402,7 @@ fn run_capture_thread(
                     control_rx,
                     ready_tx,
                     &alsa_device,
+                    volume,
                 );
             }
 
@@ -409,6 +425,7 @@ fn run_alsa_capture_thread(
     control_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     alsa_device: &str,
+    volume: AudioVolumeState,
 ) -> Result<()> {
     let started = start_alsa_capture_runtime(&config, alsa_device);
     let (pcm, input_sample_rate, input_channels, chunk_frames, sample_format) = match started {
@@ -504,10 +521,11 @@ fn run_alsa_capture_thread(
             continue;
         }
 
-        let pcm = captured_pcm;
+        let mut pcm = captured_pcm;
         if pcm.is_empty() {
             continue;
         }
+        apply_gain_in_place(&mut pcm, volume.capture_volume());
 
         let frames = (pcm.len() / target_channels.max(1)) as u64;
         let start_frame = emitted_frames;
@@ -613,6 +631,7 @@ fn run_playback_thread(
     config: AudioConfig,
     command_rx: mpsc::Receiver<PlaybackCommand>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
+    volume: AudioVolumeState,
 ) -> Result<()> {
     if matches!(
         resolved_playback_backend(&config),
@@ -625,6 +644,7 @@ fn run_playback_thread(
                 command_rx,
                 ready_tx,
                 &alsa_device,
+                volume,
             );
         }
 
@@ -657,6 +677,7 @@ fn run_playback_thread(
                     command_rx,
                     ready_tx,
                     &alsa_device,
+                    volume,
                 );
             }
 
@@ -693,8 +714,9 @@ fn run_playback_thread(
 
         match command {
             PlaybackCommand::Play { pcm, sample_rate } => {
-                let rendered =
+                let mut rendered =
                     render_playback_pcm(&pcm, sample_rate, output_sample_rate, output_channels);
+                apply_gain_in_place(&mut rendered, volume.playback_volume());
                 let mut buffer = lock_mutex(&buffer, "playback buffer")?;
                 buffer.extend(rendered);
                 clamp_playback_buffer(

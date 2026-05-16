@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use crate::channels::ChannelRegistry;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::cli::CliChannel;
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
+#[cfg(feature = "channel-embedded")]
+use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
 use crate::config::ChannelConfig;
 use crate::event::EventBus;
 use crate::providers::adapter::{
@@ -305,6 +308,7 @@ pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
 pub fn create_tools_with_sensors(
     name: &str,
     sensors: Arc<SensorRegistry>,
+    channels: Arc<ChannelRegistry>,
 ) -> Box<dyn ToolRegistry> {
     match name {
         "builtin" => {
@@ -312,7 +316,12 @@ pub fn create_tools_with_sensors(
                 module = name,
                 "creating tool registry with sensors (BuiltinToolRegistry)"
             );
-            Box::new(BuiltinToolRegistry::with_sensors(sensors))
+            let mut registry = BuiltinToolRegistry::with_sensors(sensors);
+            #[cfg(feature = "channel-embedded")]
+            registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
+            #[cfg(not(feature = "channel-embedded"))]
+            let _ = channels;
+            Box::new(registry)
         }
         _ => create_tools(name),
     }

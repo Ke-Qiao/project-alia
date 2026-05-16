@@ -7,13 +7,16 @@ use uuid::Uuid;
 use alia_proto::settings::embedded_settings_server::EmbeddedSettings as EmbeddedSettingsTrait;
 use alia_proto::settings::{
     DeleteDirectResponseRequest, DeleteDirectResponseResponse, DirectResponseAudioVariant,
-    DirectResponseList, DirectResponseRule, SettingsSnapshot as ProtoSettingsSnapshot,
-    UpdateSettingsRequest,
+    DirectResponseList, DirectResponseRule, SetVolumeRequest,
+    SettingsSnapshot as ProtoSettingsSnapshot, UpdateSettingsRequest, VolumeSettings,
 };
 
 use super::auth::require_auth_if_bound;
 use crate::binding::BindingManager;
 use crate::module::traits::DiscoveryBackend;
+use crate::module::volume::{
+    AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState, MAX_AUDIO_VOLUME, MIN_AUDIO_VOLUME,
+};
 use crate::plugin::PluginRegistry;
 use crate::settings::{EmbeddedSettingsManager, SettingsSnapshot};
 use crate::storage::{DirectResponseAudioRecord, DirectResponseRuleRecord, EmbeddedStore};
@@ -22,6 +25,7 @@ pub struct EmbeddedSettingsService {
     binding: Arc<BindingManager>,
     settings: Arc<EmbeddedSettingsManager>,
     state_store: EmbeddedStore,
+    volume: AudioVolumeState,
     discovery: Arc<dyn DiscoveryBackend>,
     plugins: Arc<PluginRegistry>,
 }
@@ -31,6 +35,7 @@ impl EmbeddedSettingsService {
         binding: Arc<BindingManager>,
         settings: Arc<EmbeddedSettingsManager>,
         state_store: EmbeddedStore,
+        volume: AudioVolumeState,
         discovery: Arc<dyn DiscoveryBackend>,
         plugins: Arc<PluginRegistry>,
     ) -> Self {
@@ -38,6 +43,7 @@ impl EmbeddedSettingsService {
             binding,
             settings,
             state_store,
+            volume,
             discovery,
             plugins,
         }
@@ -77,8 +83,51 @@ impl EmbeddedSettingsTrait for EmbeddedSettingsService {
             .update_from_json(&request.get_ref().settings_json)
             .await
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        if let Some(volume) = volume_patch_from_settings_json(&request.get_ref().settings_json) {
+            let mut next = self.volume.get();
+            if let Some(capture_volume) = volume.capture_volume {
+                next.capture_volume = capture_volume;
+            }
+            if let Some(playback_volume) = volume.playback_volume {
+                next.playback_volume = playback_volume;
+            }
+            let next = self.volume.set(next);
+            self.state_store
+                .save_json(AUDIO_VOLUME_STATE_KEY, &next)
+                .await
+                .map_err(|error| Status::internal(error.to_string()))?;
+        }
         self.refresh_discovery_metadata().await;
         build_response(snapshot).map(Response::new)
+    }
+
+    async fn get_volume(&self, request: Request<()>) -> Result<Response<VolumeSettings>, Status> {
+        require_auth_if_bound(&self.binding, &request).await?;
+        Ok(Response::new(volume_to_proto(self.volume.get())))
+    }
+
+    async fn set_volume(
+        &self,
+        request: Request<SetVolumeRequest>,
+    ) -> Result<Response<VolumeSettings>, Status> {
+        require_auth_if_bound(&self.binding, &request).await?;
+        let request = request.into_inner();
+        let mut next = self.volume.get();
+
+        if request.set_capture_volume {
+            next.capture_volume = request.capture_volume;
+        }
+        if request.set_playback_volume {
+            next.playback_volume = request.playback_volume;
+        }
+
+        let next = self.volume.set(next);
+        self.state_store
+            .save_json(AUDIO_VOLUME_STATE_KEY, &next)
+            .await
+            .map_err(|error| Status::internal(error.to_string()))?;
+
+        Ok(Response::new(volume_to_proto(next)))
     }
 
     async fn list_direct_responses(
@@ -137,6 +186,38 @@ impl EmbeddedSettingsTrait for EmbeddedSettingsService {
             requires_restart: true,
         }))
     }
+}
+
+fn volume_to_proto(volume: AudioVolumeConfig) -> VolumeSettings {
+    VolumeSettings {
+        capture_volume: volume.capture_volume,
+        playback_volume: volume.playback_volume,
+        min_volume: MIN_AUDIO_VOLUME,
+        max_volume: MAX_AUDIO_VOLUME,
+    }
+}
+
+struct VolumePatch {
+    capture_volume: Option<f32>,
+    playback_volume: Option<f32>,
+}
+
+fn volume_patch_from_settings_json(settings_json: &str) -> Option<VolumePatch> {
+    let patch = serde_json::from_str::<serde_json::Value>(settings_json).ok()?;
+    let audio = patch.get("audio")?;
+    let capture_volume = audio
+        .get("capture_volume")
+        .and_then(serde_json::Value::as_f64)
+        .map(|value| value as f32);
+    let playback_volume = audio
+        .get("playback_volume")
+        .and_then(serde_json::Value::as_f64)
+        .map(|value| value as f32);
+
+    (capture_volume.is_some() || playback_volume.is_some()).then_some(VolumePatch {
+        capture_volume,
+        playback_volume,
+    })
 }
 
 fn build_response(snapshot: SettingsSnapshot) -> Result<ProtoSettingsSnapshot, Status> {

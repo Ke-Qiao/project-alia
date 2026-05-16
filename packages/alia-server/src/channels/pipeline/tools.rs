@@ -44,6 +44,7 @@ pub(super) async fn run_llm_tool_loop(
         user_id,
         conversation_id: session_id,
         source: "ai".to_string(),
+        channel_id: Some(channel_id.to_string()),
     };
     let max_depth = tools_config.max_tool_call_depth.max(1);
 

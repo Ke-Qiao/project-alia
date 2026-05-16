@@ -14,6 +14,7 @@ use super::noop::*;
 #[cfg(feature = "sherpa-onnx")]
 use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt, SherpaOnnxVad};
 use super::traits::*;
+use super::volume::AudioVolumeState;
 
 /// Create the wake word engine based on config.
 pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
@@ -87,18 +88,30 @@ fn create_sherpa_vad(_config: &EmbeddedConfig) -> Result<Box<dyn VoiceActivityEn
 }
 
 /// Create the audio capture backend based on config.
-pub fn create_audio_capture(config: &EmbeddedConfig) -> Result<Box<dyn AudioCaptureBackend>> {
+pub fn create_audio_capture(
+    config: &EmbeddedConfig,
+    volume: AudioVolumeState,
+) -> Result<Box<dyn AudioCaptureBackend>> {
     match config.modules.audio_capture.as_str() {
-        "cpal" => Ok(Box::new(CpalAudioCapture::new(config.audio.clone()))),
+        "cpal" => Ok(Box::new(CpalAudioCapture::new(
+            config.audio.clone(),
+            volume,
+        ))),
         "noop" => Ok(Box::new(NoopAudioCapture)),
         other => bail!("unknown audio_capture backend: {other}"),
     }
 }
 
 /// Create the audio playback backend based on config.
-pub fn create_audio_playback(config: &EmbeddedConfig) -> Result<Box<dyn AudioPlaybackBackend>> {
+pub fn create_audio_playback(
+    config: &EmbeddedConfig,
+    volume: AudioVolumeState,
+) -> Result<Box<dyn AudioPlaybackBackend>> {
     match config.modules.audio_playback.as_str() {
-        "cpal" => Ok(Box::new(CpalAudioPlayback::new(config.audio.clone()))),
+        "cpal" => Ok(Box::new(CpalAudioPlayback::new(
+            config.audio.clone(),
+            volume,
+        ))),
         "noop" => Ok(Box::new(NoopAudioPlayback)),
         other => bail!("unknown audio_playback backend: {other}"),
     }

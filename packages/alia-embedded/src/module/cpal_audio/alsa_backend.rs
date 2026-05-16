@@ -20,6 +20,7 @@ pub(super) fn run_alsa_capture_thread(
     control_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     alsa_device: &str,
+    volume: AudioVolumeState,
 ) -> Result<()> {
     let started = start_alsa_capture_runtime(&config, alsa_device);
     let (pcm, input_sample_rate, input_channels, chunk_frames, sample_format) = match started {
@@ -115,10 +116,11 @@ pub(super) fn run_alsa_capture_thread(
             continue;
         }
 
-        let pcm = captured_pcm;
+        let mut pcm = captured_pcm;
         if pcm.is_empty() {
             continue;
         }
+        apply_gain_in_place(&mut pcm, volume.capture_volume());
 
         let frames = (pcm.len() / target_channels.max(1)) as u64;
         let start_frame = emitted_frames;
@@ -224,6 +226,7 @@ pub(super) fn run_alsa_playback_thread(
     command_rx: mpsc::Receiver<PlaybackCommand>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     alsa_device: &str,
+    volume: AudioVolumeState,
 ) -> Result<()> {
     let started = create_alsa_playback_runtime(&config, alsa_device, None);
     let mut runtime = match started {
@@ -246,7 +249,14 @@ pub(super) fn run_alsa_playback_thread(
                 Ok(command) => command,
                 Err(_) => break,
             };
-            if apply_playback_command(command, &mut buffer, &mut runtime, &config, alsa_device)? {
+            if apply_playback_command(
+                command,
+                &mut buffer,
+                &mut runtime,
+                &config,
+                alsa_device,
+                &volume,
+            )? {
                 break;
             }
             continue;
@@ -266,6 +276,7 @@ pub(super) fn run_alsa_playback_thread(
                         &mut runtime,
                         &config,
                         alsa_device,
+                        &volume,
                     )? {
                         let _ = runtime.pcm.drop();
                         info!("stopped ALSA audio playback");
@@ -394,6 +405,7 @@ fn apply_playback_command(
     runtime: &mut AlsaPlaybackRuntime,
     config: &AudioConfig,
     alsa_device: &str,
+    volume: &AudioVolumeState,
 ) -> Result<bool> {
     match command {
         PlaybackCommand::Play {
@@ -427,12 +439,13 @@ fn apply_playback_command(
                 );
             }
 
-            let rendered = render_playback_pcm(
+            let mut rendered = render_playback_pcm(
                 &input,
                 sample_rate,
                 runtime.output_sample_rate,
                 runtime.output_channels,
             );
+            apply_gain_in_place(&mut rendered, volume.playback_volume());
             buffer.extend(rendered);
             clamp_playback_buffer(
                 buffer,

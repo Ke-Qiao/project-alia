@@ -24,6 +24,7 @@ use super::noop::{
 use super::registry::EmbeddedModuleRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
+use super::volume::{AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState};
 
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
@@ -35,6 +36,7 @@ pub struct EmbeddedNode {
     pub binding_manager: Arc<BindingManager>,
     pub settings_manager: Arc<EmbeddedSettingsManager>,
     pub state_store: EmbeddedStore,
+    pub volume_state: AudioVolumeState,
     pub event_bus: EventBus,
 }
 
@@ -85,6 +87,7 @@ impl EmbeddedNode {
             self.binding_manager.clone(),
             self.settings_manager.clone(),
             self.state_store.clone(),
+            self.volume_state.clone(),
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
         ));
@@ -218,6 +221,30 @@ impl EmbeddedBuilder {
             cancel_token: self.cancel_token.clone(),
             audio_bus,
         };
+        let volume_config = match state_store
+            .load_json::<AudioVolumeConfig>(AUDIO_VOLUME_STATE_KEY)
+            .await
+        {
+            Ok(Some(value)) => value.sanitized(),
+            Ok(None) => {
+                let value = AudioVolumeConfig::from_audio_config(&config.audio);
+                if let Err(error) = state_store.save_json(AUDIO_VOLUME_STATE_KEY, &value).await {
+                    warn!(
+                        error = %error,
+                        "failed to persist default audio volume; continuing with config defaults"
+                    );
+                }
+                value
+            }
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    "failed to load persisted audio volume; using config defaults"
+                );
+                AudioVolumeConfig::from_audio_config(&config.audio)
+            }
+        };
+        let volume_state = AudioVolumeState::new(volume_config);
 
         // Resolve modules: use overrides or fall back to factory
         let mut wakeword: Box<dyn WakeWordEngine> = match self.wakeword {
@@ -250,17 +277,21 @@ impl EmbeddedBuilder {
         };
         let mut audio_capture: Box<dyn AudioCaptureBackend> = match self.audio_capture {
             Some(m) => m,
-            None => factory::create_audio_capture(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "audio capture module creation failed; using noop");
-                Box::new(NoopAudioCapture)
-            }),
+            None => factory::create_audio_capture(&config, volume_state.clone()).unwrap_or_else(
+                |error| {
+                    warn!(error = ?error, "audio capture module creation failed; using noop");
+                    Box::new(NoopAudioCapture)
+                },
+            ),
         };
         let mut audio_playback: Box<dyn AudioPlaybackBackend> = match self.audio_playback {
             Some(m) => m,
-            None => factory::create_audio_playback(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "audio playback module creation failed; using noop");
-                Box::new(NoopAudioPlayback)
-            }),
+            None => factory::create_audio_playback(&config, volume_state.clone()).unwrap_or_else(
+                |error| {
+                    warn!(error = ?error, "audio playback module creation failed; using noop");
+                    Box::new(NoopAudioPlayback)
+                },
+            ),
         };
         let mut mixer: Box<dyn AudioMixer> = match self.mixer {
             Some(m) => m,
@@ -424,6 +455,7 @@ impl EmbeddedBuilder {
             binding_manager,
             settings_manager,
             state_store: ctx.state_store.clone(),
+            volume_state,
             event_bus: ctx.event_bus.clone(),
         })
     }

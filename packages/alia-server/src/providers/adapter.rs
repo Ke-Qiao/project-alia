@@ -578,6 +578,7 @@ pub struct ToolContext {
     pub user_id: Uuid,
     pub conversation_id: Option<Uuid>,
     pub source: String, // "ai" | "manual" | "scheduler"
+    pub channel_id: Option<String>,
 }
 
 #[async_trait]

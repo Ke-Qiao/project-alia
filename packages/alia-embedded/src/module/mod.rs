@@ -11,5 +11,6 @@ pub mod registry;
 pub mod sherpa;
 pub mod speech;
 pub mod traits;
+pub mod volume;
 
 pub use builder::EmbeddedBuilder;

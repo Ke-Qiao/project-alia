@@ -80,8 +80,11 @@ impl ModuleLifecycle for SpeechPipeline {
 
     async fn start(&self) -> Result<()> {
         let mut task = self.task.lock().await;
-        if task.is_some() {
+        if task.as_ref().is_some_and(|task| !task.is_finished()) {
             return Ok(());
+        }
+        if task.take().is_some() {
+            warn!("speech pipeline task had stopped; restarting");
         }
 
         let mut rx = self.audio_bus.subscribe();
@@ -188,6 +191,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                     max_duration_ms,
                                 )
                                 .await;
+                                rx = rx.resubscribe();
                             }
                             continue;
                         }
@@ -273,7 +277,13 @@ impl ModuleLifecycle for SpeechPipeline {
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        if self.task.lock().await.is_some() {
+        if self
+            .task
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
+        {
             ModuleHealth::Healthy
         } else {
             ModuleHealth::Degraded

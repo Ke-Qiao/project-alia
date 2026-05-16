@@ -64,6 +64,7 @@ async fn execute_tool(
         user_id: auth.id,
         conversation_id: None,
         source: "manual".to_string(),
+        channel_id: None,
     };
 
     let result = state.modules.tools.execute(call, &ctx).await?;

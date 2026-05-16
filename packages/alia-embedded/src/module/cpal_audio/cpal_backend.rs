@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) -> Result<Stream> {
+pub(super) fn start_cpal_capture_runtime(
+    config: &AudioConfig,
+    bus: AudioBus,
+    volume: AudioVolumeState,
+) -> Result<Stream> {
     let host = cpal::default_host();
     let device = select_input_device(&host, &config.capture_device)?;
     let selected = select_stream_config(
@@ -35,6 +39,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::I16 => build_input_stream::<i16>(
@@ -43,6 +48,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::I32 => build_input_stream::<i32>(
@@ -51,6 +57,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::I64 => build_input_stream::<i64>(
@@ -59,6 +66,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::U8 => build_input_stream::<u8>(
@@ -67,6 +75,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::U16 => build_input_stream::<u16>(
@@ -75,6 +84,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::U32 => build_input_stream::<u32>(
@@ -83,6 +93,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::U64 => build_input_stream::<u64>(
@@ -91,6 +102,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::F32 => build_input_stream::<f32>(
@@ -99,6 +111,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         SampleFormat::F64 => build_input_stream::<f64>(
@@ -107,6 +120,7 @@ pub(super) fn start_cpal_capture_runtime(config: &AudioConfig, bus: AudioBus) ->
             converter,
             bus,
             emitted_frames,
+            volume,
             err_fn,
         )?,
         _ => bail!(
@@ -206,6 +220,7 @@ fn build_input_stream<T>(
     converter: Arc<Mutex<CaptureConverter>>,
     bus: AudioBus,
     emitted_frames: Arc<AtomicU64>,
+    volume: AudioVolumeState,
     err_fn: impl Fn(cpal::StreamError) + Send + 'static,
 ) -> Result<Stream>
 where
@@ -225,7 +240,7 @@ where
         .build_input_stream(
             config,
             move |data: &[T], _| {
-                let pcm = match converter.lock() {
+                let mut pcm = match converter.lock() {
                     Ok(mut converter) => converter.convert(data),
                     Err(error) => {
                         warn!(%error, "capture converter lock poisoned");
@@ -235,6 +250,7 @@ where
                 if pcm.is_empty() {
                     return;
                 }
+                apply_gain_in_place(&mut pcm, volume.capture_volume());
                 let frames = (pcm.len() / channels.max(1)) as u64;
                 let start_frame = emitted_frames.fetch_add(frames, Ordering::Relaxed);
                 let peak = pcm

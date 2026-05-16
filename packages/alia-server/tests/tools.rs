@@ -13,6 +13,7 @@ async fn test_get_current_time() {
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
+        channel_id: None,
     };
 
     let result = tool
@@ -32,6 +33,7 @@ async fn test_calculate_expression() {
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
+        channel_id: None,
     };
 
     let result = tool
@@ -50,6 +52,7 @@ async fn test_calculate_rejects_division_by_zero() {
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
+        channel_id: None,
     };
 
     let result = tool

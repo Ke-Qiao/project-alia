@@ -376,6 +376,8 @@ pub struct AudioConfig {
     pub capture_sample_rate: u32,
     #[serde(default = "default_channels")]
     pub capture_channels: u16,
+    #[serde(default = "default_audio_volume")]
+    pub capture_volume: f32,
 
     #[serde(default)]
     pub playback_backend: AudioBackend,
@@ -386,6 +388,8 @@ pub struct AudioConfig {
     pub playback_sample_rate: u32,
     #[serde(default = "default_channels")]
     pub playback_channels: u16,
+    #[serde(default = "default_audio_volume")]
+    pub playback_volume: f32,
     #[serde(default = "default_playback_buffer_ms")]
     pub playback_buffer_ms: u32,
     #[serde(default = "default_playback_target_buffer_ms")]
@@ -419,10 +423,12 @@ impl Default for AudioConfig {
             capture_device: default_device(),
             capture_sample_rate: default_capture_sample_rate(),
             capture_channels: default_channels(),
+            capture_volume: default_audio_volume(),
             playback_backend: AudioBackend::default(),
             playback_device: default_device(),
             playback_sample_rate: default_playback_sample_rate(),
             playback_channels: default_channels(),
+            playback_volume: default_audio_volume(),
             playback_buffer_ms: default_playback_buffer_ms(),
             playback_target_buffer_ms: default_playback_target_buffer_ms(),
             playback_max_buffer_ms: default_playback_max_buffer_ms(),
@@ -448,6 +454,9 @@ fn default_playback_sample_rate() -> u32 {
 }
 fn default_channels() -> u16 {
     1
+}
+fn default_audio_volume() -> f32 {
+    1.0
 }
 fn default_playback_buffer_ms() -> u32 {
     60
