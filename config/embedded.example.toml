@@ -11,6 +11,7 @@
 # - [edge_stt]
 # - [vad]
 # - [interrupt]
+# - [continuous_dialogue]
 # - [discovery]
 
 [runtime]
@@ -92,7 +93,7 @@ max_duration_ms = 15000
 # Do not accept a VAD endpoint before this minimum capture duration.
 post_wake_min_capture_ms = 1800
 post_wake_capture_ms = 2500
-post_wake_response_delay_ms = 700
+post_wake_response_delay_ms = 500
 
 [vad]
 model_path = "models/silero-vad/silero_vad.onnx"
@@ -111,6 +112,15 @@ debug = false
 interrupt_on_wakeword_during_playback = true
 interrupt_skip_direct_response = true
 interrupt_debounce_ms = 300
+
+[continuous_dialogue]
+# After one wake word, keep listening after each assistant reply so the user can
+# continue without repeating the wake word. Follow-up capture starts only after
+# VAD hears speech; silence just keeps the listening window open until timeout.
+enabled = true
+followup_timeout_ms = 10000
+# 0 means unlimited; a small cap avoids accidentally staying active forever.
+max_followup_turns = 6
 
 [direct_response_defaults]
 audio_dir = "run/direct-responses"

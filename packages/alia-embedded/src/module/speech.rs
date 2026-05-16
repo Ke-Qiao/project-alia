@@ -1,27 +1,36 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alia_proto::audio::server_audio_ingress_client::ServerAudioIngressClient;
-use alia_proto::audio::{
-    AudioChunk, AudioEncoding, CapturedAudioChunk, InterruptActiveTurnRequest,
-};
-use anyhow::{Context, Result, bail};
-use futures::stream;
+use anyhow::Result;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+mod capture;
+mod continuous;
+mod responses;
+mod transport;
+mod utterance;
+
+use capture::{PendingSpeechCapture, SpeechCapture, prepare_vad_for_capture};
+use continuous::ContinuousDialogueState;
+use responses::{
+    ACTION_LISTENING_CONTINUE, ACTION_LISTENING_START, ACTION_WAKEWORD,
+    play_direct_response_action, play_direct_response_action_or_keyword,
+};
+use transport::interrupt_server_active_turn;
+use utterance::{UtteranceOutcome, handle_utterance};
+
 use super::audio_debug::AudioDebugRecorder;
-use super::context::{AudioBus, AudioFrame, EventBus, ModuleEvent};
+use super::context::{AudioBus, EventBus, ModuleEvent};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{
     AudioPlaybackBackend, DirectResponseEngine, EdgeSttEngine, VoiceActivityEngine,
-    VoiceActivityState, WakeWordEngine, WakeWordEvent,
+    VoiceActivityState, WakeWordEngine,
 };
 use crate::binding::BindingManager;
-use crate::config::{EdgeSttConfig, InterruptConfig};
+use crate::config::{ContinuousDialogueConfig, EdgeSttConfig, InterruptConfig};
 
 pub struct SpeechPipeline {
     audio_bus: AudioBus,
@@ -38,6 +47,7 @@ pub struct SpeechPipeline {
     post_wake_min_capture_ms: u32,
     post_wake_response_delay_ms: u32,
     interrupt_config: InterruptConfig,
+    continuous_config: ContinuousDialogueConfig,
     cancel_token: CancellationToken,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -54,6 +64,7 @@ impl SpeechPipeline {
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
         interrupt_config: &InterruptConfig,
+        continuous_config: &ContinuousDialogueConfig,
         audio_debug: AudioDebugRecorder,
         cancel_token: CancellationToken,
     ) -> Self {
@@ -72,6 +83,7 @@ impl SpeechPipeline {
             post_wake_min_capture_ms: edge_stt_config.post_wake_min_capture_ms,
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
             interrupt_config: interrupt_config.clone(),
+            continuous_config: continuous_config.clone(),
             cancel_token,
             task: Mutex::new(None),
         }
@@ -108,11 +120,13 @@ impl ModuleLifecycle for SpeechPipeline {
         let post_wake_min_capture_ms = self.post_wake_min_capture_ms;
         let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
         let interrupt_config = self.interrupt_config.clone();
+        let continuous_config = self.continuous_config.clone();
         let cancel = self.cancel_token.child_token();
 
         *task = Some(tokio::spawn(async move {
             let mut capture: Option<SpeechCapture> = None;
-            let mut pending_wakeword: Option<WakeWordEvent> = None;
+            let mut pending_capture: Option<PendingSpeechCapture> = None;
+            let mut continuous = ContinuousDialogueState::new(continuous_config);
             let mut playback_active = false;
             let mut last_interrupt_at_us = 0u64;
 
@@ -121,8 +135,18 @@ impl ModuleLifecycle for SpeechPipeline {
                     _ = cancel.cancelled() => break,
                     event = event_rx.recv() => {
                         match event {
-                            Ok(ModuleEvent::PlaybackStarted { .. }) => playback_active = true,
-                            Ok(ModuleEvent::PlaybackFinished { .. }) => playback_active = false,
+                            Ok(ModuleEvent::PlaybackStarted { source }) => {
+                                playback_active = true;
+                                if is_assistant_playback_source(&source) {
+                                    continuous.mark_assistant_speaking();
+                                }
+                            }
+                            Ok(ModuleEvent::PlaybackFinished { source }) => {
+                                playback_active = false;
+                                if is_assistant_playback_source(&source) {
+                                    continuous.schedule_followup();
+                                }
+                            }
                             Ok(_) => {}
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                                 debug!(skipped, "speech pipeline lagged behind module event bus");
@@ -141,32 +165,98 @@ impl ModuleLifecycle for SpeechPipeline {
                         };
                         audio_debug.record_capture_frame(&frame).await;
 
-                        if let Some(event) = pending_wakeword.take() {
+                        if capture.is_none() && pending_capture.is_none() {
+                            if continuous.start_followup_if_scheduled(frame.timestamp_us) {
+                                if prepare_vad_for_capture(vad.as_ref()) {
+                                    info!("continuous dialogue follow-up listening started");
+                                    debug!(
+                                        timeout_ms = continuous.followup_timeout_ms(),
+                                        max_followup_turns = continuous.max_followup_turns(),
+                                        "continuous dialogue follow-up listening started"
+                                    );
+                                    play_direct_response_action(
+                                        ACTION_LISTENING_CONTINUE,
+                                        Arc::clone(&direct_response),
+                                        Arc::clone(&playback),
+                                        event_bus.clone(),
+                                        audio_debug.clone(),
+                                    )
+                                    .await;
+                                    rx = rx.resubscribe();
+                                    continue;
+                                } else {
+                                    continuous.end_session();
+                                    warn!("continuous dialogue follow-up requires VAD; ending session");
+                                }
+                            }
+
+                            if continuous.expire_if_needed(frame.timestamp_us) {
+                                info!("continuous dialogue session ended after follow-up timeout");
+                            }
+
+                            if continuous.is_followup_listening() && !playback_active {
+                                match vad.accept(&frame.pcm, frame.sample_rate) {
+                                    Ok(VoiceActivityState::Speech) => {
+                                        continuous.mark_followup_capture_started();
+                                        pending_capture = Some(PendingSpeechCapture::followup(
+                                            frame.timestamp_us,
+                                            VoiceActivityState::Speech,
+                                        ));
+                                    }
+                                    Ok(VoiceActivityState::Unavailable) => {
+                                        continuous.end_session();
+                                        warn!("continuous dialogue VAD became unavailable; ending session");
+                                    }
+                                    Ok(VoiceActivityState::Silence | VoiceActivityState::Finished) => {}
+                                    Err(error) => {
+                                        continuous.end_session();
+                                        warn!(error = %error, "continuous dialogue VAD failed; ending session");
+                                        debug!(error = ?error, "continuous dialogue VAD failure details");
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(pending) = pending_capture.take() {
                             event_bus.publish(ModuleEvent::SpeechStart);
-                            let vad_enabled = prepare_vad_for_capture(vad.as_ref());
-                            info!("started post-wake speech capture");
+                            let vad_enabled = if pending.reset_vad {
+                                prepare_vad_for_capture(vad.as_ref())
+                            } else {
+                                vad.is_available()
+                            };
+                            info!(
+                                origin = pending.origin.as_str(),
+                                "started speech capture"
+                            );
                             debug!(
-                                keyword = %event.keyword,
+                                keyword = %pending.event.keyword,
+                                origin = pending.origin.as_str(),
                                 vad_enabled,
                                 capture_ms = post_wake_capture_ms,
                                 min_capture_ms = post_wake_min_capture_ms,
                                 max_ms = max_duration_ms,
-                                "started post-wake speech capture"
+                                "started speech capture"
                             );
-                            capture = Some(SpeechCapture::new(
-                                event,
+                            let mut next_capture = SpeechCapture::new(
+                                pending.event,
+                                pending.origin,
                                 frame.sample_rate,
                                 frame.timestamp_us,
                                 Duration::from_millis(post_wake_capture_ms as u64),
                                 Duration::from_millis(post_wake_min_capture_ms as u64),
                                 Duration::from_millis(max_duration_ms as u64),
                                 vad_enabled,
-                            ));
+                            );
+                            if let Some(state) = pending.initial_vad_state {
+                                next_capture.observe_vad(state);
+                                next_capture.skip_next_vad_accept();
+                            }
+                            capture = Some(next_capture);
                         }
 
                         if let Some(active) = capture.as_mut() {
                             active.push(&frame);
-                            if active.vad_enabled() {
+                            if active.vad_enabled() && !active.take_skip_next_vad_accept() {
                                 match vad.accept(&frame.pcm, frame.sample_rate) {
                                     Ok(state) => active.observe_vad(state),
                                     Err(error) => {
@@ -184,7 +274,10 @@ impl ModuleLifecycle for SpeechPipeline {
                                     warn!(error = %error, "failed to reset VAD after speech capture");
                                     debug!(error = ?error, "VAD reset failure details");
                                 }
-                                info!("finished post-wake speech capture");
+                                info!(
+                                    origin = finished.origin.as_str(),
+                                    "finished speech capture"
+                                );
                                 debug!(
                                     reason = reason.as_str(),
                                     duration_ms = finished.duration_ms(),
@@ -192,7 +285,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                     "finished post-wake speech capture"
                                 );
                                 event_bus.publish(ModuleEvent::SpeechEnd);
-                                handle_utterance(
+                                let outcome = handle_utterance(
                                     finished,
                                     Arc::clone(&edge_stt),
                                     Arc::clone(&direct_response),
@@ -203,6 +296,19 @@ impl ModuleLifecycle for SpeechPipeline {
                                     max_duration_ms,
                                 )
                                 .await;
+                                match outcome {
+                                    UtteranceOutcome::UploadedToServer => {
+                                        continuous.mark_waiting_for_assistant();
+                                    }
+                                    UtteranceOutcome::LocalDirectResponse => {
+                                        continuous.schedule_followup();
+                                    }
+                                    UtteranceOutcome::Ignored
+                                    | UtteranceOutcome::FallbackResponse
+                                    | UtteranceOutcome::Cancelled => {
+                                        continuous.end_session();
+                                    }
+                                }
                                 rx = rx.resubscribe();
                             }
                             continue;
@@ -215,6 +321,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                 confidence = event.confidence,
                                 "wakeword detection details"
                             );
+                            continuous.start_session();
                             event_bus.publish(ModuleEvent::WakeWordDetected {
                                 keyword: event.keyword.clone(),
                                 timestamp_us: event.timestamp_us,
@@ -258,24 +365,34 @@ impl ModuleLifecycle for SpeechPipeline {
 
                             if !(interrupting_playback
                                 && interrupt_config.interrupt_skip_direct_response)
-                                && let Some(action) = direct_response.match_keyword(&event.keyword)
                             {
-                                play_direct_response(
-                                    action,
+                                let wakeword_audio_played = play_direct_response_action_or_keyword(
+                                    ACTION_WAKEWORD,
+                                    &event.keyword,
+                                    Arc::clone(&direct_response),
                                     Arc::clone(&playback),
                                     event_bus.clone(),
                                     audio_debug.clone(),
                                 )
                                 .await;
-                                if post_wake_response_delay_ms > 0 {
+                                if wakeword_audio_played && post_wake_response_delay_ms > 0 {
                                     tokio::time::sleep(Duration::from_millis(
                                         post_wake_response_delay_ms as u64,
                                     ))
                                     .await;
                                 }
+
+                                play_direct_response_action(
+                                    ACTION_LISTENING_START,
+                                    Arc::clone(&direct_response),
+                                    Arc::clone(&playback),
+                                    event_bus.clone(),
+                                    audio_debug.clone(),
+                                )
+                                .await;
                                 rx = rx.resubscribe();
                             }
-                            pending_wakeword = Some(event);
+                            pending_capture = Some(PendingSpeechCapture::wakeword(event));
                         }
                     }
                 }
@@ -308,474 +425,8 @@ impl ModuleLifecycle for SpeechPipeline {
     }
 }
 
-struct SpeechCapture {
-    wakeword: WakeWordEvent,
-    sample_rate: u32,
-    fallback_deadline_us: u64,
-    min_vad_end_deadline_us: u64,
-    max_deadline_us: u64,
-    vad_enabled: bool,
-    vad_saw_speech: bool,
-    vad_finished: bool,
-    pcm: Vec<i16>,
-}
-
-impl SpeechCapture {
-    fn new(
-        wakeword: WakeWordEvent,
-        sample_rate: u32,
-        started_at_us: u64,
-        fallback_duration: Duration,
-        min_vad_end_duration: Duration,
-        max_duration: Duration,
-        vad_enabled: bool,
-    ) -> Self {
-        let fallback_deadline_us =
-            started_at_us.saturating_add(fallback_duration.as_micros() as u64);
-        let min_vad_end_deadline_us =
-            started_at_us.saturating_add(min_vad_end_duration.as_micros() as u64);
-        let max_deadline_us = started_at_us.saturating_add(max_duration.as_micros() as u64);
-        Self {
-            wakeword,
-            sample_rate,
-            fallback_deadline_us,
-            min_vad_end_deadline_us,
-            max_deadline_us,
-            vad_enabled,
-            vad_saw_speech: false,
-            vad_finished: false,
-            pcm: Vec::new(),
-        }
-    }
-
-    fn push(&mut self, frame: &AudioFrame) {
-        if frame.sample_rate != self.sample_rate {
-            warn!(
-                expected = self.sample_rate,
-                actual = frame.sample_rate,
-                "dropping frame with changed sample rate during speech capture"
-            );
-            return;
-        }
-        self.pcm.extend_from_slice(&frame.pcm);
-    }
-
-    fn vad_enabled(&self) -> bool {
-        self.vad_enabled
-    }
-
-    fn disable_vad(&mut self) {
-        self.vad_enabled = false;
-    }
-
-    fn observe_vad(&mut self, state: VoiceActivityState) {
-        match state {
-            VoiceActivityState::Unavailable => self.disable_vad(),
-            VoiceActivityState::Silence => {}
-            VoiceActivityState::Speech => {
-                self.vad_saw_speech = true;
-                self.vad_finished = false;
-            }
-            VoiceActivityState::Finished => {
-                self.vad_saw_speech = true;
-                self.vad_finished = true;
-            }
-        }
-    }
-
-    fn completion_reason(&self, timestamp_us: u64) -> Option<SpeechCompletionReason> {
-        if !self.vad_enabled {
-            return (timestamp_us >= self.fallback_deadline_us)
-                .then_some(SpeechCompletionReason::FixedWindow);
-        }
-
-        if self.vad_finished && timestamp_us >= self.min_vad_end_deadline_us {
-            return Some(SpeechCompletionReason::VadFinished);
-        }
-        if timestamp_us >= self.max_deadline_us {
-            return Some(SpeechCompletionReason::MaxDuration);
-        }
-        if !self.vad_saw_speech && timestamp_us >= self.fallback_deadline_us {
-            return Some(SpeechCompletionReason::NoSpeechTimeout);
-        }
-        None
-    }
-
-    fn duration_ms(&self) -> u64 {
-        if self.sample_rate == 0 {
-            return 0;
-        }
-        (self.pcm.len() as u64 * 1_000) / self.sample_rate as u64
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SpeechCompletionReason {
-    FixedWindow,
-    VadFinished,
-    MaxDuration,
-    NoSpeechTimeout,
-}
-
-impl SpeechCompletionReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::FixedWindow => "fixed_window",
-            Self::VadFinished => "vad_finished",
-            Self::MaxDuration => "max_duration",
-            Self::NoSpeechTimeout => "no_speech_timeout",
-        }
-    }
-}
-
-fn prepare_vad_for_capture(vad: &dyn VoiceActivityEngine) -> bool {
-    if !vad.is_available() {
-        return false;
-    }
-
-    match vad.reset() {
-        Ok(()) => true,
-        Err(error) => {
-            warn!(error = %error, "failed to reset VAD before speech capture; using fixed capture window");
-            debug!(error = ?error, "VAD reset failure details");
-            false
-        }
-    }
-}
-
-async fn handle_utterance(
-    capture: SpeechCapture,
-    edge_stt: Arc<dyn EdgeSttEngine>,
-    direct_response: Arc<dyn DirectResponseEngine>,
-    playback: Arc<dyn AudioPlaybackBackend>,
-    binding: Arc<BindingManager>,
-    audio_debug: AudioDebugRecorder,
-    event_bus: EventBus,
-    max_duration_ms: u32,
-) {
-    if capture.pcm.is_empty() {
-        return;
-    }
-    audio_debug.record_wake_capture(&capture.pcm, capture.sample_rate, &capture.wakeword.keyword);
-
-    let transcript = match edge_stt
-        .transcribe_short(&capture.pcm, max_duration_ms)
-        .await
-    {
-        Ok(Some(text)) if !text.trim().is_empty() => {
-            info!("edge STT produced transcript");
-            debug!(transcript = %text, "edge STT transcript details");
-            text
-        }
-        Ok(_) => {
-            debug!(keyword = %capture.wakeword.keyword, "edge STT produced no transcript");
-            upload_to_server(&capture, &binding).await;
-            return;
-        }
-        Err(error) => {
-            warn!(error = %error, "edge STT failed");
-            upload_to_server(&capture, &binding).await;
-            return;
-        }
-    };
-
-    let Some(action) = direct_response.match_keyword(&transcript) else {
-        debug!(%transcript, "no direct response keyword matched");
-        upload_to_server(&capture, &binding).await;
-        return;
-    };
-
-    play_direct_response(action, playback, event_bus, audio_debug).await;
-}
-
-async fn play_direct_response(
-    action: super::traits::DirectResponseAction,
-    playback: Arc<dyn AudioPlaybackBackend>,
-    event_bus: EventBus,
-    audio_debug: AudioDebugRecorder,
-) {
-    if let Some(action_name) = action.action.as_deref() {
-        info!(action = action_name, "direct response action matched");
-    }
-
-    match read_pcm16_wav(Path::new(&action.audio_path)).await {
-        Ok(wav) => {
-            audio_debug.record_playback("direct-response", &wav.pcm, wav.sample_rate, 1);
-            info!(
-                audio = %action.audio_path,
-                source_sample_rate = wav.sample_rate,
-                source_channels = wav.source_channels,
-                pcm_samples = wav.pcm.len(),
-                "playing direct response audio"
-            );
-            event_bus.publish(ModuleEvent::PlaybackStarted {
-                source: action.audio_path.clone(),
-            });
-            if let Err(error) = playback.play(&wav.pcm, wav.sample_rate) {
-                warn!(error = %error, audio = %action.audio_path, "direct response playback failed");
-            } else if let Some(duration) = pcm_duration(&wav.pcm, wav.sample_rate) {
-                tokio::time::sleep(duration).await;
-            }
-            event_bus.publish(ModuleEvent::PlaybackFinished {
-                source: action.audio_path,
-            });
-        }
-        Err(error) => {
-            warn!(error = %error, audio = %action.audio_path, "failed to read direct response audio")
-        }
-    }
-}
-
-fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
-    if pcm.is_empty() || sample_rate == 0 {
-        return None;
-    }
-
-    Some(Duration::from_secs_f64(
-        pcm.len() as f64 / sample_rate as f64,
-    ))
-}
-
-async fn upload_to_server(capture: &SpeechCapture, binding: &BindingManager) {
-    let status = binding.status().await;
-    let Some(server_endpoint) = status.server_endpoint.as_deref() else {
-        warn!("cannot upload speech to server before device is bound");
-        return;
-    };
-    let endpoint = match derive_audio_ingress_endpoint(server_endpoint) {
-        Ok(endpoint) => endpoint,
-        Err(error) => {
-            warn!(error = %error, server_endpoint, "failed to derive server audio ingress endpoint");
-            return;
-        }
-    };
-    let pcm = capture.pcm.clone();
-    let sample_rate = capture.sample_rate;
-    let channel_id = "embedded".to_string();
-    let user_id = "embedded-user".to_string();
-
-    if let Err(error) =
-        upload_pcm16_to_server(endpoint, pcm, sample_rate, channel_id, user_id).await
-    {
-        warn!(error = %error, "failed to upload captured speech to server");
-    }
-}
-
-async fn interrupt_server_active_turn(
-    binding: Arc<BindingManager>,
-    channel_id: String,
-    user_id: String,
-    reason: String,
-    timestamp_us: u64,
-) {
-    let status = binding.status().await;
-    let Some(server_endpoint) = status.server_endpoint.as_deref() else {
-        debug!("cannot interrupt server turn before device is bound");
-        return;
-    };
-    let endpoint = match derive_audio_ingress_endpoint(server_endpoint) {
-        Ok(endpoint) => endpoint,
-        Err(error) => {
-            warn!(error = %error, server_endpoint, "failed to derive server audio ingress endpoint for interrupt");
-            return;
-        }
-    };
-
-    if let Err(error) =
-        interrupt_active_turn(endpoint, channel_id, user_id, reason, timestamp_us).await
-    {
-        warn!(error = %error, "failed to interrupt active server voice turn");
-        debug!(error = ?error, "server turn interrupt failure details");
-    }
-}
-
-fn derive_audio_ingress_endpoint(server_endpoint: &str) -> Result<String> {
-    let (scheme, rest) = server_endpoint
-        .split_once("://")
-        .ok_or_else(|| anyhow::anyhow!("server endpoint must include scheme"))?;
-    let (authority, _path) = rest.split_once('/').unwrap_or((rest, ""));
-    let (host, port) = authority
-        .rsplit_once(':')
-        .ok_or_else(|| anyhow::anyhow!("server endpoint must include host:port"))?;
-    let port = port
-        .parse::<u16>()
-        .context("parsing server endpoint port")?;
-    let ingress_port = port
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("server endpoint port cannot be incremented"))?;
-    Ok(format!("{scheme}://{host}:{ingress_port}"))
-}
-
-async fn upload_pcm16_to_server(
-    endpoint: String,
-    pcm: Vec<i16>,
-    sample_rate: u32,
-    channel_id: String,
-    user_id: String,
-) -> Result<()> {
-    let mut client = ServerAudioIngressClient::connect(endpoint.clone())
-        .await
-        .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
-
-    let upload_stream = stream::unfold(
-        (pcm, 0usize, 0u64, channel_id, user_id),
-        move |(pcm, offset, sequence, channel_id, user_id)| async move {
-            if offset >= pcm.len() {
-                return None;
-            }
-
-            let end = offset.saturating_add(1600).min(pcm.len());
-            let frame = CapturedAudioChunk {
-                chunk: Some(AudioChunk {
-                    opus_data: pcm16_to_le_bytes(&pcm[offset..end]),
-                    sequence,
-                    timestamp_us: timestamp_us(),
-                    encoding: AudioEncoding::PcmS16le as i32,
-                }),
-                channel_id: channel_id.clone(),
-                user_id: user_id.clone(),
-                sample_rate,
-                channels: 1,
-            };
-            Some((frame, (pcm, end, sequence + 1, channel_id, user_id)))
-        },
-    );
-
-    client
-        .upload_captured_audio(upload_stream)
-        .await
-        .context("uploading captured speech to server")?;
-    Ok(())
-}
-
-async fn interrupt_active_turn(
-    endpoint: String,
-    channel_id: String,
-    user_id: String,
-    reason: String,
-    timestamp_us: u64,
-) -> Result<()> {
-    let mut client = ServerAudioIngressClient::connect(endpoint.clone())
-        .await
-        .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
-
-    client
-        .interrupt_active_turn(InterruptActiveTurnRequest {
-            channel_id,
-            user_id,
-            reason,
-            timestamp_us,
-        })
-        .await
-        .context("interrupting active server voice turn")?;
-    Ok(())
-}
-
-fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
-    pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect()
-}
-
-fn timestamp_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
-}
-
-#[derive(Debug)]
-struct DecodedPcmWav {
-    pcm: Vec<i16>,
-    sample_rate: u32,
-    source_channels: u16,
-}
-
-async fn read_pcm16_wav(path: &Path) -> Result<DecodedPcmWav> {
-    let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || read_pcm16_wav_blocking(&path))
-        .await
-        .context("joining WAV reader task")?
-}
-
-fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
-    let data = std::fs::read(path).with_context(|| format!("reading WAV: {}", path.display()))?;
-    if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
-        bail!("{} is not a RIFF/WAVE file", path.display());
-    }
-
-    let mut offset = 12;
-    let mut sample_rate = None;
-    let mut channels = None;
-    let mut bits_per_sample = None;
-    let mut audio_format = None;
-    let mut pcm_bytes = None;
-
-    while offset + 8 <= data.len() {
-        let id = &data[offset..offset + 4];
-        let size = u32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap()) as usize;
-        offset += 8;
-        if offset + size > data.len() {
-            bail!("malformed WAV chunk in {}", path.display());
-        }
-
-        match id {
-            b"fmt " => {
-                if size < 16 {
-                    bail!("invalid WAV fmt chunk in {}", path.display());
-                }
-                audio_format = Some(u16::from_le_bytes(
-                    data[offset..offset + 2].try_into().unwrap(),
-                ));
-                channels = Some(u16::from_le_bytes(
-                    data[offset + 2..offset + 4].try_into().unwrap(),
-                ));
-                sample_rate = Some(u32::from_le_bytes(
-                    data[offset + 4..offset + 8].try_into().unwrap(),
-                ));
-                bits_per_sample = Some(u16::from_le_bytes(
-                    data[offset + 14..offset + 16].try_into().unwrap(),
-                ));
-            }
-            b"data" => {
-                pcm_bytes = Some(&data[offset..offset + size]);
-            }
-            _ => {}
-        }
-
-        offset += size + (size % 2);
-    }
-
-    if audio_format != Some(1) {
-        bail!("{} must be PCM WAV", path.display());
-    }
-    if bits_per_sample != Some(16) {
-        bail!("{} must be 16-bit PCM WAV", path.display());
-    }
-
-    let channels = channels.context("missing WAV channel count")?;
-    let sample_rate = sample_rate.context("missing WAV sample rate")?;
-    let pcm_bytes = pcm_bytes.context("missing WAV data chunk")?;
-    let samples: Vec<i16> = pcm_bytes
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-
-    if channels <= 1 {
-        return Ok(DecodedPcmWav {
-            pcm: samples,
-            sample_rate,
-            source_channels: channels,
-        });
-    }
-
-    let mono = samples
-        .chunks_exact(channels as usize)
-        .map(|frame| frame[0])
-        .collect();
-    Ok(DecodedPcmWav {
-        pcm: mono,
-        sample_rate,
-        source_channels: channels,
-    })
+fn is_assistant_playback_source(source: &str) -> bool {
+    source == "tts"
 }
 
 #[cfg(test)]
@@ -783,152 +434,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_pcm16_wav() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.wav");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"RIFF");
-        bytes.extend_from_slice(&40u32.to_le_bytes());
-        bytes.extend_from_slice(b"WAVEfmt ");
-        bytes.extend_from_slice(&16u32.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&16_000u32.to_le_bytes());
-        bytes.extend_from_slice(&32_000u32.to_le_bytes());
-        bytes.extend_from_slice(&2u16.to_le_bytes());
-        bytes.extend_from_slice(&16u16.to_le_bytes());
-        bytes.extend_from_slice(b"data");
-        bytes.extend_from_slice(&4u32.to_le_bytes());
-        bytes.extend_from_slice(&1i16.to_le_bytes());
-        bytes.extend_from_slice(&(-2i16).to_le_bytes());
-        std::fs::write(&path, bytes).unwrap();
-
-        let wav = read_pcm16_wav_blocking(&path).unwrap();
-        assert_eq!(wav.sample_rate, 16_000);
-        assert_eq!(wav.source_channels, 1);
-        assert_eq!(wav.pcm, vec![1, -2]);
-    }
-
-    #[test]
-    fn computes_pcm_duration() {
-        assert_eq!(
-            pcm_duration(&vec![0; 16_000], 16_000),
-            Some(Duration::from_secs(1))
-        );
-        assert_eq!(pcm_duration(&[], 16_000), None);
-        assert_eq!(pcm_duration(&[0], 0), None);
-    }
-
-    #[test]
-    fn vad_capture_waits_for_silence_until_max_duration() {
-        let mut capture = SpeechCapture::new(
-            wakeword_event(),
-            16_000,
-            1_000,
-            Duration::from_millis(2_500),
-            Duration::from_millis(1_800),
-            Duration::from_millis(5_000),
-            true,
-        );
-
-        capture.observe_vad(VoiceActivityState::Speech);
-
-        assert_eq!(capture.completion_reason(1_000 + 2_600_000), None);
-        capture.observe_vad(VoiceActivityState::Finished);
-        assert_eq!(
-            capture.completion_reason(1_000 + 2_700_000),
-            Some(SpeechCompletionReason::VadFinished)
-        );
-    }
-
-    #[test]
-    fn vad_capture_does_not_accept_early_finished_segment() {
-        let mut capture = SpeechCapture::new(
-            wakeword_event(),
-            16_000,
-            1_000,
-            Duration::from_millis(2_500),
-            Duration::from_millis(1_800),
-            Duration::from_millis(5_000),
-            true,
-        );
-
-        capture.observe_vad(VoiceActivityState::Finished);
-
-        assert_eq!(capture.completion_reason(1_000 + 1_200_000), None);
-        assert_eq!(
-            capture.completion_reason(1_000 + 1_800_000),
-            Some(SpeechCompletionReason::VadFinished)
-        );
-    }
-
-    #[test]
-    fn vad_capture_resumes_after_premature_finished_segment() {
-        let mut capture = SpeechCapture::new(
-            wakeword_event(),
-            16_000,
-            1_000,
-            Duration::from_millis(2_500),
-            Duration::from_millis(1_800),
-            Duration::from_millis(5_000),
-            true,
-        );
-
-        capture.observe_vad(VoiceActivityState::Finished);
-        capture.observe_vad(VoiceActivityState::Speech);
-
-        assert_eq!(capture.completion_reason(1_000 + 2_000_000), None);
-    }
-
-    #[test]
-    fn vad_capture_uses_no_speech_timeout_before_speech_starts() {
-        let capture = SpeechCapture::new(
-            wakeword_event(),
-            16_000,
-            1_000,
-            Duration::from_millis(2_500),
-            Duration::from_millis(1_800),
-            Duration::from_millis(5_000),
-            true,
-        );
-
-        assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
-        assert_eq!(
-            capture.completion_reason(1_000 + 2_500_000),
-            Some(SpeechCompletionReason::NoSpeechTimeout)
-        );
-    }
-
-    #[test]
-    fn fixed_capture_fallback_uses_post_wake_capture_window() {
-        let capture = SpeechCapture::new(
-            wakeword_event(),
-            16_000,
-            1_000,
-            Duration::from_millis(2_500),
-            Duration::from_millis(1_800),
-            Duration::from_millis(5_000),
-            false,
-        );
-
-        assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
-        assert_eq!(
-            capture.completion_reason(1_000 + 2_500_000),
-            Some(SpeechCompletionReason::FixedWindow)
-        );
-    }
-
-    #[test]
-    fn derives_audio_ingress_from_bound_server_endpoint() {
-        let endpoint = derive_audio_ingress_endpoint("http://192.168.1.10:3000").unwrap();
-        assert_eq!(endpoint, "http://192.168.1.10:3001");
-    }
-
-    fn wakeword_event() -> WakeWordEvent {
-        WakeWordEvent {
-            keyword: "HEY_ALIA".to_string(),
-            confidence: 1.0,
-            timestamp_us: 1_000,
-        }
+    fn assistant_playback_source_is_tts_only() {
+        assert!(is_assistant_playback_source("tts"));
+        assert!(!is_assistant_playback_source("wakeword_interrupt"));
+        assert!(!is_assistant_playback_source(
+            "run/direct-responses/wakeword/hello.wav"
+        ));
     }
 }

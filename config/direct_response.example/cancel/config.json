@@ -1,0 +1,11 @@
+{
+  "slug": "cancel",
+  "keywords": [
+    "退下",
+    "拜拜",
+    "取消",
+    "不用了"
+  ],
+  "action": "cancel",
+  "enabled": true
+}

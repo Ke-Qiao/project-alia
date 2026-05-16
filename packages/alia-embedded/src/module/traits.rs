@@ -72,7 +72,7 @@ pub trait VoiceActivityEngine: ModuleLifecycle {
 /// Action to execute when a keyword is matched locally.
 #[derive(Debug, Clone)]
 pub struct DirectResponseAction {
-    pub audio_path: String,
+    pub audio_path: Option<String>,
     pub action: Option<String>,
 }
 
@@ -83,6 +83,13 @@ pub struct DirectResponseAction {
 pub trait DirectResponseEngine: ModuleLifecycle {
     /// Match input text, returning an action if a keyword hits.
     fn match_keyword(&self, text: &str) -> Option<DirectResponseAction>;
+
+    /// Resolve a named system response such as `wakeword`, `fallback`, or
+    /// `listening_continue`. Missing responses are expected and should be
+    /// handled by callers without failing the speech pipeline.
+    fn match_action(&self, _action: &str) -> Option<DirectResponseAction> {
+        None
+    }
 }
 
 // ─── Audio Capture Backend ───────────────────────────────────────────────────

@@ -11,6 +11,7 @@ use super::traits::{DirectResponseAction, DirectResponseEngine};
 
 #[derive(Debug, Clone)]
 struct KeywordRule {
+    slug: String,
     keywords: Vec<String>,
     audio_variants: Vec<WeightedAudio>,
     action: Option<String>,
@@ -50,11 +51,33 @@ impl KeywordMatcher {
                 .any(|keyword| normalized.contains(keyword))
         })?;
 
-        let audio = choose_audio(&rule.audio_variants)?;
+        Some(DirectResponseAction {
+            audio_path: choose_audio(&rule.audio_variants).map(|audio| audio.display().to_string()),
+            action: rule.action.clone(),
+        })
+    }
+
+    fn find_action(&self, action: &str) -> Option<DirectResponseAction> {
+        let requested = normalize_action_name(action);
+        if requested.is_empty() {
+            return None;
+        }
+
+        let rules = self.rules.read().ok()?;
+        let rule = rules.iter().find(|rule| {
+            rule.action
+                .as_deref()
+                .map(normalize_action_name)
+                .is_some_and(|candidate| candidate == requested)
+                || normalize_action_name(&rule.slug) == requested
+        })?;
 
         Some(DirectResponseAction {
-            audio_path: audio.display().to_string(),
-            action: rule.action.clone(),
+            audio_path: choose_audio(&rule.audio_variants).map(|audio| audio.display().to_string()),
+            action: rule
+                .action
+                .clone()
+                .or_else(|| (!rule.slug.trim().is_empty()).then_some(rule.slug.clone())),
         })
     }
 }
@@ -106,12 +129,17 @@ impl DirectResponseEngine for KeywordMatcher {
     fn match_keyword(&self, text: &str) -> Option<DirectResponseAction> {
         self.find_match(text)
     }
+
+    fn match_action(&self, action: &str) -> Option<DirectResponseAction> {
+        self.find_action(action)
+    }
 }
 
 fn build_rules(configs: &[DirectResponseConfig]) -> Vec<KeywordRule> {
     configs
         .iter()
         .map(|config| KeywordRule {
+            slug: config.slug.clone(),
             keywords: config
                 .keywords
                 .iter()
@@ -121,7 +149,17 @@ fn build_rules(configs: &[DirectResponseConfig]) -> Vec<KeywordRule> {
             audio_variants: build_audio_variants(config),
             action: config.action.clone(),
         })
-        .filter(|rule| !rule.keywords.is_empty() && !rule.audio_variants.is_empty())
+        .filter(|rule| {
+            let has_action = rule
+                .action
+                .as_deref()
+                .is_some_and(|action| !action.trim().is_empty());
+            let has_audio = !rule.audio_variants.is_empty();
+            let has_keywords = !rule.keywords.is_empty();
+            let has_slug = !rule.slug.trim().is_empty();
+
+            (has_keywords && (has_action || has_audio)) || has_action || (has_slug && has_audio)
+        })
         .collect()
 }
 
@@ -136,7 +174,7 @@ fn build_audio_variants(config: &DirectResponseConfig) -> Vec<WeightedAudio> {
         .filter(|variant| variant.weight > 0.0)
         .collect::<Vec<_>>();
 
-    if variants.is_empty() {
+    if variants.is_empty() && !config.audio.as_os_str().is_empty() {
         variants.push(WeightedAudio {
             audio: config.audio.clone(),
             weight: 1.0,
@@ -178,6 +216,16 @@ fn normalize(input: &str) -> String {
         .collect()
 }
 
+fn normalize_action_name(input: &str) -> String {
+    input
+        .trim()
+        .chars()
+        .flat_map(char::to_lowercase)
+        .map(|ch| if ch == '-' { '_' } else { ch })
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,7 +242,10 @@ mod tests {
         }]);
 
         let action = matcher.match_keyword("Hey, what time is it?").unwrap();
-        assert_eq!(action.audio_path, "assets/responses/time.wav");
+        assert_eq!(
+            action.audio_path.as_deref(),
+            Some("assets/responses/time.wav")
+        );
         assert_eq!(action.action.as_deref(), Some("report_time"));
     }
 
@@ -212,6 +263,52 @@ mod tests {
         }]);
 
         let action = matcher.match_keyword("hello").unwrap();
-        assert_eq!(action.audio_path, "variant.wav");
+        assert_eq!(action.audio_path.as_deref(), Some("variant.wav"));
+    }
+
+    #[test]
+    fn supports_action_only_response() {
+        let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: "cancel".to_string(),
+            keywords: vec!["退下".to_string()],
+            audio: PathBuf::new(),
+            audio_variants: Vec::new(),
+            action: Some("cancel".to_string()),
+        }]);
+
+        let action = matcher.match_keyword("退下").unwrap();
+        assert_eq!(action.audio_path, None);
+        assert_eq!(action.action.as_deref(), Some("cancel"));
+        let action = matcher.match_action("cancel").unwrap();
+        assert_eq!(action.audio_path, None);
+        assert_eq!(action.action.as_deref(), Some("cancel"));
+    }
+
+    #[test]
+    fn ignores_keyword_only_rule_without_audio_or_action() {
+        let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: "empty".to_string(),
+            keywords: vec!["empty".to_string()],
+            audio: PathBuf::new(),
+            audio_variants: Vec::new(),
+            action: None,
+        }]);
+
+        assert!(matcher.match_keyword("empty").is_none());
+    }
+
+    #[test]
+    fn resolves_named_response_by_slug() {
+        let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: "listening-continue".to_string(),
+            keywords: Vec::new(),
+            audio: PathBuf::from("continue.wav"),
+            audio_variants: Vec::new(),
+            action: None,
+        }]);
+
+        let action = matcher.match_action("listening_continue").unwrap();
+        assert_eq!(action.audio_path.as_deref(), Some("continue.wav"));
+        assert_eq!(action.action.as_deref(), Some("listening-continue"));
     }
 }

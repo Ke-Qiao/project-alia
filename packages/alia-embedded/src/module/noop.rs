@@ -74,6 +74,10 @@ impl DirectResponseEngine for NoopDirectResponse {
     fn match_keyword(&self, _text: &str) -> Option<DirectResponseAction> {
         None
     }
+
+    fn match_action(&self, _action: &str) -> Option<DirectResponseAction> {
+        None
+    }
 }
 
 // ─── NoopFaceTracker ─────────────────────────────────────────────────────────

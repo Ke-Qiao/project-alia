@@ -253,9 +253,10 @@ async fn proto_to_record(
         .filter(|keyword| !keyword.trim().is_empty())
         .collect();
 
-    if keywords.is_empty() {
+    let action = (!rule.action.trim().is_empty()).then_some(rule.action);
+    if keywords.is_empty() && action.is_none() && rule.slug.trim().is_empty() {
         return Err(Status::invalid_argument(
-            "direct response requires at least one keyword",
+            "direct response requires at least one keyword, action, or slug",
         ));
     }
     let variant_audio_dir = if slug.is_empty() {
@@ -272,10 +273,9 @@ async fn proto_to_record(
         });
     }
     let audio_variants = write_audio_variants(variants, &variant_audio_dir).await?;
-
-    if audio_variants.is_empty() {
+    if keywords.is_empty() && action.is_none() && audio_variants.is_empty() {
         return Err(Status::invalid_argument(
-            "direct response requires audio_path or at least one audio variant",
+            "direct response requires at least one keyword, action, or audio variant",
         ));
     }
 
@@ -284,7 +284,7 @@ async fn proto_to_record(
         slug,
         keywords,
         audio_variants,
-        action: (!rule.action.trim().is_empty()).then_some(rule.action),
+        action,
         enabled: rule.enabled,
     })
 }

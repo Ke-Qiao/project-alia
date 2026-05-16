@@ -32,6 +32,7 @@ pub struct DirectResponseAudioRecord {
 struct DirectResponseImportConfig {
     #[serde(default)]
     slug: String,
+    #[serde(default)]
     keywords: Vec<String>,
     #[serde(default)]
     audio: Option<PathBuf>,
@@ -423,9 +424,6 @@ impl EmbeddedStore {
         let keywords_json =
             serde_json::to_string(&rule.keywords).context("serializing keywords")?;
         let audio_variants = normalize_audio_variants(rule);
-        if audio_variants.is_empty() {
-            anyhow::bail!("direct response requires at least one audio variant");
-        }
         let audio_variants_json =
             serde_json::to_string(&audio_variants).context("serializing audio variants")?;
         let slug = if sanitize_slug(&rule.slug).is_empty() {
@@ -589,17 +587,14 @@ impl EmbeddedStore {
         if audio_variants.is_empty() {
             audio_variants = discover_wav_variants(config_dir)?;
         }
-        if audio_variants.is_empty() {
-            anyhow::bail!("direct response import has no audio variants");
-        }
-
         let keywords = import
             .keywords
             .into_iter()
             .filter(|keyword| !keyword.trim().is_empty())
             .collect::<Vec<_>>();
-        if keywords.is_empty() {
-            anyhow::bail!("direct response import requires at least one keyword");
+        let action = import.action.filter(|action| !action.trim().is_empty());
+        if keywords.is_empty() && action.is_none() && audio_variants.is_empty() {
+            anyhow::bail!("direct response import requires a keyword, action, or audio variant");
         }
 
         let id = existing
@@ -611,7 +606,7 @@ impl EmbeddedStore {
             slug: slug.clone(),
             keywords,
             audio_variants,
-            action: import.action.filter(|action| !action.trim().is_empty()),
+            action,
             enabled: import.enabled,
         })
         .await?;
@@ -1054,6 +1049,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upserts_action_only_direct_response_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
+            .await
+            .unwrap();
+
+        let inserted = store
+            .upsert_direct_response(&DirectResponseRuleRecord {
+                id: 0,
+                slug: "cancel".to_string(),
+                keywords: vec!["退下".to_string()],
+                audio_variants: Vec::new(),
+                action: Some("cancel".to_string()),
+                enabled: true,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(inserted.slug, "cancel");
+        assert_eq!(inserted.audio_variants, Vec::new());
+        let rules = store.load_direct_responses().await.unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].audio_variants.len(), 0);
+        assert_eq!(rules[0].action.as_deref(), Some("cancel"));
+    }
+
+    #[tokio::test]
     async fn imports_direct_response_bundle_and_removes_config() {
         let dir = tempfile::tempdir().unwrap();
         let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
@@ -1092,6 +1114,38 @@ mod tests {
             rules[0].audio_variants[0].audio_path,
             bundle.join("hello.wav").display().to_string()
         );
+    }
+
+    #[tokio::test]
+    async fn imports_action_only_direct_response_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
+            .await
+            .unwrap();
+        let bundle = dir.path().join("direct_response").join("cancel");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(
+            bundle.join("config.json"),
+            r#"{
+                "slug": "cancel",
+                "keywords": ["退下", "拜拜"],
+                "action": "cancel"
+            }"#,
+        )
+        .unwrap();
+
+        let imported = store
+            .import_direct_response_bundles(&dir.path().join("direct_response"))
+            .await
+            .unwrap();
+        assert_eq!(imported, 1);
+        assert!(!bundle.join("config.json").exists());
+
+        let rules = store.list_direct_responses(true).await.unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].slug, "cancel");
+        assert_eq!(rules[0].audio_variants, Vec::new());
+        assert_eq!(rules[0].action.as_deref(), Some("cancel"));
     }
 
     #[tokio::test]

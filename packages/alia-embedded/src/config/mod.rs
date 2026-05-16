@@ -257,6 +257,15 @@ mod tests {
     }
 
     #[test]
+    fn has_continuous_dialogue_defaults() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert!(settings.continuous_dialogue.enabled);
+        assert_eq!(settings.continuous_dialogue.followup_timeout_ms, 10_000);
+        assert_eq!(settings.continuous_dialogue.max_followup_turns, 6);
+    }
+
+    #[test]
     fn has_audio_debug_defaults() {
         let settings = EmbeddedRuntimeSettings::default();
 

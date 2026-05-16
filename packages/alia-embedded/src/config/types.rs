@@ -13,6 +13,8 @@ pub struct EmbeddedConfig {
     pub vad: VadConfig,
     #[serde(default)]
     pub interrupt: InterruptConfig,
+    #[serde(default)]
+    pub continuous_dialogue: ContinuousDialogueConfig,
     pub audio: AudioConfig,
     #[serde(default)]
     pub audio_debug: AudioDebugConfig,
@@ -374,6 +376,34 @@ fn default_interrupt_debounce_ms() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinuousDialogueConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_continuous_followup_timeout_ms")]
+    pub followup_timeout_ms: u32,
+    #[serde(default = "default_continuous_max_followup_turns")]
+    pub max_followup_turns: u32,
+}
+
+impl Default for ContinuousDialogueConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            followup_timeout_ms: default_continuous_followup_timeout_ms(),
+            max_followup_turns: default_continuous_max_followup_turns(),
+        }
+    }
+}
+
+fn default_continuous_followup_timeout_ms() -> u32 {
+    10_000
+}
+
+fn default_continuous_max_followup_turns() -> u32 {
+    6
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
     #[serde(default)]
     pub capture_backend: AudioBackend,
@@ -634,7 +664,9 @@ pub struct ProcessConfig {
 pub struct DirectResponseConfig {
     #[serde(default)]
     pub slug: String,
+    #[serde(default)]
     pub keywords: Vec<String>,
+    #[serde(default)]
     pub audio: PathBuf,
     #[serde(default)]
     pub audio_variants: Vec<DirectResponseAudioConfig>,
@@ -696,6 +728,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub interrupt: InterruptConfig,
     #[serde(default)]
+    pub continuous_dialogue: ContinuousDialogueConfig,
+    #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
@@ -712,6 +746,7 @@ impl Default for EmbeddedConfig {
             edge_stt: EdgeSttConfig::default(),
             vad: VadConfig::default(),
             interrupt: InterruptConfig::default(),
+            continuous_dialogue: ContinuousDialogueConfig::default(),
             audio: AudioConfig::default(),
             audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
@@ -734,6 +769,7 @@ impl EmbeddedConfig {
         self.edge_stt = runtime.edge_stt;
         self.vad = runtime.vad;
         self.interrupt = runtime.interrupt;
+        self.continuous_dialogue = runtime.continuous_dialogue;
         self.discovery = runtime.discovery;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
@@ -752,6 +788,7 @@ impl EmbeddedConfig {
             edge_stt: self.edge_stt.clone(),
             vad: self.vad.clone(),
             interrupt: self.interrupt.clone(),
+            continuous_dialogue: self.continuous_dialogue.clone(),
             discovery: self.discovery.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),
