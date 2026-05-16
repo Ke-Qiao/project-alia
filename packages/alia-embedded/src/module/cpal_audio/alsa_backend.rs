@@ -46,6 +46,7 @@ pub(super) fn run_alsa_capture_thread(
     let mut emitted_frames = 0_u64;
     let mut level_peak = 0_u64;
     let mut silence_warned = false;
+    let mut clipping_warned = false;
     let mut detected_s32_shift = alsa_capture_s32_shift_override(&config);
     let sample_count = chunk_frames.saturating_mul(input_channels.max(1));
     let mut raw_buffer_i16 = vec![0_i16; sample_count];
@@ -85,8 +86,16 @@ pub(super) fn run_alsa_capture_thread(
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
                         let raw = &raw_buffer_i32[..samples_read];
-                        let shift = *detected_s32_shift
-                            .get_or_insert_with(|| detect_alsa_s32_capture_shift(raw).unwrap_or(8));
+                        let shift = match detected_s32_shift {
+                            Some(shift) => shift,
+                            None => {
+                                let shift = detect_alsa_s32_capture_shift(raw);
+                                if let Some(shift) = shift {
+                                    detected_s32_shift = Some(shift);
+                                }
+                                shift.unwrap_or(16)
+                            }
+                        };
                         if emitted_frames == 0 {
                             info!(
                                 alsa_device,
@@ -131,6 +140,13 @@ pub(super) fn run_alsa_capture_thread(
             .max()
             .unwrap_or(0);
         level_peak = level_peak.max(peak);
+        if peak >= 32_760 && !clipping_warned {
+            clipping_warned = true;
+            warn!(
+                peak,
+                "microphone input is clipping; lower capture_volume or adjust alsa_capture_s32_alignment"
+            );
+        }
         if emitted_frames >= target_sample_rate as u64 * 5 && !silence_warned {
             silence_warned = true;
             if level_peak < 256 {

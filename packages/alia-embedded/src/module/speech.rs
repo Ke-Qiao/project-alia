@@ -33,6 +33,7 @@ pub struct SpeechPipeline {
     binding: Arc<BindingManager>,
     max_duration_ms: u32,
     post_wake_capture_ms: u32,
+    post_wake_min_capture_ms: u32,
     post_wake_response_delay_ms: u32,
     interrupt_config: InterruptConfig,
     cancel_token: CancellationToken,
@@ -64,6 +65,7 @@ impl SpeechPipeline {
             binding,
             max_duration_ms: edge_stt_config.max_duration_ms,
             post_wake_capture_ms: edge_stt_config.post_wake_capture_ms,
+            post_wake_min_capture_ms: edge_stt_config.post_wake_min_capture_ms,
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
             interrupt_config: interrupt_config.clone(),
             cancel_token,
@@ -98,6 +100,7 @@ impl ModuleLifecycle for SpeechPipeline {
         let binding = Arc::clone(&self.binding);
         let max_duration_ms = self.max_duration_ms;
         let post_wake_capture_ms = self.post_wake_capture_ms;
+        let post_wake_min_capture_ms = self.post_wake_min_capture_ms;
         let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
         let interrupt_config = self.interrupt_config.clone();
         let cancel = self.cancel_token.child_token();
@@ -140,6 +143,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                 keyword = %event.keyword,
                                 vad_enabled,
                                 capture_ms = post_wake_capture_ms,
+                                min_capture_ms = post_wake_min_capture_ms,
                                 max_ms = max_duration_ms,
                                 "started post-wake speech capture"
                             );
@@ -148,6 +152,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                 frame.sample_rate,
                                 frame.timestamp_us,
                                 Duration::from_millis(post_wake_capture_ms as u64),
+                                Duration::from_millis(post_wake_min_capture_ms as u64),
                                 Duration::from_millis(max_duration_ms as u64),
                                 vad_enabled,
                             ));
@@ -295,6 +300,7 @@ struct SpeechCapture {
     wakeword: WakeWordEvent,
     sample_rate: u32,
     fallback_deadline_us: u64,
+    min_vad_end_deadline_us: u64,
     max_deadline_us: u64,
     vad_enabled: bool,
     vad_saw_speech: bool,
@@ -308,16 +314,20 @@ impl SpeechCapture {
         sample_rate: u32,
         started_at_us: u64,
         fallback_duration: Duration,
+        min_vad_end_duration: Duration,
         max_duration: Duration,
         vad_enabled: bool,
     ) -> Self {
         let fallback_deadline_us =
             started_at_us.saturating_add(fallback_duration.as_micros() as u64);
+        let min_vad_end_deadline_us =
+            started_at_us.saturating_add(min_vad_end_duration.as_micros() as u64);
         let max_deadline_us = started_at_us.saturating_add(max_duration.as_micros() as u64);
         Self {
             wakeword,
             sample_rate,
             fallback_deadline_us,
+            min_vad_end_deadline_us,
             max_deadline_us,
             vad_enabled,
             vad_saw_speech: false,
@@ -350,7 +360,10 @@ impl SpeechCapture {
         match state {
             VoiceActivityState::Unavailable => self.disable_vad(),
             VoiceActivityState::Silence => {}
-            VoiceActivityState::Speech => self.vad_saw_speech = true,
+            VoiceActivityState::Speech => {
+                self.vad_saw_speech = true;
+                self.vad_finished = false;
+            }
             VoiceActivityState::Finished => {
                 self.vad_saw_speech = true;
                 self.vad_finished = true;
@@ -364,7 +377,7 @@ impl SpeechCapture {
                 .then_some(SpeechCompletionReason::FixedWindow);
         }
 
-        if self.vad_finished {
+        if self.vad_finished && timestamp_us >= self.min_vad_end_deadline_us {
             return Some(SpeechCompletionReason::VadFinished);
         }
         if timestamp_us >= self.max_deadline_us {
@@ -797,6 +810,7 @@ mod tests {
             16_000,
             1_000,
             Duration::from_millis(2_500),
+            Duration::from_millis(1_800),
             Duration::from_millis(5_000),
             true,
         );
@@ -812,12 +826,52 @@ mod tests {
     }
 
     #[test]
+    fn vad_capture_does_not_accept_early_finished_segment() {
+        let mut capture = SpeechCapture::new(
+            wakeword_event(),
+            16_000,
+            1_000,
+            Duration::from_millis(2_500),
+            Duration::from_millis(1_800),
+            Duration::from_millis(5_000),
+            true,
+        );
+
+        capture.observe_vad(VoiceActivityState::Finished);
+
+        assert_eq!(capture.completion_reason(1_000 + 1_200_000), None);
+        assert_eq!(
+            capture.completion_reason(1_000 + 1_800_000),
+            Some(SpeechCompletionReason::VadFinished)
+        );
+    }
+
+    #[test]
+    fn vad_capture_resumes_after_premature_finished_segment() {
+        let mut capture = SpeechCapture::new(
+            wakeword_event(),
+            16_000,
+            1_000,
+            Duration::from_millis(2_500),
+            Duration::from_millis(1_800),
+            Duration::from_millis(5_000),
+            true,
+        );
+
+        capture.observe_vad(VoiceActivityState::Finished);
+        capture.observe_vad(VoiceActivityState::Speech);
+
+        assert_eq!(capture.completion_reason(1_000 + 2_000_000), None);
+    }
+
+    #[test]
     fn vad_capture_uses_no_speech_timeout_before_speech_starts() {
         let capture = SpeechCapture::new(
             wakeword_event(),
             16_000,
             1_000,
             Duration::from_millis(2_500),
+            Duration::from_millis(1_800),
             Duration::from_millis(5_000),
             true,
         );
@@ -836,6 +890,7 @@ mod tests {
             16_000,
             1_000,
             Duration::from_millis(2_500),
+            Duration::from_millis(1_800),
             Duration::from_millis(5_000),
             false,
         );

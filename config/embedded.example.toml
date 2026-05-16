@@ -60,9 +60,10 @@ playback_buffer_ms = 60
 playback_target_buffer_ms = 300
 playback_max_buffer_ms = 2000
 playback_command_queue_capacity = 8
-# When `true`, ALSA playback retunes to the source clip/stream sample rate
-# instead of pinning everything to `playback_sample_rate`.
-alsa_playback_follow_source_rate = true
+# Keep ALSA pinned to `playback_sample_rate` and resample in software. This is
+# more stable on Pi I2S DAC/amp boards whose apparent gain changes after rate
+# reconfiguration.
+alsa_playback_follow_source_rate = false
 # I2S mics often expose 24-bit samples inside S32_LE. `auto` detects whether
 # those bits are left- or right-justified; set explicitly if a board needs it.
 alsa_capture_s32_alignment = "auto"
@@ -73,7 +74,10 @@ jitter_buffer_ms = 60
 
 [edge_stt]
 language = "zh"
-max_duration_ms = 5000
+max_duration_ms = 15000
+# VAD may briefly think an utterance ended while the user is still speaking.
+# Do not accept a VAD endpoint before this minimum capture duration.
+post_wake_min_capture_ms = 1800
 post_wake_capture_ms = 2500
 post_wake_response_delay_ms = 700
 
@@ -84,7 +88,7 @@ threshold = 0.5
 min_silence_duration_ms = 700
 min_speech_duration_ms = 250
 window_size = 512
-max_speech_duration_ms = 5000
+max_speech_duration_ms = 15000
 buffer_size_sec = 10.0
 provider = "cpu"
 num_threads = 1

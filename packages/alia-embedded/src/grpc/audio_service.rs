@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
@@ -71,6 +72,8 @@ impl AudioStreamTrait for AudioStreamService {
         let mut stream = request.into_inner();
         let initial = self.pending_playback.lock().await.clone();
         let initial_request_id = initial.as_ref().map(|pending| pending.request_id.clone());
+        let playback_started_at = Instant::now();
+        let mut uploaded_pcm_samples = 0usize;
 
         if let Some(pending) = &initial {
             self.event_bus.publish(ModuleEvent::PlaybackStarted {
@@ -90,10 +93,26 @@ impl AudioStreamTrait for AudioStreamService {
             {
                 break;
             }
+            if matches!(
+                AudioEncoding::try_from(chunk.encoding).unwrap_or(AudioEncoding::Opus),
+                AudioEncoding::PcmS16le
+            ) {
+                uploaded_pcm_samples =
+                    uploaded_pcm_samples.saturating_add(chunk.opus_data.len() / 2);
+            }
             self.playback_chunk(&chunk, current.sample_rate)?;
         }
 
         if let Some(pending) = initial {
+            if self.pending_matches(&pending).await {
+                self.wait_for_estimated_playback_drain(
+                    &pending,
+                    uploaded_pcm_samples,
+                    pending.sample_rate,
+                    playback_started_at,
+                )
+                .await;
+            }
             let mut slot = self.pending_playback.lock().await;
             if slot
                 .as_ref()
@@ -221,6 +240,47 @@ impl AudioStreamTrait for AudioStreamService {
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
             rx,
         )))
+    }
+}
+
+impl AudioStreamService {
+    async fn pending_matches(&self, pending: &PendingPlayback) -> bool {
+        self.pending_playback
+            .lock()
+            .await
+            .as_ref()
+            .map(|current| current.request_id == pending.request_id)
+            .unwrap_or(false)
+    }
+
+    async fn wait_for_estimated_playback_drain(
+        &self,
+        pending: &PendingPlayback,
+        pcm_samples: usize,
+        sample_rate: u32,
+        playback_started_at: Instant,
+    ) {
+        if pcm_samples == 0 || sample_rate == 0 {
+            return;
+        }
+
+        let estimated = Duration::from_secs_f64(pcm_samples as f64 / sample_rate as f64);
+        let elapsed = playback_started_at.elapsed();
+        if estimated <= elapsed {
+            return;
+        }
+
+        let deadline = Instant::now() + (estimated - elapsed);
+        loop {
+            if !self.pending_matches(pending).await {
+                return;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return;
+            }
+            tokio::time::sleep((deadline - now).min(Duration::from_millis(100))).await;
+        }
     }
 }
 

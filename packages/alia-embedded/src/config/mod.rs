@@ -221,6 +221,21 @@ mod tests {
     }
 
     #[test]
+    fn has_post_wake_min_capture_default() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert_eq!(settings.edge_stt.post_wake_min_capture_ms, 1_800);
+    }
+
+    #[test]
+    fn has_longer_post_wake_capture_limits() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert_eq!(settings.edge_stt.max_duration_ms, 15_000);
+        assert_eq!(settings.vad.max_speech_duration_ms, 15_000);
+    }
+
+    #[test]
     fn has_vad_model_path_default() {
         let settings = EmbeddedRuntimeSettings::default();
 

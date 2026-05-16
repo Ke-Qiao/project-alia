@@ -451,6 +451,7 @@ fn run_alsa_capture_thread(
     let mut emitted_frames = 0_u64;
     let mut level_peak = 0_u64;
     let mut silence_warned = false;
+    let mut clipping_warned = false;
     let mut detected_s32_shift = None;
     let sample_count = chunk_frames.saturating_mul(input_channels.max(1));
     let mut raw_buffer_i16 = vec![0_i16; sample_count];
@@ -490,8 +491,16 @@ fn run_alsa_capture_thread(
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
                         let raw = &raw_buffer_i32[..samples_read];
-                        let shift = *detected_s32_shift
-                            .get_or_insert_with(|| detect_alsa_s32_capture_shift(raw).unwrap_or(8));
+                        let shift = match detected_s32_shift {
+                            Some(shift) => shift,
+                            None => {
+                                let shift = detect_alsa_s32_capture_shift(raw);
+                                if let Some(shift) = shift {
+                                    detected_s32_shift = Some(shift);
+                                }
+                                shift.unwrap_or(16)
+                            }
+                        };
                         if detected_s32_shift == Some(shift) && emitted_frames == 0 {
                             info!(
                                 alsa_device,
@@ -536,6 +545,13 @@ fn run_alsa_capture_thread(
             .max()
             .unwrap_or(0);
         level_peak = level_peak.max(peak);
+        if peak >= 32_760 && !clipping_warned {
+            clipping_warned = true;
+            warn!(
+                peak,
+                "microphone input is clipping; lower capture_volume or adjust alsa_capture_s32_alignment"
+            );
+        }
         if emitted_frames >= target_sample_rate as u64 * 5 && !silence_warned {
             silence_warned = true;
             if level_peak < 256 {
@@ -1725,7 +1741,60 @@ fn detect_alsa_s32_capture_shift(samples: &[i32]) -> Option<u8> {
     }
 
     let low_zero_ratio = low_byte_zero as f32 / nonzero as f32;
-    Some(if low_zero_ratio > 0.95 { 16 } else { 8 })
+    let stats_8 = s32_shift_stats(samples, 8);
+    let stats_16 = s32_shift_stats(samples, 16);
+    let stats_24 = s32_shift_stats(samples, 24);
+
+    if stats_8.clipped_ratio > 0.02 && stats_16.clipped_ratio < stats_8.clipped_ratio {
+        if stats_16.clipped_ratio > 0.02 && stats_24.peak > 128 {
+            return Some(24);
+        }
+        return Some(16);
+    }
+
+    if low_zero_ratio > 0.90 && stats_16.peak > 128 {
+        return Some(16);
+    }
+
+    if stats_8.peak >= 32_760 && stats_16.peak > 128 {
+        return Some(16);
+    }
+
+    Some(8)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct S32ShiftStats {
+    peak: u64,
+    clipped_ratio: f32,
+}
+
+fn s32_shift_stats(samples: &[i32], shift: u8) -> S32ShiftStats {
+    let mut considered = 0usize;
+    let mut clipped = 0usize;
+    let mut peak = 0u64;
+
+    for sample in samples.iter().take(4096) {
+        if *sample == 0 {
+            continue;
+        }
+        considered += 1;
+        let converted = i32_sample_to_i16_with_shift(*sample, shift);
+        let abs = converted.unsigned_abs() as u64;
+        peak = peak.max(abs);
+        if abs >= 32_760 {
+            clipped += 1;
+        }
+    }
+
+    S32ShiftStats {
+        peak,
+        clipped_ratio: if considered == 0 {
+            0.0
+        } else {
+            clipped as f32 / considered as f32
+        },
+    }
 }
 
 #[cfg(test)]
@@ -1751,6 +1820,12 @@ mod tests {
     #[test]
     fn detects_left_justified_alsa_s32_capture() {
         let samples = [0x0102_0300, -0x0102_0300, 0x0203_0400, -0x0203_0400];
+        assert_eq!(detect_alsa_s32_capture_shift(&samples), Some(16));
+    }
+
+    #[test]
+    fn detects_left_justified_alsa_s32_capture_with_noisy_low_byte() {
+        let samples = [0x1102_0311, -0x1102_0322, 0x2203_0433, -0x2203_0444];
         assert_eq!(detect_alsa_s32_capture_shift(&samples), Some(16));
     }
 

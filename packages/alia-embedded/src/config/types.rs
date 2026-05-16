@@ -222,6 +222,8 @@ pub struct EdgeSttConfig {
     pub use_itn: bool,
     #[serde(default = "default_edge_stt_max_duration_ms")]
     pub max_duration_ms: u32,
+    #[serde(default = "default_post_wake_min_capture_ms")]
+    pub post_wake_min_capture_ms: u32,
     #[serde(default = "default_post_wake_capture_ms")]
     pub post_wake_capture_ms: u32,
     #[serde(default = "default_post_wake_response_delay_ms")]
@@ -240,6 +242,7 @@ impl Default for EdgeSttConfig {
             num_threads: default_edge_stt_num_threads(),
             use_itn: true,
             max_duration_ms: default_edge_stt_max_duration_ms(),
+            post_wake_min_capture_ms: default_post_wake_min_capture_ms(),
             post_wake_capture_ms: default_post_wake_capture_ms(),
             post_wake_response_delay_ms: default_post_wake_response_delay_ms(),
             debug: false,
@@ -260,7 +263,10 @@ fn default_edge_stt_num_threads() -> i32 {
     2
 }
 fn default_edge_stt_max_duration_ms() -> u32 {
-    5_000
+    15_000
+}
+fn default_post_wake_min_capture_ms() -> u32 {
+    1_800
 }
 fn default_post_wake_capture_ms() -> u32 {
     2_500
@@ -332,7 +338,7 @@ fn default_vad_window_size() -> i32 {
     512
 }
 fn default_vad_max_speech_duration_ms() -> u32 {
-    5_000
+    15_000
 }
 fn default_vad_buffer_size_sec() -> f32 {
     10.0
@@ -398,7 +404,7 @@ pub struct AudioConfig {
     pub playback_max_buffer_ms: u32,
     #[serde(default = "default_playback_command_queue_capacity")]
     pub playback_command_queue_capacity: usize,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_alsa_playback_follow_source_rate")]
     pub alsa_playback_follow_source_rate: bool,
     #[serde(default)]
     pub alsa_capture_s32_alignment: AlsaCaptureS32Alignment,
@@ -433,7 +439,7 @@ impl Default for AudioConfig {
             playback_target_buffer_ms: default_playback_target_buffer_ms(),
             playback_max_buffer_ms: default_playback_max_buffer_ms(),
             playback_command_queue_capacity: default_playback_command_queue_capacity(),
-            alsa_playback_follow_source_rate: default_true(),
+            alsa_playback_follow_source_rate: default_alsa_playback_follow_source_rate(),
             alsa_capture_s32_alignment: AlsaCaptureS32Alignment::default(),
             opus_bitrate: default_opus_bitrate(),
             opus_frame_ms: default_opus_frame_ms(),
@@ -469,6 +475,9 @@ fn default_playback_max_buffer_ms() -> u32 {
 }
 fn default_playback_command_queue_capacity() -> usize {
     8
+}
+fn default_alsa_playback_follow_source_rate() -> bool {
+    false
 }
 fn default_opus_bitrate() -> u32 {
     24000
