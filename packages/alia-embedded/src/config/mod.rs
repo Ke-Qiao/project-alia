@@ -75,6 +75,7 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.edge_stt.tokens_path);
     resolve_relative(parent, &mut config.vad.model_path);
     resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
+    resolve_runtime_relative(&mut config.audio_debug.dir);
 
     for response in &mut config.direct_response {
         resolve_relative(parent, &mut response.audio);
@@ -139,6 +140,7 @@ fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRuntimeSe
     relativize_path(base, &mut settings.edge_stt.tokens_path);
     relativize_path(base, &mut settings.vad.model_path);
     normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);
+    normalize_runtime_path_for_settings(&mut settings.audio_debug.dir);
 }
 
 fn normalize_runtime_path_for_settings(path: &mut PathBuf) {
@@ -252,5 +254,17 @@ mod tests {
         assert!(settings.interrupt.interrupt_on_wakeword_during_playback);
         assert!(settings.interrupt.interrupt_skip_direct_response);
         assert_eq!(settings.interrupt.interrupt_debounce_ms, 300);
+    }
+
+    #[test]
+    fn has_audio_debug_defaults() {
+        let settings = EmbeddedRuntimeSettings::default();
+
+        assert!(!settings.audio_debug.enabled);
+        assert_eq!(settings.audio_debug.dir, PathBuf::from("run/audio-debug"));
+        assert!(settings.audio_debug.record_capture_stream);
+        assert!(settings.audio_debug.record_wake_capture);
+        assert!(settings.audio_debug.record_playback);
+        assert_eq!(settings.audio_debug.capture_segment_ms, 10_000);
     }
 }

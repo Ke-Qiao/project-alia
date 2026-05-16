@@ -1,3 +1,4 @@
+pub mod audio_debug;
 pub mod builder;
 pub mod context;
 pub mod cpal_audio;

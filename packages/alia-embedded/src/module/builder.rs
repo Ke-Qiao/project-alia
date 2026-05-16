@@ -14,6 +14,7 @@ use crate::process::ProcessManager;
 use crate::settings::EmbeddedSettingsManager;
 use crate::storage::EmbeddedStore;
 
+use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
 use super::lifecycle::ModuleLifecycle;
@@ -37,6 +38,7 @@ pub struct EmbeddedNode {
     pub settings_manager: Arc<EmbeddedSettingsManager>,
     pub state_store: EmbeddedStore,
     pub volume_state: AudioVolumeState,
+    pub audio_debug: AudioDebugRecorder,
     pub event_bus: EventBus,
 }
 
@@ -59,6 +61,7 @@ impl EmbeddedNode {
             self.registry.audio_playback.clone(),
             self.binding_manager.clone(),
             self.event_bus.clone(),
+            self.audio_debug.clone(),
         ))
         .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
         .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES);
@@ -245,6 +248,7 @@ impl EmbeddedBuilder {
             }
         };
         let volume_state = AudioVolumeState::new(volume_config);
+        let audio_debug = AudioDebugRecorder::new(config.audio_debug.clone());
 
         // Resolve modules: use overrides or fall back to factory
         let mut wakeword: Box<dyn WakeWordEngine> = match self.wakeword {
@@ -393,6 +397,7 @@ impl EmbeddedBuilder {
             binding_manager.clone(),
             &config.edge_stt,
             &config.interrupt,
+            audio_debug.clone(),
             self.cancel_token.clone(),
         ));
 
@@ -456,6 +461,7 @@ impl EmbeddedBuilder {
             settings_manager,
             state_store: ctx.state_store.clone(),
             volume_state,
+            audio_debug,
             event_bus: ctx.event_bus.clone(),
         })
     }

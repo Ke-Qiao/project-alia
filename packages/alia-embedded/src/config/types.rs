@@ -14,6 +14,8 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub interrupt: InterruptConfig,
     pub audio: AudioConfig,
+    #[serde(default)]
+    pub audio_debug: AudioDebugConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
@@ -477,7 +479,7 @@ fn default_playback_command_queue_capacity() -> usize {
     8
 }
 fn default_alsa_playback_follow_source_rate() -> bool {
-    false
+    true
 }
 fn default_opus_bitrate() -> u32 {
     24000
@@ -490,6 +492,43 @@ fn default_upload_buffer_frames() -> u32 {
 }
 fn default_jitter_buffer_ms() -> u32 {
     60
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioDebugConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_audio_debug_dir")]
+    pub dir: PathBuf,
+    #[serde(default = "default_true")]
+    pub record_capture_stream: bool,
+    #[serde(default = "default_true")]
+    pub record_wake_capture: bool,
+    #[serde(default = "default_true")]
+    pub record_playback: bool,
+    #[serde(default = "default_audio_debug_capture_segment_ms")]
+    pub capture_segment_ms: u32,
+}
+
+impl Default for AudioDebugConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: default_audio_debug_dir(),
+            record_capture_stream: true,
+            record_wake_capture: true,
+            record_playback: true,
+            capture_segment_ms: default_audio_debug_capture_segment_ms(),
+        }
+    }
+}
+
+fn default_audio_debug_dir() -> PathBuf {
+    PathBuf::from("run/audio-debug")
+}
+
+fn default_audio_debug_capture_segment_ms() -> u32 {
+    10_000
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -646,6 +685,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
+    pub audio_debug: AudioDebugConfig,
+    #[serde(default)]
     pub edge_stt: EdgeSttConfig,
     #[serde(default)]
     pub vad: VadConfig,
@@ -669,6 +710,7 @@ impl Default for EmbeddedConfig {
             vad: VadConfig::default(),
             interrupt: InterruptConfig::default(),
             audio: AudioConfig::default(),
+            audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
             dev: DevConfig::default(),
@@ -685,6 +727,7 @@ impl EmbeddedConfig {
         self.identity = runtime.identity;
         self.wakeword = runtime.wakeword;
         self.audio = runtime.audio;
+        self.audio_debug = runtime.audio_debug;
         self.edge_stt = runtime.edge_stt;
         self.vad = runtime.vad;
         self.interrupt = runtime.interrupt;
@@ -702,6 +745,7 @@ impl EmbeddedConfig {
             identity: self.identity.clone(),
             wakeword: self.wakeword.clone(),
             audio: self.audio.clone(),
+            audio_debug: self.audio_debug.clone(),
             edge_stt: self.edge_stt.clone(),
             vad: self.vad.clone(),
             interrupt: self.interrupt.clone(),

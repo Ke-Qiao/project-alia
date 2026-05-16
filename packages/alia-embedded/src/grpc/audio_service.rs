@@ -12,6 +12,7 @@ use alia_proto::audio::{
 
 use super::auth::{extract_bearer_token, require_auth, require_auth_token};
 use crate::binding::BindingManager;
+use crate::module::audio_debug::AudioDebugRecorder;
 use crate::module::context::EventBus;
 use crate::module::context::ModuleEvent;
 use crate::module::traits::AudioPlaybackBackend;
@@ -28,6 +29,7 @@ pub struct AudioStreamService {
     playback: Arc<dyn AudioPlaybackBackend>,
     binding: Arc<BindingManager>,
     event_bus: EventBus,
+    audio_debug: AudioDebugRecorder,
     pending_playback: Arc<Mutex<Option<PendingPlayback>>>,
 }
 
@@ -36,11 +38,13 @@ impl AudioStreamService {
         playback: Arc<dyn AudioPlaybackBackend>,
         binding: Arc<BindingManager>,
         event_bus: EventBus,
+        audio_debug: AudioDebugRecorder,
     ) -> Self {
         Self {
             playback,
             binding,
             event_bus,
+            audio_debug,
             pending_playback: Arc::new(Mutex::new(None)),
         }
     }
@@ -74,6 +78,7 @@ impl AudioStreamTrait for AudioStreamService {
         let initial_request_id = initial.as_ref().map(|pending| pending.request_id.clone());
         let playback_started_at = Instant::now();
         let mut uploaded_pcm_samples = 0usize;
+        let mut debug_playback_pcm = self.audio_debug.record_playback_enabled().then(Vec::new);
 
         if let Some(pending) = &initial {
             self.event_bus.publish(ModuleEvent::PlaybackStarted {
@@ -99,11 +104,24 @@ impl AudioStreamTrait for AudioStreamService {
             ) {
                 uploaded_pcm_samples =
                     uploaded_pcm_samples.saturating_add(chunk.opus_data.len() / 2);
+                if let Some(debug_pcm) = debug_playback_pcm.as_mut()
+                    && let Ok(pcm) = pcm16_from_le_bytes(&chunk.opus_data)
+                {
+                    debug_pcm.extend_from_slice(&pcm);
+                }
             }
             self.playback_chunk(&chunk, current.sample_rate)?;
         }
 
         if let Some(pending) = initial {
+            if let Some(debug_pcm) = debug_playback_pcm.take() {
+                self.audio_debug.record_playback(
+                    &pending.source,
+                    &debug_pcm,
+                    pending.sample_rate,
+                    1,
+                );
+            }
             if self.pending_matches(&pending).await {
                 self.wait_for_estimated_playback_drain(
                     &pending,

@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
+use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, AudioFrame, EventBus, ModuleEvent};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{
@@ -31,6 +32,7 @@ pub struct SpeechPipeline {
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<dyn AudioPlaybackBackend>,
     binding: Arc<BindingManager>,
+    audio_debug: AudioDebugRecorder,
     max_duration_ms: u32,
     post_wake_capture_ms: u32,
     post_wake_min_capture_ms: u32,
@@ -52,6 +54,7 @@ impl SpeechPipeline {
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
         interrupt_config: &InterruptConfig,
+        audio_debug: AudioDebugRecorder,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -63,6 +66,7 @@ impl SpeechPipeline {
             direct_response,
             playback,
             binding,
+            audio_debug,
             max_duration_ms: edge_stt_config.max_duration_ms,
             post_wake_capture_ms: edge_stt_config.post_wake_capture_ms,
             post_wake_min_capture_ms: edge_stt_config.post_wake_min_capture_ms,
@@ -98,6 +102,7 @@ impl ModuleLifecycle for SpeechPipeline {
         let direct_response = Arc::clone(&self.direct_response);
         let playback = Arc::clone(&self.playback);
         let binding = Arc::clone(&self.binding);
+        let audio_debug = self.audio_debug.clone();
         let max_duration_ms = self.max_duration_ms;
         let post_wake_capture_ms = self.post_wake_capture_ms;
         let post_wake_min_capture_ms = self.post_wake_min_capture_ms;
@@ -134,6 +139,7 @@ impl ModuleLifecycle for SpeechPipeline {
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                         };
+                        audio_debug.record_capture_frame(&frame).await;
 
                         if let Some(event) = pending_wakeword.take() {
                             event_bus.publish(ModuleEvent::SpeechStart);
@@ -192,6 +198,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                     Arc::clone(&direct_response),
                                     Arc::clone(&playback),
                                     Arc::clone(&binding),
+                                    audio_debug.clone(),
                                     event_bus.clone(),
                                     max_duration_ms,
                                 )
@@ -253,8 +260,13 @@ impl ModuleLifecycle for SpeechPipeline {
                                 && interrupt_config.interrupt_skip_direct_response)
                                 && let Some(action) = direct_response.match_keyword(&event.keyword)
                             {
-                                play_direct_response(action, Arc::clone(&playback), event_bus.clone())
-                                    .await;
+                                play_direct_response(
+                                    action,
+                                    Arc::clone(&playback),
+                                    event_bus.clone(),
+                                    audio_debug.clone(),
+                                )
+                                .await;
                                 if post_wake_response_delay_ms > 0 {
                                     tokio::time::sleep(Duration::from_millis(
                                         post_wake_response_delay_ms as u64,
@@ -437,12 +449,14 @@ async fn handle_utterance(
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<dyn AudioPlaybackBackend>,
     binding: Arc<BindingManager>,
+    audio_debug: AudioDebugRecorder,
     event_bus: EventBus,
     max_duration_ms: u32,
 ) {
     if capture.pcm.is_empty() {
         return;
     }
+    audio_debug.record_wake_capture(&capture.pcm, capture.sample_rate, &capture.wakeword.keyword);
 
     let transcript = match edge_stt
         .transcribe_short(&capture.pcm, max_duration_ms)
@@ -471,13 +485,14 @@ async fn handle_utterance(
         return;
     };
 
-    play_direct_response(action, playback, event_bus).await;
+    play_direct_response(action, playback, event_bus, audio_debug).await;
 }
 
 async fn play_direct_response(
     action: super::traits::DirectResponseAction,
     playback: Arc<dyn AudioPlaybackBackend>,
     event_bus: EventBus,
+    audio_debug: AudioDebugRecorder,
 ) {
     if let Some(action_name) = action.action.as_deref() {
         info!(action = action_name, "direct response action matched");
@@ -485,6 +500,7 @@ async fn play_direct_response(
 
     match read_pcm16_wav(Path::new(&action.audio_path)).await {
         Ok(wav) => {
+            audio_debug.record_playback("direct-response", &wav.pcm, wav.sample_rate, 1);
             info!(
                 audio = %action.audio_path,
                 source_sample_rate = wav.sample_rate,
