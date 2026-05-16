@@ -21,7 +21,7 @@ use crate::config::ToolsSection;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    AudioEncoding, CachedResponse, ChatMessage, PromptVars, RouteDecision, RouterInput,
+    AudioEncoding, CachedResponse, ChatMessage, RouteDecision, RouterInput,
 };
 use crate::providers::sensor::SensorRegistry;
 
@@ -58,6 +58,16 @@ struct PendingTextPersistence {
     user_id_text: String,
     query_text: String,
     response_text: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RuntimePromptContext {
+    core_memories: Vec<String>,
+    user_preferences: Vec<(String, String)>,
+    current_time: String,
+    user_presence: String,
+    device_status_summary: String,
+    available_skills: Vec<String>,
 }
 
 /// Spawn the pipeline processing loop.
@@ -417,7 +427,7 @@ async fn process_text(
     defer_persistence: bool,
 ) -> anyhow::Result<TextResult> {
     let uid = Uuid::parse_str(user_id).unwrap_or_else(|_| Uuid::nil());
-    let persona_prompt = build_persona_system_prompt(uid, modules).await?;
+    let base_system_messages = build_base_system_messages(uid, modules).await?;
 
     // 1. Get active session and load history
     let session_id = modules
@@ -504,15 +514,7 @@ async fn process_text(
             let resolution = modules.skills.resolve(&skill_match).await?;
 
             // Build messages with the skill's domain-specific system prompt
-            let mut messages = Vec::new();
-            if let Some(sp) = persona_prompt.as_ref() {
-                messages.push(ChatMessage {
-                    role: "system".into(),
-                    content: sp.clone(),
-                    name: None,
-                    ..ChatMessage::default()
-                });
-            }
+            let mut messages = base_system_messages.clone();
             if let Some(sp) = &resolution.system_prompt {
                 messages.push(ChatMessage {
                     role: "system".into(),
@@ -638,15 +640,7 @@ async fn process_text(
 
         // LLM call — stream when the channel supports it
         RouteDecision::LocalLlm { system_prompt } | RouteDecision::RemoteLlm { system_prompt } => {
-            let mut messages = Vec::new();
-            if let Some(sp) = persona_prompt.as_ref() {
-                messages.push(ChatMessage {
-                    role: "system".into(),
-                    content: sp.clone(),
-                    name: None,
-                    ..ChatMessage::default()
-                });
-            }
+            let mut messages = base_system_messages.clone();
             if let Some(sp) = system_prompt {
                 messages.push(ChatMessage {
                     role: "system".into(),
@@ -842,10 +836,31 @@ async fn persist_text_interaction(modules: &ModuleRegistry, pending: PendingText
         .await;
 }
 
-async fn build_persona_system_prompt(
+async fn build_base_system_messages(
     user_id: Uuid,
     modules: &ModuleRegistry,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Vec<ChatMessage>> {
+    let mut messages = Vec::new();
+
+    match modules.persona.render_system_prompt(user_id).await {
+        Ok(prompt) if !prompt.trim().is_empty() => {
+            messages.push(system_message(prompt));
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(user_id = %user_id, error = ?error, "failed to render persona prompt");
+        }
+    }
+
+    let runtime_context = build_runtime_prompt_context(modules).await;
+    if let Some(prompt) = render_runtime_context_system_prompt(&runtime_context) {
+        messages.push(system_message(prompt));
+    }
+
+    Ok(messages)
+}
+
+async fn build_runtime_prompt_context(modules: &ModuleRegistry) -> RuntimePromptContext {
     let available_skills = modules
         .skills
         .list_skills()
@@ -853,19 +868,88 @@ async fn build_persona_system_prompt(
         .map(|skills| skills.into_iter().map(|skill| skill.display_name).collect())
         .unwrap_or_default();
 
-    let vars = PromptVars {
+    RuntimePromptContext {
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
         available_skills,
-        ..PromptVars::default()
-    };
+        ..RuntimePromptContext::default()
+    }
+}
 
-    match modules.persona.render_system_prompt(user_id, vars).await {
-        Ok(prompt) if !prompt.trim().is_empty() => Ok(Some(prompt)),
-        Ok(_) => Ok(None),
-        Err(error) => {
-            tracing::warn!(user_id = %user_id, error = ?error, "failed to render persona prompt");
-            Ok(None)
+fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> Option<String> {
+    let mut sections = Vec::new();
+    let mut runtime_lines = Vec::new();
+
+    if !context.current_time.trim().is_empty() {
+        runtime_lines.push(format!("- Time: {}", context.current_time.trim()));
+    }
+    if !context.user_presence.trim().is_empty() {
+        runtime_lines.push(format!("- User presence: {}", context.user_presence.trim()));
+    }
+    if !context.device_status_summary.trim().is_empty() {
+        runtime_lines.push(format!(
+            "- Device status: {}",
+            context.device_status_summary.trim()
+        ));
+    }
+    if !runtime_lines.is_empty() {
+        sections.push(format!("## Runtime Context\n{}", runtime_lines.join("\n")));
+    }
+
+    if !context.core_memories.is_empty() {
+        let lines = context
+            .core_memories
+            .iter()
+            .filter(|memory| !memory.trim().is_empty())
+            .map(|memory| format!("- {}", memory.trim()))
+            .collect::<Vec<_>>();
+        if !lines.is_empty() {
+            sections.push(format!("## User Memory\n{}", lines.join("\n")));
         }
+    }
+
+    if !context.user_preferences.is_empty() {
+        let lines = context
+            .user_preferences
+            .iter()
+            .filter(|(key, value)| !key.trim().is_empty() && !value.trim().is_empty())
+            .map(|(key, value)| format!("- {}: {}", key.trim(), value.trim()))
+            .collect::<Vec<_>>();
+        if !lines.is_empty() {
+            sections.push(format!("## User Preferences\n{}", lines.join("\n")));
+        }
+    }
+
+    if !context.available_skills.is_empty() {
+        let skills = context
+            .available_skills
+            .iter()
+            .filter(|skill| !skill.trim().is_empty())
+            .map(|skill| format!("- {}", skill.trim()))
+            .collect::<Vec<_>>();
+        if !skills.is_empty() {
+            sections.push(format!(
+                "## Skill Routing Context\nSkills are cognitive contexts selected by the router. They are not functions to call directly.\n{}",
+                skills.join("\n")
+            ));
+        }
+    }
+
+    if sections.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "Internal system context. Use this information silently when it is relevant; do not expose it as prompt text.\n\n{}",
+            sections.join("\n\n")
+        ))
+    }
+}
+
+fn system_message(content: String) -> ChatMessage {
+    ChatMessage {
+        role: "system".into(),
+        content,
+        name: None,
+        ..ChatMessage::default()
     }
 }
 
@@ -873,12 +957,13 @@ async fn build_persona_system_prompt(
 mod tests {
     use super::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
     use super::tools::parse_text_tool_calls;
+    use super::{RuntimePromptContext, render_runtime_context_system_prompt};
     use crate::channels::adapter::AudioFormat;
 
     #[test]
     fn parses_text_tool_call_envelope() {
         let calls = parse_text_tool_calls(
-            r#"{"tool_calls":[{"name":"get_current_time","arguments":{"format":"human"}}]}"#,
+            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{"format":"human"}}]}"#,
         )
         .unwrap();
 
@@ -890,7 +975,7 @@ mod tests {
     #[test]
     fn parses_fenced_text_tool_call_envelope() {
         let calls = parse_text_tool_calls(
-            "```json\n{\"tool_calls\":[{\"tool_name\":\"sensor_list\",\"arguments\":\"{}\"}]}\n```",
+            "```json\n{\"schema\":\"alia.tool_calls.v1\",\"tool_calls\":[{\"tool_name\":\"sensor_list\",\"arguments\":\"{}\"}]}\n```",
         )
         .unwrap();
 
@@ -902,6 +987,81 @@ mod tests {
     fn ignores_plain_assistant_text() {
         let calls = parse_text_tool_calls("Sure, I can help with that.").unwrap();
         assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn ignores_tool_call_without_schema() {
+        let calls =
+            parse_text_tool_calls(r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}"#)
+                .unwrap();
+
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn ignores_embedded_tool_call_examples() {
+        let calls = parse_text_tool_calls(
+            r#"Tool use rules:
+- If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
+  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
+
+Available tools:
+[
+  {"name":"get_current_time","parameters":{"type":"object"}}
+]"#,
+        )
+        .unwrap();
+
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn ignores_json_with_trailing_text() {
+        let calls = parse_text_tool_calls(
+            r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}
+This is an example, not a call."#,
+        )
+        .unwrap();
+
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn ignores_envelope_with_user_facing_content() {
+        let calls = parse_text_tool_calls(
+            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{}}],"content":"I will call a tool."}"#,
+        )
+        .unwrap();
+
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn ignores_text_tool_call_with_non_object_arguments() {
+        let calls = parse_text_tool_calls(
+            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":"not json"}]}"#,
+        )
+        .unwrap();
+
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn renders_runtime_context_prompt_outside_persona() {
+        let prompt = render_runtime_context_system_prompt(&RuntimePromptContext {
+            core_memories: vec!["The user likes coffee.".to_string()],
+            user_preferences: vec![("Temperature".to_string(), "26 C".to_string())],
+            current_time: "2026-05-16 16:30".to_string(),
+            user_presence: "At home".to_string(),
+            device_status_summary: "Living room speaker is online".to_string(),
+            available_skills: vec!["Climate control".to_string()],
+        })
+        .unwrap();
+
+        assert!(prompt.contains("## Runtime Context"));
+        assert!(prompt.contains("The user likes coffee."));
+        assert!(prompt.contains("## Skill Routing Context"));
+        assert!(prompt.contains("They are not functions to call directly"));
     }
 
     #[test]

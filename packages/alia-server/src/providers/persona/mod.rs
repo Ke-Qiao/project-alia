@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::module::ModuleLifecycle;
-use crate::providers::adapter::{Persona, PersonaProvider, PromptVars};
+use crate::providers::adapter::{Persona, PersonaProvider};
 
 pub struct NoopPersona;
 
@@ -36,11 +36,7 @@ impl PersonaProvider for NoopPersona {
         })
     }
 
-    async fn render_system_prompt(
-        &self,
-        _user_id: Uuid,
-        _vars: PromptVars,
-    ) -> anyhow::Result<String> {
+    async fn render_system_prompt(&self, _user_id: Uuid) -> anyhow::Result<String> {
         Ok("You are Alia, a helpful assistant.".into())
     }
 }

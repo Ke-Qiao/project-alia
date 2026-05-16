@@ -312,21 +312,10 @@ pub struct Persona {
     pub behavior_guidelines: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct PromptVars {
-    pub core_memories: Vec<String>,
-    pub user_preferences: Vec<(String, String)>,
-    pub current_time: String,
-    pub user_presence: String,
-    pub device_status_summary: String,
-    pub available_skills: Vec<String>,
-}
-
 #[async_trait]
 pub trait PersonaProvider: ModuleLifecycle {
     async fn get_effective_persona(&self, user_id: Uuid) -> anyhow::Result<Persona>;
-    async fn render_system_prompt(&self, user_id: Uuid, vars: PromptVars)
-    -> anyhow::Result<String>;
+    async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String>;
 }
 
 // ========== Conversation Backend ==========

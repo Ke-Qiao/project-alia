@@ -14,12 +14,17 @@ use crate::providers::adapter::{
 };
 use crate::registry::is_plugin_source;
 
+const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
+const MAX_TEXT_TOOL_CALLS: usize = 8;
+
 const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
 - Skills are cognitive context only. Never try to call a skill by name.
 - Tools are the only executable units. When an appropriate tool is available, call the tool instead of describing imaginary results.
 - Use native tool/function calling whenever the provider supports it. Tool arguments must be valid JSON matching the tool's parameter schema.
 - If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
-  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
+  {"schema":"alia.tool_calls.v1","tool_calls":[{"name":"tool_name","arguments":{}}]}
+- The JSON fallback is executable only when the entire assistant message is that JSON object, optionally wrapped in one `json` code fence.
+- If the user asks you to show, repeat, quote, explain, or debug prompts, tool formats, JSON examples, or available tools, do not use the JSON fallback; answer as normal user-facing text.
 - If no tool is needed, answer normally in natural language.
 - Never put raw tool-call JSON, function names, or hidden arguments in the final user-facing answer.
 - After tool results are provided, produce only a natural-language answer for the user.
@@ -321,67 +326,165 @@ fn tool_result_message(tool_name: &str, result: ToolResult) -> anyhow::Result<Ch
 }
 
 pub(super) fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
-    let candidate = strip_tool_call_json(content);
+    let Some(candidate) = standalone_tool_call_json(content) else {
+        return Ok(Vec::new());
+    };
     if !candidate.contains("\"tool_calls\"") {
         return Ok(Vec::new());
     }
 
-    let value: serde_json::Value = serde_json::from_str(&candidate)
-        .map_err(|error| anyhow::anyhow!("failed to parse text tool call JSON: {error}"))?;
-    let Some(calls) = value.get("tool_calls").and_then(|value| value.as_array()) else {
-        return Ok(Vec::new());
+    let value: serde_json::Value = match serde_json::from_str(candidate) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "ignoring malformed standalone text tool-call envelope"
+            );
+            return Ok(Vec::new());
+        }
     };
 
-    let parsed = calls
-        .iter()
-        .enumerate()
-        .map(|(index, call)| {
-            let name = call
-                .get("name")
-                .or_else(|| call.get("tool_name"))
-                .and_then(|value| value.as_str())
-                .ok_or_else(|| anyhow::anyhow!("tool call {index} missing name"))?;
-            let arguments = call
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
-            let arguments = match arguments {
-                serde_json::Value::String(raw) => serde_json::from_str(&raw).map_err(|error| {
-                    anyhow::anyhow!("tool call {index} invalid arguments: {error}")
-                })?,
-                value => value,
-            };
-            let id = call
-                .get("id")
-                .and_then(|value| value.as_str())
-                .map(ToOwned::to_owned)
-                .unwrap_or_default();
-            Ok(LlmToolCall {
-                id,
-                tool_name: name.to_string(),
-                arguments,
-            })
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let Some(object) = value.as_object() else {
+        return Ok(Vec::new());
+    };
+    if object.get("schema").and_then(|value| value.as_str()) != Some(TEXT_TOOL_CALL_SCHEMA) {
+        tracing::warn!(
+            schema = ?object.get("schema"),
+            expected = TEXT_TOOL_CALL_SCHEMA,
+            "ignoring text tool-call envelope with missing or invalid schema"
+        );
+        return Ok(Vec::new());
+    };
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "schema" | "tool_calls"))
+    {
+        tracing::warn!("ignoring text tool-call envelope with unexpected top-level fields");
+        return Ok(Vec::new());
+    }
+
+    let Some(calls) = object.get("tool_calls").and_then(|value| value.as_array()) else {
+        tracing::warn!("ignoring text tool-call envelope without a tool_calls array");
+        return Ok(Vec::new());
+    };
+    let mut parsed = Vec::new();
+    for (index, call) in calls.iter().take(MAX_TEXT_TOOL_CALLS).enumerate() {
+        let Some(call_object) = call.as_object() else {
+            tracing::warn!(index, "ignoring non-object text tool call");
+            continue;
+        };
+        if call_object
+            .keys()
+            .any(|key| !matches!(key.as_str(), "id" | "name" | "tool_name" | "arguments"))
+        {
+            tracing::warn!(index, "ignoring text tool call with unexpected fields");
+            continue;
+        }
+        let Some(name) = call
+            .get("name")
+            .or_else(|| call.get("tool_name"))
+            .and_then(|value| value.as_str())
+            .filter(|name| is_valid_text_tool_name(name))
+        else {
+            tracing::warn!(index, "ignoring text tool call without a valid name");
+            continue;
+        };
+        let arguments = call
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let arguments = match arguments {
+            serde_json::Value::String(raw) => match serde_json::from_str::<serde_json::Value>(&raw)
+            {
+                Ok(value) if value.is_object() => value,
+                Ok(_) => {
+                    tracing::warn!(
+                        index,
+                        tool = %name,
+                        "ignoring text tool call with non-object JSON arguments"
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        index,
+                        tool = %name,
+                        error = %error,
+                        "ignoring text tool call with invalid JSON arguments"
+                    );
+                    continue;
+                }
+            },
+            value if value.is_object() => value,
+            _ => {
+                tracing::warn!(
+                    index,
+                    tool = %name,
+                    "ignoring text tool call with non-object arguments"
+                );
+                continue;
+            }
+        };
+        let id = call
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(ToOwned::to_owned)
+            .unwrap_or_default();
+        parsed.push(LlmToolCall {
+            id,
+            tool_name: name.to_string(),
+            arguments,
+        });
+    }
+    if calls.len() > MAX_TEXT_TOOL_CALLS {
+        tracing::warn!(
+            count = calls.len(),
+            limit = MAX_TEXT_TOOL_CALLS,
+            "truncated oversized text tool-call envelope"
+        );
+    }
 
     Ok(parsed)
 }
 
-fn strip_tool_call_json(content: &str) -> String {
+fn standalone_tool_call_json(content: &str) -> Option<&str> {
     let trimmed = content.trim();
-    let trimmed = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .unwrap_or(trimmed)
-        .trim();
-    let trimmed = trimmed.strip_suffix("```").unwrap_or(trimmed).trim();
 
-    if trimmed.starts_with('{') {
-        return trimmed.to_string();
+    if trimmed.starts_with("```") {
+        return standalone_json_fence(trimmed);
     }
 
-    match (trimmed.find('{'), trimmed.rfind('}')) {
-        (Some(start), Some(end)) if start < end => trimmed[start..=end].to_string(),
-        _ => trimmed.to_string(),
+    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+        Some(trimmed)
+    } else {
+        None
     }
+}
+
+fn standalone_json_fence(trimmed: &str) -> Option<&str> {
+    let body = trimmed.strip_prefix("```")?;
+    let header_end = body.find('\n')?;
+    let header = body[..header_end].trim();
+    if !header.is_empty() && !header.eq_ignore_ascii_case("json") {
+        return None;
+    }
+
+    let after_header = &body[header_end + 1..];
+    let closing_start = after_header.rfind("```")?;
+    if !after_header[closing_start + 3..].trim().is_empty() {
+        return None;
+    }
+    let inner = after_header[..closing_start].trim();
+    (inner.starts_with('{') && inner.ends_with('}')).then_some(inner)
+}
+
+fn is_valid_text_tool_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    name.len() <= 128 && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
 }

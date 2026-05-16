@@ -13,61 +13,24 @@ use uuid::Uuid;
 
 use crate::entity::{persona, user_active_persona, user_persona_override};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{Persona, PersonaProvider, PromptVars};
-
-const TOOL_USE_GUIDELINES: &str = r#"## 工具与技能
-- 如果系统提供了工具调用，请通过工具调用完成操作或查询，不要把工具调用 JSON、函数名或内部参数直接说给用户。
-- 工具返回结果后，只用自然语言总结用户需要知道的结果。
-- 如果工具需要用户确认，请先请求确认，不要声称已经执行。"#;
+use crate::providers::adapter::{Persona, PersonaProvider};
 
 /// Default system prompt template with Handlebars variables
-const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 Alia，一个贴心的智能家居助手。你性格温和、有耐心，喜欢帮助用户解决日常生活中的问题。
+const DEFAULT_SYSTEM_PROMPT: &str = r#"You are Alia, a warm and capable personal assistant for everyday life, smart-home control, and voice-first interaction.
 
-## 核心特质
-- 温和体贴，善于倾听
-- 专注于用户的真实需求
-- 对智能家居和日常生活有丰富的了解
-- 尊重用户隐私，不主动询问敏感信息
+## Core Traits
+- Be calm, concise, and genuinely helpful.
+- Listen for the user's real intent, especially in short voice commands.
+- Use available context carefully, without pretending to know things the system did not provide.
+- Respect privacy. Do not ask for sensitive information unless it is necessary for the task.
+- Prefer practical next steps over long explanations, unless the user asks for detail.
 
 {{#if behavior_guidelines}}
-## 行为准则
+## Additional Behavior Guidelines
 {{{behavior_guidelines}}}
 {{/if}}
 
-{{#if core_memories}}
-## 你对用户的了解
-{{#each core_memories}}
-- {{{this}}}
-{{/each}}
-{{/if}}
-
-{{#if user_preferences}}
-## 用户偏好
-{{#each user_preferences}}
-- {{this.[0]}}: {{this.[1]}}
-{{/each}}
-{{/if}}
-
-## 当前环境
-- 时间: {{current_time}}
-{{#if user_presence}}
-- 用户状态: {{user_presence}}
-{{/if}}
-{{#if device_status_summary}}
-- 设备状态: {{device_status_summary}}
-{{/if}}
-
-{{#if available_skills}}
-## 可用能力
-你可以执行以下操作:
-{{#each available_skills}}
-- {{this}}
-{{/each}}
-{{/if}}
-
-{{{tool_use_guidelines}}}
-
-请用自然、亲切的方式回应用户。
+Respond naturally in the language the user is using when it is clear. Keep voice responses short unless the user asks for a longer answer.
 "#;
 
 /// Template-based Persona Provider backed by PostgreSQL
@@ -163,7 +126,7 @@ impl TemplatePersona {
                 "language": "zh-CN",
                 "style": "warm"
             }),
-            greeting: Some("你好！有什么我可以帮助你的吗？".to_string()),
+            greeting: Some("Hello! How can I help you?".to_string()),
             behavior_guidelines: None,
         }
     }
@@ -236,23 +199,13 @@ impl PersonaProvider for TemplatePersona {
         Ok(Self::merge_persona(&persona_model, user_override.as_ref()))
     }
 
-    async fn render_system_prompt(
-        &self,
-        user_id: Uuid,
-        vars: PromptVars,
-    ) -> anyhow::Result<String> {
+    async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String> {
         let persona = self.get_effective_persona(user_id).await?;
 
         let data = serde_json::json!({
             "persona_name": persona.name,
-            "core_memories": vars.core_memories,
-            "user_preferences": vars.user_preferences,
-            "current_time": vars.current_time,
-            "user_presence": vars.user_presence,
-            "device_status_summary": vars.device_status_summary,
-            "available_skills": vars.available_skills,
             "behavior_guidelines": persona.behavior_guidelines,
-            "tool_use_guidelines": TOOL_USE_GUIDELINES,
+            "personality_traits": persona.personality_traits,
         });
 
         let handlebars = self.handlebars.read().await;
@@ -268,10 +221,6 @@ impl PersonaProvider for TemplatePersona {
                 handlebars.render("default", &data)?
             }
         };
-        if rendered.contains("## 工具与技能") {
-            Ok(rendered)
-        } else {
-            Ok(format!("{rendered}\n\n{TOOL_USE_GUIDELINES}"))
-        }
+        Ok(rendered)
     }
 }
