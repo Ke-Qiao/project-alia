@@ -3,16 +3,19 @@
 //! Implements EmbeddingAdapter for local Ollama embedding models.
 //! Supports models like nomic-embed-text, mxbai-embed-large, etc.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::EmbeddingAdapter;
+use crate::settings::values::string_setting;
 
 /// Ollama embedding request
 #[derive(Debug, Serialize)]
@@ -53,6 +56,17 @@ impl OllamaEmbedding {
     }
 }
 
+fn ollama_embedding_dimension(model: &str) -> usize {
+    match model {
+        "nomic-embed-text" => 768,
+        "mxbai-embed-large" => 1024,
+        "snowflake-arctic-embed" => 1024,
+        "all-minilm" => 384,
+        "bge-m3" => 1024,
+        _ => 768,
+    }
+}
+
 impl Default for OllamaEmbedding {
     fn default() -> Self {
         Self::new()
@@ -73,14 +87,7 @@ impl ModuleLifecycle for OllamaEmbedding {
         config.model = server_config.providers.ollama.embedding_model.clone();
 
         // Set dimension based on model
-        config.dimension = match config.model.as_str() {
-            "nomic-embed-text" => 768,
-            "mxbai-embed-large" => 1024,
-            "snowflake-arctic-embed" => 1024,
-            "all-minilm" => 384,
-            "bge-m3" => 1024,
-            _ => 768, // default
-        };
+        config.dimension = ollama_embedding_dimension(&config.model);
 
         tracing::info!(model = %config.model, endpoint = %config.endpoint, dimension = config.dimension, "Ollama Embedding initialized");
         Ok(())
@@ -102,6 +109,29 @@ impl ModuleLifecycle for OllamaEmbedding {
             }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Ollama: {}", e)),
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.write().await;
+
+        if let Some(value) = string_setting(updates, "core.providers.ollama.endpoint") {
+            config.endpoint = value;
+            applied.push("core.providers.ollama.endpoint".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.ollama.embedding_model") {
+            config.dimension = ollama_embedding_dimension(&value);
+            config.model = value;
+            applied.push("core.providers.ollama.embedding_model".to_string());
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

@@ -1,5 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
@@ -31,6 +34,14 @@ pub struct ModuleRegistry {
     pub tools: Arc<dyn ToolRegistry>,
     // Custom extensions
     pub extensions: Vec<Arc<dyn ModuleLifecycle>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleSettingsApplyReport {
+    pub module: String,
+    pub applied: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl ModuleRegistry {
@@ -96,5 +107,60 @@ impl ModuleRegistry {
         results.insert("scheduler".to_string(), self.scheduler.health_check().await);
         results.insert("tools".to_string(), self.tools.health_check().await);
         results
+    }
+
+    /// Apply runtime settings to modules that support hot reload.
+    pub async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> Vec<ModuleSettingsApplyReport> {
+        let modules: Vec<&dyn ModuleLifecycle> = vec![
+            self.local_llm.as_ref(),
+            self.remote_llm.as_ref(),
+            self.stt.as_ref(),
+            self.tts.as_ref(),
+            self.embedding.as_ref(),
+            self.cache.as_ref(),
+            self.skills.as_ref(),
+            self.router.as_ref(),
+            self.insights.as_ref(),
+            self.rule_engine.as_ref(),
+            self.tools.as_ref(),
+        ];
+
+        let mut reports = Vec::new();
+        for module in modules {
+            match module.apply_settings(updates).await {
+                Ok(applied) if !applied.is_empty() => reports.push(ModuleSettingsApplyReport {
+                    module: module.name().to_string(),
+                    applied,
+                    error: None,
+                }),
+                Ok(_) => {}
+                Err(error) => reports.push(ModuleSettingsApplyReport {
+                    module: module.name().to_string(),
+                    applied: Vec::new(),
+                    error: Some(error.to_string()),
+                }),
+            }
+        }
+
+        for extension in &self.extensions {
+            match extension.apply_settings(updates).await {
+                Ok(applied) if !applied.is_empty() => reports.push(ModuleSettingsApplyReport {
+                    module: extension.name().to_string(),
+                    applied,
+                    error: None,
+                }),
+                Ok(_) => {}
+                Err(error) => reports.push(ModuleSettingsApplyReport {
+                    module: extension.name().to_string(),
+                    applied: Vec::new(),
+                    error: Some(error.to_string()),
+                }),
+            }
+        }
+
+        reports
     }
 }

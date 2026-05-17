@@ -3,16 +3,19 @@
 //! Implements EmbeddingAdapter for OpenAI embedding models.
 //! Supports text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::EmbeddingAdapter;
+use crate::settings::values::string_setting;
 
 /// OpenAI embedding request
 #[derive(Debug, Serialize)]
@@ -62,6 +65,15 @@ impl OpenAiEmbedding {
     }
 }
 
+fn openai_embedding_dimension(model: &str) -> usize {
+    match model {
+        "text-embedding-3-small" => 1536,
+        "text-embedding-3-large" => 3072,
+        "text-embedding-ada-002" => 1536,
+        _ => 1536,
+    }
+}
+
 impl Default for OpenAiEmbedding {
     fn default() -> Self {
         Self::new()
@@ -83,12 +95,7 @@ impl ModuleLifecycle for OpenAiEmbedding {
         config.model = server_config.providers.openai.embedding_model.clone();
 
         // Set dimension based on model
-        config.dimension = match config.model.as_str() {
-            "text-embedding-3-small" => 1536,
-            "text-embedding-3-large" => 3072,
-            "text-embedding-ada-002" => 1536,
-            _ => 1536, // default
-        };
+        config.dimension = openai_embedding_dimension(&config.model);
 
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured for embedding");
@@ -105,6 +112,33 @@ impl ModuleLifecycle for OpenAiEmbedding {
         } else {
             ModuleHealth::Healthy
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.write().await;
+
+        if let Some(value) = string_setting(updates, "core.providers.openai.api_key") {
+            config.api_key = value;
+            applied.push("core.providers.openai.api_key".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.openai.base_url") {
+            config.base_url = value;
+            applied.push("core.providers.openai.base_url".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.openai.embedding_model") {
+            config.dimension = openai_embedding_dimension(&value);
+            config.model = value;
+            applied.push("core.providers.openai.embedding_model".to_string());
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

@@ -4,7 +4,7 @@ use sea_orm::DatabaseConnection;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::JwtKeys;
-use crate::channels::ChannelRegistry;
+use crate::channels::{ChannelRegistry, SharedPipelinePolicies};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::ModuleRegistry;
@@ -26,5 +26,6 @@ pub struct AppState {
     pub config: Arc<ServerConfig>,
     pub jwt_keys: Arc<JwtKeys>,
     pub settings: SettingsRegistry,
+    pub pipeline_policies: SharedPipelinePolicies,
     pub cancel_token: CancellationToken,
 }

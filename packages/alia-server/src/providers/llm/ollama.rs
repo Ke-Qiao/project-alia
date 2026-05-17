@@ -3,6 +3,7 @@
 //! Implements LlmAdapter for local Ollama models with streaming support.
 //! Supports any model available in local Ollama instance.
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
@@ -17,6 +19,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolDefinition,
 };
+use crate::settings::values::{f32_setting, string_setting};
 
 /// Ollama chat request
 #[derive(Debug, Serialize)]
@@ -249,6 +252,32 @@ impl ModuleLifecycle for OllamaLlm {
             }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Ollama: {}", e)),
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.write().await;
+
+        if let Some(value) = string_setting(updates, "core.providers.ollama.endpoint") {
+            config.endpoint = value;
+            applied.push("core.providers.ollama.endpoint".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.ollama.chat_model") {
+            config.model = value;
+            applied.push("core.providers.ollama.chat_model".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.providers.ollama.temperature") {
+            config.temperature = value;
+            applied.push("core.providers.ollama.temperature".to_string());
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

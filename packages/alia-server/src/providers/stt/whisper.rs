@@ -3,6 +3,7 @@
 //! Implements SttAdapter for whisper.cpp server with streaming support.
 //! Connects to a whisper.cpp HTTP server for speech-to-text transcription.
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,11 +12,13 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{AudioEncoding, SttAdapter, TranscribeChunk};
+use crate::settings::values::{string_setting, u64_setting};
 
 /// Whisper.cpp transcription response
 #[derive(Debug, Deserialize)]
@@ -112,6 +115,33 @@ impl ModuleLifecycle for WhisperCppStt {
             }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to Whisper: {}", e)),
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.write().await;
+
+        if let Some(value) = string_setting(updates, "core.providers.whisper_cpp.endpoint") {
+            config.endpoint = value;
+            applied.push("core.providers.whisper_cpp.endpoint".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.whisper_cpp.language") {
+            config.language = value;
+            applied.push("core.providers.whisper_cpp.language".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.providers.whisper_cpp.request_timeout_sec")
+        {
+            config.request_timeout_sec = value;
+            applied.push("core.providers.whisper_cpp.request_timeout_sec".to_string());
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

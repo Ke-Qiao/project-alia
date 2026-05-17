@@ -3,6 +3,7 @@
 //! Implements TtsAdapter for GPT-SoVITS server with streaming support.
 //! Connects to GPT-SoVITS HTTP API for high-quality voice synthesis.
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,11 +12,16 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::TtsAdapter;
+use crate::settings::values::{
+    bool_setting, f32_setting, i32_setting, optional_string_setting, string_setting,
+    string_vec_setting, u32_setting, u64_setting,
+};
 
 /// GPT-SoVITS synthesis request
 #[derive(Debug, Serialize)]
@@ -313,6 +319,166 @@ impl ModuleLifecycle for GptSovitsTts {
             }
             Err(e) => ModuleHealth::Unhealthy(format!("Cannot connect to GPT-SoVITS: {}", e)),
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let configured = {
+            let mut config = self.config.write().await;
+
+            if let Some(value) = string_setting(updates, "core.providers.gpt_sovits.endpoint") {
+                config.endpoint = value;
+                applied.push("core.providers.gpt_sovits.endpoint".to_string());
+            }
+            if let Some(value) =
+                u64_setting(updates, "core.providers.gpt_sovits.request_timeout_sec")
+            {
+                config.request_timeout_sec = value;
+                applied.push("core.providers.gpt_sovits.request_timeout_sec".to_string());
+            }
+            if let Some(value) =
+                u64_setting(updates, "core.providers.gpt_sovits.stream_idle_timeout_sec")
+            {
+                config.stream_idle_timeout_sec = value;
+                applied.push("core.providers.gpt_sovits.stream_idle_timeout_sec".to_string());
+            }
+
+            if let Some(value) =
+                optional_string_setting(updates, "core.profiles.voice.default.model_name")
+            {
+                config.model_name = value;
+                applied.push("core.profiles.voice.default.model_name".to_string());
+            }
+            if let Some(value) =
+                optional_string_setting(updates, "core.profiles.voice.default.gpt_weights_path")
+            {
+                config.gpt_weights_path = value;
+                applied.push("core.profiles.voice.default.gpt_weights_path".to_string());
+            }
+            if let Some(value) =
+                optional_string_setting(updates, "core.profiles.voice.default.sovits_weights_path")
+            {
+                config.sovits_weights_path = value;
+                applied.push("core.profiles.voice.default.sovits_weights_path".to_string());
+            }
+            if let Some(value) =
+                optional_string_setting(updates, "core.profiles.voice.default.ref_audio_path")
+            {
+                config.ref_audio_path = value;
+                applied.push("core.profiles.voice.default.ref_audio_path".to_string());
+            }
+            if let Some(value) =
+                string_vec_setting(updates, "core.profiles.voice.default.aux_ref_audio_paths")
+            {
+                config.aux_ref_audio_paths = value;
+                applied.push("core.profiles.voice.default.aux_ref_audio_paths".to_string());
+            }
+            if let Some(value) =
+                optional_string_setting(updates, "core.profiles.voice.default.prompt_text")
+            {
+                config.prompt_text = value;
+                applied.push("core.profiles.voice.default.prompt_text".to_string());
+            }
+            if let Some(value) = string_setting(updates, "core.profiles.voice.default.text_lang") {
+                config.text_lang = value;
+                applied.push("core.profiles.voice.default.text_lang".to_string());
+            }
+            if let Some(value) = string_setting(updates, "core.profiles.voice.default.prompt_lang")
+            {
+                config.prompt_lang = value;
+                applied.push("core.profiles.voice.default.prompt_lang".to_string());
+            }
+            if let Some(value) =
+                string_setting(updates, "core.profiles.voice.default.text_split_method")
+            {
+                config.text_split_method = value;
+                applied.push("core.profiles.voice.default.text_split_method".to_string());
+            }
+            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.batch_size") {
+                config.batch_size = value;
+                applied.push("core.profiles.voice.default.batch_size".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.profiles.voice.default.batch_threshold")
+            {
+                config.batch_threshold = value;
+                applied.push("core.profiles.voice.default.batch_threshold".to_string());
+            }
+            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.split_bucket") {
+                config.split_bucket = value;
+                applied.push("core.profiles.voice.default.split_bucket".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.profiles.voice.default.speed_factor") {
+                config.speed_factor = value;
+                applied.push("core.profiles.voice.default.speed_factor".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.profiles.voice.default.fragment_interval")
+            {
+                config.fragment_interval = value;
+                applied.push("core.profiles.voice.default.fragment_interval".to_string());
+            }
+            if let Some(value) = i32_setting(updates, "core.profiles.voice.default.seed") {
+                config.seed = value;
+                applied.push("core.profiles.voice.default.seed".to_string());
+            }
+            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.parallel_infer")
+            {
+                config.parallel_infer = value;
+                applied.push("core.profiles.voice.default.parallel_infer".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.profiles.voice.default.repetition_penalty")
+            {
+                config.repetition_penalty = value;
+                applied.push("core.profiles.voice.default.repetition_penalty".to_string());
+            }
+            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.sample_steps") {
+                config.sample_steps = value;
+                applied.push("core.profiles.voice.default.sample_steps".to_string());
+            }
+            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.super_sampling")
+            {
+                config.super_sampling = value;
+                applied.push("core.profiles.voice.default.super_sampling".to_string());
+            }
+            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.overlap_length")
+            {
+                config.overlap_length = value;
+                applied.push("core.profiles.voice.default.overlap_length".to_string());
+            }
+            if let Some(value) =
+                u32_setting(updates, "core.profiles.voice.default.min_chunk_length")
+            {
+                config.min_chunk_length = value;
+                applied.push("core.profiles.voice.default.min_chunk_length".to_string());
+            }
+
+            config.clone()
+        };
+
+        if applied.iter().any(|key| {
+            matches!(
+                key.as_str(),
+                "core.providers.gpt_sovits.endpoint"
+                    | "core.profiles.voice.default.gpt_weights_path"
+                    | "core.profiles.voice.default.sovits_weights_path"
+            )
+        }) && let Err(error) = configure_remote_weights(&self.client, &configured).await
+        {
+            tracing::warn!(
+                error = %error,
+                endpoint = %configured.endpoint,
+                "GPT-SoVITS runtime weight setup failed; keeping updated request config"
+            );
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

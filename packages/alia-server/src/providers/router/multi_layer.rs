@@ -6,16 +6,18 @@
 //!   - LOCAL_LLM → simple chat handled by local Ollama model
 //!   - REMOTE_LLM → complex reasoning forwarded to remote LLM (GPT-4o / Claude)
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput};
+use crate::settings::values::{bool_setting, f32_setting, string_setting, u64_setting};
 
 // ── Ollama API types (local to this module) ────────────────────────────
 
@@ -555,6 +557,56 @@ impl ModuleLifecycle for MultiLayerRouter {
         } else {
             ModuleHealth::Unhealthy("not initialized".to_string())
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut config_guard = self.config.write().await;
+        let Some(config) = config_guard.as_mut() else {
+            return Ok(Vec::new());
+        };
+
+        let mut next = config.clone();
+        let mut applied = Vec::new();
+
+        if let Some(value) = string_setting(updates, "core.providers.ollama.endpoint") {
+            next.ollama_endpoint = value;
+            applied.push("core.providers.ollama.endpoint".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.policies.routing.model") {
+            next.model = value;
+            applied.push("core.policies.routing.model".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.policies.routing.temperature") {
+            next.temperature = value;
+            applied.push("core.policies.routing.temperature".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.routing.timeout_sec") {
+            next.timeout_sec = value;
+            applied.push("core.policies.routing.timeout_sec".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.routing.local_llm_enabled") {
+            next.local_llm_enabled = value;
+            applied.push("core.policies.routing.local_llm_enabled".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.routing.remote_llm_enabled") {
+            next.remote_llm_enabled = value;
+            applied.push("core.policies.routing.remote_llm_enabled".to_string());
+        }
+
+        if !next.local_llm_enabled && !next.remote_llm_enabled {
+            anyhow::bail!(
+                "invalid routing policy: at least one of local_llm_enabled or remote_llm_enabled must stay enabled"
+            );
+        }
+
+        if !applied.is_empty() {
+            *config = next;
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 

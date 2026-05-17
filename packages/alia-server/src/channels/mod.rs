@@ -8,5 +8,5 @@ pub(crate) mod pipeline;
 pub(crate) mod registry;
 
 pub use adapter::ChannelAdapter;
-pub use pipeline::spawn_pipeline;
+pub use pipeline::{PipelinePolicies, SharedPipelinePolicies, spawn_pipeline};
 pub use registry::ChannelRegistry;

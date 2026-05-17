@@ -321,23 +321,33 @@ impl SettingsRegistry {
             (
                 "core.database.url",
                 json!(config.database.url),
-                schema_secret("Database URL"),
+                schema_secret("Database URL", true),
             ),
             (
                 "core.database.max_connections",
                 json!(config.database.max_connections),
                 schema("Max Connections", "number", true),
             ),
-            // LLM / conversation
+            // Providers
             (
                 "core.providers.openai.api_key",
                 json!(config.providers.openai.api_key),
-                schema_secret("OpenAI API Key"),
+                schema_secret("OpenAI API Key", false),
             ),
             (
                 "core.providers.openai.chat_model",
                 json!(config.providers.openai.chat_model),
                 schema("OpenAI Model", "string", false),
+            ),
+            (
+                "core.providers.openai.embedding_model",
+                json!(config.providers.openai.embedding_model),
+                schema("OpenAI Embedding Model", "string", false),
+            ),
+            (
+                "core.providers.openai.temperature",
+                json!(0.7),
+                schema("OpenAI Temperature", "number", false),
             ),
             (
                 "core.providers.openai.base_url",
@@ -355,6 +365,82 @@ impl SettingsRegistry {
                 schema("Ollama Model", "string", false),
             ),
             (
+                "core.providers.ollama.embedding_model",
+                json!(config.providers.ollama.embedding_model),
+                schema("Ollama Embedding Model", "string", false),
+            ),
+            (
+                "core.providers.ollama.temperature",
+                json!(0.7),
+                schema("Ollama Temperature", "number", false),
+            ),
+            (
+                "core.providers.whisper_cpp.endpoint",
+                json!(config.providers.whisper_cpp.endpoint),
+                schema("Whisper.cpp Endpoint", "string", false),
+            ),
+            (
+                "core.providers.whisper_cpp.language",
+                json!("auto"),
+                schema("Whisper.cpp Language", "string", false),
+            ),
+            (
+                "core.providers.whisper_cpp.request_timeout_sec",
+                json!(config.providers.whisper_cpp.request_timeout_sec),
+                schema("Whisper.cpp Timeout", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.endpoint",
+                json!(config.providers.gpt_sovits.endpoint),
+                schema("GPT-SoVITS Endpoint", "string", false),
+            ),
+            (
+                "core.providers.gpt_sovits.request_timeout_sec",
+                json!(config.providers.gpt_sovits.request_timeout_sec),
+                schema("GPT-SoVITS Timeout", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.stream_idle_timeout_sec",
+                json!(config.providers.gpt_sovits.stream_idle_timeout_sec),
+                schema("GPT-SoVITS Stream Idle Timeout", "number", false),
+            ),
+            (
+                "core.providers.mem0.base_url",
+                json!(config.providers.mem0.base_url),
+                schema("Mem0 Base URL", "string", true),
+            ),
+            (
+                "core.providers.mem0.api_key",
+                json!(config.providers.mem0.api_key),
+                schema_secret("Mem0 API Key", true),
+            ),
+            // Policies
+            (
+                "core.policies.routing.model",
+                json!(config.policies.routing.model),
+                schema("Router Model", "string", false),
+            ),
+            (
+                "core.policies.routing.temperature",
+                json!(config.policies.routing.temperature),
+                schema("Router Temperature", "number", false),
+            ),
+            (
+                "core.policies.routing.timeout_sec",
+                json!(config.policies.routing.timeout_sec),
+                schema("Router Timeout", "number", false),
+            ),
+            (
+                "core.policies.routing.local_llm_enabled",
+                json!(config.policies.routing.local_llm_enabled),
+                schema("Enable Local LLM Routing", "bool", true),
+            ),
+            (
+                "core.policies.routing.remote_llm_enabled",
+                json!(config.policies.routing.remote_llm_enabled),
+                schema("Enable Remote LLM Routing", "bool", true),
+            ),
+            (
                 "core.policies.conversation.streaming_enabled",
                 json!(config.policies.conversation.streaming_enabled),
                 schema("Streaming", "bool", false),
@@ -363,6 +449,137 @@ impl SettingsRegistry {
                 "core.policies.conversation.max_context_messages",
                 json!(config.policies.conversation.max_context_messages),
                 schema("Max Context Turns", "number", false),
+            ),
+            (
+                "core.policies.cache.enabled",
+                json!(config.policies.cache.enabled),
+                schema("Enable Cache", "bool", false),
+            ),
+            (
+                "core.policies.cache.exact_match_enabled",
+                json!(config.policies.cache.exact_match_enabled),
+                schema("Enable Exact Cache", "bool", false),
+            ),
+            (
+                "core.policies.cache.semantic_match_enabled",
+                json!(config.policies.cache.semantic_match_enabled),
+                schema("Enable Semantic Cache", "bool", false),
+            ),
+            (
+                "core.policies.cache.semantic_threshold",
+                json!(config.policies.cache.semantic_threshold),
+                schema("Semantic Cache Threshold", "number", false),
+            ),
+            (
+                "core.policies.cache.default_ttl_seconds",
+                json!(config.policies.cache.default_ttl_seconds),
+                schema("Cache TTL", "number", false),
+            ),
+            (
+                "core.policies.cache.skill_cache_ttl_seconds",
+                json!(config.policies.cache.skill_cache_ttl_seconds),
+                schema("Skill Cache TTL", "number", false),
+            ),
+            (
+                "core.policies.memory.enabled",
+                json!(config.policies.memory.enabled),
+                schema("Enable Memory", "bool", true),
+            ),
+            (
+                "core.policies.memory.conversation_ingest_enabled",
+                json!(config.policies.memory.conversation_ingest_enabled),
+                schema("Memory Conversation Ingest", "bool", false),
+            ),
+            (
+                "core.policies.memory.max_retrieval_results",
+                json!(config.policies.memory.max_retrieval_results),
+                schema("Memory Retrieval Limit", "number", false),
+            ),
+            (
+                "core.policies.memory.similarity_threshold",
+                json!(config.policies.memory.similarity_threshold),
+                schema("Memory Similarity Threshold", "number", false),
+            ),
+            (
+                "core.policies.tools.max_tool_call_depth",
+                json!(config.policies.tools.max_tool_call_depth),
+                schema("Max Tool Call Depth", "number", false),
+            ),
+            (
+                "core.policies.tools.tool_call_timeout_sec",
+                json!(config.policies.tools.tool_call_timeout_sec),
+                schema("Tool Call Timeout", "number", false),
+            ),
+            (
+                "core.policies.tools.max_tools_per_turn",
+                json!(config.policies.tools.max_tools_per_turn),
+                schema("Max Tools Per Turn", "number", false),
+            ),
+            (
+                "core.policies.tools.candidate_pool_size",
+                json!(config.policies.tools.candidate_pool_size),
+                schema("Tool Candidate Pool", "number", false),
+            ),
+            (
+                "core.policies.tools.llm_candidate_filter_enabled",
+                json!(config.policies.tools.llm_candidate_filter_enabled),
+                schema("Enable LLM Tool Filter", "bool", false),
+            ),
+            (
+                "core.policies.tools.llm_candidate_filter_threshold",
+                json!(config.policies.tools.llm_candidate_filter_threshold),
+                schema("LLM Tool Filter Threshold", "number", false),
+            ),
+            (
+                "core.policies.tools.allow_plugin_tools",
+                json!(config.policies.tools.allow_plugin_tools),
+                schema("Allow Plugin Tools", "bool", false),
+            ),
+            // Profiles
+            (
+                "core.profiles.default_voice",
+                json!(config.profiles.default_voice),
+                schema("Default Voice Profile", "string", true),
+            ),
+            (
+                "core.profiles.voice.default.model_name",
+                json!(config.profiles.default_voice_profile().model_name),
+                schema("Voice Model Name", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.gpt_weights_path",
+                json!(config.profiles.default_voice_profile().gpt_weights_path),
+                schema("GPT Weights Path", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.sovits_weights_path",
+                json!(config.profiles.default_voice_profile().sovits_weights_path),
+                schema("SoVITS Weights Path", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.ref_audio_path",
+                json!(config.profiles.default_voice_profile().ref_audio_path),
+                schema("Reference Audio Path", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.prompt_text",
+                json!(config.profiles.default_voice_profile().prompt_text),
+                schema("Reference Prompt Text", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.text_lang",
+                json!(config.profiles.default_voice_profile().text_lang),
+                schema("Target Text Language", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.prompt_lang",
+                json!(config.profiles.default_voice_profile().prompt_lang),
+                schema("Reference Prompt Language", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.speed_factor",
+                json!(config.profiles.default_voice_profile().speed_factor),
+                schema("Voice Speed", "number", false),
             ),
             // Modules
             (
@@ -423,14 +640,14 @@ fn schema(label: &str, value_type: &str, requires_restart: bool) -> SettingSchem
     }
 }
 
-fn schema_secret(label: &str) -> SettingSchema {
+fn schema_secret(label: &str, requires_restart: bool) -> SettingSchema {
     SettingSchema {
         label: label.to_string(),
         description: None,
         value_type: "secret".to_string(),
         default: None,
         options: None,
-        requires_restart: true,
+        requires_restart,
         secret: true,
     }
 }

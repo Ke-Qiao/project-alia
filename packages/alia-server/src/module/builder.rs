@@ -2,11 +2,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sea_orm::DatabaseConnection;
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::JwtKeys;
-use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
+use crate::channels::{ChannelAdapter, ChannelRegistry, PipelinePolicies, spawn_pipeline};
 use crate::config::MemorySection;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
@@ -452,6 +453,12 @@ impl ServerBuilder {
 
         // Start sensor auto-cleanup
         sensor_registry.spawn_cleanup_loop(self.cancel_token.clone());
+        let pipeline_policies = Arc::new(RwLock::new(PipelinePolicies::new(
+            self.config.policies.conversation.clone(),
+            self.config.policies.tools.clone(),
+            self.config.policies.cache.clone(),
+            effective_memory_config,
+        )));
 
         let state = AppState {
             db: self.db,
@@ -464,8 +471,43 @@ impl ServerBuilder {
             config: self.config,
             jwt_keys: Arc::new(jwt_keys),
             settings,
+            pipeline_policies: pipeline_policies.clone(),
             cancel_token: self.cancel_token,
         };
+
+        let runtime_settings = state
+            .settings
+            .all()
+            .await
+            .into_iter()
+            .filter(|(_, entry)| {
+                !entry
+                    .schema
+                    .as_ref()
+                    .is_some_and(|schema| schema.requires_restart)
+            })
+            .map(|(key, entry)| (key, entry.value))
+            .collect();
+        for report in state.modules.apply_settings(&runtime_settings).await {
+            if let Some(error) = report.error {
+                tracing::warn!(
+                    module = %report.module,
+                    error = %error,
+                    "failed to apply persisted runtime settings"
+                );
+            }
+        }
+        let applied_pipeline_settings = state
+            .pipeline_policies
+            .write()
+            .await
+            .apply_settings(&runtime_settings);
+        if !applied_pipeline_settings.is_empty() {
+            tracing::debug!(
+                applied = ?applied_pipeline_settings,
+                "persisted pipeline settings applied"
+            );
+        }
 
         // Spawn the Channel → AI Pipeline processing loop
         spawn_pipeline(
@@ -475,9 +517,7 @@ impl ServerBuilder {
             state.sensors.clone(),
             state.cancel_token.clone(),
             state.config.server.debug_output,
-            state.config.policies.tools.clone(),
-            state.config.policies.cache.clone(),
-            effective_memory_config,
+            pipeline_policies,
         );
 
         Ok(state)

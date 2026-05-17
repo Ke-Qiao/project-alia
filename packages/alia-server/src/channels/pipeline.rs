@@ -12,13 +12,15 @@
 
 use std::sync::Arc;
 
+use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
-use crate::config::{CacheSection, MemorySection, ToolsSection};
+use crate::config::{CacheSection, ConversationSection, MemorySection, ToolsSection};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
@@ -28,6 +30,7 @@ use crate::providers::adapter::{
     ToolDefinition,
 };
 use crate::providers::sensor::SensorRegistry;
+use crate::settings::values::{bool_setting, f32_setting, u32_setting, u64_setting, usize_setting};
 
 mod debug;
 mod streaming;
@@ -146,6 +149,130 @@ struct RuntimePromptContext {
     available_skills: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PipelinePolicies {
+    pub conversation: ConversationSection,
+    pub tools: ToolsSection,
+    pub cache: CacheSection,
+    pub memory: MemorySection,
+}
+
+pub type SharedPipelinePolicies = Arc<RwLock<PipelinePolicies>>;
+
+impl PipelinePolicies {
+    pub fn new(
+        conversation: ConversationSection,
+        tools: ToolsSection,
+        cache: CacheSection,
+        memory: MemorySection,
+    ) -> Self {
+        Self {
+            conversation,
+            tools,
+            cache,
+            memory,
+        }
+    }
+
+    pub fn apply_settings(
+        &mut self,
+        updates: &std::collections::BTreeMap<String, Value>,
+    ) -> Vec<String> {
+        let mut applied = Vec::new();
+
+        if let Some(value) =
+            usize_setting(updates, "core.policies.conversation.max_context_messages")
+        {
+            self.conversation.max_context_messages = value;
+            applied.push("core.policies.conversation.max_context_messages".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.conversation.streaming_enabled") {
+            self.conversation.streaming_enabled = value;
+            applied.push("core.policies.conversation.streaming_enabled".to_string());
+        }
+
+        if let Some(value) = bool_setting(updates, "core.policies.cache.enabled") {
+            self.cache.enabled = value;
+            applied.push("core.policies.cache.enabled".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.cache.exact_match_enabled") {
+            self.cache.exact_match_enabled = value;
+            applied.push("core.policies.cache.exact_match_enabled".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.cache.semantic_match_enabled") {
+            self.cache.semantic_match_enabled = value;
+            applied.push("core.policies.cache.semantic_match_enabled".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.policies.cache.semantic_threshold") {
+            self.cache.semantic_threshold = value.clamp(0.0, 1.0);
+            applied.push("core.policies.cache.semantic_threshold".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.cache.default_ttl_seconds") {
+            self.cache.default_ttl_seconds = value;
+            applied.push("core.policies.cache.default_ttl_seconds".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.cache.skill_cache_ttl_seconds") {
+            self.cache.skill_cache_ttl_seconds = value;
+            applied.push("core.policies.cache.skill_cache_ttl_seconds".to_string());
+        }
+
+        if let Some(value) = bool_setting(updates, "core.policies.memory.enabled") {
+            self.memory.enabled = value;
+            applied.push("core.policies.memory.enabled".to_string());
+        }
+        if let Some(value) =
+            bool_setting(updates, "core.policies.memory.conversation_ingest_enabled")
+        {
+            self.memory.conversation_ingest_enabled = value;
+            applied.push("core.policies.memory.conversation_ingest_enabled".to_string());
+        }
+        if let Some(value) = u32_setting(updates, "core.policies.memory.max_retrieval_results") {
+            self.memory.max_retrieval_results = value;
+            applied.push("core.policies.memory.max_retrieval_results".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.policies.memory.similarity_threshold") {
+            self.memory.similarity_threshold = value.clamp(0.0, 1.0);
+            applied.push("core.policies.memory.similarity_threshold".to_string());
+        }
+
+        if let Some(value) = u32_setting(updates, "core.policies.tools.max_tool_call_depth") {
+            self.tools.max_tool_call_depth = value;
+            applied.push("core.policies.tools.max_tool_call_depth".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.tools.tool_call_timeout_sec") {
+            self.tools.tool_call_timeout_sec = value;
+            applied.push("core.policies.tools.tool_call_timeout_sec".to_string());
+        }
+        if let Some(value) = usize_setting(updates, "core.policies.tools.max_tools_per_turn") {
+            self.tools.max_tools_per_turn = value;
+            applied.push("core.policies.tools.max_tools_per_turn".to_string());
+        }
+        if let Some(value) = usize_setting(updates, "core.policies.tools.candidate_pool_size") {
+            self.tools.candidate_pool_size = value;
+            applied.push("core.policies.tools.candidate_pool_size".to_string());
+        }
+        if let Some(value) =
+            bool_setting(updates, "core.policies.tools.llm_candidate_filter_enabled")
+        {
+            self.tools.llm_candidate_filter_enabled = value;
+            applied.push("core.policies.tools.llm_candidate_filter_enabled".to_string());
+        }
+        if let Some(value) = usize_setting(
+            updates,
+            "core.policies.tools.llm_candidate_filter_threshold",
+        ) {
+            self.tools.llm_candidate_filter_threshold = value;
+            applied.push("core.policies.tools.llm_candidate_filter_threshold".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.tools.allow_plugin_tools") {
+            self.tools.allow_plugin_tools = value;
+            applied.push("core.policies.tools.allow_plugin_tools".to_string());
+        }
+
+        applied
+    }
+}
+
 /// Spawn the pipeline processing loop.
 ///
 /// The task runs until the cancel token is triggered. It subscribes to the
@@ -158,9 +285,7 @@ pub fn spawn_pipeline(
     sensors: Arc<SensorRegistry>,
     cancel_token: CancellationToken,
     debug_output: bool,
-    tools_config: ToolsSection,
-    cache_config: CacheSection,
-    memory_config: MemorySection,
+    policies: SharedPipelinePolicies,
 ) {
     let mut rx = event_bus.subscribe();
     let bus = event_bus.clone();
@@ -181,13 +306,11 @@ pub fn spawn_pipeline(
                             let channels = channels.clone();
                             let sensors = sensors.clone();
                             let bus = bus.clone();
-                            let tools_config = tools_config.clone();
-                            let cache_config = cache_config.clone();
-                            let memory_config = memory_config.clone();
+                            let policy_snapshot = policies.read().await.clone();
                             let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config, &cache_config, &memory_config).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.memory).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -226,6 +349,7 @@ async fn process_event(
     event_bus: &EventBus,
     voice_turns: &VoiceTurnRegistry,
     debug_output: bool,
+    conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
     cache_config: &CacheSection,
     memory_config: &MemorySection,
@@ -260,6 +384,7 @@ async fn process_event(
                 event_bus,
                 debug_output,
                 false,
+                conversation_config,
                 tools_config,
                 cache_config,
                 memory_config,
@@ -394,6 +519,7 @@ async fn process_event(
                 event_bus,
                 debug_output,
                 channel.capabilities().voice_output && channel.capabilities().audio_streaming,
+                conversation_config,
                 tools_config,
                 cache_config,
                 memory_config,
@@ -524,6 +650,7 @@ async fn process_text(
     event_bus: &EventBus,
     debug_output: bool,
     audio_response: bool,
+    conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
     cache_config: &CacheSection,
     memory_config: &MemorySection,
@@ -540,7 +667,13 @@ async fn process_text(
         .conversation
         .get_or_create_active_session(channel_id, user_id)
         .await?;
-    let history = modules.conversation.get_history(session_id, 20).await?;
+    let history = modules
+        .conversation
+        .get_history(
+            session_id,
+            conversation_config.max_context_messages.max(1) as u64,
+        )
+        .await?;
     let mut trace = AgentTrace::new(session_id);
     trace
         .record(
@@ -813,7 +946,7 @@ async fn process_text(
                 event_bus,
                 "skill",
                 audio_response,
-                true,
+                conversation_config.streaming_enabled,
                 tools_config,
                 debug_output,
                 &mut trace,
@@ -836,7 +969,8 @@ async fn process_text(
                 user_id,
             );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
-            let allow_local_streaming = escalation_prompt.is_none();
+            let allow_local_streaming =
+                conversation_config.streaming_enabled && escalation_prompt.is_none();
             let local_outcome = execute_llm_response(
                 modules,
                 modules.local_llm.as_ref(),
@@ -904,7 +1038,7 @@ async fn process_text(
                     event_bus,
                     "remote_llm_escalated",
                     audio_response,
-                    true,
+                    conversation_config.streaming_enabled,
                     tools_config,
                     debug_output,
                     &mut trace,
@@ -939,7 +1073,7 @@ async fn process_text(
                 event_bus,
                 "remote_llm",
                 audio_response,
-                true,
+                conversation_config.streaming_enabled,
                 tools_config,
                 debug_output,
                 &mut trace,

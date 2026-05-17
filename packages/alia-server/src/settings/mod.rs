@@ -7,4 +7,5 @@
 //! - Schema declarations for frontend rendering
 
 pub mod registry;
+pub mod values;
 pub use registry::SettingsRegistry;

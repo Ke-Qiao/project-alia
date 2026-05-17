@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
@@ -60,5 +62,16 @@ pub trait ModuleLifecycle: Send + Sync {
     /// Health check for /health endpoint aggregation
     async fn health_check(&self) -> ModuleHealth {
         ModuleHealth::Healthy
+    }
+
+    /// Apply runtime setting changes that do not require rebuilding the module.
+    ///
+    /// Modules should return the dotted setting keys they consumed. Unknown keys
+    /// are ignored so plugins and future modules can share one update path.
+    async fn apply_settings(
+        &self,
+        _updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        Ok(Vec::new())
     }
 }

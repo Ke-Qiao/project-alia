@@ -3,6 +3,7 @@
 //! Implements LlmAdapter for OpenAI GPT models with streaming support.
 //! Supports OpenAI-compatible endpoints (including Azure OpenAI, vLLM, etc).
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
@@ -17,6 +19,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolDefinition,
 };
+use crate::settings::values::{f32_setting, string_setting};
 
 /// OpenAI chat completion request
 #[derive(Debug, Serialize)]
@@ -260,6 +263,36 @@ impl ModuleLifecycle for OpenAiLlm {
         } else {
             ModuleHealth::Healthy
         }
+    }
+
+    async fn apply_settings(
+        &self,
+        updates: &BTreeMap<String, Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.write().await;
+
+        if let Some(value) = string_setting(updates, "core.providers.openai.api_key") {
+            config.api_key = value;
+            applied.push("core.providers.openai.api_key".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.openai.base_url") {
+            config.base_url = value;
+            applied.push("core.providers.openai.base_url".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.providers.openai.chat_model") {
+            config.model = value;
+            applied.push("core.providers.openai.chat_model".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.providers.openai.temperature") {
+            config.temperature = value;
+            applied.push("core.providers.openai.temperature".to_string());
+        }
+
+        if !applied.is_empty() {
+            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+        }
+        Ok(applied)
     }
 }
 
