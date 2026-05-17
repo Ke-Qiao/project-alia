@@ -545,10 +545,48 @@ pub struct RuleAction {
     pub payload: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationRule {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub enabled: bool,
+    /// JSON pattern matched against serialized `ServerEvent`.
+    pub event_pattern: serde_json::Value,
+    /// JSON condition expression evaluated after the event pattern matches.
+    pub conditions: serde_json::Value,
+    /// Action config with a `type` field, executed by the shared action registry.
+    pub action: serde_json::Value,
+    pub cooldown_sec: u32,
+    pub created_by: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RuleFilter {
+    pub user_id: Option<Uuid>,
+    pub enabled_only: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct RulePatch {
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub event_pattern: Option<serde_json::Value>,
+    pub conditions: Option<serde_json::Value>,
+    pub action: Option<serde_json::Value>,
+    pub cooldown_sec: Option<u32>,
+}
+
 #[async_trait]
 pub trait RuleEvaluator: ModuleLifecycle {
     async fn evaluate(&self, event: &crate::event::ServerEvent) -> anyhow::Result<Vec<RuleAction>>;
     async fn reload(&self) -> anyhow::Result<()>;
+    async fn create_rule(&self, rule: AutomationRule) -> anyhow::Result<Uuid>;
+    async fn update_rule(&self, rule_id: Uuid, patch: RulePatch) -> anyhow::Result<()>;
+    async fn delete_rule(&self, rule_id: Uuid) -> anyhow::Result<()>;
+    async fn list_rules(&self, filter: RuleFilter) -> anyhow::Result<Vec<AutomationRule>>;
+    async fn pause_rule(&self, rule_id: Uuid) -> anyhow::Result<()>;
+    async fn resume_rule(&self, rule_id: Uuid) -> anyhow::Result<()>;
 }
 
 // ========== Scheduler Backend ==========
@@ -557,13 +595,15 @@ pub trait RuleEvaluator: ModuleLifecycle {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleConfig {
     #[serde(rename = "type")]
-    pub schedule_type: String, // "cron" | "once" | "interval"
+    pub schedule_type: String, // "cron" | "once" | "interval" | "condition"
     #[serde(default)]
     pub cron_expression: Option<String>, // For cron type
     #[serde(default)]
     pub run_at: Option<String>, // For once type (ISO 8601)
     #[serde(default)]
     pub every_sec: Option<u32>, // For interval type
+    #[serde(default)]
+    pub poll_interval_sec: Option<u32>, // For condition/polling type
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -609,18 +649,24 @@ pub struct EventSubscription {
     pub created_by: String,
 }
 
-/// Trait for plugin-provided condition evaluators
-#[async_trait]
-pub trait ConditionEvaluator: Send + Sync {
-    fn condition_type(&self) -> &str;
-    async fn evaluate(&self, config: &serde_json::Value) -> anyhow::Result<bool>;
-}
-
 /// Trait for plugin-provided action executors
 #[async_trait]
 pub trait ActionExecutor: Send + Sync {
     fn action_type(&self) -> &str;
-    async fn execute(&self, config: &serde_json::Value) -> anyhow::Result<serde_json::Value>;
+    async fn execute(
+        &self,
+        config: &serde_json::Value,
+        ctx: &ActionContext,
+    ) -> anyhow::Result<serde_json::Value>;
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionContext {
+    pub user_id: Uuid,
+    pub source: String,
+    pub trigger_id: Option<Uuid>,
+    pub trigger_name: Option<String>,
+    pub event: Option<serde_json::Value>,
 }
 
 #[async_trait]

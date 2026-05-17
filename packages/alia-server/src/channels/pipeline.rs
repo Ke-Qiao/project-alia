@@ -591,11 +591,16 @@ async fn process_event(
             use crate::providers::sensor::SensorReading;
             let sensor_id = format!("{}:{}", channel_id, sensor_type);
             let reading = SensorReading {
-                sensor_id,
-                value: payload,
+                sensor_id: sensor_id.clone(),
+                value: payload.clone(),
                 timestamp: chrono::Utc::now(),
                 quality: 1.0,
             };
+            event_bus.publish(ServerEvent::SensorDataIngested {
+                sensor_id,
+                source: channel_id,
+                value: payload,
+            });
             sensors.ingest(reading).await;
             Ok(())
         }

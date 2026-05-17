@@ -1,74 +1,20 @@
-//! Scheduler module: time-based task scheduling, event subscriptions, and condition evaluation.
+//! Scheduler module: time-based, polling, event subscription, and action automation.
 //!
 //! This module provides:
-//! - `NoopScheduler`: A no-op implementation for disabled scheduler
-//! - `CronScheduler`: A full implementation with cron, one-time, and interval scheduling
+//! - `AutomationScheduler`: cron, one-time, interval, polling-condition, and event subscriptions
 //! - `ConditionRegistry` + `ConditionEvaluator`: Extensible condition evaluation
 //!   (built-in: sensor, time_range; plugins can register custom evaluators at runtime)
+//! - `ActionRegistry` + `ActionExecutor`: Shared action execution for scheduled tasks and rules
 
+pub mod action;
 pub mod condition;
 pub mod cron;
 pub mod evaluators;
 
+pub use crate::providers::adapter::{ActionContext, ActionExecutor};
+pub use action::ActionRegistry;
 pub use condition::ConditionRegistry;
 // Re-exported for plugin implementors
 #[allow(unused_imports)]
 pub use condition::ConditionEvaluator;
-pub use cron::CronScheduler;
-
-use async_trait::async_trait;
-use uuid::Uuid;
-
-use crate::module::ModuleLifecycle;
-use crate::providers::adapter::{
-    EventSubscription, ScheduledTask, SchedulerBackend, TaskFilter, TaskPatch,
-};
-
-/// No-op scheduler implementation for disabled state.
-pub struct NoopScheduler;
-
-#[async_trait]
-impl ModuleLifecycle for NoopScheduler {
-    fn name(&self) -> &'static str {
-        "noop_scheduler"
-    }
-}
-
-#[async_trait]
-impl SchedulerBackend for NoopScheduler {
-    async fn create_task(&self, _task: ScheduledTask) -> anyhow::Result<Uuid> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn update_task(&self, _task_id: Uuid, _patch: TaskPatch) -> anyhow::Result<()> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn delete_task(&self, _task_id: Uuid) -> anyhow::Result<()> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn list_tasks(&self, _filter: TaskFilter) -> anyhow::Result<Vec<ScheduledTask>> {
-        Ok(Vec::new())
-    }
-
-    async fn pause_task(&self, _task_id: Uuid) -> anyhow::Result<()> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn resume_task(&self, _task_id: Uuid) -> anyhow::Result<()> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn subscribe_event(&self, _sub: EventSubscription) -> anyhow::Result<Uuid> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn unsubscribe_event(&self, _sub_id: Uuid) -> anyhow::Result<()> {
-        anyhow::bail!("scheduler is disabled")
-    }
-
-    async fn list_subscriptions(&self, _user_id: Uuid) -> anyhow::Result<Vec<EventSubscription>> {
-        Ok(Vec::new())
-    }
-}
+pub use cron::AutomationScheduler;

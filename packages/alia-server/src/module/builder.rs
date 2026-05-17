@@ -23,7 +23,14 @@ use crate::providers::memory::NoopMemory;
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
-use crate::scheduler::evaluators::{SensorConditionEvaluator, TimeRangeConditionEvaluator};
+use crate::scheduler::action::{
+    ActionRegistry, EmitEventActionExecutor, LogActionExecutor, NoopActionExecutor,
+    ToolCallActionExecutor,
+};
+use crate::scheduler::evaluators::{
+    EventFieldConditionEvaluator, EventPatternConditionEvaluator, SensorConditionEvaluator,
+    TimeRangeConditionEvaluator,
+};
 use crate::settings::SettingsRegistry;
 use crate::state::AppState;
 
@@ -192,6 +199,7 @@ impl ServerBuilder {
             artifacts: artifact_registry.clone(),
             scheduler: None,
             conditions: None,
+            actions: None,
             conversation: None,
             memory: None,
         };
@@ -259,9 +267,30 @@ impl ServerBuilder {
         condition_registry
             .register(Arc::new(TimeRangeConditionEvaluator))
             .await;
+        condition_registry
+            .register(Arc::new(EventFieldConditionEvaluator))
+            .await;
+        condition_registry
+            .register(Arc::new(EventPatternConditionEvaluator))
+            .await;
+
+        let action_registry = Arc::new(ActionRegistry::new());
+        action_registry.register(Arc::new(LogActionExecutor)).await;
+        action_registry
+            .register(Arc::new(NoopActionExecutor::new("insights")))
+            .await;
+        action_registry
+            .register(Arc::new(EmitEventActionExecutor::new(
+                self.event_bus.clone(),
+            )))
+            .await;
 
         let mut scheduler = self.scheduler.unwrap_or_else(|| {
-            factory::create_scheduler(&self.config.modules.scheduler, condition_registry.clone())
+            factory::create_scheduler(
+                &self.config.modules.scheduler,
+                condition_registry.clone(),
+                action_registry.clone(),
+            )
         });
 
         let mut tools = self.tools.unwrap_or_else(|| {
@@ -286,6 +315,7 @@ impl ServerBuilder {
             artifacts: artifact_registry.clone(),
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
+            actions: Some(action_registry.clone()),
             conversation: None, // Will be populated shortly but usually not needed in other modules init
             memory: None,
         };
@@ -324,6 +354,10 @@ impl ServerBuilder {
         };
         init_module(cache.as_mut(), &ctx).await;
         init_module(tools.as_mut(), &ctx).await;
+        let tools_arc: Arc<dyn ToolRegistry> = Arc::from(tools);
+        action_registry
+            .register(Arc::new(ToolCallActionExecutor::new(tools_arc.clone())))
+            .await;
         init_module(skills.as_mut(), &ctx).await;
         init_module(persona.as_mut(), &ctx).await;
         init_module(router.as_mut(), &ctx).await;
@@ -386,7 +420,7 @@ impl ServerBuilder {
             router: Arc::from(router),
             rule_engine: Arc::from(rule_engine),
             scheduler,
-            tools: Arc::from(tools),
+            tools: tools_arc,
             extensions,
         };
 
@@ -468,6 +502,7 @@ impl ServerBuilder {
             modules: Arc::new(registry),
             sensors: sensor_registry,
             conditions: condition_registry,
+            actions: action_registry,
             config: self.config,
             jwt_keys: Arc::new(jwt_keys),
             settings,

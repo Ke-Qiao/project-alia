@@ -91,6 +91,7 @@ async fn restart_channel(
         artifacts: state.artifacts.clone(),
         scheduler: Some(state.modules.scheduler.clone()),
         conditions: Some(state.conditions.clone()),
+        actions: Some(state.actions.clone()),
         conversation: Some(state.modules.conversation.clone()),
         memory: Some(state.modules.memory.clone()),
     };

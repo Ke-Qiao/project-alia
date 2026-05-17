@@ -1,21 +1,19 @@
-//! Built-in condition evaluators: sensor and time_range.
+//! Built-in condition evaluators: sensor, time range, and event fields.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{Timelike, Utc};
+use chrono::Timelike;
 
-use super::condition::ConditionEvaluator;
+use super::condition::{ConditionContext, ConditionEvaluator};
 use crate::providers::sensor::SensorRegistry;
 
 /// Evaluates sensor-based conditions.
 ///
-/// Condition format:
+/// Example:
 /// ```json
 /// {"type": "sensor", "sensor_id": "room:temperature", "op": "gt", "value": 25.0}
 /// ```
-///
-/// Supported operators: `gt`, `gte`, `lt`, `lte`, `eq`
 pub struct SensorConditionEvaluator {
     sensors: Arc<SensorRegistry>,
 }
@@ -32,46 +30,97 @@ impl ConditionEvaluator for SensorConditionEvaluator {
         "sensor"
     }
 
-    async fn evaluate(&self, condition: &serde_json::Value) -> bool {
+    async fn evaluate(
+        &self,
+        condition: &serde_json::Value,
+        _ctx: &ConditionContext,
+    ) -> anyhow::Result<bool> {
         let Some(sensor_id) = condition.get("sensor_id").and_then(|v| v.as_str()) else {
-            return false;
+            return Ok(false);
         };
-        let Some(op) = condition.get("op").and_then(|v| v.as_str()) else {
-            return false;
+        let Some(expected) = condition.get("value") else {
+            return Ok(false);
         };
-        let Some(threshold) = condition.get("value").and_then(|v| v.as_f64()) else {
-            return false;
+        let op = condition.get("op").and_then(|v| v.as_str()).unwrap_or("eq");
+
+        let Some(reading) = self.sensors.latest(sensor_id).await else {
+            return Ok(false);
         };
 
-        let Some(current) = self.sensors.latest_value_f64(sensor_id).await else {
-            return false;
-        };
+        Ok(compare_values(&reading.value, op, expected))
+    }
+}
 
-        match op {
-            "gt" => current > threshold,
-            "gte" => current >= threshold,
-            "lt" => current < threshold,
-            "lte" => current <= threshold,
-            "eq" => (current - threshold).abs() < f64::EPSILON,
-            _ => {
-                tracing::warn!(op, "unknown sensor condition operator");
-                false
-            }
-        }
+/// Evaluates fields from the current event context.
+///
+/// Example:
+/// ```json
+/// {"type":"event_field","field":"payload.sensor_id","op":"eq","value":"room:temperature"}
+/// ```
+pub struct EventFieldConditionEvaluator;
+
+#[async_trait]
+impl ConditionEvaluator for EventFieldConditionEvaluator {
+    fn condition_type(&self) -> &'static str {
+        "event_field"
+    }
+
+    async fn evaluate(
+        &self,
+        condition: &serde_json::Value,
+        ctx: &ConditionContext,
+    ) -> anyhow::Result<bool> {
+        let Some(event) = &ctx.event else {
+            return Ok(false);
+        };
+        let Some(field) = condition.get("field").and_then(|v| v.as_str()) else {
+            return Ok(false);
+        };
+        let op = condition.get("op").and_then(|v| v.as_str()).unwrap_or("eq");
+        let expected = condition.get("value").unwrap_or(&serde_json::Value::Null);
+        let actual = get_field(event, field);
+
+        Ok(compare_values(&actual, op, expected))
+    }
+}
+
+/// Evaluates event JSON by structural pattern.
+///
+/// Example:
+/// ```json
+/// {"type":"event_pattern","pattern":{"type":"SensorDataIngested"}}
+/// ```
+pub struct EventPatternConditionEvaluator;
+
+#[async_trait]
+impl ConditionEvaluator for EventPatternConditionEvaluator {
+    fn condition_type(&self) -> &'static str {
+        "event_pattern"
+    }
+
+    async fn evaluate(
+        &self,
+        condition: &serde_json::Value,
+        ctx: &ConditionContext,
+    ) -> anyhow::Result<bool> {
+        let Some(event) = &ctx.event else {
+            return Ok(false);
+        };
+        let pattern = condition
+            .get("pattern")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        Ok(matches_pattern(event, &pattern))
     }
 }
 
 /// Evaluates time-of-day range conditions.
 ///
-/// Condition format:
+/// Example:
 /// ```json
 /// {"type": "time_range", "after": "08:00", "before": "22:00"}
 /// ```
-///
-/// Both `after` and `before` are optional. If only `after` is set, checks current >= after.
-/// If only `before` is set, checks current < before.
-/// If both are set and `after < before`, checks `after <= now < before`.
-/// If both are set and `after > before` (overnight), checks `now >= after || now < before`.
 pub struct TimeRangeConditionEvaluator;
 
 #[async_trait]
@@ -80,9 +129,12 @@ impl ConditionEvaluator for TimeRangeConditionEvaluator {
         "time_range"
     }
 
-    async fn evaluate(&self, condition: &serde_json::Value) -> bool {
-        let now = Utc::now();
-        let now_minutes = now.hour() * 60 + now.minute();
+    async fn evaluate(
+        &self,
+        condition: &serde_json::Value,
+        ctx: &ConditionContext,
+    ) -> anyhow::Result<bool> {
+        let now_minutes = ctx.now.hour() * 60 + ctx.now.minute();
 
         let after_minutes = condition
             .get("after")
@@ -94,19 +146,77 @@ impl ConditionEvaluator for TimeRangeConditionEvaluator {
             .and_then(|v| v.as_str())
             .and_then(parse_hhmm);
 
-        match (after_minutes, before_minutes) {
+        Ok(match (after_minutes, before_minutes) {
             (Some(after), Some(before)) if after <= before => {
-                // Normal range: 08:00 - 22:00
                 now_minutes >= after && now_minutes < before
             }
-            (Some(after), Some(before)) => {
-                // Overnight range: 22:00 - 06:00
-                now_minutes >= after || now_minutes < before
-            }
+            (Some(after), Some(before)) => now_minutes >= after || now_minutes < before,
             (Some(after), None) => now_minutes >= after,
             (None, Some(before)) => now_minutes < before,
             (None, None) => true,
+        })
+    }
+}
+
+fn compare_values(actual: &serde_json::Value, op: &str, expected: &serde_json::Value) -> bool {
+    match op {
+        "eq" => actual == expected,
+        "neq" => actual != expected,
+        "contains" => actual
+            .as_str()
+            .zip(expected.as_str())
+            .is_some_and(|(actual, expected)| actual.contains(expected)),
+        "gt" | "gte" | "lt" | "lte" => {
+            let Some(actual) = value_as_f64(actual) else {
+                return false;
+            };
+            let Some(expected) = value_as_f64(expected) else {
+                return false;
+            };
+            match op {
+                "gt" => actual > expected,
+                "gte" => actual >= expected,
+                "lt" => actual < expected,
+                "lte" => actual <= expected,
+                _ => false,
+            }
         }
+        _ => {
+            tracing::warn!(op, "unknown condition operator");
+            false
+        }
+    }
+}
+
+fn value_as_f64(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        serde_json::Value::String(s) => s.parse().ok(),
+        _ => None,
+    }
+}
+
+fn get_field(data: &serde_json::Value, path: &str) -> serde_json::Value {
+    let mut current = data;
+    for part in path.split('.') {
+        match current {
+            serde_json::Value::Object(map) => {
+                current = map.get(part).unwrap_or(&serde_json::Value::Null);
+            }
+            _ => return serde_json::Value::Null,
+        }
+    }
+    current.clone()
+}
+
+fn matches_pattern(event: &serde_json::Value, pattern: &serde_json::Value) -> bool {
+    match (event, pattern) {
+        (_, serde_json::Value::Null) => true,
+        (serde_json::Value::Object(ev), serde_json::Value::Object(pat)) => pat
+            .iter()
+            .all(|(k, v)| ev.get(k).is_some_and(|ev_v| matches_pattern(ev_v, v))),
+        (ev, pat) => ev == pat,
     }
 }
 

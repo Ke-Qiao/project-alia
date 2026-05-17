@@ -10,7 +10,7 @@ use crate::event::EventBus;
 use crate::module::ModuleRegistry;
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
-use crate::scheduler::ConditionRegistry;
+use crate::scheduler::{ActionRegistry, ConditionRegistry};
 use crate::settings::SettingsRegistry;
 
 /// Application global state, passed to Axum handlers via State extractor
@@ -23,6 +23,7 @@ pub struct AppState {
     pub modules: Arc<ModuleRegistry>,
     pub sensors: Arc<SensorRegistry>,
     pub conditions: Arc<ConditionRegistry>,
+    pub actions: Arc<ActionRegistry>,
     pub config: Arc<ServerConfig>,
     pub jwt_keys: Arc<JwtKeys>,
     pub settings: SettingsRegistry,

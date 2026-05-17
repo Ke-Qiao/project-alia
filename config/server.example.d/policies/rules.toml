@@ -1,4 +1,4 @@
 [policies.rules]
-evaluation_interval_sec = 10
+# Event-driven automation rules are evaluated from EventBus events and share
+# the same condition/action registries as scheduler tasks.
 max_rules_per_user = 50
-

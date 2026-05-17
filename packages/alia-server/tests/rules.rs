@@ -1,46 +1,43 @@
+use std::sync::Arc;
+
 use alia_server::event::ServerEvent;
-use alia_server::providers::RuleEvaluator;
-use alia_server::rules::engine::{Condition, Rule, SimpleRuleEngine};
+use alia_server::providers::adapter::{AutomationRule, RuleEvaluator};
+use alia_server::rules::EventRuleEngine;
+use alia_server::scheduler::ConditionRegistry;
+use alia_server::scheduler::action::ActionRegistry;
+use alia_server::scheduler::evaluators::EventFieldConditionEvaluator;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn test_condition_evaluation() {
-    let data = serde_json::json!({
-        "type": "device_online",
-        "payload": {
-            "device_id": "device-123"
-        }
-    });
+async fn test_event_rule_matching() {
+    let conditions = Arc::new(ConditionRegistry::new());
+    conditions
+        .register(Arc::new(EventFieldConditionEvaluator))
+        .await;
+    let actions = Arc::new(ActionRegistry::new());
+    let engine = EventRuleEngine::with_registries(conditions, actions);
 
-    let cond = Condition::Equals {
-        field: "payload.device_id".to_string(),
-        value: serde_json::json!("device-123"),
-    };
-    assert!(SimpleRuleEngine::evaluate_condition(&cond, &data));
-
-    let cond = Condition::Contains {
-        field: "payload.device_id".to_string(),
-        value: "123".to_string(),
-    };
-    assert!(SimpleRuleEngine::evaluate_condition(&cond, &data));
-}
-
-#[tokio::test]
-async fn test_rule_matching() {
-    let engine = SimpleRuleEngine::new();
-
-    {
-        let mut rules = engine.rules.write().await;
-        rules.push(Rule {
+    engine
+        .create_rule(AutomationRule {
             id: Uuid::new_v4(),
+            user_id: Uuid::nil(),
             name: "Test Rule".to_string(),
             enabled: true,
-            trigger_event: "device_online".to_string(),
-            conditions: None,
-            action_type: "notify".to_string(),
-            action_payload: serde_json::json!({"message": "Device came online"}),
-        });
-    }
+            event_pattern: serde_json::json!({"type": "DeviceOnline"}),
+            conditions: serde_json::json!([
+                {
+                    "type": "event_field",
+                    "field": "payload.device_id",
+                    "op": "eq",
+                    "value": "device-123"
+                }
+            ]),
+            action: serde_json::json!({"type": "log", "message": "Device came online"}),
+            cooldown_sec: 0,
+            created_by: "test".to_string(),
+        })
+        .await
+        .unwrap();
 
     let event = ServerEvent::DeviceOnline {
         device_id: "device-123".to_string(),

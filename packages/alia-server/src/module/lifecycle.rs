@@ -10,7 +10,7 @@ use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::providers::adapter::{ConversationBackend, MemoryBackend, SchedulerBackend};
 use crate::registry::ArtifactRegistry;
-use crate::scheduler::ConditionRegistry;
+use crate::scheduler::{ActionRegistry, ConditionRegistry};
 
 /// Health status of a module
 #[derive(Debug, Clone)]
@@ -32,6 +32,8 @@ pub struct ModuleContext {
     pub scheduler: Option<Arc<dyn SchedulerBackend>>,
     /// Condition registry for registering/evaluating task conditions.
     pub conditions: Option<Arc<ConditionRegistry>>,
+    /// Action registry shared by scheduled tasks, event rules, and plugins.
+    pub actions: Option<Arc<ActionRegistry>>,
     /// Conversation backend for managing sessions (available to channels).
     pub conversation: Option<Arc<dyn ConversationBackend>>,
     /// Memory backend for tools/components initialized after memory.

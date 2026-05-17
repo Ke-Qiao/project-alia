@@ -33,8 +33,8 @@ use crate::providers::router::MultiLayerRouter;
 use crate::providers::router::PassthroughRouter;
 use crate::providers::sensor::SensorRegistry;
 use crate::providers::skills::{BuiltinSkills, NoopSkills};
-use crate::rules::{NoopRuleEngine, SimpleRuleEngine};
-use crate::scheduler::{ConditionRegistry, CronScheduler, NoopScheduler};
+use crate::rules::EventRuleEngine;
+use crate::scheduler::{ActionRegistry, AutomationScheduler, ConditionRegistry};
 use crate::tools::{BuiltinToolRegistry, NoopToolRegistry};
 
 #[cfg(feature = "embed-ollama")]
@@ -262,17 +262,13 @@ pub fn create_router(name: &str) -> Box<dyn RouterStrategy> {
 
 pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
     match name {
-        "simple" => {
-            tracing::info!(module = name, "creating rule engine (SimpleRuleEngine)");
-            Box::new(SimpleRuleEngine::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating rule engine (noop)");
-            Box::new(NoopRuleEngine)
+        "automation" => {
+            tracing::info!(module = name, "creating rule engine (EventRuleEngine)");
+            Box::new(EventRuleEngine::new())
         }
         _ => {
-            tracing::warn!(module = name, "unknown rule engine, using simple");
-            Box::new(SimpleRuleEngine::new())
+            tracing::warn!(module = name, "unknown rule engine, using automation");
+            Box::new(EventRuleEngine::new())
         }
     }
 }
@@ -280,19 +276,16 @@ pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
 pub fn create_scheduler(
     name: &str,
     conditions: Arc<ConditionRegistry>,
+    actions: Arc<ActionRegistry>,
 ) -> Box<dyn SchedulerBackend> {
     match name {
-        "cron" => {
-            tracing::info!(module = name, "creating scheduler (CronScheduler)");
-            Box::new(CronScheduler::with_conditions(conditions))
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating scheduler (noop)");
-            Box::new(NoopScheduler)
+        "automation" => {
+            tracing::info!(module = name, "creating scheduler (AutomationScheduler)");
+            Box::new(AutomationScheduler::with_registries(conditions, actions))
         }
         _ => {
-            tracing::warn!(module = name, "unknown scheduler, using noop");
-            Box::new(NoopScheduler)
+            tracing::warn!(module = name, "unknown scheduler, using automation");
+            Box::new(AutomationScheduler::with_registries(conditions, actions))
         }
     }
 }

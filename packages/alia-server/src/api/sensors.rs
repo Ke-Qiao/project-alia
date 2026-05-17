@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use crate::auth::AuthUser;
 use crate::error::Result;
+use crate::event::ServerEvent;
 use crate::providers::sensor::{SensorDefinition, SensorQuery, SensorReading, SensorSummary};
 use crate::state::AppState;
 
@@ -104,6 +105,11 @@ async fn ingest_reading(
         timestamp: Utc::now(),
         quality: req.quality,
     };
+    state.event_bus.publish(ServerEvent::SensorDataIngested {
+        sensor_id: reading.sensor_id.clone(),
+        source: "api".to_string(),
+        value: reading.value.clone(),
+    });
     state.sensors.ingest(reading).await;
     Ok(Json(serde_json::json!({ "ingested": true })))
 }
@@ -123,6 +129,11 @@ async fn ingest_batch(
             timestamp: Utc::now(),
             quality: req.quality,
         };
+        state.event_bus.publish(ServerEvent::SensorDataIngested {
+            sensor_id: reading.sensor_id.clone(),
+            source: "api".to_string(),
+            value: reading.value.clone(),
+        });
         state.sensors.ingest(reading).await;
     }
     Ok(Json(serde_json::json!({ "ingested": count })))

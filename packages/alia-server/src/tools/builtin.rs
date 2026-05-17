@@ -35,8 +35,8 @@ use crate::entity::tool;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MemoryBackend, MemoryNode, RetrievalOpts, ToolCall, ToolContext, ToolDefinition, ToolExecutor,
-    ToolRegistry, ToolResult,
+    MemoryBackend, MemoryNode, RetrievalOpts, ScheduleConfig, ScheduledTask, SchedulerBackend,
+    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
@@ -162,6 +162,8 @@ pub struct BuiltinToolRegistry {
     artifacts: Option<Arc<ArtifactRegistry>>,
     /// Memory backend used by memory_search and memory_store built-in tools.
     memory: Option<Arc<dyn MemoryBackend>>,
+    /// Scheduler backend used by schedule_task.
+    scheduler: Option<Arc<dyn SchedulerBackend>>,
 }
 
 impl BuiltinToolRegistry {
@@ -173,6 +175,7 @@ impl BuiltinToolRegistry {
             db: None,
             artifacts: None,
             memory: None,
+            scheduler: None,
         }
     }
 
@@ -221,10 +224,14 @@ impl BuiltinToolRegistry {
         }
 
         // schedule_task
-        self.executors
-            .write()
-            .unwrap()
-            .insert("schedule_task".to_string(), Arc::new(ScheduleTask));
+        if let Some(scheduler) = &self.scheduler {
+            self.executors.write().unwrap().insert(
+                "schedule_task".to_string(),
+                Arc::new(ScheduleTask::new(scheduler.clone())),
+            );
+        } else {
+            tracing::info!("scheduler unavailable; schedule_task tool is not registered");
+        }
 
         // send_notification
         self.executors
@@ -366,6 +373,7 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         self.db = Some(ctx.db.clone());
         self.artifacts = Some(ctx.artifacts.clone());
         self.memory = ctx.memory.clone();
+        self.scheduler = ctx.scheduler.clone();
         self.register_builtins();
 
         if let Err(e) = self.upsert_executor_tools_to_db().await {
@@ -1171,7 +1179,15 @@ impl ToolExecutor for MemoryStore {
 }
 
 /// Schedule a task
-struct ScheduleTask;
+struct ScheduleTask {
+    scheduler: Arc<dyn SchedulerBackend>,
+}
+
+impl ScheduleTask {
+    fn new(scheduler: Arc<dyn SchedulerBackend>) -> Self {
+        Self { scheduler }
+    }
+}
 
 #[async_trait]
 impl ToolExecutor for ScheduleTask {
@@ -1190,7 +1206,7 @@ impl ToolExecutor for ScheduleTask {
                     },
                     "schedule_type": {
                         "type": "string",
-                        "enum": ["cron", "once", "interval"],
+                        "enum": ["cron", "once", "interval", "condition"],
                         "description": "Type of schedule"
                     },
                     "cron_expression": {
@@ -1204,6 +1220,14 @@ impl ToolExecutor for ScheduleTask {
                     "every_sec": {
                         "type": "integer",
                         "description": "Interval in seconds for recurring tasks"
+                    },
+                    "poll_interval_sec": {
+                        "type": "integer",
+                        "description": "Polling interval in seconds for condition schedules"
+                    },
+                    "conditions": {
+                        "type": ["array", "object"],
+                        "description": "Optional condition expression. Arrays are AND; objects can use all/any/not, sensor, time_range, event_field, or plugin-defined types."
                     },
                     "action": {
                         "type": "object",
@@ -1221,24 +1245,72 @@ impl ToolExecutor for ScheduleTask {
     async fn execute(
         &self,
         arguments: serde_json::Value,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
         let name = arguments
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("name is required"))?;
+        let schedule_type = arguments
+            .get("schedule_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("schedule_type is required"))?;
+        let action = arguments
+            .get("action")
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("action is required"))?;
 
-        // TODO: Integrate with SchedulerBackend
-        tracing::info!(%name, "schedule_task called (stub)");
+        let task = ScheduledTask {
+            id: Uuid::new_v4(),
+            user_id: ctx.user_id,
+            name: name.to_string(),
+            enabled: true,
+            schedule: ScheduleConfig {
+                schedule_type: schedule_type.to_string(),
+                cron_expression: arguments
+                    .get("cron_expression")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned),
+                run_at: arguments
+                    .get("run_at")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned),
+                every_sec: arguments
+                    .get("every_sec")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
+                poll_interval_sec: arguments
+                    .get("poll_interval_sec")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
+            },
+            conditions: arguments
+                .get("conditions")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([])),
+            action,
+            cooldown_sec: arguments
+                .get("cooldown_sec")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            max_retries: arguments
+                .get("max_retries")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
+            created_by: ctx.source.clone(),
+        };
+        let task_id = self.scheduler.create_task(task.clone()).await?;
 
         Ok(ToolResult {
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
-                "scheduled": false,
-                "message": "Scheduler integration pending"
+                "scheduled": true,
+                "task_id": task_id,
+                "name": task.name,
+                "schedule": task.schedule,
             }),
-            display: Some(format!("Task '{}' scheduling pending integration", name)),
+            display: Some(format!("Scheduled task '{name}'")),
         })
     }
 }

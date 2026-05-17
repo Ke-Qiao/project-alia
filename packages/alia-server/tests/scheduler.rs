@@ -1,4 +1,4 @@
-use alia_server::scheduler::cron::CronScheduler;
+use alia_server::scheduler::cron::matches_pattern;
 
 #[test]
 fn test_matches_pattern() {
@@ -16,15 +16,15 @@ fn test_matches_pattern() {
             "plugin_name": "weather"
         }
     });
-    assert!(CronScheduler::matches_pattern(&event, &pattern1));
+    assert!(matches_pattern(&event, &pattern1));
 
     let pattern2 = serde_json::json!({
         "type": "PluginEvent"
     });
-    assert!(CronScheduler::matches_pattern(&event, &pattern2));
+    assert!(matches_pattern(&event, &pattern2));
 
     let pattern3 = serde_json::json!({
         "type": "DeviceOnline"
     });
-    assert!(!CronScheduler::matches_pattern(&event, &pattern3));
+    assert!(!matches_pattern(&event, &pattern3));
 }

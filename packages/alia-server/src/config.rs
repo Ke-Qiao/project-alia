@@ -168,7 +168,7 @@ pub struct ModulesSection {
 }
 
 fn default_scheduler_module() -> String {
-    "cron".to_string()
+    "automation".to_string()
 }
 
 fn default_tools_module() -> String {
@@ -709,14 +709,12 @@ impl Default for InsightsSection {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RulesSection {
-    pub evaluation_interval_sec: u64,
     pub max_rules_per_user: u32,
 }
 
 impl Default for RulesSection {
     fn default() -> Self {
         Self {
-            evaluation_interval_sec: 10,
             max_rules_per_user: 50,
         }
     }

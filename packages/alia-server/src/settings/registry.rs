@@ -612,6 +612,16 @@ impl SettingsRegistry {
                 json!(config.modules.router),
                 schema_select("Router", &["multi_layer", "passthrough"], true),
             ),
+            (
+                "core.modules.rule_engine",
+                json!(config.modules.rule_engine),
+                schema_select("Rule Engine", &["automation"], true),
+            ),
+            (
+                "core.modules.scheduler",
+                json!(config.modules.scheduler),
+                schema_select("Scheduler", &["automation"], true),
+            ),
         ];
 
         for (key, value, s) in entries {

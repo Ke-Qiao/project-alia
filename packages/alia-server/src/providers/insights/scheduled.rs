@@ -3,8 +3,8 @@
 //! Triggers insights phases via:
 //! - Event-driven: ConversationEnded → Phase 1 (extraction)
 //! - Event-driven: Idle detection → Phase 2 (consolidation)
-//! - Scheduler: reflection_schedule → Phase 3 (reflection) via CronScheduler
-//! - Scheduler: habit_detection_schedule → Phase 4 (habit detection) via CronScheduler
+//! - Scheduler: reflection_schedule → Phase 3 (reflection) via AutomationScheduler
+//! - Scheduler: habit_detection_schedule → Phase 4 (habit detection) via AutomationScheduler
 //! - Memory threshold: pending episodic memories > threshold → Phase 2
 //! - Manual trigger via API
 
@@ -490,6 +490,7 @@ impl ScheduledInsights {
                 cron_expression: Some(config.reflection_schedule.clone()),
                 run_at: None,
                 every_sec: None,
+                poll_interval_sec: None,
             },
             conditions: conditions_json.clone(),
             action: serde_json::json!({
@@ -518,6 +519,7 @@ impl ScheduledInsights {
                 cron_expression: Some(config.habit_detection_schedule.clone()),
                 run_at: None,
                 every_sec: None,
+                poll_interval_sec: None,
             },
             conditions: conditions_json,
             action: serde_json::json!({
