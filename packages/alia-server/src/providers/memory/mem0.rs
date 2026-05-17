@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use crate::config::MemorySection;
+use crate::config::{Mem0ProviderSection, MemorySection};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::adapter::{
     MemoryConversationIngest, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
@@ -42,20 +42,20 @@ pub struct Mem0Config {
 }
 
 impl Mem0Config {
-    pub fn from_memory_config(config: &MemorySection) -> Self {
+    pub fn from_config(_policy: &MemorySection, config: &Mem0ProviderSection) -> Self {
         Self {
-            base_url: config.mem0_base_url.clone(),
-            api_key: config.mem0_api_key.clone(),
-            user_id_prefix: config.mem0_user_id_prefix.clone(),
-            app_id: config.mem0_app_id.clone(),
-            agent_id: config.mem0_agent_id.clone(),
-            run_id: config.mem0_run_id.clone(),
-            custom_instructions: config.mem0_custom_instructions.clone(),
-            infer: config.mem0_infer,
-            conversation_infer: config.mem0_conversation_infer,
-            request_timeout: Duration::from_secs(config.mem0_request_timeout_sec.max(1)),
-            page_size: config.mem0_page_size.clamp(1, 500),
-            add_poll_timeout: Duration::from_millis(config.mem0_add_poll_timeout_ms),
+            base_url: config.base_url.clone(),
+            api_key: config.api_key.clone(),
+            user_id_prefix: config.user_id_prefix.clone(),
+            app_id: config.app_id.clone(),
+            agent_id: config.agent_id.clone(),
+            run_id: config.run_id.clone(),
+            custom_instructions: config.custom_instructions.clone(),
+            infer: config.infer,
+            conversation_infer: config.conversation_infer,
+            request_timeout: Duration::from_secs(config.request_timeout_sec.max(1)),
+            page_size: config.page_size.clamp(1, 500),
+            add_poll_timeout: Duration::from_millis(config.add_poll_timeout_ms),
         }
     }
 }

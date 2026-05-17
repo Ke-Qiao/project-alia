@@ -204,9 +204,9 @@ impl ModuleLifecycle for DbCache {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.db = Some(ctx.db.clone());
-        self.default_ttl = Duration::from_secs(ctx.config.cache.default_ttl_seconds);
-        self.semantic_threshold = ctx.config.cache.semantic_threshold;
-        self.semantic_enabled = ctx.config.cache.semantic_match_enabled;
+        self.default_ttl = Duration::from_secs(ctx.config.policies.cache.default_ttl_seconds);
+        self.semantic_threshold = ctx.config.policies.cache.semantic_threshold;
+        self.semantic_enabled = ctx.config.policies.cache.semantic_match_enabled;
 
         // Run initial cleanup of expired entries
         self.cleanup_expired().await?;

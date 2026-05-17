@@ -88,7 +88,7 @@ async fn get_status(
 }
 
 async fn toggle(State(state): State<AppState>, _auth: AuthUser) -> Result<Json<serde_json::Value>> {
-    let config_enabled = state.config.insights.enabled;
+    let config_enabled = state.config.policies.insights.enabled;
     Ok(Json(serde_json::json!({
         "enabled": config_enabled,
         "message": "insights toggle is config-driven; update server.toml [insights].enabled"

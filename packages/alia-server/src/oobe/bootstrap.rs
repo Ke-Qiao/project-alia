@@ -40,9 +40,71 @@ pub fn needs_setup() -> bool {
         .any(|c| !c.is_empty() && Path::new(c).exists())
 }
 
-/// Embedded example config (same content as config/server.example.toml).
+/// Base example config (same content as config/server.example.toml).
 /// We embed it at compile time so the binary is self-contained.
 const EXAMPLE_CONFIG: &str = include_str!("../../../../config/server.example.toml");
+const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
+    (
+        "providers/openai.toml",
+        include_str!("../../../../config/server.example.d/providers/openai.toml"),
+    ),
+    (
+        "providers/ollama.toml",
+        include_str!("../../../../config/server.example.d/providers/ollama.toml"),
+    ),
+    (
+        "providers/whisper_cpp.toml",
+        include_str!("../../../../config/server.example.d/providers/whisper_cpp.toml"),
+    ),
+    (
+        "providers/gpt_sovits.toml",
+        include_str!("../../../../config/server.example.d/providers/gpt_sovits.toml"),
+    ),
+    (
+        "providers/mem0.toml",
+        include_str!("../../../../config/server.example.d/providers/mem0.toml"),
+    ),
+    (
+        "policies/routing.toml",
+        include_str!("../../../../config/server.example.d/policies/routing.toml"),
+    ),
+    (
+        "policies/conversation.toml",
+        include_str!("../../../../config/server.example.d/policies/conversation.toml"),
+    ),
+    (
+        "policies/memory.toml",
+        include_str!("../../../../config/server.example.d/policies/memory.toml"),
+    ),
+    (
+        "policies/cache.toml",
+        include_str!("../../../../config/server.example.d/policies/cache.toml"),
+    ),
+    (
+        "policies/insights.toml",
+        include_str!("../../../../config/server.example.d/policies/insights.toml"),
+    ),
+    (
+        "policies/rules.toml",
+        include_str!("../../../../config/server.example.d/policies/rules.toml"),
+    ),
+    (
+        "policies/scheduler.toml",
+        include_str!("../../../../config/server.example.d/policies/scheduler.toml"),
+    ),
+    (
+        "policies/tools.toml",
+        include_str!("../../../../config/server.example.d/policies/tools.toml"),
+    ),
+    (
+        "profiles/voice.default.toml",
+        include_str!("../../../../config/server.example.d/profiles/voice.default.toml"),
+    ),
+    (
+        "resources/skills.toml",
+        include_str!("../../../../config/server.example.d/resources/skills.toml"),
+    ),
+];
 
 /// Determine the best path to write the config file.
 /// Respects ALIA_CONFIG_PATH if set, then tries ./config/, then XDG.
@@ -71,6 +133,15 @@ pub fn release_example_config(target: &Path) -> anyhow::Result<PathBuf> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(target, EXAMPLE_CONFIG)?;
+    let fragment_dir = target.with_extension("d");
+    std::fs::create_dir_all(&fragment_dir)?;
+    for (name, content) in EXAMPLE_CONFIG_FRAGMENTS {
+        let path = fragment_dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+    }
     Ok(target.to_path_buf())
 }
 

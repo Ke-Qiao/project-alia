@@ -1,0 +1,8 @@
+[policies.memory]
+enabled = true
+conversation_ingest_enabled = true
+max_retrieval_results = 10
+similarity_threshold = 0.3
+health_check_attempts = 3
+health_check_interval_ms = 500
+

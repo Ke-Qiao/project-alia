@@ -48,7 +48,7 @@ pub struct SettingSchema {
 ///
 /// Keys use dot-separated namespaces:
 /// - `core.server.port`           — server settings
-/// - `core.llm.openai_api_key`    — LLM settings
+/// - `core.providers.openai.api_key` — provider settings
 /// - `plugin.zigbee.bridge_host`  — plugin settings
 #[derive(Clone)]
 pub struct SettingsRegistry {
@@ -330,38 +330,38 @@ impl SettingsRegistry {
             ),
             // LLM / conversation
             (
-                "core.llm.openai_api_key",
-                json!(config.llm.openai_api_key),
+                "core.providers.openai.api_key",
+                json!(config.providers.openai.api_key),
                 schema_secret("OpenAI API Key"),
             ),
             (
-                "core.llm.openai_model",
-                json!(config.llm.openai_model),
+                "core.providers.openai.chat_model",
+                json!(config.providers.openai.chat_model),
                 schema("OpenAI Model", "string", false),
             ),
             (
-                "core.llm.openai_base_url",
-                json!(config.llm.openai_base_url),
+                "core.providers.openai.base_url",
+                json!(config.providers.openai.base_url),
                 schema("OpenAI Base URL", "string", false),
             ),
             (
-                "core.llm.ollama_endpoint",
-                json!(config.llm.ollama_endpoint),
+                "core.providers.ollama.endpoint",
+                json!(config.providers.ollama.endpoint),
                 schema("Ollama Endpoint", "string", false),
             ),
             (
-                "core.llm.ollama_model",
-                json!(config.llm.ollama_model),
+                "core.providers.ollama.chat_model",
+                json!(config.providers.ollama.chat_model),
                 schema("Ollama Model", "string", false),
             ),
             (
-                "core.conversation.streaming_enabled",
-                json!(config.conversation.streaming_enabled),
+                "core.policies.conversation.streaming_enabled",
+                json!(config.policies.conversation.streaming_enabled),
                 schema("Streaming", "bool", false),
             ),
             (
-                "core.conversation.max_context_messages",
-                json!(config.conversation.max_context_messages),
+                "core.policies.conversation.max_context_messages",
+                json!(config.policies.conversation.max_context_messages),
                 schema("Max Context Turns", "number", false),
             ),
             // Modules

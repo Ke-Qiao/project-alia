@@ -27,12 +27,14 @@ Copy the example and edit:
 # From workspace root
 cp config/server.example.toml config/server.toml
 cp -R config/server.example.d config/server.d
-# Edit config/server.toml and config/server.d/*.toml with your settings.
+# Edit config/server.toml and semantic fragments under config/server.d/.
 ```
 
-`server.toml` is the base config. Files under `server.d/**/*.toml` are loaded
-recursively in sorted order, which keeps LLM, STT/TTS, memory, and future plugin
-settings out of one monolithic file.
+`server.toml` is the base config and owns `[modules]` provider selection. Files
+under `server.d/**/*.toml` are loaded recursively in sorted order and
+deep-merged. Keep external service settings in `server.d/providers/`, behavior
+settings in `server.d/policies/`, voice/profile settings in
+`server.d/profiles/`, and future plugin settings in `server.d/plugins/`.
 
 The `mise.toml` at the workspace root automatically sets `ALIA_CONFIG_PATH=config/server.toml`.
 To override manually:

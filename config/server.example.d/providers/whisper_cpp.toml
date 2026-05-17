@@ -1,0 +1,6 @@
+[providers.whisper_cpp]
+endpoint = "http://localhost:8080"
+# Informational: whisper.cpp chooses the model when whisper-server starts.
+model = "large-v3"
+request_timeout_sec = 30
+

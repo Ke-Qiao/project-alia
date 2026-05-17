@@ -1,0 +1,27 @@
+[profiles]
+default_voice = "default"
+
+[profiles.voice.default]
+provider = "gpt_sovits"
+model_name = "default"
+gpt_weights_path = ""
+sovits_weights_path = ""
+ref_audio_path = ""
+aux_ref_audio_paths = []
+prompt_text = ""
+text_lang = "zh"
+prompt_lang = "zh"
+text_split_method = "cut5"
+batch_size = 1
+batch_threshold = 0.75
+split_bucket = true
+speed_factor = 1.0
+fragment_interval = 0.3
+seed = -1
+parallel_infer = true
+repetition_penalty = 1.35
+sample_steps = 32
+super_sampling = false
+overlap_length = 2
+min_chunk_length = 16
+

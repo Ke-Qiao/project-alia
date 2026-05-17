@@ -1,4 +1,6 @@
+use anyhow::Context;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -9,22 +11,14 @@ pub struct ServerConfig {
     #[serde(default)]
     pub channels: Vec<ChannelConfig>,
     pub modules: ModulesSection,
-    pub llm: LlmSection,
-    pub router: RouterSection,
-    pub embedding: EmbeddingSection,
-    pub stt: SttSection,
-    pub tts: TtsSection,
-    pub conversation: ConversationSection,
-    pub memory: MemorySection,
-    pub cache: CacheSection,
-    pub insights: InsightsSection,
-    pub rules: RulesSection,
     #[serde(default)]
-    pub scheduler: SchedulerSection,
+    pub providers: ProvidersSection,
     #[serde(default)]
-    pub tools: ToolsSection,
+    pub policies: PoliciesSection,
     #[serde(default)]
-    pub skills: SkillsSection,
+    pub profiles: ProfilesSection,
+    #[serde(default)]
+    pub resources: ResourcesSection,
 
     /// Directory where the base config file lives — set automatically by `load()`.
     /// Used to resolve relative paths in config fragments (skills_dir, etc.).
@@ -187,6 +181,359 @@ fn default_remote_llm_module() -> String {
     "openai".to_string()
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ProvidersSection {
+    #[serde(default)]
+    pub openai: OpenAiProviderSection,
+    #[serde(default)]
+    pub ollama: OllamaProviderSection,
+    #[serde(default)]
+    pub whisper_cpp: WhisperCppProviderSection,
+    #[serde(default)]
+    pub gpt_sovits: GptSovitsProviderSection,
+    #[serde(default)]
+    pub mem0: Mem0ProviderSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenAiProviderSection {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_openai_chat_model")]
+    pub chat_model: String,
+    #[serde(default = "default_openai_embedding_model")]
+    pub embedding_model: String,
+    #[serde(default = "default_openai_base_url")]
+    pub base_url: String,
+}
+
+impl Default for OpenAiProviderSection {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            chat_model: default_openai_chat_model(),
+            embedding_model: default_openai_embedding_model(),
+            base_url: default_openai_base_url(),
+        }
+    }
+}
+
+fn default_openai_chat_model() -> String {
+    "gpt-4o-mini".to_string()
+}
+
+fn default_openai_embedding_model() -> String {
+    "text-embedding-3-small".to_string()
+}
+
+fn default_openai_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OllamaProviderSection {
+    #[serde(default = "default_ollama_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_ollama_chat_model")]
+    pub chat_model: String,
+    #[serde(default = "default_ollama_embedding_model")]
+    pub embedding_model: String,
+}
+
+impl Default for OllamaProviderSection {
+    fn default() -> Self {
+        Self {
+            endpoint: default_ollama_endpoint(),
+            chat_model: default_ollama_chat_model(),
+            embedding_model: default_ollama_embedding_model(),
+        }
+    }
+}
+
+fn default_ollama_endpoint() -> String {
+    "http://localhost:11434".to_string()
+}
+
+fn default_ollama_chat_model() -> String {
+    "qwen2.5:7b".to_string()
+}
+
+fn default_ollama_embedding_model() -> String {
+    "bge-m3".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WhisperCppProviderSection {
+    #[serde(default = "default_whisper_cpp_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_whisper_cpp_model")]
+    pub model: String,
+    #[serde(default = "default_stt_request_timeout")]
+    pub request_timeout_sec: u64,
+}
+
+impl Default for WhisperCppProviderSection {
+    fn default() -> Self {
+        Self {
+            endpoint: default_whisper_cpp_endpoint(),
+            model: default_whisper_cpp_model(),
+            request_timeout_sec: default_stt_request_timeout(),
+        }
+    }
+}
+
+fn default_whisper_cpp_endpoint() -> String {
+    "http://localhost:8080".to_string()
+}
+
+fn default_whisper_cpp_model() -> String {
+    "large-v3".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GptSovitsProviderSection {
+    #[serde(default = "default_gpt_sovits_endpoint")]
+    pub endpoint: String,
+    #[serde(default = "default_tts_request_timeout")]
+    pub request_timeout_sec: u64,
+    #[serde(default = "default_tts_stream_idle_timeout")]
+    pub stream_idle_timeout_sec: u64,
+}
+
+impl Default for GptSovitsProviderSection {
+    fn default() -> Self {
+        Self {
+            endpoint: default_gpt_sovits_endpoint(),
+            request_timeout_sec: default_tts_request_timeout(),
+            stream_idle_timeout_sec: default_tts_stream_idle_timeout(),
+        }
+    }
+}
+
+fn default_gpt_sovits_endpoint() -> String {
+    "http://localhost:9880/tts".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Mem0ProviderSection {
+    #[serde(default = "default_mem0_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub user_id_prefix: String,
+    #[serde(default)]
+    pub app_id: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub custom_instructions: Option<String>,
+    #[serde(default)]
+    pub infer: bool,
+    #[serde(default = "default_true")]
+    pub conversation_infer: bool,
+    #[serde(default = "default_mem0_request_timeout")]
+    pub request_timeout_sec: u64,
+    #[serde(default = "default_mem0_page_size")]
+    pub page_size: u32,
+    #[serde(default)]
+    pub add_poll_timeout_ms: u64,
+}
+
+impl Default for Mem0ProviderSection {
+    fn default() -> Self {
+        Self {
+            base_url: default_mem0_base_url(),
+            api_key: String::new(),
+            user_id_prefix: String::new(),
+            app_id: None,
+            agent_id: None,
+            run_id: None,
+            custom_instructions: None,
+            infer: false,
+            conversation_infer: true,
+            request_timeout_sec: default_mem0_request_timeout(),
+            page_size: default_mem0_page_size(),
+            add_poll_timeout_ms: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PoliciesSection {
+    #[serde(default)]
+    pub routing: RoutingPolicySection,
+    #[serde(default)]
+    pub conversation: ConversationSection,
+    #[serde(default)]
+    pub memory: MemorySection,
+    #[serde(default)]
+    pub cache: CacheSection,
+    #[serde(default)]
+    pub insights: InsightsSection,
+    #[serde(default)]
+    pub rules: RulesSection,
+    #[serde(default)]
+    pub scheduler: SchedulerSection,
+    #[serde(default)]
+    pub tools: ToolsSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RoutingPolicySection {
+    #[serde(default = "default_router_model")]
+    pub model: String,
+    #[serde(default = "default_router_temperature")]
+    pub temperature: f32,
+    #[serde(default = "default_router_timeout")]
+    pub timeout_sec: u64,
+    #[serde(default = "default_true")]
+    pub local_llm_enabled: bool,
+    #[serde(default = "default_true")]
+    pub remote_llm_enabled: bool,
+}
+
+impl Default for RoutingPolicySection {
+    fn default() -> Self {
+        Self {
+            model: default_router_model(),
+            temperature: default_router_temperature(),
+            timeout_sec: default_router_timeout(),
+            local_llm_enabled: true,
+            remote_llm_enabled: true,
+        }
+    }
+}
+
+fn default_router_model() -> String {
+    "qwen3:4b".to_string()
+}
+
+fn default_router_temperature() -> f32 {
+    0.1
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProfilesSection {
+    #[serde(default = "default_voice_profile_id")]
+    pub default_voice: String,
+    #[serde(default)]
+    pub voice: BTreeMap<String, VoiceProfileSection>,
+}
+
+impl Default for ProfilesSection {
+    fn default() -> Self {
+        Self {
+            default_voice: default_voice_profile_id(),
+            voice: BTreeMap::new(),
+        }
+    }
+}
+
+impl ProfilesSection {
+    pub fn default_voice_profile(&self) -> VoiceProfileSection {
+        self.voice
+            .get(&self.default_voice)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+fn default_voice_profile_id() -> String {
+    "default".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceProfileSection {
+    #[serde(default = "default_gpt_sovits_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub model_name: Option<String>,
+    #[serde(default)]
+    pub gpt_weights_path: Option<String>,
+    #[serde(default)]
+    pub sovits_weights_path: Option<String>,
+    #[serde(default)]
+    pub ref_audio_path: Option<String>,
+    #[serde(default)]
+    pub aux_ref_audio_paths: Vec<String>,
+    #[serde(default)]
+    pub prompt_text: Option<String>,
+    #[serde(default = "default_gpt_sovits_language")]
+    pub text_lang: String,
+    #[serde(default = "default_gpt_sovits_prompt_language")]
+    pub prompt_lang: String,
+    #[serde(default = "default_gpt_sovits_text_split_method")]
+    pub text_split_method: String,
+    #[serde(default = "default_gpt_sovits_batch_size")]
+    pub batch_size: u32,
+    #[serde(default = "default_gpt_sovits_batch_threshold")]
+    pub batch_threshold: f32,
+    #[serde(default = "default_true")]
+    pub split_bucket: bool,
+    #[serde(default = "default_gpt_sovits_speed_factor")]
+    pub speed_factor: f32,
+    #[serde(default = "default_gpt_sovits_fragment_interval")]
+    pub fragment_interval: f32,
+    #[serde(default = "default_gpt_sovits_seed")]
+    pub seed: i32,
+    #[serde(default = "default_true")]
+    pub parallel_infer: bool,
+    #[serde(default = "default_gpt_sovits_repetition_penalty")]
+    pub repetition_penalty: f32,
+    #[serde(default = "default_gpt_sovits_sample_steps")]
+    pub sample_steps: u32,
+    #[serde(default)]
+    pub super_sampling: bool,
+    #[serde(default = "default_gpt_sovits_overlap_length")]
+    pub overlap_length: u32,
+    #[serde(default = "default_gpt_sovits_min_chunk_length")]
+    pub min_chunk_length: u32,
+}
+
+impl Default for VoiceProfileSection {
+    fn default() -> Self {
+        Self {
+            provider: default_gpt_sovits_provider(),
+            model_name: None,
+            gpt_weights_path: None,
+            sovits_weights_path: None,
+            ref_audio_path: None,
+            aux_ref_audio_paths: Vec::new(),
+            prompt_text: None,
+            text_lang: default_gpt_sovits_language(),
+            prompt_lang: default_gpt_sovits_prompt_language(),
+            text_split_method: default_gpt_sovits_text_split_method(),
+            batch_size: default_gpt_sovits_batch_size(),
+            batch_threshold: default_gpt_sovits_batch_threshold(),
+            split_bucket: true,
+            speed_factor: default_gpt_sovits_speed_factor(),
+            fragment_interval: default_gpt_sovits_fragment_interval(),
+            seed: default_gpt_sovits_seed(),
+            parallel_infer: true,
+            repetition_penalty: default_gpt_sovits_repetition_penalty(),
+            sample_steps: default_gpt_sovits_sample_steps(),
+            super_sampling: false,
+            overlap_length: default_gpt_sovits_overlap_length(),
+            min_chunk_length: default_gpt_sovits_min_chunk_length(),
+        }
+    }
+}
+
+fn default_gpt_sovits_provider() -> String {
+    "gpt_sovits".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResourcesSection {
+    /// Directory containing `.md` skill definition files (TOML frontmatter).
+    /// Relative paths are resolved from the config file's parent directory.
+    #[serde(default)]
+    pub skills_dir: Option<String>,
+}
+
 fn default_router_timeout() -> u64 {
     5
 }
@@ -242,100 +589,18 @@ fn default_gpt_sovits_min_chunk_length() -> u32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct LlmSection {
-    pub adapter: String,
-    pub openai_api_key: String,
-    pub openai_model: String,
-    pub openai_base_url: String,
-    pub ollama_endpoint: String,
-    pub ollama_model: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct RouterSection {
-    pub model: String,
-    pub temperature: f32,
-    #[serde(default = "default_router_timeout")]
-    pub timeout_sec: u64,
-    #[serde(default = "default_true")]
-    pub local_llm_enabled: bool,
-    #[serde(default = "default_true")]
-    pub remote_llm_enabled: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct EmbeddingSection {
-    pub adapter: String,
-    pub ollama_endpoint: String,
-    pub ollama_model: String,
-    pub openai_model: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SttSection {
-    pub adapter: String,
-    pub whisper_cpp_endpoint: String,
-    pub whisper_cpp_model: String,
-    #[serde(default = "default_stt_request_timeout")]
-    pub request_timeout_sec: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct TtsSection {
-    pub adapter: String,
-    pub gpt_sovits_endpoint: String,
-    #[serde(default = "default_tts_request_timeout")]
-    pub request_timeout_sec: u64,
-    #[serde(default = "default_tts_stream_idle_timeout")]
-    pub stream_idle_timeout_sec: u64,
-    #[serde(default)]
-    pub gpt_sovits_model_name: Option<String>,
-    #[serde(default)]
-    pub gpt_sovits_gpt_weights_path: Option<String>,
-    #[serde(default)]
-    pub gpt_sovits_sovits_weights_path: Option<String>,
-    #[serde(default)]
-    pub gpt_sovits_ref_audio_path: Option<String>,
-    #[serde(default)]
-    pub gpt_sovits_aux_ref_audio_paths: Vec<String>,
-    #[serde(default)]
-    pub gpt_sovits_prompt_text: Option<String>,
-    #[serde(default = "default_gpt_sovits_language")]
-    pub gpt_sovits_text_lang: String,
-    #[serde(default = "default_gpt_sovits_prompt_language")]
-    pub gpt_sovits_prompt_lang: String,
-    #[serde(default = "default_gpt_sovits_text_split_method")]
-    pub gpt_sovits_text_split_method: String,
-    #[serde(default = "default_gpt_sovits_batch_size")]
-    pub gpt_sovits_batch_size: u32,
-    #[serde(default = "default_gpt_sovits_batch_threshold")]
-    pub gpt_sovits_batch_threshold: f32,
-    #[serde(default = "default_true")]
-    pub gpt_sovits_split_bucket: bool,
-    #[serde(default = "default_gpt_sovits_speed_factor")]
-    pub gpt_sovits_speed_factor: f32,
-    #[serde(default = "default_gpt_sovits_fragment_interval")]
-    pub gpt_sovits_fragment_interval: f32,
-    #[serde(default = "default_gpt_sovits_seed")]
-    pub gpt_sovits_seed: i32,
-    #[serde(default = "default_true")]
-    pub gpt_sovits_parallel_infer: bool,
-    #[serde(default = "default_gpt_sovits_repetition_penalty")]
-    pub gpt_sovits_repetition_penalty: f32,
-    #[serde(default = "default_gpt_sovits_sample_steps")]
-    pub gpt_sovits_sample_steps: u32,
-    #[serde(default)]
-    pub gpt_sovits_super_sampling: bool,
-    #[serde(default = "default_gpt_sovits_overlap_length")]
-    pub gpt_sovits_overlap_length: u32,
-    #[serde(default = "default_gpt_sovits_min_chunk_length")]
-    pub gpt_sovits_min_chunk_length: u32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct ConversationSection {
     pub max_context_messages: usize,
     pub streaming_enabled: bool,
+}
+
+impl Default for ConversationSection {
+    fn default() -> Self {
+        Self {
+            max_context_messages: 20,
+            streaming_enabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -349,30 +614,19 @@ pub struct MemorySection {
     pub health_check_attempts: u32,
     #[serde(default = "default_memory_health_check_interval_ms")]
     pub health_check_interval_ms: u64,
-    #[serde(default = "default_mem0_base_url")]
-    pub mem0_base_url: String,
-    #[serde(default)]
-    pub mem0_api_key: String,
-    #[serde(default)]
-    pub mem0_user_id_prefix: String,
-    #[serde(default)]
-    pub mem0_app_id: Option<String>,
-    #[serde(default)]
-    pub mem0_agent_id: Option<String>,
-    #[serde(default)]
-    pub mem0_run_id: Option<String>,
-    #[serde(default)]
-    pub mem0_custom_instructions: Option<String>,
-    #[serde(default)]
-    pub mem0_infer: bool,
-    #[serde(default = "default_true")]
-    pub mem0_conversation_infer: bool,
-    #[serde(default = "default_mem0_request_timeout")]
-    pub mem0_request_timeout_sec: u64,
-    #[serde(default = "default_mem0_page_size")]
-    pub mem0_page_size: u32,
-    #[serde(default)]
-    pub mem0_add_poll_timeout_ms: u64,
+}
+
+impl Default for MemorySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            conversation_ingest_enabled: true,
+            max_retrieval_results: 10,
+            similarity_threshold: 0.3,
+            health_check_attempts: default_memory_health_check_attempts(),
+            health_check_interval_ms: default_memory_health_check_interval_ms(),
+        }
+    }
 }
 
 fn default_memory_health_check_attempts() -> u32 {
@@ -405,6 +659,19 @@ pub struct CacheSection {
     pub skill_cache_ttl_seconds: u64,
 }
 
+impl Default for CacheSection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            exact_match_enabled: true,
+            semantic_match_enabled: true,
+            semantic_threshold: 0.92,
+            default_ttl_seconds: 3600,
+            skill_cache_ttl_seconds: 300,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct InsightsSection {
     pub enabled: bool,
@@ -424,10 +691,35 @@ pub struct InsightsSection {
     pub conditions: Vec<serde_json::Value>,
 }
 
+impl Default for InsightsSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            extraction_enabled: false,
+            consolidation_idle_minutes: 30,
+            reflection_schedule: "0 3 * * *".to_string(),
+            habit_detection_schedule: "0 4 * * *".to_string(),
+            memory_threshold: 50,
+            max_concurrent_insights: 1,
+            presence_sensor_id: String::new(),
+            conditions: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RulesSection {
     pub evaluation_interval_sec: u64,
     pub max_rules_per_user: u32,
+}
+
+impl Default for RulesSection {
+    fn default() -> Self {
+        Self {
+            evaluation_interval_sec: 10,
+            max_rules_per_user: 50,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -524,14 +816,6 @@ fn default_allow_plugin_tools() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct SkillsSection {
-    /// Directory containing `.md` skill definition files (TOML frontmatter).
-    /// Relative paths are resolved from the config file's parent directory.
-    #[serde(default)]
-    pub skills_dir: Option<String>,
-}
-
 impl ServerConfig {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
@@ -549,13 +833,13 @@ impl ServerConfig {
             config.auth.jwt_secret = secret;
         }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            config.llm.openai_api_key = key;
+            config.providers.openai.api_key = key;
         }
         if let Ok(key) = std::env::var("MEM0_API_KEY") {
-            config.memory.mem0_api_key = key;
+            config.providers.mem0.api_key = key;
         }
         if let Ok(url) = std::env::var("MEM0_BASE_URL") {
-            config.memory.mem0_base_url = url;
+            config.providers.mem0.base_url = url;
         }
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =
@@ -610,12 +894,38 @@ impl ServerConfig {
 }
 
 fn load_config_with_fragments(path: &Path) -> anyhow::Result<String> {
-    let mut content = std::fs::read_to_string(path)?;
+    let mut content = read_toml_value(path)?;
     for fragment in config_fragments(path)? {
-        content.push_str("\n\n");
-        content.push_str(&std::fs::read_to_string(&fragment)?);
+        let fragment_value = read_toml_value(&fragment)?;
+        merge_toml_values(&mut content, fragment_value);
     }
-    Ok(content)
+    toml::to_string(&content).context("failed to serialize merged server config")
+}
+
+fn read_toml_value(path: &Path) -> anyhow::Result<toml::Value> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read config file {}", path.display()))?;
+    content
+        .parse::<toml::Value>()
+        .with_context(|| format!("failed to parse config file {}", path.display()))
+}
+
+fn merge_toml_values(base: &mut toml::Value, overlay: toml::Value) {
+    match (base, overlay) {
+        (toml::Value::Table(base), toml::Value::Table(overlay)) => {
+            for (key, value) in overlay {
+                match base.get_mut(&key) {
+                    Some(existing) => merge_toml_values(existing, value),
+                    None => {
+                        base.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base, overlay) => {
+            *base = overlay;
+        }
+    }
 }
 
 fn config_fragments(path: &Path) -> anyhow::Result<Vec<PathBuf>> {
@@ -661,20 +971,42 @@ mod tests {
         let nested_dir = fragment_dir.join("plugins");
 
         std::fs::create_dir_all(&nested_dir).unwrap();
-        std::fs::write(&config_path, "base = true\n").unwrap();
-        std::fs::write(fragment_dir.join("20-second.toml"), "second = true\n").unwrap();
-        std::fs::write(fragment_dir.join("10-first.toml"), "first = true\n").unwrap();
-        std::fs::write(nested_dir.join("30-plugin.toml"), "plugin = true\n").unwrap();
+        std::fs::write(
+            &config_path,
+            r#"
+value = "base"
+
+[providers.openai]
+chat_model = "base"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            fragment_dir.join("20-second.toml"),
+            r#"
+value = "second"
+
+[providers.ollama]
+chat_model = "qwen2.5:7b"
+"#,
+        )
+        .unwrap();
+        std::fs::write(fragment_dir.join("10-first.toml"), "value = \"first\"\n").unwrap();
+        std::fs::write(nested_dir.join("30-plugin.toml"), "value = \"plugin\"\n").unwrap();
         std::fs::write(fragment_dir.join("ignore.md"), "ignored = true\n").unwrap();
 
         let loaded = load_config_with_fragments(&config_path).unwrap();
-        assert!(loaded.contains("base = true"));
-        assert!(loaded.contains("first = true"));
-        assert!(loaded.contains("second = true"));
-        assert!(loaded.contains("plugin = true"));
-        assert!(!loaded.contains("ignored = true"));
-        assert!(loaded.find("first = true") < loaded.find("second = true"));
-        assert!(loaded.find("second = true") < loaded.find("plugin = true"));
+        let loaded: toml::Value = loaded.parse().unwrap();
+        assert_eq!(loaded["value"].as_str(), Some("plugin"));
+        assert_eq!(
+            loaded["providers"]["openai"]["chat_model"].as_str(),
+            Some("base")
+        );
+        assert_eq!(
+            loaded["providers"]["ollama"]["chat_model"].as_str(),
+            Some("qwen2.5:7b")
+        );
+        assert!(loaded.get("ignored").is_none());
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -687,9 +1019,16 @@ mod tests {
         assert_eq!(config.modules.llm, "openai");
         assert_eq!(config.modules.local_llm, "ollama");
         assert_eq!(config.modules.remote_llm, "openai");
-        assert_eq!(config.llm.adapter, "openai");
-        assert_eq!(config.stt.adapter, "whisper_cpp");
-        assert_eq!(config.tts.adapter, "gpt_sovits");
-        assert_eq!(config.conversation.max_context_messages, 20);
+        assert_eq!(config.providers.openai.chat_model, "qwen2.5-7b-instruct");
+        assert_eq!(
+            config.providers.whisper_cpp.endpoint,
+            "http://localhost:8080"
+        );
+        assert_eq!(
+            config.providers.gpt_sovits.endpoint,
+            "http://localhost:9880/tts"
+        );
+        assert_eq!(config.policies.conversation.max_context_messages, 20);
+        assert_eq!(config.resources.skills_dir.as_deref(), Some("../skills"));
     }
 }

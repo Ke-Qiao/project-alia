@@ -1,0 +1,7 @@
+[policies.routing]
+model = "qwen3:4b"
+temperature = 0.1
+timeout_sec = 5
+local_llm_enabled = true
+remote_llm_enabled = true
+

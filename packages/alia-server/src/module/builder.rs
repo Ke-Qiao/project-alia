@@ -197,14 +197,14 @@ impl ServerBuilder {
 
         // Create modules: use override or create from config
         let mut local_llm = self.local_llm.unwrap_or_else(|| {
-            if self.config.router.local_llm_enabled {
+            if self.config.policies.routing.local_llm_enabled {
                 factory::create_llm(&self.config.modules.local_llm)
             } else {
                 factory::create_llm("noop")
             }
         });
         let mut remote_llm = self.remote_llm.unwrap_or_else(|| {
-            if self.config.router.remote_llm_enabled {
+            if self.config.policies.routing.remote_llm_enabled {
                 factory::create_llm(&self.config.modules.remote_llm)
             } else {
                 factory::create_llm("noop")
@@ -223,7 +223,11 @@ impl ServerBuilder {
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new())
         });
         let mut memory = self.memory.unwrap_or_else(|| {
-            factory::create_memory(&self.config.modules.memory, &self.config.memory)
+            factory::create_memory(
+                &self.config.modules.memory,
+                &self.config.policies.memory,
+                &self.config.providers.mem0,
+            )
         });
         let mut cache = self
             .cache
@@ -298,7 +302,7 @@ impl ServerBuilder {
         init_module(stt.as_mut(), &ctx).await;
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
-        let mut effective_memory_config = self.config.memory.clone();
+        let mut effective_memory_config = self.config.policies.memory.clone();
         if effective_memory_config.enabled
             && let Err(reason) =
                 verify_memory_health(memory.as_ref(), &effective_memory_config).await
@@ -359,7 +363,7 @@ impl ServerBuilder {
         // Build registry
         let local_llm: Arc<dyn LlmAdapter> = Arc::from(local_llm);
         let remote_llm: Arc<dyn LlmAdapter> = Arc::from(remote_llm);
-        let default_llm = if self.config.router.remote_llm_enabled {
+        let default_llm = if self.config.policies.routing.remote_llm_enabled {
             remote_llm.clone()
         } else {
             local_llm.clone()
@@ -471,8 +475,8 @@ impl ServerBuilder {
             state.sensors.clone(),
             state.cancel_token.clone(),
             state.config.server.debug_output,
-            state.config.tools.clone(),
-            state.config.cache.clone(),
+            state.config.policies.tools.clone(),
+            state.config.policies.cache.clone(),
             effective_memory_config,
         );
 

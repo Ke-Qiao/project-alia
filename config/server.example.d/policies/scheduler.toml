@@ -1,0 +1,9 @@
+[policies.scheduler]
+enabled = true
+max_tasks_per_user = 100
+max_subscriptions_per_user = 50
+tick_interval_sec = 1
+missed_task_policy = "skip"
+task_timeout_sec = 30
+max_concurrent_tasks = 5
+

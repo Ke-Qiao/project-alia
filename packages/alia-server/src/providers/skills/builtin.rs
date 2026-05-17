@@ -343,7 +343,7 @@ impl ModuleLifecycle for BuiltinSkills {
         self.artifacts = Some(ctx.artifacts.clone());
         self.skills_dir = ctx
             .config
-            .skills
+            .resources
             .skills_dir
             .as_ref()
             .map(|d| ctx.config.resolve_path(d));

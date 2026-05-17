@@ -225,51 +225,54 @@ impl ModuleLifecycle for GptSovitsTts {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
+        let provider_config = &server_config.providers.gpt_sovits;
+        let voice_config = server_config.profiles.default_voice_profile();
+        if voice_config.provider != "gpt_sovits" {
+            tracing::warn!(
+                provider = %voice_config.provider,
+                "default voice profile is not configured for GPT-SoVITS; applying shared voice fields anyway"
+            );
+        }
 
         let configured = {
             let mut config = self.config.write().await;
-            config.endpoint = server_config.tts.gpt_sovits_endpoint.clone();
-            config.model_name = non_empty(server_config.tts.gpt_sovits_model_name.as_deref());
-            config.gpt_weights_path =
-                non_empty(server_config.tts.gpt_sovits_gpt_weights_path.as_deref());
-            config.sovits_weights_path =
-                non_empty(server_config.tts.gpt_sovits_sovits_weights_path.as_deref());
-            config.ref_audio_path = server_config
-                .tts
-                .gpt_sovits_ref_audio_path
+            config.endpoint = provider_config.endpoint.clone();
+            config.model_name = non_empty(voice_config.model_name.as_deref());
+            config.gpt_weights_path = non_empty(voice_config.gpt_weights_path.as_deref());
+            config.sovits_weights_path = non_empty(voice_config.sovits_weights_path.as_deref());
+            config.ref_audio_path = voice_config
+                .ref_audio_path
                 .as_ref()
                 .filter(|value| !value.trim().is_empty())
                 .cloned();
-            config.aux_ref_audio_paths = server_config
-                .tts
-                .gpt_sovits_aux_ref_audio_paths
+            config.aux_ref_audio_paths = voice_config
+                .aux_ref_audio_paths
                 .iter()
                 .filter(|value| !value.trim().is_empty())
                 .cloned()
                 .collect();
-            config.prompt_text = server_config
-                .tts
-                .gpt_sovits_prompt_text
+            config.prompt_text = voice_config
+                .prompt_text
                 .as_ref()
                 .filter(|value| !value.trim().is_empty())
                 .cloned();
-            config.text_lang = server_config.tts.gpt_sovits_text_lang.clone();
-            config.prompt_lang = server_config.tts.gpt_sovits_prompt_lang.clone();
-            config.text_split_method = server_config.tts.gpt_sovits_text_split_method.clone();
-            config.batch_size = server_config.tts.gpt_sovits_batch_size;
-            config.batch_threshold = server_config.tts.gpt_sovits_batch_threshold;
-            config.split_bucket = server_config.tts.gpt_sovits_split_bucket;
-            config.speed_factor = server_config.tts.gpt_sovits_speed_factor;
-            config.fragment_interval = server_config.tts.gpt_sovits_fragment_interval;
-            config.seed = server_config.tts.gpt_sovits_seed;
-            config.parallel_infer = server_config.tts.gpt_sovits_parallel_infer;
-            config.repetition_penalty = server_config.tts.gpt_sovits_repetition_penalty;
-            config.sample_steps = server_config.tts.gpt_sovits_sample_steps;
-            config.super_sampling = server_config.tts.gpt_sovits_super_sampling;
-            config.overlap_length = server_config.tts.gpt_sovits_overlap_length;
-            config.min_chunk_length = server_config.tts.gpt_sovits_min_chunk_length;
-            config.request_timeout_sec = server_config.tts.request_timeout_sec;
-            config.stream_idle_timeout_sec = server_config.tts.stream_idle_timeout_sec;
+            config.text_lang = voice_config.text_lang.clone();
+            config.prompt_lang = voice_config.prompt_lang.clone();
+            config.text_split_method = voice_config.text_split_method.clone();
+            config.batch_size = voice_config.batch_size;
+            config.batch_threshold = voice_config.batch_threshold;
+            config.split_bucket = voice_config.split_bucket;
+            config.speed_factor = voice_config.speed_factor;
+            config.fragment_interval = voice_config.fragment_interval;
+            config.seed = voice_config.seed;
+            config.parallel_infer = voice_config.parallel_infer;
+            config.repetition_penalty = voice_config.repetition_penalty;
+            config.sample_steps = voice_config.sample_steps;
+            config.super_sampling = voice_config.super_sampling;
+            config.overlap_length = voice_config.overlap_length;
+            config.min_chunk_length = voice_config.min_chunk_length;
+            config.request_timeout_sec = provider_config.request_timeout_sec;
+            config.stream_idle_timeout_sec = provider_config.stream_idle_timeout_sec;
             config.clone()
         };
 

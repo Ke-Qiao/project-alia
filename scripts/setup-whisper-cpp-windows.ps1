@@ -95,9 +95,10 @@ Write-Host ""
 Write-Host "Health check:"
 Write-Host "  curl http://$HostName`:$Port/health"
 Write-Host ""
-Write-Host "Alia config:"
-Write-Host "  whisper_cpp_endpoint = `"http://$HostName`:$Port`""
-Write-Host "  whisper_cpp_model = `"$Model`""
+Write-Host "Alia config (config/server.d/providers/whisper_cpp.toml):"
+Write-Host "  [providers.whisper_cpp]"
+Write-Host "  endpoint = `"http://$HostName`:$Port`""
+Write-Host "  model = `"$Model`""
 
 if ($Start) {
     & $serverBin -m $modelPath --host $HostName --port $Port -t $Threads

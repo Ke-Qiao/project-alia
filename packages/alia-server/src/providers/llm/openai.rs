@@ -241,9 +241,9 @@ impl ModuleLifecycle for OpenAiLlm {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.api_key = server_config.llm.openai_api_key.clone();
-        config.base_url = server_config.llm.openai_base_url.clone();
-        config.model = server_config.llm.openai_model.clone();
+        config.api_key = server_config.providers.openai.api_key.clone();
+        config.base_url = server_config.providers.openai.base_url.clone();
+        config.model = server_config.providers.openai.chat_model.clone();
 
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured");

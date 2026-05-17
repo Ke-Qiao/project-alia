@@ -130,9 +130,10 @@ Start server:
 Health check:
   curl http://$HOST:$PORT/health
 
-Alia config:
-  whisper_cpp_endpoint = "http://$HOST:$PORT"
-  whisper_cpp_model = "$MODEL"
+Alia config (config/server.d/providers/whisper_cpp.toml):
+  [providers.whisper_cpp]
+  endpoint = "http://$HOST:$PORT"
+  model = "$MODEL"
 EOF
 
 if [[ "$START" -eq 1 ]]; then

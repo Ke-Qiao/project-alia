@@ -1,0 +1,5 @@
+[providers.gpt_sovits]
+endpoint = "http://localhost:9880/tts"
+request_timeout_sec = 60
+stream_idle_timeout_sec = 10
+

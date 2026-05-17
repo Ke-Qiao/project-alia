@@ -225,8 +225,8 @@ impl ModuleLifecycle for OllamaLlm {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.endpoint = server_config.llm.ollama_endpoint.clone();
-        config.model = server_config.llm.ollama_model.clone();
+        config.endpoint = server_config.providers.ollama.endpoint.clone();
+        config.model = server_config.providers.ollama.chat_model.clone();
 
         tracing::info!(model = %config.model, endpoint = %config.endpoint, "Ollama LLM initialized");
         Ok(())

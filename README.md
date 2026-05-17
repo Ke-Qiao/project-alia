@@ -45,6 +45,8 @@ docker compose up -d
 cp config/server.example.toml config/server.toml
 cp -R config/server.example.d config/server.d
 cp config/embedded.example.toml config/embedded.toml
+# Choose providers in config/server.toml [modules], then tune provider settings
+# in config/server.d/providers/ and voice settings in config/server.d/profiles/.
 
 # 4. Run the server
 cargo run -p alia-server

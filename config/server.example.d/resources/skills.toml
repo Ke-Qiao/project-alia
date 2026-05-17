@@ -1,0 +1,7 @@
+[resources]
+# Directory containing .md skill definition files (TOML frontmatter).
+# Relative paths resolve from this config file's directory.
+# e.g. "../skills" => <config_dir>/../skills/ (dev layout)
+#      "skills"    => <config_dir>/skills/     (deployed layout)
+skills_dir = "../skills"
+

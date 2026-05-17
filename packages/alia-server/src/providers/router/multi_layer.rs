@@ -499,25 +499,26 @@ impl ModuleLifecycle for MultiLayerRouter {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let local_enabled = ctx.config.router.local_llm_enabled;
-        let remote_enabled = ctx.config.router.remote_llm_enabled;
+        let routing = &ctx.config.policies.routing;
+        let local_enabled = routing.local_llm_enabled;
+        let remote_enabled = routing.remote_llm_enabled;
 
         if !local_enabled && !remote_enabled {
             anyhow::bail!(
-                "invalid router config: both router_local_llm_enabled and \
-                 router_remote_llm_enabled are false — at least one must be true"
+                "invalid routing policy: both policies.routing.local_llm_enabled and \
+                 policies.routing.remote_llm_enabled are false — at least one must be true"
             );
         }
 
-        let timeout_sec = ctx.config.router.timeout_sec;
+        let timeout_sec = routing.timeout_sec;
         self.client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_sec))
             .build()
             .unwrap_or_default();
         let cfg = RouterConfig {
-            ollama_endpoint: ctx.config.llm.ollama_endpoint.clone(),
-            model: ctx.config.router.model.clone(),
-            temperature: ctx.config.router.temperature,
+            ollama_endpoint: ctx.config.providers.ollama.endpoint.clone(),
+            model: routing.model.clone(),
+            temperature: routing.temperature,
             timeout_sec,
             local_llm_enabled: local_enabled,
             remote_llm_enabled: remote_enabled,

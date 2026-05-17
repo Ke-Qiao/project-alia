@@ -590,7 +590,7 @@ impl ModuleLifecycle for ScheduledInsights {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let insights_config = ctx.config.insights.clone();
+        let insights_config = ctx.config.policies.insights.clone();
 
         self.enabled
             .store(insights_config.enabled, Ordering::Relaxed);

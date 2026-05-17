@@ -1,0 +1,5 @@
+[providers.ollama]
+endpoint = "http://localhost:11434"
+chat_model = "qwen2.5:7b"
+embedding_model = "bge-m3"
+

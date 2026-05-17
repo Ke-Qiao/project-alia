@@ -1,0 +1,14 @@
+[providers.mem0]
+base_url = "https://api.mem0.ai"
+api_key = ""
+user_id_prefix = ""
+app_id = ""
+agent_id = ""
+run_id = ""
+custom_instructions = ""
+infer = false
+conversation_infer = true
+request_timeout_sec = 20
+page_size = 50
+add_poll_timeout_ms = 0
+

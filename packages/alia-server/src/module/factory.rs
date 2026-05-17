@@ -7,7 +7,7 @@ use crate::channels::cli::CliChannel;
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, MemorySection};
+use crate::config::{ChannelConfig, Mem0ProviderSection, MemorySection};
 use crate::event::EventBus;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
@@ -132,7 +132,11 @@ pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
     }
 }
 
-pub fn create_memory(name: &str, config: &MemorySection) -> Box<dyn MemoryBackend> {
+pub fn create_memory(
+    name: &str,
+    config: &MemorySection,
+    _mem0_config: &Mem0ProviderSection,
+) -> Box<dyn MemoryBackend> {
     if !config.enabled {
         tracing::info!(module = name, "memory disabled by config");
         return Box::new(NoopMemory);
@@ -147,7 +151,7 @@ pub fn create_memory(name: &str, config: &MemorySection) -> Box<dyn MemoryBacken
         "mem0" => {
             tracing::info!(module = name, "creating memory backend (mem0)");
             Box::new(ExternalMemoryBackend::new(Mem0Client::new(
-                Mem0Config::from_memory_config(config),
+                Mem0Config::from_config(config, _mem0_config),
             )))
         }
         "noop" => {

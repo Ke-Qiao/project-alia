@@ -1,0 +1,6 @@
+[providers.openai]
+api_key = ""
+chat_model = "qwen2.5-7b-instruct"
+embedding_model = "text-embedding-3-small"
+base_url = "http://127.0.0.1:1234/v1"
+

@@ -88,8 +88,8 @@ impl ModuleLifecycle for WhisperCppStt {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.endpoint = server_config.stt.whisper_cpp_endpoint.clone();
-        config.request_timeout_sec = server_config.stt.request_timeout_sec;
+        config.endpoint = server_config.providers.whisper_cpp.endpoint.clone();
+        config.request_timeout_sec = server_config.providers.whisper_cpp.request_timeout_sec;
 
         tracing::info!(endpoint = %config.endpoint, "Whisper STT initialized");
         Ok(())

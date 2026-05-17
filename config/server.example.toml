@@ -6,10 +6,13 @@
 #   3. ~/.config/alia/server.toml  (XDG / macOS Library)
 #   4. /etc/alia/server.toml
 #
-# This base file is loaded first, then fragments from ./server.example.d/**/*.toml
-# are loaded in sorted order. For a runtime config named server.toml, fragments
-# live in ./server.d/**/*.toml. Relative paths are resolved from the base config
-# file's directory, NOT the working directory.
+# This base file owns instance-level settings and module selection.
+# Implementation details live in ./server.example.d/**/*.toml and are
+# deep-merged in sorted order. For a runtime config named server.toml,
+# fragments live in ./server.d/**/*.toml. Prefer semantic folders such as
+# providers/, policies/, profiles/, resources/, and future plugins/.
+# Relative paths are resolved from the base config file's directory, NOT the
+# working directory.
 # ─────────────────────────────────────────────────────────────────────
 
 [server]
@@ -64,33 +67,3 @@ router = "multi_layer"
 rule_engine = "simple"
 scheduler = "cron"
 tools = "builtin"
-
-[skills]
-# Directory containing .md skill definition files (TOML frontmatter).
-# Relative paths resolve from this config file's directory.
-# e.g. "../skills" → <config_dir>/../skills/ (dev layout)
-#      "skills"    → <config_dir>/skills/     (deployed layout)
-skills_dir = "../skills"
-
-[rules]
-evaluation_interval_sec = 10
-max_rules_per_user = 50
-
-[scheduler]
-enabled = true
-max_tasks_per_user = 100
-max_subscriptions_per_user = 50
-tick_interval_sec = 1
-missed_task_policy = "skip"
-task_timeout_sec = 30
-max_concurrent_tasks = 5
-
-[tools]
-max_tool_call_depth = 5
-tool_call_timeout_sec = 30
-max_tools_per_turn = 8
-candidate_pool_size = 24
-llm_candidate_filter_enabled = true
-llm_candidate_filter_threshold = 12
-allow_plugin_tools = true
-require_confirmation = []

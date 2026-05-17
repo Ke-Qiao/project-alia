@@ -69,8 +69,8 @@ impl ModuleLifecycle for OllamaEmbedding {
         let server_config: &ServerConfig = &ctx.config;
 
         let mut config = self.config.write().await;
-        config.endpoint = server_config.llm.ollama_endpoint.clone();
-        config.model = server_config.embedding.ollama_model.clone();
+        config.endpoint = server_config.providers.ollama.endpoint.clone();
+        config.model = server_config.providers.ollama.embedding_model.clone();
 
         // Set dimension based on model
         config.dimension = match config.model.as_str() {
