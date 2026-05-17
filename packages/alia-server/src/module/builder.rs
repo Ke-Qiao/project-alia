@@ -472,6 +472,7 @@ impl ServerBuilder {
             state.cancel_token.clone(),
             state.config.server.debug_output,
             state.config.tools.clone(),
+            state.config.cache.clone(),
             effective_memory_config,
         );
 

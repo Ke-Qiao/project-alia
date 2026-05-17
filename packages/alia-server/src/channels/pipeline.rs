@@ -18,12 +18,13 @@ use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
-use crate::config::{MemorySection, ToolsSection};
+use crate::config::{CacheSection, MemorySection, ToolsSection};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    AudioEncoding, CacheEntry, CachedResponse, ChatMessage, DEFAULT_CACHE_SCOPE, LlmAdapter,
-    MemoryConversationIngest, MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput,
+    AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
+    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryConversationIngest,
+    MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput, SemanticCacheCandidate,
     ToolDefinition,
 };
 use crate::providers::sensor::SensorRegistry;
@@ -64,6 +65,75 @@ struct PendingTextPersistence {
     query_text: String,
     response_text: String,
     channel_id: String,
+    cache_write: Option<CacheWrite>,
+}
+
+#[derive(Debug, Clone)]
+struct CacheWrite {
+    scope: String,
+    metadata: serde_json::Value,
+    ttl_seconds: u64,
+    store_embedding: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CacheContext {
+    memory_context_used: bool,
+    used_tools: bool,
+    skill_cacheable: Option<bool>,
+    response_was_fallback: bool,
+    route: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct LlmExecutionOutcome {
+    text: String,
+    streamed: bool,
+    audio_streamed: bool,
+    used_tools: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AgentTrace {
+    session_id: Uuid,
+    turn_id: Uuid,
+    next_sequence: i32,
+}
+
+impl AgentTrace {
+    fn new(session_id: Uuid) -> Self {
+        Self {
+            session_id,
+            turn_id: Uuid::new_v4(),
+            next_sequence: 0,
+        }
+    }
+
+    pub(super) async fn record(
+        &mut self,
+        modules: &ModuleRegistry,
+        event_type: impl Into<String>,
+        actor: impl Into<String>,
+        summary: Option<String>,
+        payload: serde_json::Value,
+    ) {
+        let event = ConversationEventEntry {
+            turn_id: self.turn_id,
+            sequence: self.next_sequence,
+            event_type: event_type.into(),
+            actor: actor.into(),
+            summary,
+            payload,
+        };
+        self.next_sequence += 1;
+        if let Err(error) = modules
+            .conversation
+            .append_event(self.session_id, event)
+            .await
+        {
+            tracing::debug!(error = ?error, "failed to append conversation event");
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -89,6 +159,7 @@ pub fn spawn_pipeline(
     cancel_token: CancellationToken,
     debug_output: bool,
     tools_config: ToolsSection,
+    cache_config: CacheSection,
     memory_config: MemorySection,
 ) {
     let mut rx = event_bus.subscribe();
@@ -111,11 +182,12 @@ pub fn spawn_pipeline(
                             let sensors = sensors.clone();
                             let bus = bus.clone();
                             let tools_config = tools_config.clone();
+                            let cache_config = cache_config.clone();
                             let memory_config = memory_config.clone();
                             let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config, &memory_config).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config, &cache_config, &memory_config).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -155,6 +227,7 @@ async fn process_event(
     voice_turns: &VoiceTurnRegistry,
     debug_output: bool,
     tools_config: &ToolsSection,
+    cache_config: &CacheSection,
     memory_config: &MemorySection,
 ) -> anyhow::Result<()> {
     match event {
@@ -188,6 +261,7 @@ async fn process_event(
                 debug_output,
                 false,
                 tools_config,
+                cache_config,
                 memory_config,
                 None,
                 false,
@@ -321,6 +395,7 @@ async fn process_event(
                 debug_output,
                 channel.capabilities().voice_output && channel.capabilities().audio_streaming,
                 tools_config,
+                cache_config,
                 memory_config,
                 Some(&turn),
                 turn.interrupt_config.discard_interrupted_turn_history,
@@ -450,13 +525,15 @@ async fn process_text(
     debug_output: bool,
     audio_response: bool,
     tools_config: &ToolsSection,
+    cache_config: &CacheSection,
     memory_config: &MemorySection,
     turn: Option<&VoiceTurn>,
     defer_persistence: bool,
 ) -> anyhow::Result<TextResult> {
     let uid = stable_user_uuid(user_id);
-    let base_system_messages =
+    let (mut base_system_messages, runtime_context) =
         build_base_system_messages(uid, modules, memory_config, text).await?;
+    let memory_context_used = runtime_context_has_user_memory(&runtime_context);
 
     // 1. Get active session and load history
     let session_id = modules
@@ -464,37 +541,140 @@ async fn process_text(
         .get_or_create_active_session(channel_id, user_id)
         .await?;
     let history = modules.conversation.get_history(session_id, 20).await?;
+    let mut trace = AgentTrace::new(session_id);
+    trace
+        .record(
+            modules,
+            "turn_started",
+            "pipeline",
+            Some("User turn started".to_string()),
+            serde_json::json!({
+                "channel_id": channel_id,
+                "user_id": user_id,
+                "input_preview": preview_for_prompt(text, 240),
+                "history_messages": history.len(),
+                "memory_context_used": memory_context_used,
+            }),
+        )
+        .await;
 
-    // 2. Check cache first (never streamed)
-    if let Some(CachedResponse { response_text, .. }) = modules.cache.get(Some(uid), text).await? {
-        tracing::debug!(query = text, "pipeline cache hit");
-        debug_component_text(
-            debug_output,
-            "cache",
-            "hit",
-            &response_text,
-            Some((channel_id, user_id)),
-        );
-        let pending = PendingTextPersistence {
-            session_id,
-            user_id: uid,
-            user_id_text: user_id.to_string(),
-            query_text: text.to_string(),
-            response_text: response_text.clone(),
-            channel_id: channel_id.to_string(),
-        };
-        if !defer_persistence {
-            persist_text_interaction(modules, pending.clone(), memory_config).await;
+    // 2. Check exact cache first (never streamed). Only entries with explicit
+    // safe-direct metadata can bypass the LLM.
+    if cache_config.enabled && cache_config.exact_match_enabled && !memory_context_used {
+        if let Some(cached) = modules.cache.get(Some(uid), text).await? {
+            if cached_response_is_safe_direct(&cached) {
+                let cache_metadata = cached.metadata.clone();
+                let response_text = cached.response_text;
+                tracing::debug!(query = text, "pipeline cache hit");
+                debug_component_text(
+                    debug_output,
+                    "cache",
+                    "hit",
+                    &response_text,
+                    Some((channel_id, user_id)),
+                );
+                trace
+                    .record(
+                        modules,
+                        "cache_hit",
+                        "cache",
+                        Some("Direct cache hit".to_string()),
+                        serde_json::json!({
+                            "kind": "exact",
+                            "metadata": cache_metadata,
+                        }),
+                    )
+                    .await;
+                let pending = PendingTextPersistence {
+                    session_id,
+                    user_id: uid,
+                    user_id_text: user_id.to_string(),
+                    query_text: text.to_string(),
+                    response_text: response_text.clone(),
+                    channel_id: channel_id.to_string(),
+                    cache_write: None,
+                };
+                if !defer_persistence {
+                    persist_text_interaction(modules, pending.clone(), memory_config).await;
+                }
+                trace
+                    .record(
+                        modules,
+                        "turn_completed",
+                        "pipeline",
+                        Some("Turn completed from cache".to_string()),
+                        serde_json::json!({
+                            "route": "cache",
+                            "streamed": false,
+                            "audio_streamed": false,
+                            "used_tools": false,
+                            "response_chars": response_text.chars().count(),
+                        }),
+                    )
+                    .await;
+                return Ok(TextResult {
+                    text: response_text,
+                    streamed: false,
+                    audio_streamed: false,
+                    interrupted: false,
+                    pending_persistence: defer_persistence.then_some(pending),
+                });
+            }
+            tracing::debug!(query = text, "cache candidate ignored by safety policy");
+            debug_component(
+                debug_output,
+                "cache",
+                "unsafe_hit_ignored",
+                Some((channel_id, user_id)),
+            );
+            trace
+                .record(
+                    modules,
+                    "cache_ignored",
+                    "cache",
+                    Some("Exact cache candidate ignored by safety policy".to_string()),
+                    serde_json::json!({
+                        "kind": "exact",
+                        "metadata": cached.metadata,
+                    }),
+                )
+                .await;
         }
-        return Ok(TextResult {
-            text: response_text,
-            streamed: false,
-            audio_streamed: false,
-            interrupted: false,
-            pending_persistence: defer_persistence.then_some(pending),
-        });
     }
     debug_component(debug_output, "cache", "miss", Some((channel_id, user_id)));
+    trace
+        .record(
+            modules,
+            "cache_miss",
+            "cache",
+            Some("No direct cache response used".to_string()),
+            serde_json::json!({
+                "exact_enabled": cache_config.exact_match_enabled,
+                "semantic_enabled": cache_config.semantic_match_enabled,
+                "memory_context_used": memory_context_used,
+            }),
+        )
+        .await;
+
+    if cache_config.enabled
+        && cache_config.semantic_match_enabled
+        && !memory_context_used
+        && let Some((prompt, candidate_count)) =
+            semantic_cache_reference_prompt(modules, uid, text, debug_output).await
+    {
+        trace
+            .record(
+                modules,
+                "semantic_cache_candidates",
+                "cache",
+                Some("Semantic cache references attached".to_string()),
+                serde_json::json!({
+                    "candidates": candidate_count,
+                }),
+            )
+            .await;
+        base_system_messages.push(system_message(prompt));
+    }
 
     // 3. Route the input
     debug_component_text(
@@ -513,6 +693,17 @@ async fn process_text(
         match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
             Some(decision) => decision,
             None => {
+                trace
+                    .record(
+                        modules,
+                        "turn_interrupted",
+                        "pipeline",
+                        Some("Turn interrupted during router stage".to_string()),
+                        serde_json::json!({
+                            "stage": "router",
+                        }),
+                    )
+                    .await;
                 return Ok(TextResult {
                     text: String::new(),
                     streamed: false,
@@ -529,8 +720,19 @@ async fn process_text(
         route_decision_name(&decision),
         Some((channel_id, user_id)),
     );
+    trace
+        .record(
+            modules,
+            "route_decision",
+            "router",
+            Some(route_decision_name(&decision).to_string()),
+            serde_json::json!({
+                "route": route_decision_name(&decision),
+            }),
+        )
+        .await;
 
-    let (mut response, mut streamed, mut audio_streamed) = match decision {
+    let (outcome, skill_cacheable, route_for_cache) = match decision {
         // Cache hit from router — never streamed
         RouteDecision::CacheHit { response } => {
             debug_component_text(
@@ -540,7 +742,16 @@ async fn process_text(
                 &response,
                 Some((channel_id, user_id)),
             );
-            (response, false, false)
+            (
+                LlmExecutionOutcome {
+                    text: response,
+                    streamed: false,
+                    audio_streamed: false,
+                    used_tools: false,
+                },
+                None,
+                "router_cache",
+            )
         }
 
         // Skill execution — resolve skill, then send through LLM with tools.
@@ -552,6 +763,19 @@ async fn process_text(
                 confidence: 1.0,
             };
             let resolution = modules.skills.resolve(&skill_match).await?;
+            trace
+                .record(
+                    modules,
+                    "skill_resolved",
+                    "skills",
+                    Some(resolution.skill_name.clone()),
+                    serde_json::json!({
+                        "skill": resolution.skill_name,
+                        "cacheable": resolution.cacheable,
+                        "tools": resolution.tools,
+                    }),
+                )
+                .await;
 
             // Build messages with the skill's domain-specific system prompt
             let mut messages = base_system_messages.clone();
@@ -574,7 +798,8 @@ async fn process_text(
             let tools =
                 select_tools_for_skill(modules, &resolution.tools, text, tools_config, channel_id)
                     .await?;
-            execute_llm_response(
+            let skill_cacheable = resolution.cacheable;
+            let outcome = execute_llm_response(
                 modules,
                 modules.llm.as_ref(),
                 messages,
@@ -591,9 +816,11 @@ async fn process_text(
                 true,
                 tools_config,
                 debug_output,
+                &mut trace,
                 turn,
             )
-            .await?
+            .await?;
+            (outcome, Some(skill_cacheable), "skill")
         }
 
         // LLM call — stream when the channel supports it
@@ -610,7 +837,7 @@ async fn process_text(
             );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
             let allow_local_streaming = escalation_prompt.is_none();
-            let (local_response, local_streamed, local_audio_streamed) = execute_llm_response(
+            let local_outcome = execute_llm_response(
                 modules,
                 modules.local_llm.as_ref(),
                 messages,
@@ -627,11 +854,12 @@ async fn process_text(
                 allow_local_streaming,
                 tools_config,
                 debug_output,
+                &mut trace,
                 turn,
             )
             .await?;
 
-            if let Some(reason) = escalation_reason(&local_response)
+            if let Some(reason) = escalation_reason(&local_outcome.text)
                 && let Some(remote_prompt) = escalation_prompt
             {
                 tracing::info!(
@@ -662,7 +890,7 @@ async fn process_text(
                 ));
                 let remote_tools =
                     select_all_tools(modules, text, tools_config, channel_id).await?;
-                execute_llm_response(
+                let remote_outcome = execute_llm_response(
                     modules,
                     modules.remote_llm.as_ref(),
                     remote_messages,
@@ -679,11 +907,13 @@ async fn process_text(
                     true,
                     tools_config,
                     debug_output,
+                    &mut trace,
                     turn,
                 )
-                .await?
+                .await?;
+                (remote_outcome, None, "remote_llm_escalated")
             } else {
-                (local_response, local_streamed, local_audio_streamed)
+                (local_outcome, None, "local_llm")
             }
         }
         RouteDecision::RemoteLlm { system_prompt } => {
@@ -695,7 +925,7 @@ async fn process_text(
                 user_id,
             );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
-            execute_llm_response(
+            let outcome = execute_llm_response(
                 modules,
                 modules.remote_llm.as_ref(),
                 messages,
@@ -712,22 +942,43 @@ async fn process_text(
                 true,
                 tools_config,
                 debug_output,
+                &mut trace,
                 turn,
             )
-            .await?
+            .await?;
+            (outcome, None, "remote_llm")
         }
     };
 
     if turn_is_interrupted(turn) {
+        trace
+            .record(
+                modules,
+                "turn_interrupted",
+                "pipeline",
+                Some("Turn interrupted before persistence".to_string()),
+                serde_json::json!({
+                    "route": route_for_cache,
+                    "streamed": outcome.streamed,
+                    "audio_streamed": outcome.audio_streamed,
+                    "used_tools": outcome.used_tools,
+                }),
+            )
+            .await;
         return Ok(TextResult {
-            text: response,
-            streamed,
-            audio_streamed,
+            text: outcome.text,
+            streamed: outcome.streamed,
+            audio_streamed: outcome.audio_streamed,
             interrupted: true,
             pending_persistence: None,
         });
     }
 
+    let mut response_was_fallback = false;
+    let used_tools = outcome.used_tools;
+    let mut response = outcome.text;
+    let mut streamed = outcome.streamed;
+    let mut audio_streamed = outcome.audio_streamed;
     if response.trim().is_empty() {
         tracing::warn!(
             channel_id,
@@ -737,6 +988,51 @@ async fn process_text(
         response = EMPTY_RESPONSE_FALLBACK.to_string();
         streamed = false;
         audio_streamed = false;
+        response_was_fallback = true;
+    }
+
+    let cache_context = CacheContext {
+        memory_context_used,
+        used_tools,
+        skill_cacheable,
+        response_was_fallback,
+        route: route_for_cache,
+    };
+    let cache_write = cache_write_for_response(cache_config, text, &response, cache_context);
+    match &cache_write {
+        Some(write) => {
+            trace
+                .record(
+                    modules,
+                    "cache_write_scheduled",
+                    "cache",
+                    Some("Response eligible for cache write".to_string()),
+                    serde_json::json!({
+                        "scope": write.scope,
+                        "ttl_seconds": write.ttl_seconds,
+                        "store_embedding": write.store_embedding,
+                        "metadata": write.metadata,
+                    }),
+                )
+                .await;
+        }
+        None => {
+            trace
+                .record(
+                    modules,
+                    "cache_write_skipped",
+                    "cache",
+                    Some("Response not eligible for cache write".to_string()),
+                    serde_json::json!({
+                        "route": route_for_cache,
+                        "memory_context_used": memory_context_used,
+                        "used_tools": used_tools,
+                        "skill_cacheable": skill_cacheable,
+                        "response_was_fallback": response_was_fallback,
+                    }),
+                )
+                .await;
+        }
     }
 
     let pending_persistence = PendingTextPersistence {
@@ -746,11 +1042,28 @@ async fn process_text(
         query_text: text.to_string(),
         response_text: response.clone(),
         channel_id: channel_id.to_string(),
+        cache_write,
     };
 
     if !defer_persistence {
         persist_text_interaction(modules, pending_persistence.clone(), memory_config).await;
     }
+    trace
+        .record(
+            modules,
+            "turn_completed",
+            "pipeline",
+            Some("Turn completed".to_string()),
+            serde_json::json!({
+                "route": route_for_cache,
+                "streamed": streamed,
+                "audio_streamed": audio_streamed,
+                "used_tools": used_tools,
+                "response_chars": response.chars().count(),
+                "defer_persistence": defer_persistence,
+            }),
+        )
+        .await;
 
     Ok(TextResult {
         text: response,
@@ -805,8 +1118,9 @@ async fn execute_llm_response(
     allow_streaming: bool,
     tools_config: &ToolsSection,
     debug_output: bool,
+    trace: &mut AgentTrace,
     turn: Option<&VoiceTurn>,
-) -> anyhow::Result<(String, bool, bool)> {
+) -> anyhow::Result<LlmExecutionOutcome> {
     if !tools.is_empty() {
         debug_component_tools(
             debug_output,
@@ -815,7 +1129,25 @@ async fn execute_llm_response(
             &tools,
             Some((channel_id, user_id)),
         );
-        let full = run_llm_tool_loop(
+        let available_tools = tools
+            .iter()
+            .map(|tool| tool.name.clone())
+            .collect::<Vec<_>>();
+        trace
+            .record(
+                modules,
+                "llm_call",
+                "llm",
+                Some(route.to_string()),
+                serde_json::json!({
+                    "route": route,
+                    "mode": "tool_loop",
+                    "available_tools": available_tools,
+                    "messages": messages.len(),
+                }),
+            )
+            .await;
+        let outcome = run_llm_tool_loop(
             modules,
             llm,
             messages,
@@ -827,6 +1159,7 @@ async fn execute_llm_response(
             route,
             tools_config,
             debug_output,
+            trace,
             turn,
         )
         .await?;
@@ -834,10 +1167,29 @@ async fn execute_llm_response(
             debug_output,
             "llm",
             "tool_loop_result",
-            &full,
+            &outcome.text,
             Some((channel_id, user_id)),
         );
-        return Ok((full, false, false));
+        trace
+            .record(
+                modules,
+                "llm_result",
+                "llm",
+                Some("Tool loop completed".to_string()),
+                serde_json::json!({
+                    "route": route,
+                    "mode": "tool_loop",
+                    "used_tools": outcome.used_tools,
+                    "response_chars": outcome.text.chars().count(),
+                }),
+            )
+            .await;
+        return Ok(LlmExecutionOutcome {
+            text: outcome.text,
+            streamed: false,
+            audio_streamed: false,
+            used_tools: outcome.used_tools,
+        });
     }
 
     if allow_streaming && channel.capabilities().streaming {
@@ -849,6 +1201,20 @@ async fn execute_llm_response(
             &messages,
             Some((channel_id, user_id)),
         );
+        trace
+            .record(
+                modules,
+                "llm_call",
+                "llm",
+                Some(route.to_string()),
+                serde_json::json!({
+                    "route": route,
+                    "mode": "stream",
+                    "messages": messages.len(),
+                    "audio_response": audio_response,
+                }),
+            )
+            .await;
         let (full, audio_streamed) = if audio_response {
             stream_llm_response_with_sentence_tts(
                 modules,
@@ -888,7 +1254,26 @@ async fn execute_llm_response(
             &full,
             Some((channel_id, user_id)),
         );
-        return Ok((full, true, audio_streamed));
+        trace
+            .record(
+                modules,
+                "llm_result",
+                "llm",
+                Some("Streaming response completed".to_string()),
+                serde_json::json!({
+                    "route": route,
+                    "mode": "stream",
+                    "response_chars": full.chars().count(),
+                    "audio_streamed": audio_streamed,
+                }),
+            )
+            .await;
+        return Ok(LlmExecutionOutcome {
+            text: full,
+            streamed: true,
+            audio_streamed,
+            used_tools: false,
+        });
     }
 
     debug_component_llm_call(
@@ -899,6 +1284,19 @@ async fn execute_llm_response(
         &messages,
         Some((channel_id, user_id)),
     );
+    trace
+        .record(
+            modules,
+            "llm_call",
+            "llm",
+            Some(route.to_string()),
+            serde_json::json!({
+                "route": route,
+                "mode": "chat",
+                "messages": messages.len(),
+            }),
+        )
+        .await;
     let full = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
         Some(full) => full,
         None => String::new(),
@@ -912,7 +1310,26 @@ async fn execute_llm_response(
             Some((channel_id, user_id)),
         );
     }
-    Ok((full, false, false))
+    trace
+        .record(
+            modules,
+            "llm_result",
+            "llm",
+            Some("Chat response completed".to_string()),
+            serde_json::json!({
+                "route": route,
+                "mode": "chat",
+                "response_chars": full.chars().count(),
+                "interrupted": turn_is_interrupted(turn),
+            }),
+        )
+        .await;
+    Ok(LlmExecutionOutcome {
+        text: full,
+        streamed: false,
+        audio_streamed: false,
+        used_tools: false,
+    })
 }
 
 fn escalation_reason(response: &str) -> Option<&str> {
@@ -923,6 +1340,285 @@ fn escalation_reason(response: &str) -> Option<&str> {
     } else {
         reason
     })
+}
+
+fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
+    let metadata = &cached.metadata;
+    let policy = metadata
+        .get("policy")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+
+    metadata.get("schema").and_then(serde_json::Value::as_str) == Some(CACHE_METADATA_SCHEMA)
+        && matches!(policy, "private_exact" | "shared_exact")
+        && metadata
+            .get("safe_direct_return")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        && metadata
+            .get("memory_independent")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        && metadata
+            .get("tool_free")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        && metadata
+            .get("dynamic_free")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+}
+
+fn cache_write_for_response(
+    cache_config: &CacheSection,
+    query_text: &str,
+    response_text: &str,
+    context: CacheContext,
+) -> Option<CacheWrite> {
+    if !cache_config.enabled || !cache_config.exact_match_enabled {
+        return None;
+    }
+    if context.response_was_fallback
+        || context.used_tools
+        || context.memory_context_used
+        || response_text.trim().is_empty()
+        || matches!(context.route, "router_cache" | "remote_llm_escalated")
+    {
+        return None;
+    }
+    if matches!(context.skill_cacheable, Some(false)) {
+        return None;
+    }
+    if query_is_dynamic(query_text)
+        || query_is_memory_related(query_text)
+        || query_is_device_or_action_related(query_text)
+    {
+        return None;
+    }
+
+    let ttl_seconds = if context.skill_cacheable == Some(true) {
+        cache_config.skill_cache_ttl_seconds
+    } else {
+        cache_config.default_ttl_seconds
+    };
+    if ttl_seconds == 0 {
+        return None;
+    }
+
+    Some(CacheWrite {
+        scope: DEFAULT_CACHE_SCOPE.into(),
+        metadata: serde_json::json!({
+            "schema": CACHE_METADATA_SCHEMA,
+            "policy": "private_exact",
+            "safe_direct_return": true,
+            "memory_independent": true,
+            "tool_free": true,
+            "dynamic_free": true,
+            "route": context.route,
+            "language": guess_text_language(query_text),
+            "created_by": "pipeline",
+        }),
+        ttl_seconds,
+        store_embedding: cache_config.semantic_match_enabled,
+    })
+}
+
+fn runtime_context_has_user_memory(context: &RuntimePromptContext) -> bool {
+    !context.core_memories.is_empty() || !context.user_preferences.is_empty()
+}
+
+async fn semantic_cache_reference_prompt(
+    modules: &ModuleRegistry,
+    user_id: Uuid,
+    query_text: &str,
+    debug_output: bool,
+) -> Option<(String, usize)> {
+    if modules.embedding.name() == "noop_embedding" {
+        return None;
+    }
+
+    let embeddings = match modules.embedding.embed(&[query_text.to_string()]).await {
+        Ok(embeddings) => embeddings,
+        Err(error) => {
+            tracing::debug!(error = ?error, "semantic cache embedding lookup failed");
+            return None;
+        }
+    };
+    let embedding = embeddings.first()?;
+    let candidates = match modules
+        .cache
+        .get_semantic_candidates(Some(user_id), embedding, 3)
+        .await
+    {
+        Ok(candidates) => candidates
+            .into_iter()
+            .filter(semantic_candidate_is_safe_reference)
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            tracing::debug!(error = ?error, "semantic cache candidate lookup failed");
+            Vec::new()
+        }
+    };
+    if candidates.is_empty() {
+        return None;
+    }
+
+    if debug_output {
+        tracing::info!(
+            target: "alia_server::debug_output",
+            component = "cache",
+            event = "semantic_candidates",
+            candidates = candidates.len(),
+            "component event"
+        );
+    }
+
+    let references = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            format!(
+                "{}. similarity={:.3}: {}",
+                index + 1,
+                candidate.similarity,
+                preview_for_prompt(&candidate.response_text, 360)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let candidate_count = candidates.len();
+    Some((
+        format!(
+            "Internal cache references. These are semantically similar previous answers, not authoritative facts. Reuse or adapt them only if they clearly answer the current user request; otherwise ignore them. Do not mention the cache.\n\n{}",
+            references
+        ),
+        candidate_count,
+    ))
+}
+
+fn semantic_candidate_is_safe_reference(candidate: &SemanticCacheCandidate) -> bool {
+    cached_response_is_safe_direct(&CachedResponse {
+        response_text: candidate.response_text.clone(),
+        metadata: candidate.metadata.clone(),
+    })
+}
+
+fn preview_for_prompt(text: &str, max_chars: usize) -> String {
+    let mut preview = text.trim().chars().take(max_chars).collect::<String>();
+    if text.trim().chars().count() > max_chars {
+        preview.push_str("...");
+    }
+    preview
+}
+
+fn query_is_dynamic(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    contains_any(
+        &lower,
+        &[
+            "today",
+            "tomorrow",
+            "now",
+            "latest",
+            "current",
+            "weather",
+            "news",
+            "time",
+            "date",
+            "search",
+            "fetch",
+            "lookup",
+            "http://",
+            "https://",
+            "今天",
+            "明天",
+            "现在",
+            "最新",
+            "当前",
+            "天气",
+            "新闻",
+            "时间",
+            "几点",
+            "日期",
+            "搜索",
+            "查询",
+            "查一下",
+            "检索",
+        ],
+    )
+}
+
+fn query_is_memory_related(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    contains_any(
+        &lower,
+        &[
+            "remember",
+            "memory",
+            "memorize",
+            "preference",
+            "favorite",
+            "what do i",
+            "my ",
+            "mine",
+            "记住",
+            "记得",
+            "记忆",
+            "偏好",
+            "我的",
+            "我喜欢",
+            "我最喜欢",
+            "之前",
+        ],
+    )
+}
+
+fn query_is_device_or_action_related(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    contains_any(
+        &lower,
+        &[
+            "turn on",
+            "turn off",
+            "set ",
+            "adjust",
+            "volume",
+            "device",
+            "light",
+            "speaker",
+            "microphone",
+            "schedule",
+            "remind",
+            "notify",
+            "打开",
+            "关闭",
+            "设置",
+            "调整",
+            "调大",
+            "调小",
+            "音量",
+            "设备",
+            "灯",
+            "麦克风",
+            "提醒",
+            "通知",
+        ],
+    )
+}
+
+fn contains_any(text: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| text.contains(needle))
+}
+
+fn guess_text_language(text: &str) -> &'static str {
+    if text.chars().any(|ch| {
+        ('\u{4e00}'..='\u{9fff}').contains(&ch) || ('\u{3400}'..='\u{4dbf}').contains(&ch)
+    }) {
+        "zh"
+    } else {
+        "unknown"
+    }
 }
 
 async fn persist_text_interaction(
@@ -956,7 +1652,18 @@ async fn persist_text_interaction(
         )
         .await;
 
-    let _ = modules.cache.put(cache_entry_for_pending(&pending)).await;
+    if let Some(entry) = cache_entry_for_pending(&pending) {
+        let should_store_embedding = pending
+            .cache_write
+            .as_ref()
+            .is_some_and(|cache_write| cache_write.store_embedding);
+        let scope = entry.scope.clone();
+        let query_text = entry.query_text.clone();
+        let user_id = entry.user_id;
+        if modules.cache.put(entry).await.is_ok() && should_store_embedding {
+            update_cache_entry_embedding(modules, user_id, &query_text, &scope).await;
+        }
+    }
 
     if memory_config.enabled
         && memory_config.conversation_ingest_enabled
@@ -998,14 +1705,43 @@ async fn persist_text_interaction(
     }
 }
 
-fn cache_entry_for_pending(pending: &PendingTextPersistence) -> CacheEntry {
-    CacheEntry {
+fn cache_entry_for_pending(pending: &PendingTextPersistence) -> Option<CacheEntry> {
+    let cache_write = pending.cache_write.as_ref()?;
+    Some(CacheEntry {
         user_id: Some(pending.user_id),
-        scope: DEFAULT_CACHE_SCOPE.into(),
+        scope: cache_write.scope.clone(),
         query_text: pending.query_text.clone(),
         response_text: pending.response_text.clone(),
-        metadata: serde_json::Value::Null,
-        ttl_seconds: 3600,
+        metadata: cache_write.metadata.clone(),
+        ttl_seconds: cache_write.ttl_seconds,
+    })
+}
+
+async fn update_cache_entry_embedding(
+    modules: &ModuleRegistry,
+    user_id: Option<Uuid>,
+    query_text: &str,
+    scope: &str,
+) {
+    if modules.embedding.name() == "noop_embedding" {
+        return;
+    }
+    let embeddings = match modules.embedding.embed(&[query_text.to_string()]).await {
+        Ok(embeddings) => embeddings,
+        Err(error) => {
+            tracing::debug!(error = ?error, "cache embedding generation failed");
+            return;
+        }
+    };
+    let Some(embedding) = embeddings.first() else {
+        return;
+    };
+    if let Err(error) = modules
+        .cache
+        .update_embedding(user_id, query_text, scope, embedding)
+        .await
+    {
+        tracing::debug!(error = ?error, "cache embedding update failed");
     }
 }
 
@@ -1014,7 +1750,7 @@ async fn build_base_system_messages(
     modules: &ModuleRegistry,
     memory_config: &MemorySection,
     user_text: &str,
-) -> anyhow::Result<Vec<ChatMessage>> {
+) -> anyhow::Result<(Vec<ChatMessage>, RuntimePromptContext)> {
     let mut messages = Vec::new();
 
     match modules.persona.render_system_prompt(user_id).await {
@@ -1033,7 +1769,7 @@ async fn build_base_system_messages(
         messages.push(system_message(prompt));
     }
 
-    Ok(messages)
+    Ok((messages, runtime_context))
 }
 
 async fn build_runtime_prompt_context(
@@ -1177,10 +1913,24 @@ mod tests {
     use super::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
     use super::tools::parse_text_tool_calls;
     use super::{
-        PendingTextPersistence, RuntimePromptContext, cache_entry_for_pending, escalation_reason,
-        render_runtime_context_system_prompt,
+        CacheContext, CacheWrite, PendingTextPersistence, RuntimePromptContext,
+        cache_entry_for_pending, cache_write_for_response, cached_response_is_safe_direct,
+        escalation_reason, render_runtime_context_system_prompt,
     };
     use crate::channels::adapter::AudioFormat;
+    use crate::config::CacheSection;
+    use crate::providers::adapter::CachedResponse;
+
+    fn test_cache_config() -> CacheSection {
+        CacheSection {
+            enabled: true,
+            exact_match_enabled: true,
+            semantic_match_enabled: false,
+            semantic_threshold: 0.92,
+            default_ttl_seconds: 3600,
+            skill_cache_ttl_seconds: 300,
+        }
+    }
 
     #[test]
     fn parses_text_tool_call_envelope() {
@@ -1233,12 +1983,85 @@ mod tests {
             query_text: "hello".to_string(),
             response_text: "hi".to_string(),
             channel_id: "test-channel".to_string(),
+            cache_write: Some(CacheWrite {
+                scope: crate::providers::adapter::DEFAULT_CACHE_SCOPE.to_string(),
+                metadata: serde_json::json!({"schema": crate::providers::adapter::CACHE_METADATA_SCHEMA}),
+                ttl_seconds: 3600,
+                store_embedding: false,
+            }),
         };
 
-        let entry = cache_entry_for_pending(&pending);
+        let entry = cache_entry_for_pending(&pending).unwrap();
         assert_eq!(entry.scope, crate::providers::adapter::DEFAULT_CACHE_SCOPE);
         assert_eq!(entry.query_text, "hello");
         assert_eq!(entry.response_text, "hi");
+    }
+
+    #[test]
+    fn cache_policy_allows_safe_memory_independent_exact_entries() {
+        let entry = cache_write_for_response(
+            &test_cache_config(),
+            "What is MQTT?",
+            "MQTT is a lightweight messaging protocol.",
+            CacheContext {
+                memory_context_used: false,
+                used_tools: false,
+                skill_cacheable: None,
+                response_was_fallback: false,
+                route: "local_llm",
+            },
+        )
+        .expect("safe static answer should be cacheable");
+
+        let cached = CachedResponse {
+            response_text: "MQTT answer".to_string(),
+            metadata: entry.metadata,
+        };
+        assert!(cached_response_is_safe_direct(&cached));
+    }
+
+    #[test]
+    fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
+        let config = test_cache_config();
+        let base = CacheContext {
+            memory_context_used: false,
+            used_tools: false,
+            skill_cacheable: None,
+            response_was_fallback: false,
+            route: "remote_llm",
+        };
+
+        assert!(
+            cache_write_for_response(&config, "What time is it?", "It is noon.", base).is_none()
+        );
+        assert!(
+            cache_write_for_response(
+                &config,
+                "What is MQTT?",
+                "Answer",
+                CacheContext {
+                    used_tools: true,
+                    ..base
+                },
+            )
+            .is_none()
+        );
+        assert!(
+            cache_write_for_response(
+                &config,
+                "What is MQTT?",
+                "Answer",
+                CacheContext {
+                    memory_context_used: true,
+                    ..base
+                },
+            )
+            .is_none()
+        );
+        assert!(!cached_response_is_safe_direct(&CachedResponse {
+            response_text: "old cache".to_string(),
+            metadata: serde_json::json!({}),
+        }));
     }
 
     #[test]

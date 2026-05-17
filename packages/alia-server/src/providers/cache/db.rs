@@ -21,6 +21,7 @@ use crate::entity::llm_cache;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     CacheBackend, CacheEntry, CacheFilter, CachedResponse, DEFAULT_CACHE_SCOPE,
+    SemanticCacheCandidate,
 };
 
 /// Database-backed cache backend
@@ -316,6 +317,79 @@ impl CacheBackend for DbCache {
 
         tracing::info!(removed = result.rows_affected, "cache invalidated");
         Ok(result.rows_affected)
+    }
+
+    async fn get_semantic_candidates(
+        &self,
+        user_id: Option<Uuid>,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> anyhow::Result<Vec<SemanticCacheCandidate>> {
+        if !self.semantic_enabled || query_embedding.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let db = self.db()?;
+        let vector_str = format!(
+            "[{}]",
+            query_embedding
+                .iter()
+                .map(|f| f.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let user_filter = if let Some(uid) = user_id {
+            format!("AND (user_id = '{}' OR user_id IS NULL)", uid)
+        } else {
+            "AND user_id IS NULL".to_string()
+        };
+        let limit = limit.clamp(1, 10);
+        let sql = format!(
+            r#"
+            SELECT response_text, metadata,
+                   1 - (embedding <=> $1::vector) as similarity
+            FROM llm_cache
+            WHERE embedding IS NOT NULL
+                AND expires_at > NOW()
+                {}
+            ORDER BY embedding <=> $1::vector
+            LIMIT {}
+            "#,
+            user_filter, limit
+        );
+
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                &sql,
+                [vector_str.into()],
+            ))
+            .await?;
+
+        let mut candidates = Vec::new();
+        for row in rows {
+            let similarity: f32 = row.try_get("", "similarity").unwrap_or(0.0);
+            if similarity < self.semantic_threshold {
+                continue;
+            }
+            candidates.push(SemanticCacheCandidate {
+                response_text: row.try_get("", "response_text")?,
+                metadata: row.try_get("", "metadata")?,
+                similarity,
+            });
+        }
+
+        Ok(candidates)
+    }
+
+    async fn update_embedding(
+        &self,
+        user_id: Option<Uuid>,
+        query: &str,
+        scope: &str,
+        embedding: &[f32],
+    ) -> anyhow::Result<()> {
+        DbCache::update_embedding(self, user_id, query, scope, embedding).await
     }
 }
 

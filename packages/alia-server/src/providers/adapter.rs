@@ -232,11 +232,19 @@ pub trait MemoryBackend: ModuleLifecycle {
 // ========== Cache Backend ==========
 
 pub const DEFAULT_CACHE_SCOPE: &str = "default";
+pub const CACHE_METADATA_SCHEMA: &str = "alia.cache_metadata.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
     pub response_text: String,
     pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticCacheCandidate {
+    pub response_text: String,
+    pub metadata: serde_json::Value,
+    pub similarity: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -264,6 +272,23 @@ pub trait CacheBackend: ModuleLifecycle {
     ) -> anyhow::Result<Option<CachedResponse>>;
     async fn put(&self, entry: CacheEntry) -> anyhow::Result<()>;
     async fn invalidate(&self, filter: CacheFilter) -> anyhow::Result<u64>;
+    async fn get_semantic_candidates(
+        &self,
+        _user_id: Option<Uuid>,
+        _query_embedding: &[f32],
+        _limit: usize,
+    ) -> anyhow::Result<Vec<SemanticCacheCandidate>> {
+        Ok(Vec::new())
+    }
+    async fn update_embedding(
+        &self,
+        _user_id: Option<Uuid>,
+        _query: &str,
+        _scope: &str,
+        _embedding: &[f32],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 // ========== Skill Provider ==========
@@ -390,6 +415,26 @@ pub trait ConversationBackend: ModuleLifecycle {
 
     /// Append a message to a session.
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
+
+    /// Append a traceable agent event to a session. Backends that do not persist
+    /// conversation history can ignore this.
+    async fn append_event(
+        &self,
+        _session_id: Uuid,
+        _event: ConversationEventEntry,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationEventEntry {
+    pub turn_id: Uuid,
+    pub sequence: i32,
+    pub event_type: String,
+    pub actor: String,
+    pub summary: Option<String>,
+    pub payload: serde_json::Value,
 }
 
 // ========== Insights Strategy ==========

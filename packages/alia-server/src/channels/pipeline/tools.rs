@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
+use super::AgentTrace;
 use super::debug::{
     debug_component_llm_call, debug_component_tool_calls, debug_component_tool_result,
 };
@@ -27,6 +28,12 @@ Do not return an empty message."#;
 enum ToolCallProtocol {
     Native,
     TextFallback,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ToolLoopOutcome {
+    pub text: String,
+    pub used_tools: bool,
 }
 
 const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
@@ -57,8 +64,9 @@ pub(super) async fn run_llm_tool_loop(
     route: &'static str,
     tools_config: &ToolsSection,
     debug_output: bool,
+    trace: &mut AgentTrace,
     turn: Option<&VoiceTurn>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<ToolLoopOutcome> {
     let mut messages = inject_tool_prompt(base_messages, &tools)?;
     let tool_map = tools
         .iter()
@@ -72,6 +80,7 @@ pub(super) async fn run_llm_tool_loop(
     };
     let max_depth = tools_config.max_tool_call_depth.max(1);
     let mut last_tool_display: Option<String> = None;
+    let mut called_tool_names = Vec::new();
 
     for depth in 0..max_depth {
         debug_component_llm_call(
@@ -91,7 +100,12 @@ pub(super) async fn run_llm_tool_loop(
         .await?
         {
             Some(response) => response,
-            None => return Ok(String::new()),
+            None => {
+                return Ok(ToolLoopOutcome {
+                    text: String::new(),
+                    used_tools: !called_tool_names.is_empty(),
+                });
+            }
         };
         let mut protocol = normalize_tool_response(&mut response)?;
         if response.tool_calls.is_empty()
@@ -122,7 +136,12 @@ pub(super) async fn run_llm_tool_loop(
             .await?
             {
                 Some(retry_text) => retry_text,
-                None => return Ok(String::new()),
+                None => {
+                    return Ok(ToolLoopOutcome {
+                        text: String::new(),
+                        used_tools: !called_tool_names.is_empty(),
+                    });
+                }
             };
             response = LlmResponse::text(retry_text);
             protocol = normalize_tool_response(&mut response)?;
@@ -136,9 +155,15 @@ pub(super) async fn run_llm_tool_loop(
                     user_id = user_id_text,
                     "LLM returned empty response after tool retry"
                 );
-                return Ok(non_empty_tool_fallback(last_tool_display.as_deref()));
+                return Ok(ToolLoopOutcome {
+                    text: non_empty_tool_fallback(last_tool_display.as_deref()),
+                    used_tools: !called_tool_names.is_empty(),
+                });
             }
-            return Ok(response.content);
+            return Ok(ToolLoopOutcome {
+                text: response.content,
+                used_tools: !called_tool_names.is_empty(),
+            });
         }
 
         let tool_calls = response
@@ -154,6 +179,25 @@ pub(super) async fn run_llm_tool_loop(
             &tool_calls,
             Some((channel_id, user_id_text)),
         );
+        trace
+            .record(
+                modules,
+                "tool_calls",
+                "llm",
+                Some(format!("{} tool call(s)", tool_calls.len())),
+                serde_json::json!({
+                    "depth": depth + 1,
+                    "calls": tool_calls
+                        .iter()
+                        .map(|call| serde_json::json!({
+                            "tool": call.tool_name,
+                            "call_id": call.id,
+                            "arguments": call.arguments,
+                        }))
+                        .collect::<Vec<_>>(),
+                }),
+            )
+            .await;
 
         messages.push(tool_call_request_message(
             protocol,
@@ -162,8 +206,26 @@ pub(super) async fn run_llm_tool_loop(
         ));
 
         for call in &tool_calls {
+            if !called_tool_names.contains(&call.tool_name) {
+                called_tool_names.push(call.tool_name.clone());
+            }
             let result =
                 execute_pipeline_tool_call(modules, &call, &tool_map, tools_config, &ctx).await;
+            trace
+                .record(
+                    modules,
+                    "tool_result",
+                    "tool",
+                    Some(call.tool_name.clone()),
+                    serde_json::json!({
+                        "tool": call.tool_name,
+                        "call_id": result.call_id,
+                        "success": result.success,
+                        "display": result.display,
+                        "output": result.output,
+                    }),
+                )
+                .await;
             if turn_is_interrupted(turn) {
                 tracing::info!(
                     channel_id,
@@ -171,7 +233,10 @@ pub(super) async fn run_llm_tool_loop(
                     tool = %call.tool_name,
                     "discarding tool result from interrupted voice turn"
                 );
-                return Ok(String::new());
+                return Ok(ToolLoopOutcome {
+                    text: String::new(),
+                    used_tools: !called_tool_names.is_empty(),
+                });
             }
             debug_component_tool_result(
                 debug_output,
@@ -204,7 +269,10 @@ pub(super) async fn run_llm_tool_loop(
         Some(final_response) => final_response,
         None => String::new(),
     };
-    Ok(final_response)
+    Ok(ToolLoopOutcome {
+        text: final_response,
+        used_tools: !called_tool_names.is_empty(),
+    })
 }
 
 fn normalize_tool_response(response: &mut LlmResponse) -> anyhow::Result<ToolCallProtocol> {

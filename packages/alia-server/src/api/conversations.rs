@@ -1,16 +1,20 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
+use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::error::Result;
+use crate::entity::{chat_message, chat_session, conversation_event};
+use crate::error::{AppError, Result};
 use crate::state::AppState;
 
 #[derive(Serialize)]
 pub struct Conversation {
     pub id: Uuid,
+    pub channel_id: String,
+    pub creator_id: Option<String>,
     pub title: String,
     pub created_at: String,
     pub updated_at: String,
@@ -21,40 +25,164 @@ pub struct Message {
     pub id: Uuid,
     pub role: String,
     pub content: String,
+    pub user_id: Option<String>,
     pub created_at: String,
 }
 
-async fn list_conversations(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-) -> Result<Json<Vec<Conversation>>> {
-    Ok(Json(Vec::new()))
+#[derive(Serialize)]
+pub struct AgentEvent {
+    pub id: Uuid,
+    pub turn_id: Uuid,
+    pub sequence: i32,
+    pub event_type: String,
+    pub actor: String,
+    pub summary: Option<String>,
+    pub payload: serde_json::Value,
+    pub created_at: String,
 }
 
-async fn get_conversation(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_id): Path<Uuid>,
-) -> Result<Json<Conversation>> {
-    Err(crate::error::AppError::NotFound(
-        "Conversation not found".into(),
+#[derive(Deserialize)]
+struct ListQuery {
+    limit: Option<u64>,
+}
+
+async fn list_conversations(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<Vec<Conversation>>> {
+    let mut select = chat_session::Entity::find().order_by_desc(chat_session::Column::UpdatedAt);
+    if !auth.is_admin() {
+        select = select.filter(
+            Condition::any()
+                .add(chat_session::Column::CreatorId.eq(auth.id.to_string()))
+                .add(chat_session::Column::CreatorId.eq(auth.name.clone())),
+        );
+    }
+
+    let sessions = select
+        .limit(query.limit.unwrap_or(100).min(500))
+        .all(&state.db)
+        .await
+        .map_err(AppError::Database)?;
+
+    Ok(Json(
+        sessions.into_iter().map(conversation_response).collect(),
     ))
 }
 
+async fn get_conversation(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Conversation>> {
+    let session = load_authorized_session(&state, &auth, id).await?;
+    Ok(Json(conversation_response(session)))
+}
+
 async fn delete_conversation(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    let _ = load_authorized_session(&state, &auth, id).await?;
+    chat_session::Entity::delete_by_id(id)
+        .exec(&state.db)
+        .await
+        .map_err(AppError::Database)?;
     Ok(Json(serde_json::json!({"success": true})))
 }
 
 async fn get_messages(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
-    Path(_id): Path<Uuid>,
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<Message>>> {
-    Ok(Json(Vec::new()))
+    let _ = load_authorized_session(&state, &auth, id).await?;
+    let messages = chat_message::Entity::find()
+        .filter(chat_message::Column::SessionId.eq(id))
+        .order_by_asc(chat_message::Column::CreatedAt)
+        .limit(query.limit.unwrap_or(1000).min(5000))
+        .all(&state.db)
+        .await
+        .map_err(AppError::Database)?;
+
+    Ok(Json(messages.into_iter().map(message_response).collect()))
+}
+
+async fn get_events(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<Vec<AgentEvent>>> {
+    let _ = load_authorized_session(&state, &auth, id).await?;
+    let events = conversation_event::Entity::find()
+        .filter(conversation_event::Column::SessionId.eq(id))
+        .order_by_asc(conversation_event::Column::CreatedAt)
+        .order_by_asc(conversation_event::Column::Sequence)
+        .limit(query.limit.unwrap_or(1000).min(5000))
+        .all(&state.db)
+        .await
+        .map_err(AppError::Database)?;
+
+    Ok(Json(events.into_iter().map(agent_event_response).collect()))
+}
+
+async fn load_authorized_session(
+    state: &AppState,
+    auth: &AuthUser,
+    id: Uuid,
+) -> Result<chat_session::Model> {
+    let session = chat_session::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Conversation not found".into()))?;
+
+    if auth.is_admin()
+        || session.creator_id.as_deref() == Some(auth.id.to_string().as_str())
+        || session.creator_id.as_deref() == Some(auth.name.as_str())
+    {
+        Ok(session)
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
+fn conversation_response(session: chat_session::Model) -> Conversation {
+    Conversation {
+        id: session.id,
+        channel_id: session.channel_id,
+        creator_id: session.creator_id,
+        title: session.name.unwrap_or_else(|| "New Chat".to_string()),
+        created_at: session.created_at.to_rfc3339(),
+        updated_at: session.updated_at.to_rfc3339(),
+    }
+}
+
+fn message_response(message: chat_message::Model) -> Message {
+    Message {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        user_id: message.user_id,
+        created_at: message.created_at.to_rfc3339(),
+    }
+}
+
+fn agent_event_response(event: conversation_event::Model) -> AgentEvent {
+    AgentEvent {
+        id: event.id,
+        turn_id: event.turn_id,
+        sequence: event.sequence,
+        event_type: event.event_type,
+        actor: event.actor,
+        summary: event.summary,
+        payload: event.payload,
+        created_at: event.created_at.to_rfc3339(),
+    }
 }
 
 pub fn routes() -> Router<AppState> {
@@ -65,4 +193,5 @@ pub fn routes() -> Router<AppState> {
             get(get_conversation).delete(delete_conversation),
         )
         .route("/conversations/{id}/messages", get(get_messages))
+        .route("/conversations/{id}/events", get(get_events))
 }

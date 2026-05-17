@@ -8,9 +8,9 @@ use sea_orm::{
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::entity::{chat_message, chat_session};
+use crate::entity::{chat_message, chat_session, conversation_event};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ChatMessage, ConversationBackend};
+use crate::providers::adapter::{ChatMessage, ConversationBackend, ConversationEventEntry};
 
 pub struct DatabaseConversationBackend {
     db: Option<DatabaseConnection>,
@@ -215,6 +215,27 @@ impl ConversationBackend for DatabaseConversationBackend {
             .exec(db)
             .await?;
 
+        Ok(())
+    }
+
+    async fn append_event(
+        &self,
+        session_id: Uuid,
+        event: ConversationEventEntry,
+    ) -> anyhow::Result<()> {
+        let db = self.db()?;
+        let event = conversation_event::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            session_id: Set(session_id),
+            turn_id: Set(event.turn_id),
+            sequence: Set(event.sequence),
+            event_type: Set(event.event_type),
+            actor: Set(event.actor),
+            summary: Set(event.summary),
+            payload: Set(event.payload),
+            created_at: Set(chrono::Utc::now().into()),
+        };
+        event.insert(db).await?;
         Ok(())
     }
 }
