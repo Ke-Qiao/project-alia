@@ -10,9 +10,6 @@ node_modules/
 # macOS
 .DS_Store
 
-# local dev documentations
-docs/
-
 # skills
 .agents/
 .claude/

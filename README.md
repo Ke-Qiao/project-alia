@@ -24,7 +24,7 @@ graph LR
 | Crate | Description |
 |-------|-------------|
 | [proto](crates/proto/) | Shared Protobuf definitions and generated code |
-| [transport](crates/transport/) | USB/WiFi transport layer abstraction |
+| [transport](crates/transport/) | Shared transport/auth helpers for server and embedded communication |
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ project-alia/
 │   └── embedded.example.toml
 ├── crates/
 │   ├── proto/                # Shared Protobuf definitions
-│   └── transport/            # USB/WiFi transport abstraction
+│   └── transport/            # Shared transport/auth helpers
 ├── packages/
 │   ├── alia-server/          # Server (Rust / Axum)
 │   ├── alia-embedded/        # Edge node (Rust / Tonic)
@@ -107,6 +107,13 @@ project-alia/
 - **Database**: PostgreSQL 17
 - **Tooling**: mise, pnpm, Docker
 
+## Documentation
+
+Start with [docs/README.md](docs/README.md) for the current architecture,
+configuration, voice pipeline, protocol, and operations documentation. Older
+long-form notes live under `docs/legacy/` and are kept only as historical
+references.
+
 ## Feature Flags (alia-server)
 
 The server uses Cargo feature flags for conditional compilation. All features are enabled by default.
@@ -120,9 +127,10 @@ The server uses Cargo feature flags for conditional compilation. All features ar
 | `tts-sovits` | SoVITS text-to-speech |
 | `embed-ollama` | Ollama embedding backend |
 | `embed-openai` | OpenAI embedding backend |
-| `memory-graphrag` | GraphRAG memory system |
+| `memory-mem0` | Mem0 memory backend |
 | `cache-semantic` | Two-layer semantic cache |
-| `meditation` | Scheduled meditation system |
+| `tools-http` | Built-in HTTP/fetch tool support |
+| `insights` | Scheduled insights system |
 
 Build a minimal server (no AI backends, no embedded channel):
 
