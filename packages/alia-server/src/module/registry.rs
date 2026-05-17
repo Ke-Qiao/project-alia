@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter,
     MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
     SttAdapter, ToolRegistry, TtsAdapter,
 };
@@ -12,6 +12,8 @@ use crate::providers::adapter::{
 pub struct ModuleRegistry {
     // AI adapters
     pub llm: Arc<dyn LlmAdapter>,
+    pub local_llm: Arc<dyn LlmAdapter>,
+    pub remote_llm: Arc<dyn LlmAdapter>,
     pub stt: Arc<dyn SttAdapter>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
@@ -21,7 +23,7 @@ pub struct ModuleRegistry {
     pub cache: Arc<dyn CacheBackend>,
     pub skills: Arc<dyn SkillProvider>,
     pub persona: Arc<dyn PersonaProvider>,
-    pub meditation: Arc<dyn MeditationStrategy>,
+    pub insights: Arc<dyn InsightStrategy>,
     pub router: Arc<dyn RouterStrategy>,
     // Infrastructure
     pub rule_engine: Arc<dyn RuleEvaluator>,
@@ -45,7 +47,7 @@ impl ModuleRegistry {
         let modules: Vec<&dyn ModuleLifecycle> = vec![
             self.scheduler.as_ref(),
             self.tools.as_ref(),
-            self.meditation.as_ref(),
+            self.insights.as_ref(),
             self.rule_engine.as_ref(),
             self.router.as_ref(),
             self.persona.as_ref(),
@@ -56,7 +58,8 @@ impl ModuleRegistry {
             self.tts.as_ref(),
             self.stt.as_ref(),
             self.embedding.as_ref(),
-            self.llm.as_ref(),
+            self.remote_llm.as_ref(),
+            self.local_llm.as_ref(),
         ];
         for m in modules {
             if let Err(e) = m.stop().await {
@@ -66,28 +69,32 @@ impl ModuleRegistry {
     }
 
     /// Aggregate health check for GET /health endpoint
-    pub async fn health(&self) -> HashMap<&str, ModuleHealth> {
+    pub async fn health(&self) -> HashMap<String, ModuleHealth> {
         let mut results = HashMap::new();
-        results.insert(self.llm.name(), self.llm.health_check().await);
-        results.insert(self.stt.name(), self.stt.health_check().await);
-        results.insert(self.tts.name(), self.tts.health_check().await);
-        results.insert(self.embedding.name(), self.embedding.health_check().await);
+        results.insert("llm.local".to_string(), self.local_llm.health_check().await);
         results.insert(
-            self.conversation.name(),
+            "llm.remote".to_string(),
+            self.remote_llm.health_check().await,
+        );
+        results.insert("stt".to_string(), self.stt.health_check().await);
+        results.insert("tts".to_string(), self.tts.health_check().await);
+        results.insert("embedding".to_string(), self.embedding.health_check().await);
+        results.insert(
+            "conversation".to_string(),
             self.conversation.health_check().await,
         );
-        results.insert(self.memory.name(), self.memory.health_check().await);
-        results.insert(self.cache.name(), self.cache.health_check().await);
-        results.insert(self.skills.name(), self.skills.health_check().await);
-        results.insert(self.persona.name(), self.persona.health_check().await);
-        results.insert(self.meditation.name(), self.meditation.health_check().await);
-        results.insert(self.router.name(), self.router.health_check().await);
+        results.insert("memory".to_string(), self.memory.health_check().await);
+        results.insert("cache".to_string(), self.cache.health_check().await);
+        results.insert("skills".to_string(), self.skills.health_check().await);
+        results.insert("persona".to_string(), self.persona.health_check().await);
+        results.insert("insights".to_string(), self.insights.health_check().await);
+        results.insert("router".to_string(), self.router.health_check().await);
         results.insert(
-            self.rule_engine.name(),
+            "rule_engine".to_string(),
             self.rule_engine.health_check().await,
         );
-        results.insert(self.scheduler.name(), self.scheduler.health_check().await);
-        results.insert(self.tools.name(), self.tools.health_check().await);
+        results.insert("scheduler".to_string(), self.scheduler.health_check().await);
+        results.insert("tools".to_string(), self.tools.health_check().await);
         results
     }
 }

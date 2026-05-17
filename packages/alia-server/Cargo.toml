@@ -37,8 +37,8 @@ memory-mem0 = ["dep:reqwest"]
 # Cache backend
 cache-semantic = []
 
-# Meditation system
-meditation = []
+# Insights system
+insights = []
 
 [dependencies]
 alia-proto = { workspace = true, optional = true }

@@ -15,7 +15,7 @@ use crate::channels::adapter::{
 };
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
-use crate::providers::adapter::{ChatMessage, TtsAdapter};
+use crate::providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter};
 
 const TTS_SENTENCE_MAX_CHARS: usize = 80;
 const TTS_SENTENCE_GAP_MS: u32 = 80;
@@ -178,6 +178,7 @@ pub(super) async fn deliver_tts_audio(
 
 pub(super) async fn stream_llm_response_with_sentence_tts(
     modules: &ModuleRegistry,
+    llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     channel_id: &str,
@@ -221,9 +222,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
 
     let llm_delivery = async move {
         let mut token_stream =
-            match cancellable_stage(turn, "llm_stream_start", modules.llm.chat_stream(messages))
-                .await?
-            {
+            match cancellable_stage(turn, "llm_stream_start", llm.chat_stream(messages)).await? {
                 Some(token_stream) => token_stream,
                 None => return Ok::<_, anyhow::Error>(String::new()),
             };
@@ -574,7 +573,8 @@ fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<Str
 }
 
 pub(super) async fn stream_llm_response(
-    modules: &ModuleRegistry,
+    _modules: &ModuleRegistry,
+    llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     channel_id: &str,
@@ -585,8 +585,7 @@ pub(super) async fn stream_llm_response(
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<String> {
     let mut token_stream =
-        match cancellable_stage(turn, "llm_stream_start", modules.llm.chat_stream(messages)).await?
-        {
+        match cancellable_stage(turn, "llm_stream_start", llm.chat_stream(messages)).await? {
             Some(token_stream) => token_stream,
             None => return Ok(String::new()),
         };

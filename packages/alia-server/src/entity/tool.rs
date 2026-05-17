@@ -25,6 +25,14 @@ pub struct Model {
     pub require_confirmation: bool,
     #[sea_orm(column_type = "String(StringLen::N(50))", nullable)]
     pub required_role: Option<String>,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub routing_keywords: serde_json::Value,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub routing_examples: serde_json::Value,
+    #[sea_orm(column_type = "Text")]
+    pub routing_text: String,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub routing_embedding: Option<serde_json::Value>,
     pub enabled: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

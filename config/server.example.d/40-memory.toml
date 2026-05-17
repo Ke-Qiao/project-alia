@@ -30,13 +30,13 @@ semantic_threshold = 0.92
 default_ttl_seconds = 3600
 skill_cache_ttl_seconds = 300
 
-[meditation]
+[insights]
 enabled = false
 extraction_enabled = false
 consolidation_idle_minutes = 30
 reflection_schedule = "0 3 * * *"
 habit_detection_schedule = "0 4 * * *"
 memory_threshold = 50
-max_concurrent_meditations = 1
+max_concurrent_insights = 1
 presence_sensor_id = "presence"
 conditions = []

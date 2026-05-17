@@ -114,7 +114,7 @@ src/
 │   ├── cache/         # Cache backend (two-layer: exact + semantic)
 │   ├── skills/        # Skill provider (builtin skills engine)
 │   ├── persona/       # Persona/prompt provider (Handlebars templates)
-│   ├── meditation/    # Background meditation strategy
+│   ├── insights/      # Background insights strategy
 │   └── router/        # Intent routing (MultiLayerRouter + Passthrough)
 ├── rules/             # Rule engine
 ├── scheduler/         # Cron/interval task scheduler
@@ -158,7 +158,7 @@ All features are enabled by default. Disable with `--no-default-features` and se
 | `embed-openai` | OpenAI embedding adapter | `reqwest` |
 | `memory-graphrag` | GraphRAG memory backend | — |
 | `cache-semantic` | Two-layer semantic cache | — |
-| `meditation` | Background meditation/reflection | — |
+| `insights` | Background insights/reflection | — |
 
 ```bash
 # Minimal build (no AI backends, no embedded channel)

@@ -4,8 +4,8 @@
 
 pub mod chat_message;
 pub mod chat_session;
+pub mod insight_log;
 pub mod llm_cache;
-pub mod meditation_log;
 pub mod persona;
 pub mod registry_artifact;
 pub mod registry_dependency;

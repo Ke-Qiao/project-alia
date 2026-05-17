@@ -1,6 +1,6 @@
-//! ScheduledMeditation: Full implementation of MeditationStrategy.
+//! ScheduledInsights: Full implementation of InsightStrategy.
 //!
-//! Triggers meditation phases via:
+//! Triggers insights phases via:
 //! - Event-driven: ConversationEnded → Phase 1 (extraction)
 //! - Event-driven: Idle detection → Phase 2 (consolidation)
 //! - Scheduler: reflection_schedule → Phase 3 (reflection) via CronScheduler
@@ -20,22 +20,22 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::config::MeditationSection;
-use crate::entity::meditation_log;
+use crate::config::InsightsSection;
+use crate::entity::insight_log;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MeditationPhase, MeditationStatus, MeditationStrategy, MeditationTask, ScheduleConfig,
-    ScheduledTask, SchedulerBackend,
+    InsightPhase, InsightStatus, InsightStrategy, InsightTask, ScheduleConfig, ScheduledTask,
+    SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
-/// Well-known task name prefix for meditation cron tasks
-const TASK_NAME_REFLECTION: &str = "meditation_reflection";
-const TASK_NAME_HABIT_DETECTION: &str = "meditation_habit_detection";
+/// Well-known task name prefix for insights cron tasks
+const TASK_NAME_REFLECTION: &str = "insight_reflection";
+const TASK_NAME_HABIT_DETECTION: &str = "insight_habit_detection";
 
 /// Internal state tracking last execution and pending tasks
-struct MeditationState {
+struct InsightState {
     last_phase: Option<String>,
     last_executed_at: Option<DateTime<Utc>>,
     last_interaction_at: Option<DateTime<Utc>>,
@@ -43,8 +43,8 @@ struct MeditationState {
     conditions_override: Option<Vec<serde_json::Value>>,
 }
 
-pub struct ScheduledMeditation {
-    config: Mutex<Option<MeditationSection>>,
+pub struct ScheduledInsights {
+    config: Mutex<Option<InsightsSection>>,
     db: Mutex<Option<DatabaseConnection>>,
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
@@ -56,10 +56,10 @@ pub struct ScheduledMeditation {
     enabled: AtomicBool,
     pending_tasks: AtomicU32,
     concurrency_semaphore: Arc<Semaphore>,
-    state: Mutex<MeditationState>,
+    state: Mutex<InsightState>,
 }
 
-impl ScheduledMeditation {
+impl ScheduledInsights {
     pub fn new() -> Self {
         Self {
             config: Mutex::new(None),
@@ -73,7 +73,7 @@ impl ScheduledMeditation {
             enabled: AtomicBool::new(true),
             pending_tasks: AtomicU32::new(0),
             concurrency_semaphore: Arc::new(Semaphore::new(1)),
-            state: Mutex::new(MeditationState {
+            state: Mutex::new(InsightState {
                 last_phase: None,
                 last_executed_at: None,
                 last_interaction_at: None,
@@ -82,23 +82,23 @@ impl ScheduledMeditation {
         }
     }
 
-    /// Execute a meditation phase, guarded by the concurrency semaphore
+    /// Execute an insights phase, guarded by the concurrency semaphore
     async fn execute_phase(
         db: &DatabaseConnection,
         event_bus: &EventBus,
         user_id: Uuid,
-        phase: &MeditationPhase,
+        phase: &InsightPhase,
         trigger: &str,
         semaphore: &Semaphore,
-    ) -> anyhow::Result<MeditationLog> {
+    ) -> anyhow::Result<InsightLog> {
         let _permit = semaphore
             .acquire()
             .await
-            .map_err(|_| anyhow::anyhow!("meditation semaphore closed"))?;
+            .map_err(|_| anyhow::anyhow!("insights semaphore closed"))?;
 
         let phase_str = phase.as_str();
 
-        event_bus.publish(ServerEvent::MeditationStarted {
+        event_bus.publish(ServerEvent::InsightStarted {
             phase: phase_str.to_string(),
             trigger: trigger.to_string(),
         });
@@ -109,7 +109,7 @@ impl ScheduledMeditation {
 
         let log = match result {
             Ok(stats) => {
-                let log = MeditationLog {
+                let log = InsightLog {
                     summary: stats.summary,
                     nodes_created: stats.nodes_created,
                     nodes_updated: stats.nodes_updated,
@@ -119,7 +119,7 @@ impl ScheduledMeditation {
                     duration_ms,
                 };
 
-                event_bus.publish(ServerEvent::MeditationCompleted {
+                event_bus.publish(ServerEvent::InsightCompleted {
                     phase: phase_str.to_string(),
                     nodes_created: log.nodes_created as u32,
                     nodes_updated: log.nodes_updated as u32,
@@ -128,8 +128,8 @@ impl ScheduledMeditation {
                 log
             }
             Err(e) => {
-                tracing::error!(phase = phase_str, error = %e, "meditation phase failed");
-                MeditationLog {
+                tracing::error!(phase = phase_str, error = %e, "insights phase failed");
+                InsightLog {
                     summary: format!("Phase failed: {e}"),
                     nodes_created: 0,
                     nodes_updated: 0,
@@ -143,7 +143,7 @@ impl ScheduledMeditation {
 
         // Persist log to database
         let log_id = Uuid::new_v4();
-        let active_model = meditation_log::ActiveModel {
+        let active_model = insight_log::ActiveModel {
             id: Set(log_id),
             user_id: Set(user_id),
             phase: Set(phase_str.to_string()),
@@ -158,17 +158,17 @@ impl ScheduledMeditation {
             created_at: Set(Utc::now()),
         };
         if let Err(e) = active_model.insert(db).await {
-            tracing::error!(error = %e, "failed to persist meditation log");
+            tracing::error!(error = %e, "failed to persist insights log");
         }
 
         Ok(log)
     }
 
-    /// Run a specific meditation phase
+    /// Run a specific insights phase
     /// TODO: Integrate with LLM and MemoryBackend for actual processing
-    async fn run_phase(phase: &MeditationPhase, _user_id: Uuid) -> anyhow::Result<PhaseStats> {
+    async fn run_phase(phase: &InsightPhase, _user_id: Uuid) -> anyhow::Result<PhaseStats> {
         match phase {
-            MeditationPhase::Extraction => {
+            InsightPhase::Extraction => {
                 tracing::info!("executing Phase 1: memory extraction");
                 // TODO: Use LlmAdapter to analyze recent conversation,
                 //       extract facts/preferences/entities → store via MemoryBackend
@@ -181,7 +181,7 @@ impl ScheduledMeditation {
                     model_used: Some("local".to_string()),
                 })
             }
-            MeditationPhase::Consolidation => {
+            InsightPhase::Consolidation => {
                 tracing::info!("executing Phase 2: memory consolidation");
                 // TODO: Summarize episodic → core, merge duplicates,
                 //       apply time decay, run community detection via MemoryBackend
@@ -194,7 +194,7 @@ impl ScheduledMeditation {
                     model_used: Some("local".to_string()),
                 })
             }
-            MeditationPhase::Reflection => {
+            InsightPhase::Reflection => {
                 tracing::info!("executing Phase 3: self-reflection");
                 // TODO: Use remote LLM to review recent memory changes,
                 //       generate behavioral insights, store as core memories
@@ -207,7 +207,7 @@ impl ScheduledMeditation {
                     model_used: Some("remote".to_string()),
                 })
             }
-            MeditationPhase::HabitDetection => {
+            InsightPhase::HabitDetection => {
                 tracing::info!("executing Phase 4: habit detection");
                 // TODO: Analyze sensor data + interaction patterns,
                 //       detect routines, update procedural memories
@@ -223,7 +223,7 @@ impl ScheduledMeditation {
         }
     }
 
-    /// Background loop: listens for events that trigger meditation phases.
+    /// Background loop: listens for events that trigger insights phases.
     /// Handles both direct events (voice, sensor) and scheduler-fired TaskTriggered events.
     async fn event_listener_loop(
         db: DatabaseConnection,
@@ -232,8 +232,8 @@ impl ScheduledMeditation {
         enabled: Arc<AtomicBool>,
         pending_tasks: Arc<AtomicU32>,
         semaphore: Arc<Semaphore>,
-        state: Arc<Mutex<MeditationState>>,
-        config: MeditationSection,
+        state: Arc<Mutex<InsightState>>,
+        config: InsightsSection,
         reflection_task_id: Option<Uuid>,
         habit_task_id: Option<Uuid>,
     ) {
@@ -242,7 +242,7 @@ impl ScheduledMeditation {
         loop {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
-                    tracing::info!("meditation event listener cancelled");
+                    tracing::info!("insights event listener cancelled");
                     break;
                 }
                 result = rx.recv() => {
@@ -258,10 +258,10 @@ impl ScheduledMeditation {
                             ).await;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!(lagged = n, "meditation event listener lagged");
+                            tracing::warn!(lagged = n, "insights event listener lagged");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("event bus closed, stopping meditation listener");
+                            tracing::info!("event bus closed, stopping insights listener");
                             break;
                         }
                     }
@@ -270,7 +270,7 @@ impl ScheduledMeditation {
         }
     }
 
-    /// Handle incoming events that may trigger meditation
+    /// Handle incoming events that may trigger insights
     async fn handle_event(
         db: &DatabaseConnection,
         event_bus: &EventBus,
@@ -278,8 +278,8 @@ impl ScheduledMeditation {
         enabled: &AtomicBool,
         pending_tasks: &AtomicU32,
         semaphore: &Semaphore,
-        state: &Mutex<MeditationState>,
-        config: &MeditationSection,
+        state: &Mutex<InsightState>,
+        config: &InsightsSection,
         reflection_task_id: Option<Uuid>,
         habit_task_id: Option<Uuid>,
     ) {
@@ -291,10 +291,10 @@ impl ScheduledMeditation {
                 let phase = if Some(*task_id) == reflection_task_id
                     || task_name == TASK_NAME_REFLECTION
                 {
-                    Some(MeditationPhase::Reflection)
+                    Some(InsightPhase::Reflection)
                 } else if Some(*task_id) == habit_task_id || task_name == TASK_NAME_HABIT_DETECTION
                 {
-                    Some(MeditationPhase::HabitDetection)
+                    Some(InsightPhase::HabitDetection)
                 } else {
                     None
                 };
@@ -336,7 +336,7 @@ impl ScheduledMeditation {
                     &db,
                     &event_bus,
                     user_id,
-                    &MeditationPhase::Extraction,
+                    &InsightPhase::Extraction,
                     "post_conversation",
                     semaphore_ref,
                 )
@@ -357,7 +357,7 @@ impl ScheduledMeditation {
                 pending_tasks.fetch_sub(1, Ordering::Relaxed);
             }
 
-            // Sensor-triggered meditation: presence sensor detects user left/returned
+            // Sensor-triggered insights: presence sensor detects user left/returned
             ServerEvent::SensorDataIngested {
                 sensor_id, value, ..
             } => {
@@ -390,7 +390,7 @@ impl ScheduledMeditation {
                     db,
                     event_bus,
                     user_id,
-                    &MeditationPhase::Consolidation,
+                    &InsightPhase::Consolidation,
                     "sensor",
                     semaphore,
                 )
@@ -399,7 +399,7 @@ impl ScheduledMeditation {
                     db,
                     event_bus,
                     user_id,
-                    &MeditationPhase::Reflection,
+                    &InsightPhase::Reflection,
                     "sensor",
                     semaphore,
                 )
@@ -423,7 +423,7 @@ impl ScheduledMeditation {
         enabled: Arc<AtomicBool>,
         pending_tasks: Arc<AtomicU32>,
         semaphore: Arc<Semaphore>,
-        state: Arc<Mutex<MeditationState>>,
+        state: Arc<Mutex<InsightState>>,
         idle_minutes: u64,
     ) {
         let check_interval = std::time::Duration::from_secs(60); // Check every minute
@@ -432,7 +432,7 @@ impl ScheduledMeditation {
         loop {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
-                    tracing::info!("meditation idle check loop cancelled");
+                    tracing::info!("insights idle check loop cancelled");
                     break;
                 }
                 _ = interval.tick() => {
@@ -456,7 +456,7 @@ impl ScheduledMeditation {
                         pending_tasks.fetch_add(1, Ordering::Relaxed);
                         let _ = Self::execute_phase(
                             &db, &event_bus, user_id,
-                            &MeditationPhase::Consolidation, "idle", &semaphore,
+                            &InsightPhase::Consolidation, "idle", &semaphore,
                         ).await;
                         pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
@@ -471,10 +471,10 @@ impl ScheduledMeditation {
         }
     }
 
-    /// Register cron-based meditation tasks with the SchedulerBackend
+    /// Register cron-based insights tasks with the SchedulerBackend
     async fn register_scheduler_tasks(
         scheduler: &dyn SchedulerBackend,
-        config: &MeditationSection,
+        config: &InsightsSection,
         conditions: &[serde_json::Value],
     ) -> anyhow::Result<(Option<Uuid>, Option<Uuid>)> {
         let conditions_json = serde_json::Value::Array(conditions.to_vec());
@@ -493,7 +493,7 @@ impl ScheduledMeditation {
             },
             conditions: conditions_json.clone(),
             action: serde_json::json!({
-                "type": "meditation",
+                "type": "insights",
                 "phase": "reflection",
             }),
             cooldown_sec: 300, // 5 min cooldown to avoid double-firing
@@ -504,7 +504,7 @@ impl ScheduledMeditation {
         tracing::info!(
             task_id = %reflection_id,
             cron = %config.reflection_schedule,
-            "registered meditation reflection task with scheduler"
+            "registered insights reflection task with scheduler"
         );
 
         // Phase 4: Habit detection (e.g., "0 4 * * *")
@@ -521,7 +521,7 @@ impl ScheduledMeditation {
             },
             conditions: conditions_json,
             action: serde_json::json!({
-                "type": "meditation",
+                "type": "insights",
                 "phase": "habit_detection",
             }),
             cooldown_sec: 300,
@@ -532,20 +532,20 @@ impl ScheduledMeditation {
         tracing::info!(
             task_id = %habit_id,
             cron = %config.habit_detection_schedule,
-            "registered meditation habit detection task with scheduler"
+            "registered insights habit detection task with scheduler"
         );
 
         Ok((Some(reflection_id), Some(habit_id)))
     }
 }
 
-impl Default for ScheduledMeditation {
+impl Default for ScheduledInsights {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MeditationPhase {
+impl InsightPhase {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Extraction => "extraction",
@@ -556,7 +556,7 @@ impl MeditationPhase {
     }
 }
 
-impl std::fmt::Display for MeditationPhase {
+impl std::fmt::Display for InsightPhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
@@ -572,8 +572,8 @@ struct PhaseStats {
     model_used: Option<String>,
 }
 
-/// Result of a meditation phase for internal tracking
-struct MeditationLog {
+/// Result of an insights phase for internal tracking
+struct InsightLog {
     summary: String,
     nodes_created: i32,
     nodes_updated: i32,
@@ -584,28 +584,28 @@ struct MeditationLog {
 }
 
 #[async_trait]
-impl ModuleLifecycle for ScheduledMeditation {
+impl ModuleLifecycle for ScheduledInsights {
     fn name(&self) -> &'static str {
         "scheduled"
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let meditation_config = ctx.config.meditation.clone();
+        let insights_config = ctx.config.insights.clone();
 
         self.enabled
-            .store(meditation_config.enabled, Ordering::Relaxed);
+            .store(insights_config.enabled, Ordering::Relaxed);
         self.concurrency_semaphore = Arc::new(Semaphore::new(
-            meditation_config.max_concurrent_meditations as usize,
+            insights_config.max_concurrent_insights as usize,
         ));
 
-        *self.config.lock().await = Some(meditation_config);
+        *self.config.lock().await = Some(insights_config);
         *self.db.lock().await = Some(ctx.db.clone());
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
         *self.scheduler.lock().await = ctx.scheduler.clone();
         *self.condition_registry.lock().await = ctx.conditions.clone();
 
-        tracing::info!("ScheduledMeditation initialized");
+        tracing::info!("ScheduledInsights initialized");
         Ok(())
     }
 
@@ -615,28 +615,28 @@ impl ModuleLifecycle for ScheduledMeditation {
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let db = self
             .db
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let event_bus = self
             .event_bus
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let cancel_token = self
             .cancel_token
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
 
         if !config.enabled {
-            tracing::info!("meditation is disabled by config");
+            tracing::info!("insights is disabled by config");
             return Ok(());
         }
 
@@ -648,12 +648,12 @@ impl ModuleLifecycle for ScheduledMeditation {
             match Self::register_scheduler_tasks(scheduler.as_ref(), &config, &conditions).await {
                 Ok(ids) => ids,
                 Err(e) => {
-                    tracing::error!(error = %e, "failed to register meditation cron tasks");
+                    tracing::error!(error = %e, "failed to register insights cron tasks");
                     (None, None)
                 }
             }
         } else {
-            tracing::warn!("no scheduler available, cron-based meditation phases disabled");
+            tracing::warn!("no scheduler available, cron-based insights phases disabled");
             (None, None)
         };
 
@@ -663,7 +663,7 @@ impl ModuleLifecycle for ScheduledMeditation {
         let enabled = Arc::new(AtomicBool::new(self.enabled.load(Ordering::Relaxed)));
         let pending = Arc::new(AtomicU32::new(0));
         let semaphore = self.concurrency_semaphore.clone();
-        let state = Arc::new(Mutex::new(MeditationState {
+        let state = Arc::new(Mutex::new(InsightState {
             last_phase: None,
             last_executed_at: None,
             last_interaction_at: Some(Utc::now()),
@@ -718,7 +718,7 @@ impl ModuleLifecycle for ScheduledMeditation {
             .await;
         });
 
-        tracing::info!("ScheduledMeditation started (2 background tasks, cron via scheduler)");
+        tracing::info!("ScheduledInsights started (2 background tasks, cron via scheduler)");
         Ok(())
     }
 
@@ -732,31 +732,31 @@ impl ModuleLifecycle for ScheduledMeditation {
                 let _ = scheduler.delete_task(id).await;
             }
         }
-        tracing::info!("ScheduledMeditation stopped");
+        tracing::info!("ScheduledInsights stopped");
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
         if !self.enabled.load(Ordering::Relaxed) {
-            return ModuleHealth::Degraded("meditation disabled".to_string());
+            return ModuleHealth::Degraded("insights disabled".to_string());
         }
         ModuleHealth::Healthy
     }
 }
 
 #[async_trait]
-impl MeditationStrategy for ScheduledMeditation {
-    async fn schedule(&self, task: MeditationTask) -> anyhow::Result<()> {
+impl InsightStrategy for ScheduledInsights {
+    async fn schedule(&self, task: InsightTask) -> anyhow::Result<()> {
         if !self.enabled.load(Ordering::Relaxed) {
-            anyhow::bail!("meditation is disabled");
+            anyhow::bail!("insights is disabled");
         }
 
         let phase = match task.phase.as_str() {
-            "extraction" => MeditationPhase::Extraction,
-            "consolidation" => MeditationPhase::Consolidation,
-            "reflection" => MeditationPhase::Reflection,
-            "habit_detection" => MeditationPhase::HabitDetection,
-            other => anyhow::bail!("unknown meditation phase: {other}"),
+            "extraction" => InsightPhase::Extraction,
+            "consolidation" => InsightPhase::Consolidation,
+            "reflection" => InsightPhase::Reflection,
+            "habit_detection" => InsightPhase::HabitDetection,
+            other => anyhow::bail!("unknown insights phase: {other}"),
         };
 
         let db = self
@@ -764,13 +764,13 @@ impl MeditationStrategy for ScheduledMeditation {
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let event_bus = self
             .event_bus
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
 
         self.pending_tasks.fetch_add(1, Ordering::Relaxed);
 
@@ -794,14 +794,14 @@ impl MeditationStrategy for ScheduledMeditation {
         Ok(())
     }
 
-    async fn status(&self, user_id: Uuid) -> anyhow::Result<MeditationStatus> {
+    async fn status(&self, user_id: Uuid) -> anyhow::Result<InsightStatus> {
         let state = self.state.lock().await;
 
         // Query last log from DB for this user
         let last_log = if let Some(db) = self.db.lock().await.as_ref() {
-            meditation_log::Entity::find()
-                .filter(meditation_log::Column::UserId.eq(user_id))
-                .order_by_desc(meditation_log::Column::CreatedAt)
+            insight_log::Entity::find()
+                .filter(insight_log::Column::UserId.eq(user_id))
+                .order_by_desc(insight_log::Column::CreatedAt)
                 .one(db)
                 .await
                 .ok()
@@ -810,7 +810,7 @@ impl MeditationStrategy for ScheduledMeditation {
             None
         };
 
-        Ok(MeditationStatus {
+        Ok(InsightStatus {
             enabled: self.enabled.load(Ordering::Relaxed),
             last_phase: last_log
                 .as_ref()
@@ -824,19 +824,19 @@ impl MeditationStrategy for ScheduledMeditation {
         })
     }
 
-    async fn trigger(&self, user_id: Uuid, phase: MeditationPhase) -> anyhow::Result<()> {
+    async fn trigger(&self, user_id: Uuid, phase: InsightPhase) -> anyhow::Result<()> {
         let db = self
             .db
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let event_bus = self
             .event_bus
             .lock()
             .await
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("meditation not initialized"))?;
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
 
         self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let result = Self::execute_phase(
@@ -905,7 +905,7 @@ impl MeditationStrategy for ScheduledMeditation {
 
         tracing::info!(
             num_conditions = conditions.len(),
-            "meditation conditions updated, scheduler tasks re-registered"
+            "insights conditions updated, scheduler tasks re-registered"
         );
         Ok(())
     }

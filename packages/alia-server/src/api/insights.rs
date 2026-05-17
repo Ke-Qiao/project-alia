@@ -1,19 +1,18 @@
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::entity::meditation_log;
+use crate::entity::insight_log;
 use crate::error::Result;
-use crate::providers::adapter::MeditationPhase;
+use crate::providers::adapter::InsightPhase;
 use crate::state::AppState;
 
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
-
 #[derive(Serialize)]
-pub struct MeditationStatusResponse {
+pub struct InsightStatusResponse {
     pub enabled: bool,
     pub last_phase: Option<String>,
     pub last_executed_at: Option<String>,
@@ -21,7 +20,7 @@ pub struct MeditationStatusResponse {
 }
 
 #[derive(Serialize)]
-pub struct MeditationLogResponse {
+pub struct InsightLogResponse {
     pub id: Uuid,
     pub phase: String,
     pub trigger_type: String,
@@ -46,6 +45,7 @@ pub struct PaginationParams {
 fn default_page() -> u64 {
     1
 }
+
 fn default_per_page() -> u64 {
     20
 }
@@ -71,15 +71,15 @@ fn default_phase() -> String {
 async fn get_status(
     State(state): State<AppState>,
     auth: AuthUser,
-) -> Result<Json<MeditationStatusResponse>> {
+) -> Result<Json<InsightStatusResponse>> {
     let status = state
         .modules
-        .meditation
+        .insights
         .status(auth.id)
         .await
-        .map_err(|e| crate::error::AppError::Internal(e))?;
+        .map_err(crate::error::AppError::Internal)?;
 
-    Ok(Json(MeditationStatusResponse {
+    Ok(Json(InsightStatusResponse {
         enabled: status.enabled,
         last_phase: status.last_phase,
         last_executed_at: status.last_executed_at.map(|t| t.to_rfc3339()),
@@ -88,11 +88,10 @@ async fn get_status(
 }
 
 async fn toggle(State(state): State<AppState>, _auth: AuthUser) -> Result<Json<serde_json::Value>> {
-    // Toggle is a config-level operation; for now we report current state
-    let config_enabled = state.config.meditation.enabled;
+    let config_enabled = state.config.insights.enabled;
     Ok(Json(serde_json::json!({
         "enabled": config_enabled,
-        "message": "meditation toggle is config-driven; update server.toml [meditation].enabled"
+        "message": "insights toggle is config-driven; update server.toml [insights].enabled"
     })))
 }
 
@@ -100,91 +99,56 @@ async fn get_logs(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(params): Query<PaginationParams>,
-) -> Result<Json<PaginatedResponse<MeditationLogResponse>>> {
-    let paginator = meditation_log::Entity::find()
-        .filter(meditation_log::Column::UserId.eq(auth.id))
-        .order_by_desc(meditation_log::Column::CreatedAt)
+) -> Result<Json<PaginatedResponse<InsightLogResponse>>> {
+    let paginator = insight_log::Entity::find()
+        .filter(insight_log::Column::UserId.eq(auth.id))
+        .order_by_desc(insight_log::Column::CreatedAt)
         .paginate(&state.db, params.per_page);
 
     let total = paginator
         .num_items()
         .await
-        .map_err(|e| crate::error::AppError::Database(e))?;
+        .map_err(crate::error::AppError::Database)?;
 
-    let page_idx = if params.page > 0 { params.page - 1 } else { 0 };
+    let page_idx = params.page.saturating_sub(1);
     let logs = paginator
         .fetch_page(page_idx)
         .await
-        .map_err(|e| crate::error::AppError::Database(e))?;
-
-    let data: Vec<MeditationLogResponse> = logs
-        .into_iter()
-        .map(|l| MeditationLogResponse {
-            id: l.id,
-            phase: l.phase,
-            trigger_type: l.trigger_type,
-            summary: l.summary,
-            nodes_created: l.nodes_created,
-            nodes_updated: l.nodes_updated,
-            nodes_merged: l.nodes_merged,
-            edges_created: l.edges_created,
-            model_used: l.model_used,
-            duration_ms: l.duration_ms,
-            created_at: l.created_at.to_rfc3339(),
-        })
-        .collect();
+        .map_err(crate::error::AppError::Database)?;
 
     Ok(Json(PaginatedResponse {
-        data,
+        data: logs.into_iter().map(log_response).collect(),
         total,
         page: params.page,
         per_page: params.per_page,
     }))
 }
 
-async fn get_insights(
+async fn get_reflections(
     State(state): State<AppState>,
     auth: AuthUser,
-) -> Result<Json<Vec<MeditationLogResponse>>> {
-    // Insights are reflection-phase logs
-    let logs = meditation_log::Entity::find()
-        .filter(meditation_log::Column::UserId.eq(auth.id))
-        .filter(meditation_log::Column::Phase.eq("reflection"))
-        .order_by_desc(meditation_log::Column::CreatedAt)
+) -> Result<Json<Vec<InsightLogResponse>>> {
+    let logs = insight_log::Entity::find()
+        .filter(insight_log::Column::UserId.eq(auth.id))
+        .filter(insight_log::Column::Phase.eq("reflection"))
+        .order_by_desc(insight_log::Column::CreatedAt)
         .all(&state.db)
         .await
-        .map_err(|e| crate::error::AppError::Database(e))?;
+        .map_err(crate::error::AppError::Database)?;
 
-    let data: Vec<MeditationLogResponse> = logs
-        .into_iter()
-        .map(|l| MeditationLogResponse {
-            id: l.id,
-            phase: l.phase,
-            trigger_type: l.trigger_type,
-            summary: l.summary,
-            nodes_created: l.nodes_created,
-            nodes_updated: l.nodes_updated,
-            nodes_merged: l.nodes_merged,
-            edges_created: l.edges_created,
-            model_used: l.model_used,
-            duration_ms: l.duration_ms,
-            created_at: l.created_at.to_rfc3339(),
-        })
-        .collect();
-
-    Ok(Json(data))
+    Ok(Json(logs.into_iter().map(log_response).collect()))
 }
 
-async fn trigger_meditation(
+async fn trigger_insights(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(body): Json<TriggerRequest>,
 ) -> Result<Json<serde_json::Value>> {
     let phase = match body.phase.as_str() {
-        "extraction" => MeditationPhase::Extraction,
-        "consolidation" => MeditationPhase::Consolidation,
-        "reflection" => MeditationPhase::Reflection,
-        "habit_detection" => MeditationPhase::HabitDetection,
+        "extraction" => InsightPhase::Extraction,
+        "consolidation" => InsightPhase::Consolidation,
+        "reflection" => InsightPhase::Reflection,
+        "habit_detection" => InsightPhase::HabitDetection,
         other => {
             return Err(crate::error::AppError::Validation(format!(
                 "unknown phase: {other}; valid: extraction, consolidation, reflection, habit_detection"
@@ -194,10 +158,10 @@ async fn trigger_meditation(
 
     state
         .modules
-        .meditation
+        .insights
         .trigger(auth.id, phase)
         .await
-        .map_err(|e| crate::error::AppError::Internal(e))?;
+        .map_err(crate::error::AppError::Internal)?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -209,8 +173,7 @@ async fn get_conditions(
     State(state): State<AppState>,
     _auth: AuthUser,
 ) -> Result<Json<Vec<serde_json::Value>>> {
-    let conditions = state.modules.meditation.get_conditions().await;
-    Ok(Json(conditions))
+    Ok(Json(state.modules.insights.get_conditions().await))
 }
 
 #[derive(Deserialize)]
@@ -225,10 +188,10 @@ async fn set_conditions(
 ) -> Result<Json<serde_json::Value>> {
     state
         .modules
-        .meditation
+        .insights
         .set_conditions(body.conditions.clone())
         .await
-        .map_err(|e| crate::error::AppError::Internal(e))?;
+        .map_err(crate::error::AppError::Internal)?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -236,15 +199,31 @@ async fn set_conditions(
     })))
 }
 
+fn log_response(log: insight_log::Model) -> InsightLogResponse {
+    InsightLogResponse {
+        id: log.id,
+        phase: log.phase,
+        trigger_type: log.trigger_type,
+        summary: log.summary,
+        nodes_created: log.nodes_created,
+        nodes_updated: log.nodes_updated,
+        nodes_merged: log.nodes_merged,
+        edges_created: log.edges_created,
+        model_used: log.model_used,
+        duration_ms: log.duration_ms,
+        created_at: log.created_at.to_rfc3339(),
+    }
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/meditation/status", get(get_status))
-        .route("/meditation/toggle", post(toggle))
-        .route("/meditation/logs", get(get_logs))
-        .route("/meditation/insights", get(get_insights))
-        .route("/meditation/trigger", post(trigger_meditation))
+        .route("/insights/status", get(get_status))
+        .route("/insights/toggle", post(toggle))
+        .route("/insights/logs", get(get_logs))
+        .route("/insights/reflections", get(get_reflections))
+        .route("/insights/trigger", post(trigger_insights))
         .route(
-            "/meditation/conditions",
+            "/insights/conditions",
             get(get_conditions).put(set_conditions),
         )
 }

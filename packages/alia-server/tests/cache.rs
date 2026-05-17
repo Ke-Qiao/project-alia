@@ -1,7 +1,7 @@
 #![cfg(feature = "cache-semantic")]
 
 use alia_server::providers::CacheBackend;
-use alia_server::providers::adapter::{CacheEntry, CacheFilter};
+use alia_server::providers::adapter::{CacheEntry, CacheFilter, DEFAULT_CACHE_SCOPE};
 use alia_server::providers::cache::two_layer::TwoLayerCache;
 use uuid::Uuid;
 
@@ -13,7 +13,7 @@ async fn test_cache_hit() {
     cache
         .put(CacheEntry {
             user_id,
-            scope: "default".to_string(),
+            scope: DEFAULT_CACHE_SCOPE.to_string(),
             query_text: "What is the weather?".to_string(),
             response_text: "It's sunny!".to_string(),
             metadata: serde_json::json!({}),

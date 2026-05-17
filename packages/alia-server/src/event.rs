@@ -61,12 +61,12 @@ pub enum ServerEvent {
         action: String,
     },
 
-    // Meditation events
-    MeditationStarted {
+    // Insights events
+    InsightStarted {
         phase: String,
         trigger: String,
     },
-    MeditationCompleted {
+    InsightCompleted {
         phase: String,
         nodes_created: u32,
         nodes_updated: u32,

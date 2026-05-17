@@ -10,7 +10,8 @@ use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::config::ToolsSection;
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    ChatMessage, LlmResponse, LlmToolCall, ToolCall, ToolContext, ToolDefinition, ToolResult,
+    ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolCall, ToolCandidateInfo, ToolContext,
+    ToolDefinition, ToolResult, ToolSelectionInput,
 };
 use crate::registry::is_plugin_source;
 
@@ -46,6 +47,7 @@ const TOOL_USE_SYSTEM_PROMPT: &str = r#"Tool use rules:
 
 pub(super) async fn run_llm_tool_loop(
     modules: &ModuleRegistry,
+    llm: &dyn LlmAdapter,
     base_messages: Vec<ChatMessage>,
     tools: Vec<ToolDefinition>,
     user_id: Uuid,
@@ -84,7 +86,7 @@ pub(super) async fn run_llm_tool_loop(
         let mut response = match cancellable_stage(
             turn,
             "llm_tool_call",
-            modules.llm.chat_with_tools(&messages, &tools),
+            llm.chat_with_tools(&messages, &tools),
         )
         .await?
         {
@@ -115,7 +117,7 @@ pub(super) async fn run_llm_tool_loop(
             let retry_text = match cancellable_stage(
                 turn,
                 "llm_tool_call_text_retry",
-                modules.llm.chat(&retry_messages),
+                llm.chat(&retry_messages),
             )
             .await?
             {
@@ -198,7 +200,7 @@ pub(super) async fn run_llm_tool_loop(
         "Tool-call depth limit reached. Stop calling tools and give the user a concise final answer based on the tool results already available.",
     ));
 
-    let final_response = match cancellable_stage(turn, "llm", modules.llm.chat(&messages)).await? {
+    let final_response = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
         Some(final_response) => final_response,
         None => String::new(),
     };
@@ -294,13 +296,15 @@ async fn select_tools(
     }
 
     let total = tools.len();
-    let selected = rank_and_limit_tools(
+    let selected = select_ranked_or_llm_filtered_tools(
+        modules,
         tools,
         user_text,
-        tools_config.max_tools_per_turn,
+        tools_config,
         skill_scoped,
         channel_id,
-    );
+    )
+    .await;
     if selected.len() < total {
         tracing::debug!(
             total,
@@ -311,6 +315,86 @@ async fn select_tools(
     }
 
     Ok(selected)
+}
+
+async fn select_ranked_or_llm_filtered_tools(
+    modules: &ModuleRegistry,
+    tools: Vec<ToolDefinition>,
+    user_text: &str,
+    tools_config: &ToolsSection,
+    skill_scoped: bool,
+    channel_id: &str,
+) -> Vec<ToolDefinition> {
+    let max_tools_per_turn = tools_config.max_tools_per_turn;
+    if tools.is_empty() || max_tools_per_turn == 0 {
+        return Vec::new();
+    }
+
+    let candidate_pool_size = tools_config
+        .candidate_pool_size
+        .max(max_tools_per_turn)
+        .max(1);
+    let ranked = rank_tool_candidates(
+        tools,
+        user_text,
+        candidate_pool_size,
+        skill_scoped,
+        channel_id,
+    );
+
+    if ranked.is_empty() {
+        return Vec::new();
+    }
+
+    let should_use_llm_filter = tools_config.llm_candidate_filter_enabled
+        && ranked.len() > max_tools_per_turn
+        && ranked.len()
+            >= tools_config
+                .llm_candidate_filter_threshold
+                .max(max_tools_per_turn + 1);
+
+    if should_use_llm_filter {
+        let candidate_infos = ranked
+            .iter()
+            .map(|candidate| tool_candidate_info(&candidate.tool))
+            .collect::<Vec<_>>();
+        let input = ToolSelectionInput {
+            text: user_text.to_string(),
+            channel_id: channel_id.to_string(),
+            candidates: candidate_infos,
+            max_tools: max_tools_per_turn,
+        };
+
+        match modules.router.select_tool_candidates(&input).await {
+            Ok(Some(names)) => {
+                let selected = select_tools_by_name_order(&ranked, &names, max_tools_per_turn);
+                if !selected.is_empty() || names.is_empty() {
+                    tracing::debug!(
+                        candidates = ranked.len(),
+                        selected = selected.len(),
+                        "local LLM selected tool candidates"
+                    );
+                    return selected;
+                }
+                tracing::debug!(
+                    candidates = ranked.len(),
+                    "local LLM selected no valid tool names; using ranked fallback"
+                );
+            }
+            Ok(None) => {
+                tracing::debug!("router does not provide LLM tool candidate filtering");
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "LLM tool candidate filtering failed; using ranked fallback");
+            }
+        }
+    }
+
+    ranked
+        .into_iter()
+        .take(max_tools_per_turn)
+        .map(|candidate| candidate.tool)
+        .collect()
 }
 
 fn rank_and_limit_tools(
@@ -328,6 +412,36 @@ fn rank_and_limit_tools(
         return tools;
     }
 
+    rank_tool_candidates(
+        tools,
+        user_text,
+        max_tools_per_turn,
+        skill_scoped,
+        channel_id,
+    )
+    .into_iter()
+    .map(|candidate| candidate.tool)
+    .collect()
+}
+
+#[derive(Debug, Clone)]
+struct RankedToolCandidate {
+    score: i32,
+    index: usize,
+    tool: ToolDefinition,
+}
+
+fn rank_tool_candidates(
+    tools: Vec<ToolDefinition>,
+    user_text: &str,
+    limit: usize,
+    skill_scoped: bool,
+    channel_id: &str,
+) -> Vec<RankedToolCandidate> {
+    if tools.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+
     let query = user_text.to_lowercase();
     let query_terms = tokenize_for_tool_routing(user_text);
     let mut ranked = tools
@@ -335,29 +449,79 @@ fn rank_and_limit_tools(
         .enumerate()
         .map(|(index, tool)| {
             let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
-            (score, index, tool)
+            RankedToolCandidate { score, index, tool }
         })
-        .filter(|(score, _, _)| skill_scoped || *score > 0)
+        .filter(|candidate| skill_scoped || candidate.score > 0)
         .collect::<Vec<_>>();
 
-    ranked.sort_by(
-        |(left_score, left_index, left_tool), (right_score, right_index, right_tool)| {
-            right_score
-                .cmp(left_score)
-                .then_with(|| {
-                    left_tool
-                        .require_confirmation
-                        .cmp(&right_tool.require_confirmation)
-                })
-                .then_with(|| left_index.cmp(right_index))
-        },
-    );
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| {
+                left.tool
+                    .require_confirmation
+                    .cmp(&right.tool.require_confirmation)
+            })
+            .then_with(|| left.index.cmp(&right.index))
+    });
 
-    ranked
-        .into_iter()
-        .take(max_tools_per_turn)
-        .map(|(_, _, tool)| tool)
-        .collect()
+    ranked.into_iter().take(limit).collect()
+}
+
+fn select_tools_by_name_order(
+    ranked: &[RankedToolCandidate],
+    names: &[String],
+    max_tools: usize,
+) -> Vec<ToolDefinition> {
+    let ranked_by_name = ranked
+        .iter()
+        .map(|candidate| (candidate.tool.name.as_str(), &candidate.tool))
+        .collect::<HashMap<_, _>>();
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
+    for name in names {
+        if selected.len() >= max_tools {
+            break;
+        }
+        if seen.insert(name.as_str())
+            && let Some(tool) = ranked_by_name.get(name.as_str())
+        {
+            selected.push((*tool).clone());
+        }
+    }
+    selected
+}
+
+fn tool_candidate_info(tool: &ToolDefinition) -> ToolCandidateInfo {
+    ToolCandidateInfo {
+        name: tool.name.clone(),
+        description: tool.description.clone(),
+        source: tool.source.clone(),
+        require_confirmation: tool.require_confirmation,
+        keywords: tool_candidate_keywords(tool),
+    }
+}
+
+fn tool_candidate_keywords(tool: &ToolDefinition) -> Vec<String> {
+    let mut keywords = tokenize_for_tool_routing(&format!(
+        "{} {} {} {}",
+        tool.name,
+        tool.description,
+        tool.source,
+        schema_property_names(&tool.parameters).join(" ")
+    ))
+    .into_iter()
+    .collect::<Vec<_>>();
+    keywords.extend(
+        tool_routing_hints(&tool.name.to_lowercase())
+            .iter()
+            .map(|hint| hint.to_string()),
+    );
+    keywords.sort();
+    keywords.dedup();
+    keywords.truncate(24);
+    keywords
 }
 
 fn score_tool_candidate(

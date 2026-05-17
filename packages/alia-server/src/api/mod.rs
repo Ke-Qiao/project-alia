@@ -3,7 +3,7 @@ pub mod channels;
 pub mod conversations;
 pub mod devices;
 pub mod health;
-pub mod meditation;
+pub mod insights;
 pub mod memories;
 pub mod personas;
 pub mod plugins;
@@ -43,7 +43,7 @@ fn api_routes() -> Router<AppState> {
         .merge(sensors::routes())
         .merge(memories::routes())
         .merge(personas::routes())
-        .merge(meditation::routes())
+        .merge(insights::routes())
         .merge(skills::routes())
         .merge(tools::routes())
 }

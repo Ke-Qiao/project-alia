@@ -368,7 +368,17 @@ impl SettingsRegistry {
             (
                 "core.modules.llm",
                 json!(config.modules.llm),
-                schema_select("LLM Backend", &["openai", "ollama", "noop"], true),
+                schema_select("Default LLM Backend", &["openai", "ollama", "noop"], true),
+            ),
+            (
+                "core.modules.local_llm",
+                json!(config.modules.local_llm),
+                schema_select("Local LLM Backend", &["ollama", "openai", "noop"], true),
+            ),
+            (
+                "core.modules.remote_llm",
+                json!(config.modules.remote_llm),
+                schema_select("Remote LLM Backend", &["openai", "ollama", "noop"], true),
             ),
             (
                 "core.modules.memory",

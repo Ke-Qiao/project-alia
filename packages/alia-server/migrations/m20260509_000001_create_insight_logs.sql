@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS meditation_logs (
+CREATE TABLE IF NOT EXISTS insight_logs (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     phase VARCHAR(20) NOT NULL,
@@ -13,6 +13,6 @@ CREATE TABLE IF NOT EXISTS meditation_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_meditation_logs_user_id ON meditation_logs(user_id);
-CREATE INDEX idx_meditation_logs_phase ON meditation_logs(phase);
-CREATE INDEX idx_meditation_logs_created_at ON meditation_logs(created_at DESC);
+CREATE INDEX idx_insight_logs_user_id ON insight_logs(user_id);
+CREATE INDEX idx_insight_logs_phase ON insight_logs(phase);
+CREATE INDEX idx_insight_logs_created_at ON insight_logs(created_at DESC);

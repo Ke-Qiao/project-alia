@@ -10,7 +10,7 @@ use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
 use crate::config::{ChannelConfig, MemorySection};
 use crate::event::EventBus;
 use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy, MemoryBackend, PersonaProvider,
+    CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
     RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
     TtsAdapter,
 };
@@ -18,10 +18,10 @@ use crate::providers::adapter::{
 use crate::providers::cache::TwoLayerCache;
 use crate::providers::cache::{DbCache, NoopCache};
 use crate::providers::embedding::NoopEmbedding;
+use crate::providers::insights::NoopInsights;
+#[cfg(feature = "insights")]
+use crate::providers::insights::ScheduledInsights;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::providers::meditation::NoopMeditation;
-#[cfg(feature = "meditation")]
-use crate::providers::meditation::ScheduledMeditation;
 #[cfg(feature = "memory-mem0")]
 use crate::providers::memory::external::ExternalMemoryBackend;
 #[cfg(feature = "memory-mem0")]
@@ -217,23 +217,23 @@ pub fn create_persona(name: &str) -> Box<dyn PersonaProvider> {
     }
 }
 
-pub fn create_meditation(name: &str) -> Box<dyn MeditationStrategy> {
+pub fn create_insights(name: &str) -> Box<dyn InsightStrategy> {
     match name {
-        #[cfg(feature = "meditation")]
+        #[cfg(feature = "insights")]
         "scheduled" => {
             tracing::info!(
                 module = name,
-                "creating meditation strategy (ScheduledMeditation)"
+                "creating insights strategy (ScheduledInsights)"
             );
-            Box::new(ScheduledMeditation::new())
+            Box::new(ScheduledInsights::new())
         }
         "noop" => {
-            tracing::info!(module = name, "creating meditation strategy (noop)");
-            Box::new(NoopMeditation)
+            tracing::info!(module = name, "creating insights strategy (noop)");
+            Box::new(NoopInsights)
         }
         _ => {
-            tracing::warn!(module = name, "unknown meditation strategy, using noop");
-            Box::new(NoopMeditation)
+            tracing::warn!(module = name, "unknown insights strategy, using noop");
+            Box::new(NoopInsights)
         }
     }
 }

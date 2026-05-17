@@ -231,6 +231,8 @@ pub trait MemoryBackend: ModuleLifecycle {
 
 // ========== Cache Backend ==========
 
+pub const DEFAULT_CACHE_SCOPE: &str = "default";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
     pub response_text: String,
@@ -390,10 +392,10 @@ pub trait ConversationBackend: ModuleLifecycle {
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
 }
 
-// ========== Meditation Strategy ==========
+// ========== Insights Strategy ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeditationTask {
+pub struct InsightTask {
     pub user_id: Uuid,
     pub phase: String,
     pub trigger: String,
@@ -401,7 +403,7 @@ pub struct MeditationTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeditationStatus {
+pub struct InsightStatus {
     pub enabled: bool,
     pub last_phase: Option<String>,
     pub last_executed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -410,7 +412,7 @@ pub struct MeditationStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MeditationPhase {
+pub enum InsightPhase {
     Extraction,
     Consolidation,
     Reflection,
@@ -418,11 +420,11 @@ pub enum MeditationPhase {
 }
 
 #[async_trait]
-pub trait MeditationStrategy: ModuleLifecycle {
-    async fn schedule(&self, task: MeditationTask) -> anyhow::Result<()>;
-    async fn status(&self, user_id: Uuid) -> anyhow::Result<MeditationStatus>;
-    async fn trigger(&self, user_id: Uuid, phase: MeditationPhase) -> anyhow::Result<()>;
-    /// Get the current meditation trigger conditions (config defaults merged with user overrides)
+pub trait InsightStrategy: ModuleLifecycle {
+    async fn schedule(&self, task: InsightTask) -> anyhow::Result<()>;
+    async fn status(&self, user_id: Uuid) -> anyhow::Result<InsightStatus>;
+    async fn trigger(&self, user_id: Uuid, phase: InsightPhase) -> anyhow::Result<()>;
+    /// Get the current insight trigger conditions (config defaults merged with user overrides)
     async fn get_conditions(&self) -> Vec<serde_json::Value>;
     /// Set user-level condition overrides (replaces config defaults at runtime)
     async fn set_conditions(&self, conditions: Vec<serde_json::Value>) -> anyhow::Result<()>;
@@ -438,17 +440,54 @@ pub struct RouterInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCandidateInfo {
+    pub name: String,
+    pub description: String,
+    pub source: String,
+    pub require_confirmation: bool,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolSelectionInput {
+    pub text: String,
+    pub channel_id: String,
+    pub candidates: Vec<ToolCandidateInfo>,
+    pub max_tools: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RouteDecision {
-    CacheHit { response: String },
-    Skill { skill_name: String },
-    LocalLlm { system_prompt: Option<String> },
-    RemoteLlm { system_prompt: Option<String> },
+    CacheHit {
+        response: String,
+    },
+    Skill {
+        skill_name: String,
+    },
+    LocalLlm {
+        system_prompt: Option<String>,
+        escalation_prompt: Option<String>,
+    },
+    RemoteLlm {
+        system_prompt: Option<String>,
+    },
 }
 
 #[async_trait]
 pub trait RouterStrategy: ModuleLifecycle {
     async fn route(&self, input: &RouterInput) -> anyhow::Result<RouteDecision>;
+
+    /// Optional lightweight candidate filtering for large tool lists.
+    /// Routers backed by a local/small model can override this; the pipeline
+    /// falls back to deterministic ranking when `None` is returned.
+    async fn select_tool_candidates(
+        &self,
+        _input: &ToolSelectionInput,
+    ) -> anyhow::Result<Option<Vec<String>>> {
+        Ok(None)
+    }
 }
 
 // ========== Rule Evaluator ==========

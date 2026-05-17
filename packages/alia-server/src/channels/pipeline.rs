@@ -22,8 +22,9 @@ use crate::config::{MemorySection, ToolsSection};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    AudioEncoding, CachedResponse, ChatMessage, MemoryConversationIngest,
-    MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput,
+    AudioEncoding, CacheEntry, CachedResponse, ChatMessage, DEFAULT_CACHE_SCOPE, LlmAdapter,
+    MemoryConversationIngest, MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput,
+    ToolDefinition,
 };
 use crate::providers::sensor::SensorRegistry;
 
@@ -573,236 +574,147 @@ async fn process_text(
             let tools =
                 select_tools_for_skill(modules, &resolution.tools, text, tools_config, channel_id)
                     .await?;
-            if !tools.is_empty() {
-                debug_component_tools(
-                    debug_output,
-                    "tools",
-                    "available",
-                    &tools,
-                    Some((channel_id, user_id)),
-                );
-                let full = run_llm_tool_loop(
-                    modules,
-                    messages,
-                    tools,
-                    uid,
-                    Some(session_id),
-                    channel_id,
-                    user_id,
-                    "skill",
-                    tools_config,
-                    debug_output,
-                    turn,
-                )
-                .await?;
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "tool_loop_result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, false, false)
-            } else if channel.capabilities().streaming {
-                debug_component_llm_call(
-                    debug_output,
-                    "llm",
-                    "stream_call",
-                    "skill",
-                    &messages,
-                    Some((channel_id, user_id)),
-                );
-                let (full, audio_streamed) = if audio_response {
-                    stream_llm_response_with_sentence_tts(
-                        modules,
-                        channel,
-                        target,
-                        channel_id,
-                        user_id,
-                        event_bus,
-                        &messages,
-                        debug_output,
-                        turn,
-                    )
-                    .await?
-                } else {
-                    (
-                        stream_llm_response(
-                            modules,
-                            channel,
-                            target,
-                            channel_id,
-                            user_id,
-                            event_bus,
-                            &messages,
-                            debug_output,
-                            turn,
-                        )
-                        .await?,
-                        false,
-                    )
-                };
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "stream_result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, true, audio_streamed)
-            } else {
-                debug_component_llm_call(
-                    debug_output,
-                    "llm",
-                    "call",
-                    "skill",
-                    &messages,
-                    Some((channel_id, user_id)),
-                );
-                let full = match cancellable_stage(turn, "llm", modules.llm.chat(&messages)).await?
-                {
-                    Some(full) => full,
-                    None => String::new(),
-                };
-                if turn_is_interrupted(turn) {
-                    (full, false, false)
-                } else {
-                    debug_component_text(
-                        debug_output,
-                        "llm",
-                        "result",
-                        &full,
-                        Some((channel_id, user_id)),
-                    );
-                    (full, false, false)
-                }
-            }
+            execute_llm_response(
+                modules,
+                modules.llm.as_ref(),
+                messages,
+                tools,
+                uid,
+                session_id,
+                channel,
+                target,
+                channel_id,
+                user_id,
+                event_bus,
+                "skill",
+                audio_response,
+                true,
+                tools_config,
+                debug_output,
+                turn,
+            )
+            .await?
         }
 
         // LLM call — stream when the channel supports it
-        RouteDecision::LocalLlm { system_prompt } | RouteDecision::RemoteLlm { system_prompt } => {
-            let mut messages = base_system_messages.clone();
-            if let Some(sp) = system_prompt {
-                messages.push(ChatMessage {
-                    role: "system".into(),
-                    content: sp,
-                    name: None,
-                    ..ChatMessage::default()
-                });
-            }
-            messages.extend(history);
-            messages.push(ChatMessage {
-                role: "user".into(),
-                content: text.to_string(),
-                name: Some(user_id.to_string()),
-                ..ChatMessage::default()
-            });
-
+        RouteDecision::LocalLlm {
+            system_prompt,
+            escalation_prompt,
+        } => {
+            let messages = build_llm_messages(
+                &base_system_messages,
+                &history,
+                system_prompt,
+                text,
+                user_id,
+            );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
-            if !tools.is_empty() {
-                debug_component_tools(
-                    debug_output,
-                    "tools",
-                    "available",
-                    &tools,
-                    Some((channel_id, user_id)),
-                );
-                let full = run_llm_tool_loop(
-                    modules,
-                    messages,
-                    tools,
-                    uid,
-                    Some(session_id),
+            let allow_local_streaming = escalation_prompt.is_none();
+            let (local_response, local_streamed, local_audio_streamed) = execute_llm_response(
+                modules,
+                modules.local_llm.as_ref(),
+                messages,
+                tools,
+                uid,
+                session_id,
+                channel,
+                target,
+                channel_id,
+                user_id,
+                event_bus,
+                "local_llm",
+                audio_response,
+                allow_local_streaming,
+                tools_config,
+                debug_output,
+                turn,
+            )
+            .await?;
+
+            if let Some(reason) = escalation_reason(&local_response)
+                && let Some(remote_prompt) = escalation_prompt
+            {
+                tracing::info!(
                     channel_id,
                     user_id,
+                    reason = %reason,
+                    "local LLM escalated turn to remote LLM"
+                );
+                debug_component_text(
+                    debug_output,
                     "llm",
+                    "escalate",
+                    reason,
+                    Some((channel_id, user_id)),
+                );
+                let mut remote_messages = build_llm_messages(
+                    &base_system_messages,
+                    &history,
+                    Some(remote_prompt),
+                    text,
+                    user_id,
+                );
+                remote_messages.push(ChatMessage::new(
+                    "system",
+                    format!(
+                        "The local model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
+                    ),
+                ));
+                let remote_tools =
+                    select_all_tools(modules, text, tools_config, channel_id).await?;
+                execute_llm_response(
+                    modules,
+                    modules.remote_llm.as_ref(),
+                    remote_messages,
+                    remote_tools,
+                    uid,
+                    session_id,
+                    channel,
+                    target,
+                    channel_id,
+                    user_id,
+                    event_bus,
+                    "remote_llm_escalated",
+                    audio_response,
+                    true,
                     tools_config,
                     debug_output,
                     turn,
                 )
-                .await?;
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "tool_loop_result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, false, false)
-            } else if channel.capabilities().streaming {
-                debug_component_llm_call(
-                    debug_output,
-                    "llm",
-                    "stream_call",
-                    "llm",
-                    &messages,
-                    Some((channel_id, user_id)),
-                );
-                let (full, audio_streamed) = if audio_response {
-                    stream_llm_response_with_sentence_tts(
-                        modules,
-                        channel,
-                        target,
-                        channel_id,
-                        user_id,
-                        event_bus,
-                        &messages,
-                        debug_output,
-                        turn,
-                    )
-                    .await?
-                } else {
-                    (
-                        stream_llm_response(
-                            modules,
-                            channel,
-                            target,
-                            channel_id,
-                            user_id,
-                            event_bus,
-                            &messages,
-                            debug_output,
-                            turn,
-                        )
-                        .await?,
-                        false,
-                    )
-                };
-                debug_component_text(
-                    debug_output,
-                    "llm",
-                    "stream_result",
-                    &full,
-                    Some((channel_id, user_id)),
-                );
-                (full, true, audio_streamed)
+                .await?
             } else {
-                debug_component_llm_call(
-                    debug_output,
-                    "llm",
-                    "call",
-                    "llm",
-                    &messages,
-                    Some((channel_id, user_id)),
-                );
-                let full = match cancellable_stage(turn, "llm", modules.llm.chat(&messages)).await?
-                {
-                    Some(full) => full,
-                    None => String::new(),
-                };
-                if turn_is_interrupted(turn) {
-                    (full, false, false)
-                } else {
-                    debug_component_text(
-                        debug_output,
-                        "llm",
-                        "result",
-                        &full,
-                        Some((channel_id, user_id)),
-                    );
-                    (full, false, false)
-                }
+                (local_response, local_streamed, local_audio_streamed)
             }
+        }
+        RouteDecision::RemoteLlm { system_prompt } => {
+            let messages = build_llm_messages(
+                &base_system_messages,
+                &history,
+                system_prompt,
+                text,
+                user_id,
+            );
+            let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+            execute_llm_response(
+                modules,
+                modules.remote_llm.as_ref(),
+                messages,
+                tools,
+                uid,
+                session_id,
+                channel,
+                target,
+                channel_id,
+                user_id,
+                event_bus,
+                "remote_llm",
+                audio_response,
+                true,
+                tools_config,
+                debug_output,
+                turn,
+            )
+            .await?
         }
     };
 
@@ -849,6 +761,170 @@ async fn process_text(
     })
 }
 
+fn build_llm_messages(
+    base_system_messages: &[ChatMessage],
+    history: &[ChatMessage],
+    system_prompt: Option<String>,
+    text: &str,
+    user_id: &str,
+) -> Vec<ChatMessage> {
+    let mut messages = base_system_messages.to_vec();
+    if let Some(sp) = system_prompt {
+        messages.push(ChatMessage {
+            role: "system".into(),
+            content: sp,
+            name: None,
+            ..ChatMessage::default()
+        });
+    }
+    messages.extend_from_slice(history);
+    messages.push(ChatMessage {
+        role: "user".into(),
+        content: text.to_string(),
+        name: Some(user_id.to_string()),
+        ..ChatMessage::default()
+    });
+    messages
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_llm_response(
+    modules: &ModuleRegistry,
+    llm: &dyn LlmAdapter,
+    messages: Vec<ChatMessage>,
+    tools: Vec<ToolDefinition>,
+    user_uuid: Uuid,
+    session_id: Uuid,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    channel_id: &str,
+    user_id: &str,
+    event_bus: &EventBus,
+    route: &'static str,
+    audio_response: bool,
+    allow_streaming: bool,
+    tools_config: &ToolsSection,
+    debug_output: bool,
+    turn: Option<&VoiceTurn>,
+) -> anyhow::Result<(String, bool, bool)> {
+    if !tools.is_empty() {
+        debug_component_tools(
+            debug_output,
+            "tools",
+            "available",
+            &tools,
+            Some((channel_id, user_id)),
+        );
+        let full = run_llm_tool_loop(
+            modules,
+            llm,
+            messages,
+            tools,
+            user_uuid,
+            Some(session_id),
+            channel_id,
+            user_id,
+            route,
+            tools_config,
+            debug_output,
+            turn,
+        )
+        .await?;
+        debug_component_text(
+            debug_output,
+            "llm",
+            "tool_loop_result",
+            &full,
+            Some((channel_id, user_id)),
+        );
+        return Ok((full, false, false));
+    }
+
+    if allow_streaming && channel.capabilities().streaming {
+        debug_component_llm_call(
+            debug_output,
+            "llm",
+            "stream_call",
+            route,
+            &messages,
+            Some((channel_id, user_id)),
+        );
+        let (full, audio_streamed) = if audio_response {
+            stream_llm_response_with_sentence_tts(
+                modules,
+                llm,
+                channel,
+                target,
+                channel_id,
+                user_id,
+                event_bus,
+                &messages,
+                debug_output,
+                turn,
+            )
+            .await?
+        } else {
+            (
+                stream_llm_response(
+                    modules,
+                    llm,
+                    channel,
+                    target,
+                    channel_id,
+                    user_id,
+                    event_bus,
+                    &messages,
+                    debug_output,
+                    turn,
+                )
+                .await?,
+                false,
+            )
+        };
+        debug_component_text(
+            debug_output,
+            "llm",
+            "stream_result",
+            &full,
+            Some((channel_id, user_id)),
+        );
+        return Ok((full, true, audio_streamed));
+    }
+
+    debug_component_llm_call(
+        debug_output,
+        "llm",
+        "call",
+        route,
+        &messages,
+        Some((channel_id, user_id)),
+    );
+    let full = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
+        Some(full) => full,
+        None => String::new(),
+    };
+    if !turn_is_interrupted(turn) {
+        debug_component_text(
+            debug_output,
+            "llm",
+            "result",
+            &full,
+            Some((channel_id, user_id)),
+        );
+    }
+    Ok((full, false, false))
+}
+
+fn escalation_reason(response: &str) -> Option<&str> {
+    let trimmed = response.trim_start();
+    let reason = trimmed.strip_prefix("[ESCALATE]")?.trim();
+    Some(if reason.is_empty() {
+        "local model requested escalation"
+    } else {
+        reason
+    })
+}
+
 async fn persist_text_interaction(
     modules: &ModuleRegistry,
     pending: PendingTextPersistence,
@@ -880,17 +956,7 @@ async fn persist_text_interaction(
         )
         .await;
 
-    let _ = modules
-        .cache
-        .put(crate::providers::adapter::CacheEntry {
-            user_id: Some(pending.user_id),
-            scope: "pipeline".into(),
-            query_text: pending.query_text.clone(),
-            response_text: pending.response_text.clone(),
-            metadata: serde_json::Value::Null,
-            ttl_seconds: 3600,
-        })
-        .await;
+    let _ = modules.cache.put(cache_entry_for_pending(&pending)).await;
 
     if memory_config.enabled
         && memory_config.conversation_ingest_enabled
@@ -929,6 +995,17 @@ async fn persist_text_interaction(
                 "failed to ingest conversation into memory backend"
             );
         }
+    }
+}
+
+fn cache_entry_for_pending(pending: &PendingTextPersistence) -> CacheEntry {
+    CacheEntry {
+        user_id: Some(pending.user_id),
+        scope: DEFAULT_CACHE_SCOPE.into(),
+        query_text: pending.query_text.clone(),
+        response_text: pending.response_text.clone(),
+        metadata: serde_json::Value::Null,
+        ttl_seconds: 3600,
     }
 }
 
@@ -1099,7 +1176,10 @@ fn system_message(content: String) -> ChatMessage {
 mod tests {
     use super::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
     use super::tools::parse_text_tool_calls;
-    use super::{RuntimePromptContext, render_runtime_context_system_prompt};
+    use super::{
+        PendingTextPersistence, RuntimePromptContext, cache_entry_for_pending, escalation_reason,
+        render_runtime_context_system_prompt,
+    };
     use crate::channels::adapter::AudioFormat;
 
     #[test]
@@ -1129,6 +1209,36 @@ mod tests {
     fn ignores_plain_assistant_text() {
         let calls = parse_text_tool_calls("Sure, I can help with that.").unwrap();
         assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn detects_local_llm_escalation_marker() {
+        assert_eq!(
+            escalation_reason("[ESCALATE] This needs deeper reasoning."),
+            Some("This needs deeper reasoning.")
+        );
+        assert_eq!(
+            escalation_reason("  [ESCALATE]"),
+            Some("local model requested escalation")
+        );
+        assert!(escalation_reason("普通回复").is_none());
+    }
+
+    #[test]
+    fn pipeline_cache_entry_uses_default_lookup_scope() {
+        let pending = PendingTextPersistence {
+            session_id: uuid::Uuid::new_v4(),
+            user_id: uuid::Uuid::new_v4(),
+            user_id_text: "test-user".to_string(),
+            query_text: "hello".to_string(),
+            response_text: "hi".to_string(),
+            channel_id: "test-channel".to_string(),
+        };
+
+        let entry = cache_entry_for_pending(&pending);
+        assert_eq!(entry.scope, crate::providers::adapter::DEFAULT_CACHE_SCOPE);
+        assert_eq!(entry.query_text, "hello");
+        assert_eq!(entry.response_text, "hi");
     }
 
     #[test]

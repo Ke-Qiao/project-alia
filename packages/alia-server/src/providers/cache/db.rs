@@ -19,7 +19,9 @@ use uuid::Uuid;
 
 use crate::entity::llm_cache;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{CacheBackend, CacheEntry, CacheFilter, CachedResponse};
+use crate::providers::adapter::{
+    CacheBackend, CacheEntry, CacheFilter, CachedResponse, DEFAULT_CACHE_SCOPE,
+};
 
 /// Database-backed cache backend
 pub struct DbCache {
@@ -70,7 +72,7 @@ impl DbCache {
         query: &str,
     ) -> anyhow::Result<Option<CachedResponse>> {
         let db = self.db()?;
-        let hash = Self::make_hash("default", user_id, query);
+        let hash = Self::make_hash(DEFAULT_CACHE_SCOPE, user_id, query);
 
         let entry = llm_cache::Entity::find()
             .filter(llm_cache::Column::QueryHash.eq(&hash))

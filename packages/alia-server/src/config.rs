@@ -17,7 +17,7 @@ pub struct ServerConfig {
     pub conversation: ConversationSection,
     pub memory: MemorySection,
     pub cache: CacheSection,
-    pub meditation: MeditationSection,
+    pub insights: InsightsSection,
     pub rules: RulesSection,
     #[serde(default)]
     pub scheduler: SchedulerSection,
@@ -151,7 +151,12 @@ fn default_grpc_timeout() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {
+    #[serde(default = "default_remote_llm_module")]
     pub llm: String,
+    #[serde(default = "default_local_llm_module")]
+    pub local_llm: String,
+    #[serde(default = "default_remote_llm_module")]
+    pub remote_llm: String,
     pub stt: String,
     pub tts: String,
     pub embedding: String,
@@ -159,7 +164,7 @@ pub struct ModulesSection {
     pub cache: String,
     pub skills: String,
     pub persona: String,
-    pub meditation: String,
+    pub insights: String,
     pub router: String,
     pub rule_engine: String,
     #[serde(default = "default_scheduler_module")]
@@ -174,6 +179,12 @@ fn default_scheduler_module() -> String {
 
 fn default_tools_module() -> String {
     "builtin".to_string()
+}
+fn default_local_llm_module() -> String {
+    "ollama".to_string()
+}
+fn default_remote_llm_module() -> String {
+    "openai".to_string()
 }
 
 fn default_router_timeout() -> u64 {
@@ -395,18 +406,18 @@ pub struct CacheSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct MeditationSection {
+pub struct InsightsSection {
     pub enabled: bool,
     pub extraction_enabled: bool,
     pub consolidation_idle_minutes: u64,
     pub reflection_schedule: String,
     pub habit_detection_schedule: String,
     pub memory_threshold: u32,
-    pub max_concurrent_meditations: u32,
-    /// Sensor ID for presence detection (e.g. "presence"); empty to disable sensor-triggered meditation
+    pub max_concurrent_insights: u32,
+    /// Sensor ID for presence detection (e.g. "presence"); empty to disable sensor-triggered insights
     #[serde(default)]
     pub presence_sensor_id: String,
-    /// Default conditions applied to meditation cron tasks (JSON condition objects).
+    /// Default conditions applied to insights cron tasks (JSON condition objects).
     /// Users can override per-user via API.
     /// Example: [{"type": "time_range", "after": "00:00", "before": "06:00"}]
     #[serde(default)]
@@ -459,7 +470,7 @@ fn default_max_concurrent_tasks() -> u32 {
     5
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ToolsSection {
     #[serde(default = "default_tool_call_depth")]
     pub max_tool_call_depth: u32,
@@ -467,10 +478,31 @@ pub struct ToolsSection {
     pub tool_call_timeout_sec: u64,
     #[serde(default = "default_max_tools_per_turn")]
     pub max_tools_per_turn: usize,
+    #[serde(default = "default_tool_candidate_pool_size")]
+    pub candidate_pool_size: usize,
+    #[serde(default = "default_true")]
+    pub llm_candidate_filter_enabled: bool,
+    #[serde(default = "default_llm_candidate_filter_threshold")]
+    pub llm_candidate_filter_threshold: usize,
     #[serde(default = "default_allow_plugin_tools")]
     pub allow_plugin_tools: bool,
     #[serde(default)]
     pub require_confirmation: Vec<String>,
+}
+
+impl Default for ToolsSection {
+    fn default() -> Self {
+        Self {
+            max_tool_call_depth: default_tool_call_depth(),
+            tool_call_timeout_sec: default_tool_timeout(),
+            max_tools_per_turn: default_max_tools_per_turn(),
+            candidate_pool_size: default_tool_candidate_pool_size(),
+            llm_candidate_filter_enabled: true,
+            llm_candidate_filter_threshold: default_llm_candidate_filter_threshold(),
+            allow_plugin_tools: default_allow_plugin_tools(),
+            require_confirmation: Vec::new(),
+        }
+    }
 }
 
 fn default_tool_call_depth() -> u32 {
@@ -481,6 +513,12 @@ fn default_tool_timeout() -> u64 {
 }
 fn default_max_tools_per_turn() -> usize {
     8
+}
+fn default_tool_candidate_pool_size() -> usize {
+    24
+}
+fn default_llm_candidate_filter_threshold() -> usize {
+    12
 }
 fn default_allow_plugin_tools() -> bool {
     true
@@ -647,6 +685,8 @@ mod tests {
         let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
 
         assert_eq!(config.modules.llm, "openai");
+        assert_eq!(config.modules.local_llm, "ollama");
+        assert_eq!(config.modules.remote_llm, "openai");
         assert_eq!(config.llm.adapter, "openai");
         assert_eq!(config.stt.adapter, "whisper_cpp");
         assert_eq!(config.tts.adapter, "gpt_sovits");

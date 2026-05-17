@@ -17,7 +17,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{CacheBackend, CacheEntry, CacheFilter, CachedResponse};
+use crate::providers::adapter::{
+    CacheBackend, CacheEntry, CacheFilter, CachedResponse, DEFAULT_CACHE_SCOPE,
+};
 
 /// Cache entry with expiration
 struct CacheItem {
@@ -102,8 +104,7 @@ impl CacheBackend for TwoLayerCache {
         query: &str,
     ) -> anyhow::Result<Option<CachedResponse>> {
         // Try exact match first (L1)
-        // Use "default" scope for basic queries
-        let key = Self::make_key("default", user_id, query);
+        let key = Self::make_key(DEFAULT_CACHE_SCOPE, user_id, query);
 
         let cache = self.exact_cache.read().await;
         if let Some(item) = cache.get(&key) {

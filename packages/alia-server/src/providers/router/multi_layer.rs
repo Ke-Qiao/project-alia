@@ -6,6 +6,7 @@
 //!   - LOCAL_LLM → simple chat handled by local Ollama model
 //!   - REMOTE_LLM → complex reasoning forwarded to remote LLM (GPT-4o / Claude)
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy};
+use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput};
 
 // ── Ollama API types (local to this module) ────────────────────────────
 
@@ -43,6 +44,14 @@ struct OllamaResponse {
     message: OllamaMessage,
     #[allow(dead_code)]
     done: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolSelectionResponse {
+    #[serde(default)]
+    selected: Vec<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
 }
 
 // ── Classification result ──────────────────────────────────────────────
@@ -233,6 +242,18 @@ Guidelines:
 - When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
+const TOOL_SELECTION_PROMPT: &str = r#"You are a fast tool candidate selector inside Alia.
+You do NOT answer the user. Select only tools that are likely useful for this exact user request.
+
+Rules:
+- Return one JSON object only: {"selected":["tool_name", "..."], "reasoning":"short"}
+- Select at most max_tools names.
+- Use only names from the candidate list.
+- Prefer precise tools over broad tools.
+- If no tool is needed, return {"selected":[]}.
+- Skills are cognitive context, not callable tools.
+"#;
+
 // ── Implementation ─────────────────────────────────────────────────────
 
 pub struct MultiLayerRouter {
@@ -354,6 +375,85 @@ impl MultiLayerRouter {
         Ok(classification)
     }
 
+    async fn select_tools_with_local_model(
+        &self,
+        config: &RouterConfig,
+        input: &ToolSelectionInput,
+    ) -> anyhow::Result<Option<Vec<String>>> {
+        if matches!(config.llm_mode(), LlmMode::RemoteOnly) {
+            return Ok(None);
+        }
+        if input.candidates.is_empty() || input.max_tools == 0 {
+            return Ok(Some(Vec::new()));
+        }
+
+        let candidate_names = input
+            .candidates
+            .iter()
+            .map(|candidate| candidate.name.as_str())
+            .collect::<Vec<_>>();
+        let payload = serde_json::json!({
+            "user_text": &input.text,
+            "channel_id": &input.channel_id,
+            "max_tools": input.max_tools,
+            "candidates": &input.candidates,
+        });
+
+        let request = OllamaRequest {
+            model: config.model.clone(),
+            messages: vec![
+                OllamaMessage {
+                    role: "system".to_string(),
+                    content: TOOL_SELECTION_PROMPT.to_string(),
+                },
+                OllamaMessage {
+                    role: "user".to_string(),
+                    content: payload.to_string(),
+                },
+            ],
+            stream: false,
+            options: Some(OllamaOptions {
+                temperature: config.temperature.min(0.2),
+            }),
+        };
+
+        let url = format!("{}/api/chat", config.ollama_endpoint);
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("ollama tool selection request failed: {e}"))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("ollama tool selection returned {status}: {body}");
+        }
+
+        let ollama_resp: OllamaResponse = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("ollama tool selection response parse failed: {e}"))?;
+        let raw = ollama_resp.message.content.trim().to_string();
+        let selected = parse_tool_selection_response(&raw, &candidate_names, input.max_tools)
+            .map_err(|e| {
+                tracing::warn!(
+                    raw_response = %raw,
+                    error = %e,
+                    "failed to parse local tool selection"
+                );
+                e
+            })?;
+
+        tracing::debug!(
+            selected = ?selected,
+            "local LLM tool candidate selection result"
+        );
+        Ok(Some(selected))
+    }
+
     /// Convert a Classification into a RouteDecision, attaching the appropriate
     /// system prompt for the target LLM based on which tiers are enabled.
     pub fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
@@ -369,8 +469,13 @@ impl MultiLayerRouter {
                     LlmMode::LocalOnly => LOCAL_LLM_SYSTEM_PROMPT_SOLO,
                     _ => LOCAL_LLM_SYSTEM_PROMPT,
                 };
+                let escalation_prompt = match mode {
+                    LlmMode::BothEnabled => Some(REMOTE_LLM_SYSTEM_PROMPT.to_string()),
+                    _ => None,
+                };
                 RouteDecision::LocalLlm {
                     system_prompt: Some(prompt.to_string()),
+                    escalation_prompt,
                 }
             }
             // Default to remote for any unrecognized classification
@@ -473,6 +578,10 @@ impl RouterStrategy for MultiLayerRouter {
                 let fallback = match mode {
                     LlmMode::LocalOnly => RouteDecision::LocalLlm {
                         system_prompt: Some(LOCAL_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                        escalation_prompt: None,
+                    },
+                    LlmMode::RemoteOnly => RouteDecision::RemoteLlm {
+                        system_prompt: Some(REMOTE_LLM_SYSTEM_PROMPT_SOLO.to_string()),
                     },
                     _ => RouteDecision::RemoteLlm {
                         system_prompt: Some(REMOTE_LLM_SYSTEM_PROMPT.to_string()),
@@ -481,6 +590,17 @@ impl RouterStrategy for MultiLayerRouter {
                 Ok(fallback)
             }
         }
+    }
+
+    async fn select_tool_candidates(
+        &self,
+        input: &ToolSelectionInput,
+    ) -> anyhow::Result<Option<Vec<String>>> {
+        let config = self.config.read().await;
+        let cfg = config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
+        self.select_tools_with_local_model(cfg, input).await
     }
 }
 
@@ -502,4 +622,28 @@ pub fn strip_code_fences(s: &str) -> &str {
     } else {
         trimmed
     }
+}
+
+pub fn parse_tool_selection_response(
+    raw: &str,
+    candidate_names: &[&str],
+    max_tools: usize,
+) -> anyhow::Result<Vec<String>> {
+    let candidate_names = candidate_names.iter().copied().collect::<HashSet<_>>();
+    let selection: ToolSelectionResponse = serde_json::from_str(strip_code_fences(raw))
+        .map_err(|e| anyhow::anyhow!("tool selection parse error: {e}"))?;
+
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
+    for name in selection.selected {
+        if selected.len() >= max_tools {
+            break;
+        }
+        if candidate_names.contains(name.as_str()) && seen.insert(name.clone()) {
+            selected.push(name);
+        }
+    }
+
+    tracing::debug!(reasoning = ?selection.reasoning, "parsed local tool selection");
+    Ok(selected)
 }

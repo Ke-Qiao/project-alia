@@ -14,7 +14,7 @@ use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter,
     MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
     SttAdapter, ToolRegistry, TtsAdapter,
 };
@@ -36,7 +36,8 @@ pub struct ServerBuilder {
     channels: Vec<Box<dyn ChannelAdapter>>,
 
     // Module slots (None = use config default)
-    llm: Option<Box<dyn LlmAdapter>>,
+    local_llm: Option<Box<dyn LlmAdapter>>,
+    remote_llm: Option<Box<dyn LlmAdapter>>,
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
@@ -45,7 +46,7 @@ pub struct ServerBuilder {
     cache: Option<Box<dyn CacheBackend>>,
     skills: Option<Box<dyn SkillProvider>>,
     persona: Option<Box<dyn PersonaProvider>>,
-    meditation: Option<Box<dyn MeditationStrategy>>,
+    insights: Option<Box<dyn InsightStrategy>>,
     router: Option<Box<dyn RouterStrategy>>,
     rule_engine: Option<Box<dyn RuleEvaluator>>,
     scheduler: Option<Box<dyn SchedulerBackend>>,
@@ -67,7 +68,8 @@ impl ServerBuilder {
             event_bus,
             cancel_token,
             channels: Vec::new(),
-            llm: None,
+            local_llm: None,
+            remote_llm: None,
             stt: None,
             tts: None,
             embedding: None,
@@ -76,7 +78,7 @@ impl ServerBuilder {
             cache: None,
             skills: None,
             persona: None,
-            meditation: None,
+            insights: None,
             router: None,
             rule_engine: None,
             scheduler: None,
@@ -86,7 +88,17 @@ impl ServerBuilder {
     }
 
     pub fn with_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
-        self.llm = Some(Box::new(llm));
+        self.remote_llm = Some(Box::new(llm));
+        self
+    }
+
+    pub fn with_local_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+        self.local_llm = Some(Box::new(llm));
+        self
+    }
+
+    pub fn with_remote_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+        self.remote_llm = Some(Box::new(llm));
         self
     }
 
@@ -130,8 +142,8 @@ impl ServerBuilder {
         self
     }
 
-    pub fn with_meditation(mut self, med: impl MeditationStrategy + 'static) -> Self {
-        self.meditation = Some(Box::new(med));
+    pub fn with_insights(mut self, insights: impl InsightStrategy + 'static) -> Self {
+        self.insights = Some(Box::new(insights));
         self
     }
 
@@ -184,9 +196,20 @@ impl ServerBuilder {
         };
 
         // Create modules: use override or create from config
-        let mut llm = self
-            .llm
-            .unwrap_or_else(|| factory::create_llm(&self.config.modules.llm));
+        let mut local_llm = self.local_llm.unwrap_or_else(|| {
+            if self.config.router.local_llm_enabled {
+                factory::create_llm(&self.config.modules.local_llm)
+            } else {
+                factory::create_llm("noop")
+            }
+        });
+        let mut remote_llm = self.remote_llm.unwrap_or_else(|| {
+            if self.config.router.remote_llm_enabled {
+                factory::create_llm(&self.config.modules.remote_llm)
+            } else {
+                factory::create_llm("noop")
+            }
+        });
         let mut stt = self
             .stt
             .unwrap_or_else(|| factory::create_stt(&self.config.modules.stt));
@@ -211,9 +234,9 @@ impl ServerBuilder {
         let mut persona = self
             .persona
             .unwrap_or_else(|| factory::create_persona(&self.config.modules.persona));
-        let mut meditation = self
-            .meditation
-            .unwrap_or_else(|| factory::create_meditation(&self.config.modules.meditation));
+        let mut insights = self
+            .insights
+            .unwrap_or_else(|| factory::create_insights(&self.config.modules.insights));
         let mut router = self
             .router
             .unwrap_or_else(|| factory::create_router(&self.config.modules.router));
@@ -270,7 +293,8 @@ impl ServerBuilder {
             conversation: Some(conversation_arc.clone()),
             ..ctx
         };
-        init_module(llm.as_mut(), &ctx).await;
+        init_module(local_llm.as_mut(), &ctx).await;
+        init_module(remote_llm.as_mut(), &ctx).await;
         init_module(stt.as_mut(), &ctx).await;
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
@@ -298,7 +322,7 @@ impl ServerBuilder {
         init_module(skills.as_mut(), &ctx).await;
         init_module(persona.as_mut(), &ctx).await;
         init_module(router.as_mut(), &ctx).await;
-        init_module(meditation.as_mut(), &ctx).await;
+        init_module(insights.as_mut(), &ctx).await;
         init_module(rule_engine.as_mut(), &ctx).await;
 
         // Initialize extensions
@@ -333,8 +357,18 @@ impl ServerBuilder {
         }
 
         // Build registry
+        let local_llm: Arc<dyn LlmAdapter> = Arc::from(local_llm);
+        let remote_llm: Arc<dyn LlmAdapter> = Arc::from(remote_llm);
+        let default_llm = if self.config.router.remote_llm_enabled {
+            remote_llm.clone()
+        } else {
+            local_llm.clone()
+        };
+
         let registry = ModuleRegistry {
-            llm: Arc::from(llm),
+            llm: default_llm,
+            local_llm,
+            remote_llm,
             stt: Arc::from(stt),
             tts: Arc::from(tts),
             embedding: Arc::from(embedding),
@@ -343,7 +377,7 @@ impl ServerBuilder {
             cache: Arc::from(cache),
             skills: Arc::from(skills),
             persona: Arc::from(persona),
-            meditation: Arc::from(meditation),
+            insights: Arc::from(insights),
             router: Arc::from(router),
             rule_engine: Arc::from(rule_engine),
             scheduler,
@@ -354,7 +388,8 @@ impl ServerBuilder {
         // Start modules (scheduler first since it was init'd first)
         tracing::info!("starting modules...");
         start_module(registry.scheduler.as_ref()).await;
-        start_module(registry.llm.as_ref()).await;
+        start_module(registry.local_llm.as_ref()).await;
+        start_module(registry.remote_llm.as_ref()).await;
         start_module(registry.stt.as_ref()).await;
         start_module(registry.tts.as_ref()).await;
         start_module(registry.embedding.as_ref()).await;
@@ -364,7 +399,7 @@ impl ServerBuilder {
         start_module(registry.skills.as_ref()).await;
         start_module(registry.persona.as_ref()).await;
         start_module(registry.router.as_ref()).await;
-        start_module(registry.meditation.as_ref()).await;
+        start_module(registry.insights.as_ref()).await;
         start_module(registry.rule_engine.as_ref()).await;
         start_module(registry.tools.as_ref()).await;
         for ext in &registry.extensions {

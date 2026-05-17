@@ -48,7 +48,7 @@ use crate::api;
         (name = "sensors", description = "Sensor data"),
         (name = "memories", description = "Memory management"),
         (name = "personas", description = "Persona management"),
-        (name = "meditation", description = "Meditation system"),
+        (name = "insights", description = "Background insights system"),
         (name = "skills", description = "Skill definitions — extend what the LLM knows how to do well"),
         (name = "scheduler", description = "Task scheduler"),
         (name = "tools", description = "Tool invocations — extend what the LLM can do"),

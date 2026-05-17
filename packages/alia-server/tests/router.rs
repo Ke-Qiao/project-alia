@@ -1,9 +1,9 @@
 #![cfg(feature = "llm-ollama")]
 
 use alia_server::providers::adapter::RouteDecision;
-use alia_server::providers::router::multi_layer::strip_code_fences;
 use alia_server::providers::router::multi_layer::{
-    Classification, LlmMode, MultiLayerRouter, RouterConfig,
+    Classification, LlmMode, MultiLayerRouter, RouterConfig, parse_tool_selection_response,
+    strip_code_fences,
 };
 
 #[test]
@@ -49,11 +49,20 @@ fn test_to_decision_local_llm_both_mode() {
         reasoning: None,
     };
     match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-        RouteDecision::LocalLlm { system_prompt } => {
+        RouteDecision::LocalLlm {
+            system_prompt,
+            escalation_prompt,
+        } => {
             let prompt = system_prompt.unwrap();
             assert!(
                 prompt.contains("[ESCALATE]"),
                 "both-mode local prompt should mention escalation"
+            );
+            assert!(
+                escalation_prompt
+                    .as_deref()
+                    .is_some_and(|prompt| prompt.contains("primary reasoning model")),
+                "both-mode local route should carry a remote escalation prompt"
             );
         }
         other => panic!("expected LocalLlm, got {other:?}"),
@@ -69,7 +78,10 @@ fn test_to_decision_local_llm_solo_mode() {
         reasoning: None,
     };
     match MultiLayerRouter::to_decision(c, LlmMode::LocalOnly) {
-        RouteDecision::LocalLlm { system_prompt } => {
+        RouteDecision::LocalLlm {
+            system_prompt,
+            escalation_prompt,
+        } => {
             let prompt = system_prompt.unwrap();
             assert!(
                 !prompt.contains("[ESCALATE]"),
@@ -78,6 +90,10 @@ fn test_to_decision_local_llm_solo_mode() {
             assert!(
                 prompt.contains("primary and only"),
                 "solo prompt should indicate it's the only model"
+            );
+            assert!(
+                escalation_prompt.is_none(),
+                "local-only mode must not carry a remote escalation prompt"
             );
         }
         other => panic!("expected LocalLlm, got {other:?}"),
@@ -150,4 +166,15 @@ fn test_llm_mode() {
     cfg.local_llm_enabled = false;
     cfg.remote_llm_enabled = true;
     assert_eq!(cfg.llm_mode(), LlmMode::RemoteOnly);
+}
+
+#[test]
+fn test_parse_tool_selection_response_filters_to_candidates() {
+    let raw = r#"```json
+{"selected":["fetch","unknown","fetch","memory_search"],"reasoning":"need web and memory"}
+```"#;
+    let selected =
+        parse_tool_selection_response(raw, &["fetch", "memory_search", "calculate"], 2).unwrap();
+
+    assert_eq!(selected, vec!["fetch", "memory_search"]);
 }

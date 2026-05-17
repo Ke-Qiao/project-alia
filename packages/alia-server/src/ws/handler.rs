@@ -60,9 +60,7 @@ fn event_type_tag(event: &ServerEvent) -> &'static str {
         ServerEvent::ProcessOutput { .. } | ServerEvent::ProcessStateChanged { .. } => "process",
         ServerEvent::VoiceStateChanged { .. } => "voice",
         ServerEvent::RuleTriggered { .. } => "rule",
-        ServerEvent::MeditationStarted { .. } | ServerEvent::MeditationCompleted { .. } => {
-            "meditation"
-        }
+        ServerEvent::InsightStarted { .. } | ServerEvent::InsightCompleted { .. } => "insights",
         ServerEvent::TaskScheduled { .. }
         | ServerEvent::TaskTriggered { .. }
         | ServerEvent::TaskCompleted { .. }

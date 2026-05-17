@@ -47,6 +47,106 @@ const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
 const FETCH_DEFAULT_TIMEOUT_SEC: u64 = 10;
 const FETCH_HARD_TIMEOUT_SEC: u64 = 30;
 
+struct ToolCatalogFields {
+    routing_keywords: serde_json::Value,
+    routing_examples: serde_json::Value,
+    routing_text: String,
+}
+
+fn tool_catalog_fields(definition: &ToolDefinition) -> ToolCatalogFields {
+    let schema_terms = schema_property_names(&definition.parameters).join(" ");
+    let routing_text = format!(
+        "{}\n{}\nsource: {}\nparameters: {}\nhints: {}",
+        definition.name,
+        definition.description,
+        definition.source,
+        schema_terms,
+        tool_routing_hints(&definition.name).join(" ")
+    );
+    let mut keywords = tokenize_catalog_text(&routing_text);
+    keywords.extend(
+        tool_routing_hints(&definition.name)
+            .iter()
+            .map(|hint| hint.to_string()),
+    );
+    keywords.sort();
+    keywords.dedup();
+
+    ToolCatalogFields {
+        routing_keywords: serde_json::json!(keywords),
+        routing_examples: serde_json::json!([]),
+        routing_text,
+    }
+}
+
+fn set_tool_catalog(active: &mut tool::ActiveModel, definition: &ToolDefinition) {
+    let catalog = tool_catalog_fields(definition);
+    active.routing_keywords = Set(catalog.routing_keywords);
+    active.routing_examples = Set(catalog.routing_examples);
+    active.routing_text = Set(catalog.routing_text);
+    active.routing_embedding = Set(None);
+}
+
+fn tokenize_catalog_text(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter_map(|term| {
+            let term = term.trim();
+            (term.len() >= 2).then(|| term.to_string())
+        })
+        .collect()
+}
+
+fn schema_property_names(parameters: &serde_json::Value) -> Vec<String> {
+    parameters
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .map(|properties| properties.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
+    match tool_name {
+        "get_current_time" => &[
+            "time", "date", "today", "now", "时间", "几点", "今天", "日期",
+        ],
+        "fetch" => &[
+            "fetch", "url", "http", "https", "web", "search", "lookup", "latest", "current",
+            "网页", "链接", "搜索", "查询", "最新", "当前",
+        ],
+        "calculate" => &["calculate", "compute", "math", "算", "计算"],
+        "memory_search" => &["remember", "memory", "recall", "记得", "记忆", "之前"],
+        "memory_store" => &[
+            "remember this",
+            "preference",
+            "save",
+            "store",
+            "记住",
+            "保存",
+            "记录",
+        ],
+        "device_control" => &[
+            "device",
+            "smart home",
+            "control",
+            "设备",
+            "智能家居",
+            "控制",
+        ],
+        "embedded_volume_control" => &[
+            "volume",
+            "microphone",
+            "speaker",
+            "mic",
+            "音量",
+            "麦克风",
+            "喇叭",
+            "扬声器",
+        ],
+        _ => &[],
+    }
+}
+
 /// BuiltinToolRegistry: Full implementation of ToolRegistry
 pub struct BuiltinToolRegistry {
     /// Code-backed tools. Built-ins, Rust components, and in-process Rust
@@ -212,11 +312,13 @@ impl BuiltinToolRegistry {
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
+                    set_tool_catalog(&mut active, &definition);
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
                 }
                 None => {
+                    let catalog = tool_catalog_fields(&definition);
                     tool::ActiveModel {
                         id: Set(Uuid::new_v4()),
                         name: Set(definition.name),
@@ -225,6 +327,10 @@ impl BuiltinToolRegistry {
                         source: Set(definition.source.clone()),
                         require_confirmation: Set(definition.require_confirmation),
                         required_role: Set(definition.required_role),
+                        routing_keywords: Set(catalog.routing_keywords),
+                        routing_examples: Set(catalog.routing_examples),
+                        routing_text: Set(catalog.routing_text),
+                        routing_embedding: Set(None),
                         enabled: Set(true),
                         created_at: Set(now),
                         updated_at: Set(now),
@@ -407,11 +513,13 @@ impl ToolRegistry for BuiltinToolRegistry {
                     active.source = Set(tool.source.clone());
                     active.require_confirmation = Set(tool.require_confirmation);
                     active.required_role = Set(tool.required_role.clone());
+                    set_tool_catalog(&mut active, &tool);
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
                 }
                 None => {
+                    let catalog = tool_catalog_fields(&tool);
                     let active = tool::ActiveModel {
                         id: Set(Uuid::new_v4()),
                         name: Set(tool.name.clone()),
@@ -420,6 +528,10 @@ impl ToolRegistry for BuiltinToolRegistry {
                         source: Set(tool.source.clone()),
                         require_confirmation: Set(tool.require_confirmation),
                         required_role: Set(tool.required_role.clone()),
+                        routing_keywords: Set(catalog.routing_keywords),
+                        routing_examples: Set(catalog.routing_examples),
+                        routing_text: Set(catalog.routing_text),
+                        routing_embedding: Set(None),
                         enabled: Set(true),
                         created_at: Set(now),
                         updated_at: Set(now),
@@ -470,11 +582,13 @@ impl ToolRegistry for BuiltinToolRegistry {
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
+                    set_tool_catalog(&mut active, &definition);
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
                 }
                 None => {
+                    let catalog = tool_catalog_fields(&definition);
                     tool::ActiveModel {
                         id: Set(Uuid::new_v4()),
                         name: Set(definition.name.clone()),
@@ -483,6 +597,10 @@ impl ToolRegistry for BuiltinToolRegistry {
                         source: Set(definition.source.clone()),
                         require_confirmation: Set(definition.require_confirmation),
                         required_role: Set(definition.required_role.clone()),
+                        routing_keywords: Set(catalog.routing_keywords),
+                        routing_examples: Set(catalog.routing_examples),
+                        routing_text: Set(catalog.routing_text),
+                        routing_embedding: Set(None),
                         enabled: Set(true),
                         created_at: Set(now),
                         updated_at: Set(now),
