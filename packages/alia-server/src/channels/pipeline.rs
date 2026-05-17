@@ -12,16 +12,18 @@
 
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
-use crate::config::ToolsSection;
+use crate::config::{MemorySection, ToolsSection};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    AudioEncoding, CachedResponse, ChatMessage, RouteDecision, RouterInput,
+    AudioEncoding, CachedResponse, ChatMessage, MemoryConversationIngest,
+    MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput,
 };
 use crate::providers::sensor::SensorRegistry;
 
@@ -60,6 +62,7 @@ struct PendingTextPersistence {
     user_id_text: String,
     query_text: String,
     response_text: String,
+    channel_id: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -85,6 +88,7 @@ pub fn spawn_pipeline(
     cancel_token: CancellationToken,
     debug_output: bool,
     tools_config: ToolsSection,
+    memory_config: MemorySection,
 ) {
     let mut rx = event_bus.subscribe();
     let bus = event_bus.clone();
@@ -106,10 +110,11 @@ pub fn spawn_pipeline(
                             let sensors = sensors.clone();
                             let bus = bus.clone();
                             let tools_config = tools_config.clone();
+                            let memory_config = memory_config.clone();
                             let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &tools_config, &memory_config).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -149,6 +154,7 @@ async fn process_event(
     voice_turns: &VoiceTurnRegistry,
     debug_output: bool,
     tools_config: &ToolsSection,
+    memory_config: &MemorySection,
 ) -> anyhow::Result<()> {
     match event {
         ChannelEvent::TextMessage {
@@ -181,6 +187,7 @@ async fn process_event(
                 debug_output,
                 false,
                 tools_config,
+                memory_config,
                 None,
                 false,
             )
@@ -313,6 +320,7 @@ async fn process_event(
                 debug_output,
                 channel.capabilities().voice_output && channel.capabilities().audio_streaming,
                 tools_config,
+                memory_config,
                 Some(&turn),
                 turn.interrupt_config.discard_interrupted_turn_history,
             )
@@ -366,7 +374,7 @@ async fn process_event(
             }
 
             if let Some(pending) = result.pending_persistence {
-                persist_text_interaction(modules, pending).await;
+                persist_text_interaction(modules, pending, memory_config).await;
             }
 
             voice_turns.finish(&turn).await;
@@ -403,6 +411,22 @@ fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
     }
 }
 
+fn stable_user_uuid(user_id: &str) -> Uuid {
+    let user_id = user_id.trim();
+    if user_id.is_empty() {
+        Uuid::nil()
+    } else {
+        Uuid::parse_str(user_id).unwrap_or_else(|_| {
+            let digest = Sha256::digest(user_id.as_bytes());
+            let mut bytes = [0_u8; 16];
+            bytes.copy_from_slice(&digest[..16]);
+            bytes[6] = (bytes[6] & 0x0f) | 0x50;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            Uuid::from_bytes(bytes)
+        })
+    }
+}
+
 /// Core text processing: Router → Cache/Skill/LLM → response text.
 ///
 /// Returns a [`TextResult`] containing the full response and a flag indicating
@@ -425,11 +449,13 @@ async fn process_text(
     debug_output: bool,
     audio_response: bool,
     tools_config: &ToolsSection,
+    memory_config: &MemorySection,
     turn: Option<&VoiceTurn>,
     defer_persistence: bool,
 ) -> anyhow::Result<TextResult> {
-    let uid = Uuid::parse_str(user_id).unwrap_or_else(|_| Uuid::nil());
-    let base_system_messages = build_base_system_messages(uid, modules).await?;
+    let uid = stable_user_uuid(user_id);
+    let base_system_messages =
+        build_base_system_messages(uid, modules, memory_config, text).await?;
 
     // 1. Get active session and load history
     let session_id = modules
@@ -448,12 +474,23 @@ async fn process_text(
             &response_text,
             Some((channel_id, user_id)),
         );
+        let pending = PendingTextPersistence {
+            session_id,
+            user_id: uid,
+            user_id_text: user_id.to_string(),
+            query_text: text.to_string(),
+            response_text: response_text.clone(),
+            channel_id: channel_id.to_string(),
+        };
+        if !defer_persistence {
+            persist_text_interaction(modules, pending.clone(), memory_config).await;
+        }
         return Ok(TextResult {
             text: response_text,
             streamed: false,
             audio_streamed: false,
             interrupted: false,
-            pending_persistence: None,
+            pending_persistence: defer_persistence.then_some(pending),
         });
     }
     debug_component(debug_output, "cache", "miss", Some((channel_id, user_id)));
@@ -796,10 +833,11 @@ async fn process_text(
         user_id_text: user_id.to_string(),
         query_text: text.to_string(),
         response_text: response.clone(),
+        channel_id: channel_id.to_string(),
     };
 
     if !defer_persistence {
-        persist_text_interaction(modules, pending_persistence.clone()).await;
+        persist_text_interaction(modules, pending_persistence.clone(), memory_config).await;
     }
 
     Ok(TextResult {
@@ -811,7 +849,11 @@ async fn process_text(
     })
 }
 
-async fn persist_text_interaction(modules: &ModuleRegistry, pending: PendingTextPersistence) {
+async fn persist_text_interaction(
+    modules: &ModuleRegistry,
+    pending: PendingTextPersistence,
+    memory_config: &MemorySection,
+) {
     let _ = modules
         .conversation
         .append_message(
@@ -819,7 +861,7 @@ async fn persist_text_interaction(modules: &ModuleRegistry, pending: PendingText
             ChatMessage {
                 role: "user".into(),
                 content: pending.query_text.clone(),
-                name: Some(pending.user_id_text),
+                name: Some(pending.user_id_text.clone()),
                 ..ChatMessage::default()
             },
         )
@@ -843,17 +885,58 @@ async fn persist_text_interaction(modules: &ModuleRegistry, pending: PendingText
         .put(crate::providers::adapter::CacheEntry {
             user_id: Some(pending.user_id),
             scope: "pipeline".into(),
-            query_text: pending.query_text,
-            response_text: pending.response_text,
+            query_text: pending.query_text.clone(),
+            response_text: pending.response_text.clone(),
             metadata: serde_json::Value::Null,
             ttl_seconds: 3600,
         })
         .await;
+
+    if memory_config.enabled
+        && memory_config.conversation_ingest_enabled
+        && !pending.user_id.is_nil()
+    {
+        let ingest = MemoryConversationIngest {
+            run_id: Some(pending.session_id.to_string()),
+            messages: vec![
+                MemoryConversationMessage {
+                    role: "user".to_string(),
+                    content: pending.query_text,
+                    name: Some(pending.user_id_text),
+                },
+                MemoryConversationMessage {
+                    role: "assistant".to_string(),
+                    content: pending.response_text,
+                    name: None,
+                },
+            ],
+            metadata: serde_json::json!({
+                "source": "pipeline",
+                "channel_id": pending.channel_id,
+                "conversation_id": pending.session_id,
+            }),
+        };
+
+        if let Err(error) = modules
+            .memory
+            .ingest_conversation(pending.user_id, ingest)
+            .await
+        {
+            tracing::warn!(
+                user_id = %pending.user_id,
+                session_id = %pending.session_id,
+                error = ?error,
+                "failed to ingest conversation into memory backend"
+            );
+        }
+    }
 }
 
 async fn build_base_system_messages(
     user_id: Uuid,
     modules: &ModuleRegistry,
+    memory_config: &MemorySection,
+    user_text: &str,
 ) -> anyhow::Result<Vec<ChatMessage>> {
     let mut messages = Vec::new();
 
@@ -867,7 +950,8 @@ async fn build_base_system_messages(
         }
     }
 
-    let runtime_context = build_runtime_prompt_context(modules).await;
+    let runtime_context =
+        build_runtime_prompt_context(user_id, modules, memory_config, user_text).await;
     if let Some(prompt) = render_runtime_context_system_prompt(&runtime_context) {
         messages.push(system_message(prompt));
     }
@@ -875,7 +959,12 @@ async fn build_base_system_messages(
     Ok(messages)
 }
 
-async fn build_runtime_prompt_context(modules: &ModuleRegistry) -> RuntimePromptContext {
+async fn build_runtime_prompt_context(
+    user_id: Uuid,
+    modules: &ModuleRegistry,
+    memory_config: &MemorySection,
+    user_text: &str,
+) -> RuntimePromptContext {
     let available_skills = modules
         .skills
         .list_skills()
@@ -883,10 +972,48 @@ async fn build_runtime_prompt_context(modules: &ModuleRegistry) -> RuntimePrompt
         .map(|skills| skills.into_iter().map(|skill| skill.display_name).collect())
         .unwrap_or_default();
 
+    let core_memories = retrieve_runtime_memories(user_id, modules, memory_config, user_text).await;
+
     RuntimePromptContext {
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
+        core_memories,
         available_skills,
         ..RuntimePromptContext::default()
+    }
+}
+
+async fn retrieve_runtime_memories(
+    user_id: Uuid,
+    modules: &ModuleRegistry,
+    memory_config: &MemorySection,
+    user_text: &str,
+) -> Vec<String> {
+    if !memory_config.enabled || user_id.is_nil() || user_text.trim().is_empty() {
+        return Vec::new();
+    }
+
+    match modules
+        .memory
+        .retrieve(
+            user_id,
+            user_text,
+            RetrievalOpts {
+                max_results: Some(memory_config.max_retrieval_results.max(1).min(12)),
+                min_similarity: Some(memory_config.similarity_threshold.clamp(0.0, 1.0)),
+                layers: None,
+            },
+        )
+        .await
+    {
+        Ok(nodes) => nodes
+            .into_iter()
+            .filter(|node| !node.content.trim().is_empty())
+            .map(|node| node.content)
+            .collect(),
+        Err(error) => {
+            tracing::warn!(user_id = %user_id, error = ?error, "failed to retrieve runtime memories");
+            Vec::new()
+        }
     }
 }
 

@@ -330,11 +330,58 @@ pub struct ConversationSection {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MemorySection {
     pub enabled: bool,
-    pub epidosic_ttl_days: u32,
-    pub max_core_memories: u32,
+    #[serde(default = "default_true")]
+    pub conversation_ingest_enabled: bool,
     pub max_retrieval_results: u32,
     pub similarity_threshold: f32,
-    pub graph_community_algorithm: String,
+    #[serde(default = "default_memory_health_check_attempts")]
+    pub health_check_attempts: u32,
+    #[serde(default = "default_memory_health_check_interval_ms")]
+    pub health_check_interval_ms: u64,
+    #[serde(default = "default_mem0_base_url")]
+    pub mem0_base_url: String,
+    #[serde(default)]
+    pub mem0_api_key: String,
+    #[serde(default)]
+    pub mem0_user_id_prefix: String,
+    #[serde(default)]
+    pub mem0_app_id: Option<String>,
+    #[serde(default)]
+    pub mem0_agent_id: Option<String>,
+    #[serde(default)]
+    pub mem0_run_id: Option<String>,
+    #[serde(default)]
+    pub mem0_custom_instructions: Option<String>,
+    #[serde(default)]
+    pub mem0_infer: bool,
+    #[serde(default = "default_true")]
+    pub mem0_conversation_infer: bool,
+    #[serde(default = "default_mem0_request_timeout")]
+    pub mem0_request_timeout_sec: u64,
+    #[serde(default = "default_mem0_page_size")]
+    pub mem0_page_size: u32,
+    #[serde(default)]
+    pub mem0_add_poll_timeout_ms: u64,
+}
+
+fn default_memory_health_check_attempts() -> u32 {
+    3
+}
+
+fn default_memory_health_check_interval_ms() -> u64 {
+    500
+}
+
+fn default_mem0_base_url() -> String {
+    "https://api.mem0.ai".to_string()
+}
+
+fn default_mem0_request_timeout() -> u64 {
+    20
+}
+
+fn default_mem0_page_size() -> u32 {
+    50
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -465,6 +512,12 @@ impl ServerConfig {
         }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             config.llm.openai_api_key = key;
+        }
+        if let Ok(key) = std::env::var("MEM0_API_KEY") {
+            config.memory.mem0_api_key = key;
+        }
+        if let Ok(url) = std::env::var("MEM0_BASE_URL") {
+            config.memory.mem0_base_url = url;
         }
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =

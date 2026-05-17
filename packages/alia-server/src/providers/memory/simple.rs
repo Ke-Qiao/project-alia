@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    GraphFragment, MemoryBackend, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
 };
 
 /// In-memory storage for user memories
@@ -75,15 +75,55 @@ impl ModuleLifecycle for SimpleMemory {
 
 #[async_trait]
 impl MemoryBackend for SimpleMemory {
-    async fn store(&self, user_id: Uuid, mut node: MemoryNode) -> anyhow::Result<Uuid> {
-        let id = node.id.unwrap_or_else(Uuid::new_v4);
-        node.id = Some(id);
+    async fn store(&self, user_id: Uuid, mut node: MemoryNode) -> anyhow::Result<String> {
+        let id = node.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        node.id = Some(id.clone());
 
         let mut memories = self.memories.write().await;
         memories.entry(user_id).or_default().push(node);
 
         tracing::debug!(user_id = %user_id, node_id = %id, "stored memory node");
         Ok(id)
+    }
+
+    async fn list(&self, user_id: Uuid, opts: MemoryListOpts) -> anyhow::Result<Vec<MemoryNode>> {
+        let memories = self.memories.read().await;
+        let mut results = memories
+            .get(&user_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|memory| {
+                opts.layers
+                    .as_ref()
+                    .is_none_or(|layers| layers.contains(&memory.memory_layer))
+            })
+            .collect::<Vec<_>>();
+
+        results.sort_by(|left, right| {
+            right
+                .importance
+                .partial_cmp(&left.importance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Some(limit) = opts.max_results {
+            results.truncate(limit as usize);
+        }
+
+        Ok(results)
+    }
+
+    async fn get(&self, user_id: Uuid, node_id: &str) -> anyhow::Result<Option<MemoryNode>> {
+        let memories = self.memories.read().await;
+        Ok(memories
+            .get(&user_id)
+            .and_then(|memories| {
+                memories
+                    .iter()
+                    .find(|memory| memory.id.as_deref() == Some(node_id))
+            })
+            .cloned())
     }
 
     async fn retrieve(
@@ -144,12 +184,12 @@ impl MemoryBackend for SimpleMemory {
         Ok(results)
     }
 
-    async fn update(&self, node_id: Uuid, patch: MemoryPatch) -> anyhow::Result<()> {
+    async fn update(&self, node_id: &str, patch: MemoryPatch) -> anyhow::Result<()> {
         let mut memories = self.memories.write().await;
 
         for user_memories in memories.values_mut() {
             for memory in user_memories.iter_mut() {
-                if memory.id == Some(node_id) {
+                if memory.id.as_deref() == Some(node_id) {
                     if let Some(content) = patch.content {
                         memory.content = content;
                     }
@@ -168,12 +208,12 @@ impl MemoryBackend for SimpleMemory {
         anyhow::bail!("Memory node {} not found", node_id)
     }
 
-    async fn delete(&self, node_id: Uuid) -> anyhow::Result<()> {
+    async fn delete(&self, node_id: &str) -> anyhow::Result<()> {
         let mut memories = self.memories.write().await;
 
         for user_memories in memories.values_mut() {
             let original_len = user_memories.len();
-            user_memories.retain(|m| m.id != Some(node_id));
+            user_memories.retain(|m| m.id.as_deref() != Some(node_id));
             if user_memories.len() < original_len {
                 tracing::debug!(node_id = %node_id, "deleted memory node");
                 return Ok(());
@@ -184,16 +224,11 @@ impl MemoryBackend for SimpleMemory {
         Ok(())
     }
 
-    async fn graph_neighbors(&self, _node_id: Uuid, _depth: u32) -> anyhow::Result<GraphFragment> {
-        // SimpleMemory doesn't support graph operations
-        Ok(GraphFragment {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        })
-    }
-
-    async fn refresh_communities(&self, _user_id: Uuid) -> anyhow::Result<()> {
-        // SimpleMemory doesn't support community detection
-        Ok(())
+    async fn clear(&self, user_id: Uuid) -> anyhow::Result<u64> {
+        let mut memories = self.memories.write().await;
+        Ok(memories
+            .remove(&user_id)
+            .map(|items| items.len() as u64)
+            .unwrap_or(0))
     }
 }

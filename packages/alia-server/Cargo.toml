@@ -8,8 +8,8 @@ default = [
     "channel-embedded",
     "llm-openai", "llm-ollama",
     "stt-whisper", "tts-sovits",
-    "embed-ollama", "memory-graphrag",
-    "cache-semantic", "meditation",
+    "embed-ollama", "memory-mem0",
+    "cache-semantic",
     "tools-http",
 ]
 
@@ -32,7 +32,7 @@ embed-openai = ["dep:reqwest"]
 tools-http = ["dep:reqwest"]
 
 # Memory backend
-memory-graphrag = []
+memory-mem0 = ["dep:reqwest"]
 
 # Cache backend
 cache-semantic = []

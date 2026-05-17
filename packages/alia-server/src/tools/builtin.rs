@@ -5,7 +5,7 @@
 //! - `fetch`: Fetch a public HTTP(S) URL and return bounded text content
 //! - `calculate`: Evaluate a basic arithmetic expression
 //! - `get_weather`: Get weather for a location (stub, requires plugin)
-//! - `memory_search`: Search user's memory graph
+//! - `memory_search`: Search user's configured third-party memory backend
 //! - `memory_store`: Store information to memory
 //! - `device_control`: Control connected devices
 //! - `schedule_task`: Create a scheduled task
@@ -104,17 +104,21 @@ impl BuiltinToolRegistry {
             .unwrap()
             .insert("calculate".to_string(), Arc::new(Calculate));
 
-        // memory_search
-        self.executors.write().unwrap().insert(
-            "memory_search".to_string(),
-            Arc::new(MemorySearch::new(self.memory.clone())),
-        );
+        if let Some(memory) = &self.memory {
+            // memory_search
+            self.executors.write().unwrap().insert(
+                "memory_search".to_string(),
+                Arc::new(MemorySearch::new(Some(memory.clone()))),
+            );
 
-        // memory_store
-        self.executors.write().unwrap().insert(
-            "memory_store".to_string(),
-            Arc::new(MemoryStore::new(self.memory.clone())),
-        );
+            // memory_store
+            self.executors.write().unwrap().insert(
+                "memory_store".to_string(),
+                Arc::new(MemoryStore::new(Some(memory.clone()))),
+            );
+        } else {
+            tracing::info!("memory backend unavailable; memory tools are not registered");
+        }
 
         // schedule_task
         self.executors
@@ -1302,6 +1306,7 @@ async fn retrieve_memory_by_terms(
         for node in memory.retrieve(user_id, &term, opts.clone()).await? {
             let key = node
                 .id
+                .as_deref()
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| node.content.clone());
             if seen.insert(key) {

@@ -1,34 +1,17 @@
 //! Memory backends for storing and retrieving user memories.
 //!
 //! Available implementations:
-//! - `GraphRagMemory`: Full-featured GraphRAG backend with 4 memory layers
 //! - `SimpleMemory`: In-memory storage with keyword-based retrieval
+//! - `ExternalMemoryBackend`: Adapter wrapper for third-party memory services
 //! - `NoopMemory`: No-op placeholder (returns empty results)
-//!
-//! Memory Layers:
-//! - L0 Working: In-memory conversation context window
-//! - L1 Episodic: DB-backed conversation summaries (with TTL)
-//! - L2 Core: User profile, preferences, key facts (persistent)
-//! - L3 Procedural: Habits and behavior patterns (system-maintained)
 
-#[cfg(feature = "memory-graphrag")]
-pub mod core;
-#[cfg(feature = "memory-graphrag")]
-pub mod episodic;
-#[cfg(feature = "memory-graphrag")]
-pub mod graph;
-#[cfg(feature = "memory-graphrag")]
-pub mod graphrag;
-#[cfg(feature = "memory-graphrag")]
-pub mod procedural;
-#[cfg(feature = "memory-graphrag")]
-pub mod retrieval;
+pub mod external;
+#[cfg(feature = "memory-mem0")]
+pub mod mem0;
 pub mod simple;
-#[cfg(feature = "memory-graphrag")]
-pub mod working;
 
-#[cfg(feature = "memory-graphrag")]
-pub use graphrag::GraphRagMemory;
+#[cfg(feature = "memory-mem0")]
+pub use mem0::Mem0Client;
 pub use simple::SimpleMemory;
 
 use async_trait::async_trait;
@@ -36,7 +19,7 @@ use uuid::Uuid;
 
 use crate::module::ModuleLifecycle;
 use crate::providers::adapter::{
-    GraphFragment, MemoryBackend, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
 };
 
 pub struct NoopMemory;
@@ -50,8 +33,16 @@ impl ModuleLifecycle for NoopMemory {
 
 #[async_trait]
 impl MemoryBackend for NoopMemory {
-    async fn store(&self, _user_id: Uuid, _node: MemoryNode) -> anyhow::Result<Uuid> {
-        Ok(Uuid::new_v4())
+    async fn store(&self, _user_id: Uuid, _node: MemoryNode) -> anyhow::Result<String> {
+        Ok(Uuid::new_v4().to_string())
+    }
+
+    async fn list(&self, _user_id: Uuid, _opts: MemoryListOpts) -> anyhow::Result<Vec<MemoryNode>> {
+        Ok(Vec::new())
+    }
+
+    async fn get(&self, _user_id: Uuid, _node_id: &str) -> anyhow::Result<Option<MemoryNode>> {
+        Ok(None)
     }
 
     async fn retrieve(
@@ -63,18 +54,15 @@ impl MemoryBackend for NoopMemory {
         Ok(Vec::new())
     }
 
-    async fn update(&self, _node_id: Uuid, _patch: MemoryPatch) -> anyhow::Result<()> {
+    async fn update(&self, _node_id: &str, _patch: MemoryPatch) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn delete(&self, _node_id: Uuid) -> anyhow::Result<()> {
+    async fn delete(&self, _node_id: &str) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn graph_neighbors(&self, _node_id: Uuid, _depth: u32) -> anyhow::Result<GraphFragment> {
-        Ok(GraphFragment {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        })
+    async fn clear(&self, _user_id: Uuid) -> anyhow::Result<u64> {
+        Ok(0)
     }
 }

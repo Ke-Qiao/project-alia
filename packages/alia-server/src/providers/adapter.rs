@@ -140,7 +140,7 @@ pub trait EmbeddingAdapter: ModuleLifecycle {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryNode {
-    pub id: Option<Uuid>,
+    pub id: Option<String>,
     pub memory_layer: String,
     pub node_type: String,
     pub content: String,
@@ -155,11 +155,31 @@ pub struct RetrievalOpts {
     pub layers: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MemoryListOpts {
+    pub max_results: Option<u32>,
+    pub layers: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryPatch {
     pub content: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub importance: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryConversationMessage {
+    pub role: String,
+    pub content: String,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryConversationIngest {
+    pub run_id: Option<String>,
+    pub messages: Vec<MemoryConversationMessage>,
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,26 +190,42 @@ pub struct GraphFragment {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEdge {
-    pub source_id: Uuid,
-    pub target_id: Uuid,
+    pub source_id: String,
+    pub target_id: String,
     pub relation_type: String,
     pub weight: f32,
 }
 
 #[async_trait]
 pub trait MemoryBackend: ModuleLifecycle {
-    async fn store(&self, user_id: Uuid, node: MemoryNode) -> anyhow::Result<Uuid>;
+    async fn store(&self, user_id: Uuid, node: MemoryNode) -> anyhow::Result<String>;
+    async fn list(&self, user_id: Uuid, opts: MemoryListOpts) -> anyhow::Result<Vec<MemoryNode>>;
+    async fn get(&self, user_id: Uuid, node_id: &str) -> anyhow::Result<Option<MemoryNode>>;
     async fn retrieve(
         &self,
         user_id: Uuid,
         query: &str,
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<MemoryNode>>;
-    async fn update(&self, node_id: Uuid, patch: MemoryPatch) -> anyhow::Result<()>;
-    async fn delete(&self, node_id: Uuid) -> anyhow::Result<()>;
-    async fn graph_neighbors(&self, node_id: Uuid, depth: u32) -> anyhow::Result<GraphFragment>;
-    async fn refresh_communities(&self, _user_id: Uuid) -> anyhow::Result<()> {
-        Ok(())
+    async fn update(&self, node_id: &str, patch: MemoryPatch) -> anyhow::Result<()>;
+    async fn delete(&self, node_id: &str) -> anyhow::Result<()>;
+    async fn clear(&self, user_id: Uuid) -> anyhow::Result<u64>;
+    async fn ingest_conversation(
+        &self,
+        _user_id: Uuid,
+        _ingest: MemoryConversationIngest,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+    async fn graph_for_user(
+        &self,
+        user_id: Uuid,
+        opts: MemoryListOpts,
+    ) -> anyhow::Result<GraphFragment> {
+        Ok(GraphFragment {
+            nodes: self.list(user_id, opts).await?,
+            edges: Vec::new(),
+        })
     }
 }
 

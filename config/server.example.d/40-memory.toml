@@ -1,10 +1,26 @@
 [memory]
 enabled = true
-epidosic_ttl_days = 90
-max_core_memories = 500
+conversation_ingest_enabled = true
 max_retrieval_results = 10
-similarity_threshold = 0.75
-graph_community_algorithm = "leiden"
+similarity_threshold = 0.3
+health_check_attempts = 3
+health_check_interval_ms = 500
+
+# External memory backend settings. The default server config uses mem0.
+# Set [modules].memory = "simple" only for local tests that do not need persistence.
+# MEM0_API_KEY and MEM0_BASE_URL environment variables override these values.
+mem0_base_url = "https://api.mem0.ai"
+mem0_api_key = ""
+mem0_user_id_prefix = ""
+mem0_app_id = ""
+mem0_agent_id = ""
+mem0_run_id = ""
+mem0_custom_instructions = ""
+mem0_infer = false
+mem0_conversation_infer = true
+mem0_request_timeout_sec = 20
+mem0_page_size = 50
+mem0_add_poll_timeout_ms = 0
 
 [cache]
 enabled = true
@@ -15,8 +31,8 @@ default_ttl_seconds = 3600
 skill_cache_ttl_seconds = 300
 
 [meditation]
-enabled = true
-extraction_enabled = true
+enabled = false
+extraction_enabled = false
 consolidation_idle_minutes = 30
 reflection_schedule = "0 3 * * *"
 habit_detection_schedule = "0 4 * * *"

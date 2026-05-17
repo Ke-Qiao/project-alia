@@ -1,20 +1,24 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use sea_orm::DatabaseConnection;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::JwtKeys;
 use crate::channels::{ChannelAdapter, ChannelRegistry, spawn_pipeline};
+use crate::config::MemorySection;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::factory;
-use crate::module::lifecycle::{ModuleContext, ModuleLifecycle};
+use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MeditationStrategy,
     MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
     SttAdapter, ToolRegistry, TtsAdapter,
 };
+use crate::providers::memory::NoopMemory;
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
@@ -195,9 +199,9 @@ impl ServerBuilder {
         let mut conversation = self.conversation.unwrap_or_else(|| {
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new())
         });
-        let mut memory = self
-            .memory
-            .unwrap_or_else(|| factory::create_memory(&self.config.modules.memory));
+        let mut memory = self.memory.unwrap_or_else(|| {
+            factory::create_memory(&self.config.modules.memory, &self.config.memory)
+        });
         let mut cache = self
             .cache
             .unwrap_or_else(|| factory::create_cache(&self.config.modules.cache));
@@ -270,9 +274,23 @@ impl ServerBuilder {
         init_module(stt.as_mut(), &ctx).await;
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
+        let mut effective_memory_config = self.config.memory.clone();
+        if effective_memory_config.enabled
+            && let Err(reason) =
+                verify_memory_health(memory.as_ref(), &effective_memory_config).await
+        {
+            tracing::warn!(
+                module = memory.name(),
+                reason = %reason,
+                "memory backend health checks failed; disabling memory module for this server run"
+            );
+            effective_memory_config.enabled = false;
+            memory = Box::new(NoopMemory);
+        }
         let memory_arc: Arc<dyn MemoryBackend> = Arc::from(memory);
+        let memory_for_ctx = effective_memory_config.enabled.then(|| memory_arc.clone());
         let ctx = ModuleContext {
-            memory: Some(memory_arc.clone()),
+            memory: memory_for_ctx,
             ..ctx
         };
         init_module(cache.as_mut(), &ctx).await;
@@ -419,6 +437,7 @@ impl ServerBuilder {
             state.cancel_token.clone(),
             state.config.server.debug_output,
             state.config.tools.clone(),
+            effective_memory_config,
         );
 
         Ok(state)
@@ -439,6 +458,47 @@ async fn init_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
             "module init failure details"
         );
     }
+}
+
+async fn verify_memory_health(
+    module: &dyn ModuleLifecycle,
+    config: &MemorySection,
+) -> Result<(), String> {
+    let attempts = config.health_check_attempts.max(1);
+    let delay = Duration::from_millis(config.health_check_interval_ms);
+
+    for attempt in 1..=attempts {
+        match module.health_check().await {
+            ModuleHealth::Healthy => return Ok(()),
+            ModuleHealth::Degraded(reason) => {
+                tracing::warn!(
+                    module = module.name(),
+                    attempt,
+                    attempts,
+                    reason = %reason,
+                    "memory backend health check degraded; keeping memory enabled"
+                );
+                return Ok(());
+            }
+            ModuleHealth::Unhealthy(reason) => {
+                tracing::warn!(
+                    module = module.name(),
+                    attempt,
+                    attempts,
+                    reason = %reason,
+                    "memory backend health check failed"
+                );
+                if attempt == attempts {
+                    return Err(reason);
+                }
+                if !delay.is_zero() {
+                    sleep(delay).await;
+                }
+            }
+        }
+    }
+
+    Err("memory backend health check failed".to_string())
 }
 
 async fn start_module(module: &dyn ModuleLifecycle) {
