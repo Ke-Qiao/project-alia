@@ -511,11 +511,11 @@ pub enum RouteDecision {
     Skill {
         skill_name: String,
     },
-    LocalLlm {
+    MinorLlm {
         system_prompt: Option<String>,
         escalation_prompt: Option<String>,
     },
-    RemoteLlm {
+    MajorLlm {
         system_prompt: Option<String>,
     },
 }
@@ -525,7 +525,7 @@ pub trait RouterStrategy: ModuleLifecycle {
     async fn route(&self, input: &RouterInput) -> anyhow::Result<RouteDecision>;
 
     /// Optional lightweight candidate filtering for large tool lists.
-    /// Routers backed by a local/small model can override this; the pipeline
+    /// Routers backed by a minor/small model can override this; the pipeline
     /// falls back to deterministic ranking when `None` is returned.
     async fn select_tool_candidates(
         &self,

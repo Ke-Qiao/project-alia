@@ -137,20 +137,20 @@ fn default_grpc_timeout() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {
-    #[serde(default = "default_local_llm_module")]
-    pub local_llm: String,
-    #[serde(default = "default_remote_llm_module")]
-    pub remote_llm: String,
+    #[serde(default = "default_minor_llm_module")]
+    pub minor_llm: String,
+    #[serde(default = "default_major_llm_module")]
+    pub major_llm: String,
     pub stt: String,
     pub tts: String,
     pub embedding: String,
     pub memory: String,
 }
 
-fn default_local_llm_module() -> String {
+fn default_minor_llm_module() -> String {
     "ollama".to_string()
 }
-fn default_remote_llm_module() -> String {
+fn default_major_llm_module() -> String {
     "openai".to_string()
 }
 
@@ -363,9 +363,9 @@ pub struct RoutingPolicySection {
     #[serde(default = "default_router_timeout")]
     pub timeout_sec: u64,
     #[serde(default = "default_true")]
-    pub local_llm_enabled: bool,
+    pub minor_llm_enabled: bool,
     #[serde(default = "default_true")]
-    pub remote_llm_enabled: bool,
+    pub major_llm_enabled: bool,
 }
 
 impl Default for RoutingPolicySection {
@@ -374,8 +374,8 @@ impl Default for RoutingPolicySection {
             model: default_router_model(),
             temperature: default_router_temperature(),
             timeout_sec: default_router_timeout(),
-            local_llm_enabled: true,
-            remote_llm_enabled: true,
+            minor_llm_enabled: true,
+            major_llm_enabled: true,
         }
     }
 }

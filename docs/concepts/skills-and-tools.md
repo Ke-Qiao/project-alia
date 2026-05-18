@@ -63,7 +63,7 @@ is layered filtering:
 
 - database metadata and keywords provide a broad candidate pool
 - embeddings/semantic search can narrow candidates quickly
-- a lightweight local LLM can filter the candidate pool before remote LLM use
+- a lightweight minor LLM can filter the candidate pool before major LLM use
 - insights can improve keywords and descriptions during idle time
 
 The final LLM prompt should see only the tools that are likely relevant to the

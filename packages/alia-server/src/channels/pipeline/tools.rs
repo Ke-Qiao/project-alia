@@ -443,13 +443,13 @@ async fn select_ranked_or_llm_filtered_tools(
                     tracing::debug!(
                         candidates = ranked.len(),
                         selected = selected.len(),
-                        "local LLM selected tool candidates"
+                        "minor LLM selected tool candidates"
                     );
                     return selected;
                 }
                 tracing::debug!(
                     candidates = ranked.len(),
-                    "local LLM selected no valid tool names; using ranked fallback"
+                    "minor LLM selected no valid tool names; using ranked fallback"
                 );
             }
             Ok(None) => {

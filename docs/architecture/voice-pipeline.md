@@ -21,7 +21,7 @@ Package-specific implementation details live in the server and embedded docs:
 7. Server STT converts the audio into text.
 8. The pipeline loads conversation, persona, memory snippets, skills, tools, and
    policy context.
-9. Router chooses cache, local LLM, remote LLM, or skill-routed execution.
+9. Router chooses cache, minor LLM, major LLM, or skill-routed execution.
 10. LLM output is interpreted as text plus native or parsed tool calls.
 11. Tool results are fed back into the LLM loop until the turn is complete.
 12. The final assistant text is sent to the channel and synthesized by TTS for

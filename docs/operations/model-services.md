@@ -33,10 +33,10 @@ before routing the turn through the LLM/tool pipeline.
 
 ## Server LLM
 
-LLM providers are split into local and remote slots:
+LLM providers are split into major and minor roles:
 
-- local LLM is usually Ollama and can be used for routing or lighter work
-- remote LLM is usually OpenAI-compatible and can also point at LM Studio if it
+- minor LLM is usually a smaller/cheaper model and can be used for routing or lighter work
+- major LLM is usually OpenAI-compatible and can also point at LM Studio if it
   exposes an OpenAI-compatible API
 
 Configure these under:

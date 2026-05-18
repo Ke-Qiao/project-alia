@@ -431,14 +431,14 @@ impl SettingsRegistry {
                 schema("Router Timeout", "number", false),
             ),
             (
-                "core.policies.routing.local_llm_enabled",
-                json!(config.policies.routing.local_llm_enabled),
-                schema("Enable Local LLM Routing", "bool", true),
+                "core.policies.routing.minor_llm_enabled",
+                json!(config.policies.routing.minor_llm_enabled),
+                schema("Enable Minor LLM Routing", "bool", true),
             ),
             (
-                "core.policies.routing.remote_llm_enabled",
-                json!(config.policies.routing.remote_llm_enabled),
-                schema("Enable Remote LLM Routing", "bool", true),
+                "core.policies.routing.major_llm_enabled",
+                json!(config.policies.routing.major_llm_enabled),
+                schema("Enable Major LLM Routing", "bool", true),
             ),
             (
                 "core.policies.conversation.streaming_enabled",
@@ -604,14 +604,14 @@ impl SettingsRegistry {
             // Provider selection. Core registries/state machines are fixed
             // services and expose extension registries instead of backend slots.
             (
-                "core.modules.local_llm",
-                json!(config.modules.local_llm),
-                schema_select("Local LLM Backend", &["ollama", "openai", "noop"], true),
+                "core.modules.minor_llm",
+                json!(config.modules.minor_llm),
+                schema_select("Minor LLM Backend", &["ollama", "openai", "noop"], true),
             ),
             (
-                "core.modules.remote_llm",
-                json!(config.modules.remote_llm),
-                schema_select("Remote LLM Backend", &["openai", "ollama", "noop"], true),
+                "core.modules.major_llm",
+                json!(config.modules.major_llm),
+                schema_select("Major LLM Backend", &["openai", "ollama", "noop"], true),
             ),
             (
                 "core.modules.stt",

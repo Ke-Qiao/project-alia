@@ -16,7 +16,7 @@ can be safe.
 Tool candidate selection uses the persisted tool catalog as a routing index.
 When an embedding provider is available, the pipeline lazily stores routing
 embeddings for tool metadata and uses semantic similarity plus lexical hints to
-narrow candidates before optional local LLM filtering.
+narrow candidates before optional minor LLM filtering.
 
 ## Tool Calling
 

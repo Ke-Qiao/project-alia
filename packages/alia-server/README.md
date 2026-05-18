@@ -159,7 +159,7 @@ All features are enabled by default. Disable with `--no-default-features` and se
 |------|-------------|----------|
 | `channel-embedded` | gRPC channel adapter for alia-embedded devices | `alia-proto`, `tonic` |
 | `llm-openai` | OpenAI ChatGPT adapter | `reqwest` |
-| `llm-ollama` | Ollama local LLM adapter + multi-layer intent router | `reqwest` |
+| `llm-ollama` | Ollama LLM adapter + multi-layer intent router | `reqwest` |
 | `stt-whisper` | whisper.cpp STT adapter | `reqwest` |
 | `tts-sovits` | GPT-SoVITS TTS adapter | `reqwest` |
 | `embed-ollama` | Ollama embedding adapter | `reqwest` |

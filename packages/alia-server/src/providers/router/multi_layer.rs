@@ -1,10 +1,10 @@
-//! MultiLayerRouter: Intent classification via local Ollama model.
+//! MultiLayerRouter: Intent classification via the minor LLM.
 //!
-//! Uses a lightweight local model (e.g. Qwen3-4B) to classify user intent,
+//! Uses a lightweight minor model (e.g. Qwen3-4B) to classify user intent,
 //! then routes to the appropriate execution path:
 //!   - SKILL → matched skill context and bound tools
-//!   - LOCAL_LLM → simple chat handled by local Ollama model
-//!   - REMOTE_LLM → complex reasoning forwarded to remote LLM (GPT-4o / Claude)
+//!   - MINOR_LLM → simple chat handled by the minor model
+//!   - MAJOR_LLM → complex reasoning forwarded to the major model
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -77,26 +77,26 @@ pub struct RouterConfig {
     pub model: String,
     pub temperature: f32,
     pub timeout_sec: u64,
-    pub local_llm_enabled: bool,
-    pub remote_llm_enabled: bool,
+    pub minor_llm_enabled: bool,
+    pub major_llm_enabled: bool,
 }
 
 /// Which LLM tiers are available for routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmMode {
     BothEnabled,
-    LocalOnly,
-    RemoteOnly,
+    MinorOnly,
+    MajorOnly,
 }
 
 impl RouterConfig {
     pub fn llm_mode(&self) -> LlmMode {
-        match (self.local_llm_enabled, self.remote_llm_enabled) {
+        match (self.minor_llm_enabled, self.major_llm_enabled) {
             (true, true) => LlmMode::BothEnabled,
-            (true, false) => LlmMode::LocalOnly,
-            (false, true) => LlmMode::RemoteOnly,
-            // Should be caught at init, but fall back to remote
-            (false, false) => LlmMode::RemoteOnly,
+            (true, false) => LlmMode::MinorOnly,
+            (false, true) => LlmMode::MajorOnly,
+            // Should be caught at init, but fall back to major
+            (false, false) => LlmMode::MajorOnly,
         }
     }
 }
@@ -132,14 +132,14 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
-### "local_llm" — simple, short replies
+### "minor_llm" — simple, short replies
 Use when a lightweight model can handle it in one turn:
 - Greetings ("Hi", "Good morning"), farewells, thanks, acknowledgments
 - Yes/no confirmations, simple follow-ups ("OK", "got it", "and then?")
 - Single-fact questions with short answers ("What day is it?", "What's 2+2?")
 - Casual chit-chat that doesn't reference user history or need personalization
 
-### "remote_llm" — complex reasoning (default when uncertain)
+### "major_llm" — complex reasoning (default when uncertain)
 Use for anything that needs deep thinking, creativity, or user context:
 - Multi-step reasoning, analysis, comparisons, advice
 - Creative writing, stories, code generation
@@ -151,14 +151,14 @@ Use for anything that needs deep thinking, creativity, or user context:
 ## Decision priority
 
 1. If the message is a clear device/system command → "skill"
-2. If it's trivial small-talk or a one-word reply → "local_llm"
-3. Everything else → "remote_llm"
+2. If it's trivial small-talk or a one-word reply → "minor_llm"
+3. Everything else → "major_llm"
 
-When in doubt between "local_llm" and "remote_llm", always choose "remote_llm".
-When in doubt between "skill" and "remote_llm", choose "remote_llm" (let the LLM figure it out with tool use)."#;
+When in doubt between "minor_llm" and "major_llm", always choose "major_llm".
+When in doubt between "skill" and "major_llm", choose "major_llm" (let the LLM figure it out with tool use)."#;
 
-/// Classification prompt when only local LLM is available (no remote option)
-const CLASSIFICATION_PROMPT_LOCAL_ONLY: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
+/// Classification prompt when only the minor LLM is available (no major option)
+const CLASSIFICATION_PROMPT_MINOR_ONLY: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
 
 ## Your output
 
@@ -186,17 +186,17 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
-### "local_llm" — all other messages
-Route everything that is not a skill command to the local LLM. This is the only general-purpose model available.
+### "minor_llm" — all other messages
+Route everything that is not a skill command to the minor LLM. This is the only general-purpose model available.
 
 ## Decision priority
 
 1. If the message is a clear device/system command → "skill"
-2. Everything else → "local_llm""#;
+2. Everything else → "minor_llm""#;
 
-/// System prompt given to the **local LLM** when it handles a conversation (both-mode).
+/// System prompt given to the **minor LLM** when it handles a conversation (both-mode).
 /// Tells it to stay in scope and escalate complex tasks.
-const LOCAL_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, a friendly and concise smart home AI assistant running on a local model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
+const MINOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, a friendly and concise smart home AI assistant running on the minor model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
 
 Guidelines:
 - Keep responses brief (1-3 sentences).
@@ -208,9 +208,9 @@ Guidelines:
 - If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer.
 - Answer in the same language the user uses."#;
 
-/// System prompt given to the **local LLM** when it's the only model (local-only mode).
+/// System prompt given to the **minor LLM** when it's the only model (minor-only mode).
 /// No escalation — it handles everything.
-const LOCAL_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations — from simple greetings to complex reasoning.
+const MINOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations — from simple greetings to complex reasoning.
 
 Guidelines:
 - Be warm, natural, and helpful.
@@ -220,8 +220,8 @@ Guidelines:
 - You may not have full conversation history, so ask for clarification when needed.
 - If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer."#;
 
-/// System prompt given to the **remote LLM** when handling a conversation.
-const REMOTE_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
+/// System prompt given to the **major LLM** when handling a conversation.
+const MAJOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
 
 Guidelines:
 - Be warm, thoughtful, and personalized. Use the user's memory and context when available.
@@ -232,8 +232,8 @@ Guidelines:
 - When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
-/// System prompt given to the **remote LLM** when it's the only model (remote-only mode).
-const REMOTE_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations — from casual greetings to complex reasoning and creative tasks.
+/// System prompt given to the **major LLM** when it's the only model (major-only mode).
+const MAJOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations — from casual greetings to complex reasoning and creative tasks.
 
 Guidelines:
 - Be warm, natural, and personalized. Use the user's memory and context when available.
@@ -274,7 +274,7 @@ impl MultiLayerRouter {
         }
     }
 
-    /// Call the local Ollama model for intent classification.
+    /// Call the minor Ollama model for intent classification.
     async fn classify(
         &self,
         config: &RouterConfig,
@@ -284,16 +284,16 @@ impl MultiLayerRouter {
 
         // Pick classification prompt based on available LLM tiers
         let classification_prompt = match mode {
-            LlmMode::RemoteOnly => {
-                // No local LLM — skip classification entirely, always remote
+            LlmMode::MajorOnly => {
+                // No minor LLM — skip classification entirely, always major.
                 return Ok(Classification {
-                    route: "remote_llm".to_string(),
+                    route: "major_llm".to_string(),
                     skill_name: None,
                     confidence: Some(1.0),
-                    reasoning: Some("remote-only mode, skipping classification".to_string()),
+                    reasoning: Some("major-only mode, skipping classification".to_string()),
                 });
             }
-            LlmMode::LocalOnly => CLASSIFICATION_PROMPT_LOCAL_ONLY,
+            LlmMode::MinorOnly => CLASSIFICATION_PROMPT_MINOR_ONLY,
             LlmMode::BothEnabled => CLASSIFICATION_PROMPT_BOTH,
         };
 
@@ -362,7 +362,7 @@ impl MultiLayerRouter {
             tracing::warn!(
                 raw_response = %raw,
                 error = %e,
-                "failed to parse classification, falling back to remote_llm"
+                "failed to parse classification, falling back to major_llm"
             );
             anyhow::anyhow!("classification parse error: {e}")
         })?;
@@ -377,12 +377,12 @@ impl MultiLayerRouter {
         Ok(classification)
     }
 
-    async fn select_tools_with_local_model(
+    async fn select_tools_with_minor_model(
         &self,
         config: &RouterConfig,
         input: &ToolSelectionInput,
     ) -> anyhow::Result<Option<Vec<String>>> {
-        if matches!(config.llm_mode(), LlmMode::RemoteOnly) {
+        if matches!(config.llm_mode(), LlmMode::MajorOnly) {
             return Ok(None);
         }
         if input.candidates.is_empty() || input.max_tools == 0 {
@@ -444,14 +444,14 @@ impl MultiLayerRouter {
                 tracing::warn!(
                     raw_response = %raw,
                     error = %e,
-                    "failed to parse local tool selection"
+                    "failed to parse minor tool selection"
                 );
                 e
             })?;
 
         tracing::debug!(
             selected = ?selected,
-            "local LLM tool candidate selection result"
+            "minor LLM tool candidate selection result"
         );
         Ok(Some(selected))
     }
@@ -466,27 +466,27 @@ impl MultiLayerRouter {
                     .unwrap_or_else(|| "unknown".to_string());
                 RouteDecision::Skill { skill_name }
             }
-            "local_llm" => {
+            "minor_llm" => {
                 let prompt = match mode {
-                    LlmMode::LocalOnly => LOCAL_LLM_SYSTEM_PROMPT_SOLO,
-                    _ => LOCAL_LLM_SYSTEM_PROMPT,
+                    LlmMode::MinorOnly => MINOR_LLM_SYSTEM_PROMPT_SOLO,
+                    _ => MINOR_LLM_SYSTEM_PROMPT,
                 };
                 let escalation_prompt = match mode {
-                    LlmMode::BothEnabled => Some(REMOTE_LLM_SYSTEM_PROMPT.to_string()),
+                    LlmMode::BothEnabled => Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
                     _ => None,
                 };
-                RouteDecision::LocalLlm {
+                RouteDecision::MinorLlm {
                     system_prompt: Some(prompt.to_string()),
                     escalation_prompt,
                 }
             }
-            // Default to remote for any unrecognized classification
+            // Default to major for any unrecognized classification.
             _ => {
                 let prompt = match mode {
-                    LlmMode::RemoteOnly => REMOTE_LLM_SYSTEM_PROMPT_SOLO,
-                    _ => REMOTE_LLM_SYSTEM_PROMPT,
+                    LlmMode::MajorOnly => MAJOR_LLM_SYSTEM_PROMPT_SOLO,
+                    _ => MAJOR_LLM_SYSTEM_PROMPT,
                 };
-                RouteDecision::RemoteLlm {
+                RouteDecision::MajorLlm {
                     system_prompt: Some(prompt.to_string()),
                 }
             }
@@ -502,13 +502,13 @@ impl ModuleLifecycle for MultiLayerRouter {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let routing = &ctx.config.policies.routing;
-        let local_enabled = routing.local_llm_enabled;
-        let remote_enabled = routing.remote_llm_enabled;
+        let minor_enabled = routing.minor_llm_enabled;
+        let major_enabled = routing.major_llm_enabled;
 
-        if !local_enabled && !remote_enabled {
+        if !minor_enabled && !major_enabled {
             anyhow::bail!(
-                "invalid routing policy: both policies.routing.local_llm_enabled and \
-                 policies.routing.remote_llm_enabled are false — at least one must be true"
+                "invalid routing policy: both policies.routing.minor_llm_enabled and \
+                 policies.routing.major_llm_enabled are false — at least one must be true"
             );
         }
 
@@ -522,16 +522,16 @@ impl ModuleLifecycle for MultiLayerRouter {
             model: routing.model.clone(),
             temperature: routing.temperature,
             timeout_sec,
-            local_llm_enabled: local_enabled,
-            remote_llm_enabled: remote_enabled,
+            minor_llm_enabled: minor_enabled,
+            major_llm_enabled: major_enabled,
         };
         tracing::info!(
             model = %cfg.model,
             endpoint = %cfg.ollama_endpoint,
             temperature = cfg.temperature,
             timeout_sec = cfg.timeout_sec,
-            local_llm = local_enabled,
-            remote_llm = remote_enabled,
+            minor_llm = minor_enabled,
+            major_llm = major_enabled,
             mode = ?cfg.llm_mode(),
             "MultiLayerRouter initialized"
         );
@@ -542,7 +542,7 @@ impl ModuleLifecycle for MultiLayerRouter {
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
         if let Some(cfg) = config.as_ref() {
-            if matches!(cfg.llm_mode(), LlmMode::RemoteOnly) {
+            if matches!(cfg.llm_mode(), LlmMode::MajorOnly) {
                 return ModuleHealth::Healthy;
             }
             match self
@@ -554,7 +554,7 @@ impl ModuleLifecycle for MultiLayerRouter {
                 Ok(r) if r.status().is_success() => ModuleHealth::Healthy,
                 Ok(r) => ModuleHealth::Degraded(format!("ollama returned {}", r.status())),
                 Err(e) => ModuleHealth::Degraded(format!(
-                    "ollama unreachable: {e}, routing will fall back to remote"
+                    "ollama unreachable: {e}, routing will fall back to major"
                 )),
             }
         } else {
@@ -590,18 +590,18 @@ impl ModuleLifecycle for MultiLayerRouter {
             next.timeout_sec = value;
             applied.push("core.policies.routing.timeout_sec".to_string());
         }
-        if let Some(value) = bool_setting(updates, "core.policies.routing.local_llm_enabled") {
-            next.local_llm_enabled = value;
-            applied.push("core.policies.routing.local_llm_enabled".to_string());
+        if let Some(value) = bool_setting(updates, "core.policies.routing.minor_llm_enabled") {
+            next.minor_llm_enabled = value;
+            applied.push("core.policies.routing.minor_llm_enabled".to_string());
         }
-        if let Some(value) = bool_setting(updates, "core.policies.routing.remote_llm_enabled") {
-            next.remote_llm_enabled = value;
-            applied.push("core.policies.routing.remote_llm_enabled".to_string());
+        if let Some(value) = bool_setting(updates, "core.policies.routing.major_llm_enabled") {
+            next.major_llm_enabled = value;
+            applied.push("core.policies.routing.major_llm_enabled".to_string());
         }
 
-        if !next.local_llm_enabled && !next.remote_llm_enabled {
+        if !next.minor_llm_enabled && !next.major_llm_enabled {
             anyhow::bail!(
-                "invalid routing policy: at least one of local_llm_enabled or remote_llm_enabled must stay enabled"
+                "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must stay enabled"
             );
         }
 
@@ -626,21 +626,21 @@ impl RouterStrategy for MultiLayerRouter {
         match self.classify(cfg, input).await {
             Ok(classification) => Ok(Self::to_decision(classification, mode)),
             Err(e) => {
-                // On classification failure, fall back to the best available LLM
+                // On classification failure, fall back to the best available LLM.
                 tracing::warn!(
                     error = %e,
                     "router classification failed, falling back"
                 );
                 let fallback = match mode {
-                    LlmMode::LocalOnly => RouteDecision::LocalLlm {
-                        system_prompt: Some(LOCAL_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                    LlmMode::MinorOnly => RouteDecision::MinorLlm {
+                        system_prompt: Some(MINOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
                         escalation_prompt: None,
                     },
-                    LlmMode::RemoteOnly => RouteDecision::RemoteLlm {
-                        system_prompt: Some(REMOTE_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                    LlmMode::MajorOnly => RouteDecision::MajorLlm {
+                        system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
                     },
-                    _ => RouteDecision::RemoteLlm {
-                        system_prompt: Some(REMOTE_LLM_SYSTEM_PROMPT.to_string()),
+                    _ => RouteDecision::MajorLlm {
+                        system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
                     },
                 };
                 Ok(fallback)
@@ -656,7 +656,7 @@ impl RouterStrategy for MultiLayerRouter {
         let cfg = config
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
-        self.select_tools_with_local_model(cfg, input).await
+        self.select_tools_with_minor_model(cfg, input).await
     }
 }
 
@@ -700,6 +700,6 @@ pub fn parse_tool_selection_response(
         }
     }
 
-    tracing::debug!(reasoning = ?selection.reasoning, "parsed local tool selection");
+    tracing::debug!(reasoning = ?selection.reasoning, "parsed minor tool selection");
     Ok(selected)
 }

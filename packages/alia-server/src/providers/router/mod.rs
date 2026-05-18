@@ -9,7 +9,7 @@ use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy};
 #[cfg(feature = "llm-ollama")]
 pub use multi_layer::MultiLayerRouter;
 
-/// Passthrough router: always routes to remote LLM
+/// Passthrough router: always routes to the major LLM.
 pub struct PassthroughRouter;
 
 #[async_trait]
@@ -22,7 +22,7 @@ impl ModuleLifecycle for PassthroughRouter {
 #[async_trait]
 impl RouterStrategy for PassthroughRouter {
     async fn route(&self, _input: &RouterInput) -> anyhow::Result<RouteDecision> {
-        Ok(RouteDecision::RemoteLlm {
+        Ok(RouteDecision::MajorLlm {
             system_prompt: None,
         })
     }

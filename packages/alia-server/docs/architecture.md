@@ -23,8 +23,8 @@ registries instead of replacement slots.
 
 | Provider key | Typical implementation | Purpose |
 | --- | --- | --- |
-| `local_llm` | `ollama` | Lightweight/local model for routing and simple work. |
-| `remote_llm` | `openai` | Larger model for complex turns. |
+| `minor_llm` | `ollama` | Lightweight model for routing, tool narrowing, and simple work. |
+| `major_llm` | `openai` | Stronger model for complex turns. |
 | `stt` | `whisper_cpp` | Server-side speech recognition. |
 | `tts` | `gpt_sovits` | Server-side speech synthesis. |
 | `embedding` | `ollama` or `openai` | Embeddings for semantic cache and retrieval. |
@@ -57,7 +57,7 @@ sequenceDiagram
     Channel->>Pipeline: ChannelEvent
     Pipeline->>Pipeline: Load user, session, persona, memory, context
     Pipeline->>Router: Route turn
-    Router-->>Pipeline: cache/local/remote/skill decision
+    Router-->>Pipeline: cache/minor/major/skill decision
     Pipeline->>LLM: Prompt + selected tools
     LLM-->>Pipeline: Text and/or tool calls
     Pipeline->>Tools: Execute calls

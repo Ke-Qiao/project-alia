@@ -1894,10 +1894,10 @@ impl ModuleLifecycle for ScheduledInsights {
         *self.config.lock().await = Some(insights_config);
         *self.db.lock().await = Some(ctx.db.clone());
         *self.llm.lock().await = ctx
-            .remote_llm
+            .major_llm
             .clone()
             .or_else(|| ctx.llm.clone())
-            .or_else(|| ctx.local_llm.clone());
+            .or_else(|| ctx.minor_llm.clone());
         *self.memory.lock().await = ctx.memory.clone();
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());

@@ -28,8 +28,8 @@ pub(super) fn route_decision_name(decision: &RouteDecision) -> &'static str {
     match decision {
         RouteDecision::CacheHit { .. } => "cache_hit",
         RouteDecision::Skill { .. } => "skill",
-        RouteDecision::LocalLlm { .. } => "local_llm",
-        RouteDecision::RemoteLlm { .. } => "remote_llm",
+        RouteDecision::MinorLlm { .. } => "minor_llm",
+        RouteDecision::MajorLlm { .. } => "major_llm",
     }
 }
 

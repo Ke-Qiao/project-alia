@@ -15,8 +15,8 @@ use crate::providers::adapter::{
 pub struct ModuleRegistry {
     // AI adapters
     pub llm: Arc<dyn LlmAdapter>,
-    pub local_llm: Arc<dyn LlmAdapter>,
-    pub remote_llm: Arc<dyn LlmAdapter>,
+    pub minor_llm: Arc<dyn LlmAdapter>,
+    pub major_llm: Arc<dyn LlmAdapter>,
     pub stt: Arc<dyn SttAdapter>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
@@ -69,8 +69,8 @@ impl ModuleRegistry {
             self.tts.as_ref(),
             self.stt.as_ref(),
             self.embedding.as_ref(),
-            self.remote_llm.as_ref(),
-            self.local_llm.as_ref(),
+            self.major_llm.as_ref(),
+            self.minor_llm.as_ref(),
         ];
         for m in modules {
             if let Err(e) = m.stop().await {
@@ -82,11 +82,8 @@ impl ModuleRegistry {
     /// Aggregate health check for GET /health endpoint
     pub async fn health(&self) -> HashMap<String, ModuleHealth> {
         let mut results = HashMap::new();
-        results.insert("llm.local".to_string(), self.local_llm.health_check().await);
-        results.insert(
-            "llm.remote".to_string(),
-            self.remote_llm.health_check().await,
-        );
+        results.insert("llm.minor".to_string(), self.minor_llm.health_check().await);
+        results.insert("llm.major".to_string(), self.major_llm.health_check().await);
         results.insert("stt".to_string(), self.stt.health_check().await);
         results.insert("tts".to_string(), self.tts.health_check().await);
         results.insert("embedding".to_string(), self.embedding.health_check().await);
@@ -115,8 +112,8 @@ impl ModuleRegistry {
         updates: &BTreeMap<String, Value>,
     ) -> Vec<ModuleSettingsApplyReport> {
         let modules: Vec<&dyn ModuleLifecycle> = vec![
-            self.local_llm.as_ref(),
-            self.remote_llm.as_ref(),
+            self.minor_llm.as_ref(),
+            self.major_llm.as_ref(),
             self.stt.as_ref(),
             self.tts.as_ref(),
             self.embedding.as_ref(),

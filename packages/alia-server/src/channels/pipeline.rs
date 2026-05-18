@@ -1078,7 +1078,7 @@ async fn process_text(
         }
 
         // LLM call — stream when the channel supports it
-        RouteDecision::LocalLlm {
+        RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
@@ -1090,11 +1090,11 @@ async fn process_text(
                 user_id,
             );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
-            let allow_local_streaming =
+            let allow_minor_streaming =
                 conversation_config.streaming_enabled && escalation_prompt.is_none();
-            let local_outcome = execute_llm_response(
+            let minor_outcome = execute_llm_response(
                 modules,
-                modules.local_llm.as_ref(),
+                modules.minor_llm.as_ref(),
                 messages,
                 tools,
                 uid,
@@ -1104,9 +1104,9 @@ async fn process_text(
                 channel_id,
                 user_id,
                 event_bus,
-                "local_llm",
+                "minor_llm",
                 audio_response,
-                allow_local_streaming,
+                allow_minor_streaming,
                 tools_config,
                 debug_output,
                 &mut trace,
@@ -1114,14 +1114,14 @@ async fn process_text(
             )
             .await?;
 
-            if let Some(reason) = escalation_reason(&local_outcome.text)
-                && let Some(remote_prompt) = escalation_prompt
+            if let Some(reason) = escalation_reason(&minor_outcome.text)
+                && let Some(major_prompt) = escalation_prompt
             {
                 tracing::info!(
                     channel_id,
                     user_id,
                     reason = %reason,
-                    "local LLM escalated turn to remote LLM"
+                    "minor LLM escalated turn to major LLM"
                 );
                 debug_component_text(
                     debug_output,
@@ -1130,26 +1130,25 @@ async fn process_text(
                     reason,
                     Some((channel_id, user_id)),
                 );
-                let mut remote_messages = build_llm_messages(
+                let mut major_messages = build_llm_messages(
                     &base_system_messages,
                     &history,
-                    Some(remote_prompt),
+                    Some(major_prompt),
                     text,
                     user_id,
                 );
-                remote_messages.push(ChatMessage::new(
+                major_messages.push(ChatMessage::new(
                     "system",
                     format!(
-                        "The local model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
+                        "The minor model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
                     ),
                 ));
-                let remote_tools =
-                    select_all_tools(modules, text, tools_config, channel_id).await?;
-                let remote_outcome = execute_llm_response(
+                let major_tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+                let major_outcome = execute_llm_response(
                     modules,
-                    modules.remote_llm.as_ref(),
-                    remote_messages,
-                    remote_tools,
+                    modules.major_llm.as_ref(),
+                    major_messages,
+                    major_tools,
                     uid,
                     session_id,
                     channel,
@@ -1157,7 +1156,7 @@ async fn process_text(
                     channel_id,
                     user_id,
                     event_bus,
-                    "remote_llm_escalated",
+                    "major_llm_escalated",
                     audio_response,
                     conversation_config.streaming_enabled,
                     tools_config,
@@ -1166,12 +1165,12 @@ async fn process_text(
                     turn,
                 )
                 .await?;
-                (remote_outcome, None, "remote_llm_escalated")
+                (major_outcome, None, "major_llm_escalated")
             } else {
-                (local_outcome, None, "local_llm")
+                (minor_outcome, None, "minor_llm")
             }
         }
-        RouteDecision::RemoteLlm { system_prompt } => {
+        RouteDecision::MajorLlm { system_prompt } => {
             let messages = build_llm_messages(
                 &base_system_messages,
                 &history,
@@ -1182,7 +1181,7 @@ async fn process_text(
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
             let outcome = execute_llm_response(
                 modules,
-                modules.remote_llm.as_ref(),
+                modules.major_llm.as_ref(),
                 messages,
                 tools,
                 uid,
@@ -1192,7 +1191,7 @@ async fn process_text(
                 channel_id,
                 user_id,
                 event_bus,
-                "remote_llm",
+                "major_llm",
                 audio_response,
                 conversation_config.streaming_enabled,
                 tools_config,
@@ -1201,7 +1200,7 @@ async fn process_text(
                 turn,
             )
             .await?;
-            (outcome, None, "remote_llm")
+            (outcome, None, "major_llm")
         }
     };
 
@@ -1598,7 +1597,7 @@ pub fn escalation_reason(response: &str) -> Option<&str> {
     let trimmed = response.trim_start();
     let reason = trimmed.strip_prefix("[ESCALATE]")?.trim();
     Some(if reason.is_empty() {
-        "local model requested escalation"
+        "minor model requested escalation"
     } else {
         reason
     })
@@ -1646,7 +1645,7 @@ pub fn cache_write_for_response(
         || context.used_tools
         || context.memory_context_used
         || response_text.trim().is_empty()
-        || matches!(context.route, "router_cache" | "remote_llm_escalated")
+        || matches!(context.route, "router_cache" | "major_llm_escalated")
     {
         return None;
     }

@@ -107,8 +107,8 @@ async fn restart_channel(
         conversation: Some(state.modules.conversation.clone()),
         memory: Some(state.modules.memory.clone()),
         llm: Some(state.modules.llm.clone()),
-        local_llm: Some(state.modules.local_llm.clone()),
-        remote_llm: Some(state.modules.remote_llm.clone()),
+        minor_llm: Some(state.modules.minor_llm.clone()),
+        major_llm: Some(state.modules.major_llm.clone()),
         cache: Some(state.modules.cache.clone()),
         tools: Some(state.modules.tools.clone()),
     };

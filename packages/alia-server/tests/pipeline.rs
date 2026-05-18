@@ -58,14 +58,14 @@ fn ignores_plain_assistant_text() {
 }
 
 #[test]
-fn detects_local_llm_escalation_marker() {
+fn detects_minor_llm_escalation_marker() {
     assert_eq!(
         escalation_reason("[ESCALATE] This needs deeper reasoning."),
         Some("This needs deeper reasoning.")
     );
     assert_eq!(
         escalation_reason("  [ESCALATE]"),
-        Some("local model requested escalation")
+        Some("minor model requested escalation")
     );
     assert!(escalation_reason("普通回复").is_none());
 }
@@ -108,7 +108,7 @@ fn cache_policy_allows_safe_memory_independent_exact_entries() {
             used_tools: false,
             skill_cacheable: None,
             response_was_fallback: false,
-            route: "local_llm",
+            route: "minor_llm",
         },
     )
     .expect("safe static answer should be cacheable");
@@ -138,7 +138,7 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
         used_tools: false,
         skill_cacheable: None,
         response_was_fallback: false,
-        route: "remote_llm",
+        route: "major_llm",
     };
 
     let policy = test_cache_policy();

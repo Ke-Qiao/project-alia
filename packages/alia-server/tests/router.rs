@@ -8,14 +8,14 @@ use alia_server::providers::router::multi_layer::{
 
 #[test]
 fn test_strip_code_fences_bare_json() {
-    let input = r#"{"route": "remote_llm", "confidence": 0.9}"#;
+    let input = r#"{"route": "major_llm", "confidence": 0.9}"#;
     assert_eq!(strip_code_fences(input), input);
 }
 
 #[test]
 fn test_strip_code_fences_with_json_tag() {
-    let input = "```json\n{\"route\": \"local_llm\"}\n```";
-    assert_eq!(strip_code_fences(input), "{\"route\": \"local_llm\"}");
+    let input = "```json\n{\"route\": \"minor_llm\"}\n```";
+    assert_eq!(strip_code_fences(input), "{\"route\": \"minor_llm\"}");
 }
 
 #[test]
@@ -41,51 +41,51 @@ fn test_to_decision_skill() {
 }
 
 #[test]
-fn test_to_decision_local_llm_both_mode() {
+fn test_to_decision_minor_llm_both_mode() {
     let c = Classification {
-        route: "local_llm".to_string(),
+        route: "minor_llm".to_string(),
         skill_name: None,
         confidence: Some(0.8),
         reasoning: None,
     };
     match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-        RouteDecision::LocalLlm {
+        RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
             assert!(
                 prompt.contains("[ESCALATE]"),
-                "both-mode local prompt should mention escalation"
+                "both-mode minor prompt should mention escalation"
             );
             assert!(
                 escalation_prompt
                     .as_deref()
                     .is_some_and(|prompt| prompt.contains("primary reasoning model")),
-                "both-mode local route should carry a remote escalation prompt"
+                "both-mode minor route should carry a major escalation prompt"
             );
         }
-        other => panic!("expected LocalLlm, got {other:?}"),
+        other => panic!("expected MinorLlm, got {other:?}"),
     }
 }
 
 #[test]
-fn test_to_decision_local_llm_solo_mode() {
+fn test_to_decision_minor_llm_solo_mode() {
     let c = Classification {
-        route: "local_llm".to_string(),
+        route: "minor_llm".to_string(),
         skill_name: None,
         confidence: Some(0.8),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::LocalOnly) {
-        RouteDecision::LocalLlm {
+    match MultiLayerRouter::to_decision(c, LlmMode::MinorOnly) {
+        RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
             assert!(
                 !prompt.contains("[ESCALATE]"),
-                "solo-mode local prompt should NOT mention escalation"
+                "solo-mode minor prompt should NOT mention escalation"
             );
             assert!(
                 prompt.contains("primary and only"),
@@ -93,44 +93,44 @@ fn test_to_decision_local_llm_solo_mode() {
             );
             assert!(
                 escalation_prompt.is_none(),
-                "local-only mode must not carry a remote escalation prompt"
+                "minor-only mode must not carry a major escalation prompt"
             );
         }
-        other => panic!("expected LocalLlm, got {other:?}"),
+        other => panic!("expected MinorLlm, got {other:?}"),
     }
 }
 
 #[test]
-fn test_to_decision_remote_llm_both_mode() {
+fn test_to_decision_major_llm_both_mode() {
     let c = Classification {
-        route: "remote_llm".to_string(),
+        route: "major_llm".to_string(),
         skill_name: None,
         confidence: Some(0.9),
         reasoning: None,
     };
     match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
-        RouteDecision::RemoteLlm { system_prompt } => {
+        RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
             assert!(prompt.contains("primary reasoning model"));
         }
-        other => panic!("expected RemoteLlm, got {other:?}"),
+        other => panic!("expected MajorLlm, got {other:?}"),
     }
 }
 
 #[test]
-fn test_to_decision_remote_llm_solo_mode() {
+fn test_to_decision_major_llm_solo_mode() {
     let c = Classification {
-        route: "remote_llm".to_string(),
+        route: "major_llm".to_string(),
         skill_name: None,
         confidence: Some(0.9),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::RemoteOnly) {
-        RouteDecision::RemoteLlm { system_prompt } => {
+    match MultiLayerRouter::to_decision(c, LlmMode::MajorOnly) {
+        RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
             assert!(prompt.contains("all conversations"));
         }
-        other => panic!("expected RemoteLlm, got {other:?}"),
+        other => panic!("expected MajorLlm, got {other:?}"),
     }
 }
 
@@ -144,7 +144,7 @@ fn test_to_decision_unknown_falls_back() {
     };
     assert!(matches!(
         MultiLayerRouter::to_decision(c, LlmMode::BothEnabled),
-        RouteDecision::RemoteLlm { .. }
+        RouteDecision::MajorLlm { .. }
     ));
 }
 
@@ -155,17 +155,17 @@ fn test_llm_mode() {
         model: String::new(),
         temperature: 0.0,
         timeout_sec: 5,
-        local_llm_enabled: true,
-        remote_llm_enabled: true,
+        minor_llm_enabled: true,
+        major_llm_enabled: true,
     };
     assert_eq!(cfg.llm_mode(), LlmMode::BothEnabled);
 
-    cfg.remote_llm_enabled = false;
-    assert_eq!(cfg.llm_mode(), LlmMode::LocalOnly);
+    cfg.major_llm_enabled = false;
+    assert_eq!(cfg.llm_mode(), LlmMode::MinorOnly);
 
-    cfg.local_llm_enabled = false;
-    cfg.remote_llm_enabled = true;
-    assert_eq!(cfg.llm_mode(), LlmMode::RemoteOnly);
+    cfg.minor_llm_enabled = false;
+    cfg.major_llm_enabled = true;
+    assert_eq!(cfg.llm_mode(), LlmMode::MajorOnly);
 }
 
 #[test]

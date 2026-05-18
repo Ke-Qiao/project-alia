@@ -43,8 +43,8 @@ pub struct ServerBuilder {
     channels: Vec<Box<dyn ChannelAdapter>>,
 
     // Provider override slots (None = use config selection).
-    local_llm: Option<Box<dyn LlmAdapter>>,
-    remote_llm: Option<Box<dyn LlmAdapter>>,
+    minor_llm: Option<Box<dyn LlmAdapter>>,
+    major_llm: Option<Box<dyn LlmAdapter>>,
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
@@ -66,8 +66,8 @@ impl ServerBuilder {
             event_bus,
             cancel_token,
             channels: Vec::new(),
-            local_llm: None,
-            remote_llm: None,
+            minor_llm: None,
+            major_llm: None,
             stt: None,
             tts: None,
             embedding: None,
@@ -77,17 +77,17 @@ impl ServerBuilder {
     }
 
     pub fn with_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
-        self.remote_llm = Some(Box::new(llm));
+        self.major_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_local_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
-        self.local_llm = Some(Box::new(llm));
+    pub fn with_minor_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+        self.minor_llm = Some(Box::new(llm));
         self
     }
 
-    pub fn with_remote_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
-        self.remote_llm = Some(Box::new(llm));
+    pub fn with_major_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+        self.major_llm = Some(Box::new(llm));
         self
     }
 
@@ -144,23 +144,23 @@ impl ServerBuilder {
             conversation: None,
             memory: None,
             llm: None,
-            local_llm: None,
-            remote_llm: None,
+            minor_llm: None,
+            major_llm: None,
             cache: None,
             tools: None,
         };
 
         // Create provider adapters from config; core services are fixed below.
-        let mut local_llm = self.local_llm.unwrap_or_else(|| {
-            if self.config.policies.routing.local_llm_enabled {
-                factory::create_llm(&self.config.modules.local_llm)
+        let mut minor_llm = self.minor_llm.unwrap_or_else(|| {
+            if self.config.policies.routing.minor_llm_enabled {
+                factory::create_llm(&self.config.modules.minor_llm)
             } else {
                 factory::create_llm("noop")
             }
         });
-        let mut remote_llm = self.remote_llm.unwrap_or_else(|| {
-            if self.config.policies.routing.remote_llm_enabled {
-                factory::create_llm(&self.config.modules.remote_llm)
+        let mut major_llm = self.major_llm.unwrap_or_else(|| {
+            if self.config.policies.routing.major_llm_enabled {
+                factory::create_llm(&self.config.modules.major_llm)
             } else {
                 factory::create_llm("noop")
             }
@@ -243,8 +243,8 @@ impl ServerBuilder {
             conversation: None, // Will be populated shortly but usually not needed in other modules init
             memory: None,
             llm: None,
-            local_llm: None,
-            remote_llm: None,
+            minor_llm: None,
+            major_llm: None,
             cache: None,
             tools: None,
         };
@@ -257,19 +257,19 @@ impl ServerBuilder {
             conversation: Some(conversation_arc.clone()),
             ..ctx
         };
-        init_module(local_llm.as_mut(), &ctx).await;
-        init_module(remote_llm.as_mut(), &ctx).await;
-        let local_llm: Arc<dyn LlmAdapter> = Arc::from(local_llm);
-        let remote_llm: Arc<dyn LlmAdapter> = Arc::from(remote_llm);
-        let default_llm = if self.config.policies.routing.remote_llm_enabled {
-            remote_llm.clone()
+        init_module(minor_llm.as_mut(), &ctx).await;
+        init_module(major_llm.as_mut(), &ctx).await;
+        let minor_llm: Arc<dyn LlmAdapter> = Arc::from(minor_llm);
+        let major_llm: Arc<dyn LlmAdapter> = Arc::from(major_llm);
+        let default_llm = if self.config.policies.routing.major_llm_enabled {
+            major_llm.clone()
         } else {
-            local_llm.clone()
+            minor_llm.clone()
         };
         let ctx = ModuleContext {
             llm: Some(default_llm.clone()),
-            local_llm: Some(local_llm.clone()),
-            remote_llm: Some(remote_llm.clone()),
+            minor_llm: Some(minor_llm.clone()),
+            major_llm: Some(major_llm.clone()),
             ..ctx
         };
         init_module(stt.as_mut(), &ctx).await;
@@ -365,8 +365,8 @@ impl ServerBuilder {
         // Build registry
         let registry = ModuleRegistry {
             llm: default_llm,
-            local_llm,
-            remote_llm,
+            minor_llm,
+            major_llm,
             stt: Arc::from(stt),
             tts: Arc::from(tts),
             embedding: Arc::from(embedding),
@@ -386,8 +386,8 @@ impl ServerBuilder {
         // Start modules (scheduler first since it was init'd first)
         tracing::info!("starting modules...");
         start_module(registry.scheduler.as_ref()).await;
-        start_module(registry.local_llm.as_ref()).await;
-        start_module(registry.remote_llm.as_ref()).await;
+        start_module(registry.minor_llm.as_ref()).await;
+        start_module(registry.major_llm.as_ref()).await;
         start_module(registry.stt.as_ref()).await;
         start_module(registry.tts.as_ref()).await;
         start_module(registry.embedding.as_ref()).await;
