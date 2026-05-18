@@ -402,13 +402,25 @@ async fn select_ranked_or_llm_filtered_tools(
         .candidate_pool_size
         .max(max_tools_per_turn)
         .max(1);
-    let ranked = rank_tool_candidates(
-        tools,
+    let ranked = indexed_rank_tool_candidates(
+        modules,
+        &tools,
         user_text,
         candidate_pool_size,
         skill_scoped,
         channel_id,
-    );
+        tools_config,
+    )
+    .await
+    .unwrap_or_else(|| {
+        rank_tool_candidates(
+            tools,
+            user_text,
+            candidate_pool_size,
+            skill_scoped,
+            channel_id,
+        )
+    });
 
     if ranked.is_empty() {
         return Vec::new();
@@ -496,7 +508,164 @@ pub fn rank_and_limit_tools(
 struct RankedToolCandidate {
     score: i32,
     index: usize,
+    semantic_similarity: Option<f32>,
     tool: ToolDefinition,
+}
+
+async fn indexed_rank_tool_candidates(
+    modules: &ModuleRegistry,
+    tools: &[ToolDefinition],
+    user_text: &str,
+    limit: usize,
+    skill_scoped: bool,
+    channel_id: &str,
+    tools_config: &ToolsSection,
+) -> Option<Vec<RankedToolCandidate>> {
+    if !tools_config.indexed_search_enabled
+        || tools.is_empty()
+        || limit == 0
+        || user_text.trim().is_empty()
+        || modules.embedding.name() == "noop_embedding"
+    {
+        return None;
+    }
+
+    let query_embedding = match modules.embedding.embed(&[user_text.to_string()]).await {
+        Ok(mut embeddings) => embeddings.pop().filter(|embedding| !embedding.is_empty())?,
+        Err(error) => {
+            tracing::debug!(error = ?error, "tool indexed search query embedding failed");
+            return None;
+        }
+    };
+    let embedding_model = modules.embedding.name().to_string();
+    let tool_names = tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+    let index_entries = match modules.tools.routing_index(&tool_names).await {
+        Ok(entries) => entries,
+        Err(error) => {
+            tracing::debug!(error = ?error, "tool routing index lookup failed");
+            Vec::new()
+        }
+    };
+    let index_by_name = index_entries
+        .into_iter()
+        .map(|entry| (entry.name.clone(), entry))
+        .collect::<HashMap<_, _>>();
+
+    let mut embeddings_by_name = HashMap::<String, Vec<f32>>::new();
+    let mut missing = Vec::<(String, String)>::new();
+    for tool in tools {
+        if let Some(entry) = index_by_name.get(&tool.name)
+            && let Some(stored) = &entry.routing_embedding
+            && stored.model.as_deref() == Some(embedding_model.as_str())
+            && stored.vector.len() == query_embedding.len()
+        {
+            embeddings_by_name.insert(tool.name.clone(), stored.vector.clone());
+            continue;
+        }
+
+        if tools_config.indexed_search_refresh_missing_embeddings {
+            let routing_text = index_by_name
+                .get(&tool.name)
+                .map(|entry| entry.routing_text.clone())
+                .filter(|text| !text.trim().is_empty())
+                .unwrap_or_else(|| tool_routing_text(tool));
+            missing.push((tool.name.clone(), routing_text));
+        }
+    }
+
+    if !missing.is_empty() {
+        let texts = missing
+            .iter()
+            .map(|(_, text)| text.clone())
+            .collect::<Vec<_>>();
+        match modules.embedding.embed(&texts).await {
+            Ok(vectors) => {
+                for ((tool_name, _), vector) in missing.into_iter().zip(vectors.into_iter()) {
+                    if vector.len() != query_embedding.len() || vector.is_empty() {
+                        continue;
+                    }
+                    if let Err(error) = modules
+                        .tools
+                        .update_routing_embedding(&tool_name, &embedding_model, &vector)
+                        .await
+                    {
+                        tracing::debug!(
+                            tool = %tool_name,
+                            error = ?error,
+                            "failed to persist tool routing embedding"
+                        );
+                    }
+                    embeddings_by_name.insert(tool_name, vector);
+                }
+            }
+            Err(error) => {
+                tracing::debug!(error = ?error, "tool routing embedding refresh failed");
+            }
+        }
+    }
+
+    if embeddings_by_name.is_empty() {
+        return None;
+    }
+
+    let query = user_text.to_lowercase();
+    let query_terms = tokenize_for_tool_routing(user_text);
+    let min_similarity = tools_config.indexed_search_min_similarity.clamp(0.0, 1.0);
+    let mut ranked = tools
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter_map(|(index, tool)| {
+            let lexical_score =
+                score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
+            let semantic_similarity = embeddings_by_name
+                .get(&tool.name)
+                .and_then(|embedding| cosine_similarity(&query_embedding, embedding));
+            let semantic_match = semantic_similarity.is_some_and(|score| score >= min_similarity);
+            if !skill_scoped && lexical_score <= 0 && !semantic_match {
+                return None;
+            }
+
+            let semantic_boost = semantic_similarity
+                .map(|score| (score.clamp(0.0, 1.0) * 100.0).round() as i32)
+                .unwrap_or_default();
+            Some(RankedToolCandidate {
+                score: lexical_score + semantic_boost,
+                index,
+                semantic_similarity,
+                tool,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| {
+                right
+                    .semantic_similarity
+                    .partial_cmp(&left.semantic_similarity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| {
+                left.tool
+                    .require_confirmation
+                    .cmp(&right.tool.require_confirmation)
+            })
+            .then_with(|| left.index.cmp(&right.index))
+    });
+    ranked.truncate(limit);
+
+    tracing::debug!(
+        candidates = tools.len(),
+        selected = ranked.len(),
+        "indexed tool candidate search applied"
+    );
+    Some(ranked)
 }
 
 fn rank_tool_candidates(
@@ -517,7 +686,12 @@ fn rank_tool_candidates(
         .enumerate()
         .map(|(index, tool)| {
             let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
-            RankedToolCandidate { score, index, tool }
+            RankedToolCandidate {
+                score,
+                index,
+                semantic_similarity: None,
+                tool,
+            }
         })
         .filter(|candidate| skill_scoped || candidate.score > 0)
         .collect::<Vec<_>>();
@@ -590,6 +764,40 @@ fn tool_candidate_keywords(tool: &ToolDefinition) -> Vec<String> {
     keywords.dedup();
     keywords.truncate(24);
     keywords
+}
+
+fn tool_routing_text(tool: &ToolDefinition) -> String {
+    format!(
+        "{}\n{}\nsource: {}\nparameters: {}\nhints: {}",
+        tool.name,
+        tool.description,
+        tool.source,
+        schema_property_names(&tool.parameters).join(" "),
+        tool_routing_hints(&tool.name.to_lowercase()).join(" ")
+    )
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
+    if left.len() != right.len() || left.is_empty() {
+        return None;
+    }
+
+    let mut dot = 0.0_f32;
+    let mut left_norm = 0.0_f32;
+    let mut right_norm = 0.0_f32;
+    for (left, right) in left.iter().zip(right.iter()) {
+        if !left.is_finite() || !right.is_finite() {
+            return None;
+        }
+        dot += left * right;
+        left_norm += left * left;
+        right_norm += right * right;
+    }
+
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return None;
+    }
+    Some((dot / (left_norm.sqrt() * right_norm.sqrt())).clamp(-1.0, 1.0))
 }
 
 fn score_tool_candidate(
@@ -974,6 +1182,44 @@ fn tool_requires_confirmation(tool: &ToolDefinition, tools_config: &ToolsSection
             .require_confirmation
             .iter()
             .any(|name| name == &tool.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tool(name: &str, description: &str) -> ToolDefinition {
+        ToolDefinition {
+            name: name.to_string(),
+            description: description.to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                }
+            }),
+            source: "builtin".to_string(),
+            require_confirmation: false,
+            required_role: None,
+        }
+    }
+
+    #[test]
+    fn cosine_similarity_scores_parallel_vectors_highest() {
+        assert_eq!(cosine_similarity(&[1.0, 0.0], &[1.0, 0.0]), Some(1.0));
+        assert_eq!(cosine_similarity(&[1.0, 0.0], &[0.0, 1.0]), Some(0.0));
+        assert!(cosine_similarity(&[0.0, 0.0], &[1.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn tool_routing_text_contains_indexable_metadata() {
+        let text = tool_routing_text(&tool("fetch", "Fetch a public HTTP URL"));
+
+        assert!(text.contains("fetch"));
+        assert!(text.contains("Fetch a public HTTP URL"));
+        assert!(text.contains("parameters: query"));
+        assert!(text.contains("latest"));
+    }
 }
 
 pub fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolCall {

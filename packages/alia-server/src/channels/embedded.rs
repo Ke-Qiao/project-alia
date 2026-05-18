@@ -31,8 +31,8 @@ use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::sensor::{
-    SensorDefinition as ServerSensorDefinition, SensorReading as ServerSensorReading,
-    SensorRegistry,
+    SensorDefinition as ServerSensorDefinition, SensorReadProvider,
+    SensorReading as ServerSensorReading, SensorRegistry,
 };
 
 use super::adapter::{
@@ -102,6 +102,95 @@ pub struct EmbeddedChannel {
     default_server_id: String,
     default_server_name: String,
     default_server_endpoint: String,
+}
+
+struct EmbeddedSensorReadProvider {
+    channel_id: String,
+    source: String,
+    endpoint: String,
+    discovery_service_name: String,
+    discovery_timeout_sec: u64,
+    sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
+    signing_key: SigningKey,
+    server_id: String,
+}
+
+impl EmbeddedSensorReadProvider {
+    async fn client(&self) -> anyhow::Result<EmbeddedSensorClient<Channel>> {
+        if let Some(client) = self.sensor_client.read().await.clone() {
+            return Ok(client);
+        }
+
+        let endpoint = if self.endpoint.trim().is_empty() {
+            discover_service_endpoint(
+                &self.discovery_service_name,
+                Duration::from_secs(self.discovery_timeout_sec),
+            )
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no embedded endpoint discovered for {}",
+                    self.discovery_service_name
+                )
+            })?
+        } else {
+            self.endpoint.clone()
+        };
+
+        let channel = Channel::from_shared(endpoint.clone())
+            .map_err(|error| anyhow::anyhow!("invalid embedded endpoint {endpoint}: {error}"))?
+            .connect()
+            .await?;
+        let client = EmbeddedSensorClient::new(channel);
+        *self.sensor_client.write().await = Some(client.clone());
+        Ok(client)
+    }
+}
+
+#[async_trait]
+impl SensorReadProvider for EmbeddedSensorReadProvider {
+    fn source(&self) -> &str {
+        &self.source
+    }
+
+    async fn read_sensor(
+        &self,
+        sensor_id: &str,
+        _definition: &ServerSensorDefinition,
+    ) -> anyhow::Result<ServerSensorReading> {
+        let remote_sensor_id = embedded_sensor_remote_id(&self.channel_id, sensor_id);
+        let mut client = self.client().await?;
+        let response = match client
+            .read_sensor(auth_request_with_signing_key(
+                &self.signing_key,
+                &self.server_id,
+                alia_proto::sensor::SensorRef {
+                    sensor_id: remote_sensor_id,
+                },
+            )?)
+            .await
+        {
+            Ok(response) => response.into_inner(),
+            Err(error) => {
+                *self.sensor_client.write().await = None;
+                return Err(error.into());
+            }
+        };
+
+        if !response.available {
+            let message = if response.error.trim().is_empty() {
+                "embedded sensor reported unavailable".to_string()
+            } else {
+                response.error.clone()
+            };
+            anyhow::bail!(message);
+        }
+
+        Ok(embedded_sensor_reading_to_server(
+            &self.channel_id,
+            &response,
+        ))
+    }
 }
 
 impl EmbeddedChannel {
@@ -501,6 +590,23 @@ impl ModuleLifecycle for EmbeddedChannel {
             "http://{}:{}",
             _ctx.config.server.host, _ctx.config.server.port
         );
+        let signing_key = self
+            .signing_key
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?
+            .clone();
+        _ctx.sensors
+            .register_read_provider(Arc::new(EmbeddedSensorReadProvider {
+                channel_id: self.config.id.clone(),
+                source: embedded_sensor_source(&self.config.id),
+                endpoint: self.config.endpoint.clone(),
+                discovery_service_name: self.config.discovery_service_name.clone(),
+                discovery_timeout_sec: self.config.discovery_timeout_sec,
+                sensor_client: self.sensor_client.clone(),
+                signing_key,
+                server_id: self.default_server_id.clone(),
+            }))
+            .await?;
         Ok(())
     }
 
@@ -518,6 +624,11 @@ impl ModuleLifecycle for EmbeddedChannel {
                 error = %error,
                 "failed to mark embedded sensors offline during shutdown"
             );
+        }
+        if let Some(registry) = self.sensor_registry.read().await.clone() {
+            registry
+                .unregister_read_provider(&embedded_sensor_source(&self.config.id))
+                .await;
         }
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
@@ -1490,15 +1601,22 @@ pub async fn ingest_embedded_sensor_reading(
 
     registry
         .ingest_from_source(
-            ServerSensorReading {
-                sensor_id: embedded_sensor_public_id(channel_id, &reading.sensor_id),
-                value: parse_json_or_null(&reading.value_json),
-                timestamp: timestamp_us_to_utc(reading.timestamp_us),
-                quality: reading.quality,
-            },
+            embedded_sensor_reading_to_server(channel_id, reading),
             &embedded_sensor_source(channel_id),
         )
         .await
+}
+
+fn embedded_sensor_reading_to_server(
+    channel_id: &str,
+    reading: &alia_proto::sensor::SensorReading,
+) -> ServerSensorReading {
+    ServerSensorReading {
+        sensor_id: embedded_sensor_public_id(channel_id, &reading.sensor_id),
+        value: parse_json_or_null(&reading.value_json),
+        timestamp: timestamp_us_to_utc(reading.timestamp_us),
+        quality: reading.quality,
+    }
 }
 
 fn embedded_sensor_definition_to_server(

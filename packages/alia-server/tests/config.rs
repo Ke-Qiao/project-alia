@@ -76,6 +76,14 @@ fn parses_split_example_config() {
         "http://localhost:9880/tts"
     );
     assert_eq!(config.policies.conversation.max_context_messages, 20);
+    assert!(config.policies.tools.indexed_search_enabled);
+    assert_eq!(config.policies.tools.indexed_search_min_similarity, 0.3);
+    assert!(
+        config
+            .policies
+            .tools
+            .indexed_search_refresh_missing_embeddings
+    );
     assert_eq!(config.resources.skills_dir.as_deref(), Some("../skills"));
     assert!(
         config

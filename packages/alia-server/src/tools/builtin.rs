@@ -37,6 +37,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     MemoryBackend, MemoryNode, RetrievalOpts, ScheduleConfig, ScheduledTask, SchedulerBackend,
     ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+    ToolRoutingEmbedding, ToolRoutingIndexEntry,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
@@ -79,12 +80,23 @@ fn tool_catalog_fields(definition: &ToolDefinition) -> ToolCatalogFields {
     }
 }
 
-fn set_tool_catalog(active: &mut tool::ActiveModel, definition: &ToolDefinition) {
+fn set_tool_catalog(
+    active: &mut tool::ActiveModel,
+    definition: &ToolDefinition,
+    existing_routing_text: Option<&str>,
+    existing_embedding: Option<serde_json::Value>,
+) {
     let catalog = tool_catalog_fields(definition);
+    let routing_embedding =
+        if existing_routing_text.is_some_and(|text| text == catalog.routing_text) {
+            existing_embedding
+        } else {
+            None
+        };
     active.routing_keywords = Set(catalog.routing_keywords);
     active.routing_examples = Set(catalog.routing_examples);
     active.routing_text = Set(catalog.routing_text);
-    active.routing_embedding = Set(None);
+    active.routing_embedding = Set(routing_embedding);
 }
 
 fn tokenize_catalog_text(text: &str) -> Vec<String> {
@@ -103,6 +115,33 @@ fn schema_property_names(parameters: &serde_json::Value) -> Vec<String> {
         .and_then(serde_json::Value::as_object)
         .map(|properties| properties.keys().cloned().collect())
         .unwrap_or_default()
+}
+
+fn routing_keywords_from_json(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_tool_routing_embedding(value: Option<&serde_json::Value>) -> Option<ToolRoutingEmbedding> {
+    let value = value?;
+    let model = value
+        .get("model")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let vector_value = value.get("vector").unwrap_or(value);
+    let vector = vector_value
+        .as_array()?
+        .iter()
+        .map(|item| item.as_f64().map(|value| value as f32))
+        .collect::<Option<Vec<_>>>()?;
+    (!vector.is_empty()).then_some(ToolRoutingEmbedding { model, vector })
 }
 
 fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
@@ -313,13 +352,20 @@ impl BuiltinToolRegistry {
 
             match existing {
                 Some(row) => {
+                    let existing_routing_text = row.routing_text.clone();
+                    let existing_embedding = row.routing_embedding.clone();
                     let mut active: tool::ActiveModel = row.into();
                     active.description = Set(definition.description.clone());
                     active.parameters = Set(definition.parameters.clone());
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
-                    set_tool_catalog(&mut active, &definition);
+                    set_tool_catalog(
+                        &mut active,
+                        &definition,
+                        Some(&existing_routing_text),
+                        existing_embedding,
+                    );
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
@@ -515,13 +561,20 @@ impl ToolRegistry for BuiltinToolRegistry {
 
             match existing {
                 Some(row) => {
+                    let existing_routing_text = row.routing_text.clone();
+                    let existing_embedding = row.routing_embedding.clone();
                     let mut active: tool::ActiveModel = row.into();
                     active.description = Set(tool.description.clone());
                     active.parameters = Set(tool.parameters.clone());
                     active.source = Set(tool.source.clone());
                     active.require_confirmation = Set(tool.require_confirmation);
                     active.required_role = Set(tool.required_role.clone());
-                    set_tool_catalog(&mut active, &tool);
+                    set_tool_catalog(
+                        &mut active,
+                        &tool,
+                        Some(&existing_routing_text),
+                        existing_embedding,
+                    );
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
@@ -584,13 +637,20 @@ impl ToolRegistry for BuiltinToolRegistry {
 
             match existing {
                 Some(row) => {
+                    let existing_routing_text = row.routing_text.clone();
+                    let existing_embedding = row.routing_embedding.clone();
                     let mut active: tool::ActiveModel = row.into();
                     active.description = Set(definition.description.clone());
                     active.parameters = Set(definition.parameters.clone());
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
-                    set_tool_catalog(&mut active, &definition);
+                    set_tool_catalog(
+                        &mut active,
+                        &definition,
+                        Some(&existing_routing_text),
+                        existing_embedding,
+                    );
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
@@ -705,6 +765,68 @@ impl ToolRegistry for BuiltinToolRegistry {
 
         tracing::info!(plugin = %plugin_name, removed, "unregistered plugin tools");
         Ok(removed)
+    }
+
+    async fn routing_index(
+        &self,
+        tool_names: &[String],
+    ) -> anyhow::Result<Vec<ToolRoutingIndexEntry>> {
+        let Some(db) = &self.db else {
+            return Ok(Vec::new());
+        };
+        if tool_names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = tool::Entity::find()
+            .filter(tool::Column::Enabled.eq(true))
+            .filter(tool::Column::Name.is_in(tool_names.iter().cloned()))
+            .all(db)
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ToolRoutingIndexEntry {
+                name: row.name,
+                routing_text: row.routing_text,
+                routing_keywords: routing_keywords_from_json(&row.routing_keywords),
+                routing_embedding: parse_tool_routing_embedding(row.routing_embedding.as_ref()),
+            })
+            .collect())
+    }
+
+    async fn update_routing_embedding(
+        &self,
+        tool_name: &str,
+        embedding_model: &str,
+        embedding: &[f32],
+    ) -> anyhow::Result<()> {
+        let Some(db) = &self.db else {
+            return Ok(());
+        };
+        if tool_name.trim().is_empty() || embedding.is_empty() {
+            return Ok(());
+        }
+
+        let Some(row) = tool::Entity::find()
+            .filter(tool::Column::Name.eq(tool_name))
+            .one(db)
+            .await?
+        else {
+            return Ok(());
+        };
+
+        let mut active: tool::ActiveModel = row.into();
+        active.routing_embedding = Set(Some(serde_json::json!({
+            "schema": "alia.tool_routing_embedding.v1",
+            "model": embedding_model,
+            "dimension": embedding.len(),
+            "vector": embedding,
+            "updated_at": Utc::now().to_rfc3339(),
+        })));
+        active.updated_at = Set(Utc::now());
+        active.update(db).await?;
+        Ok(())
     }
 }
 

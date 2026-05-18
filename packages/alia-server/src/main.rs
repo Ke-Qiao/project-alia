@@ -191,6 +191,7 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
             .context("failed to parse embedded audio ingress gRPC address")?;
         let grpc_cancel = cancel_token.clone();
         let grpc_event_bus = event_bus.clone();
+        let grpc_channels = state.channels.clone();
         tokio::spawn(async move {
             use alia_proto::audio::server_audio_ingress_server::ServerAudioIngressServer;
             use alia_server::grpc::audio_ingress::ServerAudioIngressService;
@@ -199,7 +200,7 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
             tracing::info!(addr = %grpc_addr, "embedded audio ingress gRPC listening");
             if let Err(error) = Server::builder()
                 .add_service(ServerAudioIngressServer::new(
-                    ServerAudioIngressService::new(grpc_event_bus, "embedded"),
+                    ServerAudioIngressService::new(grpc_event_bus, grpc_channels, "embedded"),
                 ))
                 .serve_with_shutdown(grpc_addr, async move {
                     grpc_cancel.cancelled().await;

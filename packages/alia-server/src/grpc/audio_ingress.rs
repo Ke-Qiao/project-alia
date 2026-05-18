@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use alia_proto::audio::server_audio_ingress_server::ServerAudioIngress;
 use alia_proto::audio::{
     AudioEncoding as ProtoAudioEncoding, AudioUploadResponse, CapturedAudioChunk,
@@ -6,21 +8,42 @@ use alia_proto::audio::{
 use tonic::{Request, Response, Status};
 
 use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelEvent};
+use crate::channels::registry::ChannelRegistry;
 use crate::event::{EventBus, ServerEvent};
 
 pub struct ServerAudioIngressService {
     event_bus: EventBus,
+    channels: Arc<ChannelRegistry>,
     default_channel_id: String,
     default_user_id: String,
 }
 
 impl ServerAudioIngressService {
-    pub fn new(event_bus: EventBus, default_channel_id: impl Into<String>) -> Self {
+    pub fn new(
+        event_bus: EventBus,
+        channels: Arc<ChannelRegistry>,
+        default_channel_id: impl Into<String>,
+    ) -> Self {
         Self {
             event_bus,
+            channels,
             default_channel_id: default_channel_id.into(),
             default_user_id: "embedded-user".to_string(),
         }
+    }
+
+    async fn resolve_channel_id(&self, requested: Option<String>) -> Result<String, Status> {
+        let requested = requested
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&self.default_channel_id);
+
+        self.channels
+            .resolve_id_or_type(requested)
+            .await
+            .map_err(|error| Status::failed_precondition(error.to_string()))?
+            .ok_or_else(|| Status::invalid_argument(format!("channel '{requested}' not found")))
     }
 }
 
@@ -61,6 +84,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
         if audio.is_empty() {
             return Err(Status::invalid_argument("captured audio stream was empty"));
         }
+        let channel_id = self.resolve_channel_id(channel_id).await?;
 
         let format = match encoding {
             ProtoAudioEncoding::PcmS16le => AudioFormat::Pcm16,
@@ -69,7 +93,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
 
         self.event_bus
             .publish(ServerEvent::ChannelInput(ChannelEvent::AudioInput {
-                channel_id: channel_id.unwrap_or_else(|| self.default_channel_id.clone()),
+                channel_id,
                 user_id: user_id.unwrap_or_else(|| self.default_user_id.clone()),
                 audio: AudioPayload {
                     data: audio,
@@ -87,11 +111,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
         request: Request<InterruptActiveTurnRequest>,
     ) -> Result<Response<TurnInterruptResponse>, Status> {
         let req = request.into_inner();
-        let channel_id = if req.channel_id.trim().is_empty() {
-            self.default_channel_id.clone()
-        } else {
-            req.channel_id
-        };
+        let channel_id = self.resolve_channel_id(Some(req.channel_id)).await?;
         let user_id = if req.user_id.trim().is_empty() {
             self.default_user_id.clone()
         } else {
@@ -122,11 +142,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
         request: Request<SensorDataRequest>,
     ) -> Result<Response<SensorDataResponse>, Status> {
         let req = request.into_inner();
-        let channel_id = if req.channel_id.trim().is_empty() {
-            self.default_channel_id.clone()
-        } else {
-            req.channel_id
-        };
+        let channel_id = self.resolve_channel_id(Some(req.channel_id)).await?;
         let sensor_type = req.sensor_type.trim();
         if sensor_type.is_empty() {
             return Err(Status::invalid_argument("sensor_type is required"));

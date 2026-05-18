@@ -20,6 +20,12 @@ This keeps behavior channel-local. The embedded channel can support voice
 interruption and hardware actions without forcing the same semantics onto CLI or
 future chat integrations.
 
+`channel_id` is the stable instance identity and `channel_type` is only the
+adapter category. Runtime routing, conversation history, tools, and delivery
+should use the instance id. If older embedded clients send `"embedded"` as a
+channel id, the server resolves it as a type alias only when exactly one
+embedded channel is active; exact ids always win.
+
 ## Embedded Channel
 
 The embedded channel talks to `alia-embedded` over gRPC. It currently handles:
@@ -44,6 +50,24 @@ The server has one shared `SensorRegistry`. It is visible to:
 
 The registry stores sensor definitions and latest/time-series readings. It also
 tracks source ownership for dependency checks.
+
+Sensor reads have one shared policy path:
+
+- `cache_only` reads the latest stored value and never calls the device/source.
+- `best_effort` returns fresh cache when possible, otherwise tries an
+  on-demand source read and may fall back to stale cache.
+- `fresh` requires the registry to ask the source reader when cache is missing
+  or older than `max_age_sec`.
+
+The built-in `sensor_read` tool defaults to `best_effort` with stale fallback,
+which is safer for assistant answers during transient device/network issues.
+Scheduler `sensor` conditions default to `fresh` and fail closed on stale data,
+which is safer for automation.
+
+Components and plugins that can read hardware directly should register a
+`SensorReadProvider` for their registry source. The registry handles timeout,
+freshness checks, stale metadata, and single-flight locking per sensor, so tools
+and schedulers do not need channel-specific code.
 
 ## Embedded Sensor Mirroring
 
@@ -101,3 +125,8 @@ Embedded channel actions include:
 `read_embedded_sensor` accepts either the public id (`pi5:temperature`) or the
 embedded-local id (`temperature`). The channel strips its own prefix before
 calling embedded.
+
+The embedded channel also registers a source reader for `component:{channel_id}`
+during initialization. Generic `sensor_read` calls and scheduler sensor
+conditions therefore use embedded gRPC `ReadSensor` automatically when the
+cached value is stale or missing.

@@ -11,6 +11,7 @@
 pub mod registry;
 
 pub use registry::{
-    SensorDefinition, SensorQuery, SensorReading, SensorRegistry, SensorRegistryConfig,
+    SensorDefinition, SensorFreshnessPolicy, SensorQuery, SensorReadMode, SensorReadProvider,
+    SensorReadResult, SensorReading, SensorRegistry, SensorRegistryConfig, SensorStalePolicy,
     SensorSummary,
 };

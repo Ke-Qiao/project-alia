@@ -798,6 +798,12 @@ pub struct ToolsSection {
     pub llm_candidate_filter_threshold: usize,
     #[serde(default = "default_allow_plugin_tools")]
     pub allow_plugin_tools: bool,
+    #[serde(default = "default_true")]
+    pub indexed_search_enabled: bool,
+    #[serde(default = "default_tool_indexed_search_min_similarity")]
+    pub indexed_search_min_similarity: f32,
+    #[serde(default = "default_true")]
+    pub indexed_search_refresh_missing_embeddings: bool,
     #[serde(default)]
     pub require_confirmation: Vec<String>,
 }
@@ -812,6 +818,9 @@ impl Default for ToolsSection {
             llm_candidate_filter_enabled: true,
             llm_candidate_filter_threshold: default_llm_candidate_filter_threshold(),
             allow_plugin_tools: default_allow_plugin_tools(),
+            indexed_search_enabled: true,
+            indexed_search_min_similarity: default_tool_indexed_search_min_similarity(),
+            indexed_search_refresh_missing_embeddings: true,
             require_confirmation: Vec::new(),
         }
     }
@@ -834,6 +843,9 @@ fn default_llm_candidate_filter_threshold() -> usize {
 }
 fn default_allow_plugin_tools() -> bool {
     true
+}
+fn default_tool_indexed_search_min_similarity() -> f32 {
+    0.30
 }
 
 impl ServerConfig {

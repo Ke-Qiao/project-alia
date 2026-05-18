@@ -6,5 +6,7 @@ candidate_pool_size = 24
 llm_candidate_filter_enabled = true
 llm_candidate_filter_threshold = 12
 allow_plugin_tools = true
+indexed_search_enabled = true
+indexed_search_min_similarity = 0.3
+indexed_search_refresh_missing_embeddings = true
 require_confirmation = []
-

@@ -13,6 +13,11 @@ Every built-in, component-owned, or plugin-owned tool/skill should be registered
 in the database catalog. The runtime dependency tree tracks ownership so removal
 can be safe.
 
+Tool candidate selection uses the persisted tool catalog as a routing index.
+When an embedding provider is available, the pipeline lazily stores routing
+embeddings for tool metadata and uses semantic similarity plus lexical hints to
+narrow candidates before optional local LLM filtering.
+
 ## Tool Calling
 
 The preferred path is native provider tool/function calling. Text-based tool
@@ -31,6 +36,11 @@ Rules and scheduler tasks share condition and action registries.
   plugin-defined evaluators.
 - Actions include log, emit event, tool call, insights hooks, and future
   plugin-defined executors.
+
+Sensor conditions use the shared sensor freshness policy. By default they ask
+the source reader for a fresh value when the cache is missing or old, and fail
+closed if only stale data is available. Individual conditions can opt into
+`cache_only`, `best_effort`, custom `max_age_sec`, and custom `timeout_ms`.
 
 ## Memory and Insights
 

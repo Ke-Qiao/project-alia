@@ -39,6 +39,59 @@ impl ChannelRegistry {
         self.channels.read().await.get(id).cloned()
     }
 
+    /// Resolve a channel identifier.
+    ///
+    /// Exact instance IDs always win. If no exact ID exists, a value that
+    /// matches exactly one channel type is treated as a legacy/type alias and
+    /// resolved to that channel's concrete instance ID.
+    pub async fn resolve_id_or_type(&self, id_or_type: &str) -> anyhow::Result<Option<String>> {
+        let requested = id_or_type.trim();
+        if requested.is_empty() {
+            return Ok(None);
+        }
+
+        let channels = self.channels.read().await;
+        if channels.contains_key(requested) {
+            return Ok(Some(requested.to_string()));
+        }
+
+        let matches = channels
+            .values()
+            .filter(|channel| channel.channel_type() == requested)
+            .map(|channel| channel.channel_id().to_string())
+            .collect::<Vec<_>>();
+
+        match matches.as_slice() {
+            [] => Ok(None),
+            [channel_id] => {
+                tracing::warn!(
+                    requested,
+                    resolved_channel_id = %channel_id,
+                    "channel id matched a channel type; resolved to concrete channel id"
+                );
+                Ok(Some(channel_id.clone()))
+            }
+            _ => anyhow::bail!(
+                "channel id '{}' matched multiple channels by type; use a concrete channel id",
+                requested
+            ),
+        }
+    }
+
+    /// Get a channel by exact ID or by unique channel type alias.
+    pub async fn get_resolved(
+        &self,
+        id_or_type: &str,
+    ) -> anyhow::Result<Option<(String, Arc<dyn ChannelAdapter>)>> {
+        let Some(channel_id) = self.resolve_id_or_type(id_or_type).await? else {
+            return Ok(None);
+        };
+        Ok(self
+            .get(&channel_id)
+            .await
+            .map(|channel| (channel_id, channel)))
+    }
+
     /// List all active channels.
     pub async fn list(&self) -> Vec<Arc<dyn ChannelAdapter>> {
         self.channels.read().await.values().cloned().collect()

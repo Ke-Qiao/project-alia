@@ -1,12 +1,15 @@
 //! Built-in condition evaluators: sensor, time range, and event fields.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::Timelike;
 
 use super::condition::{ConditionContext, ConditionEvaluator};
-use crate::providers::sensor::SensorRegistry;
+use crate::providers::sensor::{
+    SensorFreshnessPolicy, SensorReadMode, SensorRegistry, SensorStalePolicy,
+};
 
 /// Evaluates sensor-based conditions.
 ///
@@ -43,7 +46,19 @@ impl ConditionEvaluator for SensorConditionEvaluator {
         };
         let op = condition.get("op").and_then(|v| v.as_str()).unwrap_or("eq");
 
-        let Some(reading) = self.sensors.latest(sensor_id).await? else {
+        let policy = scheduler_sensor_policy(condition);
+        let fail_closed_on_stale = matches!(policy.stale_policy, SensorStalePolicy::FailClosed);
+        let result = self.sensors.read(sensor_id, policy).await?;
+        if result.stale && fail_closed_on_stale {
+            if let Some(warning) = result.warning {
+                tracing::debug!(sensor_id, warning = %warning, "sensor condition failed closed");
+            }
+            return Ok(false);
+        }
+        let Some(reading) = result.reading else {
+            if let Some(warning) = result.warning {
+                tracing::debug!(sensor_id, warning = %warning, "sensor condition has no reading");
+            }
             return Ok(false);
         };
 
@@ -195,6 +210,39 @@ fn value_as_f64(value: &serde_json::Value) -> Option<f64> {
         serde_json::Value::String(s) => s.parse().ok(),
         _ => None,
     }
+}
+
+fn scheduler_sensor_policy(condition: &serde_json::Value) -> SensorFreshnessPolicy {
+    let mut policy = SensorFreshnessPolicy::scheduler_default();
+    if let Some(mode) = condition
+        .get("read_mode")
+        .and_then(serde_json::Value::as_str)
+        .and_then(SensorReadMode::from_str)
+    {
+        policy.mode = mode;
+    }
+    if let Some(stale_policy) = condition
+        .get("stale_policy")
+        .and_then(serde_json::Value::as_str)
+        .and_then(SensorStalePolicy::from_str)
+    {
+        policy.stale_policy = stale_policy;
+    }
+    if let Some(max_age_sec) = condition
+        .get("max_age_sec")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        policy.max_age = Duration::from_millis((max_age_sec * 1000.0).round() as u64);
+    }
+    if let Some(timeout_ms) = condition
+        .get("timeout_ms")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|value| *value > 0)
+    {
+        policy.timeout = Duration::from_millis(timeout_ms);
+    }
+    policy
 }
 
 fn get_field(data: &serde_json::Value, path: &str) -> serde_json::Value {

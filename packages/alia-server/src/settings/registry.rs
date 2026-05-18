@@ -535,6 +535,26 @@ impl SettingsRegistry {
                 json!(config.policies.tools.allow_plugin_tools),
                 schema("Allow Plugin Tools", "bool", false),
             ),
+            (
+                "core.policies.tools.indexed_search_enabled",
+                json!(config.policies.tools.indexed_search_enabled),
+                schema("Enable Indexed Tool Search", "bool", false),
+            ),
+            (
+                "core.policies.tools.indexed_search_min_similarity",
+                json!(config.policies.tools.indexed_search_min_similarity),
+                schema("Tool Search Similarity Threshold", "number", false),
+            ),
+            (
+                "core.policies.tools.indexed_search_refresh_missing_embeddings",
+                json!(
+                    config
+                        .policies
+                        .tools
+                        .indexed_search_refresh_missing_embeddings
+                ),
+                schema("Refresh Tool Search Embeddings", "bool", false),
+            ),
             // Profiles
             (
                 "core.profiles.default_voice",

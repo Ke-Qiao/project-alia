@@ -275,6 +275,24 @@ impl PipelinePolicies {
             self.tools.allow_plugin_tools = value;
             applied.push("core.policies.tools.allow_plugin_tools".to_string());
         }
+        if let Some(value) = bool_setting(updates, "core.policies.tools.indexed_search_enabled") {
+            self.tools.indexed_search_enabled = value;
+            applied.push("core.policies.tools.indexed_search_enabled".to_string());
+        }
+        if let Some(value) =
+            f32_setting(updates, "core.policies.tools.indexed_search_min_similarity")
+        {
+            self.tools.indexed_search_min_similarity = value.clamp(0.0, 1.0);
+            applied.push("core.policies.tools.indexed_search_min_similarity".to_string());
+        }
+        if let Some(value) = bool_setting(
+            updates,
+            "core.policies.tools.indexed_search_refresh_missing_embeddings",
+        ) {
+            self.tools.indexed_search_refresh_missing_embeddings = value;
+            applied
+                .push("core.policies.tools.indexed_search_refresh_missing_embeddings".to_string());
+        }
 
         applied
     }
@@ -375,9 +393,7 @@ async fn process_event(
                 &text,
                 Some((&channel_id, &user_id)),
             );
-            let channel = channels.get(&channel_id).await.ok_or_else(|| {
-                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
-            })?;
+            let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
                 user_id: user_id.clone(),
             };
@@ -423,24 +439,35 @@ async fn process_event(
             user_id,
             reason,
         } => {
+            let (channel_id, channel) = match resolve_event_channel(channels, &channel_id).await {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    tracing::warn!(
+                        requested_channel_id = %channel_id,
+                        user_id,
+                        reason,
+                        error = %error,
+                        "interrupt requested for an unknown channel"
+                    );
+                    return Ok(());
+                }
+            };
             let interrupted = voice_turns.interrupt(&channel_id, &user_id).await;
             if interrupted {
                 tracing::info!(channel_id, user_id, reason, "active voice turn interrupted");
-                if let Some(channel) = channels.get(&channel_id).await {
-                    let config = channel.interrupt_config();
-                    if config.enabled {
-                        let target = ChannelTarget {
-                            user_id: user_id.clone(),
-                        };
-                        if let Err(error) = channel.stop_current_playback(&target, &reason).await {
-                            tracing::warn!(
-                                channel_type = channel.channel_type(),
-                                channel_id = channel.channel_id(),
-                                error = %error,
-                                "failed to stop channel playback after interrupt"
-                            );
-                            tracing::debug!(error = ?error, "stop playback failure details");
-                        }
+                let config = channel.interrupt_config();
+                if config.enabled {
+                    let target = ChannelTarget {
+                        user_id: user_id.clone(),
+                    };
+                    if let Err(error) = channel.stop_current_playback(&target, &reason).await {
+                        tracing::warn!(
+                            channel_type = channel.channel_type(),
+                            channel_id = channel.channel_id(),
+                            error = %error,
+                            "failed to stop channel playback after interrupt"
+                        );
+                        tracing::debug!(error = ?error, "stop playback failure details");
                     }
                 }
             } else {
@@ -458,9 +485,7 @@ async fn process_event(
             user_id,
             audio,
         } => {
-            let channel = channels.get(&channel_id).await.ok_or_else(|| {
-                anyhow::anyhow!("channel '{}' not found for response delivery", channel_id)
-            })?;
+            let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
                 user_id: user_id.clone(),
             };
@@ -597,6 +622,7 @@ async fn process_event(
             sensor_type,
             payload,
         } => {
+            let (channel_id, _channel) = resolve_event_channel(channels, &channel_id).await?;
             // Ingest sensor data into the registry
             use crate::providers::sensor::SensorReading;
             let sensor_id = format!("{}:{}", channel_id, sensor_type);
@@ -627,6 +653,16 @@ fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
         | ChannelEvent::SensorData { channel_id, .. }
         | ChannelEvent::StatusChange { channel_id, .. } => Some(channel_id),
     }
+}
+
+async fn resolve_event_channel(
+    channels: &ChannelRegistry,
+    channel_id: &str,
+) -> anyhow::Result<(String, Arc<dyn ChannelAdapter>)> {
+    channels
+        .get_resolved(channel_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("channel '{}' not found for response delivery", channel_id))
 }
 
 fn stable_user_uuid(user_id: &str) -> Uuid {

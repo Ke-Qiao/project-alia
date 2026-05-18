@@ -719,6 +719,22 @@ pub struct ToolResult {
     pub display: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolRoutingEmbedding {
+    pub model: Option<String>,
+    pub vector: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolRoutingIndexEntry {
+    pub name: String,
+    pub routing_text: String,
+    #[serde(default)]
+    pub routing_keywords: Vec<String>,
+    #[serde(default)]
+    pub routing_embedding: Option<ToolRoutingEmbedding>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub user_id: Uuid,
@@ -760,4 +776,22 @@ pub trait ToolRegistry: ModuleLifecycle {
     async fn unregister_plugin_tool(&self, tool_name: &str) -> anyhow::Result<()>;
     /// Unregister all tools owned by a plugin.
     async fn unregister_plugin_tools(&self, plugin_name: &str) -> anyhow::Result<u64>;
+    /// Return routing index entries for the requested tool names. Implementors
+    /// can back this with a database catalog; the pipeline can still fall back
+    /// to deterministic ranking when no index is available.
+    async fn routing_index(
+        &self,
+        _tool_names: &[String],
+    ) -> anyhow::Result<Vec<ToolRoutingIndexEntry>> {
+        Ok(Vec::new())
+    }
+    /// Store or refresh the routing embedding for a tool catalog row.
+    async fn update_routing_embedding(
+        &self,
+        _tool_name: &str,
+        _embedding_model: &str,
+        _embedding: &[f32],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

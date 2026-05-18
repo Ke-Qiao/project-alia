@@ -4,11 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use utoipa::{IntoParams, ToSchema};
 
@@ -75,6 +76,99 @@ pub struct SensorSummary {
     pub online: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SensorReadMode {
+    CacheOnly,
+    BestEffort,
+    Fresh,
+}
+
+impl SensorReadMode {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cache_only" | "cache-only" | "cache" | "latest" => Some(Self::CacheOnly),
+            "best_effort" | "best-effort" | "best" | "auto" => Some(Self::BestEffort),
+            "fresh" | "force_fresh" | "force-fresh" | "remote" => Some(Self::Fresh),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SensorStalePolicy {
+    AllowStale,
+    FailClosed,
+}
+
+impl SensorStalePolicy {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "allow_stale" | "allow-stale" | "allow" | "stale_ok" | "stale-ok" => {
+                Some(Self::AllowStale)
+            }
+            "fail_closed" | "fail-closed" | "fresh_only" | "fresh-only" | "strict" => {
+                Some(Self::FailClosed)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SensorFreshnessPolicy {
+    pub mode: SensorReadMode,
+    pub max_age: Duration,
+    pub timeout: Duration,
+    pub stale_policy: SensorStalePolicy,
+}
+
+impl SensorFreshnessPolicy {
+    pub fn tool_default(offline_threshold: Duration) -> Self {
+        Self {
+            mode: SensorReadMode::BestEffort,
+            max_age: offline_threshold,
+            timeout: Duration::from_secs(2),
+            stale_policy: SensorStalePolicy::AllowStale,
+        }
+    }
+
+    pub fn scheduler_default() -> Self {
+        Self {
+            mode: SensorReadMode::Fresh,
+            max_age: Duration::from_secs(5),
+            timeout: Duration::from_secs(2),
+            stale_policy: SensorStalePolicy::FailClosed,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SensorReadResult {
+    pub definition: Option<SensorDefinition>,
+    pub reading: Option<SensorReading>,
+    pub fresh: bool,
+    pub stale: bool,
+    pub refreshed: bool,
+    pub age_ms: Option<i64>,
+    pub warning: Option<String>,
+}
+
+/// Pull-based reader for sensors that can be queried on demand.
+///
+/// Push-only sources can ignore this trait and keep using `ingest`. Embedded
+/// devices and future plugins can register a provider so generic tools and
+/// scheduler conditions get fresh values without knowing channel internals.
+#[async_trait]
+pub trait SensorReadProvider: Send + Sync {
+    fn source(&self) -> &str;
+
+    async fn read_sensor(
+        &self,
+        sensor_id: &str,
+        definition: &SensorDefinition,
+    ) -> anyhow::Result<SensorReading>;
+}
+
 /// Configuration for the sensor registry.
 #[derive(Debug, Clone)]
 pub struct SensorRegistryConfig {
@@ -107,6 +201,8 @@ pub struct SensorRegistry {
     /// Hot cache and fallback when no DB is attached.
     sensors: Arc<RwLock<HashMap<String, SensorDefinition>>>,
     readings: Arc<RwLock<HashMap<String, Vec<SensorReading>>>>,
+    read_providers: Arc<RwLock<HashMap<String, Arc<dyn SensorReadProvider>>>>,
+    read_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl SensorRegistry {
@@ -117,6 +213,8 @@ impl SensorRegistry {
             artifacts: Arc::new(RwLock::new(None)),
             sensors: Arc::new(RwLock::new(HashMap::new())),
             readings: Arc::new(RwLock::new(HashMap::new())),
+            read_providers: Arc::new(RwLock::new(HashMap::new())),
+            read_locks: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -139,6 +237,31 @@ impl SensorRegistry {
 
     async fn artifacts(&self) -> Option<Arc<ArtifactRegistry>> {
         self.artifacts.read().await.clone()
+    }
+
+    pub fn offline_threshold(&self) -> Duration {
+        self.config.offline_threshold
+    }
+
+    /// Register an on-demand reader for all sensors owned by `provider.source()`.
+    pub async fn register_read_provider(
+        &self,
+        provider: Arc<dyn SensorReadProvider>,
+    ) -> anyhow::Result<()> {
+        let source = validate_owner_name(provider.source(), "sensor read provider source")?;
+        self.read_providers
+            .write()
+            .await
+            .insert(source.clone(), provider);
+        tracing::info!(source = %source, "sensor read provider registered");
+        Ok(())
+    }
+
+    pub async fn unregister_read_provider(&self, source: &str) {
+        let source = source.trim();
+        if self.read_providers.write().await.remove(source).is_some() {
+            tracing::info!(source = %source, "sensor read provider unregistered");
+        }
     }
 
     async fn refresh_hot_cache(&self) -> anyhow::Result<()> {
@@ -250,6 +373,7 @@ impl SensorRegistry {
 
         let memory_removed = self.sensors.write().await.remove(sensor_id).is_some();
         self.readings.write().await.remove(sensor_id);
+        self.read_locks.write().await.remove(sensor_id);
         let removed = db_removed || memory_removed;
         if removed {
             if let Some(artifacts) = artifacts {
@@ -387,6 +511,118 @@ impl SensorRegistry {
             .and_then(|series| series.last().cloned()))
     }
 
+    /// Read a sensor with a cache/freshness policy.
+    ///
+    /// This is the shared path for tools, scheduler conditions, and future
+    /// plugins. It first checks the latest persisted/cache value, then asks the
+    /// source-owned read provider when the value is missing or too old.
+    pub async fn read(
+        &self,
+        sensor_id: &str,
+        policy: SensorFreshnessPolicy,
+    ) -> anyhow::Result<SensorReadResult> {
+        validate_sensor_id(sensor_id)?;
+
+        let definition = self.get_sensor(sensor_id).await?;
+        let latest = self.latest(sensor_id).await?;
+        if matches!(policy.mode, SensorReadMode::CacheOnly) || reading_is_fresh(&latest, &policy) {
+            return Ok(sensor_read_result(definition, latest, &policy, false, None));
+        }
+
+        let Some(definition_for_provider) = definition.clone() else {
+            return Ok(sensor_read_result(
+                None,
+                latest,
+                &policy,
+                false,
+                Some("sensor is not registered".to_string()),
+            ));
+        };
+
+        let provider = self
+            .read_providers
+            .read()
+            .await
+            .get(&definition_for_provider.source)
+            .cloned();
+        let Some(provider) = provider else {
+            return Ok(sensor_read_result(
+                Some(definition_for_provider),
+                latest,
+                &policy,
+                false,
+                Some("no on-demand reader registered for sensor source".to_string()),
+            ));
+        };
+
+        let lock = self.read_lock(sensor_id).await;
+        let _guard = lock.lock().await;
+
+        let definition = self.get_sensor(sensor_id).await?;
+        let latest = self.latest(sensor_id).await?;
+        if reading_is_fresh(&latest, &policy) {
+            return Ok(sensor_read_result(definition, latest, &policy, false, None));
+        }
+
+        let Some(definition_for_provider) = definition.clone() else {
+            return Ok(sensor_read_result(
+                None,
+                latest,
+                &policy,
+                false,
+                Some("sensor is not registered".to_string()),
+            ));
+        };
+
+        let read_result = tokio::time::timeout(
+            policy.timeout,
+            provider.read_sensor(sensor_id, &definition_for_provider),
+        )
+        .await;
+
+        match read_result {
+            Ok(Ok(mut reading)) => {
+                if reading.sensor_id.trim().is_empty() {
+                    reading.sensor_id = sensor_id.to_string();
+                } else if reading.sensor_id != sensor_id {
+                    tracing::warn!(
+                        requested_sensor_id = %sensor_id,
+                        returned_sensor_id = %reading.sensor_id,
+                        "sensor read provider returned a different sensor id; normalizing"
+                    );
+                    reading.sensor_id = sensor_id.to_string();
+                }
+                reading.quality = reading.quality.clamp(0.0, 1.0);
+                self.ingest_from_source(reading.clone(), &definition_for_provider.source)
+                    .await?;
+                Ok(sensor_read_result(
+                    Some(definition_for_provider),
+                    Some(reading),
+                    &policy,
+                    true,
+                    None,
+                ))
+            }
+            Ok(Err(error)) => Ok(sensor_read_result(
+                definition,
+                latest,
+                &policy,
+                false,
+                Some(format!("fresh sensor read failed: {error}")),
+            )),
+            Err(_) => Ok(sensor_read_result(
+                definition,
+                latest,
+                &policy,
+                false,
+                Some(format!(
+                    "fresh sensor read timed out after {} ms",
+                    policy.timeout.as_millis()
+                )),
+            )),
+        }
+    }
+
     /// Get the latest value as f64 (for condition evaluation).
     pub async fn latest_value_f64(&self, sensor_id: &str) -> anyhow::Result<Option<f64>> {
         Ok(self.latest(sensor_id).await?.and_then(|r| match &r.value {
@@ -395,6 +631,14 @@ impl SensorRegistry {
             serde_json::Value::String(s) => s.parse().ok(),
             _ => None,
         }))
+    }
+
+    async fn read_lock(&self, sensor_id: &str) -> Arc<Mutex<()>> {
+        let mut locks = self.read_locks.write().await;
+        locks
+            .entry(sensor_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     /// Query readings with filters.
@@ -729,6 +973,44 @@ fn infer_value_type(value: &serde_json::Value) -> &'static str {
         serde_json::Value::String(_) => "string",
         _ => "json",
     }
+}
+
+fn reading_is_fresh(reading: &Option<SensorReading>, policy: &SensorFreshnessPolicy) -> bool {
+    reading
+        .as_ref()
+        .and_then(|reading| reading_age(reading).ok())
+        .is_some_and(|age| age <= policy.max_age)
+}
+
+fn sensor_read_result(
+    definition: Option<SensorDefinition>,
+    reading: Option<SensorReading>,
+    policy: &SensorFreshnessPolicy,
+    refreshed: bool,
+    warning: Option<String>,
+) -> SensorReadResult {
+    let age = reading
+        .as_ref()
+        .and_then(|reading| reading_age(reading).ok());
+    let fresh = age.is_some_and(|age| age <= policy.max_age);
+    let stale = age.is_some_and(|age| age > policy.max_age);
+    let age_ms = age.map(|age| age.as_millis().min(i64::MAX as u128) as i64);
+
+    SensorReadResult {
+        definition,
+        reading,
+        fresh,
+        stale,
+        refreshed,
+        age_ms,
+        warning,
+    }
+}
+
+fn reading_age(reading: &SensorReading) -> anyhow::Result<Duration> {
+    (Utc::now() - reading.timestamp)
+        .to_std()
+        .map_err(|_| anyhow::anyhow!("sensor reading timestamp is in the future"))
 }
 
 fn db_datetime_to_utc(value: DateTimeWithTimeZone) -> DateTime<Utc> {

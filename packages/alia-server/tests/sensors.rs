@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(feature = "channel-embedded")]
 use alia_proto::sensor::{
@@ -11,13 +12,42 @@ use alia_server::channels::embedded::{
 };
 use alia_server::providers::adapter::{ToolContext, ToolExecutor};
 use alia_server::providers::sensor::{
-    SensorDefinition, SensorQuery, SensorReading, SensorRegistry, SensorRegistryConfig,
+    SensorDefinition, SensorQuery, SensorReadProvider, SensorReading, SensorRegistry,
+    SensorRegistryConfig,
 };
 use alia_server::scheduler::condition::{ConditionContext, ConditionEvaluator, ConditionRegistry};
 use alia_server::scheduler::evaluators::SensorConditionEvaluator;
 use alia_server::tools::sensor::{SensorListTool, SensorReadTool};
+use async_trait::async_trait;
 use chrono::Utc;
 use uuid::Uuid;
+
+struct FakeSensorReadProvider {
+    source: String,
+    value: serde_json::Value,
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl SensorReadProvider for FakeSensorReadProvider {
+    fn source(&self) -> &str {
+        &self.source
+    }
+
+    async fn read_sensor(
+        &self,
+        sensor_id: &str,
+        _definition: &SensorDefinition,
+    ) -> anyhow::Result<SensorReading> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(SensorReading {
+            sensor_id: sensor_id.to_string(),
+            value: self.value.clone(),
+            timestamp: Utc::now(),
+            quality: 1.0,
+        })
+    }
+}
 
 #[tokio::test]
 async fn registry_ingest_auto_registers_and_queries_latest() {
@@ -100,6 +130,66 @@ async fn sensor_tools_read_from_shared_registry() {
 }
 
 #[tokio::test]
+async fn sensor_read_tool_refreshes_from_registered_provider() {
+    let sensors = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
+    sensors
+        .register_sensor(SensorDefinition {
+            sensor_id: "probe:temperature".to_string(),
+            display_name: "Probe temperature".to_string(),
+            source: "probe".to_string(),
+            unit: "C".to_string(),
+            value_type: "float".to_string(),
+            metadata: serde_json::json!({}),
+            registered_at: Utc::now(),
+            last_seen_at: None,
+        })
+        .await
+        .unwrap();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    sensors
+        .register_read_provider(Arc::new(FakeSensorReadProvider {
+            source: "probe".to_string(),
+            value: serde_json::json!(22.25),
+            calls: calls.clone(),
+        }))
+        .await
+        .unwrap();
+
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: None,
+    };
+    let read = SensorReadTool::new(sensors.clone())
+        .execute(
+            serde_json::json!({
+                "sensor_id": "probe:temperature",
+                "read_mode": "fresh",
+                "max_age_sec": 60
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(read.success);
+    assert_eq!(read.output["value"], serde_json::json!(22.25));
+    assert_eq!(read.output["refreshed"], serde_json::json!(true));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        sensors
+            .latest("probe:temperature")
+            .await
+            .unwrap()
+            .unwrap()
+            .value,
+        serde_json::json!(22.25)
+    );
+}
+
+#[tokio::test]
 async fn sensor_condition_evaluator_uses_latest_registry_value() {
     let sensors = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
     sensors
@@ -145,6 +235,53 @@ async fn sensor_condition_evaluator_uses_latest_registry_value() {
         .await
         .unwrap();
     assert!(matched);
+}
+
+#[tokio::test]
+async fn sensor_condition_evaluator_refreshes_missing_provider_value() {
+    let sensors = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
+    sensors
+        .register_sensor(SensorDefinition {
+            sensor_id: "probe:co2".to_string(),
+            display_name: "Probe CO2".to_string(),
+            source: "probe".to_string(),
+            unit: "ppm".to_string(),
+            value_type: "int".to_string(),
+            metadata: serde_json::json!({}),
+            registered_at: Utc::now(),
+            last_seen_at: None,
+        })
+        .await
+        .unwrap();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    sensors
+        .register_read_provider(Arc::new(FakeSensorReadProvider {
+            source: "probe".to_string(),
+            value: serde_json::json!(810),
+            calls: calls.clone(),
+        }))
+        .await
+        .unwrap();
+
+    let evaluator = SensorConditionEvaluator::new(sensors);
+    let matched = evaluator
+        .evaluate(
+            &serde_json::json!({
+                "type": "sensor",
+                "sensor_id": "probe:co2",
+                "op": "gte",
+                "value": 800,
+                "read_mode": "fresh",
+                "timeout_ms": 500
+            }),
+            &ConditionContext::new(None),
+        )
+        .await
+        .unwrap();
+
+    assert!(matched);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
