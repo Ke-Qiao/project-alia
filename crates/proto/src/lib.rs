@@ -17,3 +17,7 @@ pub mod plugin {
 pub mod settings {
     tonic::include_proto!("alia.settings");
 }
+
+pub mod sensor {
+    tonic::include_proto!("alia.sensor");
+}

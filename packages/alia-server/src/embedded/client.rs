@@ -7,6 +7,7 @@ use tonic::transport::Channel;
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
+use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 
 use crate::event::EventBus;
 
@@ -31,6 +32,7 @@ pub struct EmbeddedClient {
     process_client: Arc<RwLock<Option<ProcessManagerClient<Channel>>>>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
+    sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
 }
 
 impl EmbeddedClient {
@@ -51,6 +53,7 @@ impl EmbeddedClient {
             process_client: Arc::new(RwLock::new(None)),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
+            sensor_client: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -76,7 +79,9 @@ impl EmbeddedClient {
                         Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
-                    *self.binding_client.write().await = Some(DeviceBindingClient::new(channel));
+                    *self.binding_client.write().await =
+                        Some(DeviceBindingClient::new(channel.clone()));
+                    *self.sensor_client.write().await = Some(EmbeddedSensorClient::new(channel));
                     *self.status.write().await = ConnectionStatus::Connected;
                     tracing::info!(endpoint = %self.endpoint, "connected to alia-embedded");
                     return Ok(());
@@ -131,6 +136,18 @@ impl EmbeddedClient {
             self.connect().await?;
         }
         self.binding_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
+    /// Get an EmbeddedSensorClient, connecting lazily if needed.
+    pub async fn sensor_client(&self) -> anyhow::Result<EmbeddedSensorClient<Channel>> {
+        if self.sensor_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        self.sensor_client
             .read()
             .await
             .clone()

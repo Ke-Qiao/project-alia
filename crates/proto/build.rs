@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/binding.proto",
                 "proto/plugin.proto",
                 "proto/settings.proto",
+                "proto/sensor.proto",
             ],
             &["proto/"],
         )?;

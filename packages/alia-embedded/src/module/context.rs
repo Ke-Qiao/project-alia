@@ -4,6 +4,7 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::EmbeddedConfig;
+use crate::module::sensor::SensorRegistry;
 use crate::storage::EmbeddedStore;
 
 /// Audio bus for zero-copy PCM distribution between modules.
@@ -79,4 +80,7 @@ pub struct ModuleContext {
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
     pub audio_bus: AudioBus,
+    /// Shared sensor provider registry. Concrete sensor modules register their
+    /// provider handles here; server-facing gRPC reads route through it.
+    pub sensors: Arc<SensorRegistry>,
 }

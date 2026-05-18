@@ -1,6 +1,6 @@
 //! Sensor registry with PostgreSQL persistence and in-memory fallback.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -196,6 +196,30 @@ impl SensorRegistry {
 
         self.remember_definition(def).await;
         Ok(())
+    }
+
+    /// Mark source-owned sensors that are no longer advertised as offline.
+    ///
+    /// This keeps definitions stable for tools/rules/frontend references while
+    /// letting summaries correctly report that a remote sensor has disappeared.
+    pub async fn mark_source_sensors_offline_except(
+        &self,
+        source: &str,
+        active_sensor_ids: &HashSet<String>,
+    ) -> anyhow::Result<usize> {
+        let source = validate_owner_name(source, "source")?;
+        let definitions = self.list_definitions_by_source(&source).await?;
+        let mut updated = 0usize;
+
+        for def in definitions {
+            if active_sensor_ids.contains(&def.sensor_id) {
+                continue;
+            }
+            self.set_sensor_last_seen(&def.sensor_id, None).await?;
+            updated += 1;
+        }
+
+        Ok(updated)
     }
 
     /// Unregister a sensor and discard its readings.
@@ -470,18 +494,32 @@ impl SensorRegistry {
     }
 
     async fn touch_sensor(&self, sensor_id: &str, seen_at: DateTime<Utc>) -> anyhow::Result<()> {
+        self.set_sensor_last_seen(sensor_id, Some(seen_at)).await
+    }
+
+    async fn set_sensor_last_seen(
+        &self,
+        sensor_id: &str,
+        seen_at: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<()> {
         if let Some(db) = self.db().await {
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "UPDATE sensor_definitions SET last_seen_at = $2::timestamptz WHERE sensor_id = $1",
-                vec![sensor_id.to_string().into(), seen_at.to_rfc3339().into()],
+                "UPDATE sensor_definitions SET last_seen_at = NULLIF($2, '')::timestamptz WHERE sensor_id = $1",
+                vec![
+                    sensor_id.to_string().into(),
+                    seen_at
+                        .map(|value| value.to_rfc3339())
+                        .unwrap_or_default()
+                        .into(),
+                ],
             ))
             .await?;
         }
 
         let mut sensors = self.sensors.write().await;
         if let Some(def) = sensors.get_mut(sensor_id) {
-            def.last_seen_at = Some(seen_at);
+            def.last_seen_at = seen_at;
         }
         Ok(())
     }

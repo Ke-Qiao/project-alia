@@ -23,6 +23,7 @@ use super::noop::{
     NoopFaceTracker, NoopMixer, NoopVad, NoopWakeWord,
 };
 use super::registry::EmbeddedModuleRegistry;
+use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
 use super::volume::{AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState};
@@ -49,12 +50,13 @@ impl EmbeddedNode {
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::process::process_manager_server::ProcessManagerServer;
+        use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
         use alia_proto::settings::embedded_settings_server::EmbeddedSettingsServer;
         use tonic::transport::Server;
 
         use crate::grpc::{
             AudioStreamService, DeviceBindingService, EmbeddedSettingsService,
-            PluginManagerService, ProcessManagerService,
+            PluginManagerService, ProcessManagerService, SensorService,
         };
 
         let audio_svc = AudioStreamServer::new(AudioStreamService::new(
@@ -94,6 +96,10 @@ impl EmbeddedNode {
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
         ));
+        let sensor_svc = EmbeddedSensorServer::new(SensorService::new(
+            self.registry.sensors.clone(),
+            self.binding_manager.clone(),
+        ));
 
         let addr: SocketAddr = "0.0.0.0:50051".parse()?;
         info!(%addr, "gRPC server listening");
@@ -105,6 +111,7 @@ impl EmbeddedNode {
             .add_service(plugin_svc)
             .add_service(binding_svc)
             .add_service(settings_svc)
+            .add_service(sensor_svc)
             .serve_with_shutdown(addr, async move {
                 cancel.cancelled().await;
             })
@@ -217,12 +224,14 @@ impl EmbeddedBuilder {
             .context("opening embedded SQLite state store")?;
         let event_bus = EventBus::new(256);
         let audio_bus = AudioBus::new(512);
+        let sensors = Arc::new(SensorRegistry::new());
         let ctx = ModuleContext {
             config: config.clone(),
             state_store: state_store.clone(),
             event_bus,
             cancel_token: self.cancel_token.clone(),
             audio_bus,
+            sensors: sensors.clone(),
         };
         let volume_config = match state_store
             .load_json::<AudioVolumeConfig>(AUDIO_VOLUME_STATE_KEY)
@@ -450,6 +459,7 @@ impl EmbeddedBuilder {
             speech_pipeline,
             face_tracker,
             discovery,
+            sensors,
             process_manager,
             plugin_registry,
         };

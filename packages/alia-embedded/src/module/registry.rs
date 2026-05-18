@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
+use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
 use crate::plugin::PluginRegistry;
@@ -29,6 +30,7 @@ pub struct EmbeddedModuleRegistry {
     pub discovery: Arc<dyn DiscoveryBackend>,
 
     // Core infrastructure (non-slot, unified lifecycle)
+    pub sensors: Arc<SensorRegistry>,
     pub process_manager: Arc<ProcessManager>,
     pub plugin_registry: Arc<PluginRegistry>,
 }

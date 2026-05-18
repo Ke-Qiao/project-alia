@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use alia_transport::{
 };
 use async_trait::async_trait;
 use base64::Engine;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use tokio::sync::{RwLock, mpsc};
@@ -23,12 +24,17 @@ use alia_proto::audio::{
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::process::process_manager_client::ProcessManagerClient;
+use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
 use crate::auth::load_server_keypair;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
+use crate::providers::sensor::{
+    SensorDefinition as ServerSensorDefinition, SensorReading as ServerSensorReading,
+    SensorRegistry,
+};
 
 use super::adapter::{
     AudioFormat, AudioPayload, AudioPayloadStream, ChannelAction, ChannelAdapter,
@@ -39,6 +45,7 @@ const AUDIO_GRPC_CHUNK_BYTES: usize = 64 * 1024;
 const AUDIO_STREAM_GRPC_CHUNK_BYTES: usize = 8 * 1024;
 const AUDIO_STREAM_BACKPRESSURE_CHUNKS: usize = 8;
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 
 /// Configuration for a single EmbeddedChannel instance.
 #[derive(Debug, Clone)]
@@ -90,6 +97,8 @@ pub struct EmbeddedChannel {
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
+    sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
+    sensor_registry: Arc<RwLock<Option<Arc<SensorRegistry>>>>,
     discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
     discovery_cancel: CancellationToken,
     signing_key: Option<SigningKey>,
@@ -119,6 +128,8 @@ impl EmbeddedChannel {
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
+            sensor_client: Arc::new(RwLock::new(None)),
+            sensor_registry: Arc::new(RwLock::new(None)),
             discovered_candidate: Arc::new(RwLock::new(None)),
             discovery_cancel: CancellationToken::new(),
             signing_key: None,
@@ -221,6 +232,76 @@ impl EmbeddedChannel {
         });
     }
 
+    fn spawn_sensor_sync_loop(&self) {
+        let cancel = self.discovery_cancel.child_token();
+        let sensor_client = self.sensor_client.clone();
+        let sensor_registry = self.sensor_registry.clone();
+        let channel_id = self.config.id.clone();
+        let signing_key = self.signing_key.clone();
+        let server_id = self.default_server_id.clone();
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(SENSOR_SYNC_INTERVAL_SEC));
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = ticker.tick() => {
+                        let Some(registry) = sensor_registry.read().await.clone() else {
+                            continue;
+                        };
+                        let Some(mut client) = sensor_client.read().await.clone() else {
+                            continue;
+                        };
+                        let Some(signing_key) = signing_key.as_ref() else {
+                            tracing::warn!(
+                                channel_id = %channel_id,
+                                "embedded sensor sync skipped because server signing key is unavailable"
+                            );
+                            continue;
+                        };
+
+                        let request = match auth_request_with_signing_key(signing_key, &server_id, ()) {
+                            Ok(request) => request,
+                            Err(error) => {
+                                tracing::warn!(
+                                    channel_id = %channel_id,
+                                    error = %error,
+                                    "failed to build embedded sensor sync auth request"
+                                );
+                                continue;
+                            }
+                        };
+
+                        match client.list_sensors(request).await {
+                            Ok(response) => {
+                                if let Err(error) = mirror_embedded_sensor_definitions(
+                                    &registry,
+                                    &channel_id,
+                                    response.into_inner().sensors,
+                                )
+                                .await
+                                {
+                                    tracing::warn!(
+                                        channel_id = %channel_id,
+                                        error = %error,
+                                        "failed to mirror embedded sensors during periodic sync"
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                tracing::debug!(
+                                    channel_id = %channel_id,
+                                    error = %error,
+                                    "embedded sensor periodic sync failed"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Establish gRPC connection to alia-embedded.
     async fn connect(&self) -> anyhow::Result<()> {
         let Some(endpoint) = self.resolve_endpoint().await? else {
@@ -255,8 +336,18 @@ impl EmbeddedChannel {
                     *self.binding_client.write().await =
                         Some(DeviceBindingClient::new(channel.clone()));
                     *self.settings_client.write().await =
-                        Some(EmbeddedSettingsClient::new(channel));
+                        Some(EmbeddedSettingsClient::new(channel.clone()));
+                    let sensor_client = EmbeddedSensorClient::new(channel);
+                    *self.sensor_client.write().await = Some(sensor_client.clone());
                     *self.status.write().await = ConnectionStatus::Connected;
+                    if let Err(error) = self.sync_embedded_sensors_with_client(sensor_client).await
+                    {
+                        tracing::warn!(
+                            channel_id = %self.config.id,
+                            error = %error,
+                            "failed to sync embedded sensor definitions"
+                        );
+                    }
                     tracing::info!(
                         endpoint = %endpoint,
                         channel_id = %self.config.id,
@@ -275,6 +366,13 @@ impl EmbeddedChannel {
                             error = %e,
                             "failed to connect to alia-embedded, will retry lazily"
                         );
+                        if let Err(error) = self.mark_embedded_sensors_offline().await {
+                            tracing::warn!(
+                                channel_id = %self.config.id,
+                                error = %error,
+                                "failed to mark embedded sensors offline after disconnect"
+                            );
+                        }
                         return Ok(());
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(500 * attempts as u64))
@@ -344,23 +442,64 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
+    /// Get an EmbeddedSensorClient, connecting lazily if needed.
+    pub async fn sensor_client(&self) -> anyhow::Result<EmbeddedSensorClient<Channel>> {
+        if self.sensor_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        self.sensor_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
+    async fn sync_embedded_sensors(&self) -> anyhow::Result<usize> {
+        if self.sensor_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        let client = self
+            .sensor_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))?;
+        self.sync_embedded_sensors_with_client(client).await
+    }
+
+    async fn sync_embedded_sensors_with_client(
+        &self,
+        mut client: EmbeddedSensorClient<Channel>,
+    ) -> anyhow::Result<usize> {
+        let Some(registry) = self.sensor_registry.read().await.clone() else {
+            return Ok(0);
+        };
+        let sensors = client
+            .list_sensors(self.auth_request(())?)
+            .await?
+            .into_inner()
+            .sensors;
+        mirror_embedded_sensor_definitions(&registry, &self.config.id, sensors).await
+    }
+
+    async fn mark_embedded_sensors_offline(&self) -> anyhow::Result<usize> {
+        let Some(registry) = self.sensor_registry.read().await.clone() else {
+            return Ok(0);
+        };
+        registry
+            .mark_source_sensors_offline_except(
+                &embedded_sensor_source(&self.config.id),
+                &HashSet::new(),
+            )
+            .await
+    }
+
     fn auth_request<T>(&self, message: T) -> anyhow::Result<Request<T>> {
         let signing_key = self
             .signing_key
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
-        let token = mint_auth_token(
-            signing_key,
-            &self.default_server_id,
-            "embedded:control",
-            DEFAULT_GRPC_AUTH_TTL,
-        )?;
-        let mut request = Request::new(message);
-        let header = format!("Bearer {token}")
-            .parse()
-            .map_err(|e| anyhow::anyhow!("invalid authorization metadata: {e}"))?;
-        request.metadata_mut().insert("authorization", header);
-        Ok(request)
+        auth_request_with_signing_key(signing_key, &self.default_server_id, message)
     }
 }
 
@@ -371,6 +510,7 @@ impl ModuleLifecycle for EmbeddedChannel {
     }
 
     async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
+        *self.sensor_registry.write().await = Some(_ctx.sensors.clone());
         let keypair = load_server_keypair(&_ctx.config.auth.server_keypair_path)?;
         self.server_public_key = keypair.public_key_bytes().to_vec();
         self.signing_key = Some(keypair.signing_key().clone());
@@ -385,11 +525,19 @@ impl ModuleLifecycle for EmbeddedChannel {
 
     async fn start(&self) -> anyhow::Result<()> {
         self.spawn_discovery_loop();
+        self.spawn_sensor_sync_loop();
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
         self.discovery_cancel.cancel();
+        if let Err(error) = self.mark_embedded_sensors_offline().await {
+            tracing::warn!(
+                channel_id = %self.config.id,
+                error = %error,
+                "failed to mark embedded sensors offline during shutdown"
+            );
+        }
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
             reason: "shutdown".into(),
@@ -1057,6 +1205,76 @@ impl ChannelAdapter for EmbeddedChannel {
                     "requires_restart": resp.requires_restart,
                 }))
             }
+            "list_embedded_sensors" | "list_sensors" => {
+                let mut client = self.sensor_client().await?;
+                let resp = client
+                    .list_sensors(self.auth_request(())?)
+                    .await?
+                    .into_inner();
+                let sensors = resp.sensors;
+                if let Some(registry) = self.sensor_registry.read().await.clone()
+                    && let Err(error) = mirror_embedded_sensor_definitions(
+                        &registry,
+                        &self.config.id,
+                        sensors.clone(),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        channel_id = %self.config.id,
+                        error = %error,
+                        "failed to mirror listed embedded sensors into server registry"
+                    );
+                }
+                Ok(serde_json::json!({
+                    "sensors": sensors.into_iter().map(|definition| embedded_sensor_definition_to_json(&self.config.id, definition)).collect::<Vec<_>>(),
+                }))
+            }
+            "read_embedded_sensor" | "read_sensor" => {
+                let sensor_id = required_action_str(&action.params, "sensor_id")?;
+                let remote_sensor_id = embedded_sensor_remote_id(&self.config.id, sensor_id);
+                let mut client = self.sensor_client().await?;
+                let resp = client
+                    .read_sensor(self.auth_request(alia_proto::sensor::SensorRef {
+                        sensor_id: remote_sensor_id,
+                    })?)
+                    .await?
+                    .into_inner();
+                if resp.available
+                    && let Some(registry) = self.sensor_registry.read().await.clone()
+                    && let Err(error) =
+                        ingest_embedded_sensor_reading(&registry, &self.config.id, &resp).await
+                {
+                    tracing::warn!(
+                        channel_id = %self.config.id,
+                        sensor_id = %sensor_id,
+                        error = %error,
+                        "failed to ingest embedded sensor reading into server registry"
+                    );
+                }
+                Ok(embedded_sensor_reading_to_json(&self.config.id, resp))
+            }
+            "invoke_embedded_sensor" | "invoke_sensor" => {
+                let sensor_id = required_action_str(&action.params, "sensor_id")?;
+                let command = required_action_str(&action.params, "command")?;
+                let remote_sensor_id = embedded_sensor_remote_id(&self.config.id, sensor_id);
+                let args = action
+                    .params
+                    .get("args")
+                    .cloned()
+                    .or_else(|| action.params.get("arguments").cloned())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let mut client = self.sensor_client().await?;
+                let resp = client
+                    .invoke_sensor(self.auth_request(alia_proto::sensor::SensorCommandRequest {
+                        sensor_id: remote_sensor_id,
+                        command: command.to_string(),
+                        args_json: serde_json::to_string(&args)?,
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(embedded_sensor_command_response_to_json(resp))
+            }
             _ => Err(anyhow::anyhow!(
                 "action '{}' not supported by embedded channel",
                 action.name
@@ -1261,6 +1479,227 @@ fn volume_settings_to_json(volume: alia_proto::settings::VolumeSettings) -> serd
         "min_volume": volume.min_volume,
         "max_volume": volume.max_volume,
     })
+}
+
+fn required_action_str<'a>(value: &'a serde_json::Value, key: &str) -> anyhow::Result<&'a str> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("embedded action requires string '{key}'"))
+}
+
+fn auth_request_with_signing_key<T>(
+    signing_key: &SigningKey,
+    server_id: &str,
+    message: T,
+) -> anyhow::Result<Request<T>> {
+    let token = mint_auth_token(
+        signing_key,
+        server_id,
+        "embedded:control",
+        DEFAULT_GRPC_AUTH_TTL,
+    )?;
+    let mut request = Request::new(message);
+    let header = format!("Bearer {token}")
+        .parse()
+        .map_err(|e| anyhow::anyhow!("invalid authorization metadata: {e}"))?;
+    request.metadata_mut().insert("authorization", header);
+    Ok(request)
+}
+
+pub fn embedded_sensor_source(channel_id: &str) -> String {
+    format!("component:{}", channel_id.trim())
+}
+
+pub fn embedded_sensor_public_id(channel_id: &str, remote_sensor_id: &str) -> String {
+    let channel_id = channel_id.trim();
+    let remote_sensor_id = remote_sensor_id.trim().trim_matches('/');
+    if sensor_id_has_channel_prefix(channel_id, remote_sensor_id) {
+        remote_sensor_id.to_string()
+    } else {
+        format!("{channel_id}:{remote_sensor_id}")
+    }
+}
+
+pub fn embedded_sensor_remote_id(channel_id: &str, sensor_id: &str) -> String {
+    let sensor_id = sensor_id.trim();
+    let channel_id = channel_id.trim();
+    for separator in [":", "/", "."] {
+        if let Some(remote) = sensor_id.strip_prefix(&format!("{channel_id}{separator}"))
+            && !remote.trim().is_empty()
+        {
+            return remote.to_string();
+        }
+    }
+    sensor_id.to_string()
+}
+
+pub async fn mirror_embedded_sensor_definitions(
+    registry: &SensorRegistry,
+    channel_id: &str,
+    definitions: Vec<alia_proto::sensor::SensorDefinition>,
+) -> anyhow::Result<usize> {
+    let source = embedded_sensor_source(channel_id);
+    let now = Utc::now();
+    let mut active_sensor_ids = HashSet::with_capacity(definitions.len());
+
+    for definition in &definitions {
+        active_sensor_ids.insert(embedded_sensor_public_id(channel_id, &definition.sensor_id));
+    }
+
+    let offline_count = registry
+        .mark_source_sensors_offline_except(&source, &active_sensor_ids)
+        .await?;
+    if offline_count > 0 {
+        tracing::info!(
+            channel_id = %channel_id,
+            count = offline_count,
+            "embedded sensors no longer advertised; marked offline"
+        );
+    }
+
+    for definition in definitions {
+        registry
+            .register_sensor(embedded_sensor_definition_to_server(
+                channel_id, definition, now,
+            ))
+            .await?;
+    }
+
+    Ok(active_sensor_ids.len())
+}
+
+pub async fn ingest_embedded_sensor_reading(
+    registry: &SensorRegistry,
+    channel_id: &str,
+    reading: &alia_proto::sensor::SensorReading,
+) -> anyhow::Result<()> {
+    if !reading.available {
+        return Ok(());
+    }
+
+    registry
+        .ingest_from_source(
+            ServerSensorReading {
+                sensor_id: embedded_sensor_public_id(channel_id, &reading.sensor_id),
+                value: parse_json_or_null(&reading.value_json),
+                timestamp: timestamp_us_to_utc(reading.timestamp_us),
+                quality: reading.quality,
+            },
+            &embedded_sensor_source(channel_id),
+        )
+        .await
+}
+
+fn embedded_sensor_definition_to_server(
+    channel_id: &str,
+    definition: alia_proto::sensor::SensorDefinition,
+    seen_at: DateTime<Utc>,
+) -> ServerSensorDefinition {
+    let remote_sensor_id = definition.sensor_id;
+    let public_sensor_id = embedded_sensor_public_id(channel_id, &remote_sensor_id);
+    let remote_metadata = parse_json_or_empty(&definition.metadata_json);
+
+    ServerSensorDefinition {
+        sensor_id: public_sensor_id,
+        display_name: if definition.display_name.trim().is_empty() {
+            remote_sensor_id.clone()
+        } else {
+            definition.display_name
+        },
+        source: embedded_sensor_source(channel_id),
+        unit: definition.unit,
+        value_type: if definition.value_type.trim().is_empty() {
+            "json".to_string()
+        } else {
+            definition.value_type
+        },
+        metadata: serde_json::json!({
+            "channel_id": channel_id,
+            "remote_sensor_id": remote_sensor_id,
+            "remote_source": definition.source,
+            "capabilities": definition.capabilities,
+            "remote_metadata": remote_metadata,
+            "read_via": {
+                "channel_action": "read_embedded_sensor"
+            },
+            "invoke_via": {
+                "channel_action": "invoke_embedded_sensor"
+            }
+        }),
+        registered_at: seen_at,
+        last_seen_at: Some(seen_at),
+    }
+}
+
+fn embedded_sensor_definition_to_json(
+    channel_id: &str,
+    definition: alia_proto::sensor::SensorDefinition,
+) -> serde_json::Value {
+    let remote_sensor_id = definition.sensor_id;
+    serde_json::json!({
+        "sensor_id": embedded_sensor_public_id(channel_id, &remote_sensor_id),
+        "remote_sensor_id": remote_sensor_id,
+        "display_name": definition.display_name,
+        "source": definition.source,
+        "unit": definition.unit,
+        "value_type": definition.value_type,
+        "capabilities": definition.capabilities,
+        "metadata": parse_json_or_empty(&definition.metadata_json),
+    })
+}
+
+fn embedded_sensor_reading_to_json(
+    channel_id: &str,
+    reading: alia_proto::sensor::SensorReading,
+) -> serde_json::Value {
+    let remote_sensor_id = reading.sensor_id;
+    serde_json::json!({
+        "sensor_id": embedded_sensor_public_id(channel_id, &remote_sensor_id),
+        "remote_sensor_id": remote_sensor_id,
+        "value": parse_json_or_null(&reading.value_json),
+        "timestamp_us": reading.timestamp_us,
+        "quality": reading.quality,
+        "available": reading.available,
+        "error": reading.error,
+    })
+}
+
+fn embedded_sensor_command_response_to_json(
+    response: alia_proto::sensor::SensorCommandResponse,
+) -> serde_json::Value {
+    serde_json::json!({
+        "success": response.success,
+        "result": parse_json_or_null(&response.result_json),
+        "message": response.message,
+    })
+}
+
+fn parse_json_or_empty(value: &str) -> serde_json::Value {
+    serde_json::from_str(value).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+fn parse_json_or_null(value: &str) -> serde_json::Value {
+    serde_json::from_str(value).unwrap_or(serde_json::Value::Null)
+}
+
+fn sensor_id_has_channel_prefix(channel_id: &str, sensor_id: &str) -> bool {
+    sensor_id
+        .strip_prefix(channel_id)
+        .is_some_and(|rest| matches!(rest.chars().next(), Some(':' | '/' | '.')))
+}
+
+fn timestamp_us_to_utc(timestamp_us: u64) -> DateTime<Utc> {
+    if timestamp_us == 0 {
+        return Utc::now();
+    }
+
+    let secs = (timestamp_us / 1_000_000) as i64;
+    let nanos = ((timestamp_us % 1_000_000) * 1_000) as u32;
+    Utc.timestamp_opt(secs, nanos)
+        .single()
+        .unwrap_or_else(Utc::now)
 }
 
 fn direct_response_rule_from_json(

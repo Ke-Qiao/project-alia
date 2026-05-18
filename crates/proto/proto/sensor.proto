@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package alia.sensor;
+
+import "google/protobuf/empty.proto";
+
+service EmbeddedSensor {
+  // Server -> embedded: enumerate sensors currently registered on the device.
+  rpc ListSensors(google.protobuf.Empty) returns (SensorList);
+
+  // Server -> embedded: read a sensor from its concrete implementation.
+  rpc ReadSensor(SensorRef) returns (SensorReading);
+
+  // Server -> embedded: invoke an optional sensor-specific command.
+  rpc InvokeSensor(SensorCommandRequest) returns (SensorCommandResponse);
+}
+
+message SensorRef {
+  string sensor_id = 1;
+}
+
+message SensorDefinition {
+  string sensor_id = 1;
+  string display_name = 2;
+  string source = 3;
+  string unit = 4;
+  string value_type = 5;
+  repeated string capabilities = 6;
+  string metadata_json = 7;
+}
+
+message SensorList {
+  repeated SensorDefinition sensors = 1;
+}
+
+message SensorReading {
+  string sensor_id = 1;
+  string value_json = 2;
+  uint64 timestamp_us = 3;
+  float quality = 4;
+  bool available = 5;
+  string error = 6;
+}
+
+message SensorCommandRequest {
+  string sensor_id = 1;
+  string command = 2;
+  string args_json = 3;
+}
+
+message SensorCommandResponse {
+  bool success = 1;
+  string result_json = 2;
+  string message = 3;
+}

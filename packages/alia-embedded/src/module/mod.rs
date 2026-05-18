@@ -8,6 +8,7 @@ pub mod factory;
 pub mod lifecycle;
 pub mod noop;
 pub mod registry;
+pub mod sensor;
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa;
 pub mod speech;

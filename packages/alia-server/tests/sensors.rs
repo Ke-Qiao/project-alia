@@ -1,5 +1,14 @@
 use std::sync::Arc;
 
+#[cfg(feature = "channel-embedded")]
+use alia_proto::sensor::{
+    SensorDefinition as EmbeddedProtoSensorDefinition, SensorReading as EmbeddedProtoSensorReading,
+};
+#[cfg(feature = "channel-embedded")]
+use alia_server::channels::embedded::{
+    embedded_sensor_public_id, embedded_sensor_remote_id, ingest_embedded_sensor_reading,
+    mirror_embedded_sensor_definitions,
+};
 use alia_server::providers::adapter::{ToolContext, ToolExecutor};
 use alia_server::providers::sensor::{
     SensorDefinition, SensorQuery, SensorReading, SensorRegistry, SensorRegistryConfig,
@@ -185,4 +194,119 @@ async fn plugin_sensor_helpers_namespace_track_and_unregister() {
         .unwrap();
     assert_eq!(removed, 2);
     assert!(sensors.get_sensor(&full_id).await.unwrap().is_none());
+}
+
+#[cfg(feature = "channel-embedded")]
+#[tokio::test]
+async fn embedded_sensor_mirror_registers_remote_definitions_and_marks_missing_offline() {
+    let sensors = SensorRegistry::new(SensorRegistryConfig::default());
+
+    let mirrored = mirror_embedded_sensor_definitions(
+        &sensors,
+        "embedded",
+        vec![
+            EmbeddedProtoSensorDefinition {
+                sensor_id: "temperature".to_string(),
+                display_name: "Temperature".to_string(),
+                source: "embedded".to_string(),
+                unit: "C".to_string(),
+                value_type: "float".to_string(),
+                capabilities: vec!["read".to_string()],
+                metadata_json: r#"{"location":"desk"}"#.to_string(),
+            },
+            EmbeddedProtoSensorDefinition {
+                sensor_id: "humidity".to_string(),
+                display_name: "Humidity".to_string(),
+                source: "embedded".to_string(),
+                unit: "%".to_string(),
+                value_type: "float".to_string(),
+                capabilities: vec!["read".to_string()],
+                metadata_json: "{}".to_string(),
+            },
+        ],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(mirrored, 2);
+    assert_eq!(
+        embedded_sensor_public_id("embedded", "temperature"),
+        "embedded:temperature"
+    );
+    assert_eq!(
+        embedded_sensor_remote_id("embedded", "embedded:temperature"),
+        "temperature"
+    );
+
+    let temp = sensors
+        .get_sensor("embedded:temperature")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(temp.source, "component:embedded");
+    assert_eq!(temp.metadata["remote_sensor_id"], "temperature");
+    assert_eq!(temp.metadata["remote_metadata"]["location"], "desk");
+    assert!(temp.last_seen_at.is_some());
+
+    mirror_embedded_sensor_definitions(
+        &sensors,
+        "embedded",
+        vec![EmbeddedProtoSensorDefinition {
+            sensor_id: "humidity".to_string(),
+            display_name: "Humidity".to_string(),
+            source: "embedded".to_string(),
+            unit: "%".to_string(),
+            value_type: "float".to_string(),
+            capabilities: vec!["read".to_string()],
+            metadata_json: "{}".to_string(),
+        }],
+    )
+    .await
+    .unwrap();
+
+    let temp = sensors
+        .get_sensor("embedded:temperature")
+        .await
+        .unwrap()
+        .unwrap();
+    let humidity = sensors
+        .get_sensor("embedded:humidity")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(temp.last_seen_at.is_none());
+    assert!(humidity.last_seen_at.is_some());
+}
+
+#[cfg(feature = "channel-embedded")]
+#[tokio::test]
+async fn embedded_sensor_reading_ingests_using_public_sensor_id() {
+    let sensors = SensorRegistry::new(SensorRegistryConfig::default());
+    ingest_embedded_sensor_reading(
+        &sensors,
+        "pi5",
+        &EmbeddedProtoSensorReading {
+            sensor_id: "temperature".to_string(),
+            value_json: "24.5".to_string(),
+            timestamp_us: 1_700_000_000_123_456,
+            quality: 0.8,
+            available: true,
+            error: String::new(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let latest = sensors.latest("pi5:temperature").await.unwrap().unwrap();
+    assert_eq!(latest.value, serde_json::json!(24.5));
+    assert_eq!(latest.quality, 0.8);
+    assert_eq!(
+        sensors
+            .get_sensor("pi5:temperature")
+            .await
+            .unwrap()
+            .unwrap()
+            .source,
+        "component:pi5"
+    );
 }
