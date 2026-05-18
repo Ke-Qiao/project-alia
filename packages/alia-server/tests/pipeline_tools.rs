@@ -15,6 +15,7 @@ fn tool(name: &str, description: &str) -> ToolDefinition {
                 "timezone": {"type": "string"}
             }
         }),
+        routing_hints: Vec::new(),
         source: "builtin".to_string(),
         require_confirmation: false,
         required_role: None,
@@ -93,18 +94,26 @@ fn routes_preference_statements_to_memory_store() {
 
 #[test]
 fn routes_embedded_mic_volume_to_embedded_volume_tool() {
+    let mut volume_tool = tool(
+        "embedded_volume_control",
+        "Get or set microphone and speaker volume for an alia-embedded channel",
+    );
+    volume_tool.routing_hints = vec![
+        "microphone".to_string(),
+        "speaker".to_string(),
+        "volume".to_string(),
+        "麦克风".to_string(),
+        "音量".to_string(),
+    ];
     let selected = rank_and_limit_tools(
         vec![
             tool("device_control", "Control smart home devices"),
-            tool(
-                "embedded_volume_control",
-                "Get or set microphone and speaker volume for an alia-embedded channel",
-            ),
+            volume_tool,
         ],
         "把麦克风音量调整到2",
         1,
         false,
-        "embedded",
+        "pi-living-room",
     );
 
     assert_eq!(selected.len(), 1);

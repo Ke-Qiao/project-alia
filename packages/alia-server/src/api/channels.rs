@@ -82,7 +82,18 @@ async fn restart_channel(
     }
 
     let channel_type = config.channel_type();
-    let mut channel = factory::create_channel(&config, state.event_bus.clone());
+    let mut channel = match factory::create_channel(&config, state.event_bus.clone()) {
+        Ok(channel) => channel,
+        Err(error) => {
+            state
+                .channels
+                .mark_disabled(&channel_id, channel_type, error.to_string())
+                .await;
+            return Err(AppError::AiService(format!(
+                "channel '{channel_id}' creation failed: {error}"
+            )));
+        }
+    };
     let ctx = ModuleContext {
         db: state.db.clone(),
         config: state.config.clone(),

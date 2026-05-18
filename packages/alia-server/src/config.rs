@@ -59,14 +59,6 @@ pub struct AuthSection {
     pub argon2_parallelism: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct EmbeddedSection {
-    pub endpoint: String,
-    pub reconnect_interval_sec: u64,
-    pub reconnect_max_backoff_sec: u64,
-    pub grpc_timeout_sec: u64,
-}
-
 /// Configuration for a single channel instance.
 /// The `type` field determines which adapter to create.
 #[derive(Debug, Clone, Deserialize)]

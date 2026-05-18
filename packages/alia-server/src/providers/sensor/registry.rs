@@ -18,11 +18,11 @@ use crate::registry::{ArtifactRef, ArtifactRegistry};
 /// Metadata describing a registered sensor.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SensorDefinition {
-    /// Unique sensor identifier: "{source}/{name}" (e.g., "embedded/temperature", "plugin.weather/humidity")
+    /// Unique sensor identifier, for example "room:temperature" or "plugin.weather:humidity".
     pub sensor_id: String,
     /// Human-readable name
     pub display_name: String,
-    /// Sensor source: "embedded", "plugin", "api"
+    /// Sensor source, such as "component:<name>", "plugin:<name>", "api", or "manual".
     pub source: String,
     /// Unit of measurement (e.g., "°C", "%", "lux", "boolean")
     pub unit: String,
@@ -155,7 +155,7 @@ pub struct SensorReadResult {
 
 /// Pull-based reader for sensors that can be queried on demand.
 ///
-/// Push-only sources can ignore this trait and keep using `ingest`. Embedded
+/// Push-only sources can ignore this trait and keep using `ingest`. Channel
 /// devices and future plugins can register a provider so generic tools and
 /// scheduler conditions get fresh values without knowing channel internals.
 #[async_trait]
@@ -949,7 +949,7 @@ fn sensor_artifact_source(source: &str) -> String {
         || matches!(source, "api" | "builtin" | "file" | "manual")
     {
         source.to_string()
-    } else if matches!(source, "embedded" | "unknown") {
+    } else if !source.contains(':') {
         format!("component:{source}")
     } else {
         source.to_string()

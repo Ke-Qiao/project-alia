@@ -1,7 +1,7 @@
 //! Sensor system: registration, time-series storage, query, and auto-cleanup.
 //!
 //! Sensors can be reported from:
-//! - Embedded devices (via gRPC → ChannelEvent::SensorData)
+//! - Channel adapters and components (via `ChannelEvent::SensorData`)
 //! - Plugins/components (via ModuleContext::sensors and EventBus)
 //! - API (direct HTTP ingestion)
 //!

@@ -620,7 +620,7 @@ impl SettingsRegistry {
             (
                 "core.modules.memory",
                 json!(config.modules.memory),
-                schema_select("Memory Backend", &["graphrag", "simple", "noop"], true),
+                schema_select("Memory Backend", &["mem0", "simple", "noop"], true),
             ),
             (
                 "core.modules.cache",

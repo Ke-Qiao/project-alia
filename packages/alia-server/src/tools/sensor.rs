@@ -35,7 +35,7 @@ impl ToolExecutor for SensorReadTool {
                 "properties": {
                     "sensor_id": {
                         "type": "string",
-                        "description": "The sensor ID to read (e.g., 'embedded/temperature', 'plugin.weather/humidity')"
+                        "description": "The sensor ID to read (for example, 'room:temperature' or 'plugin.weather:humidity')"
                     },
                     "read_mode": {
                         "type": "string",
@@ -58,6 +58,7 @@ impl ToolExecutor for SensorReadTool {
                 },
                 "required": ["sensor_id"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -183,10 +184,11 @@ impl ToolExecutor for SensorListTool {
                 "properties": {
                     "source": {
                         "type": "string",
-                        "description": "Filter by source: 'embedded', 'plugin', 'api'. Omit to list all."
+                        "description": "Filter by source, such as 'component:<name>', 'plugin:<name>', or 'api'. Omit to list all."
                     }
                 }
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,

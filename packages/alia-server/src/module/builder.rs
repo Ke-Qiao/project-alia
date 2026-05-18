@@ -418,9 +418,25 @@ impl ServerBuilder {
                 tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
                 continue;
             }
-            let channel: Box<dyn ChannelAdapter> =
-                factory::create_channel(ch_cfg, self.event_bus.clone());
-            register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
+            match factory::create_channel(ch_cfg, self.event_bus.clone()) {
+                Ok(channel) => {
+                    register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
+                }
+                Err(error) => {
+                    let channel_id = ch_cfg.id().to_string();
+                    let channel_type = ch_cfg.channel_type();
+                    let reason = error.to_string();
+                    tracing::warn!(
+                        channel_type,
+                        channel_id = %channel_id,
+                        error = ?error,
+                        "channel creation failed; channel disabled"
+                    );
+                    channel_registry
+                        .mark_disabled(&channel_id, channel_type, reason)
+                        .await;
+                }
+            }
         }
         // Register explicitly added channels
         for channel in self.channels {

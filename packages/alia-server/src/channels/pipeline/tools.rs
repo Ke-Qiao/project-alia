@@ -408,7 +408,6 @@ async fn select_ranked_or_llm_filtered_tools(
         user_text,
         candidate_pool_size,
         skill_scoped,
-        channel_id,
         tools_config,
     )
     .await
@@ -418,7 +417,6 @@ async fn select_ranked_or_llm_filtered_tools(
             user_text,
             candidate_pool_size,
             skill_scoped,
-            channel_id,
         )
     });
 
@@ -482,7 +480,7 @@ pub fn rank_and_limit_tools(
     user_text: &str,
     max_tools_per_turn: usize,
     skill_scoped: bool,
-    channel_id: &str,
+    _channel_id: &str,
 ) -> Vec<ToolDefinition> {
     if tools.is_empty() || max_tools_per_turn == 0 {
         return Vec::new();
@@ -497,7 +495,6 @@ pub fn rank_and_limit_tools(
         user_text,
         max_tools_per_turn,
         skill_scoped,
-        channel_id,
     )
     .into_iter()
     .map(|candidate| candidate.tool)
@@ -518,7 +515,6 @@ async fn indexed_rank_tool_candidates(
     user_text: &str,
     limit: usize,
     skill_scoped: bool,
-    channel_id: &str,
     tools_config: &ToolsSection,
 ) -> Option<Vec<RankedToolCandidate>> {
     if !tools_config.indexed_search_enabled
@@ -619,8 +615,7 @@ async fn indexed_rank_tool_candidates(
         .cloned()
         .enumerate()
         .filter_map(|(index, tool)| {
-            let lexical_score =
-                score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
+            let lexical_score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped);
             let semantic_similarity = embeddings_by_name
                 .get(&tool.name)
                 .and_then(|embedding| cosine_similarity(&query_embedding, embedding));
@@ -673,7 +668,6 @@ fn rank_tool_candidates(
     user_text: &str,
     limit: usize,
     skill_scoped: bool,
-    channel_id: &str,
 ) -> Vec<RankedToolCandidate> {
     if tools.is_empty() || limit == 0 {
         return Vec::new();
@@ -685,7 +679,7 @@ fn rank_tool_candidates(
         .into_iter()
         .enumerate()
         .map(|(index, tool)| {
-            let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped, channel_id);
+            let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped);
             RankedToolCandidate {
                 score,
                 index,
@@ -760,6 +754,7 @@ fn tool_candidate_keywords(tool: &ToolDefinition) -> Vec<String> {
             .iter()
             .map(|hint| hint.to_string()),
     );
+    keywords.extend(tool.routing_hints.iter().map(|hint| hint.to_lowercase()));
     keywords.sort();
     keywords.dedup();
     keywords.truncate(24);
@@ -767,13 +762,18 @@ fn tool_candidate_keywords(tool: &ToolDefinition) -> Vec<String> {
 }
 
 fn tool_routing_text(tool: &ToolDefinition) -> String {
+    let mut hints = tool_routing_hints(&tool.name.to_lowercase())
+        .iter()
+        .map(|hint| (*hint).to_string())
+        .collect::<Vec<_>>();
+    hints.extend(tool.routing_hints.iter().cloned());
     format!(
         "{}\n{}\nsource: {}\nparameters: {}\nhints: {}",
         tool.name,
         tool.description,
         tool.source,
         schema_property_names(&tool.parameters).join(" "),
-        tool_routing_hints(&tool.name.to_lowercase()).join(" ")
+        hints.join(" ")
     )
 }
 
@@ -805,7 +805,6 @@ fn score_tool_candidate(
     query: &str,
     query_terms: &HashSet<String>,
     skill_scoped: bool,
-    channel_id: &str,
 ) -> i32 {
     let mut score = if skill_scoped { 1 } else { 0 };
     let name = tool.name.to_lowercase();
@@ -832,8 +831,24 @@ fn score_tool_candidate(
         }
     }
 
+    for term in searchable_terms
+        .iter()
+        .filter(|term| term.chars().any(|ch| !ch.is_ascii()))
+        .take(8)
+    {
+        if query.contains(term.as_str()) {
+            score += 3;
+        }
+    }
+
     for hint in tool_routing_hints(&name) {
         if query.contains(hint) {
+            score += 12;
+        }
+    }
+    for hint in &tool.routing_hints {
+        let hint = hint.trim().to_lowercase();
+        if !hint.is_empty() && query.contains(&hint) {
             score += 12;
         }
     }
@@ -845,15 +860,6 @@ fn score_tool_candidate(
     }
     if looks_like_arithmetic(query) && name == "calculate" {
         score += 18;
-    }
-    if channel_id == "embedded" && name == "embedded_volume_control" {
-        score += 8;
-    }
-    if name == "embedded_volume_control" && looks_like_embedded_volume_request(query) {
-        score += 28;
-    }
-    if name == "device_control" && looks_like_embedded_volume_request(query) {
-        score -= 8;
     }
 
     score
@@ -994,33 +1000,6 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "扬声器",
             "温度",
         ],
-        "embedded_volume_control" => &[
-            "embedded",
-            "pi",
-            "raspberry",
-            "mic",
-            "microphone",
-            "capture volume",
-            "speaker",
-            "playback volume",
-            "louder",
-            "quieter",
-            "volume",
-            "麦克风",
-            "话筒",
-            "拾音",
-            "收音",
-            "输入音量",
-            "喇叭",
-            "扬声器",
-            "播放音量",
-            "音量",
-            "声音",
-            "调大",
-            "调小",
-            "放大",
-            "小声",
-        ],
         "sensor_read" => &[
             "sensor",
             "temperature",
@@ -1046,34 +1025,6 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
         ],
         _ => &[],
     }
-}
-
-fn looks_like_embedded_volume_request(query: &str) -> bool {
-    let has_volume = [
-        "volume", "louder", "quieter", "音量", "声音", "调大", "调小", "放大", "小声",
-    ]
-    .iter()
-    .any(|hint| query.contains(hint));
-    let has_embedded_audio_target = [
-        "mic",
-        "microphone",
-        "speaker",
-        "capture",
-        "playback",
-        "pi",
-        "raspberry",
-        "embedded",
-        "麦克风",
-        "话筒",
-        "拾音",
-        "收音",
-        "扬声器",
-        "喇叭",
-    ]
-    .iter()
-    .any(|hint| query.contains(hint));
-
-    has_volume && has_embedded_audio_target
 }
 
 fn looks_like_arithmetic(query: &str) -> bool {
@@ -1198,6 +1149,7 @@ mod tests {
                     "query": {"type": "string"}
                 }
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,

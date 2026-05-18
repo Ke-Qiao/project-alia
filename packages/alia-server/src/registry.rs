@@ -212,7 +212,7 @@ pub fn owner_from_source(source: &str) -> ArtifactOwner {
             kind: source.to_string(),
             name: source.to_string(),
         },
-        "embedded" | "grpc" | "http" | "rules" | "scheduler" | "sensor" => ArtifactOwner {
+        "grpc" | "http" | "rules" | "scheduler" | "sensor" => ArtifactOwner {
             kind: "component".to_string(),
             name: source.to_string(),
         },

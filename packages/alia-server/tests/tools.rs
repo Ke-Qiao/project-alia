@@ -81,6 +81,7 @@ fn test_to_openai_functions() {
         name: "test_tool".to_string(),
         description: "A test tool".to_string(),
         parameters: serde_json::json!({"type": "object"}),
+        routing_hints: Vec::new(),
         source: "builtin".to_string(),
         require_confirmation: false,
         required_role: None,

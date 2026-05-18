@@ -56,20 +56,21 @@ struct ToolCatalogFields {
 
 fn tool_catalog_fields(definition: &ToolDefinition) -> ToolCatalogFields {
     let schema_terms = schema_property_names(&definition.parameters).join(" ");
+    let mut hints = tool_routing_hints(&definition.name)
+        .iter()
+        .map(|hint| (*hint).to_string())
+        .collect::<Vec<_>>();
+    hints.extend(definition.routing_hints.iter().cloned());
     let routing_text = format!(
         "{}\n{}\nsource: {}\nparameters: {}\nhints: {}",
         definition.name,
         definition.description,
         definition.source,
         schema_terms,
-        tool_routing_hints(&definition.name).join(" ")
+        hints.join(" ")
     );
     let mut keywords = tokenize_catalog_text(&routing_text);
-    keywords.extend(
-        tool_routing_hints(&definition.name)
-            .iter()
-            .map(|hint| hint.to_string()),
-    );
+    keywords.extend(hints);
     keywords.sort();
     keywords.dedup();
 
@@ -171,16 +172,6 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "设备",
             "智能家居",
             "控制",
-        ],
-        "embedded_volume_control" => &[
-            "volume",
-            "microphone",
-            "speaker",
-            "mic",
-            "音量",
-            "麦克风",
-            "喇叭",
-            "扬声器",
         ],
         _ => &[],
     }
@@ -318,6 +309,7 @@ impl BuiltinToolRegistry {
                     name: row.name,
                     description: row.description,
                     parameters: row.parameters,
+                    routing_hints: Vec::new(),
                     source: row.source,
                     require_confirmation: row.require_confirmation,
                     required_role: row.required_role,
@@ -501,7 +493,6 @@ impl ToolRegistry for BuiltinToolRegistry {
             };
 
             if is_plugin {
-                // TODO: Plugin tool execution via gRPC to alia-embedded
                 Ok(ToolResult {
                     call_id: call_id.clone(),
                     success: false,
@@ -856,6 +847,7 @@ impl ToolExecutor for GetCurrentTime {
                     }
                 }
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -932,6 +924,7 @@ impl ToolExecutor for FetchUrl {
                 },
                 "required": ["url"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -1050,6 +1043,7 @@ impl ToolExecutor for Calculate {
                 },
                 "required": ["expression"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -1114,6 +1108,7 @@ impl ToolExecutor for MemorySearch {
                 },
                 "required": ["query"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -1226,6 +1221,7 @@ impl ToolExecutor for MemoryStore {
                 },
                 "required": ["content"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -1358,6 +1354,7 @@ impl ToolExecutor for ScheduleTask {
                 },
                 "required": ["name", "schedule_type", "action"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: true,
             required_role: None,
@@ -1465,6 +1462,7 @@ impl ToolExecutor for SendNotification {
                 },
                 "required": ["title", "body"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: false,
             required_role: None,
@@ -1527,6 +1525,7 @@ impl ToolExecutor for DeviceControl {
                 },
                 "required": ["device_id", "action"]
             }),
+            routing_hints: Vec::new(),
             source: "builtin".to_string(),
             require_confirmation: true,
             required_role: None,
@@ -1547,7 +1546,6 @@ impl ToolExecutor for DeviceControl {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("action is required"))?;
 
-        // TODO: Send command via gRPC to alia-embedded
         tracing::info!(%device_id, %action, "device_control called (stub)");
 
         Ok(ToolResult {
@@ -1555,7 +1553,7 @@ impl ToolExecutor for DeviceControl {
             success: true,
             output: serde_json::json!({
                 "executed": false,
-                "message": "Device control pending integration with alia-embedded"
+                "message": "Device control pending adapter integration"
             }),
             display: Some(format!("Device {} action '{}' pending", device_id, action)),
         })

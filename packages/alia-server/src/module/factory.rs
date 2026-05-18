@@ -326,7 +326,10 @@ pub fn create_tools_with_sensors(
     }
 }
 
-pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn ChannelAdapter> {
+pub fn create_channel(
+    config: &ChannelConfig,
+    event_bus: EventBus,
+) -> anyhow::Result<Box<dyn ChannelAdapter>> {
     match config {
         #[cfg(feature = "channel-embedded")]
         ChannelConfig::Embedded {
@@ -343,7 +346,7 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
             ..
         } => {
             tracing::info!(channel_id = %id, "creating EmbeddedChannel");
-            Box::new(EmbeddedChannel::new(
+            Ok(Box::new(EmbeddedChannel::new(
                 EmbeddedChannelConfig {
                     id: id.clone(),
                     endpoint: endpoint.clone(),
@@ -357,19 +360,45 @@ pub fn create_channel(config: &ChannelConfig, event_bus: EventBus) -> Box<dyn Ch
                     discard_interrupted_turn_history: *discard_interrupted_turn_history,
                 },
                 event_bus,
-            ))
+            )))
         }
         #[cfg(not(feature = "channel-embedded"))]
         ChannelConfig::Embedded { id, .. } => {
-            tracing::warn!(
-                channel_id = %id,
-                "embedded channel not available (compile without 'channel-embedded' feature)"
-            );
-            panic!("embedded channel requires 'channel-embedded' feature");
+            anyhow::bail!(
+                "embedded channel '{}' requires the 'channel-embedded' feature",
+                id
+            )
         }
         ChannelConfig::Cli { id, .. } => {
             tracing::info!(channel_id = %id, "creating CliChannel");
-            Box::new(CliChannel::new(id.clone(), event_bus))
+            Ok(Box::new(CliChannel::new(id.clone(), event_bus)))
+        }
+    }
+}
+
+#[cfg(all(test, not(feature = "channel-embedded")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_channel_without_feature_returns_error() {
+        let config = ChannelConfig::Embedded {
+            id: "pi-living-room".to_string(),
+            enabled: true,
+            endpoint: String::new(),
+            discovery_service_name: "_alia-embedded._tcp".to_string(),
+            discovery_timeout_sec: 3,
+            reconnect_interval_sec: 5,
+            reconnect_max_backoff_sec: 60,
+            grpc_timeout_sec: 10,
+            voice_turn_interrupt_enabled: true,
+            cancel_streaming_tts_on_interrupt: true,
+            discard_interrupted_turn_history: true,
+        };
+
+        match create_channel(&config, EventBus::new(1)) {
+            Ok(_) => panic!("embedded channel creation should fail without channel-embedded"),
+            Err(error) => assert!(error.to_string().contains("channel-embedded")),
         }
     }
 }

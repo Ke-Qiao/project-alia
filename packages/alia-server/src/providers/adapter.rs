@@ -698,6 +698,11 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value, // JSON Schema
+    /// Optional routing hints owned by the tool provider. These are not shown
+    /// to the LLM as executable arguments; they only help the server narrow
+    /// large tool catalogs before a turn reaches the model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routing_hints: Vec<String>,
     /// Owner source. Use "builtin", "component:<name>", "api", or a plugin name.
     pub source: String,
     pub require_confirmation: bool,

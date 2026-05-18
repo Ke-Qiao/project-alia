@@ -22,9 +22,12 @@ future chat integrations.
 
 `channel_id` is the stable instance identity and `channel_type` is only the
 adapter category. Runtime routing, conversation history, tools, and delivery
-should use the instance id. If older embedded clients send `"embedded"` as a
-channel id, the server resolves it as a type alias only when exactly one
-embedded channel is active; exact ids always win.
+should use the instance id. A plugin or component channel must not register an
+id that equals another channel's type, or a type that equals another channel's
+id. The registry rejects those ambiguous identities at registration time.
+
+If older embedded clients send `"embedded"` as a channel id, the server resolves
+it as a type alias only when exactly one embedded channel is active.
 
 ## Embedded Channel
 

@@ -2309,8 +2309,8 @@ mod tests {
     fn stable_user_uuid_never_returns_nil_for_empty_text() {
         assert!(!stable_user_uuid("").is_nil());
         assert_eq!(
-            stable_user_uuid("embedded-user"),
-            stable_user_uuid("embedded-user")
+            stable_user_uuid("sample-user"),
+            stable_user_uuid("sample-user")
         );
     }
 }

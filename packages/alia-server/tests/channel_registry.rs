@@ -58,19 +58,41 @@ async fn resolves_unique_channel_type_alias_to_concrete_id() {
 }
 
 #[tokio::test]
-async fn exact_channel_id_wins_over_type_alias() {
+async fn rejects_channel_id_that_conflicts_with_existing_channel_type() {
     let registry = ChannelRegistry::new();
-    registry
-        .register(Arc::new(TestChannel::new("embedded", "cli")))
-        .await
-        .unwrap();
     registry
         .register(Arc::new(TestChannel::new("pi-living-room", "embedded")))
         .await
         .unwrap();
 
-    let resolved = registry.resolve_id_or_type("embedded").await.unwrap();
-    assert_eq!(resolved.as_deref(), Some("embedded"));
+    let error = registry
+        .register(Arc::new(TestChannel::new("embedded", "cli")))
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("conflicts with existing channel type")
+    );
+}
+
+#[tokio::test]
+async fn rejects_channel_type_that_conflicts_with_existing_channel_id() {
+    let registry = ChannelRegistry::new();
+    registry
+        .register(Arc::new(TestChannel::new("embedded", "embedded")))
+        .await
+        .unwrap();
+
+    let error = registry
+        .register(Arc::new(TestChannel::new("custom-one", "embedded")))
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("conflicts with existing channel id")
+    );
 }
 
 #[tokio::test]

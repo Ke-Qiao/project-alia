@@ -104,13 +104,15 @@ impl ChannelRegistry {
 
     /// Register a channel (at startup or hot-add at runtime).
     pub async fn register(&self, channel: Arc<dyn ChannelAdapter>) -> anyhow::Result<()> {
-        let id = channel.channel_id().to_string();
+        let id = normalize_channel_identifier(channel.channel_id(), "channel id")?;
+        let channel_type = normalize_channel_identifier(channel.channel_type(), "channel type")?;
         let mut map = self.channels.write().await;
         if map.contains_key(&id) {
             anyhow::bail!("channel '{}' already registered", id);
         }
+        validate_channel_identity_not_ambiguous(&map, &id, &channel_type)?;
         tracing::info!(
-            channel_type = channel.channel_type(),
+            channel_type = %channel_type,
             channel_id = %id,
             "channel registered"
         );
@@ -215,4 +217,38 @@ impl ChannelRegistry {
         }
         results
     }
+}
+
+fn normalize_channel_identifier(value: &str, label: &str) -> anyhow::Result<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        anyhow::bail!("{label} must not be empty");
+    }
+    Ok(value.to_string())
+}
+
+fn validate_channel_identity_not_ambiguous(
+    channels: &HashMap<String, Arc<dyn ChannelAdapter>>,
+    new_id: &str,
+    new_type: &str,
+) -> anyhow::Result<()> {
+    for existing in channels.values() {
+        let existing_id = existing.channel_id();
+        let existing_type = existing.channel_type();
+        if new_id == existing_type && new_type != existing_type {
+            anyhow::bail!(
+                "channel id '{}' conflicts with existing channel type '{}'; use a concrete instance id that is not another channel type",
+                new_id,
+                existing_type
+            );
+        }
+        if new_type == existing_id && new_id != existing_id {
+            anyhow::bail!(
+                "channel type '{}' conflicts with existing channel id '{}'; use a channel id that does not shadow a channel type",
+                new_type,
+                existing_id
+            );
+        }
+    }
+    Ok(())
 }

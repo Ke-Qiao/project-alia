@@ -159,14 +159,15 @@ async fn resolve_embedded_channel(
     channel_id: Option<&str>,
 ) -> Result<Arc<dyn ChannelAdapter>> {
     if let Some(channel_id) = channel_id {
-        let channel = state
+        let (resolved_channel_id, channel) = state
             .channels
-            .get(channel_id)
+            .get_resolved(channel_id)
             .await
+            .map_err(|error| AppError::Validation(error.to_string()))?
             .ok_or_else(|| AppError::NotFound(format!("channel '{channel_id}' not found")))?;
         if channel.channel_type() != "embedded" {
             return Err(AppError::Validation(format!(
-                "channel '{channel_id}' is not an embedded channel"
+                "channel '{resolved_channel_id}' is not an embedded channel"
             )));
         }
         return Ok(channel);
