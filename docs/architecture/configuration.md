@@ -1,119 +1,67 @@
-# Configuration
+# Configuration Model
 
-Project Alia separates static startup configuration from runtime settings. The
-goal is to make module selection explicit while allowing safe live updates for
-provider parameters, policy tuning, voice profiles, and UI-managed settings.
+Project Alia separates startup configuration, runtime settings, and runtime
+state. The split is important because the frontend will edit settings while the
+system is running, but some choices still require rebuilding modules or
+reopening hardware.
 
-## Server Config Layout
+## Configuration Layers
 
-The server starts from a base config file:
+| Layer | Owner | Examples |
+| --- | --- | --- |
+| Startup config | Human/admin, deployment tooling | module selection, channels, database, bind addresses, model paths |
+| Runtime settings | Frontend/server APIs | provider endpoint tuning, volume, voice profile fields, policies |
+| Runtime state | The application | binding status, imported direct response metadata, latest sensor readings |
+| Disk assets | Human/admin or setup scripts | audio clips, sherpa models, provider model files, debug WAVs |
 
-- `ALIA_CONFIG_PATH`
-- `./config/server.toml`
-- user config directory
-- `/etc/alia/server.toml`
+## Package Docs
 
-For `server.toml`, fragments are loaded recursively from `server.d/**/*.toml`
-and deep-merged in sorted path order. The examples use:
+Detailed configuration docs live beside the owning package:
 
-```text
-config/
-  server.example.toml
-  server.example.d/
-    providers/
-    policies/
-    profiles/
-    resources/
-```
+- [Server configuration](../../packages/alia-server/docs/configuration.md)
+- [Embedded configuration](../../packages/alia-embedded/docs/configuration.md)
 
-The base file should own instance-level settings and module selection:
+Root docs only describe the cross-system model.
 
-- server bind address and logging
-- database and auth
-- channel instances
-- `[modules]` implementation choices
+## Server Summary
 
-Fragments should own implementation details:
+The server uses a base `config/server.toml` plus sorted fragments under
+`config/server.d/**/*.toml`. The base file owns module selection and channel
+topology. Fragments own provider, policy, profile, resource, and future plugin
+settings.
 
-- `providers/*.toml`: OpenAI-compatible, Ollama, whisper.cpp, GPT-SoVITS, Mem0
-- `policies/*.toml`: routing, conversation, cache, memory, insights, rules,
-  scheduler, tools
-- `profiles/*.toml`: voice profiles
-- `resources/*.toml`: directories and resource roots
-- future `plugins/*.toml`: plugin-owned configuration
+Module selection is intentionally startup-oriented. Provider parameters and
+policy values can often be hot-updated, but switching implementations usually
+requires rebuilding the module graph.
 
-Relative paths are resolved from the base config file directory, not from the
-process working directory.
+## Embedded Summary
 
-## Runtime Settings
+The embedded node can boot from compiled defaults when `config/embedded.toml` is
+missing. User-editable settings belong in the config file. Runtime-owned
+structured state belongs in embedded SQLite. Large assets such as direct
+response audio and sherpa-onnx models stay on disk.
 
-The server settings registry exposes `core.*` and `plugin.*` keys through
-`PATCH /api/v1/settings`. The response reports:
+## Hot Reload Direction
 
-- `changed`: keys that changed in the registry
-- `applied`: keys applied live by a module or pipeline policy
-- `requires_restart`: keys that are intentionally startup-only
-- `ignored_runtime`: keys that changed but no runtime component consumed
-- `module_reports`: per-module apply results
-- `errors`: runtime apply errors
+Runtime setting updates should report:
 
-Hot updates currently cover many provider parameters and pipeline policies,
-including LLM endpoints/models, STT/TTS endpoints/timeouts, voice profile
-fields, routing policy, cache policy, memory retrieval policy, and tool policy.
+- changed keys
+- keys applied live
+- keys requiring restart
+- keys ignored by current modules
+- per-module apply errors
 
-Restart is still expected for:
+This lets the frontend safely update settings without pretending every knob can
+be hot-reloaded.
 
-- server host/port and log-level boot behavior
-- database connection settings
-- auth secrets and key material
-- module selection in `[modules]`
-- channel topology changes that require adapter construction
-- memory backend identity/API key changes that must pass startup health checks
-- module slot changes such as switching the rule engine or scheduler backend
+## Restart Boundaries
 
-## Automation Config
+Restart is usually expected for:
 
-The active server examples use:
-
-```toml
-[modules]
-rule_engine = "automation"
-scheduler = "automation"
-```
-
-The automation scheduler supports cron, one-shot, interval, condition-polling,
-and event-subscription triggers. Rules and scheduler tasks share condition and
-action registries, so plugin-defined conditions are available to both systems.
-Sensor values are also available as a first-class condition dimension.
-
-## Embedded Config
-
-`alia-embedded` can boot with compiled defaults when `config/embedded.toml` is
-missing. The example file covers:
-
-- identity and binding state
-- wake word model and keywords
-- audio capture/playback device, backend, buffering, and volume defaults
-- audio debug WAV recording
-- edge STT timing and language
-- VAD model and endpointing thresholds
-- playback interruption behavior
-- continuous dialogue windows
-- direct response audio directory
-- mDNS/BLE discovery
-- local development binding bypass
-
-Volume settings and direct response metadata are also persisted in embedded
-SQLite so the frontend/server can update them without rewriting the whole config
-file.
-
-## Embedded Settings gRPC
-
-The embedded settings service supports:
-
-- get/update settings snapshot
-- get/set microphone and speaker volume
-- list/upsert/delete direct response rules
-
-Settings responses include `requires_restart` where the device cannot apply a
-change safely at runtime.
+- server or embedded bind addresses
+- database and auth key material
+- module implementation selection
+- channel topology changes
+- model paths requiring provider reinitialization
+- audio backend/device changes requiring hardware reopen
+- runtime directory layout

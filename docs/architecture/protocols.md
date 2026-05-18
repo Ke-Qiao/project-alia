@@ -28,6 +28,7 @@ Important services:
 | `alia.audio.AudioStream` | Embedded | Server-to-device audio playback, playback stop, and bidirectional audio hooks. |
 | `alia.audio.ServerAudioIngress` | Server | Embedded-to-server captured audio upload and active turn interruption. |
 | `alia.settings.EmbeddedSettings` | Embedded | Settings snapshot, volume, and direct response management. |
+| `alia.sensor.EmbeddedSensor` | Embedded | Sensor discovery, reads, and optional sensor commands. |
 | Binding/process/plugin services | Embedded | Device binding, subprocess management, and embedded plugin support. |
 
 ## Audio Control Paths
@@ -46,6 +47,11 @@ This avoids overloading normal audio chunks with control semantics.
 `crates/proto` is the source of truth for shared gRPC contracts. Compiling either
 server or embedded pulls in the generated protobuf code through the shared crate.
 Protocol changes should therefore be treated as workspace-wide changes.
+
+Package-specific gRPC details live in:
+
+- [alia-server channel docs](../../packages/alia-server/docs/channels-and-sensors.md)
+- [alia-embedded gRPC docs](../../packages/alia-embedded/docs/grpc-services.md)
 
 ## Local Development
 

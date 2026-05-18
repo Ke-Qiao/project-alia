@@ -1,7 +1,7 @@
 # Project Alia Documentation
 
 This directory is the current documentation set for Project Alia. The files in
-`docs/legacy/` are preserved as historical notes only; prefer the documents
+`docs/legacy/`, when present, are historical notes only; prefer the documents
 below when trying to understand the active architecture.
 
 ## Start Here
@@ -10,14 +10,19 @@ below when trying to understand the active architecture.
   packages, shared crates, and the main runtime boundaries.
 - [Voice pipeline](architecture/voice-pipeline.md) follows a wake word turn from
   embedded capture through server STT, LLM, TTS, and playback.
-- [Server architecture](architecture/server.md) explains the server module
-  graph, channels, providers, registries, and persistence boundaries.
-- [Embedded architecture](architecture/embedded.md) explains the Pi/runtime edge
-  node, audio loop, direct responses, continuous dialogue, and local storage.
-- [Configuration](architecture/configuration.md) explains the layered server
-  config, embedded config, runtime settings, and restart boundaries.
+- [Configuration](architecture/configuration.md) explains how static config,
+  runtime settings, and package-local configuration docs fit together.
 - [Protocols](architecture/protocols.md) summarizes REST, WebSocket, and gRPC
   responsibilities.
+
+## Package Docs
+
+- [alia-server docs](../packages/alia-server/docs/README.md) cover server
+  architecture, configuration, channels, sensors, runtime systems, automation,
+  tools, skills, users, auth, and persistence.
+- [alia-embedded docs](../packages/alia-embedded/docs/README.md) cover the edge
+  runtime, audio and voice flow, direct responses, settings, gRPC services, and
+  modular sensor providers.
 
 ## Concepts
 
@@ -38,7 +43,7 @@ below when trying to understand the active architecture.
 
 ## Documentation Scope
 
-These documents intentionally stay at framework and technical-detail level. They
-avoid function-by-function implementation notes so that future developer docs can
-cover exact APIs, test strategy, migrations, and provider-specific internals
-without making this overview noisy.
+Root documents intentionally stay at project and cross-package level. Package
+documents own package-specific architecture and operations. Future developer
+docs can cover exact APIs, tests, migrations, and provider internals without
+turning the overview into a maze with a name tag.

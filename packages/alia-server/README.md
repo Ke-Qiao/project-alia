@@ -87,6 +87,12 @@ curl http://localhost:3000/health
 
 API documentation is available at `http://localhost:3000/scalar`.
 
+## Documentation
+
+Package docs live in [docs/](docs/README.md). Start there for the current
+architecture, configuration, channels, sensors, runtime systems, and extension
+points.
+
 ## Project Structure
 
 ```
@@ -104,7 +110,7 @@ src/
 │   ├── registry.rs    # ChannelRegistry (multi-instance, broadcast, health)
 │   ├── embedded.rs    # EmbeddedChannel (gRPC → alia-embedded, lazy connect + retry)
 │   └── cli.rs         # CliChannel (rustyline REPL, history, colored output)
-├── embedded/          # Legacy gRPC client (superseded by channels/embedded.rs)
+├── embedded/          # Reusable embedded gRPC client helpers
 ├── module/            # Module lifecycle, registry, builder, factory
 ├── providers/         # AI adapter trait definitions + implementations
 │   ├── adapter.rs     # All trait definitions (LlmAdapter, SttAdapter, etc.)
@@ -112,7 +118,7 @@ src/
 │   ├── stt/           # Speech-to-text (whisper.cpp)
 │   ├── tts/           # Text-to-speech (GPT-SoVITS)
 │   ├── embedding/     # Embedding adapters (Ollama, OpenAI)
-│   ├── memory/        # Memory backend (GraphRAG + SimpleMemory)
+│   ├── memory/        # Memory backends (Mem0 + simple fallback)
 │   ├── cache/         # Cache backend (two-layer: exact + semantic)
 │   ├── skills/        # Skill provider (builtin skills engine)
 │   ├── persona/       # Persona/prompt provider (Handlebars templates)
@@ -158,7 +164,7 @@ All features are enabled by default. Disable with `--no-default-features` and se
 | `tts-sovits` | GPT-SoVITS TTS adapter | `reqwest` |
 | `embed-ollama` | Ollama embedding adapter | `reqwest` |
 | `embed-openai` | OpenAI embedding adapter | `reqwest` |
-| `memory-graphrag` | GraphRAG memory backend | — |
+| `memory-mem0` | Mem0 memory backend | `reqwest` |
 | `cache-semantic` | Two-layer semantic cache | — |
 | `insights` | Background insights/reflection | — |
 

@@ -16,6 +16,9 @@ Model paths are configured in `config/embedded.toml`. The helper script
 `scripts/download-sherpa-models.sh` is intended to populate the common local
 model directories.
 
+Embedded audio/model behavior is described in
+[alia-embedded audio and voice](../../packages/alia-embedded/docs/audio-and-voice.md).
+
 ## Server STT
 
 Server STT currently uses a whisper.cpp-compatible HTTP service. The server
@@ -81,3 +84,6 @@ The server expects provider endpoints to already be reachable. Model download,
 container startup, GPU/Metal tuning, and provider-specific performance settings
 should live in setup scripts or provider deployment docs rather than in the core
 architecture docs.
+
+Server provider configuration is described in
+[alia-server configuration](../../packages/alia-server/docs/configuration.md).

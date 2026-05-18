@@ -4,6 +4,11 @@ Project Alia uses module slots and provider traits to keep the runtime
 replaceable. The server decides which implementation fills each slot, while the
 pipeline depends only on trait interfaces.
 
+Package-specific module details live in:
+
+- [alia-server architecture](../../packages/alia-server/docs/architecture.md)
+- [alia-embedded architecture](../../packages/alia-embedded/docs/architecture.md)
+
 ## Terms
 
 | Term | Meaning |
@@ -62,8 +67,8 @@ Cargo features compile optional backend support:
 - built-in HTTP tools: `tools-http`
 - insights: `insights`
 
-Embedded features currently cover sherpa-onnx wake word, edge STT, and direct
-responses.
+Embedded features currently cover sherpa-onnx wake word, edge STT, VAD, direct
+responses, audio I/O, settings, and sensor service integration.
 
 ## Plugin Direction
 

@@ -4,6 +4,11 @@ The current voice pipeline is built for a practical half-to-full-duplex
 assistant: wake word starts a turn, direct response gives immediate feedback,
 the server handles heavier reasoning, and barge-in can interrupt playback.
 
+Package-specific implementation details live in the server and embedded docs:
+
+- [server pipeline/runtime docs](../../packages/alia-server/docs/architecture.md)
+- [embedded audio and voice docs](../../packages/alia-embedded/docs/audio-and-voice.md)
+
 ## End-to-End Turn
 
 1. Embedded captures microphone frames continuously.

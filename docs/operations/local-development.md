@@ -25,6 +25,11 @@ cp config/embedded.example.toml config/embedded.toml
 Edit `config/server.toml` to choose modules and channels. Then tune providers in
 `config/server.d/providers/` and policies in `config/server.d/policies/`.
 
+Detailed package setup lives in:
+
+- [alia-server configuration](../../packages/alia-server/docs/configuration.md)
+- [alia-embedded configuration](../../packages/alia-embedded/docs/configuration.md)
+
 ## Run Components
 
 ```bash

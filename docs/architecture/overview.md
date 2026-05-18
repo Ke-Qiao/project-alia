@@ -5,6 +5,11 @@ more embedded edge nodes, and a frontend app. The server owns orchestration,
 state, model-provider selection, and user-facing APIs. Embedded nodes own local
 audio I/O, wake word detection, direct responses, device binding, and playback.
 
+Detailed package docs live beside the packages:
+
+- [alia-server docs](../../packages/alia-server/docs/README.md)
+- [alia-embedded docs](../../packages/alia-embedded/docs/README.md)
+
 ```mermaid
 graph LR
     Frontend["alia-frontend<br/>Expo / React Native"] <-->|"REST + WebSocket"| Server["alia-server<br/>Axum / Rust"]
@@ -24,7 +29,7 @@ graph LR
 | Path | Role |
 | --- | --- |
 | `packages/alia-server` | Main server, API, AI pipeline, channel adapters, module lifecycle, provider adapters, registry, scheduler, tools, and persistence. |
-| `packages/alia-embedded` | Edge runtime for Pi or local dev, including audio capture/playback, wake word, VAD, edge STT, direct responses, binding, discovery, and process/plugin services. |
+| `packages/alia-embedded` | Edge runtime for Pi or local dev, including audio capture/playback, wake word, VAD, edge STT, direct responses, binding, discovery, sensors, and process/plugin services. |
 | `packages/alia-frontend` | Expo/React Native application for user-facing UI, settings, onboarding, and runtime control. |
 | `crates/proto` | Shared protobuf definitions and generated Rust code for gRPC services. |
 | `crates/transport` | Shared transport/auth helpers used across server and embedded communication. |
@@ -53,3 +58,6 @@ graph LR
   affected module/channel path where possible, while leaving the process alive.
 - Treat plugins as future first-class owners. Tools, skills, settings, and
   dependencies are registered with ownership metadata so removal can be safe.
+- Keep sensors in one server-visible plane. Embedded owns concrete sensor
+  providers, while the server mirrors definitions/readings into the shared
+  sensor registry for tools, scheduler, rules, and frontend APIs.

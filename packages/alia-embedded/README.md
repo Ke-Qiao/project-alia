@@ -21,6 +21,12 @@ alia-embedded/
 │   └── grpc/               # tonic service implementations
 ```
 
+## Documentation
+
+Package docs live in [docs/](docs/README.md). Start there for the current edge
+runtime architecture, configuration, audio/voice flow, gRPC services, and sensor
+provider model.
+
 ## Quick Start
 
 ```sh
@@ -121,4 +127,6 @@ grpcurl -plaintext -d '{"name":"mediapipe_face"}' \
 
 ## Architecture
 
-See [docs/EDGE_DETAILS.md](../../docs/EDGE_DETAILS.md) for the full design — hardware spec, audio pipeline, plugin sandbox model, device binding protocol, and latency budgets.
+See [docs/architecture.md](docs/architecture.md) for the current embedded
+architecture and [docs/audio-and-voice.md](docs/audio-and-voice.md) for the
+voice pipeline details.

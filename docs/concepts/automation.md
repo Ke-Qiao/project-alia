@@ -3,6 +3,10 @@
 Automation is split into two trigger families that share the same condition and
 action system.
 
+The server owns the current runtime implementation. See
+[alia-server runtime systems](../../packages/alia-server/docs/runtime-systems.md)
+for the package-local view.
+
 ## Rules
 
 Rules are event-driven:
