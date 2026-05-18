@@ -29,7 +29,7 @@ graph LR
 | Path | Role |
 | --- | --- |
 | `packages/alia-server` | Main server, API, AI pipeline, channel adapters, module lifecycle, provider adapters, registry, scheduler, tools, and persistence. |
-| `packages/alia-embedded` | Edge runtime for Pi or local dev, including audio capture/playback, wake word, VAD, edge STT, direct responses, binding, discovery, sensors, and process/plugin services. |
+| `packages/alia-embedded` | Edge runtime for Pi or local dev, including audio capture/playback, wake word, VAD, edge STT, direct responses, binding, discovery, sensors, and plugin services. |
 | `packages/alia-frontend` | Expo/React Native application for user-facing UI, settings, onboarding, and runtime control. |
 | `crates/proto` | Shared protobuf definitions and generated Rust code for gRPC services. |
 | `crates/transport` | Shared transport/auth helpers used across server and embedded communication. |

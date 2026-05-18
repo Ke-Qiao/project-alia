@@ -1,7 +1,3 @@
-pub mod process {
-    tonic::include_proto!("alia.process");
-}
-
 pub mod audio {
     tonic::include_proto!("alia.audio");
 }

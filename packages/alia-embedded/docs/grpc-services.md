@@ -1,8 +1,8 @@
 # gRPC Services
 
 `alia-embedded` hosts gRPC services for server control, playback, settings,
-binding, process/plugin management, and sensors. Shared protobuf definitions
-live in `crates/proto/proto/` and generated Rust code lives in `crates/proto`.
+binding, plugin management, and sensors. Shared protobuf definitions live in
+`crates/proto/proto/` and generated Rust code lives in `crates/proto`.
 
 ## Embedded-Hosted Services
 
@@ -11,7 +11,6 @@ live in `crates/proto/proto/` and generated Rust code lives in `crates/proto`.
 | `alia.audio.AudioStream` | Server-to-device playback, playback stop, audio upload helpers, and audio control hooks. |
 | `alia.settings.EmbeddedSettings` | Settings snapshot, volume, and direct response management. |
 | `alia.binding.DeviceBinding` | Device binding and auth handshake support. |
-| `alia.process.ProcessManager` | Local subprocess/process lifecycle control. |
 | `alia.plugin.PluginManager` | Embedded plugin/package lifecycle control. |
 | `alia.sensor.EmbeddedSensor` | Sensor discovery, reads, and optional sensor commands. |
 
@@ -39,4 +38,3 @@ When adding or changing a service:
    appropriate server gRPC module.
 5. Wire the tonic service into the server builder.
 6. Run workspace checks because proto changes affect both Rust codebases.
-

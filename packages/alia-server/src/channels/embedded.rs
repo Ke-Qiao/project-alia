@@ -23,7 +23,6 @@ use alia_proto::audio::{
 };
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
-use alia_proto::process::process_manager_client::ProcessManagerClient;
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
@@ -86,14 +85,11 @@ struct DiscoveryCandidate {
 }
 
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
-///
-/// Wraps the gRPC client logic that was previously in `embedded::EmbeddedClient`.
 pub struct EmbeddedChannel {
     config: EmbeddedChannelConfig,
     event_bus: EventBus,
     status: Arc<RwLock<ConnectionStatus>>,
     audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
-    process_client: Arc<RwLock<Option<ProcessManagerClient<Channel>>>>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
@@ -124,7 +120,6 @@ impl EmbeddedChannel {
             event_bus,
             status: Arc::new(RwLock::new(status)),
             audio_client: Arc::new(RwLock::new(None)),
-            process_client: Arc::new(RwLock::new(None)),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
@@ -329,8 +324,6 @@ impl EmbeddedChannel {
                     *self.audio_client.write().await = Some(configure_audio_client(
                         AudioStreamClient::new(channel.clone()),
                     ));
-                    *self.process_client.write().await =
-                        Some(ProcessManagerClient::new(channel.clone()));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
                     *self.binding_client.write().await =
@@ -380,18 +373,6 @@ impl EmbeddedChannel {
                 }
             }
         }
-    }
-
-    /// Get a ProcessManagerClient, connecting lazily if needed.
-    pub async fn process_client(&self) -> anyhow::Result<ProcessManagerClient<Channel>> {
-        if self.process_client.read().await.is_none() {
-            self.connect().await?;
-        }
-        self.process_client
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
     /// Get a PluginManagerClient, connecting lazily if needed.
@@ -727,78 +708,6 @@ impl ChannelAdapter for EmbeddedChannel {
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
         // Route actions to the appropriate gRPC service on the Pi
         match action.name.as_str() {
-            "start_process" => {
-                let name = action.params["name"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("start_process requires 'name' param"))?;
-                let mut client = self.process_client().await?;
-                let resp = client
-                    .start_process(self.auth_request(alia_proto::process::StartProcessRequest {
-                        name: name.to_string(),
-                    })?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::json!({
-                    "success": resp.success,
-                    "message": resp.message,
-                    "pid": resp.pid,
-                }))
-            }
-            "stop_process" => {
-                let name = action.params["name"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("stop_process requires 'name' param"))?;
-                let force = action.params["force"].as_bool().unwrap_or(false);
-                let mut client = self.process_client().await?;
-                let resp = client
-                    .stop_process(self.auth_request(alia_proto::process::StopProcessRequest {
-                        name: name.to_string(),
-                        force,
-                    })?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::json!({
-                    "success": resp.success,
-                    "message": resp.message,
-                }))
-            }
-            "restart_process" => {
-                let name = action.params["name"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("restart_process requires 'name' param"))?;
-                let mut client = self.process_client().await?;
-                let resp = client
-                    .restart_process(self.auth_request(
-                        alia_proto::process::RestartProcessRequest {
-                            name: name.to_string(),
-                        },
-                    )?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::json!({
-                    "success": resp.success,
-                    "message": resp.message,
-                    "pid": resp.pid,
-                }))
-            }
-            "list_processes" => {
-                let mut client = self.process_client().await?;
-                let resp = client
-                    .list_processes(
-                        self.auth_request(alia_proto::process::ListProcessesRequest {})?,
-                    )
-                    .await?
-                    .into_inner();
-                Ok(serde_json::json!({
-                    "processes": resp.processes.into_iter().map(|process| serde_json::json!({
-                        "name": process.name,
-                        "state": process.state,
-                        "pid": process.pid,
-                        "uptime_secs": process.uptime_secs,
-                        "restart_count": process.restart_count,
-                    })).collect::<Vec<_>>(),
-                }))
-            }
             "list_plugins" => {
                 let mut client = self.plugin_client().await?;
                 let resp = client

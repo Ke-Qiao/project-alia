@@ -7,7 +7,6 @@ pub mod insights;
 pub mod memories;
 pub mod personas;
 pub mod plugins;
-pub mod processes;
 pub mod rules;
 pub mod scheduler;
 pub mod sensors;
@@ -35,7 +34,6 @@ fn api_routes() -> Router<AppState> {
         .merge(devices::routes())
         .merge(voice::routes())
         .merge(conversations::routes())
-        .merge(processes::routes())
         .merge(plugins::routes())
         .merge(rules::routes())
         .merge(scheduler::routes())

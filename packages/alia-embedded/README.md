@@ -1,6 +1,6 @@
 # alia-embedded
 
-Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-word detection, Python subprocess lifecycle, plugin sandboxing, and device binding — all exposed over gRPC to the upper machine (`alia-server`).
+Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-word detection, local audio, plugin sandboxing, sensors, and device binding — all exposed over gRPC to the upper machine (`alia-server`).
 
 ## Prerequisites
 
@@ -14,7 +14,6 @@ alia-embedded/
 ├── src/
 │   ├── main.rs             # Entry point & gRPC server bootstrap
 │   ├── config/             # TOML config types
-│   ├── process/            # Python subprocess manager
 │   ├── plugin/             # Plugin registry (install, manifest, sandbox)
 │   ├── binding/            # Device binding state machine
 │   ├── module/             # Module lifecycle & registry
@@ -41,7 +40,7 @@ Runtime-owned state now lives separately from the settings file:
 
 - `config/embedded.toml`: user-editable runtime settings
 - `run/embedded-state.sqlite3`: SQLite-backed runtime state and metadata (binding status, direct-response rules)
-- Disk directories such as `plugins/`, `run/*.pid`, key files, and future audio asset folders remain file-backed
+- Disk directories such as `plugins/`, key files, and future audio asset folders remain file-backed
 
 Or override via environment variable:
 
@@ -99,13 +98,6 @@ The server listens on `0.0.0.0:50051`. Use `grpcurl` to interact:
 ```sh
 # List services
 grpcurl -plaintext localhost:50051 list
-
-# List processes
-grpcurl -plaintext localhost:50051 alia.process.ProcessManager/ListProcesses
-
-# Start a process
-grpcurl -plaintext -d '{"name":"mediapipe_face"}' \
-  localhost:50051 alia.process.ProcessManager/StartProcess
 ```
 
 ### Adding a New gRPC Service
@@ -119,11 +111,10 @@ grpcurl -plaintext -d '{"name":"mediapipe_face"}' \
 
 1. Initialize tracing (env-filter)
 2. Load `config/embedded.toml`
-3. Create `ProcessManager`, clean orphan PIDs from `run/*.pid`
-4. Create `PluginRegistry`, scan `plugins/` for manifests
-5. Open `run/embedded-state.sqlite3`
-6. Create `BindingManager`, restore state from SQLite
-7. Build & start gRPC server on `:50051`
+3. Create `PluginRegistry`, scan `plugins/` for manifests
+4. Open `run/embedded-state.sqlite3`
+5. Create `BindingManager`, restore state from SQLite
+6. Build & start gRPC server on `:50051`
 
 ## Architecture
 

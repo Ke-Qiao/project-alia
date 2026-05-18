@@ -12,6 +12,7 @@
 # - [vad]
 # - [interrupt]
 # - [continuous_dialogue]
+# - [hmmd_mmwave]
 # - [discovery]
 
 [runtime]
@@ -124,6 +125,19 @@ max_followup_turns = 6
 
 [direct_response_defaults]
 audio_dir = "run/direct-responses"
+
+[hmmd_mmwave]
+# Waveshare HMMD-mmWave-Sensor on UART only. Enable this on Raspberry Pi when
+# the sensor TX/RX pins are wired to GPIO15/GPIO14, e.g. /dev/ttyAMA0.
+enabled = false
+serial_path = "/dev/ttyAMA0"
+baud_rate = 115200
+sensor_prefix = "hmmd"
+# Send the vendor report-mode command on startup so binary frames are emitted.
+configure_report_mode = true
+read_timeout_ms = 200
+reconnect_delay_ms = 1000
+stale_after_ms = 3000
 
 [discovery]
 mdns_enabled = true

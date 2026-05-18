@@ -57,7 +57,6 @@ fn event_type_tag(event: &ServerEvent) -> &'static str {
         | ServerEvent::DeviceOffline { .. }
         | ServerEvent::DeviceDiscovered { .. } => "device",
         ServerEvent::PluginEvent { .. } => "plugin",
-        ServerEvent::ProcessOutput { .. } | ServerEvent::ProcessStateChanged { .. } => "process",
         ServerEvent::VoiceStateChanged { .. } => "voice",
         ServerEvent::RuleTriggered { .. } => "rule",
         ServerEvent::InsightStarted { .. } | ServerEvent::InsightCompleted { .. } => "insights",

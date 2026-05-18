@@ -167,8 +167,6 @@ pub struct FaceDetection {
 }
 
 /// Face tracking engine (slot: `face_tracker`).
-///
-/// Default implementation runs MediaPipe via a managed Python subprocess.
 #[tonic::async_trait]
 pub trait FaceTracker: ModuleLifecycle {
     /// Get the latest face detection results.

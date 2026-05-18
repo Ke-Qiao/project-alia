@@ -4,8 +4,6 @@ pub mod api;
 pub mod auth;
 pub mod channels;
 pub mod config;
-#[cfg(feature = "channel-embedded")]
-pub mod embedded;
 pub mod entity;
 pub mod error;
 pub mod event;

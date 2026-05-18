@@ -397,14 +397,10 @@ fn default_device_info(identity: &IdentityConfig) -> DeviceInfo {
             scheme: "grpc".to_string(),
             port: DEFAULT_GRPC_PORT,
             path: None,
-            metadata: HashMap::from([(
-                "services".to_string(),
-                "process,plugin,binding".to_string(),
-            )]),
+            metadata: HashMap::from([("services".to_string(), "plugin,binding".to_string())]),
         }],
         capabilities: vec![
             "embedded.grpc".to_string(),
-            "embedded.process_manager".to_string(),
             "embedded.plugin_manager".to_string(),
             "embedded.binding".to_string(),
         ],

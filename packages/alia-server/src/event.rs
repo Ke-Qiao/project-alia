@@ -37,18 +37,6 @@ pub enum ServerEvent {
         data: serde_json::Value,
     },
 
-    // Process events
-    ProcessOutput {
-        name: String,
-        channel: String,
-        line: String,
-    },
-    ProcessStateChanged {
-        name: String,
-        old_state: String,
-        new_state: String,
-    },
-
     // Voice events
     VoiceStateChanged {
         state: String,

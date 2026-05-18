@@ -73,3 +73,41 @@ references.
 The server side does not need new code for ordinary sensors. It only needs new
 code if the sensor requires special channel actions or a new tool.
 
+## Built-In HMMD mmWave Sensor
+
+The Waveshare HMMD-mmWave-Sensor is supported over UART. OT2 is optional and is
+not required by the built-in module.
+
+Example Pi 5 wiring:
+
+| HMMD pin | Raspberry Pi 5 pin |
+| --- | --- |
+| `3V3` | 3.3V, physical pin 1 or 17 |
+| `GND` | GND, such as physical pin 6 |
+| `TX` | GPIO15 / RXD, physical pin 10 |
+| `RX` | GPIO14 / TXD, physical pin 8 |
+
+Enable it in `config/embedded.toml`:
+
+```toml
+[hmmd_mmwave]
+enabled = true
+serial_path = "/dev/ttyAMA0"
+baud_rate = 115200
+sensor_prefix = "hmmd"
+configure_report_mode = true
+read_timeout_ms = 200
+reconnect_delay_ms = 1000
+stale_after_ms = 3000
+```
+
+The module registers:
+
+| Embedded sensor id | Value |
+| --- | --- |
+| `hmmd:presence` | Boolean presence state. |
+| `hmmd:target_distance_cm` | Target distance in centimeters when reported. |
+| `hmmd:raw` | JSON payload with presence, distance, raw frame bytes, age, and connection state. |
+
+On the server, these are mirrored with the embedded channel prefix, for example
+`embedded:hmmd:presence`.

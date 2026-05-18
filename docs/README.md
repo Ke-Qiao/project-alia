@@ -41,6 +41,11 @@ below when trying to understand the active architecture.
 - [Model services](operations/model-services.md) lists the external model
   services currently expected by the runtime.
 
+## Tracking
+
+- [Server TODO](todo.md) tracks known server-side implementation gaps and
+  follow-up work.
+
 ## Documentation Scope
 
 Root documents intentionally stay at project and cross-package level. Package

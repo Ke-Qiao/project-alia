@@ -2,8 +2,8 @@
 
 `alia-embedded` is the edge runtime for Raspberry Pi and local development. It
 owns local audio I/O, wake word detection, VAD, edge STT, direct responses,
-binding, discovery, settings, playback, plugin/process services, and modular
-sensor providers.
+binding, discovery, settings, playback, plugin services, and modular sensor
+providers.
 
 ## Start Here
 
@@ -23,4 +23,3 @@ sensor providers.
 - Cross-package architecture stays in the root [project docs](../../../docs/README.md).
 - Server runtime details live in [alia-server docs](../../alia-server/docs/README.md).
 - Shared protobuf contracts live in `crates/proto/proto/`.
-

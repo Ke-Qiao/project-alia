@@ -74,6 +74,7 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.edge_stt.model_path);
     resolve_relative(parent, &mut config.edge_stt.tokens_path);
     resolve_relative(parent, &mut config.vad.model_path);
+    resolve_relative(parent, &mut config.hmmd_mmwave.serial_path);
     resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
     resolve_runtime_relative(&mut config.audio_debug.dir);
 
@@ -139,6 +140,7 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     relativize_path(base, &mut settings.edge_stt.model_path);
     relativize_path(base, &mut settings.edge_stt.tokens_path);
     relativize_path(base, &mut settings.vad.model_path);
+    relativize_path(base, &mut settings.hmmd_mmwave.serial_path);
     normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);
     normalize_runtime_path_for_settings(&mut settings.audio_debug.dir);
 }

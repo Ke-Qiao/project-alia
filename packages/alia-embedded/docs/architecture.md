@@ -12,7 +12,7 @@ macOS and Windows practical where the selected backends are available.
 - play direct response clips for wake word, cancel, fallback, and listening cues
 - stream captured utterances to `alia-server`
 - receive server TTS audio streams and play them with interruption support
-- expose settings, binding, process, plugin, audio, and sensor services over gRPC
+- expose settings, binding, plugin, audio, and sensor services over gRPC
 - store runtime-owned state in SQLite while keeping large assets on disk
 
 ## Module Slots
@@ -57,7 +57,7 @@ Disk stores large or user-managed assets:
 - sherpa-onnx models
 - direct response audio files
 - audio debug WAV captures
-- plugin/process bundles
+- plugin bundles
 - key files and runtime artifacts
 
 ## Failure Model
@@ -66,4 +66,3 @@ Missing optional assets should log and degrade, not panic. If a component cannot
 initialize, the related channel or feature should be disabled where possible
 while the process keeps running. Concrete sensor modules should report read
 errors through the sensor service instead of crashing the gRPC server.
-

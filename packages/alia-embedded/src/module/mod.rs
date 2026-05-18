@@ -5,6 +5,7 @@ pub mod cpal_audio;
 pub mod direct_response;
 pub mod discovery;
 pub mod factory;
+pub mod hmmd_mmwave;
 pub mod lifecycle;
 pub mod noop;
 pub mod registry;

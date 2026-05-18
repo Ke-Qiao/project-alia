@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use alia_embedded::module::hmmd_mmwave::{parse_hmmd_report_payload, parse_hmmd_serial_buffer};
 use alia_embedded::module::sensor::{
     SensorDefinition, SensorProvider, SensorReading, SensorRegistry,
 };
@@ -80,4 +81,39 @@ async fn registry_rejects_unknown_sensor_reads() {
     let error = registry.read("missing:co2").await.unwrap_err();
 
     assert!(error.to_string().contains("not registered"));
+}
+
+#[test]
+fn parses_hmmd_report_payload_presence_and_distance() {
+    let reading = parse_hmmd_report_payload(&[1, 0x2C, 0x01, 0xAA]).unwrap();
+
+    assert!(reading.presence);
+    assert_eq!(reading.target_distance_cm, Some(300));
+    assert_eq!(reading.raw_payload_hex, "012C01AA");
+}
+
+#[test]
+fn parses_hmmd_binary_report_frame_from_serial_buffer() {
+    let mut buffer = vec![
+        0x00, 0xF4, 0xF3, 0xF2, 0xF1, 0x04, 0x00, 0x01, 0x64, 0x00, 0x7F, 0xF8, 0xF7, 0xF6, 0xF5,
+    ];
+
+    let readings = parse_hmmd_serial_buffer(&mut buffer);
+
+    assert_eq!(readings.len(), 1);
+    assert!(readings[0].presence);
+    assert_eq!(readings[0].target_distance_cm, Some(100));
+    assert!(buffer.is_empty());
+}
+
+#[test]
+fn parses_hmmd_ascii_fallback_lines() {
+    let mut buffer = b"ON 250\r\nOFF\r\n".to_vec();
+
+    let readings = parse_hmmd_serial_buffer(&mut buffer);
+
+    assert_eq!(readings.len(), 2);
+    assert!(readings[0].presence);
+    assert_eq!(readings[0].target_distance_cm, Some(250));
+    assert!(!readings[1].presence);
 }

@@ -20,11 +20,11 @@ pub struct EmbeddedConfig {
     pub audio_debug: AudioDebugConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
+    pub hmmd_mmwave: HmmdMmWaveConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
-    #[serde(default)]
-    pub process: Vec<ProcessConfig>,
     #[serde(default)]
     pub direct_response: Vec<DirectResponseConfig>,
     #[serde(skip)]
@@ -626,6 +626,60 @@ impl Default for DiscoveryConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HmmdMmWaveConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_hmmd_serial_path")]
+    pub serial_path: PathBuf,
+    #[serde(default = "default_hmmd_baud_rate")]
+    pub baud_rate: u32,
+    #[serde(default = "default_hmmd_sensor_prefix")]
+    pub sensor_prefix: String,
+    #[serde(default = "default_true")]
+    pub configure_report_mode: bool,
+    #[serde(default = "default_hmmd_read_timeout_ms")]
+    pub read_timeout_ms: u64,
+    #[serde(default = "default_hmmd_reconnect_delay_ms")]
+    pub reconnect_delay_ms: u64,
+    #[serde(default = "default_hmmd_stale_after_ms")]
+    pub stale_after_ms: u64,
+}
+
+impl Default for HmmdMmWaveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            serial_path: default_hmmd_serial_path(),
+            baud_rate: default_hmmd_baud_rate(),
+            sensor_prefix: default_hmmd_sensor_prefix(),
+            configure_report_mode: true,
+            read_timeout_ms: default_hmmd_read_timeout_ms(),
+            reconnect_delay_ms: default_hmmd_reconnect_delay_ms(),
+            stale_after_ms: default_hmmd_stale_after_ms(),
+        }
+    }
+}
+
+fn default_hmmd_serial_path() -> PathBuf {
+    PathBuf::from("/dev/ttyAMA0")
+}
+fn default_hmmd_baud_rate() -> u32 {
+    115_200
+}
+fn default_hmmd_sensor_prefix() -> String {
+    "hmmd".to_string()
+}
+fn default_hmmd_read_timeout_ms() -> u64 {
+    200
+}
+fn default_hmmd_reconnect_delay_ms() -> u64 {
+    1_000
+}
+fn default_hmmd_stale_after_ms() -> u64 {
+    3_000
+}
+
 fn default_true() -> bool {
     true
 }
@@ -646,17 +700,6 @@ fn default_reconnect_interval() -> u64 {
 }
 fn default_reconnect_max_backoff() -> u64 {
     60
-}
-
-/// Configuration for a managed Python process.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProcessConfig {
-    pub name: String,
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub auto_restart: bool,
 }
 
 /// Configuration for a direct (keyword → local audio) response.
@@ -732,6 +775,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
+    pub hmmd_mmwave: HmmdMmWaveConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -750,9 +795,9 @@ impl Default for EmbeddedConfig {
             audio: AudioConfig::default(),
             audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
+            hmmd_mmwave: HmmdMmWaveConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
             dev: DevConfig::default(),
-            process: Vec::new(),
             direct_response: Vec::new(),
             config_path: PathBuf::new(),
             provisioning_mode: true,
@@ -771,6 +816,7 @@ impl EmbeddedConfig {
         self.interrupt = runtime.interrupt;
         self.continuous_dialogue = runtime.continuous_dialogue;
         self.discovery = runtime.discovery;
+        self.hmmd_mmwave = runtime.hmmd_mmwave;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
         self.provisioning_mode = !runtime.runtime.provisioned;
@@ -790,6 +836,7 @@ impl EmbeddedConfig {
             interrupt: self.interrupt.clone(),
             continuous_dialogue: self.continuous_dialogue.clone(),
             discovery: self.discovery.clone(),
+            hmmd_mmwave: self.hmmd_mmwave.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),
         }

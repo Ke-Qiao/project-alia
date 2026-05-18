@@ -35,6 +35,7 @@ The example file is `config/embedded.example.toml`.
 | `[vad]` | sherpa-onnx/Silero VAD model and endpoint thresholds. |
 | `[direct_response]` | Local response directory and matching behavior. |
 | `[continuous_dialogue]` | Follow-up listening windows and turn limits. |
+| `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 
 ## Runtime State
@@ -68,4 +69,3 @@ expected for changes that rebuild core resources:
 Local development can skip full binding when explicitly configured. Use that
 only on trusted developer machines. Production devices should use the binding
 flow and authenticated gRPC requests.
-

@@ -6,12 +6,11 @@ use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
 use crate::plugin::PluginRegistry;
-use crate::process::ProcessManager;
 
 /// Central registry holding all active module instances.
 ///
-/// Non-slot core infrastructure (ProcessManager, PluginRegistry) are also
-/// held here for unified lifecycle management and health reporting.
+/// Non-slot core infrastructure is also held here for unified lifecycle
+/// management and health reporting.
 pub struct EmbeddedModuleRegistry {
     // Audio pipeline
     pub wakeword: Arc<dyn WakeWordEngine>,
@@ -31,7 +30,7 @@ pub struct EmbeddedModuleRegistry {
 
     // Core infrastructure (non-slot, unified lifecycle)
     pub sensors: Arc<SensorRegistry>,
-    pub process_manager: Arc<ProcessManager>,
+    pub sensor_modules: Vec<Arc<dyn ModuleLifecycle>>,
     pub plugin_registry: Arc<PluginRegistry>,
 }
 
@@ -40,6 +39,9 @@ impl EmbeddedModuleRegistry {
     pub async fn shutdown(&self) {
         // Reverse order: network → vision → audio output → audio input → processing
         let _ = self.discovery.stop().await;
+        for module in self.sensor_modules.iter().rev() {
+            let _ = module.stop().await;
+        }
         let _ = self.face_tracker.stop().await;
         let _ = self.mixer.stop().await;
         let _ = self.audio_playback.stop().await;
@@ -79,6 +81,9 @@ impl EmbeddedModuleRegistry {
             self.face_tracker.health_check().await,
         );
         map.insert(self.discovery.name(), self.discovery.health_check().await);
+        for module in &self.sensor_modules {
+            map.insert(module.name(), module.health_check().await);
+        }
         map
     }
 }

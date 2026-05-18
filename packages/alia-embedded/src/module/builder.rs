@@ -10,13 +10,13 @@ use crate::binding::BindingManager;
 use crate::config::EmbeddedConfig;
 use crate::identity;
 use crate::plugin::PluginRegistry;
-use crate::process::ProcessManager;
 use crate::settings::EmbeddedSettingsManager;
 use crate::storage::EmbeddedStore;
 
 use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
+use super::hmmd_mmwave::HmmdMmWaveModule;
 use super::lifecycle::ModuleLifecycle;
 use super::noop::{
     NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
@@ -49,14 +49,13 @@ impl EmbeddedNode {
         use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
-        use alia_proto::process::process_manager_server::ProcessManagerServer;
         use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
         use alia_proto::settings::embedded_settings_server::EmbeddedSettingsServer;
         use tonic::transport::Server;
 
         use crate::grpc::{
             AudioStreamService, DeviceBindingService, EmbeddedSettingsService,
-            PluginManagerService, ProcessManagerService, SensorService,
+            PluginManagerService, SensorService,
         };
 
         let audio_svc = AudioStreamServer::new(AudioStreamService::new(
@@ -67,10 +66,6 @@ impl EmbeddedNode {
         ))
         .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
         .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES);
-        let process_svc = ProcessManagerServer::new(ProcessManagerService::new(
-            self.registry.process_manager.clone(),
-            self.binding_manager.clone(),
-        ));
         let device_public_key =
             identity::load_device_public_key(&self.config.identity.keypair_path)
                 .context("loading device public key")?;
@@ -107,7 +102,6 @@ impl EmbeddedNode {
         let cancel = self.cancel_token.clone();
         Server::builder()
             .add_service(audio_svc)
-            .add_service(process_svc)
             .add_service(plugin_svc)
             .add_service(binding_svc)
             .add_service(settings_svc)
@@ -327,6 +321,10 @@ impl EmbeddedBuilder {
                 Box::new(NoopDiscovery)
             }),
         };
+        let mut sensor_modules: Vec<Box<dyn ModuleLifecycle>> = Vec::new();
+        if config.hmmd_mmwave.enabled {
+            sensor_modules.push(Box::new(HmmdMmWaveModule::new(config.hmmd_mmwave.clone())));
+        }
 
         // Initialize all modules
         info!("initializing modules");
@@ -339,14 +337,11 @@ impl EmbeddedBuilder {
         init_embedded_module(mixer.as_mut(), &ctx).await;
         init_embedded_module(face_tracker.as_mut(), &ctx).await;
         init_embedded_module(discovery.as_mut(), &ctx).await;
-
-        // Initialize core infrastructure
-        let process_manager =
-            Arc::new(ProcessManager::new(config.process.clone(), run_dir.clone()));
-        if let Err(e) = process_manager.cleanup_orphans().await {
-            error!(error = %e, "failed to clean up orphan processes");
+        for module in &mut sensor_modules {
+            init_embedded_module(module.as_mut(), &ctx).await;
         }
 
+        // Initialize core infrastructure
         let plugins_dir = PathBuf::from("plugins");
         let plugin_registry = Arc::new(PluginRegistry::new(plugins_dir));
         if let Err(e) = plugin_registry.scan().await {
@@ -395,6 +390,8 @@ impl EmbeddedBuilder {
         let mixer: Arc<dyn AudioMixer> = Arc::from(mixer);
         let face_tracker: Arc<dyn FaceTracker> = Arc::from(face_tracker);
         let discovery: Arc<dyn DiscoveryBackend> = Arc::from(discovery);
+        let sensor_modules: Vec<Arc<dyn ModuleLifecycle>> =
+            sensor_modules.into_iter().map(Arc::from).collect();
         let speech_pipeline = Arc::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),
             ctx.event_bus.clone(),
@@ -430,6 +427,9 @@ impl EmbeddedBuilder {
         }
         start_embedded_module(face_tracker.as_ref()).await;
         start_embedded_module(discovery.as_ref()).await;
+        for module in &sensor_modules {
+            start_embedded_module(module.as_ref()).await;
+        }
 
         let initial_discovery_metadata = binding_manager.status().await.discovery_metadata();
         let mut initial_discovery_metadata = initial_discovery_metadata;
@@ -460,7 +460,7 @@ impl EmbeddedBuilder {
             face_tracker,
             discovery,
             sensors,
-            process_manager,
+            sensor_modules,
             plugin_registry,
         };
 

@@ -20,7 +20,6 @@ Use rules for cases like:
 - a sensor reading enters a range
 - a device goes online or offline
 - a plugin emits a specific event
-- a process changes state
 - a tool call succeeds or fails
 
 Rules are managed through `/api/v1/rules` and persisted in PostgreSQL.

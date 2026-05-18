@@ -29,7 +29,7 @@ The embedded channel talks to `alia-embedded` over gRPC. It currently handles:
 - playback stop and active-turn interruption
 - settings and direct response management
 - volume control
-- process and plugin management
+- plugin management
 - sensor discovery, reads, and sensor-specific commands
 
 ## Sensor Registry
@@ -101,4 +101,3 @@ Embedded channel actions include:
 `read_embedded_sensor` accepts either the public id (`pi5:temperature`) or the
 embedded-local id (`temperature`). The channel strips its own prefix before
 calling embedded.
-

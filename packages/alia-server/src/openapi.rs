@@ -65,7 +65,6 @@ use crate::api;
         (name = "device", description = "Device management"),
         (name = "voice", description = "Voice interaction"),
         (name = "conversations", description = "Conversation history"),
-        (name = "processes", description = "Process management"),
         (name = "plugins", description = "Plugin management"),
         (name = "rules", description = "Automation rules"),
         (name = "settings", description = "User settings"),
