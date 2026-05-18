@@ -324,6 +324,7 @@ impl AutomationScheduler {
 
         event_bus.publish(ServerEvent::TaskTriggered {
             task_id,
+            user_id: task.user_id,
             task_name: task.name.clone(),
             trigger_source: task.schedule.schedule_type.clone(),
         });

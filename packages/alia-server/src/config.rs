@@ -532,6 +532,28 @@ pub struct ResourcesSection {
     /// Relative paths are resolved from the config file's parent directory.
     #[serde(default)]
     pub skills_dir: Option<String>,
+    #[serde(default)]
+    pub cache_policy: CachePolicyResourceSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CachePolicyResourceSection {
+    #[serde(default)]
+    pub dynamic_query_keywords: Vec<String>,
+    #[serde(default)]
+    pub memory_query_keywords: Vec<String>,
+    #[serde(default)]
+    pub action_query_keywords: Vec<String>,
+}
+
+impl Default for CachePolicyResourceSection {
+    fn default() -> Self {
+        Self {
+            dynamic_query_keywords: Vec::new(),
+            memory_query_keywords: Vec::new(),
+            action_query_keywords: Vec::new(),
+        }
+    }
 }
 
 fn default_router_timeout() -> u64 {

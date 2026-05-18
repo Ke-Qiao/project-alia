@@ -207,6 +207,10 @@ impl ServerBuilder {
             actions: None,
             conversation: None,
             memory: None,
+            llm: None,
+            local_llm: None,
+            remote_llm: None,
+            cache: None,
         };
 
         // Create modules: use override or create from config
@@ -324,6 +328,10 @@ impl ServerBuilder {
             actions: Some(action_registry.clone()),
             conversation: None, // Will be populated shortly but usually not needed in other modules init
             memory: None,
+            llm: None,
+            local_llm: None,
+            remote_llm: None,
+            cache: None,
         };
 
         // Initialize remaining modules in dependency order
@@ -336,6 +344,19 @@ impl ServerBuilder {
         };
         init_module(local_llm.as_mut(), &ctx).await;
         init_module(remote_llm.as_mut(), &ctx).await;
+        let local_llm: Arc<dyn LlmAdapter> = Arc::from(local_llm);
+        let remote_llm: Arc<dyn LlmAdapter> = Arc::from(remote_llm);
+        let default_llm = if self.config.policies.routing.remote_llm_enabled {
+            remote_llm.clone()
+        } else {
+            local_llm.clone()
+        };
+        let ctx = ModuleContext {
+            llm: Some(default_llm.clone()),
+            local_llm: Some(local_llm.clone()),
+            remote_llm: Some(remote_llm.clone()),
+            ..ctx
+        };
         init_module(stt.as_mut(), &ctx).await;
         init_module(tts.as_mut(), &ctx).await;
         init_module(memory.as_mut(), &ctx).await;
@@ -359,6 +380,11 @@ impl ServerBuilder {
             ..ctx
         };
         init_module(cache.as_mut(), &ctx).await;
+        let cache_arc: Arc<dyn CacheBackend> = Arc::from(cache);
+        let ctx = ModuleContext {
+            cache: Some(cache_arc.clone()),
+            ..ctx
+        };
         init_module(tools.as_mut(), &ctx).await;
         let tools_arc: Arc<dyn ToolRegistry> = Arc::from(tools);
         action_registry
@@ -402,14 +428,6 @@ impl ServerBuilder {
         }
 
         // Build registry
-        let local_llm: Arc<dyn LlmAdapter> = Arc::from(local_llm);
-        let remote_llm: Arc<dyn LlmAdapter> = Arc::from(remote_llm);
-        let default_llm = if self.config.policies.routing.remote_llm_enabled {
-            remote_llm.clone()
-        } else {
-            local_llm.clone()
-        };
-
         let registry = ModuleRegistry {
             llm: default_llm,
             local_llm,
@@ -419,7 +437,7 @@ impl ServerBuilder {
             embedding: Arc::from(embedding),
             conversation: conversation_arc,
             memory: memory_arc,
-            cache: Arc::from(cache),
+            cache: cache_arc,
             skills: Arc::from(skills),
             persona: Arc::from(persona),
             insights: Arc::from(insights),
@@ -497,6 +515,7 @@ impl ServerBuilder {
             self.config.policies.conversation.clone(),
             self.config.policies.tools.clone(),
             self.config.policies.cache.clone(),
+            self.config.resources.cache_policy.clone(),
             effective_memory_config,
         )));
 

@@ -104,6 +104,10 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         "resources/skills.toml",
         include_str!("../../../../config/server.example.d/resources/skills.toml"),
     ),
+    (
+        "resources/cache_policy.toml",
+        include_str!("../../../../config/server.example.d/resources/cache_policy.toml"),
+    ),
 ];
 
 /// Determine the best path to write the config file.

@@ -10,5 +10,5 @@ role:
 - `providers/` configures external services and provider-specific adapters.
 - `policies/` configures runtime behavior such as routing, cache, and tools.
 - `profiles/` configures named user-facing profiles such as voices.
-- `resources/` configures local resource locations.
+- `resources/` configures local resource locations and resource policies.
 - `plugins/` is reserved for future plugin-owned fragments.

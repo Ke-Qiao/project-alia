@@ -24,6 +24,7 @@ use super::external::ExternalMemoryClient;
 const ALIA_LAYER_KEY: &str = "alia_memory_layer";
 const ALIA_NODE_TYPE_KEY: &str = "alia_node_type";
 const ALIA_IMPORTANCE_KEY: &str = "alia_importance";
+const HEALTH_PROBE_USER_ID: Uuid = Uuid::from_u128(0x9a1a0000_0000_5000_8000_000000000001);
 
 #[derive(Debug, Clone)]
 pub struct Mem0Config {
@@ -242,7 +243,7 @@ impl ExternalMemoryClient for Mem0Client {
         } else {
             match self
                 .list(
-                    Uuid::nil(),
+                    HEALTH_PROBE_USER_ID,
                     MemoryListOpts {
                         max_results: Some(1),
                         layers: None,

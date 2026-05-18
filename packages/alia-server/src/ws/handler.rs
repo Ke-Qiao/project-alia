@@ -59,7 +59,9 @@ fn event_type_tag(event: &ServerEvent) -> &'static str {
         ServerEvent::PluginEvent { .. } => "plugin",
         ServerEvent::VoiceStateChanged { .. } => "voice",
         ServerEvent::RuleTriggered { .. } => "rule",
-        ServerEvent::InsightStarted { .. } | ServerEvent::InsightCompleted { .. } => "insights",
+        ServerEvent::ConversationTurnCompleted { .. }
+        | ServerEvent::InsightStarted { .. }
+        | ServerEvent::InsightCompleted { .. } => "insights",
         ServerEvent::TaskScheduled { .. }
         | ServerEvent::TaskTriggered { .. }
         | ServerEvent::TaskCompleted { .. }

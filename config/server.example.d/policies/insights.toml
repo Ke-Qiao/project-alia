@@ -1,5 +1,5 @@
 [policies.insights]
-enabled = false
+enabled = true
 extraction_enabled = false
 consolidation_idle_minutes = 30
 reflection_schedule = "0 3 * * *"
@@ -8,4 +8,3 @@ memory_threshold = 50
 max_concurrent_insights = 1
 presence_sensor_id = "presence"
 conditions = []
-

@@ -9,8 +9,8 @@ default = [
     "llm-openai", "llm-ollama",
     "stt-whisper", "tts-sovits",
     "embed-ollama", "memory-mem0",
-    "cache-semantic",
     "tools-http",
+    "insights",
 ]
 
 # Channel adapters
@@ -33,9 +33,6 @@ tools-http = ["dep:reqwest"]
 
 # Memory backend
 memory-mem0 = ["dep:reqwest"]
-
-# Cache backend
-cache-semantic = []
 
 # Insights system
 insights = []

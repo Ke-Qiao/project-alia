@@ -165,7 +165,6 @@ All features are enabled by default. Disable with `--no-default-features` and se
 | `embed-ollama` | Ollama embedding adapter | `reqwest` |
 | `embed-openai` | OpenAI embedding adapter | `reqwest` |
 | `memory-mem0` | Mem0 memory backend | `reqwest` |
-| `cache-semantic` | Two-layer semantic cache | — |
 | `insights` | Background insights/reflection | — |
 
 ```bash

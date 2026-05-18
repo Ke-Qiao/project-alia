@@ -39,14 +39,22 @@ a minimal fallback for local development and tests. If memory health checks fail
 at startup, memory should be disabled for prompt assembly instead of advertised
 to the LLM.
 
-Insights are background analysis hooks. They can later improve memory, cache
-entries, tool metadata, and user-facing summaries during idle time.
+Insights are background analysis hooks. Scheduled insights can ingest recent
+conversation into the memory backend, ask an LLM to extract durable memories,
+consolidate existing memories, reflect on stable user context, detect repeated
+habits, and review pending cache entries before enabling or deleting them. If
+LLM or memory is unavailable, each phase degrades to a logged skip instead of
+crashing the server.
 
 ## Cache
 
 The cache is intended for safe, memory-independent, tool-independent responses.
 Dynamic turns that depend on tools, current sensor values, personal memory, or
 fresh external state should not be cached as direct final answers.
+
+Pipeline writes create disabled pending entries. Only insights can promote an
+entry to active direct return after LLM review and optional wording refinement.
+Keyword exclusion lists live in `server.d/resources/cache_policy.toml`.
 
 ## Users and Auth
 
@@ -60,4 +68,3 @@ safe.
 Agent history is separate from chat transcript messages. It records route
 decisions, cache checks, LLM calls, tool calls/results, memory/cache events, and
 delivery events so the frontend can show how a turn was handled.
-

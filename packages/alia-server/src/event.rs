@@ -50,6 +50,12 @@ pub enum ServerEvent {
     },
 
     // Insights events
+    ConversationTurnCompleted {
+        channel_id: String,
+        user_id: String,
+        user_uuid: Uuid,
+        session_id: Uuid,
+    },
     InsightStarted {
         phase: String,
         trigger: String,
@@ -68,6 +74,7 @@ pub enum ServerEvent {
     },
     TaskTriggered {
         task_id: Uuid,
+        user_id: Uuid,
         task_name: String,
         trigger_source: String,
     },

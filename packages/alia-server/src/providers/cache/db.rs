@@ -20,9 +20,11 @@ use uuid::Uuid;
 use crate::entity::llm_cache;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    CacheBackend, CacheEntry, CacheFilter, CachedResponse, DEFAULT_CACHE_SCOPE,
-    SemanticCacheCandidate,
+    CACHE_METADATA_SCHEMA, CacheBackend, CacheEntry, CacheFilter, CachedResponse,
+    DEFAULT_CACHE_SCOPE, SemanticCacheCandidate,
 };
+
+const CACHE_STATUS_ACTIVE: &str = "active";
 
 /// Database-backed cache backend
 pub struct DbCache {
@@ -66,6 +68,12 @@ impl DbCache {
             .ok_or_else(|| anyhow::anyhow!("DbCache not initialized - call init() first"))
     }
 
+    fn cache_entry_is_active(metadata: &serde_json::Value) -> bool {
+        metadata.get("schema").and_then(serde_json::Value::as_str) == Some(CACHE_METADATA_SCHEMA)
+            && metadata.get("status").and_then(serde_json::Value::as_str)
+                == Some(CACHE_STATUS_ACTIVE)
+    }
+
     /// Try exact hash match (L1)
     async fn exact_match(
         &self,
@@ -82,6 +90,11 @@ impl DbCache {
             .await?;
 
         if let Some(entry) = entry {
+            if !Self::cache_entry_is_active(&entry.metadata) {
+                tracing::debug!(query_hash = %hash, "cache entry exists but is not active");
+                return Ok(None);
+            }
+
             // Increment hit count
             let mut active: llm_cache::ActiveModel = entry.clone().into();
             active.hit_count = Set(entry.hit_count + 1);
@@ -128,11 +141,13 @@ impl DbCache {
             FROM llm_cache
             WHERE embedding IS NOT NULL
                 AND expires_at > NOW()
+                AND metadata->>'schema' = '{}'
+                AND metadata->>'status' = '{}'
                 {}
             ORDER BY embedding <=> $1::vector
             LIMIT 1
             "#,
-            user_filter
+            CACHE_METADATA_SCHEMA, CACHE_STATUS_ACTIVE, user_filter
         );
 
         let results = db
@@ -351,11 +366,13 @@ impl CacheBackend for DbCache {
             FROM llm_cache
             WHERE embedding IS NOT NULL
                 AND expires_at > NOW()
+                AND metadata->>'schema' = '{}'
+                AND metadata->>'status' = '{}'
                 {}
             ORDER BY embedding <=> $1::vector
             LIMIT {}
             "#,
-            user_filter, limit
+            CACHE_METADATA_SCHEMA, CACHE_STATUS_ACTIVE, user_filter, limit
         );
 
         let rows = db

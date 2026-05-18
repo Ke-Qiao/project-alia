@@ -6,8 +6,8 @@ use alia_server::channels::pipeline::{
     cache_entry_for_pending, cache_write_for_response, cached_response_is_safe_direct,
     escalation_reason, render_runtime_context_system_prompt,
 };
-use alia_server::config::CacheSection;
-use alia_server::providers::adapter::CachedResponse;
+use alia_server::config::{CachePolicyResourceSection, CacheSection};
+use alia_server::providers::adapter::{CACHE_METADATA_SCHEMA, CachedResponse};
 
 fn test_cache_config() -> CacheSection {
     CacheSection {
@@ -17,6 +17,14 @@ fn test_cache_config() -> CacheSection {
         semantic_threshold: 0.92,
         default_ttl_seconds: 3600,
         skill_cache_ttl_seconds: 300,
+    }
+}
+
+fn test_cache_policy() -> CachePolicyResourceSection {
+    CachePolicyResourceSection {
+        dynamic_query_keywords: vec!["time".to_string(), "weather".to_string()],
+        memory_query_keywords: vec!["remember".to_string(), "my ".to_string()],
+        action_query_keywords: vec!["set ".to_string(), "volume".to_string()],
     }
 }
 
@@ -92,6 +100,7 @@ fn pipeline_cache_entry_uses_default_lookup_scope() {
 fn cache_policy_allows_safe_memory_independent_exact_entries() {
     let entry = cache_write_for_response(
         &test_cache_config(),
+        &test_cache_policy(),
         "What is MQTT?",
         "MQTT is a lightweight messaging protocol.",
         CacheContext {
@@ -106,8 +115,18 @@ fn cache_policy_allows_safe_memory_independent_exact_entries() {
 
     let cached = CachedResponse {
         response_text: "MQTT answer".to_string(),
-        metadata: entry.metadata,
+        metadata: serde_json::json!({
+            "schema": CACHE_METADATA_SCHEMA,
+            "policy": "private_exact",
+            "status": "active",
+            "safe_direct_return": true,
+            "memory_independent": true,
+            "tool_free": true,
+            "dynamic_free": true,
+        }),
     };
+    assert_eq!(entry.metadata["status"], "pending_insights_review");
+    assert_eq!(entry.metadata["safe_direct_return"], false);
     assert!(cached_response_is_safe_direct(&cached));
 }
 
@@ -122,10 +141,15 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
         route: "remote_llm",
     };
 
-    assert!(cache_write_for_response(&config, "What time is it?", "It is noon.", base).is_none());
+    let policy = test_cache_policy();
+    assert!(
+        cache_write_for_response(&config, &policy, "What time is it?", "It is noon.", base)
+            .is_none()
+    );
     assert!(
         cache_write_for_response(
             &config,
+            &policy,
             "What is MQTT?",
             "Answer",
             CacheContext {
@@ -138,6 +162,7 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
     assert!(
         cache_write_for_response(
             &config,
+            &policy,
             "What is MQTT?",
             "Answer",
             CacheContext {
@@ -150,6 +175,18 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
     assert!(!cached_response_is_safe_direct(&CachedResponse {
         response_text: "old cache".to_string(),
         metadata: serde_json::json!({}),
+    }));
+    assert!(!cached_response_is_safe_direct(&CachedResponse {
+        response_text: "pending cache".to_string(),
+        metadata: serde_json::json!({
+            "schema": CACHE_METADATA_SCHEMA,
+            "policy": "private_exact",
+            "status": "pending_insights_review",
+            "safe_direct_return": false,
+            "memory_independent": true,
+            "tool_free": true,
+            "dynamic_free": true,
+        }),
     }));
 }
 

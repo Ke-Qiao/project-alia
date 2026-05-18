@@ -63,7 +63,6 @@ Cargo features compile optional backend support:
 - speech providers: `stt-whisper`, `tts-sovits`
 - embeddings: `embed-ollama`, `embed-openai`
 - memory: `memory-mem0`
-- cache: `cache-semantic`
 - built-in HTTP tools: `tools-http`
 - insights: `insights`
 

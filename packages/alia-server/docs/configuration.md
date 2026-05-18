@@ -38,7 +38,8 @@ config/
     profiles/
       voice.default.toml
     resources/
-      paths.toml
+      skills.toml
+      cache_policy.toml
     plugins/
       ...
 ```
@@ -64,7 +65,8 @@ Use fragments for implementation details:
 - `policies/*.toml`: routing, conversation, cache, memory, insights, rules,
   scheduler, tools
 - `profiles/*.toml`: voice profile and TTS reference parameters
-- `resources/*.toml`: directories, runtime roots, model/service resource paths
+- `resources/*.toml`: directories, runtime roots, model/service resource paths,
+  and resource policy lists such as cache exclusion keywords
 - `plugins/*.toml`: future plugin-owned configuration
 
 Relative paths are resolved from the base config file directory.
@@ -102,7 +104,5 @@ Default features enable the common runtime. Optional feature groups include:
 | `stt-whisper`, `tts-sovits` | Speech provider adapters. |
 | `embed-ollama`, `embed-openai` | Embedding providers. |
 | `memory-mem0` | Mem0 memory backend. |
-| `cache-semantic` | Semantic cache support. |
 | `tools-http` | Built-in HTTP/fetch tools. |
 | `insights` | Background insights support. |
-

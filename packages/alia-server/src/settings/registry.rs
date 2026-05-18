@@ -605,7 +605,7 @@ impl SettingsRegistry {
             (
                 "core.modules.cache",
                 json!(config.modules.cache),
-                schema_select("Cache Backend", &["two_layer", "noop"], true),
+                schema_select("Cache Backend", &["db", "noop"], true),
             ),
             (
                 "core.modules.router",

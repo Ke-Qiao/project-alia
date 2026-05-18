@@ -8,7 +8,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
 use crate::event::EventBus;
-use crate::providers::adapter::{ConversationBackend, MemoryBackend, SchedulerBackend};
+use crate::providers::adapter::{
+    CacheBackend, ConversationBackend, LlmAdapter, MemoryBackend, SchedulerBackend,
+};
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
@@ -44,6 +46,13 @@ pub struct ModuleContext {
     pub conversation: Option<Arc<dyn ConversationBackend>>,
     /// Memory backend for tools/components initialized after memory.
     pub memory: Option<Arc<dyn MemoryBackend>>,
+    /// Default LLM and concrete local/remote handles for modules that run
+    /// background reasoning, such as insights.
+    pub llm: Option<Arc<dyn LlmAdapter>>,
+    pub local_llm: Option<Arc<dyn LlmAdapter>>,
+    pub remote_llm: Option<Arc<dyn LlmAdapter>>,
+    /// Cache backend for modules that review or maintain cache entries.
+    pub cache: Option<Arc<dyn CacheBackend>>,
 }
 
 /// Base trait for all pluggable modules

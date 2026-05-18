@@ -128,7 +128,6 @@ The server uses Cargo feature flags for conditional compilation. All features ar
 | `embed-ollama` | Ollama embedding backend |
 | `embed-openai` | OpenAI embedding backend |
 | `memory-mem0` | Mem0 memory backend |
-| `cache-semantic` | Two-layer semantic cache |
 | `tools-http` | Built-in HTTP/fetch tool support |
 | `insights` | Scheduled insights system |
 

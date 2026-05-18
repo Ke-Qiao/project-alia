@@ -95,6 +95,10 @@ async fn restart_channel(
         actions: Some(state.actions.clone()),
         conversation: Some(state.modules.conversation.clone()),
         memory: Some(state.modules.memory.clone()),
+        llm: Some(state.modules.llm.clone()),
+        local_llm: Some(state.modules.local_llm.clone()),
+        remote_llm: Some(state.modules.remote_llm.clone()),
+        cache: Some(state.modules.cache.clone()),
     };
 
     if let Err(error) = channel.init(&ctx).await {

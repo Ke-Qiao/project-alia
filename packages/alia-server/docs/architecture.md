@@ -29,10 +29,10 @@ files configure those implementations.
 | `tts` | `gpt_sovits` | Server-side speech synthesis. |
 | `embedding` | `ollama` or `openai` | Embeddings for semantic cache and retrieval. |
 | `memory` | `mem0` or `simple` | User memory backend. |
-| `cache` | `two_layer` | Exact and semantic response cache. |
+| `cache` | `db` | PostgreSQL exact and semantic response cache. |
 | `skills` | `builtin` | Skill registry and intent matching. |
 | `persona` | `template` | Persona prompt rendering. |
-| `insights` | `noop` or scheduled | Background analysis and memory/cache improvement hooks. |
+| `insights` | `scheduled` or `noop` | Background analysis and cache review hooks. |
 | `router` | `multi_layer` | Cache/local/remote/skill routing decision. |
 | `rule_engine` | `automation` | Event-driven automation rules. |
 | `scheduler` | `automation` | Cron, one-shot, interval, condition polling, and event subscriptions. |
@@ -81,4 +81,3 @@ Future plugins should use the same registries as built-ins:
 - register dependency ownership for safe uninstall
 - expose health and restart requirements
 - avoid private side registries that the frontend, scheduler, or tools cannot see
-

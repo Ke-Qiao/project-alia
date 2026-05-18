@@ -14,8 +14,6 @@ use crate::providers::adapter::{
     RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
     TtsAdapter,
 };
-#[cfg(feature = "cache-semantic")]
-use crate::providers::cache::TwoLayerCache;
 use crate::providers::cache::{DbCache, NoopCache};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::insights::NoopInsights;
@@ -170,11 +168,6 @@ pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
         "db" => {
             tracing::info!(module = name, "creating cache backend (DbCache)");
             Box::new(DbCache::new())
-        }
-        #[cfg(feature = "cache-semantic")]
-        "two_layer" => {
-            tracing::info!(module = name, "creating cache backend (TwoLayerCache)");
-            Box::new(TwoLayerCache::new())
         }
         "noop" => {
             tracing::info!(module = name, "creating cache backend (noop)");

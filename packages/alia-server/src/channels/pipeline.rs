@@ -20,7 +20,9 @@ use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
-use crate::config::{CacheSection, ConversationSection, MemorySection, ToolsSection};
+use crate::config::{
+    CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
+};
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
@@ -42,6 +44,8 @@ use tools::*;
 use turn::*;
 
 const EMPTY_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
+const CACHE_STATUS_ACTIVE: &str = "active";
+const CACHE_STATUS_PENDING_INSIGHTS_REVIEW: &str = "pending_insights_review";
 
 /// Result of `process_text` — carries the full response text and whether it
 /// was already delivered to the channel via streaming.
@@ -154,6 +158,7 @@ pub struct PipelinePolicies {
     pub conversation: ConversationSection,
     pub tools: ToolsSection,
     pub cache: CacheSection,
+    pub cache_policy: CachePolicyResourceSection,
     pub memory: MemorySection,
 }
 
@@ -164,12 +169,14 @@ impl PipelinePolicies {
         conversation: ConversationSection,
         tools: ToolsSection,
         cache: CacheSection,
+        cache_policy: CachePolicyResourceSection,
         memory: MemorySection,
     ) -> Self {
         Self {
             conversation,
             tools,
             cache,
+            cache_policy,
             memory,
         }
     }
@@ -310,7 +317,7 @@ pub fn spawn_pipeline(
                             let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.memory).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.cache_policy, &policy_snapshot.memory).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -352,6 +359,7 @@ async fn process_event(
     conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
     cache_config: &CacheSection,
+    cache_policy: &CachePolicyResourceSection,
     memory_config: &MemorySection,
 ) -> anyhow::Result<()> {
     match event {
@@ -387,6 +395,7 @@ async fn process_event(
                 conversation_config,
                 tools_config,
                 cache_config,
+                cache_policy,
                 memory_config,
                 None,
                 false,
@@ -522,6 +531,7 @@ async fn process_event(
                 conversation_config,
                 tools_config,
                 cache_config,
+                cache_policy,
                 memory_config,
                 Some(&turn),
                 turn.interrupt_config.discard_interrupted_turn_history,
@@ -576,7 +586,7 @@ async fn process_event(
             }
 
             if let Some(pending) = result.pending_persistence {
-                persist_text_interaction(modules, pending, memory_config).await;
+                persist_text_interaction(modules, pending, memory_config, event_bus).await;
             }
 
             voice_turns.finish(&turn).await;
@@ -621,18 +631,19 @@ fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
 
 fn stable_user_uuid(user_id: &str) -> Uuid {
     let user_id = user_id.trim();
-    if user_id.is_empty() {
-        Uuid::nil()
+    let stable_key = if user_id.is_empty() {
+        "unknown-pipeline-user"
     } else {
-        Uuid::parse_str(user_id).unwrap_or_else(|_| {
-            let digest = Sha256::digest(user_id.as_bytes());
-            let mut bytes = [0_u8; 16];
-            bytes.copy_from_slice(&digest[..16]);
-            bytes[6] = (bytes[6] & 0x0f) | 0x50;
-            bytes[8] = (bytes[8] & 0x3f) | 0x80;
-            Uuid::from_bytes(bytes)
-        })
-    }
+        user_id
+    };
+    Uuid::parse_str(stable_key).unwrap_or_else(|_| {
+        let digest = Sha256::digest(stable_key.as_bytes());
+        let mut bytes = [0_u8; 16];
+        bytes.copy_from_slice(&digest[..16]);
+        bytes[6] = (bytes[6] & 0x0f) | 0x50;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        Uuid::from_bytes(bytes)
+    })
 }
 
 /// Core text processing: Router → Cache/Skill/LLM → response text.
@@ -659,6 +670,7 @@ async fn process_text(
     conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
     cache_config: &CacheSection,
+    cache_policy: &CachePolicyResourceSection,
     memory_config: &MemorySection,
     turn: Option<&VoiceTurn>,
     defer_persistence: bool,
@@ -734,7 +746,8 @@ async fn process_text(
                     cache_write: None,
                 };
                 if !defer_persistence {
-                    persist_text_interaction(modules, pending.clone(), memory_config).await;
+                    persist_text_interaction(modules, pending.clone(), memory_config, event_bus)
+                        .await;
                 }
                 trace
                     .record(
@@ -795,24 +808,90 @@ async fn process_text(
         )
         .await;
 
-    if cache_config.enabled
-        && cache_config.semantic_match_enabled
-        && !memory_context_used
-        && let Some((prompt, candidate_count)) =
-            semantic_cache_reference_prompt(modules, uid, text, debug_output).await
-    {
-        trace
-            .record(
-                modules,
-                "semantic_cache_candidates",
+    if cache_config.enabled && cache_config.semantic_match_enabled && !memory_context_used {
+        let semantic_candidates = semantic_cache_candidates(modules, uid, text, debug_output).await;
+        if let Some(candidate) = semantic_candidates
+            .iter()
+            .find(|candidate| semantic_candidate_is_safe_direct(candidate))
+        {
+            let cache_metadata = candidate.metadata.clone();
+            let response_text = candidate.response_text.clone();
+            let similarity = candidate.similarity;
+            tracing::debug!(query = text, similarity, "pipeline cache hit (semantic)");
+            debug_component_text(
+                debug_output,
                 "cache",
-                Some("Semantic cache references attached".to_string()),
-                serde_json::json!({
-                    "candidates": candidate_count,
-                }),
-            )
-            .await;
-        base_system_messages.push(system_message(prompt));
+                "semantic_hit",
+                &response_text,
+                Some((channel_id, user_id)),
+            );
+            trace
+                .record(
+                    modules,
+                    "cache_hit",
+                    "cache",
+                    Some("Direct semantic cache hit".to_string()),
+                    serde_json::json!({
+                        "kind": "semantic",
+                        "similarity": similarity,
+                        "metadata": cache_metadata,
+                    }),
+                )
+                .await;
+            let pending = PendingTextPersistence {
+                session_id,
+                user_id: uid,
+                user_id_text: user_id.to_string(),
+                query_text: text.to_string(),
+                response_text: response_text.clone(),
+                channel_id: channel_id.to_string(),
+                cache_write: None,
+            };
+            if !defer_persistence {
+                persist_text_interaction(modules, pending.clone(), memory_config, event_bus).await;
+            }
+            trace
+                .record(
+                    modules,
+                    "turn_completed",
+                    "pipeline",
+                    Some("Turn completed from semantic cache".to_string()),
+                    serde_json::json!({
+                        "route": "cache",
+                        "cache_kind": "semantic",
+                        "similarity": similarity,
+                        "streamed": false,
+                        "audio_streamed": false,
+                        "used_tools": false,
+                        "response_chars": response_text.chars().count(),
+                    }),
+                )
+                .await;
+            return Ok(TextResult {
+                text: response_text,
+                streamed: false,
+                audio_streamed: false,
+                interrupted: false,
+                pending_persistence: defer_persistence.then_some(pending),
+            });
+        }
+
+        if let Some((prompt, candidate_count)) =
+            semantic_cache_reference_prompt(&semantic_candidates, debug_output)
+        {
+            trace
+                .record(
+                    modules,
+                    "semantic_cache_candidates",
+                    "cache",
+                    Some("Semantic cache references attached".to_string()),
+                    serde_json::json!({
+                        "candidates": candidate_count,
+                    }),
+                )
+                .await;
+            base_system_messages.push(system_message(prompt));
+        }
     }
 
     // 3. Route the input
@@ -1138,7 +1217,8 @@ async fn process_text(
         response_was_fallback,
         route: route_for_cache,
     };
-    let cache_write = cache_write_for_response(cache_config, text, &response, cache_context);
+    let cache_write =
+        cache_write_for_response(cache_config, cache_policy, text, &response, cache_context);
     match &cache_write {
         Some(write) => {
             trace
@@ -1186,7 +1266,13 @@ async fn process_text(
     };
 
     if !defer_persistence {
-        persist_text_interaction(modules, pending_persistence.clone(), memory_config).await;
+        persist_text_interaction(
+            modules,
+            pending_persistence.clone(),
+            memory_config,
+            event_bus,
+        )
+        .await;
     }
     trace
         .record(
@@ -1507,10 +1593,12 @@ pub fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
             .get("dynamic_free")
             .and_then(serde_json::Value::as_bool)
             == Some(true)
+        && metadata.get("status").and_then(serde_json::Value::as_str) == Some(CACHE_STATUS_ACTIVE)
 }
 
 pub fn cache_write_for_response(
     cache_config: &CacheSection,
+    cache_policy: &CachePolicyResourceSection,
     query_text: &str,
     response_text: &str,
     context: CacheContext,
@@ -1529,9 +1617,9 @@ pub fn cache_write_for_response(
     if matches!(context.skill_cacheable, Some(false)) {
         return None;
     }
-    if query_is_dynamic(query_text)
-        || query_is_memory_related(query_text)
-        || query_is_device_or_action_related(query_text)
+    if query_matches_keywords(query_text, &cache_policy.dynamic_query_keywords)
+        || query_matches_keywords(query_text, &cache_policy.memory_query_keywords)
+        || query_matches_keywords(query_text, &cache_policy.action_query_keywords)
     {
         return None;
     }
@@ -1550,13 +1638,15 @@ pub fn cache_write_for_response(
         metadata: serde_json::json!({
             "schema": CACHE_METADATA_SCHEMA,
             "policy": "private_exact",
-            "safe_direct_return": true,
+            "status": CACHE_STATUS_PENDING_INSIGHTS_REVIEW,
+            "safe_direct_return": false,
             "memory_independent": true,
             "tool_free": true,
             "dynamic_free": true,
             "route": context.route,
             "language": guess_text_language(query_text),
             "created_by": "pipeline",
+            "review_required_by": "insights",
         }),
         ttl_seconds,
         store_embedding: cache_config.semantic_match_enabled,
@@ -1567,38 +1657,62 @@ fn runtime_context_has_user_memory(context: &RuntimePromptContext) -> bool {
     !context.core_memories.is_empty() || !context.user_preferences.is_empty()
 }
 
-async fn semantic_cache_reference_prompt(
+async fn semantic_cache_candidates(
     modules: &ModuleRegistry,
     user_id: Uuid,
     query_text: &str,
     debug_output: bool,
-) -> Option<(String, usize)> {
+) -> Vec<SemanticCacheCandidate> {
     if modules.embedding.name() == "noop_embedding" {
-        return None;
+        return Vec::new();
     }
 
     let embeddings = match modules.embedding.embed(&[query_text.to_string()]).await {
         Ok(embeddings) => embeddings,
         Err(error) => {
             tracing::debug!(error = ?error, "semantic cache embedding lookup failed");
-            return None;
+            return Vec::new();
         }
     };
-    let embedding = embeddings.first()?;
+    let Some(embedding) = embeddings.first() else {
+        return Vec::new();
+    };
     let candidates = match modules
         .cache
         .get_semantic_candidates(Some(user_id), embedding, 3)
         .await
     {
-        Ok(candidates) => candidates
-            .into_iter()
-            .filter(semantic_candidate_is_safe_reference)
-            .collect::<Vec<_>>(),
+        Ok(candidates) => candidates,
         Err(error) => {
             tracing::debug!(error = ?error, "semantic cache candidate lookup failed");
             Vec::new()
         }
     };
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    if debug_output {
+        tracing::info!(
+            target: "alia_server::debug_output",
+            component = "cache",
+            event = "semantic_candidates",
+            candidates = candidates.len(),
+            "component event"
+        );
+    }
+
+    candidates
+}
+
+fn semantic_cache_reference_prompt(
+    candidates: &[SemanticCacheCandidate],
+    debug_output: bool,
+) -> Option<(String, usize)> {
+    let candidates = candidates
+        .iter()
+        .filter(|candidate| semantic_candidate_is_safe_reference(candidate))
+        .collect::<Vec<_>>();
     if candidates.is_empty() {
         return None;
     }
@@ -1607,7 +1721,7 @@ async fn semantic_cache_reference_prompt(
         tracing::info!(
             target: "alia_server::debug_output",
             component = "cache",
-            event = "semantic_candidates",
+            event = "semantic_references",
             candidates = candidates.len(),
             "component event"
         );
@@ -1637,6 +1751,10 @@ async fn semantic_cache_reference_prompt(
     ))
 }
 
+fn semantic_candidate_is_safe_direct(candidate: &SemanticCacheCandidate) -> bool {
+    semantic_candidate_is_safe_reference(candidate)
+}
+
 fn semantic_candidate_is_safe_reference(candidate: &SemanticCacheCandidate) -> bool {
     cached_response_is_safe_direct(&CachedResponse {
         response_text: candidate.response_text.clone(),
@@ -1652,103 +1770,13 @@ fn preview_for_prompt(text: &str, max_chars: usize) -> String {
     preview
 }
 
-fn query_is_dynamic(text: &str) -> bool {
+fn query_matches_keywords(text: &str, keywords: &[String]) -> bool {
     let lower = text.to_lowercase();
-    contains_any(
-        &lower,
-        &[
-            "today",
-            "tomorrow",
-            "now",
-            "latest",
-            "current",
-            "weather",
-            "news",
-            "time",
-            "date",
-            "search",
-            "fetch",
-            "lookup",
-            "http://",
-            "https://",
-            "今天",
-            "明天",
-            "现在",
-            "最新",
-            "当前",
-            "天气",
-            "新闻",
-            "时间",
-            "几点",
-            "日期",
-            "搜索",
-            "查询",
-            "查一下",
-            "检索",
-        ],
-    )
-}
-
-fn query_is_memory_related(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    contains_any(
-        &lower,
-        &[
-            "remember",
-            "memory",
-            "memorize",
-            "preference",
-            "favorite",
-            "what do i",
-            "my ",
-            "mine",
-            "记住",
-            "记得",
-            "记忆",
-            "偏好",
-            "我的",
-            "我喜欢",
-            "我最喜欢",
-            "之前",
-        ],
-    )
-}
-
-fn query_is_device_or_action_related(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    contains_any(
-        &lower,
-        &[
-            "turn on",
-            "turn off",
-            "set ",
-            "adjust",
-            "volume",
-            "device",
-            "light",
-            "speaker",
-            "microphone",
-            "schedule",
-            "remind",
-            "notify",
-            "打开",
-            "关闭",
-            "设置",
-            "调整",
-            "调大",
-            "调小",
-            "音量",
-            "设备",
-            "灯",
-            "麦克风",
-            "提醒",
-            "通知",
-        ],
-    )
-}
-
-fn contains_any(text: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| text.contains(needle))
+    keywords
+        .iter()
+        .map(|keyword| keyword.trim().to_lowercase())
+        .filter(|keyword| !keyword.is_empty())
+        .any(|keyword| lower.contains(&keyword))
 }
 
 fn guess_text_language(text: &str) -> &'static str {
@@ -1765,7 +1793,13 @@ async fn persist_text_interaction(
     modules: &ModuleRegistry,
     pending: PendingTextPersistence,
     memory_config: &MemorySection,
+    event_bus: &EventBus,
 ) {
+    let completed_channel_id = pending.channel_id.clone();
+    let completed_user_id = pending.user_id_text.clone();
+    let completed_user_uuid = pending.user_id;
+    let completed_session_id = pending.session_id;
+
     let _ = modules
         .conversation
         .append_message(
@@ -1843,6 +1877,13 @@ async fn persist_text_interaction(
             );
         }
     }
+
+    event_bus.publish(ServerEvent::ConversationTurnCompleted {
+        channel_id: completed_channel_id,
+        user_id: completed_user_id,
+        user_uuid: completed_user_uuid,
+        session_id: completed_session_id,
+    });
 }
 
 pub fn cache_entry_for_pending(pending: &PendingTextPersistence) -> Option<CacheEntry> {

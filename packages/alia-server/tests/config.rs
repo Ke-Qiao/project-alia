@@ -64,6 +64,8 @@ fn parses_split_example_config() {
     assert_eq!(config.modules.llm, "openai");
     assert_eq!(config.modules.local_llm, "ollama");
     assert_eq!(config.modules.remote_llm, "openai");
+    assert_eq!(config.modules.cache, "db");
+    assert_eq!(config.modules.insights, "scheduled");
     assert_eq!(config.providers.openai.chat_model, "qwen2.5-7b-instruct");
     assert_eq!(
         config.providers.whisper_cpp.endpoint,
@@ -75,4 +77,11 @@ fn parses_split_example_config() {
     );
     assert_eq!(config.policies.conversation.max_context_messages, 20);
     assert_eq!(config.resources.skills_dir.as_deref(), Some("../skills"));
+    assert!(
+        config
+            .resources
+            .cache_policy
+            .dynamic_query_keywords
+            .contains(&"latest".to_string())
+    );
 }
