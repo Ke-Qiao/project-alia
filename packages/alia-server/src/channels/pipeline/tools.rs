@@ -411,14 +411,7 @@ async fn select_ranked_or_llm_filtered_tools(
         tools_config,
     )
     .await
-    .unwrap_or_else(|| {
-        rank_tool_candidates(
-            tools,
-            user_text,
-            candidate_pool_size,
-            skill_scoped,
-        )
-    });
+    .unwrap_or_else(|| rank_tool_candidates(tools, user_text, candidate_pool_size, skill_scoped));
 
     if ranked.is_empty() {
         return Vec::new();
@@ -490,15 +483,10 @@ pub fn rank_and_limit_tools(
         return tools;
     }
 
-    rank_tool_candidates(
-        tools,
-        user_text,
-        max_tools_per_turn,
-        skill_scoped,
-    )
-    .into_iter()
-    .map(|candidate| candidate.tool)
-    .collect()
+    rank_tool_candidates(tools, user_text, max_tools_per_turn, skill_scoped)
+        .into_iter()
+        .map(|candidate| candidate.tool)
+        .collect()
 }
 
 #[derive(Debug, Clone)]

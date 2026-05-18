@@ -601,12 +601,8 @@ impl SettingsRegistry {
                 json!(config.profiles.default_voice_profile().speed_factor),
                 schema("Voice Speed", "number", false),
             ),
-            // Modules
-            (
-                "core.modules.llm",
-                json!(config.modules.llm),
-                schema_select("Default LLM Backend", &["openai", "ollama", "noop"], true),
-            ),
+            // Provider selection. Core registries/state machines are fixed
+            // services and expose extension registries instead of backend slots.
             (
                 "core.modules.local_llm",
                 json!(config.modules.local_llm),
@@ -618,29 +614,24 @@ impl SettingsRegistry {
                 schema_select("Remote LLM Backend", &["openai", "ollama", "noop"], true),
             ),
             (
+                "core.modules.stt",
+                json!(config.modules.stt),
+                schema_select("STT Backend", &["whisper_cpp", "noop"], true),
+            ),
+            (
+                "core.modules.tts",
+                json!(config.modules.tts),
+                schema_select("TTS Backend", &["gpt_sovits", "noop"], true),
+            ),
+            (
+                "core.modules.embedding",
+                json!(config.modules.embedding),
+                schema_select("Embedding Backend", &["ollama", "openai", "noop"], true),
+            ),
+            (
                 "core.modules.memory",
                 json!(config.modules.memory),
                 schema_select("Memory Backend", &["mem0", "simple", "noop"], true),
-            ),
-            (
-                "core.modules.cache",
-                json!(config.modules.cache),
-                schema_select("Cache Backend", &["db", "noop"], true),
-            ),
-            (
-                "core.modules.router",
-                json!(config.modules.router),
-                schema_select("Router", &["multi_layer", "passthrough"], true),
-            ),
-            (
-                "core.modules.rule_engine",
-                json!(config.modules.rule_engine),
-                schema_select("Rule Engine", &["automation"], true),
-            ),
-            (
-                "core.modules.scheduler",
-                json!(config.modules.scheduler),
-                schema_select("Scheduler", &["automation"], true),
             ),
         ];
 

@@ -134,7 +134,7 @@ src/
 
 The server uses two complementary patterns:
 
-- **Module-slot architecture** — Single-instance subsystems (LLM, STT, TTS, memory, etc.) are defined as `dyn Trait` objects in a `ModuleRegistry`, loaded at startup based on `[modules]` configuration. Swapping implementations (e.g., OpenAI → Ollama) requires only a config change.
+- **Fixed core + provider adapters** — The pipeline, tool registry, skill registry, scheduler, rule engine, settings, sensors, persona rendering, cache store, and dependency graph are fixed core services. `[modules]` selects edge providers such as LLM, STT, TTS, embeddings, and memory; plugins extend core services through registration APIs instead of replacing them.
 
 - **Channel adapter architecture** — Multi-instance I/O channels (gRPC to embedded devices, CLI REPL, future: Telegram/Discord/Web) are registered in a `ChannelRegistry`. Each channel implements the `ChannelAdapter` trait and declares its capabilities (text, voice, streaming, sensors, etc.). Channels are configured as a `[[channels]]` array, allowing multiple instances of the same type.
 

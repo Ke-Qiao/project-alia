@@ -110,6 +110,7 @@ async fn restart_channel(
         local_llm: Some(state.modules.local_llm.clone()),
         remote_llm: Some(state.modules.remote_llm.clone()),
         cache: Some(state.modules.cache.clone()),
+        tools: Some(state.modules.tools.clone()),
     };
 
     if let Err(error) = channel.init(&ctx).await {

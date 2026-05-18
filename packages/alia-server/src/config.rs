@@ -137,8 +137,6 @@ fn default_grpc_timeout() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {
-    #[serde(default = "default_remote_llm_module")]
-    pub llm: String,
     #[serde(default = "default_local_llm_module")]
     pub local_llm: String,
     #[serde(default = "default_remote_llm_module")]
@@ -147,25 +145,8 @@ pub struct ModulesSection {
     pub tts: String,
     pub embedding: String,
     pub memory: String,
-    pub cache: String,
-    pub skills: String,
-    pub persona: String,
-    pub insights: String,
-    pub router: String,
-    pub rule_engine: String,
-    #[serde(default = "default_scheduler_module")]
-    pub scheduler: String,
-    #[serde(default = "default_tools_module")]
-    pub tools: String,
 }
 
-fn default_scheduler_module() -> String {
-    "automation".to_string()
-}
-
-fn default_tools_module() -> String {
-    "builtin".to_string()
-}
 fn default_local_llm_module() -> String {
     "ollama".to_string()
 }

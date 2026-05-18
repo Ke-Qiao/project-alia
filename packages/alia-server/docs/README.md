@@ -6,10 +6,10 @@ settings, automation, tools, skills, sensors, and user/session state.
 
 ## Start Here
 
-- [Architecture](architecture.md) explains the server module graph, channels,
-  pipeline, provider slots, persistence, and failure model.
+- [Architecture](architecture.md) explains the server core graph, channels,
+  pipeline, provider adapters, persistence, and failure model.
 - [Configuration](configuration.md) explains `server.toml`, `server.d/`
-  fragments, module selection, runtime settings, and restart boundaries.
+  fragments, provider selection, runtime settings, and restart boundaries.
 - [Channels and sensors](channels-and-sensors.md) explains channel adapters,
   embedded gRPC integration, sensor mirroring, and channel actions.
 - [Runtime systems](runtime-systems.md) explains skills/tools, automation,
@@ -20,4 +20,3 @@ settings, automation, tools, skills, sensors, and user/session state.
 - Cross-package architecture stays in the root [project docs](../../../docs/README.md).
 - Embedded node details live in [alia-embedded docs](../../alia-embedded/docs/README.md).
 - Protobuf contracts live in `crates/proto/proto/`.
-

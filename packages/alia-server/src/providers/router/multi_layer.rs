@@ -542,6 +542,9 @@ impl ModuleLifecycle for MultiLayerRouter {
     async fn health_check(&self) -> ModuleHealth {
         let config = self.config.read().await;
         if let Some(cfg) = config.as_ref() {
+            if matches!(cfg.llm_mode(), LlmMode::RemoteOnly) {
+                return ModuleHealth::Healthy;
+            }
             match self
                 .client
                 .get(format!("{}/api/version", cfg.ollama_endpoint))

@@ -48,8 +48,10 @@ graph LR
 
 ## Design Direction
 
-- Keep module selection explicit. The `[modules]` section in server config
-  chooses active implementations; provider files configure those implementations.
+- Keep provider selection explicit. The `[modules]` section in server config
+  chooses active provider adapters; provider files configure those adapters.
+  Core registries and state machines are fixed services extended through
+  registration APIs.
 - Keep channel behavior channel-local. Voice interruption and playback semantics
   belong to the embedded channel, not to a global server policy.
 - Prefer streaming where it improves perceived latency. The pipeline supports

@@ -895,7 +895,11 @@ fn parse_time_tool_timezone(value: Option<&serde_json::Value>) -> anyhow::Result
     let Some(raw) = value else {
         return Ok(chrono_tz::UTC);
     };
-    let Some(timezone) = raw.as_str().map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(timezone) = raw
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         anyhow::bail!("timezone must be an IANA timezone string, for example 'Asia/Shanghai'");
     };
 

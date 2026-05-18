@@ -9,7 +9,7 @@ reopening hardware.
 
 | Layer | Owner | Examples |
 | --- | --- | --- |
-| Startup config | Human/admin, deployment tooling | module selection, channels, database, bind addresses, model paths |
+| Startup config | Human/admin, deployment tooling | provider selection, channels, database, bind addresses, model paths |
 | Runtime settings | Frontend/server APIs | provider endpoint tuning, volume, voice profile fields, policies |
 | Runtime state | The application | binding status, imported direct response metadata, latest sensor readings |
 | Disk assets | Human/admin or setup scripts | audio clips, sherpa models, provider model files, debug WAVs |
@@ -26,13 +26,14 @@ Root docs only describe the cross-system model.
 ## Server Summary
 
 The server uses a base `config/server.toml` plus sorted fragments under
-`config/server.d/**/*.toml`. The base file owns module selection and channel
+`config/server.d/**/*.toml`. The base file owns provider selection and channel
 topology. Fragments own provider, policy, profile, resource, and future plugin
 settings.
 
-Module selection is intentionally startup-oriented. Provider parameters and
-policy values can often be hot-updated, but switching implementations usually
-requires rebuilding the module graph.
+Provider selection is intentionally startup-oriented. Provider parameters and
+policy values can often be hot-updated, but switching provider implementations
+usually requires rebuilding the module graph. Core registries and state
+machines are fixed services, not startup-selectable slots.
 
 ## Embedded Summary
 
@@ -60,7 +61,7 @@ Restart is usually expected for:
 
 - server or embedded bind addresses
 - database and auth key material
-- module implementation selection
+- provider implementation selection
 - channel topology changes
 - model paths requiring provider reinitialization
 - audio backend/device changes requiring hardware reopen

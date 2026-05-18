@@ -3,9 +3,11 @@
 Copy `server.example.toml` to `server.toml`, and copy this directory to
 `server.d/` when creating a runtime config from the example.
 
-Fragments are deep-merged after the base config. Keep module selection in
-`server.toml` under `[modules]`, then place implementation details by semantic
-role:
+Fragments are deep-merged after the base config. Keep provider selection in
+`server.toml` under `[modules]`. Core server services are not replaceable slots;
+extend them through registries for tools, skills, conditions, actions, sensors,
+and plugin-owned prompt/context contributions. Place implementation details by
+semantic role:
 
 - `providers/` configures external services and provider-specific adapters.
 - `policies/` configures runtime behavior such as routing, cache, and tools.

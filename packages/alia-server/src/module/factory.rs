@@ -14,7 +14,7 @@ use crate::providers::adapter::{
     RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry,
     TtsAdapter,
 };
-use crate::providers::cache::{DbCache, NoopCache};
+use crate::providers::cache::DbCache;
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::insights::NoopInsights;
 #[cfg(feature = "insights")]
@@ -25,15 +25,16 @@ use crate::providers::memory::external::ExternalMemoryBackend;
 #[cfg(feature = "memory-mem0")]
 use crate::providers::memory::mem0::{Mem0Client, Mem0Config};
 use crate::providers::memory::{NoopMemory, SimpleMemory};
-use crate::providers::persona::{NoopPersona, TemplatePersona};
+use crate::providers::persona::TemplatePersona;
 #[cfg(feature = "llm-ollama")]
 use crate::providers::router::MultiLayerRouter;
+#[cfg(not(feature = "llm-ollama"))]
 use crate::providers::router::PassthroughRouter;
 use crate::providers::sensor::SensorRegistry;
-use crate::providers::skills::{BuiltinSkills, NoopSkills};
+use crate::providers::skills::BuiltinSkills;
 use crate::rules::EventRuleEngine;
 use crate::scheduler::{ActionRegistry, AutomationScheduler, ConditionRegistry};
-use crate::tools::{BuiltinToolRegistry, NoopToolRegistry};
+use crate::tools::BuiltinToolRegistry;
 
 #[cfg(feature = "embed-ollama")]
 use crate::providers::embedding::OllamaEmbedding;
@@ -163,167 +164,79 @@ pub fn create_memory(
     }
 }
 
-pub fn create_cache(name: &str) -> Box<dyn CacheBackend> {
-    match name {
-        "db" => {
-            tracing::info!(module = name, "creating cache backend (DbCache)");
-            Box::new(DbCache::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating cache backend (noop)");
-            Box::new(NoopCache)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown cache backend, using db");
-            Box::new(DbCache::new())
-        }
+pub fn create_cache() -> Box<dyn CacheBackend> {
+    tracing::info!("creating core cache backend (DbCache)");
+    Box::new(DbCache::new())
+}
+
+pub fn create_skills() -> Box<dyn SkillProvider> {
+    tracing::info!("creating core skill registry (BuiltinSkills)");
+    Box::new(BuiltinSkills::new())
+}
+
+pub fn create_persona() -> Box<dyn PersonaProvider> {
+    tracing::info!("creating core persona provider (TemplatePersona)");
+    Box::new(TemplatePersona::new())
+}
+
+pub fn create_insights(enabled: bool) -> Box<dyn InsightStrategy> {
+    if !enabled {
+        tracing::info!("insights disabled by policy");
+        return Box::new(NoopInsights);
+    }
+
+    #[cfg(feature = "insights")]
+    {
+        tracing::info!("creating core insights strategy (ScheduledInsights)");
+        return Box::new(ScheduledInsights::new());
+    }
+
+    #[cfg(not(feature = "insights"))]
+    {
+        tracing::warn!("insights feature is disabled; using noop insights strategy");
+        Box::new(NoopInsights)
     }
 }
 
-pub fn create_skills(name: &str) -> Box<dyn SkillProvider> {
-    match name {
-        "builtin" => {
-            tracing::info!(module = name, "creating skill provider (BuiltinSkills)");
-            Box::new(BuiltinSkills::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating skill provider (noop)");
-            Box::new(NoopSkills)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown skill provider, using builtin");
-            Box::new(BuiltinSkills::new())
-        }
+pub fn create_router() -> Box<dyn RouterStrategy> {
+    #[cfg(feature = "llm-ollama")]
+    {
+        tracing::info!("creating core router strategy (MultiLayerRouter)");
+        return Box::new(MultiLayerRouter::new());
+    }
+
+    #[cfg(not(feature = "llm-ollama"))]
+    {
+        tracing::info!("creating core router strategy (passthrough)");
+        Box::new(PassthroughRouter)
     }
 }
 
-pub fn create_persona(name: &str) -> Box<dyn PersonaProvider> {
-    match name {
-        "template" => {
-            tracing::info!(module = name, "creating persona provider (TemplatePersona)");
-            Box::new(TemplatePersona::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating persona provider (noop)");
-            Box::new(NoopPersona)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown persona provider, using template");
-            Box::new(TemplatePersona::new())
-        }
-    }
-}
-
-pub fn create_insights(name: &str) -> Box<dyn InsightStrategy> {
-    match name {
-        #[cfg(feature = "insights")]
-        "scheduled" => {
-            tracing::info!(
-                module = name,
-                "creating insights strategy (ScheduledInsights)"
-            );
-            Box::new(ScheduledInsights::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating insights strategy (noop)");
-            Box::new(NoopInsights)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown insights strategy, using noop");
-            Box::new(NoopInsights)
-        }
-    }
-}
-
-pub fn create_router(name: &str) -> Box<dyn RouterStrategy> {
-    match name {
-        #[cfg(feature = "llm-ollama")]
-        "multi_layer" => {
-            tracing::info!(module = name, "creating router strategy (MultiLayerRouter)");
-            Box::new(MultiLayerRouter::new())
-        }
-        "passthrough" => {
-            tracing::info!(module = name, "creating router strategy (passthrough)");
-            Box::new(PassthroughRouter)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown router strategy, using passthrough");
-            Box::new(PassthroughRouter)
-        }
-    }
-}
-
-pub fn create_rule_engine(name: &str) -> Box<dyn RuleEvaluator> {
-    match name {
-        "automation" => {
-            tracing::info!(module = name, "creating rule engine (EventRuleEngine)");
-            Box::new(EventRuleEngine::new())
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown rule engine, using automation");
-            Box::new(EventRuleEngine::new())
-        }
-    }
+pub fn create_rule_engine() -> Box<dyn RuleEvaluator> {
+    tracing::info!("creating core rule engine (EventRuleEngine)");
+    Box::new(EventRuleEngine::new())
 }
 
 pub fn create_scheduler(
-    name: &str,
     conditions: Arc<ConditionRegistry>,
     actions: Arc<ActionRegistry>,
 ) -> Box<dyn SchedulerBackend> {
-    match name {
-        "automation" => {
-            tracing::info!(module = name, "creating scheduler (AutomationScheduler)");
-            Box::new(AutomationScheduler::with_registries(conditions, actions))
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown scheduler, using automation");
-            Box::new(AutomationScheduler::with_registries(conditions, actions))
-        }
-    }
-}
-
-pub fn create_tools(name: &str) -> Box<dyn ToolRegistry> {
-    match name {
-        "builtin" => {
-            tracing::info!(
-                module = name,
-                "creating tool registry (BuiltinToolRegistry)"
-            );
-            Box::new(BuiltinToolRegistry::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating tool registry (noop)");
-            Box::new(NoopToolRegistry)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown tool registry, using noop");
-            Box::new(NoopToolRegistry)
-        }
-    }
+    tracing::info!("creating core scheduler (AutomationScheduler)");
+    Box::new(AutomationScheduler::with_registries(conditions, actions))
 }
 
 /// Create tools with sensor registry integration (includes sensor_read + sensor_list).
 pub fn create_tools_with_sensors(
-    name: &str,
     sensors: Arc<SensorRegistry>,
     channels: Arc<ChannelRegistry>,
 ) -> Box<dyn ToolRegistry> {
-    match name {
-        "builtin" => {
-            tracing::info!(
-                module = name,
-                "creating tool registry with sensors (BuiltinToolRegistry)"
-            );
-            let registry = BuiltinToolRegistry::with_sensors(sensors);
-            #[cfg(feature = "channel-embedded")]
-            registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
-            #[cfg(not(feature = "channel-embedded"))]
-            let _ = channels;
-            Box::new(registry)
-        }
-        _ => create_tools(name),
-    }
+    tracing::info!("creating core tool registry with sensors (BuiltinToolRegistry)");
+    let registry = BuiltinToolRegistry::with_sensors(sensors);
+    #[cfg(feature = "channel-embedded")]
+    registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
+    #[cfg(not(feature = "channel-embedded"))]
+    let _ = channels;
+    Box::new(registry)
 }
 
 pub fn create_channel(

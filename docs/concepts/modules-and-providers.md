@@ -1,8 +1,8 @@
 # Modules and Providers
 
-Project Alia uses module slots and provider traits to keep the runtime
-replaceable. The server decides which implementation fills each slot, while the
-pipeline depends only on trait interfaces.
+Project Alia separates fixed core services from replaceable provider adapters.
+The server owns one coherent runtime kernel; plugins and providers extend that
+kernel through registries instead of replacing the registries themselves.
 
 Package-specific module details live in:
 
@@ -13,32 +13,37 @@ Package-specific module details live in:
 
 | Term | Meaning |
 | --- | --- |
-| Module slot | A named runtime capability such as `llm`, `stt`, `tts`, `memory`, or `tools`. |
-| Provider | A concrete implementation behind a slot, such as OpenAI-compatible LLM, Ollama, whisper.cpp, GPT-SoVITS, or Mem0. |
+| Core service | A fixed runtime subsystem with shared invariants, such as pipeline orchestration, tools, skills, rules, scheduler, settings, sensors, and dependency ownership. |
+| Provider | A replaceable adapter selected by config, such as OpenAI-compatible LLM, Ollama, whisper.cpp, GPT-SoVITS, or Mem0. |
 | Channel | A multi-instance I/O path, such as embedded gRPC or CLI. |
-| Extension | Future plugin/component code that can register tools, skills, settings, conditions, or module-like behavior. |
+| Extension | Plugin/component code that registers tools, skills, settings, conditions, actions, sensors, prompt/context sections, or health checks. |
 | Lifecycle | Shared initialization, health check, runtime setting application, and shutdown contract. |
 
-## Server Slots
+## Provider Selection
 
-Server slots are selected in `[modules]`. Provider configuration is split into
-fragment files under `server.d/`.
+Only provider adapters are selected in `[modules]`. Provider configuration is
+split into fragment files under `server.d/`.
 
 This keeps these decisions separate:
 
-- "Which implementation should run?" belongs in `[modules]`.
+- "Which external/provider adapter should run?" belongs in `[modules]`.
 - "How is that implementation configured?" belongs in provider/policy/profile
   fragments.
+- "How do tools, skills, scheduler conditions, rules, sensors, and settings
+  compose?" belongs in the fixed core registries.
 
 ## Provider Traits
 
-The server defines traits for LLM, STT, TTS, embeddings, memory, cache, skills,
-persona, conversation history, insights, router, rules, scheduler, tools, and
+The server defines provider traits for LLM, STT, TTS, embeddings, memory, and
 tool execution.
 
 Provider implementations should be boring adapters: translate Alia's internal
 types into provider calls, return normalized results, and avoid owning pipeline
 policy.
+
+Core services still use traits internally where it helps testing and lifecycle
+management, but they are not public replacement slots. For example, plugins add
+tools to the shared tool registry; they do not swap out the registry.
 
 ## Channels Are Not Providers
 

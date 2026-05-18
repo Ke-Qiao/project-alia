@@ -1,8 +1,8 @@
 # Server Configuration
 
-Server configuration is split into a base file plus module-specific fragments.
-The base file answers "what should run"; fragments answer "how should each part
-run".
+Server configuration is split into a base file plus semantic fragments. The
+base file answers "which provider adapters and channels should run"; fragments
+answer "how should each part run".
 
 ## Loading Order
 
@@ -51,11 +51,16 @@ Keep these in `server.toml`:
 - server bind address, port, and basic logging
 - database connection and auth key material paths
 - channel topology in `[[channels]]`
-- `[modules]` slot selection
+- provider selection in `[modules]`
 
-Do not bury module selection inside provider fragments. If a frontend changes a
-provider setting at runtime, it should not accidentally change which module is
-active.
+Do not bury provider selection inside provider fragments. If a frontend changes
+a provider setting at runtime, it should not accidentally change which provider
+adapter is active.
+
+Core server services are not configurable slots. The server always owns one
+tool registry, skill registry, rule engine, scheduler, settings registry, sensor
+registry, cache store, persona renderer, and pipeline. Plugins extend these
+services through their registries.
 
 ## Fragment Responsibilities
 
@@ -89,7 +94,7 @@ Restart is expected for:
 - server host/port boot behavior
 - database connection settings
 - auth secrets and server key material
-- module selection in `[modules]`
+- provider selection in `[modules]`
 - channel topology changes requiring adapter construction
 - memory backend identity/API key changes that must pass startup health checks
 

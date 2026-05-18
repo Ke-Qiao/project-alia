@@ -61,11 +61,12 @@ fn parses_split_example_config() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
 
-    assert_eq!(config.modules.llm, "openai");
     assert_eq!(config.modules.local_llm, "ollama");
     assert_eq!(config.modules.remote_llm, "openai");
-    assert_eq!(config.modules.cache, "db");
-    assert_eq!(config.modules.insights, "scheduled");
+    assert_eq!(config.modules.stt, "whisper_cpp");
+    assert_eq!(config.modules.tts, "gpt_sovits");
+    assert_eq!(config.modules.embedding, "ollama");
+    assert_eq!(config.modules.memory, "mem0");
     assert_eq!(config.providers.openai.chat_model, "qwen2.5-7b-instruct");
     assert_eq!(
         config.providers.whisper_cpp.endpoint,

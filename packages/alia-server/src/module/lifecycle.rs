@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, LlmAdapter, MemoryBackend, SchedulerBackend,
+    CacheBackend, ConversationBackend, LlmAdapter, MemoryBackend, SchedulerBackend, ToolRegistry,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
@@ -53,6 +53,9 @@ pub struct ModuleContext {
     pub remote_llm: Option<Arc<dyn LlmAdapter>>,
     /// Cache backend for modules that review or maintain cache entries.
     pub cache: Option<Arc<dyn CacheBackend>>,
+    /// Unified executable tool registry. Plugins/components should register
+    /// code-backed tool executors here instead of replacing the registry.
+    pub tools: Option<Arc<dyn ToolRegistry>>,
 }
 
 /// Base trait for all pluggable modules

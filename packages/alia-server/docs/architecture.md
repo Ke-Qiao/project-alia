@@ -10,33 +10,38 @@ exposes APIs for the frontend and future plugins.
 | --- | --- |
 | API | Axum routes under `/api/v1`, `/health`, OpenAPI/Scalar, OOBE/bootstrap, settings, devices, users, auth, sensors, rules, scheduler, tools, skills, and conversations. |
 | Channels | Multi-instance I/O adapters such as embedded gRPC and CLI. Channels translate user/device I/O into pipeline events and deliver responses. |
-| Pipeline | Turn orchestration: conversation context, routing, cache, memory snippets, skills, tools, LLM/tool loop, TTS, delivery, persistence, and agent trace events. |
-| Providers | Swappable adapters for LLM, STT, TTS, embeddings, memory, cache, skills, persona, routing, rules, scheduler, insights, and tools. |
-| Registries | Runtime access to modules, channels, settings, tools, skills, dependency ownership, scheduler conditions/actions, and sensors. |
+| Pipeline | Fixed turn orchestration: conversation context, routing, cache policy, memory snippets, skills, tools, LLM/tool loop, TTS, delivery, persistence, and agent trace events. |
+| Providers | Swappable adapters for LLM, STT, TTS, embeddings, memory, and other edge execution backends. |
+| Registries | Fixed runtime access to modules, channels, settings, tools, skills, dependency ownership, scheduler conditions/actions, and sensors. Plugins extend these registries rather than replacing them. |
 | Persistence | PostgreSQL via SeaORM for users, sessions, messages, agent events, tools, skills, cache, personas, rules, scheduler tasks, settings, and sensor data. |
 
-## Module Slots
+## Provider Selection And Core Services
 
-The `[modules]` section in `config/server.toml` selects implementations. Provider
-files configure those implementations.
+The `[modules]` section in `config/server.toml` selects provider adapters only.
+Core services are constructed by the server builder and expose extension
+registries instead of replacement slots.
 
-| Slot | Typical implementation | Purpose |
+| Provider key | Typical implementation | Purpose |
 | --- | --- | --- |
-| `llm` | `openai` | Default LLM adapter. |
 | `local_llm` | `ollama` | Lightweight/local model for routing and simple work. |
 | `remote_llm` | `openai` | Larger model for complex turns. |
 | `stt` | `whisper_cpp` | Server-side speech recognition. |
 | `tts` | `gpt_sovits` | Server-side speech synthesis. |
 | `embedding` | `ollama` or `openai` | Embeddings for semantic cache and retrieval. |
-| `memory` | `mem0` or `simple` | User memory backend. |
-| `cache` | `db` | PostgreSQL exact and semantic response cache. |
-| `skills` | `builtin` | Skill registry and intent matching. |
-| `persona` | `template` | Persona prompt rendering. |
-| `insights` | `scheduled` or `noop` | Background analysis and cache review hooks. |
-| `router` | `multi_layer` | Cache/local/remote/skill routing decision. |
-| `rule_engine` | `automation` | Event-driven automation rules. |
-| `scheduler` | `automation` | Cron, one-shot, interval, condition polling, and event subscriptions. |
-| `tools` | `builtin` | Tool registry and code-backed execution. |
+| `memory` | `mem0` or `simple` | User memory backend behind the fixed memory integration boundary. |
+
+These services are fixed core runtime pieces:
+
+- pipeline and turn state
+- conversation/history persistence
+- cache storage and cache policy
+- skill registry and skill/tool bindings
+- persona rendering and runtime prompt assembly
+- insights scheduler/strategy wiring
+- router orchestration and tool candidate filtering
+- rule engine and automation scheduler
+- tool registry and code-backed tool execution
+- settings, sensor, channel, and dependency registries
 
 ## Pipeline Flow
 

@@ -15,9 +15,8 @@ use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter,
-    MemoryBackend, PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider,
-    SttAdapter, ToolRegistry, TtsAdapter,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
+    SchedulerBackend, SttAdapter, ToolRegistry, TtsAdapter,
 };
 use crate::providers::memory::NoopMemory;
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
@@ -43,22 +42,13 @@ pub struct ServerBuilder {
     // Channel adapters (multi-instance)
     channels: Vec<Box<dyn ChannelAdapter>>,
 
-    // Module slots (None = use config default)
+    // Provider override slots (None = use config selection).
     local_llm: Option<Box<dyn LlmAdapter>>,
     remote_llm: Option<Box<dyn LlmAdapter>>,
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
-    conversation: Option<Box<dyn ConversationBackend>>,
     memory: Option<Box<dyn MemoryBackend>>,
-    cache: Option<Box<dyn CacheBackend>>,
-    skills: Option<Box<dyn SkillProvider>>,
-    persona: Option<Box<dyn PersonaProvider>>,
-    insights: Option<Box<dyn InsightStrategy>>,
-    router: Option<Box<dyn RouterStrategy>>,
-    rule_engine: Option<Box<dyn RuleEvaluator>>,
-    scheduler: Option<Box<dyn SchedulerBackend>>,
-    tools: Option<Box<dyn ToolRegistry>>,
 
     extensions: Vec<Box<dyn ModuleLifecycle>>,
 }
@@ -81,16 +71,7 @@ impl ServerBuilder {
             stt: None,
             tts: None,
             embedding: None,
-            conversation: None,
             memory: None,
-            cache: None,
-            skills: None,
-            persona: None,
-            insights: None,
-            router: None,
-            rule_engine: None,
-            scheduler: None,
-            tools: None,
             extensions: Vec::new(),
         }
     }
@@ -125,53 +106,8 @@ impl ServerBuilder {
         self
     }
 
-    pub fn with_conversation(mut self, conv: impl ConversationBackend + 'static) -> Self {
-        self.conversation = Some(Box::new(conv));
-        self
-    }
-
     pub fn with_memory(mut self, mem: impl MemoryBackend + 'static) -> Self {
         self.memory = Some(Box::new(mem));
-        self
-    }
-
-    pub fn with_cache(mut self, cache: impl CacheBackend + 'static) -> Self {
-        self.cache = Some(Box::new(cache));
-        self
-    }
-
-    pub fn with_skills(mut self, skills: impl SkillProvider + 'static) -> Self {
-        self.skills = Some(Box::new(skills));
-        self
-    }
-
-    pub fn with_persona(mut self, persona: impl PersonaProvider + 'static) -> Self {
-        self.persona = Some(Box::new(persona));
-        self
-    }
-
-    pub fn with_insights(mut self, insights: impl InsightStrategy + 'static) -> Self {
-        self.insights = Some(Box::new(insights));
-        self
-    }
-
-    pub fn with_router(mut self, router: impl RouterStrategy + 'static) -> Self {
-        self.router = Some(Box::new(router));
-        self
-    }
-
-    pub fn with_rules(mut self, rules: impl RuleEvaluator + 'static) -> Self {
-        self.rule_engine = Some(Box::new(rules));
-        self
-    }
-
-    pub fn with_scheduler(mut self, sched: impl SchedulerBackend + 'static) -> Self {
-        self.scheduler = Some(Box::new(sched));
-        self
-    }
-
-    pub fn with_tools(mut self, tools: impl ToolRegistry + 'static) -> Self {
-        self.tools = Some(Box::new(tools));
         self
     }
 
@@ -211,9 +147,10 @@ impl ServerBuilder {
             local_llm: None,
             remote_llm: None,
             cache: None,
+            tools: None,
         };
 
-        // Create modules: use override or create from config
+        // Create provider adapters from config; core services are fixed below.
         let mut local_llm = self.local_llm.unwrap_or_else(|| {
             if self.config.policies.routing.local_llm_enabled {
                 factory::create_llm(&self.config.modules.local_llm)
@@ -237,9 +174,8 @@ impl ServerBuilder {
         let mut embedding = self
             .embedding
             .unwrap_or_else(|| factory::create_embedding(&self.config.modules.embedding));
-        let mut conversation = self.conversation.unwrap_or_else(|| {
-            Box::new(crate::providers::conversation::DatabaseConversationBackend::new())
-        });
+        let mut conversation: Box<dyn ConversationBackend> =
+            Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
         let mut memory = self.memory.unwrap_or_else(|| {
             factory::create_memory(
                 &self.config.modules.memory,
@@ -247,24 +183,12 @@ impl ServerBuilder {
                 &self.config.providers.mem0,
             )
         });
-        let mut cache = self
-            .cache
-            .unwrap_or_else(|| factory::create_cache(&self.config.modules.cache));
-        let mut skills = self
-            .skills
-            .unwrap_or_else(|| factory::create_skills(&self.config.modules.skills));
-        let mut persona = self
-            .persona
-            .unwrap_or_else(|| factory::create_persona(&self.config.modules.persona));
-        let mut insights = self
-            .insights
-            .unwrap_or_else(|| factory::create_insights(&self.config.modules.insights));
-        let mut router = self
-            .router
-            .unwrap_or_else(|| factory::create_router(&self.config.modules.router));
-        let mut rule_engine = self
-            .rule_engine
-            .unwrap_or_else(|| factory::create_rule_engine(&self.config.modules.rule_engine));
+        let mut cache = factory::create_cache();
+        let mut skills = factory::create_skills();
+        let mut persona = factory::create_persona();
+        let mut insights = factory::create_insights(self.config.policies.insights.enabled);
+        let mut router = factory::create_router();
+        let mut rule_engine = factory::create_rule_engine();
 
         // Build condition registry with built-in evaluators
         let condition_registry = Arc::new(ConditionRegistry::new());
@@ -294,21 +218,11 @@ impl ServerBuilder {
             )))
             .await;
 
-        let mut scheduler = self.scheduler.unwrap_or_else(|| {
-            factory::create_scheduler(
-                &self.config.modules.scheduler,
-                condition_registry.clone(),
-                action_registry.clone(),
-            )
-        });
+        let mut scheduler =
+            factory::create_scheduler(condition_registry.clone(), action_registry.clone());
 
-        let mut tools = self.tools.unwrap_or_else(|| {
-            factory::create_tools_with_sensors(
-                &self.config.modules.tools,
-                sensor_registry.clone(),
-                channel_registry.clone(),
-            )
-        });
+        let mut tools =
+            factory::create_tools_with_sensors(sensor_registry.clone(), channel_registry.clone());
 
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
@@ -332,6 +246,7 @@ impl ServerBuilder {
             local_llm: None,
             remote_llm: None,
             cache: None,
+            tools: None,
         };
 
         // Initialize remaining modules in dependency order
@@ -387,6 +302,10 @@ impl ServerBuilder {
         };
         init_module(tools.as_mut(), &ctx).await;
         let tools_arc: Arc<dyn ToolRegistry> = Arc::from(tools);
+        let ctx = ModuleContext {
+            tools: Some(tools_arc.clone()),
+            ..ctx
+        };
         action_registry
             .register(Arc::new(ToolCallActionExecutor::new(tools_arc.clone())))
             .await;
