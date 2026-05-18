@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -53,11 +53,7 @@ async fn list_conversations(
 ) -> Result<Json<Vec<Conversation>>> {
     let mut select = chat_session::Entity::find().order_by_desc(chat_session::Column::UpdatedAt);
     if !auth.is_admin() {
-        select = select.filter(
-            Condition::any()
-                .add(chat_session::Column::CreatorId.eq(auth.id.to_string()))
-                .add(chat_session::Column::CreatorId.eq(auth.name.clone())),
-        );
+        select = select.filter(chat_session::Column::CreatorId.eq(auth.id.to_string()));
     }
 
     let sessions = select
@@ -141,10 +137,7 @@ async fn load_authorized_session(
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Conversation not found".into()))?;
 
-    if auth.is_admin()
-        || session.creator_id.as_deref() == Some(auth.id.to_string().as_str())
-        || session.creator_id.as_deref() == Some(auth.name.as_str())
-    {
+    if auth.is_admin() || session.creator_id.as_deref() == Some(auth.id.to_string().as_str()) {
         Ok(session)
     } else {
         Err(AppError::Forbidden)

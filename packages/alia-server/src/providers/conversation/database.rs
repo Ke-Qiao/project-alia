@@ -14,7 +14,7 @@ use crate::providers::adapter::{ChatMessage, ConversationBackend, ConversationEv
 
 pub struct DatabaseConversationBackend {
     db: Option<DatabaseConnection>,
-    // In-memory tracker for the active session ID per channel_id
+    // In-memory tracker for the active session ID per channel_id + user_id.
     active_sessions: Arc<RwLock<HashMap<String, Uuid>>>,
 }
 
@@ -30,6 +30,10 @@ impl DatabaseConversationBackend {
         self.db
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("DatabaseConversationBackend not initialized"))
+    }
+
+    fn session_key(channel_id: &str, user_id: &str) -> String {
+        format!("{channel_id}\u{1f}{user_id}")
     }
 }
 
@@ -62,7 +66,7 @@ impl ConversationBackend for DatabaseConversationBackend {
         channel_id: &str,
         user_id: &str,
     ) -> anyhow::Result<Uuid> {
-        let key = channel_id.to_string();
+        let key = Self::session_key(channel_id, user_id);
 
         // 1. Check in-memory map
         {
@@ -77,6 +81,7 @@ impl ConversationBackend for DatabaseConversationBackend {
         // 2. Check latest from database for this channel
         let latest = chat_session::Entity::find()
             .filter(chat_session::Column::ChannelId.eq(channel_id))
+            .filter(chat_session::Column::CreatorId.eq(Some(user_id.to_string())))
             .order_by_desc(chat_session::Column::UpdatedAt)
             .one(db)
             .await?;
@@ -123,11 +128,12 @@ impl ConversationBackend for DatabaseConversationBackend {
     async fn list_sessions(
         &self,
         channel_id: &str,
-        _user_id: &str,
+        user_id: &str,
     ) -> anyhow::Result<Vec<(Uuid, Option<String>, chrono::DateTime<chrono::Utc>)>> {
         let db = self.db()?;
         let sessions = chat_session::Entity::find()
             .filter(chat_session::Column::ChannelId.eq(channel_id))
+            .filter(chat_session::Column::CreatorId.eq(Some(user_id.to_string())))
             .order_by_desc(chat_session::Column::UpdatedAt)
             .all(db)
             .await?;
@@ -141,13 +147,14 @@ impl ConversationBackend for DatabaseConversationBackend {
     async fn set_active_session(
         &self,
         channel_id: &str,
-        _user_id: &str,
+        user_id: &str,
         session_id: Uuid,
     ) -> anyhow::Result<()> {
         let db = self.db()?;
         // Validate session exists on the channel
         let exists = chat_session::Entity::find_by_id(session_id)
             .filter(chat_session::Column::ChannelId.eq(channel_id))
+            .filter(chat_session::Column::CreatorId.eq(Some(user_id.to_string())))
             .one(db)
             .await?
             .is_some();
@@ -156,7 +163,7 @@ impl ConversationBackend for DatabaseConversationBackend {
             anyhow::bail!("Session {} not found on this channel", session_id);
         }
 
-        let key = channel_id.to_string();
+        let key = Self::session_key(channel_id, user_id);
         let mut map = self.active_sessions.write().await;
         map.insert(key, session_id);
 

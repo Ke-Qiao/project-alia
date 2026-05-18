@@ -122,6 +122,7 @@ dependencies = [
  "base64",
  "ed25519-dalek",
  "mdns-sd",
+ "rand 0.9.4",
  "serde",
  "serde_json",
  "tokio",

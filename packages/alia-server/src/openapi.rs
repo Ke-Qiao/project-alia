@@ -16,6 +16,12 @@ use crate::api;
         api::auth::login,
         api::auth::register,
         api::auth::refresh,
+        // Users
+        api::users::get_me,
+        api::users::list_users,
+        api::users::get_user,
+        api::users::update_user,
+        api::users::delete_user,
         // Skills
         api::skills::list_skills,
         api::skills::get_skill,
@@ -31,6 +37,8 @@ use crate::api;
         api::auth::AuthResponse,
         api::auth::UserInfo,
         api::auth::TokenResponse,
+        api::users::UserResponse,
+        api::users::UpdateUserRequest,
         // Skills
         api::skills::SkillResponse,
     )),

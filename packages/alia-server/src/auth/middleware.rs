@@ -2,8 +2,10 @@ use axum::extract::{FromRequestParts, Request};
 use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum::response::Response;
+use sea_orm::EntityTrait;
 use uuid::Uuid;
 
+use crate::entity::user;
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -11,6 +13,7 @@ use crate::state::AppState;
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub id: Uuid,
+    pub email: String,
     pub name: String,
     pub role: String,
 }
@@ -43,10 +46,19 @@ impl FromRequestParts<AppState> for AuthUser {
             .decode(token)
             .map_err(|_| AppError::Auth("Invalid or expired token".into()))?;
 
+        let user = user::Entity::find_by_id(claims.sub)
+            .one(&state.db)
+            .await?
+            .ok_or_else(|| AppError::Auth("Authenticated user no longer exists".into()))?;
+        if user.status != "active" {
+            return Err(AppError::Auth("Authenticated user is not active".into()));
+        }
+
         Ok(AuthUser {
-            id: claims.sub,
-            name: claims.name,
-            role: claims.role,
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
         })
     }
 }

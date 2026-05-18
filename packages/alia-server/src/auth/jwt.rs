@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: Uuid,
+    pub email: String,
     pub name: String,
     pub role: String,
     pub iat: i64,
@@ -28,6 +29,7 @@ impl JwtKeys {
     pub fn encode(
         &self,
         user_id: Uuid,
+        email: &str,
         name: &str,
         role: &str,
         expiry_hours: u64,
@@ -35,6 +37,7 @@ impl JwtKeys {
         let now = Utc::now();
         let claims = Claims {
             sub: user_id,
+            email: email.to_string(),
             name: name.to_string(),
             role: role.to_string(),
             iat: now.timestamp(),
