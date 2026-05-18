@@ -21,6 +21,7 @@ use std::{net::IpAddr, time::Duration};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use chrono_tz::Tz;
 #[cfg(feature = "tools-http")]
 use futures::StreamExt;
 use sea_orm::{
@@ -863,14 +864,15 @@ impl ToolExecutor for GetCurrentTime {
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("human");
+        let timezone = parse_time_tool_timezone(arguments.get("timezone"))?;
 
         let now = Utc::now();
-        // TODO: Handle timezone conversion with chrono-tz
+        let local_now = now.with_timezone(&timezone);
 
         let time_str = match format {
-            "iso8601" => now.to_rfc3339(),
+            "iso8601" => local_now.to_rfc3339(),
             "unix" => now.timestamp().to_string(),
-            _ => now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            _ => local_now.format("%Y-%m-%d %H:%M:%S %Z (%:z)").to_string(),
         };
 
         Ok(ToolResult {
@@ -878,12 +880,35 @@ impl ToolExecutor for GetCurrentTime {
             success: true,
             output: serde_json::json!({
                 "datetime": time_str,
-                "timezone": "UTC",
+                "timezone": timezone.name(),
+                "utc_datetime": now.to_rfc3339(),
+                "utc_offset": local_now.format("%:z").to_string(),
+                "timezone_abbreviation": local_now.format("%Z").to_string(),
                 "timestamp": now.timestamp()
             }),
             display: Some(time_str),
         })
     }
+}
+
+fn parse_time_tool_timezone(value: Option<&serde_json::Value>) -> anyhow::Result<Tz> {
+    let Some(raw) = value else {
+        return Ok(chrono_tz::UTC);
+    };
+    let Some(timezone) = raw.as_str().map(str::trim).filter(|value| !value.is_empty()) else {
+        anyhow::bail!("timezone must be an IANA timezone string, for example 'Asia/Shanghai'");
+    };
+
+    match timezone.to_ascii_uppercase().as_str() {
+        "UTC" | "GMT" | "Z" => return Ok(chrono_tz::UTC),
+        _ => {}
+    }
+
+    timezone.parse::<Tz>().map_err(|_| {
+        anyhow::anyhow!(
+            "invalid timezone '{timezone}'; expected an IANA timezone name such as 'Asia/Shanghai', 'America/Los_Angeles', or 'Europe/London'"
+        )
+    })
 }
 
 /// Fetch a public HTTP(S) URL.

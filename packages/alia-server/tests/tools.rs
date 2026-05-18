@@ -28,6 +28,58 @@ async fn test_get_current_time() {
     assert!(result.success);
     assert!(result.output.get("datetime").is_some());
     assert!(result.output.get("timestamp").is_some());
+    assert_eq!(result.output["timezone"], "UTC");
+    assert_eq!(result.output["utc_offset"], "+00:00");
+}
+
+#[tokio::test]
+async fn test_get_current_time_uses_iana_timezone() {
+    let tool = GetCurrentTime;
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: None,
+    };
+
+    let result = tool
+        .execute(
+            serde_json::json!({"format": "human", "timezone": "Asia/Shanghai"}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.output["timezone"], "Asia/Shanghai");
+    assert_eq!(result.output["utc_offset"], "+08:00");
+    assert!(
+        result
+            .display
+            .as_deref()
+            .is_some_and(|display| display.contains("+08:00"))
+    );
+}
+
+#[tokio::test]
+async fn test_get_current_time_rejects_invalid_timezone() {
+    let tool = GetCurrentTime;
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: None,
+    };
+
+    let error = tool
+        .execute(
+            serde_json::json!({"format": "human", "timezone": "Shanghai"}),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("invalid timezone"));
 }
 
 #[tokio::test]
