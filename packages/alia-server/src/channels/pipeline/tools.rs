@@ -25,7 +25,7 @@ If no tool is needed, answer the user concisely in natural language.
 Do not return an empty message."#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ToolCallProtocol {
+pub enum ToolCallProtocol {
     Native,
     TextFallback,
 }
@@ -287,7 +287,7 @@ fn normalize_tool_response(response: &mut LlmResponse) -> anyhow::Result<ToolCal
     }
 }
 
-fn non_empty_tool_fallback(last_tool_display: Option<&str>) -> String {
+pub fn non_empty_tool_fallback(last_tool_display: Option<&str>) -> String {
     last_tool_display
         .map(str::trim)
         .filter(|display| !display.is_empty())
@@ -465,7 +465,7 @@ async fn select_ranked_or_llm_filtered_tools(
         .collect()
 }
 
-fn rank_and_limit_tools(
+pub fn rank_and_limit_tools(
     tools: Vec<ToolDefinition>,
     user_text: &str,
     max_tools_per_turn: usize,
@@ -976,7 +976,7 @@ fn tool_requires_confirmation(tool: &ToolDefinition, tools_config: &ToolsSection
             .any(|name| name == &tool.name)
 }
 
-fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolCall {
+pub fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolCall {
     let id = if call.id.trim().is_empty() {
         format!("call_{depth}_{index}")
     } else {
@@ -989,7 +989,7 @@ fn normalize_tool_call(call: &LlmToolCall, depth: u32, index: usize) -> LlmToolC
     }
 }
 
-fn tool_call_request_message(
+pub fn tool_call_request_message(
     protocol: ToolCallProtocol,
     content: &str,
     calls: &[LlmToolCall],
@@ -1016,7 +1016,7 @@ fn tool_call_request_message(
     }
 }
 
-fn tool_result_message(
+pub fn tool_result_message(
     protocol: ToolCallProtocol,
     tool_name: &str,
     result: ToolResult,
@@ -1046,7 +1046,7 @@ fn tool_result_message(
     }
 }
 
-pub(super) fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
+pub fn parse_text_tool_calls(content: &str) -> anyhow::Result<Vec<LlmToolCall>> {
     let Some(candidate) = standalone_tool_call_json(content) else {
         return Ok(parse_pseudo_function_tool_call(content)
             .into_iter()
@@ -1408,211 +1408,4 @@ fn is_valid_text_tool_name(name: &str) -> bool {
         return false;
     }
     name.len() <= 128 && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tool(name: &str, description: &str) -> ToolDefinition {
-        ToolDefinition {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "timezone": {"type": "string"}
-                }
-            }),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
-    }
-
-    #[test]
-    fn routes_global_tools_by_query_relevance() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("device_control", "Control smart home devices"),
-                tool("get_current_time", "Get the current date and time"),
-                tool("fetch", "Fetch a public HTTP URL"),
-            ],
-            "what time is it now?",
-            2,
-            false,
-            "cli",
-        );
-
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].name, "get_current_time");
-    }
-
-    #[test]
-    fn avoids_global_tool_injection_when_no_tool_matches() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("device_control", "Control smart home devices"),
-                tool("fetch", "Fetch a public HTTP URL"),
-            ],
-            "tell me a bedtime story",
-            8,
-            false,
-            "cli",
-        );
-
-        assert!(selected.is_empty());
-    }
-
-    #[test]
-    fn skill_scoped_tools_are_capped_but_not_dropped_for_zero_score() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("skill_tool_a", "A domain tool"),
-                tool("skill_tool_b", "Another domain tool"),
-                tool("skill_tool_c", "Third domain tool"),
-            ],
-            "unrelated input",
-            2,
-            true,
-            "cli",
-        );
-
-        assert_eq!(selected.len(), 2);
-        assert_eq!(selected[0].name, "skill_tool_a");
-        assert_eq!(selected[1].name, "skill_tool_b");
-    }
-
-    #[test]
-    fn routes_preference_statements_to_memory_store() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("memory_search", "Search the user's memory"),
-                tool("memory_store", "Store a piece of information to memory"),
-                tool("fetch", "Fetch a public HTTP URL"),
-            ],
-            "KeQiao 非常喜欢日本音乐家 tsukuyomi",
-            8,
-            false,
-            "cli",
-        );
-
-        assert!(selected.iter().any(|tool| tool.name == "memory_store"));
-    }
-
-    #[test]
-    fn routes_embedded_mic_volume_to_embedded_volume_tool() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("device_control", "Control smart home devices"),
-                tool(
-                    "embedded_volume_control",
-                    "Get or set microphone and speaker volume for an alia-embedded channel",
-                ),
-            ],
-            "把麦克风音量调整到2",
-            1,
-            false,
-            "embedded",
-        );
-
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].name, "embedded_volume_control");
-    }
-
-    #[test]
-    fn routes_search_language_to_fetch_candidate() {
-        let selected = rank_and_limit_tools(
-            vec![
-                tool("device_control", "Control smart home devices"),
-                tool("fetch", "Fetch a public HTTP URL"),
-            ],
-            "帮我搜索一下 sherpa onnx 最新版本",
-            8,
-            false,
-            "cli",
-        );
-
-        assert!(selected.iter().any(|tool| tool.name == "fetch"));
-    }
-
-    #[test]
-    fn native_tool_history_uses_normalized_call_ids() {
-        let call = normalize_tool_call(
-            &LlmToolCall {
-                id: String::new(),
-                tool_name: "device_control".to_string(),
-                arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
-            },
-            0,
-            0,
-        );
-        let request =
-            tool_call_request_message(ToolCallProtocol::Native, "", std::slice::from_ref(&call));
-        let result = tool_result_message(
-            ToolCallProtocol::Native,
-            "device_control",
-            ToolResult {
-                call_id: call.id.clone(),
-                success: false,
-                output: serde_json::json!({"requires_confirmation": true}),
-                display: Some("Please confirm".to_string()),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(request.tool_calls[0].id, "call_0_0");
-        assert_eq!(result.role, "tool");
-        assert_eq!(result.tool_call_id.as_deref(), Some("call_0_0"));
-    }
-
-    #[test]
-    fn text_fallback_tool_history_does_not_use_native_tool_roles() {
-        let call = normalize_tool_call(
-            &LlmToolCall {
-                id: String::new(),
-                tool_name: "device_control".to_string(),
-                arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
-            },
-            0,
-            0,
-        );
-        let request = tool_call_request_message(
-            ToolCallProtocol::TextFallback,
-            "",
-            std::slice::from_ref(&call),
-        );
-        let result = tool_result_message(
-            ToolCallProtocol::TextFallback,
-            "device_control",
-            ToolResult {
-                call_id: call.id,
-                success: false,
-                output: serde_json::json!({"requires_confirmation": true}),
-                display: Some("Please confirm".to_string()),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(request.role, "assistant");
-        assert!(request.tool_calls.is_empty());
-        assert_eq!(result.role, "system");
-        assert!(result.tool_call_id.is_none());
-        assert!(result.content.contains("requires_confirmation"));
-    }
-
-    #[test]
-    fn empty_tool_response_falls_back_to_last_tool_display() {
-        assert_eq!(
-            non_empty_tool_fallback(Some("Updated embedded volume: mic 1.00")),
-            "Updated embedded volume: mic 1.00"
-        );
-    }
-
-    #[test]
-    fn empty_tool_response_has_non_empty_generic_fallback() {
-        assert!(!non_empty_tool_fallback(None).trim().is_empty());
-        assert!(!non_empty_tool_fallback(Some("   ")).trim().is_empty());
-    }
 }

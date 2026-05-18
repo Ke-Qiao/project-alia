@@ -7,10 +7,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-mod capture;
-mod continuous;
-mod responses;
-mod transport;
+pub mod capture;
+pub mod continuous;
+pub mod responses;
+pub mod transport;
 mod utterance;
 
 use capture::{PendingSpeechCapture, SpeechCapture, prepare_vad_for_capture};
@@ -425,20 +425,6 @@ impl ModuleLifecycle for SpeechPipeline {
     }
 }
 
-fn is_assistant_playback_source(source: &str) -> bool {
+pub fn is_assistant_playback_source(source: &str) -> bool {
     source == "tts"
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn assistant_playback_source_is_tts_only() {
-        assert!(is_assistant_playback_source("tts"));
-        assert!(!is_assistant_playback_source("wakeword_interrupt"));
-        assert!(!is_assistant_playback_source(
-            "run/direct-responses/wakeword/hello.wav"
-        ));
-    }
 }

@@ -421,7 +421,7 @@ fn default_metadata() -> DiscoveryMetadata {
     }
 }
 
-fn normalize_mdns_service_type(raw: &str) -> String {
+pub fn normalize_mdns_service_type(raw: &str) -> String {
     let trimmed = raw.trim().trim_end_matches('.');
     if trimmed.ends_with(".local") {
         format!("{trimmed}.")
@@ -493,7 +493,7 @@ fn mdns_properties(info: &DeviceInfo, metadata: &DiscoveryMetadata) -> HashMap<S
     properties
 }
 
-fn encode_ble_payload(info: &DeviceInfo, metadata: &DiscoveryMetadata) -> Vec<u8> {
+pub fn encode_ble_payload(info: &DeviceInfo, metadata: &DiscoveryMetadata) -> Vec<u8> {
     let mut payload = Vec::with_capacity(12);
     payload.push(1);
     payload.push(status_code(&metadata.status));
@@ -524,45 +524,4 @@ fn stable_fingerprint(value: &str) -> [u8; 4] {
         hash = hash.wrapping_mul(0x01000193);
     }
     hash.to_be_bytes()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn normalizes_mdns_service_type() {
-        assert_eq!(
-            normalize_mdns_service_type("_alia-embedded._tcp"),
-            "_alia-embedded._tcp.local."
-        );
-        assert_eq!(
-            normalize_mdns_service_type("_alia-embedded._tcp.local"),
-            "_alia-embedded._tcp.local."
-        );
-    }
-
-    #[test]
-    fn builds_compact_ble_payload() {
-        let info = DeviceInfo {
-            device_id: "alia-pi-a1b2c3d4".to_string(),
-            device_name: "Living Room".to_string(),
-            version: "0.1.0".to_string(),
-            port: 50051,
-            endpoints: Vec::new(),
-            capabilities: Vec::new(),
-            attributes: HashMap::new(),
-        };
-        let metadata = DiscoveryMetadata {
-            status: "bound".to_string(),
-            server_id: Some("server-main".to_string()),
-            capabilities: Vec::new(),
-            attributes: HashMap::new(),
-        };
-
-        let payload = encode_ble_payload(&info, &metadata);
-        assert_eq!(payload.len(), 12);
-        assert_eq!(payload[0], 1);
-        assert_eq!(payload[1], 1);
-    }
 }

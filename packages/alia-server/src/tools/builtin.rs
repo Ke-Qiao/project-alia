@@ -957,12 +957,12 @@ impl ToolExecutor for Calculate {
 }
 
 /// Search user's memory
-struct MemorySearch {
+pub struct MemorySearch {
     memory: Option<Arc<dyn MemoryBackend>>,
 }
 
 impl MemorySearch {
-    fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
         Self { memory }
     }
 }
@@ -1065,12 +1065,12 @@ impl ToolExecutor for MemorySearch {
 }
 
 /// Store information to memory
-struct MemoryStore {
+pub struct MemoryStore {
     memory: Option<Arc<dyn MemoryBackend>>,
 }
 
 impl MemoryStore {
-    fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
         Self { memory }
     }
 }
@@ -1811,60 +1811,4 @@ pub fn parse_openai_tool_call(function_call: &serde_json::Value) -> anyhow::Resu
         arguments,
         call_id,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::providers::memory::simple::SimpleMemory;
-
-    fn test_tool_context() -> ToolContext {
-        ToolContext {
-            user_id: Uuid::new_v4(),
-            conversation_id: None,
-            source: "test".to_string(),
-            channel_id: Some("test".to_string()),
-        }
-    }
-
-    #[tokio::test]
-    async fn memory_store_and_search_use_memory_backend() {
-        let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
-        let ctx = test_tool_context();
-        let store = MemoryStore::new(Some(memory.clone()));
-        let search = MemorySearch::new(Some(memory));
-
-        let stored = store
-            .execute(
-                serde_json::json!({
-                    "content": "KeQiao likes tsukuyomi",
-                    "layer": "core",
-                    "importance": 1.0
-                }),
-                &ctx,
-            )
-            .await
-            .unwrap();
-
-        assert!(stored.success);
-        assert_eq!(stored.output["stored"], true);
-
-        let found = search
-            .execute(
-                serde_json::json!({
-                    "query": "tsukuyomi",
-                    "layers": ["core"]
-                }),
-                &ctx,
-            )
-            .await
-            .unwrap();
-
-        assert!(found.success);
-        assert_eq!(found.output["count"], 1);
-        assert_eq!(
-            found.output["results"][0]["content"],
-            "KeQiao likes tsukuyomi"
-        );
-    }
 }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 // TODO(sensor): Implement sensor reporting system:
 //   - Add a `sensor` module that collects readings from hardware sensors (temperature, humidity, motion, etc.)
 //   - Report sensor data to alia-server via gRPC `SensorData` channel events
@@ -7,25 +5,16 @@
 //   - Periodic reporting interval configurable per sensor
 //   - Batch multiple readings in a single gRPC call for efficiency
 
-mod binding;
-mod config;
-mod grpc;
-mod identity;
-mod module;
-mod plugin;
-mod process;
-mod settings;
-mod storage;
-
 use std::path::PathBuf;
 
+use alia_embedded::module::EmbeddedBuilder;
+use alia_embedded::{config, identity, module};
 use anyhow::{Context, Result};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::module::EmbeddedBuilder;
 #[cfg(feature = "sherpa-onnx")]
-use crate::module::traits::{EdgeSttEngine, WakeWordEngine};
+use alia_embedded::module::traits::{EdgeSttEngine, WakeWordEngine};
 
 #[tokio::main]
 async fn main() -> Result<()> {

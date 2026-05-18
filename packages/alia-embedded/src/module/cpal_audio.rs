@@ -313,7 +313,7 @@ enum PlaybackCommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ResolvedAudioBackend {
+pub enum ResolvedAudioBackend {
     Cpal,
     Alsa,
 }
@@ -1425,11 +1425,11 @@ where
         .context("building cpal output stream")
 }
 
-fn resolved_capture_backend(config: &AudioConfig) -> ResolvedAudioBackend {
+pub fn resolved_capture_backend(config: &AudioConfig) -> ResolvedAudioBackend {
     resolve_backend(config.capture_backend, &config.capture_device)
 }
 
-fn resolved_playback_backend(config: &AudioConfig) -> ResolvedAudioBackend {
+pub fn resolved_playback_backend(config: &AudioConfig) -> ResolvedAudioBackend {
     resolve_backend(config.playback_backend, &config.playback_device)
 }
 
@@ -1648,7 +1648,7 @@ fn alsa_playback_device_available(device_name: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn alsa_device_name(configured: &str, allow_raw: bool) -> Option<String> {
+pub fn alsa_device_name(configured: &str, allow_raw: bool) -> Option<String> {
     let trimmed = configured.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
         return Some("default".to_string());
@@ -1700,7 +1700,7 @@ fn looks_like_alsa_pcm_name(device: &str) -> bool {
     .any(|prefix| device.starts_with(prefix))
 }
 
-fn buffer_frames_for_ms(sample_rate: u32, buffer_ms: u32) -> usize {
+pub fn buffer_frames_for_ms(sample_rate: u32, buffer_ms: u32) -> usize {
     sample_rate
         .saturating_mul(buffer_ms.max(1))
         .saturating_div(1_000)
@@ -1730,7 +1730,7 @@ fn clamp_playback_buffer(
     );
 }
 
-fn playback_buffered_ms(buffered_samples: usize, sample_rate: u32, channels: usize) -> u64 {
+pub fn playback_buffered_ms(buffered_samples: usize, sample_rate: u32, channels: usize) -> u64 {
     let denom = u64::from(sample_rate).saturating_mul(channels.max(1) as u64);
     if denom == 0 {
         return 0;
@@ -1744,7 +1744,7 @@ fn i32_sample_to_i16_with_shift(sample: i32, shift: u8) -> i16 {
     (sample >> shift).clamp(i16::MIN as i32, i16::MAX as i32) as i16
 }
 
-fn detect_alsa_s32_capture_shift(samples: &[i32]) -> Option<u8> {
+pub fn detect_alsa_s32_capture_shift(samples: &[i32]) -> Option<u8> {
     let mut nonzero = 0usize;
     let mut low_byte_zero = 0usize;
 
@@ -1816,88 +1816,5 @@ fn s32_shift_stats(samples: &[i32], shift: u8) -> S32ShiftStats {
         } else {
             clipped as f32 / considered as f32
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn computes_buffer_frames_for_milliseconds() {
-        assert_eq!(buffer_frames_for_ms(24_000, 60), 1_440);
-    }
-
-    #[test]
-    fn computes_buffered_playback_milliseconds() {
-        assert_eq!(playback_buffered_ms(9_600, 24_000, 2), 200);
-    }
-
-    #[test]
-    fn detects_right_justified_alsa_s32_capture() {
-        let samples = [0x0001_0203, -0x0001_0203, 0x0002_0304, -0x0002_0304];
-        assert_eq!(detect_alsa_s32_capture_shift(&samples), Some(8));
-    }
-
-    #[test]
-    fn detects_left_justified_alsa_s32_capture() {
-        let samples = [0x0102_0300, -0x0102_0300, 0x0203_0400, -0x0203_0400];
-        assert_eq!(detect_alsa_s32_capture_shift(&samples), Some(16));
-    }
-
-    #[test]
-    fn detects_left_justified_alsa_s32_capture_with_noisy_low_byte() {
-        let samples = [0x1102_0311, -0x1102_0322, 0x2203_0433, -0x2203_0444];
-        assert_eq!(detect_alsa_s32_capture_shift(&samples), Some(16));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn detects_alsa_pcm_names() {
-        assert_eq!(
-            alsa_device_name("alsa:plughw:0,0", false),
-            Some("plughw:0,0".to_string())
-        );
-        assert_eq!(
-            alsa_device_name("default", false),
-            Some("default".to_string())
-        );
-        assert_eq!(alsa_device_name("MAX98375A", false), None);
-        assert_eq!(
-            alsa_device_name("I2S-Duplex", true),
-            Some("I2S-Duplex".to_string())
-        );
-    }
-
-    #[test]
-    fn resolves_explicit_alsa_backend_from_device_name() {
-        let mut config = AudioConfig::default();
-        config.capture_device = "alsa:plughw:2,0".to_string();
-        config.playback_device = "plughw:0,1".to_string();
-
-        assert_eq!(
-            resolved_capture_backend(&config),
-            ResolvedAudioBackend::Alsa
-        );
-        assert_eq!(
-            resolved_playback_backend(&config),
-            ResolvedAudioBackend::Alsa
-        );
-    }
-
-    #[test]
-    fn respects_explicit_backend_selection() {
-        let mut config = AudioConfig::default();
-        config.capture_backend = AudioBackend::Alsa;
-        config.playback_backend = AudioBackend::Cpal;
-
-        assert_eq!(
-            resolved_capture_backend(&config),
-            ResolvedAudioBackend::Alsa
-        );
-        assert_eq!(
-            resolved_playback_backend(&config),
-            ResolvedAudioBackend::Cpal
-        );
     }
 }

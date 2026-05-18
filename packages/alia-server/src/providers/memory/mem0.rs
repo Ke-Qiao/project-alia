@@ -496,7 +496,7 @@ fn limit_and_filter(
     nodes
 }
 
-fn parse_memory_nodes(value: &Value) -> Vec<MemoryNode> {
+pub fn parse_memory_nodes(value: &Value) -> Vec<MemoryNode> {
     candidate_arrays(value)
         .into_iter()
         .flat_map(|items| items.iter().filter_map(parse_memory_node))
@@ -552,7 +552,7 @@ fn parse_memory_node(value: &Value) -> Option<MemoryNode> {
     })
 }
 
-fn extract_memory_id(value: &Value) -> Option<String> {
+pub fn extract_memory_id(value: &Value) -> Option<String> {
     extract_string_field(value, &["memory_id", "id", "uuid"])
         .or_else(|| value.get("memory").and_then(extract_memory_id))
         .or_else(|| value.get("result").and_then(extract_memory_id))
@@ -573,45 +573,4 @@ fn extract_string_field(value: &Value, keys: &[&str]) -> Option<String> {
         }
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_search_results_with_alia_metadata() {
-        let value = json!({
-            "results": [
-                {
-                    "id": "mem_1",
-                    "memory": "KeQiao likes tsukuyomi",
-                    "metadata": {
-                        ALIA_LAYER_KEY: "core",
-                        ALIA_NODE_TYPE_KEY: "preference",
-                        ALIA_IMPORTANCE_KEY: 0.9
-                    }
-                }
-            ]
-        });
-
-        let nodes = parse_memory_nodes(&value);
-        assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].id.as_deref(), Some("mem_1"));
-        assert_eq!(nodes[0].memory_layer, "core");
-        assert_eq!(nodes[0].node_type, "preference");
-        assert_eq!(nodes[0].importance, 0.9);
-    }
-
-    #[test]
-    fn extracts_memory_id_from_nested_event_payload() {
-        let value = json!({
-            "event_id": "event_1",
-            "results": [
-                {"memory": {"id": "mem_42", "memory": "remembered fact"}}
-            ]
-        });
-
-        assert_eq!(extract_memory_id(&value).as_deref(), Some("mem_42"));
-    }
 }

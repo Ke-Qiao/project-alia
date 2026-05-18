@@ -1,8 +1,12 @@
-use alia_server::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor};
+use std::sync::Arc;
+
+use alia_server::providers::adapter::{MemoryBackend, ToolContext, ToolDefinition, ToolExecutor};
+use alia_server::providers::memory::simple::SimpleMemory;
 #[cfg(feature = "tools-http")]
 use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
-    Calculate, GetCurrentTime, parse_openai_tool_call, to_openai_functions,
+    Calculate, GetCurrentTime, MemorySearch, MemoryStore, parse_openai_tool_call,
+    to_openai_functions,
 };
 use uuid::Uuid;
 
@@ -99,4 +103,50 @@ fn test_parse_openai_tool_call() {
     assert_eq!(call.tool_name, "get_current_time");
     assert_eq!(call.call_id, "call_123");
     assert_eq!(call.arguments["format"], "human");
+}
+
+#[tokio::test]
+async fn memory_store_and_search_use_memory_backend() {
+    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: Some("test".to_string()),
+    };
+    let store = MemoryStore::new(Some(memory.clone()));
+    let search = MemorySearch::new(Some(memory));
+
+    let stored = store
+        .execute(
+            serde_json::json!({
+                "content": "KeQiao likes tsukuyomi",
+                "layer": "core",
+                "importance": 1.0
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(stored.success);
+    assert_eq!(stored.output["stored"], true);
+
+    let found = search
+        .execute(
+            serde_json::json!({
+                "query": "tsukuyomi",
+                "layers": ["core"]
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(found.success);
+    assert_eq!(found.output["count"], 1);
+    assert_eq!(
+        found.output["results"][0]["content"],
+        "KeQiao likes tsukuyomi"
+    );
 }

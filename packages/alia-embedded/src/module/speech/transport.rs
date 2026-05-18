@@ -67,7 +67,7 @@ pub(super) async fn interrupt_server_active_turn(
     }
 }
 
-fn derive_audio_ingress_endpoint(server_endpoint: &str) -> Result<String> {
+pub fn derive_audio_ingress_endpoint(server_endpoint: &str) -> Result<String> {
     let (scheme, rest) = server_endpoint
         .split_once("://")
         .ok_or_else(|| anyhow::anyhow!("server endpoint must include scheme"))?;
@@ -158,15 +158,4 @@ fn timestamp_us() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_micros() as u64
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn derives_audio_ingress_from_bound_server_endpoint() {
-        let endpoint = derive_audio_ingress_endpoint("http://192.168.1.10:3000").unwrap();
-        assert_eq!(endpoint, "http://192.168.1.10:3001");
-    }
 }

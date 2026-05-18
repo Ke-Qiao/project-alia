@@ -33,8 +33,8 @@ use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{bool_setting, f32_setting, u32_setting, u64_setting, usize_setting};
 
 mod debug;
-mod streaming;
-mod tools;
+pub mod streaming;
+pub mod tools;
 mod turn;
 use debug::*;
 use streaming::*;
@@ -61,31 +61,31 @@ struct TextResult {
 }
 
 #[derive(Debug, Clone)]
-struct PendingTextPersistence {
-    session_id: Uuid,
-    user_id: Uuid,
-    user_id_text: String,
-    query_text: String,
-    response_text: String,
-    channel_id: String,
-    cache_write: Option<CacheWrite>,
+pub struct PendingTextPersistence {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    pub user_id_text: String,
+    pub query_text: String,
+    pub response_text: String,
+    pub channel_id: String,
+    pub cache_write: Option<CacheWrite>,
 }
 
 #[derive(Debug, Clone)]
-struct CacheWrite {
-    scope: String,
-    metadata: serde_json::Value,
-    ttl_seconds: u64,
-    store_embedding: bool,
+pub struct CacheWrite {
+    pub scope: String,
+    pub metadata: serde_json::Value,
+    pub ttl_seconds: u64,
+    pub store_embedding: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CacheContext {
-    memory_context_used: bool,
-    used_tools: bool,
-    skill_cacheable: Option<bool>,
-    response_was_fallback: bool,
-    route: &'static str,
+pub struct CacheContext {
+    pub memory_context_used: bool,
+    pub used_tools: bool,
+    pub skill_cacheable: Option<bool>,
+    pub response_was_fallback: bool,
+    pub route: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -140,13 +140,13 @@ impl AgentTrace {
 }
 
 #[derive(Debug, Clone, Default)]
-struct RuntimePromptContext {
-    core_memories: Vec<String>,
-    user_preferences: Vec<(String, String)>,
-    current_time: String,
-    user_presence: String,
-    device_status_summary: String,
-    available_skills: Vec<String>,
+pub struct RuntimePromptContext {
+    pub core_memories: Vec<String>,
+    pub user_preferences: Vec<(String, String)>,
+    pub current_time: String,
+    pub user_presence: String,
+    pub device_status_summary: String,
+    pub available_skills: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1472,7 +1472,7 @@ async fn execute_llm_response(
     })
 }
 
-fn escalation_reason(response: &str) -> Option<&str> {
+pub fn escalation_reason(response: &str) -> Option<&str> {
     let trimmed = response.trim_start();
     let reason = trimmed.strip_prefix("[ESCALATE]")?.trim();
     Some(if reason.is_empty() {
@@ -1482,7 +1482,7 @@ fn escalation_reason(response: &str) -> Option<&str> {
     })
 }
 
-fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
+pub fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
     let metadata = &cached.metadata;
     let policy = metadata
         .get("policy")
@@ -1509,7 +1509,7 @@ fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
             == Some(true)
 }
 
-fn cache_write_for_response(
+pub fn cache_write_for_response(
     cache_config: &CacheSection,
     query_text: &str,
     response_text: &str,
@@ -1845,7 +1845,7 @@ async fn persist_text_interaction(
     }
 }
 
-fn cache_entry_for_pending(pending: &PendingTextPersistence) -> Option<CacheEntry> {
+pub fn cache_entry_for_pending(pending: &PendingTextPersistence) -> Option<CacheEntry> {
     let cache_write = pending.cache_write.as_ref()?;
     Some(CacheEntry {
         user_id: Some(pending.user_id),
@@ -1970,7 +1970,7 @@ async fn retrieve_runtime_memories(
     }
 }
 
-fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> Option<String> {
+pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> Option<String> {
     let mut sections = Vec::new();
     let mut runtime_lines = Vec::new();
 
@@ -2045,307 +2045,5 @@ fn system_message(content: String) -> ChatMessage {
         content,
         name: None,
         ..ChatMessage::default()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
-    use super::tools::parse_text_tool_calls;
-    use super::{
-        CacheContext, CacheWrite, PendingTextPersistence, RuntimePromptContext,
-        cache_entry_for_pending, cache_write_for_response, cached_response_is_safe_direct,
-        escalation_reason, render_runtime_context_system_prompt,
-    };
-    use crate::channels::adapter::AudioFormat;
-    use crate::config::CacheSection;
-    use crate::providers::adapter::CachedResponse;
-
-    fn test_cache_config() -> CacheSection {
-        CacheSection {
-            enabled: true,
-            exact_match_enabled: true,
-            semantic_match_enabled: false,
-            semantic_threshold: 0.92,
-            default_ttl_seconds: 3600,
-            skill_cache_ttl_seconds: 300,
-        }
-    }
-
-    #[test]
-    fn parses_text_tool_call_envelope() {
-        let calls = parse_text_tool_calls(
-            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{"format":"human"}}]}"#,
-        )
-        .unwrap();
-
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].tool_name, "get_current_time");
-        assert_eq!(calls[0].arguments["format"], "human");
-    }
-
-    #[test]
-    fn parses_fenced_text_tool_call_envelope() {
-        let calls = parse_text_tool_calls(
-            "```json\n{\"schema\":\"alia.tool_calls.v1\",\"tool_calls\":[{\"tool_name\":\"sensor_list\",\"arguments\":\"{}\"}]}\n```",
-        )
-        .unwrap();
-
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].tool_name, "sensor_list");
-    }
-
-    #[test]
-    fn ignores_plain_assistant_text() {
-        let calls = parse_text_tool_calls("Sure, I can help with that.").unwrap();
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn detects_local_llm_escalation_marker() {
-        assert_eq!(
-            escalation_reason("[ESCALATE] This needs deeper reasoning."),
-            Some("This needs deeper reasoning.")
-        );
-        assert_eq!(
-            escalation_reason("  [ESCALATE]"),
-            Some("local model requested escalation")
-        );
-        assert!(escalation_reason("普通回复").is_none());
-    }
-
-    #[test]
-    fn pipeline_cache_entry_uses_default_lookup_scope() {
-        let pending = PendingTextPersistence {
-            session_id: uuid::Uuid::new_v4(),
-            user_id: uuid::Uuid::new_v4(),
-            user_id_text: "test-user".to_string(),
-            query_text: "hello".to_string(),
-            response_text: "hi".to_string(),
-            channel_id: "test-channel".to_string(),
-            cache_write: Some(CacheWrite {
-                scope: crate::providers::adapter::DEFAULT_CACHE_SCOPE.to_string(),
-                metadata: serde_json::json!({"schema": crate::providers::adapter::CACHE_METADATA_SCHEMA}),
-                ttl_seconds: 3600,
-                store_embedding: false,
-            }),
-        };
-
-        let entry = cache_entry_for_pending(&pending).unwrap();
-        assert_eq!(entry.scope, crate::providers::adapter::DEFAULT_CACHE_SCOPE);
-        assert_eq!(entry.query_text, "hello");
-        assert_eq!(entry.response_text, "hi");
-    }
-
-    #[test]
-    fn cache_policy_allows_safe_memory_independent_exact_entries() {
-        let entry = cache_write_for_response(
-            &test_cache_config(),
-            "What is MQTT?",
-            "MQTT is a lightweight messaging protocol.",
-            CacheContext {
-                memory_context_used: false,
-                used_tools: false,
-                skill_cacheable: None,
-                response_was_fallback: false,
-                route: "local_llm",
-            },
-        )
-        .expect("safe static answer should be cacheable");
-
-        let cached = CachedResponse {
-            response_text: "MQTT answer".to_string(),
-            metadata: entry.metadata,
-        };
-        assert!(cached_response_is_safe_direct(&cached));
-    }
-
-    #[test]
-    fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
-        let config = test_cache_config();
-        let base = CacheContext {
-            memory_context_used: false,
-            used_tools: false,
-            skill_cacheable: None,
-            response_was_fallback: false,
-            route: "remote_llm",
-        };
-
-        assert!(
-            cache_write_for_response(&config, "What time is it?", "It is noon.", base).is_none()
-        );
-        assert!(
-            cache_write_for_response(
-                &config,
-                "What is MQTT?",
-                "Answer",
-                CacheContext {
-                    used_tools: true,
-                    ..base
-                },
-            )
-            .is_none()
-        );
-        assert!(
-            cache_write_for_response(
-                &config,
-                "What is MQTT?",
-                "Answer",
-                CacheContext {
-                    memory_context_used: true,
-                    ..base
-                },
-            )
-            .is_none()
-        );
-        assert!(!cached_response_is_safe_direct(&CachedResponse {
-            response_text: "old cache".to_string(),
-            metadata: serde_json::json!({}),
-        }));
-    }
-
-    #[test]
-    fn ignores_tool_call_without_schema() {
-        let calls =
-            parse_text_tool_calls(r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}"#)
-                .unwrap();
-
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn ignores_embedded_tool_call_examples() {
-        let calls = parse_text_tool_calls(
-            r#"Tool use rules:
-- If native tool calling is unavailable and a tool is needed, reply with exactly one JSON object and no prose:
-  {"tool_calls":[{"name":"tool_name","arguments":{}}]}
-
-Available tools:
-[
-  {"name":"get_current_time","parameters":{"type":"object"}}
-]"#,
-        )
-        .unwrap();
-
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn ignores_json_with_trailing_text() {
-        let calls = parse_text_tool_calls(
-            r#"{"tool_calls":[{"name":"get_current_time","arguments":{}}]}
-This is an example, not a call."#,
-        )
-        .unwrap();
-
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn ignores_envelope_with_user_facing_content() {
-        let calls = parse_text_tool_calls(
-            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":{}}],"content":"I will call a tool."}"#,
-        )
-        .unwrap();
-
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn ignores_text_tool_call_with_non_object_arguments() {
-        let calls = parse_text_tool_calls(
-            r#"{"schema":"alia.tool_calls.v1","tool_calls":[{"name":"get_current_time","arguments":"not json"}]}"#,
-        )
-        .unwrap();
-
-        assert!(calls.is_empty());
-    }
-
-    #[test]
-    fn parses_pseudo_function_text_tool_call() {
-        let calls = parse_text_tool_calls(
-            r#"memory_store(content="KeQiao likes tsukuyomi", importance:1.0, layer: "core") I remembered it."#,
-        )
-        .unwrap();
-
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].tool_name, "memory_store");
-        assert_eq!(calls[0].arguments["content"], "KeQiao likes tsukuyomi");
-        assert_eq!(calls[0].arguments["layer"], "core");
-        assert_eq!(calls[0].arguments["importance"], 1.0);
-    }
-
-    #[test]
-    fn parses_pseudo_function_search_call() {
-        let calls =
-            parse_text_tool_calls(r#"memory_search(query="KeQiao favorite musician")"#).unwrap();
-
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].tool_name, "memory_search");
-        assert_eq!(calls[0].arguments["query"], "KeQiao favorite musician");
-    }
-
-    #[test]
-    fn renders_runtime_context_prompt_outside_persona() {
-        let prompt = render_runtime_context_system_prompt(&RuntimePromptContext {
-            core_memories: vec!["The user likes coffee.".to_string()],
-            user_preferences: vec![("Temperature".to_string(), "26 C".to_string())],
-            current_time: "2026-05-16 16:30".to_string(),
-            user_presence: "At home".to_string(),
-            device_status_summary: "Living room speaker is online".to_string(),
-            available_skills: vec!["Climate control".to_string()],
-        })
-        .unwrap();
-
-        assert!(prompt.contains("## Runtime Context"));
-        assert!(prompt.contains("The user likes coffee."));
-        assert!(prompt.contains("## Skill Routing Context"));
-        assert!(prompt.contains("They are not functions to call directly"));
-    }
-
-    #[test]
-    fn decodes_tts_wav_to_pcm_payload() {
-        let pcm = [1i16, -2i16, 3i16, -4i16]
-            .into_iter()
-            .flat_map(i16::to_le_bytes)
-            .collect::<Vec<_>>();
-        let wav = test_wav(&pcm, 16_000, 2);
-
-        let payload = tts_bytes_to_pcm_payload(wav).unwrap();
-
-        assert_eq!(payload.format, AudioFormat::Pcm16);
-        assert_eq!(payload.sample_rate, 16_000);
-        assert_eq!(payload.channels, 2);
-        assert_eq!(payload.data, pcm);
-    }
-
-    #[test]
-    fn builds_pcm_silence_gap() {
-        let payload = pcm16_silence_payload(16_000, 1, 80);
-        assert_eq!(payload.format, AudioFormat::Pcm16);
-        assert_eq!(payload.data.len(), 16_000 * 80 / 1_000 * 2);
-        assert!(payload.data.iter().all(|byte| *byte == 0));
-    }
-
-    fn test_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
-        let mut wav = Vec::new();
-        let data_len = pcm.len() as u32;
-        let byte_rate = sample_rate * u32::from(channels) * 2;
-        let block_align = channels * 2;
-        wav.extend_from_slice(b"RIFF");
-        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes());
-        wav.extend_from_slice(&1u16.to_le_bytes());
-        wav.extend_from_slice(&channels.to_le_bytes());
-        wav.extend_from_slice(&sample_rate.to_le_bytes());
-        wav.extend_from_slice(&byte_rate.to_le_bytes());
-        wav.extend_from_slice(&block_align.to_le_bytes());
-        wav.extend_from_slice(&16u16.to_le_bytes());
-        wav.extend_from_slice(b"data");
-        wav.extend_from_slice(&data_len.to_le_bytes());
-        wav.extend_from_slice(pcm);
-        wav
     }
 }

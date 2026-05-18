@@ -430,7 +430,7 @@ async fn stream_tts_sentences(
     Ok(())
 }
 
-pub(super) fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> {
+pub fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> {
     if let Some((data, sample_rate, channels)) = pcm16_payload_from_wav(&bytes)? {
         return Ok(AudioPayload {
             data,
@@ -517,11 +517,7 @@ fn pcm16_payload_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<u8>, u32, 
     Ok(Some((data, sample_rate, channels.max(1))))
 }
 
-pub(super) fn pcm16_silence_payload(
-    sample_rate: u32,
-    channels: u16,
-    duration_ms: u32,
-) -> AudioPayload {
+pub fn pcm16_silence_payload(sample_rate: u32, channels: u16, duration_ms: u32) -> AudioPayload {
     let sample_count = sample_rate
         .saturating_mul(u32::from(channels.max(1)))
         .saturating_mul(duration_ms)

@@ -8,7 +8,7 @@ enum ContinuousDialogueMode {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ContinuousDialogueState {
+pub struct ContinuousDialogueState {
     enabled: bool,
     followup_timeout_ms: u32,
     max_followup_turns: u32,
@@ -19,7 +19,7 @@ pub(super) struct ContinuousDialogueState {
 }
 
 impl ContinuousDialogueState {
-    pub(super) fn new(config: ContinuousDialogueConfig) -> Self {
+    pub fn new(config: ContinuousDialogueConfig) -> Self {
         Self {
             enabled: config.enabled,
             followup_timeout_ms: config.followup_timeout_ms,
@@ -31,7 +31,7 @@ impl ContinuousDialogueState {
         }
     }
 
-    pub(super) fn start_session(&mut self) {
+    pub fn start_session(&mut self) {
         if !self.enabled {
             return;
         }
@@ -41,21 +41,21 @@ impl ContinuousDialogueState {
         self.mode = ContinuousDialogueMode::Idle;
     }
 
-    pub(super) fn mark_waiting_for_assistant(&mut self) {
+    pub fn mark_waiting_for_assistant(&mut self) {
         if self.enabled && self.session_active {
             self.start_followup_next_frame = false;
             self.mode = ContinuousDialogueMode::WaitingForAssistant;
         }
     }
 
-    pub(super) fn mark_assistant_speaking(&mut self) {
+    pub fn mark_assistant_speaking(&mut self) {
         if self.enabled && self.session_active {
             self.start_followup_next_frame = false;
             self.mode = ContinuousDialogueMode::WaitingForAssistant;
         }
     }
 
-    pub(super) fn schedule_followup(&mut self) {
+    pub fn schedule_followup(&mut self) {
         if !self.enabled || !self.session_active {
             return;
         }
@@ -67,7 +67,7 @@ impl ContinuousDialogueState {
         self.start_followup_next_frame = true;
     }
 
-    pub(super) fn start_followup_if_scheduled(&mut self, timestamp_us: u64) -> bool {
+    pub fn start_followup_if_scheduled(&mut self, timestamp_us: u64) -> bool {
         if !self.start_followup_next_frame || !self.can_start_followup() {
             return false;
         }
@@ -79,7 +79,7 @@ impl ContinuousDialogueState {
         true
     }
 
-    pub(super) fn mark_followup_capture_started(&mut self) {
+    pub fn mark_followup_capture_started(&mut self) {
         if !matches!(self.mode, ContinuousDialogueMode::FollowupListening { .. }) {
             return;
         }
@@ -88,7 +88,7 @@ impl ContinuousDialogueState {
         self.start_followup_next_frame = false;
     }
 
-    pub(super) fn expire_if_needed(&mut self, timestamp_us: u64) -> bool {
+    pub fn expire_if_needed(&mut self, timestamp_us: u64) -> bool {
         let ContinuousDialogueMode::FollowupListening { deadline_us } = self.mode else {
             return false;
         };
@@ -99,14 +99,14 @@ impl ContinuousDialogueState {
         true
     }
 
-    pub(super) fn end_session(&mut self) {
+    pub fn end_session(&mut self) {
         self.session_active = false;
         self.followup_turns = 0;
         self.start_followup_next_frame = false;
         self.mode = ContinuousDialogueMode::Idle;
     }
 
-    pub(super) fn is_followup_listening(&self) -> bool {
+    pub fn is_followup_listening(&self) -> bool {
         matches!(self.mode, ContinuousDialogueMode::FollowupListening { .. })
     }
 
@@ -114,53 +114,11 @@ impl ContinuousDialogueState {
         self.max_followup_turns == 0 || self.followup_turns < self.max_followup_turns
     }
 
-    pub(super) fn followup_timeout_ms(&self) -> u32 {
+    pub fn followup_timeout_ms(&self) -> u32 {
         self.followup_timeout_ms
     }
 
-    pub(super) fn max_followup_turns(&self) -> u32 {
+    pub fn max_followup_turns(&self) -> u32 {
         self.max_followup_turns
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn continuous_dialogue_starts_followup_after_assistant_reply() {
-        let mut state = ContinuousDialogueState::new(ContinuousDialogueConfig {
-            enabled: true,
-            followup_timeout_ms: 10_000,
-            max_followup_turns: 6,
-        });
-
-        state.start_session();
-        state.mark_waiting_for_assistant();
-        state.schedule_followup();
-
-        assert!(state.start_followup_if_scheduled(1_000));
-        assert!(state.is_followup_listening());
-        assert!(!state.expire_if_needed(1_000 + 9_999_000));
-        assert!(state.expire_if_needed(1_000 + 10_000_000));
-        assert!(!state.is_followup_listening());
-    }
-
-    #[test]
-    fn continuous_dialogue_counts_followup_turns() {
-        let mut state = ContinuousDialogueState::new(ContinuousDialogueConfig {
-            enabled: true,
-            followup_timeout_ms: 10_000,
-            max_followup_turns: 1,
-        });
-
-        state.start_session();
-        state.schedule_followup();
-        assert!(state.start_followup_if_scheduled(1_000));
-        state.mark_followup_capture_started();
-        state.schedule_followup();
-
-        assert!(!state.start_followup_if_scheduled(2_000));
-        assert!(!state.is_followup_listening());
     }
 }

@@ -127,7 +127,7 @@ fn normalize_response_action(input: &str) -> String {
         .collect()
 }
 
-fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
+pub fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
     if pcm.is_empty() || sample_rate == 0 {
         return None;
     }
@@ -138,10 +138,10 @@ fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
 }
 
 #[derive(Debug)]
-struct DecodedPcmWav {
-    pcm: Vec<i16>,
-    sample_rate: u32,
-    source_channels: u16,
+pub struct DecodedPcmWav {
+    pub pcm: Vec<i16>,
+    pub sample_rate: u32,
+    pub source_channels: u16,
 }
 
 async fn read_pcm16_wav(path: &Path) -> Result<DecodedPcmWav> {
@@ -151,7 +151,7 @@ async fn read_pcm16_wav(path: &Path) -> Result<DecodedPcmWav> {
         .context("joining WAV reader task")?
 }
 
-fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
+pub fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
     let data = std::fs::read(path).with_context(|| format!("reading WAV: {}", path.display()))?;
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         bail!("{} is not a RIFF/WAVE file", path.display());
@@ -231,46 +231,4 @@ fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
         sample_rate,
         source_channels: channels,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reads_pcm16_wav() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.wav");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"RIFF");
-        bytes.extend_from_slice(&40u32.to_le_bytes());
-        bytes.extend_from_slice(b"WAVEfmt ");
-        bytes.extend_from_slice(&16u32.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&16_000u32.to_le_bytes());
-        bytes.extend_from_slice(&32_000u32.to_le_bytes());
-        bytes.extend_from_slice(&2u16.to_le_bytes());
-        bytes.extend_from_slice(&16u16.to_le_bytes());
-        bytes.extend_from_slice(b"data");
-        bytes.extend_from_slice(&4u32.to_le_bytes());
-        bytes.extend_from_slice(&1i16.to_le_bytes());
-        bytes.extend_from_slice(&(-2i16).to_le_bytes());
-        std::fs::write(&path, bytes).unwrap();
-
-        let wav = read_pcm16_wav_blocking(&path).unwrap();
-        assert_eq!(wav.sample_rate, 16_000);
-        assert_eq!(wav.source_channels, 1);
-        assert_eq!(wav.pcm, vec![1, -2]);
-    }
-
-    #[test]
-    fn computes_pcm_duration() {
-        assert_eq!(
-            pcm_duration(&vec![0; 16_000], 16_000),
-            Some(Duration::from_secs(1))
-        );
-        assert_eq!(pcm_duration(&[], 16_000), None);
-        assert_eq!(pcm_duration(&[0], 0), None);
-    }
 }

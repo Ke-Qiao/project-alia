@@ -116,28 +116,3 @@ fn volume_to_milli(value: f32) -> u32 {
 fn milli_to_volume(value: u32) -> f32 {
     sanitize_volume(value as f32 / VOLUME_SCALE)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn clamps_volume_state() {
-        let state = AudioVolumeState::new(AudioVolumeConfig {
-            capture_volume: -1.0,
-            playback_volume: 99.0,
-        });
-
-        assert_eq!(state.capture_volume(), MIN_AUDIO_VOLUME);
-        assert_eq!(state.playback_volume(), MAX_AUDIO_VOLUME);
-    }
-
-    #[test]
-    fn applies_saturating_gain() {
-        let mut pcm = vec![1_000, 20_000, -20_000];
-
-        apply_gain_in_place(&mut pcm, 2.0);
-
-        assert_eq!(pcm, vec![2_000, 32_767, -32_768]);
-    }
-}

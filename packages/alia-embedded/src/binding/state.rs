@@ -120,9 +120,16 @@ impl BindingManager {
         Ok(())
     }
 
-    async fn persist(&self) -> Result<()> {
+    pub async fn persist(&self) -> Result<()> {
         let data = self.data.read().await.clone();
         self.store.save_json(BINDING_STATE_KEY, &data).await
+    }
+
+    #[doc(hidden)]
+    pub async fn update_for_test(&self, state: BindingState, server_id: Option<String>) {
+        let mut data = self.data.write().await;
+        data.state = state;
+        data.server_id = server_id;
     }
 
     /// Check if currently locked out due to too many failed attempts.
@@ -408,34 +415,5 @@ impl BindingManager {
             DEFAULT_AUTH_MAX_SKEW,
         )?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn test_manager(dir: &tempfile::TempDir) -> BindingManager {
-        let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
-            .await
-            .unwrap();
-        BindingManager::new(store, 3, 60)
-    }
-
-    #[tokio::test]
-    async fn persists_binding_state_to_sqlite() {
-        let dir = tempfile::tempdir().unwrap();
-        let manager = test_manager(&dir).await;
-
-        manager.data.write().await.state = BindingState::Bound;
-        manager.data.write().await.server_id = Some("server-1".to_string());
-        manager.persist().await.unwrap();
-
-        let reloaded = test_manager(&dir).await;
-        reloaded.load().await.unwrap();
-        let status = reloaded.status().await;
-
-        assert_eq!(status.state, BindingState::Bound);
-        assert_eq!(status.server_id.as_deref(), Some("server-1"));
     }
 }
