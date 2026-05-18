@@ -2,7 +2,7 @@
 //!
 //! Sensors can be reported from:
 //! - Embedded devices (via gRPC → ChannelEvent::SensorData)
-//! - Plugins (via ToolRegistry plugin tool registration)
+//! - Plugins/components (via ModuleContext::sensors and EventBus)
 //! - API (direct HTTP ingestion)
 //!
 //! The scheduler can use sensor values as conditions for task execution.

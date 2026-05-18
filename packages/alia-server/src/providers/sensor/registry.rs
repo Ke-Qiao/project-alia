@@ -1,16 +1,21 @@
-//! In-memory sensor registry with time-series storage and auto-cleanup.
+//! Sensor registry with PostgreSQL persistence and in-memory fallback.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+use utoipa::{IntoParams, ToSchema};
+
+use crate::registry::{ArtifactRef, ArtifactRegistry};
 
 /// Metadata describing a registered sensor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SensorDefinition {
     /// Unique sensor identifier: "{source}/{name}" (e.g., "embedded/temperature", "plugin.weather/humidity")
     pub sensor_id: String,
@@ -31,7 +36,7 @@ pub struct SensorDefinition {
 }
 
 /// A single sensor reading (time-series data point).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SensorReading {
     pub sensor_id: String,
     pub value: serde_json::Value,
@@ -46,7 +51,7 @@ fn default_quality() -> f32 {
 }
 
 /// Query filter for time-series data.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, IntoParams, ToSchema)]
 pub struct SensorQuery {
     pub sensor_id: Option<String>,
     pub source: Option<String>,
@@ -59,7 +64,7 @@ pub struct SensorQuery {
 }
 
 /// Aggregated sensor summary.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SensorSummary {
     pub sensor_id: String,
     pub display_name: String,
@@ -87,19 +92,20 @@ impl Default for SensorRegistryConfig {
     fn default() -> Self {
         Self {
             max_readings_per_sensor: 1000,
-            retention_duration: Duration::from_secs(24 * 3600), // 24h
-            cleanup_interval_sec: 300,                          // 5 min
-            offline_threshold: Duration::from_secs(120),        // 2 min
+            retention_duration: Duration::from_secs(24 * 3600),
+            cleanup_interval_sec: 300,
+            offline_threshold: Duration::from_secs(120),
         }
     }
 }
 
-/// In-memory sensor registry with time-series ring buffer and auto-cleanup.
+/// Sensor registry shared by APIs, tools, rules, and scheduler conditions.
 pub struct SensorRegistry {
     config: SensorRegistryConfig,
-    /// Registered sensor definitions
+    db: Arc<RwLock<Option<DatabaseConnection>>>,
+    artifacts: Arc<RwLock<Option<Arc<ArtifactRegistry>>>>,
+    /// Hot cache and fallback when no DB is attached.
     sensors: Arc<RwLock<HashMap<String, SensorDefinition>>>,
-    /// Time-series data: sensor_id → Vec of readings (newest last)
     readings: Arc<RwLock<HashMap<String, Vec<SensorReading>>>>,
 }
 
@@ -107,99 +113,403 @@ impl SensorRegistry {
     pub fn new(config: SensorRegistryConfig) -> Self {
         Self {
             config,
+            db: Arc::new(RwLock::new(None)),
+            artifacts: Arc::new(RwLock::new(None)),
             sensors: Arc::new(RwLock::new(HashMap::new())),
             readings: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Register or update a sensor definition.
-    pub async fn register_sensor(&self, mut def: SensorDefinition) {
-        let mut sensors = self.sensors.write().await;
-        if sensors.contains_key(&def.sensor_id) {
-            // Update last_seen, keep original registered_at
-            if let Some(existing) = sensors.get_mut(&def.sensor_id) {
-                existing.last_seen_at = Some(Utc::now());
-                existing.display_name = def.display_name;
-                existing.metadata = def.metadata;
+    /// Attach PostgreSQL persistence after migrations have run.
+    pub async fn attach_db(&self, db: DatabaseConnection) -> anyhow::Result<()> {
+        *self.db.write().await = Some(db);
+        self.refresh_hot_cache().await?;
+        Ok(())
+    }
+
+    /// Attach the runtime artifact registry so sensors participate in plugin
+    /// ownership and dependency checks.
+    pub async fn attach_artifacts(&self, artifacts: Arc<ArtifactRegistry>) {
+        *self.artifacts.write().await = Some(artifacts);
+    }
+
+    async fn db(&self) -> Option<DatabaseConnection> {
+        self.db.read().await.clone()
+    }
+
+    async fn artifacts(&self) -> Option<Arc<ArtifactRegistry>> {
+        self.artifacts.read().await.clone()
+    }
+
+    async fn refresh_hot_cache(&self) -> anyhow::Result<()> {
+        let Some(db) = self.db().await else {
+            return Ok(());
+        };
+
+        let definitions = load_sensor_definitions(&db).await?;
+        {
+            let mut sensors = self.sensors.write().await;
+            sensors.clear();
+            for def in definitions {
+                sensors.insert(def.sensor_id.clone(), def);
             }
+        }
+
+        let latest = self
+            .query(&SensorQuery {
+                latest_only: true,
+                ..SensorQuery::default()
+            })
+            .await?;
+        {
+            let mut readings = self.readings.write().await;
+            readings.clear();
+            for reading in latest {
+                readings
+                    .entry(reading.sensor_id.clone())
+                    .or_default()
+                    .push(reading);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Register or update a sensor definition.
+    pub async fn register_sensor(&self, mut def: SensorDefinition) -> anyhow::Result<()> {
+        validate_sensor_id(&def.sensor_id)?;
+        def.source = normalize_source(&def.source);
+        normalize_definition_timestamps(&mut def);
+
+        if let Some(db) = self.db().await {
+            upsert_sensor_definition(&db, &def).await?;
+        }
+
+        if let Some(artifacts) = self.artifacts().await {
+            artifacts
+                .upsert_artifact(
+                    &ArtifactRef::sensor(def.sensor_id.clone()),
+                    &sensor_artifact_source(&def.source),
+                )
+                .await?;
+        }
+
+        self.remember_definition(def).await;
+        Ok(())
+    }
+
+    /// Unregister a sensor and discard its readings.
+    pub async fn unregister_sensor(&self, sensor_id: &str) -> anyhow::Result<bool> {
+        self.unregister_sensor_inner(sensor_id, true).await
+    }
+
+    async fn unregister_sensor_inner(
+        &self,
+        sensor_id: &str,
+        check_dependents: bool,
+    ) -> anyhow::Result<bool> {
+        validate_sensor_id(sensor_id)?;
+        let artifact_ref = ArtifactRef::sensor(sensor_id);
+        let artifacts = self.artifacts().await;
+
+        if check_dependents && let Some(artifacts) = &artifacts {
+            artifacts
+                .ensure_no_external_dependents(std::slice::from_ref(&artifact_ref))
+                .await?;
+        }
+
+        let db_removed = if let Some(db) = self.db().await {
+            delete_sensor_definition(&db, sensor_id).await?
         } else {
-            def.registered_at = Utc::now();
+            false
+        };
+
+        let memory_removed = self.sensors.write().await.remove(sensor_id).is_some();
+        self.readings.write().await.remove(sensor_id);
+        let removed = db_removed || memory_removed;
+        if removed {
+            if let Some(artifacts) = artifacts {
+                artifacts.delete_artifact(&artifact_ref).await?;
+            }
+            tracing::info!(%sensor_id, "sensor unregistered");
+        }
+        Ok(removed)
+    }
+
+    /// Register a sensor owned by a plugin. The public sensor id is namespaced
+    /// as `{plugin_name}:{sensor_id}` unless the caller already used that prefix.
+    pub async fn register_plugin_sensor(
+        &self,
+        plugin_name: &str,
+        mut def: SensorDefinition,
+    ) -> anyhow::Result<String> {
+        let plugin_name = validate_plugin_name(plugin_name)?;
+        let sensor_id = namespace_sensor_id(&plugin_name, &def.sensor_id)?;
+        def.sensor_id = sensor_id.clone();
+        def.source = plugin_name;
+        if def.display_name.trim().is_empty() {
+            def.display_name = sensor_id.clone();
+        }
+        self.register_sensor(def).await?;
+        Ok(sensor_id)
+    }
+
+    /// Ingest a reading for a plugin-owned sensor. Unknown sensors are
+    /// auto-registered with plugin ownership.
+    pub async fn ingest_plugin_reading(
+        &self,
+        plugin_name: &str,
+        sensor_id: &str,
+        value: serde_json::Value,
+        quality: f32,
+    ) -> anyhow::Result<String> {
+        let plugin_name = validate_plugin_name(plugin_name)?;
+        let sensor_id = namespace_sensor_id(&plugin_name, sensor_id)?;
+        self.ingest_from_source(
+            SensorReading {
+                sensor_id: sensor_id.clone(),
+                value,
+                timestamp: Utc::now(),
+                quality,
+            },
+            &plugin_name,
+        )
+        .await?;
+        Ok(sensor_id)
+    }
+
+    /// Unregister all sensors owned by a plugin. When the artifact registry is
+    /// attached this first checks that no external artifact still depends on
+    /// those sensors.
+    pub async fn unregister_plugin_sensors(&self, plugin_name: &str) -> anyhow::Result<usize> {
+        let plugin_name = validate_plugin_name(plugin_name)?;
+
+        if let Some(artifacts) = self.artifacts().await {
+            let owned = artifacts
+                .owned_artifacts("plugin", &plugin_name, Some(crate::registry::KIND_SENSOR))
+                .await?;
+            artifacts.ensure_no_external_dependents(&owned).await?;
+
+            let mut removed = 0;
+            for artifact in owned {
+                if self.unregister_sensor_inner(&artifact.name, false).await? {
+                    removed += 1;
+                }
+            }
+            return Ok(removed);
+        }
+
+        let definitions = self.list_definitions_by_source(&plugin_name).await?;
+        let mut removed = 0;
+        for def in definitions {
+            if self.unregister_sensor_inner(&def.sensor_id, false).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Ingest a new reading. Auto-registers unknown sensors.
+    pub async fn ingest(&self, reading: SensorReading) -> anyhow::Result<()> {
+        let source = infer_source(&reading.sensor_id);
+        self.ingest_from_source(reading, &source).await
+    }
+
+    /// Ingest a new reading from a known source. This is the preferred entry
+    /// point for channels/plugins because it preserves source ownership.
+    pub async fn ingest_from_source(
+        &self,
+        mut reading: SensorReading,
+        source: &str,
+    ) -> anyhow::Result<()> {
+        validate_sensor_id(&reading.sensor_id)?;
+        reading.quality = reading.quality.clamp(0.0, 1.0);
+
+        if self.get_sensor(&reading.sensor_id).await?.is_none() {
+            self.register_sensor(SensorDefinition {
+                sensor_id: reading.sensor_id.clone(),
+                display_name: reading.sensor_id.clone(),
+                source: source.trim().to_string(),
+                unit: String::new(),
+                value_type: infer_value_type(&reading.value).to_string(),
+                metadata: serde_json::json!({}),
+                registered_at: Utc::now(),
+                last_seen_at: Some(reading.timestamp),
+            })
+            .await?;
+        } else {
+            self.touch_sensor(&reading.sensor_id, reading.timestamp)
+                .await?;
+        }
+
+        if let Some(db) = self.db().await {
+            insert_sensor_reading(&db, &reading).await?;
+        }
+
+        self.remember_reading(reading).await;
+        Ok(())
+    }
+
+    /// Get the latest reading for a sensor.
+    pub async fn latest(&self, sensor_id: &str) -> anyhow::Result<Option<SensorReading>> {
+        validate_sensor_id(sensor_id)?;
+        if let Some(db) = self.db().await {
+            return latest_sensor_reading(&db, sensor_id).await;
+        }
+
+        let readings = self.readings.read().await;
+        Ok(readings
+            .get(sensor_id)
+            .and_then(|series| series.last().cloned()))
+    }
+
+    /// Get the latest value as f64 (for condition evaluation).
+    pub async fn latest_value_f64(&self, sensor_id: &str) -> anyhow::Result<Option<f64>> {
+        Ok(self.latest(sensor_id).await?.and_then(|r| match &r.value {
+            serde_json::Value::Number(n) => n.as_f64(),
+            serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            serde_json::Value::String(s) => s.parse().ok(),
+            _ => None,
+        }))
+    }
+
+    /// Query readings with filters.
+    pub async fn query(&self, q: &SensorQuery) -> anyhow::Result<Vec<SensorReading>> {
+        if let Some(db) = self.db().await {
+            return query_sensor_readings(&db, q).await;
+        }
+
+        Ok(self.query_memory(q).await)
+    }
+
+    /// List all registered sensors with summary.
+    pub async fn list_sensors(&self) -> anyhow::Result<Vec<SensorSummary>> {
+        if let Some(db) = self.db().await {
+            return list_sensor_summaries(&db, self.config.offline_threshold).await;
+        }
+
+        Ok(self.list_sensors_memory().await)
+    }
+
+    /// List registered sensor definitions owned by a source/plugin.
+    pub async fn list_definitions_by_source(
+        &self,
+        source: &str,
+    ) -> anyhow::Result<Vec<SensorDefinition>> {
+        let source = validate_owner_name(source, "source")?;
+        if let Some(db) = self.db().await {
+            return load_sensor_definitions_by_source(&db, &source).await;
+        }
+
+        Ok(self
+            .sensors
+            .read()
+            .await
+            .values()
+            .filter(|def| def.source == source)
+            .cloned()
+            .collect())
+    }
+
+    /// Get a specific sensor definition.
+    pub async fn get_sensor(&self, sensor_id: &str) -> anyhow::Result<Option<SensorDefinition>> {
+        validate_sensor_id(sensor_id)?;
+        if let Some(db) = self.db().await {
+            return get_sensor_definition(&db, sensor_id).await;
+        }
+
+        Ok(self.sensors.read().await.get(sensor_id).cloned())
+    }
+
+    /// Run cleanup: discard readings older than retention_duration.
+    pub async fn cleanup(&self) -> anyhow::Result<()> {
+        if let Some(db) = self.db().await {
+            cleanup_db_readings(&db, self.config.retention_duration).await?;
+        }
+        self.cleanup_memory().await;
+        Ok(())
+    }
+
+    /// Spawn the auto-cleanup background task.
+    pub fn spawn_cleanup_loop(&self, cancel_token: CancellationToken) {
+        let readings = self.readings.clone();
+        let db = self.db.clone();
+        let retention = self.config.retention_duration;
+        let interval_sec = self.config.cleanup_interval_sec;
+        let max_per_sensor = self.config.max_readings_per_sensor;
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(interval_sec));
+
+            loop {
+                tokio::select! {
+                    _ = cancel_token.cancelled() => break,
+                    _ = interval.tick() => {
+                        if let Some(db) = db.read().await.clone()
+                            && let Err(error) = cleanup_db_readings(&db, retention).await
+                        {
+                            tracing::warn!(error = %error, "sensor DB cleanup failed");
+                        }
+
+                        let cutoff = Utc::now()
+                            - chrono::Duration::from_std(retention)
+                                .unwrap_or(chrono::Duration::hours(24));
+
+                        let mut readings = readings.write().await;
+                        for series in readings.values_mut() {
+                            series.retain(|r| r.timestamp >= cutoff);
+                            if series.len() > max_per_sensor {
+                                let excess = series.len() - max_per_sensor;
+                                series.drain(..excess);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async fn touch_sensor(&self, sensor_id: &str, seen_at: DateTime<Utc>) -> anyhow::Result<()> {
+        if let Some(db) = self.db().await {
+            db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE sensor_definitions SET last_seen_at = $2::timestamptz WHERE sensor_id = $1",
+                vec![sensor_id.to_string().into(), seen_at.to_rfc3339().into()],
+            ))
+            .await?;
+        }
+
+        let mut sensors = self.sensors.write().await;
+        if let Some(def) = sensors.get_mut(sensor_id) {
+            def.last_seen_at = Some(seen_at);
+        }
+        Ok(())
+    }
+
+    async fn remember_definition(&self, def: SensorDefinition) {
+        let mut sensors = self.sensors.write().await;
+        if let Some(existing) = sensors.get_mut(&def.sensor_id) {
+            let registered_at = existing.registered_at;
+            *existing = def;
+            existing.registered_at = registered_at;
+        } else {
             tracing::info!(sensor_id = %def.sensor_id, source = %def.source, "sensor registered");
             sensors.insert(def.sensor_id.clone(), def);
         }
     }
 
-    /// Unregister a sensor and discard its readings.
-    pub async fn unregister_sensor(&self, sensor_id: &str) -> bool {
-        let removed = self.sensors.write().await.remove(sensor_id).is_some();
-        if removed {
-            self.readings.write().await.remove(sensor_id);
-            tracing::info!(%sensor_id, "sensor unregistered");
-        }
-        removed
-    }
-
-    /// Ingest a new reading. Auto-registers sensor if not already known.
-    pub async fn ingest(&self, reading: SensorReading) {
-        let sensor_id = reading.sensor_id.clone();
-
-        // Auto-register if unknown
-        {
-            let sensors = self.sensors.read().await;
-            if !sensors.contains_key(&sensor_id) {
-                drop(sensors);
-                self.register_sensor(SensorDefinition {
-                    sensor_id: sensor_id.clone(),
-                    display_name: sensor_id.clone(),
-                    source: "unknown".into(),
-                    unit: "".into(),
-                    value_type: "float".into(),
-                    metadata: serde_json::Value::Null,
-                    registered_at: Utc::now(),
-                    last_seen_at: Some(Utc::now()),
-                })
-                .await;
-            } else {
-                drop(sensors);
-                // Update last_seen
-                let mut sensors = self.sensors.write().await;
-                if let Some(def) = sensors.get_mut(&sensor_id) {
-                    def.last_seen_at = Some(Utc::now());
-                }
-            }
-        }
-
-        // Store reading
+    async fn remember_reading(&self, reading: SensorReading) {
         let mut readings = self.readings.write().await;
-        let series = readings.entry(sensor_id).or_default();
+        let series = readings.entry(reading.sensor_id.clone()).or_default();
         series.push(reading);
 
-        // Cap size
         if series.len() > self.config.max_readings_per_sensor {
             let excess = series.len() - self.config.max_readings_per_sensor;
             series.drain(..excess);
         }
     }
 
-    /// Get the latest reading for a sensor.
-    pub async fn latest(&self, sensor_id: &str) -> Option<SensorReading> {
-        let readings = self.readings.read().await;
-        readings
-            .get(sensor_id)
-            .and_then(|series| series.last().cloned())
-    }
-
-    /// Get the latest value as f64 (for condition evaluation).
-    pub async fn latest_value_f64(&self, sensor_id: &str) -> Option<f64> {
-        self.latest(sensor_id).await.and_then(|r| match &r.value {
-            serde_json::Value::Number(n) => n.as_f64(),
-            serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-            _ => None,
-        })
-    }
-
-    /// Query readings with filters.
-    pub async fn query(&self, q: &SensorQuery) -> Vec<SensorReading> {
+    async fn query_memory(&self, q: &SensorQuery) -> Vec<SensorReading> {
         let readings = self.readings.read().await;
         let mut results = Vec::new();
 
@@ -224,21 +534,21 @@ impl SensorRegistry {
                     }
                 } else {
                     for r in series.iter().rev() {
-                        if let Some(from) = q.from {
-                            if r.timestamp < from {
-                                break;
-                            }
+                        if let Some(from) = q.from
+                            && r.timestamp < from
+                        {
+                            break;
                         }
-                        if let Some(to) = q.to {
-                            if r.timestamp > to {
-                                continue;
-                            }
+                        if let Some(to) = q.to
+                            && r.timestamp > to
+                        {
+                            continue;
                         }
                         results.push(r.clone());
-                        if let Some(limit) = q.limit {
-                            if results.len() >= limit {
-                                return results;
-                            }
+                        if let Some(limit) = q.limit
+                            && results.len() >= limit
+                        {
+                            return results;
                         }
                     }
                 }
@@ -248,8 +558,7 @@ impl SensorRegistry {
         results
     }
 
-    /// List all registered sensors with summary.
-    pub async fn list_sensors(&self) -> Vec<SensorSummary> {
+    async fn list_sensors_memory(&self) -> Vec<SensorSummary> {
         let sensors = self.sensors.read().await;
         let readings = self.readings.read().await;
         let now = Utc::now();
@@ -259,7 +568,7 @@ impl SensorRegistry {
             .map(|def| {
                 let series = readings.get(&def.sensor_id);
                 let latest = series.and_then(|s| s.last());
-                let online = def.last_seen_at.map_or(false, |t| {
+                let online = def.last_seen_at.is_some_and(|t| {
                     (now - t).to_std().unwrap_or(Duration::MAX) < self.config.offline_threshold
                 });
 
@@ -276,13 +585,7 @@ impl SensorRegistry {
             .collect()
     }
 
-    /// Get a specific sensor definition.
-    pub async fn get_sensor(&self, sensor_id: &str) -> Option<SensorDefinition> {
-        self.sensors.read().await.get(sensor_id).cloned()
-    }
-
-    /// Run cleanup: discard readings older than retention_duration.
-    pub async fn cleanup(&self) {
+    async fn cleanup_memory(&self) {
         let cutoff = Utc::now()
             - chrono::Duration::from_std(self.config.retention_duration)
                 .unwrap_or(chrono::Duration::hours(24));
@@ -299,36 +602,437 @@ impl SensorRegistry {
             tracing::debug!(removed = total_removed, "sensor cleanup completed");
         }
     }
+}
 
-    /// Spawn the auto-cleanup background task.
-    pub fn spawn_cleanup_loop(&self, cancel_token: CancellationToken) {
-        let readings = self.readings.clone();
-        let retention = self.config.retention_duration;
-        let interval_sec = self.config.cleanup_interval_sec;
-        let max_per_sensor = self.config.max_readings_per_sensor;
+fn normalize_definition_timestamps(def: &mut SensorDefinition) {
+    if def.registered_at.timestamp() <= 0 {
+        def.registered_at = Utc::now();
+    }
+}
 
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(interval_sec));
+fn validate_sensor_id(sensor_id: &str) -> anyhow::Result<()> {
+    let sensor_id = sensor_id.trim();
+    if sensor_id.is_empty() || sensor_id.len() > 200 {
+        anyhow::bail!("sensor_id must be between 1 and 200 characters");
+    }
+    Ok(())
+}
 
-            loop {
-                tokio::select! {
-                    _ = cancel_token.cancelled() => break,
-                    _ = interval.tick() => {
-                        let cutoff = Utc::now()
-                            - chrono::Duration::from_std(retention)
-                                .unwrap_or(chrono::Duration::hours(24));
+fn validate_owner_name(value: &str, label: &str) -> anyhow::Result<String> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 100 {
+        anyhow::bail!("{label} must be between 1 and 100 characters");
+    }
+    Ok(value.to_string())
+}
 
-                        let mut readings = readings.write().await;
-                        for series in readings.values_mut() {
-                            series.retain(|r| r.timestamp >= cutoff);
-                            if series.len() > max_per_sensor {
-                                let excess = series.len() - max_per_sensor;
-                                series.drain(..excess);
-                            }
-                        }
-                    }
-                }
+fn validate_plugin_name(plugin_name: &str) -> anyhow::Result<String> {
+    let plugin_name = plugin_name
+        .trim()
+        .strip_prefix("plugin:")
+        .unwrap_or(plugin_name.trim());
+    validate_owner_name(plugin_name, "plugin_name")
+}
+
+fn normalize_source(source: &str) -> String {
+    let source = source.trim();
+    if source.is_empty() {
+        "unknown".to_string()
+    } else {
+        source.to_string()
+    }
+}
+
+fn namespace_sensor_id(source: &str, sensor_id: &str) -> anyhow::Result<String> {
+    let source = validate_owner_name(source, "source")?;
+    let sensor_id = sensor_id.trim();
+    validate_sensor_id(sensor_id)?;
+    if sensor_id_has_source_prefix(&source, sensor_id) {
+        Ok(sensor_id.to_string())
+    } else {
+        Ok(format!("{source}:{sensor_id}"))
+    }
+}
+
+fn sensor_id_has_source_prefix(source: &str, sensor_id: &str) -> bool {
+    sensor_id
+        .strip_prefix(source)
+        .is_some_and(|rest| matches!(rest.chars().next(), Some(':' | '/' | '.')))
+}
+
+fn sensor_artifact_source(source: &str) -> String {
+    let source = source.trim();
+    if source.starts_with("component:")
+        || source.starts_with("plugin:")
+        || matches!(source, "api" | "builtin" | "file" | "manual")
+    {
+        source.to_string()
+    } else if matches!(source, "embedded" | "unknown") {
+        format!("component:{source}")
+    } else {
+        source.to_string()
+    }
+}
+
+fn infer_source(sensor_id: &str) -> String {
+    sensor_id
+        .split(['/', ':', '.'])
+        .next()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn infer_value_type(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(number) if number.is_i64() || number.is_u64() => "int",
+        serde_json::Value::Number(_) => "float",
+        serde_json::Value::String(_) => "string",
+        _ => "json",
+    }
+}
+
+fn db_datetime_to_utc(value: DateTimeWithTimeZone) -> DateTime<Utc> {
+    value.with_timezone(&Utc)
+}
+
+fn db_opt_datetime_to_utc(value: Option<DateTimeWithTimeZone>) -> Option<DateTime<Utc>> {
+    value.map(|dt| dt.with_timezone(&Utc))
+}
+
+fn reading_from_row(row: &sea_orm::QueryResult) -> anyhow::Result<SensorReading> {
+    let recorded_at: DateTimeWithTimeZone = row.try_get("", "recorded_at")?;
+    Ok(SensorReading {
+        sensor_id: row.try_get("", "sensor_id")?,
+        value: row.try_get("", "value")?,
+        quality: row.try_get("", "quality")?,
+        timestamp: db_datetime_to_utc(recorded_at),
+    })
+}
+
+fn definition_from_row(row: &sea_orm::QueryResult) -> anyhow::Result<SensorDefinition> {
+    let registered_at: DateTimeWithTimeZone = row.try_get("", "registered_at")?;
+    let last_seen_at: Option<DateTimeWithTimeZone> = row.try_get("", "last_seen_at")?;
+    Ok(SensorDefinition {
+        sensor_id: row.try_get("", "sensor_id")?,
+        display_name: row.try_get("", "display_name")?,
+        source: row.try_get("", "source")?,
+        unit: row.try_get("", "unit")?,
+        value_type: row.try_get("", "value_type")?,
+        metadata: row.try_get("", "metadata")?,
+        registered_at: db_datetime_to_utc(registered_at),
+        last_seen_at: db_opt_datetime_to_utc(last_seen_at),
+    })
+}
+
+async fn load_sensor_definitions(db: &DatabaseConnection) -> anyhow::Result<Vec<SensorDefinition>> {
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT sensor_id, display_name, source, unit, value_type, metadata,
+                   registered_at, last_seen_at
+            FROM sensor_definitions
+            ORDER BY sensor_id
+            "#,
+        ))
+        .await?;
+    rows.iter().map(definition_from_row).collect()
+}
+
+async fn load_sensor_definitions_by_source(
+    db: &DatabaseConnection,
+    source: &str,
+) -> anyhow::Result<Vec<SensorDefinition>> {
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT sensor_id, display_name, source, unit, value_type, metadata,
+                   registered_at, last_seen_at
+            FROM sensor_definitions
+            WHERE source = $1
+            ORDER BY sensor_id
+            "#,
+            vec![source.to_string().into()],
+        ))
+        .await?;
+    rows.iter().map(definition_from_row).collect()
+}
+
+async fn get_sensor_definition(
+    db: &DatabaseConnection,
+    sensor_id: &str,
+) -> anyhow::Result<Option<SensorDefinition>> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT sensor_id, display_name, source, unit, value_type, metadata,
+                   registered_at, last_seen_at
+            FROM sensor_definitions
+            WHERE sensor_id = $1
+            "#,
+            vec![sensor_id.to_string().into()],
+        ))
+        .await?;
+    row.as_ref().map(definition_from_row).transpose()
+}
+
+async fn upsert_sensor_definition(
+    db: &DatabaseConnection,
+    def: &SensorDefinition,
+) -> anyhow::Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        INSERT INTO sensor_definitions
+            (sensor_id, display_name, source, unit, value_type, metadata,
+             registered_at, last_seen_at)
+        VALUES
+            ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz,
+             NULLIF($8, '')::timestamptz)
+        ON CONFLICT (sensor_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            source = EXCLUDED.source,
+            unit = EXCLUDED.unit,
+            value_type = EXCLUDED.value_type,
+            metadata = EXCLUDED.metadata,
+            last_seen_at = COALESCE(EXCLUDED.last_seen_at, sensor_definitions.last_seen_at)
+        "#,
+        vec![
+            def.sensor_id.clone().into(),
+            def.display_name.clone().into(),
+            def.source.clone().into(),
+            def.unit.clone().into(),
+            def.value_type.clone().into(),
+            def.metadata.clone().into(),
+            def.registered_at.to_rfc3339().into(),
+            def.last_seen_at
+                .map(|value| value.to_rfc3339())
+                .unwrap_or_default()
+                .into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn delete_sensor_definition(
+    db: &DatabaseConnection,
+    sensor_id: &str,
+) -> anyhow::Result<bool> {
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "DELETE FROM sensor_definitions WHERE sensor_id = $1",
+            vec![sensor_id.to_string().into()],
+        ))
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+async fn insert_sensor_reading(
+    db: &DatabaseConnection,
+    reading: &SensorReading,
+) -> anyhow::Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        INSERT INTO sensor_readings (sensor_id, value, quality, recorded_at)
+        VALUES ($1, $2::jsonb, $3, $4::timestamptz)
+        "#,
+        vec![
+            reading.sensor_id.clone().into(),
+            reading.value.clone().into(),
+            reading.quality.into(),
+            reading.timestamp.to_rfc3339().into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn latest_sensor_reading(
+    db: &DatabaseConnection,
+    sensor_id: &str,
+) -> anyhow::Result<Option<SensorReading>> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            SELECT sensor_id, value, quality, recorded_at
+            FROM sensor_readings
+            WHERE sensor_id = $1
+            ORDER BY recorded_at DESC, id DESC
+            LIMIT 1
+            "#,
+            vec![sensor_id.to_string().into()],
+        ))
+        .await?;
+    row.as_ref().map(reading_from_row).transpose()
+}
+
+async fn sensor_ids_for_query(
+    db: &DatabaseConnection,
+    q: &SensorQuery,
+) -> anyhow::Result<Vec<String>> {
+    if let Some(sensor_id) = &q.sensor_id {
+        return Ok(vec![sensor_id.clone()]);
+    }
+
+    let (sql, values) = if let Some(source) = &q.source {
+        (
+            "SELECT sensor_id FROM sensor_definitions WHERE source = $1 ORDER BY sensor_id",
+            vec![source.clone().into()],
+        )
+    } else {
+        (
+            "SELECT sensor_id FROM sensor_definitions ORDER BY sensor_id",
+            Vec::new(),
+        )
+    };
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await?;
+    rows.iter()
+        .map(|row| row.try_get("", "sensor_id").map_err(Into::into))
+        .collect()
+}
+
+async fn query_sensor_readings(
+    db: &DatabaseConnection,
+    q: &SensorQuery,
+) -> anyhow::Result<Vec<SensorReading>> {
+    let sensor_ids = sensor_ids_for_query(db, q).await?;
+    let mut out = Vec::new();
+
+    for sensor_id in sensor_ids {
+        if q.latest_only {
+            if let Some(reading) = latest_sensor_reading(db, &sensor_id).await? {
+                out.push(reading);
             }
+        } else {
+            let remaining = q.limit.map(|limit| limit.saturating_sub(out.len()));
+            if matches!(remaining, Some(0)) {
+                break;
+            }
+            out.extend(query_sensor_readings_for_sensor(db, &sensor_id, q, remaining).await?);
+        }
+
+        if let Some(limit) = q.limit
+            && out.len() >= limit
+        {
+            out.truncate(limit);
+            break;
+        }
+    }
+
+    Ok(out)
+}
+
+async fn query_sensor_readings_for_sensor(
+    db: &DatabaseConnection,
+    sensor_id: &str,
+    q: &SensorQuery,
+    limit_override: Option<usize>,
+) -> anyhow::Result<Vec<SensorReading>> {
+    let mut sql = String::from(
+        r#"
+        SELECT sensor_id, value, quality, recorded_at
+        FROM sensor_readings
+        WHERE sensor_id = $1
+        "#,
+    );
+    let mut values = vec![sensor_id.to_string().into()];
+    let mut idx = 2;
+
+    if let Some(from) = q.from {
+        sql.push_str(&format!(" AND recorded_at >= ${idx}::timestamptz"));
+        values.push(from.to_rfc3339().into());
+        idx += 1;
+    }
+    if let Some(to) = q.to {
+        sql.push_str(&format!(" AND recorded_at <= ${idx}::timestamptz"));
+        values.push(to.to_rfc3339().into());
+    }
+
+    sql.push_str(" ORDER BY recorded_at DESC, id DESC");
+    if let Some(limit) = limit_override.or(q.limit) {
+        sql.push_str(&format!(" LIMIT {}", limit.min(10_000)));
+    }
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await?;
+    rows.iter().map(reading_from_row).collect()
+}
+
+async fn count_sensor_readings(db: &DatabaseConnection, sensor_id: &str) -> anyhow::Result<usize> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT COUNT(*)::bigint AS count FROM sensor_readings WHERE sensor_id = $1",
+            vec![sensor_id.to_string().into()],
+        ))
+        .await?;
+    let Some(row) = row else {
+        return Ok(0);
+    };
+    let count: i64 = row.try_get("", "count")?;
+    Ok(count.max(0) as usize)
+}
+
+async fn list_sensor_summaries(
+    db: &DatabaseConnection,
+    offline_threshold: Duration,
+) -> anyhow::Result<Vec<SensorSummary>> {
+    let definitions = load_sensor_definitions(db).await?;
+    let now = Utc::now();
+    let mut out = Vec::with_capacity(definitions.len());
+
+    for def in definitions {
+        let latest = latest_sensor_reading(db, &def.sensor_id).await?;
+        let reading_count = count_sensor_readings(db, &def.sensor_id).await?;
+        let online = def.last_seen_at.is_some_and(|last_seen| {
+            (now - last_seen).to_std().unwrap_or(Duration::MAX) < offline_threshold
+        });
+
+        out.push(SensorSummary {
+            sensor_id: def.sensor_id,
+            display_name: def.display_name,
+            unit: def.unit,
+            latest_value: latest.as_ref().map(|reading| reading.value.clone()),
+            latest_timestamp: latest.map(|reading| reading.timestamp),
+            reading_count,
+            online,
         });
     }
+
+    Ok(out)
+}
+
+async fn cleanup_db_readings(
+    db: &DatabaseConnection,
+    retention_duration: Duration,
+) -> anyhow::Result<()> {
+    let cutoff = Utc::now()
+        - chrono::Duration::from_std(retention_duration).unwrap_or(chrono::Duration::hours(24));
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "DELETE FROM sensor_readings WHERE recorded_at < $1::timestamptz",
+        vec![cutoff.to_rfc3339().into()],
+    ))
+    .await?;
+    Ok(())
 }

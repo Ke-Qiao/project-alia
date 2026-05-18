@@ -12,8 +12,18 @@ fn classifies_registry_sources() {
     assert_eq!(component.name, "embedded");
     assert!(!is_plugin_source("component:embedded"));
 
+    let embedded = owner_from_source("embedded");
+    assert_eq!(embedded.kind, "component");
+    assert_eq!(embedded.name, "embedded");
+    assert!(!is_plugin_source("embedded"));
+
     let plugin = owner_from_source("zigbee-bridge");
     assert_eq!(plugin.kind, "plugin");
     assert_eq!(plugin.name, "zigbee-bridge");
     assert!(is_plugin_source("zigbee-bridge"));
+
+    let plugin = owner_from_source("plugin:zigbee-bridge");
+    assert_eq!(plugin.kind, "plugin");
+    assert_eq!(plugin.name, "zigbee-bridge");
+    assert!(is_plugin_source("plugin:zigbee-bridge"));
 }

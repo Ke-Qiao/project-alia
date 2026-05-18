@@ -596,12 +596,13 @@ async fn process_event(
                 timestamp: chrono::Utc::now(),
                 quality: 1.0,
             };
+            let source = format!("component:{channel_id}");
+            sensors.ingest_from_source(reading, &source).await?;
             event_bus.publish(ServerEvent::SensorDataIngested {
                 sensor_id,
-                source: channel_id,
+                source,
                 value: payload,
             });
-            sensors.ingest(reading).await;
             Ok(())
         }
         ChannelEvent::StatusChange { .. } => Ok(()),

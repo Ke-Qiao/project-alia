@@ -3,58 +3,86 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 use crate::auth::AuthUser;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::event::ServerEvent;
 use crate::providers::sensor::{SensorDefinition, SensorQuery, SensorReading, SensorSummary};
 use crate::state::AppState;
 
 // ── List all sensors ────────────────────────────────────────────────────
 
-async fn list_sensors(
+#[utoipa::path(
+    get,
+    path = "/api/v1/sensors",
+    tag = "sensors",
+    security(("bearer" = [])),
+    responses((status = 200, description = "List sensors", body = [SensorSummary]))
+)]
+pub async fn list_sensors(
     State(state): State<AppState>,
     _auth: AuthUser,
 ) -> Result<Json<Vec<SensorSummary>>> {
-    let sensors = state.sensors.list_sensors().await;
+    let sensors = state.sensors.list_sensors().await?;
     Ok(Json(sensors))
 }
 
 // ── Get single sensor definition ────────────────────────────────────────
 
-async fn get_sensor(
+#[utoipa::path(
+    get,
+    path = "/api/v1/sensors/{sensor_id}",
+    tag = "sensors",
+    security(("bearer" = [])),
+    params(("sensor_id" = String, Path, description = "Sensor id")),
+    responses((status = 200, description = "Sensor definition", body = Option<SensorDefinition>))
+)]
+pub async fn get_sensor(
     State(state): State<AppState>,
     _auth: AuthUser,
     Path(sensor_id): Path<String>,
 ) -> Result<Json<Option<SensorDefinition>>> {
-    let def = state.sensors.get_sensor(&sensor_id).await;
+    let def = state.sensors.get_sensor(&sensor_id).await?;
     Ok(Json(def))
 }
 
 // ── Register a sensor ───────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-struct RegisterSensorRequest {
-    sensor_id: String,
-    display_name: String,
-    source: String,
+#[derive(Deserialize, ToSchema)]
+pub struct RegisterSensorRequest {
+    pub sensor_id: String,
+    pub display_name: String,
+    pub source: String,
     #[serde(default)]
-    unit: String,
+    pub unit: String,
     #[serde(default = "default_value_type")]
-    value_type: String,
+    pub value_type: String,
     #[serde(default)]
-    metadata: serde_json::Value,
+    pub metadata: serde_json::Value,
 }
 
 fn default_value_type() -> String {
     "float".into()
 }
 
-async fn register_sensor(
+#[utoipa::path(
+    post,
+    path = "/api/v1/sensors",
+    tag = "sensors",
+    security(("bearer" = [])),
+    request_body = RegisterSensorRequest,
+    responses((status = 200, description = "Sensor registered", body = SensorDefinition))
+)]
+pub async fn register_sensor(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(req): Json<RegisterSensorRequest>,
 ) -> Result<Json<SensorDefinition>> {
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
+
     let def = SensorDefinition {
         sensor_id: req.sensor_id.clone(),
         display_name: req.display_name,
@@ -65,62 +93,101 @@ async fn register_sensor(
         registered_at: Utc::now(),
         last_seen_at: None,
     };
-    state.sensors.register_sensor(def.clone()).await;
+    state.sensors.register_sensor(def.clone()).await?;
     Ok(Json(def))
 }
 
 // ── Unregister a sensor ─────────────────────────────────────────────────
 
-async fn unregister_sensor(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/sensors/{sensor_id}",
+    tag = "sensors",
+    security(("bearer" = [])),
+    params(("sensor_id" = String, Path, description = "Sensor id")),
+    responses((status = 200, description = "Sensor unregistered"))
+)]
+pub async fn unregister_sensor(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(sensor_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    let removed = state.sensors.unregister_sensor(&sensor_id).await;
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
+
+    let removed = state.sensors.unregister_sensor(&sensor_id).await?;
     Ok(Json(serde_json::json!({ "removed": removed })))
 }
 
 // ── Ingest readings ─────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-struct IngestRequest {
-    sensor_id: String,
-    value: serde_json::Value,
+#[derive(Deserialize, ToSchema)]
+pub struct IngestRequest {
+    pub sensor_id: String,
+    pub value: serde_json::Value,
     #[serde(default = "default_quality")]
-    quality: f32,
+    pub quality: f32,
 }
 
 fn default_quality() -> f32 {
     1.0
 }
 
-async fn ingest_reading(
+#[utoipa::path(
+    post,
+    path = "/api/v1/sensors/ingest",
+    tag = "sensors",
+    security(("bearer" = [])),
+    request_body = IngestRequest,
+    responses((status = 200, description = "Reading ingested"))
+)]
+pub async fn ingest_reading(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(req): Json<IngestRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
+
     let reading = SensorReading {
         sensor_id: req.sensor_id,
         value: req.value,
         timestamp: Utc::now(),
         quality: req.quality,
     };
+    state
+        .sensors
+        .ingest_from_source(reading.clone(), "api")
+        .await?;
     state.event_bus.publish(ServerEvent::SensorDataIngested {
         sensor_id: reading.sensor_id.clone(),
         source: "api".to_string(),
         value: reading.value.clone(),
     });
-    state.sensors.ingest(reading).await;
     Ok(Json(serde_json::json!({ "ingested": true })))
 }
 
 // ── Batch ingest ────────────────────────────────────────────────────────
 
-async fn ingest_batch(
+#[utoipa::path(
+    post,
+    path = "/api/v1/sensors/ingest/batch",
+    tag = "sensors",
+    security(("bearer" = [])),
+    request_body = [IngestRequest],
+    responses((status = 200, description = "Readings ingested"))
+)]
+pub async fn ingest_batch(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(readings): Json<Vec<IngestRequest>>,
 ) -> Result<Json<serde_json::Value>> {
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
+
     let count = readings.len();
     for req in readings {
         let reading = SensorReading {
@@ -129,35 +196,54 @@ async fn ingest_batch(
             timestamp: Utc::now(),
             quality: req.quality,
         };
+        state
+            .sensors
+            .ingest_from_source(reading.clone(), "api")
+            .await?;
         state.event_bus.publish(ServerEvent::SensorDataIngested {
             sensor_id: reading.sensor_id.clone(),
             source: "api".to_string(),
             value: reading.value.clone(),
         });
-        state.sensors.ingest(reading).await;
     }
     Ok(Json(serde_json::json!({ "ingested": count })))
 }
 
 // ── Get latest reading ──────────────────────────────────────────────────
 
-async fn get_latest(
+#[utoipa::path(
+    get,
+    path = "/api/v1/sensors/{sensor_id}/latest",
+    tag = "sensors",
+    security(("bearer" = [])),
+    params(("sensor_id" = String, Path, description = "Sensor id")),
+    responses((status = 200, description = "Latest sensor reading", body = Option<SensorReading>))
+)]
+pub async fn get_latest(
     State(state): State<AppState>,
     _auth: AuthUser,
     Path(sensor_id): Path<String>,
 ) -> Result<Json<Option<SensorReading>>> {
-    let reading = state.sensors.latest(&sensor_id).await;
+    let reading = state.sensors.latest(&sensor_id).await?;
     Ok(Json(reading))
 }
 
 // ── Query readings ──────────────────────────────────────────────────────
 
-async fn query_readings(
+#[utoipa::path(
+    get,
+    path = "/api/v1/sensors/query",
+    tag = "sensors",
+    security(("bearer" = [])),
+    params(SensorQuery),
+    responses((status = 200, description = "Query sensor readings", body = [SensorReading]))
+)]
+pub async fn query_readings(
     State(state): State<AppState>,
     _auth: AuthUser,
     Query(q): Query<SensorQuery>,
 ) -> Result<Json<Vec<SensorReading>>> {
-    let readings = state.sensors.query(&q).await;
+    let readings = state.sensors.query(&q).await?;
     Ok(Json(readings))
 }
 

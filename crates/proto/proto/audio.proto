@@ -20,6 +20,7 @@ service AudioStream {
 service ServerAudioIngress {
   rpc UploadCapturedAudio(stream CapturedAudioChunk) returns (AudioUploadResponse);
   rpc InterruptActiveTurn(InterruptActiveTurnRequest) returns (TurnInterruptResponse);
+  rpc ReportSensorData(SensorDataRequest) returns (SensorDataResponse);
 }
 
 // Full-duplex frame supporting audio data and control signaling
@@ -92,4 +93,16 @@ message InterruptActiveTurnRequest {
 message TurnInterruptResponse {
   bool accepted = 1;
   bool interrupted = 2;
+}
+
+message SensorDataRequest {
+  string channel_id = 1;
+  string sensor_type = 2;
+  string value_json = 3;
+  uint64 timestamp_us = 4;
+}
+
+message SensorDataResponse {
+  bool accepted = 1;
+  string sensor_id = 2;
 }

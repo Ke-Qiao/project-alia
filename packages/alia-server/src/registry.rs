@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::entity::{registry_artifact, registry_dependency, skill, tool};
 
 pub const KIND_SKILL: &str = "skill";
+pub const KIND_SENSOR: &str = "sensor";
 pub const KIND_TOOL: &str = "tool";
 
 #[derive(Clone)]
@@ -162,6 +163,13 @@ impl ArtifactRef {
             name: name.into(),
         }
     }
+
+    pub fn sensor(name: impl Into<String>) -> Self {
+        Self {
+            kind: KIND_SENSOR.to_string(),
+            name: name.into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,9 +200,20 @@ pub fn owner_from_source(source: &str) -> ArtifactOwner {
         };
     }
 
+    if let Some(plugin) = source.strip_prefix("plugin:") {
+        return ArtifactOwner {
+            kind: "plugin".to_string(),
+            name: plugin.to_string(),
+        };
+    }
+
     match source {
         "builtin" | "file" | "api" | "manual" => ArtifactOwner {
             kind: source.to_string(),
+            name: source.to_string(),
+        },
+        "embedded" | "grpc" | "http" | "rules" | "scheduler" | "sensor" => ArtifactOwner {
+            kind: "component".to_string(),
             name: source.to_string(),
         },
         plugin => ArtifactOwner {

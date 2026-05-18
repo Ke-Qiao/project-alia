@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::providers::adapter::{AutomationRule, RuleFilter, RulePatch};
 use crate::state::AppState;
 
@@ -87,10 +87,11 @@ async fn get_rule(
 
 async fn update_rule(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateRuleRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_rule_owner(&state, &auth, id).await?;
     state
         .modules
         .rule_engine
@@ -111,31 +112,50 @@ async fn update_rule(
 
 async fn delete_rule(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_rule_owner(&state, &auth, id).await?;
     state.modules.rule_engine.delete_rule(id).await?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
 async fn pause_rule(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_rule_owner(&state, &auth, id).await?;
     state.modules.rule_engine.pause_rule(id).await?;
     Ok(Json(serde_json::json!({ "success": true, "paused": true })))
 }
 
 async fn resume_rule(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_rule_owner(&state, &auth, id).await?;
     state.modules.rule_engine.resume_rule(id).await?;
     Ok(Json(
         serde_json::json!({ "success": true, "paused": false }),
     ))
+}
+
+async fn ensure_rule_owner(state: &AppState, auth: &AuthUser, id: Uuid) -> Result<()> {
+    let rules = state
+        .modules
+        .rule_engine
+        .list_rules(RuleFilter {
+            user_id: Some(auth.id),
+            enabled_only: false,
+        })
+        .await?;
+    if rules.into_iter().any(|rule| rule.id == id) {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Rule not found".into()))
+    }
 }
 
 pub fn routes() -> Router<AppState> {

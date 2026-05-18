@@ -1,13 +1,14 @@
 -- Migration: Registry ownership and dependency index.
 --
--- Tools and skills are concrete DB rows. This registry index records who owns
+-- Tools, skills, sensors, and plugin-provided artifacts are concrete runtime
+-- rows. This registry index records who owns
 -- each artifact and what other artifacts it depends on, so plugin/component
 -- removal can be validated before rows are deleted.
 
 CREATE TABLE registry_artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    artifact_kind VARCHAR(20) NOT NULL,          -- 'skill' | 'tool'
-    artifact_name VARCHAR(100) NOT NULL,
+    artifact_kind VARCHAR(20) NOT NULL,          -- 'skill' | 'tool' | 'sensor'
+    artifact_name VARCHAR(200) NOT NULL,
     owner_kind VARCHAR(50) NOT NULL,             -- 'builtin' | 'file' | 'api' | 'plugin' | 'component'
     owner_name VARCHAR(100) NOT NULL,
     source VARCHAR(100) NOT NULL,
@@ -21,9 +22,9 @@ CREATE INDEX idx_registry_artifacts_owner
 
 CREATE TABLE registry_dependencies (
     dependent_kind VARCHAR(20) NOT NULL,
-    dependent_name VARCHAR(100) NOT NULL,
+    dependent_name VARCHAR(200) NOT NULL,
     dependency_kind VARCHAR(20) NOT NULL,
-    dependency_name VARCHAR(100) NOT NULL,
+    dependency_name VARCHAR(200) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (dependent_kind, dependent_name, dependency_kind, dependency_name),
     FOREIGN KEY (dependent_kind, dependent_name)

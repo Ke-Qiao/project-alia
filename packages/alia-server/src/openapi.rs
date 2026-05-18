@@ -22,6 +22,15 @@ use crate::api;
         api::users::get_user,
         api::users::update_user,
         api::users::delete_user,
+        // Sensors
+        api::sensors::list_sensors,
+        api::sensors::get_sensor,
+        api::sensors::register_sensor,
+        api::sensors::unregister_sensor,
+        api::sensors::ingest_reading,
+        api::sensors::ingest_batch,
+        api::sensors::get_latest,
+        api::sensors::query_readings,
         // Skills
         api::skills::list_skills,
         api::skills::get_skill,
@@ -39,6 +48,13 @@ use crate::api;
         api::auth::TokenResponse,
         api::users::UserResponse,
         api::users::UpdateUserRequest,
+        // Sensors
+        crate::providers::sensor::SensorDefinition,
+        crate::providers::sensor::SensorReading,
+        crate::providers::sensor::SensorSummary,
+        crate::providers::sensor::SensorQuery,
+        api::sensors::RegisterSensorRequest,
+        api::sensors::IngestRequest,
         // Skills
         api::skills::SkillResponse,
     )),

@@ -53,8 +53,8 @@ impl ToolExecutor for SensorReadTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("sensor_id is required"))?;
 
-        let reading = self.sensors.latest(sensor_id).await;
-        let def = self.sensors.get_sensor(sensor_id).await;
+        let reading = self.sensors.latest(sensor_id).await?;
+        let def = self.sensors.get_sensor(sensor_id).await?;
 
         match reading {
             Some(r) => {
@@ -124,11 +124,12 @@ impl ToolExecutor for SensorListTool {
         _ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
         let source_filter = arguments.get("source").and_then(|v| v.as_str());
-        let mut sensors = self.sensors.list_sensors().await;
+        let mut sensors = self.sensors.list_sensors().await?;
 
         if let Some(source) = source_filter {
             sensors.retain(|s| {
                 s.sensor_id.starts_with(&format!("{}/", source))
+                    || s.sensor_id.starts_with(&format!("{}:", source))
                     || s.sensor_id.starts_with(&format!("{}.", source))
             });
         }

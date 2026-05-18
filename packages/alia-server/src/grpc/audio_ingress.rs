@@ -1,7 +1,7 @@
 use alia_proto::audio::server_audio_ingress_server::ServerAudioIngress;
 use alia_proto::audio::{
     AudioEncoding as ProtoAudioEncoding, AudioUploadResponse, CapturedAudioChunk,
-    InterruptActiveTurnRequest, TurnInterruptResponse,
+    InterruptActiveTurnRequest, SensorDataRequest, SensorDataResponse, TurnInterruptResponse,
 };
 use tonic::{Request, Response, Status};
 
@@ -114,6 +114,41 @@ impl ServerAudioIngress for ServerAudioIngressService {
         Ok(Response::new(TurnInterruptResponse {
             accepted: true,
             interrupted: true,
+        }))
+    }
+
+    async fn report_sensor_data(
+        &self,
+        request: Request<SensorDataRequest>,
+    ) -> Result<Response<SensorDataResponse>, Status> {
+        let req = request.into_inner();
+        let channel_id = if req.channel_id.trim().is_empty() {
+            self.default_channel_id.clone()
+        } else {
+            req.channel_id
+        };
+        let sensor_type = req.sensor_type.trim();
+        if sensor_type.is_empty() {
+            return Err(Status::invalid_argument("sensor_type is required"));
+        }
+        let payload = if req.value_json.trim().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(&req.value_json)
+                .map_err(|error| Status::invalid_argument(format!("invalid value_json: {error}")))?
+        };
+        let sensor_id = format!("{channel_id}:{sensor_type}");
+
+        self.event_bus
+            .publish(ServerEvent::ChannelInput(ChannelEvent::SensorData {
+                channel_id,
+                sensor_type: sensor_type.to_string(),
+                payload,
+            }));
+
+        Ok(Response::new(SensorDataResponse {
+            accepted: true,
+            sensor_id,
         }))
     }
 }

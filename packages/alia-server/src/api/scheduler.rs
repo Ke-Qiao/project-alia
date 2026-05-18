@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::providers::adapter::{
     EventSubscription, ScheduleConfig, ScheduledTask, TaskFilter, TaskPatch,
 };
@@ -110,10 +110,11 @@ async fn get_task(
 /// Update a task
 async fn update_task(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateTaskRequest>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_task_owner(&state, &auth, id).await?;
     let patch = TaskPatch {
         name: body.name,
         enabled: body.enabled,
@@ -129,9 +130,10 @@ async fn update_task(
 /// Delete a task
 async fn delete_task_handler(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_task_owner(&state, &auth, id).await?;
     state.modules.scheduler.delete_task(id).await?;
     Ok(Json(serde_json::json!({"success": true})))
 }
@@ -139,9 +141,10 @@ async fn delete_task_handler(
 /// Pause a task
 async fn pause_task(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_task_owner(&state, &auth, id).await?;
     state.modules.scheduler.pause_task(id).await?;
     Ok(Json(serde_json::json!({"success": true, "paused": true})))
 }
@@ -149,9 +152,10 @@ async fn pause_task(
 /// Resume a task
 async fn resume_task(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_task_owner(&state, &auth, id).await?;
     state.modules.scheduler.resume_task(id).await?;
     Ok(Json(serde_json::json!({"success": true, "paused": false})))
 }
@@ -194,11 +198,46 @@ async fn create_subscription(
 /// Delete an event subscription
 async fn delete_subscription(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
+    ensure_subscription_owner(&state, &auth, id).await?;
     state.modules.scheduler.unsubscribe_event(id).await?;
     Ok(Json(serde_json::json!({"success": true})))
+}
+
+async fn ensure_task_owner(state: &AppState, auth: &AuthUser, id: Uuid) -> Result<()> {
+    let filter = TaskFilter {
+        user_id: Some(auth.id),
+        enabled_only: false,
+    };
+    let owned = state
+        .modules
+        .scheduler
+        .list_tasks(filter)
+        .await?
+        .into_iter()
+        .any(|task| task.id == id);
+    if owned {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Task not found".into()))
+    }
+}
+
+async fn ensure_subscription_owner(state: &AppState, auth: &AuthUser, id: Uuid) -> Result<()> {
+    let owned = state
+        .modules
+        .scheduler
+        .list_subscriptions(auth.id)
+        .await?
+        .into_iter()
+        .any(|sub| sub.id == id);
+    if owned {
+        Ok(())
+    } else {
+        Err(AppError::NotFound("Subscription not found".into()))
+    }
 }
 
 // ========== Routes ==========

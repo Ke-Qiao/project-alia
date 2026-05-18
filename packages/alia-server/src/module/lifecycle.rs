@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::providers::adapter::{ConversationBackend, MemoryBackend, SchedulerBackend};
+use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
 
@@ -28,6 +29,11 @@ pub struct ModuleContext {
     pub cancel_token: CancellationToken,
     /// Shared artifact graph for registering ownership/dependencies.
     pub artifacts: Arc<ArtifactRegistry>,
+    /// Shared sensor plane. Plugins/components should register and ingest
+    /// sensors here so tools, rules, scheduler, and frontend APIs see the same
+    /// readings. Plugins that need live tracking can also subscribe to
+    /// `event_bus` and watch `ServerEvent::SensorDataIngested`.
+    pub sensors: Arc<SensorRegistry>,
     /// Scheduler reference, available for modules initialized after the scheduler.
     pub scheduler: Option<Arc<dyn SchedulerBackend>>,
     /// Condition registry for registering/evaluating task conditions.

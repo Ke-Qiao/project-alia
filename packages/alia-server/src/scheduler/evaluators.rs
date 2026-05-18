@@ -43,7 +43,7 @@ impl ConditionEvaluator for SensorConditionEvaluator {
         };
         let op = condition.get("op").and_then(|v| v.as_str()).unwrap_or("eq");
 
-        let Some(reading) = self.sensors.latest(sensor_id).await else {
+        let Some(reading) = self.sensors.latest(sensor_id).await? else {
             return Ok(false);
         };
 

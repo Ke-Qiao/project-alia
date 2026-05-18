@@ -190,6 +190,10 @@ impl ServerBuilder {
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
         let artifact_registry = Arc::new(ArtifactRegistry::new(self.db.clone()));
+        sensor_registry.attach_db(self.db.clone()).await?;
+        sensor_registry
+            .attach_artifacts(artifact_registry.clone())
+            .await;
 
         let base_ctx = ModuleContext {
             db: self.db.clone(),
@@ -197,6 +201,7 @@ impl ServerBuilder {
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
             artifacts: artifact_registry.clone(),
+            sensors: sensor_registry.clone(),
             scheduler: None,
             conditions: None,
             actions: None,
@@ -313,6 +318,7 @@ impl ServerBuilder {
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
             artifacts: artifact_registry.clone(),
+            sensors: sensor_registry.clone(),
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
             actions: Some(action_registry.clone()),
