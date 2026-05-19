@@ -33,10 +33,14 @@ config/
       conversation.toml
       cache.toml
       memory.toml
+      affect.toml
+      regulation.toml
+      expression.toml
       tools.toml
       automation.toml
     profiles/
       voice.default.toml
+      expression_styles.toml
     resources/
       skills.toml
       cache_policy.toml
@@ -59,17 +63,18 @@ adapter is active.
 
 Core server services are not configurable slots. The server always owns one
 tool registry, skill registry, rule engine, scheduler, settings registry, sensor
-registry, cache store, persona renderer, and pipeline. Plugins extend these
-services through their registries.
+registry, cache store, persona renderer, affect/expression runtimes, and
+pipeline. Plugins extend these services through their registries.
 
 ## Fragment Responsibilities
 
 Use fragments for implementation details:
 
 - `providers/*.toml`: OpenAI-compatible, Ollama, whisper.cpp, GPT-SoVITS, Mem0
-- `policies/*.toml`: routing, conversation, cache, memory, insights, rules,
-  scheduler, tools
-- `profiles/*.toml`: voice profile and TTS reference parameters
+- `policies/*.toml`: routing, conversation, cache, memory, affect, regulation,
+  expression, insights, rules, scheduler, tools
+- `profiles/*.toml`: voice profile, expression styles, and TTS reference
+  parameters
 - `resources/*.toml`: directories, runtime roots, model/service resource paths,
   and resource policy lists such as cache exclusion keywords
 - `plugins/*.toml`: future plugin-owned configuration
@@ -87,7 +92,7 @@ Hot-updatable areas include many provider parameters and pipeline policies:
 - LLM endpoints, model names, and timeouts
 - STT/TTS endpoints and timeouts
 - voice profile fields
-- routing, cache, memory retrieval, and tool policies
+- routing, affect, regulation, expression, cache, memory retrieval, and tool policies
 
 Restart is expected for:
 

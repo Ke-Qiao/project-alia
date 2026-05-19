@@ -3,3 +3,19 @@ endpoint = "http://localhost:9880/tts"
 request_timeout_sec = 60
 stream_idle_timeout_sec = 10
 
+# Provider-side prosody limits. Expression styles map to GPT-SoVITS generation
+# params. Pitch fallback rewrites the WAV sample-rate header, which changes
+# duration as well as pitch; keep it off unless the deployment accepts that
+# synchronization tradeoff or replaces it with provider/DSP pitch control.
+min_speed_factor = 0.85
+max_speed_factor = 1.15
+min_temperature = 0.75
+max_temperature = 1.25
+min_top_p = 0.82
+max_top_p = 1.0
+min_repetition_penalty = 1.05
+max_repetition_penalty = 1.55
+min_fragment_interval = 0.12
+max_fragment_interval = 0.75
+max_pitch_shift_semitones = 2.0
+sample_rate_pitch_fallback_enabled = false

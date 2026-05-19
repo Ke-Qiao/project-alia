@@ -57,6 +57,7 @@ message PluginInfo {
   string plugin_type = 3; // sensor | actuator | processor | bridge
   PluginState state = 4;
   string description = 5;
+  repeated string capabilities = 6;
 }
 
 enum PluginState {

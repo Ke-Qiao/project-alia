@@ -1,0 +1,19 @@
+name = "python-appraisal-demo"
+enabled = true
+abi_version = 1
+command = ["python3", "external_appraisal_plugin.py"]
+request_timeout_ms = 1500
+trace_stderr = true
+max_stderr_bytes = 4096
+cancel_on_timeout = true
+
+[sandbox]
+clear_env = true
+env = { PYTHONIOENCODING = "utf-8" }
+
+[capabilities]
+appraisal_engine = true
+affect_reducer = false
+intent_planner = false
+plan_transformer = false
+safety_policy = false

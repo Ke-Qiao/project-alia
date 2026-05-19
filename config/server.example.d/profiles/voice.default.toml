@@ -1,16 +1,19 @@
-[profiles]
-default_voice = "default"
+# Voice profiles are provider-neutral at the top level. Provider-native knobs
+# live under `provider_specific` so adding another TTS backend does not inherit
+# GPT-SoVITS fields.
 
 [profiles.voice.default]
 provider = "gpt_sovits"
-model_name = "default"
+model_name = "alia-default"
+reference_voice = ""
+style_prompt = ""
+language = "zh"
+
+[profiles.voice.default.provider_specific]
 gpt_weights_path = ""
 sovits_weights_path = ""
-ref_audio_path = ""
 aux_ref_audio_paths = []
-prompt_text = ""
-text_lang = "zh"
-prompt_lang = "zh"
+prompt_language = "zh"
 text_split_method = "cut5"
 batch_size = 1
 batch_threshold = 0.75
@@ -24,4 +27,3 @@ sample_steps = 32
 super_sampling = false
 overlap_length = 2
 min_chunk_length = 16
-

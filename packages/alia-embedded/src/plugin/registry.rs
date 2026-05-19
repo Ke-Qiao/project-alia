@@ -11,7 +11,7 @@ use tracing::{info, warn};
 
 use crate::module::traits::DiscoveryMetadata;
 
-use super::manifest::PluginManifest;
+use super::manifest::{PluginCapabilities, PluginManifest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginState {
@@ -29,6 +29,7 @@ pub struct PluginEntry {
     pub dir: PathBuf,
     pub pid: Option<u32>,
     pub stdin: Option<Arc<Mutex<ChildStdin>>>,
+    pub runtime_capabilities: Vec<String>,
 }
 
 pub struct PluginRegistry {
@@ -93,6 +94,7 @@ impl PluginRegistry {
                             dir: path,
                             pid: None,
                             stdin: None,
+                            runtime_capabilities: Vec::new(),
                         },
                     );
                 }
@@ -195,6 +197,7 @@ impl PluginRegistry {
                 dir: plugin_dir,
                 pid: None,
                 stdin: None,
+                runtime_capabilities: Vec::new(),
             },
         );
 
@@ -368,12 +371,19 @@ impl PluginRegistry {
         let plugins = self.plugins.read().await;
         plugins
             .values()
-            .map(|e| PluginSnapshot {
-                name: e.manifest.plugin.name.clone(),
-                version: e.manifest.plugin.version.clone(),
-                plugin_type: e.manifest.plugin.plugin_type.to_string(),
-                state: e.state,
-                description: e.manifest.plugin.description.clone().unwrap_or_default(),
+            .map(|e| {
+                let mut capabilities = plugin_capability_strings(&e.manifest.plugin.capabilities);
+                capabilities.extend(e.runtime_capabilities.clone());
+                capabilities.sort();
+                capabilities.dedup();
+                PluginSnapshot {
+                    name: e.manifest.plugin.name.clone(),
+                    version: e.manifest.plugin.version.clone(),
+                    plugin_type: e.manifest.plugin.plugin_type.to_string(),
+                    state: e.state,
+                    description: e.manifest.plugin.description.clone().unwrap_or_default(),
+                    capabilities,
+                }
             })
             .collect()
     }
@@ -482,6 +492,7 @@ impl PluginRegistry {
             return;
         };
         let event_tx = self.event_tx.clone();
+        let plugins = Arc::clone(&self.plugins);
 
         tokio::spawn(async move {
             let reader = BufReader::new(stream);
@@ -507,6 +518,16 @@ impl PluginRegistry {
                                 .unwrap_or_else(|_| b"{}".to_vec()),
                         ),
                     };
+
+                if event_type == "expression_state" {
+                    let runtime_capabilities = runtime_expression_capabilities(&payload_json);
+                    if !runtime_capabilities.is_empty() {
+                        let mut plugins = plugins.write().await;
+                        if let Some(entry) = plugins.get_mut(&plugin_name) {
+                            entry.runtime_capabilities = runtime_capabilities;
+                        }
+                    }
+                }
 
                 let _ = event_tx.send(PluginEventRecord {
                     plugin_name: plugin_name.clone(),
@@ -569,6 +590,88 @@ pub struct PluginSnapshot {
     pub plugin_type: String,
     pub state: PluginState,
     pub description: String,
+    pub capabilities: Vec<String>,
+}
+
+fn plugin_capability_strings(capabilities: &PluginCapabilities) -> Vec<String> {
+    let mut values = Vec::new();
+    if capabilities.gpio {
+        values.push("plugin.capability.gpio".to_string());
+    }
+    if capabilities.network {
+        values.push("plugin.capability.network".to_string());
+    }
+    if capabilities.usb {
+        values.push("plugin.capability.usb".to_string());
+    }
+    values.extend(
+        capabilities
+            .expression_actions
+            .iter()
+            .map(|action| format!("expression.action.{}", action.trim()))
+            .filter(|capability| capability != "expression.action."),
+    );
+    values.extend(
+        capabilities
+            .expression_state
+            .iter()
+            .map(|state| format!("expression.state.{}", state.trim()))
+            .filter(|capability| capability != "expression.state."),
+    );
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn runtime_expression_capabilities(payload_json: &[u8]) -> Vec<String> {
+    let Ok(payload) = serde_json::from_slice::<serde_json::Value>(payload_json) else {
+        return Vec::new();
+    };
+    let mut values = Vec::new();
+    if let Some(actions) = payload.get("actions").and_then(serde_json::Value::as_array) {
+        values.extend(
+            actions
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|action| format!("expression.action.{}", action.trim()))
+                .filter(|capability| capability != "expression.action."),
+        );
+    }
+    if let Some(states) = payload.get("states").and_then(serde_json::Value::as_array) {
+        values.extend(
+            states
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|state| format!("expression.state.{}", state.trim()))
+                .filter(|capability| capability != "expression.state."),
+        );
+    }
+    for (key, prefix) in [
+        ("ready", "expression.state.ready"),
+        ("busy", "expression.state.busy"),
+        ("thermal_limit", "expression.state.thermal_limit"),
+        ("battery_saver", "expression.state.battery_saver"),
+    ] {
+        if payload
+            .get(key)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            values.push(prefix.to_string());
+        }
+    }
+    if let Some(level) = payload
+        .get("battery_level")
+        .and_then(serde_json::Value::as_f64)
+    {
+        values.push(format!(
+            "expression.state.battery_level.{:.2}",
+            level.clamp(0.0, 1.0)
+        ));
+    }
+    values.sort();
+    values.dedup();
+    values
 }
 
 fn plugin_command(dir: &std::path::Path, manifest: &PluginManifest) -> (PathBuf, Vec<String>) {

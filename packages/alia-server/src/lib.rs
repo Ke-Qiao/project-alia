@@ -7,6 +7,7 @@ pub mod config;
 pub mod entity;
 pub mod error;
 pub mod event;
+pub mod expression;
 #[cfg(feature = "channel-embedded")]
 pub mod grpc;
 pub mod module;

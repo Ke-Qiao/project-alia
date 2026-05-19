@@ -1,0 +1,16 @@
+[resources.appraisal_lexicons.en]
+positive_phrases = ["great", "awesome", "amazing"]
+correction_or_failure = ["wrong", "incorrect", "failed"]
+sarcasm_markers = ["sure", "yeah right"]
+support_need = ["sad", "upset", "anxious", "scared", "overwhelmed"]
+safety_salience = ["danger", "risk", "unsafe", "warning"]
+minimal_expression = ["be brief", "concise", "don't move", "no gestures"]
+
+[resources.appraisal_lexicons.en.metadata]
+source_name = "Project Alia en appraisal overlay"
+source_url = "local"
+license = "project"
+version = "0.1"
+redistributable = true
+overlay = true
+notes = "Small project-owned seed lexicon. Import third-party dictionaries into separate source fragments and keep this overlay for product-specific cues."

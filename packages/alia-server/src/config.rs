@@ -271,6 +271,30 @@ pub struct GptSovitsProviderSection {
     pub request_timeout_sec: u64,
     #[serde(default = "default_tts_stream_idle_timeout")]
     pub stream_idle_timeout_sec: u64,
+    #[serde(default = "default_gpt_sovits_min_speed_factor")]
+    pub min_speed_factor: f32,
+    #[serde(default = "default_gpt_sovits_max_speed_factor")]
+    pub max_speed_factor: f32,
+    #[serde(default = "default_gpt_sovits_min_temperature")]
+    pub min_temperature: f32,
+    #[serde(default = "default_gpt_sovits_max_temperature")]
+    pub max_temperature: f32,
+    #[serde(default = "default_gpt_sovits_min_top_p")]
+    pub min_top_p: f32,
+    #[serde(default = "default_gpt_sovits_max_top_p")]
+    pub max_top_p: f32,
+    #[serde(default = "default_gpt_sovits_min_repetition_penalty")]
+    pub min_repetition_penalty: f32,
+    #[serde(default = "default_gpt_sovits_max_repetition_penalty")]
+    pub max_repetition_penalty: f32,
+    #[serde(default = "default_gpt_sovits_min_fragment_interval")]
+    pub min_fragment_interval: f32,
+    #[serde(default = "default_gpt_sovits_max_fragment_interval")]
+    pub max_fragment_interval: f32,
+    #[serde(default = "default_gpt_sovits_max_pitch_shift_semitones")]
+    pub max_pitch_shift_semitones: f32,
+    #[serde(default)]
+    pub sample_rate_pitch_fallback_enabled: bool,
 }
 
 impl Default for GptSovitsProviderSection {
@@ -279,12 +303,57 @@ impl Default for GptSovitsProviderSection {
             endpoint: default_gpt_sovits_endpoint(),
             request_timeout_sec: default_tts_request_timeout(),
             stream_idle_timeout_sec: default_tts_stream_idle_timeout(),
+            min_speed_factor: default_gpt_sovits_min_speed_factor(),
+            max_speed_factor: default_gpt_sovits_max_speed_factor(),
+            min_temperature: default_gpt_sovits_min_temperature(),
+            max_temperature: default_gpt_sovits_max_temperature(),
+            min_top_p: default_gpt_sovits_min_top_p(),
+            max_top_p: default_gpt_sovits_max_top_p(),
+            min_repetition_penalty: default_gpt_sovits_min_repetition_penalty(),
+            max_repetition_penalty: default_gpt_sovits_max_repetition_penalty(),
+            min_fragment_interval: default_gpt_sovits_min_fragment_interval(),
+            max_fragment_interval: default_gpt_sovits_max_fragment_interval(),
+            max_pitch_shift_semitones: default_gpt_sovits_max_pitch_shift_semitones(),
+            sample_rate_pitch_fallback_enabled: false,
         }
     }
 }
 
 fn default_gpt_sovits_endpoint() -> String {
     "http://localhost:9880/tts".to_string()
+}
+fn default_gpt_sovits_min_speed_factor() -> f32 {
+    0.85
+}
+fn default_gpt_sovits_max_speed_factor() -> f32 {
+    1.15
+}
+fn default_gpt_sovits_min_temperature() -> f32 {
+    0.75
+}
+fn default_gpt_sovits_max_temperature() -> f32 {
+    1.25
+}
+fn default_gpt_sovits_min_top_p() -> f32 {
+    0.82
+}
+fn default_gpt_sovits_max_top_p() -> f32 {
+    1.0
+}
+fn default_gpt_sovits_min_repetition_penalty() -> f32 {
+    1.05
+}
+fn default_gpt_sovits_max_repetition_penalty() -> f32 {
+    1.55
+}
+fn default_gpt_sovits_min_fragment_interval() -> f32 {
+    0.12
+}
+fn default_gpt_sovits_max_fragment_interval() -> f32 {
+    0.75
+}
+fn default_gpt_sovits_max_pitch_shift_semitones() -> f32 {
+    2.0
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -339,6 +408,12 @@ pub struct PoliciesSection {
     #[serde(default)]
     pub routing: RoutingPolicySection,
     #[serde(default)]
+    pub affect: AffectPolicySection,
+    #[serde(default)]
+    pub regulation: RegulationPolicySection,
+    #[serde(default)]
+    pub expression: ExpressionPolicySection,
+    #[serde(default)]
     pub conversation: ConversationSection,
     #[serde(default)]
     pub memory: MemorySection,
@@ -352,6 +427,243 @@ pub struct PoliciesSection {
     pub scheduler: SchedulerSection,
     #[serde(default)]
     pub tools: ToolsSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegulationPolicySection {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_regulation_max_negative_expression")]
+    pub max_negative_expression: f32,
+    #[serde(default = "default_regulation_max_expressed_arousal")]
+    pub max_expressed_arousal: f32,
+    #[serde(default = "default_regulation_default_max_intensity")]
+    pub default_max_intensity: f32,
+    #[serde(default = "default_regulation_low_trust_threshold")]
+    pub low_trust_threshold: f32,
+    #[serde(default = "default_regulation_low_trust_warmth_floor")]
+    pub low_trust_warmth_floor: f32,
+    #[serde(default = "default_regulation_low_trust_max_intensity")]
+    pub low_trust_max_intensity: f32,
+    #[serde(default = "default_regulation_low_trust_motion_scale")]
+    pub low_trust_motion_scale: f32,
+    #[serde(default = "default_regulation_fatigue_threshold")]
+    pub fatigue_threshold: f32,
+    #[serde(default = "default_regulation_fatigue_max_intensity")]
+    pub fatigue_max_intensity: f32,
+    #[serde(default = "default_regulation_fatigue_motion_scale")]
+    pub fatigue_motion_scale: f32,
+    #[serde(default = "default_regulation_deescalate_arousal_threshold")]
+    pub deescalate_arousal_threshold: f32,
+    #[serde(default = "default_regulation_deescalated_arousal")]
+    pub deescalated_arousal: f32,
+    #[serde(default = "default_regulation_deescalation_warmth_floor")]
+    pub deescalation_warmth_floor: f32,
+    #[serde(default = "default_regulation_deescalated_max_intensity")]
+    pub deescalated_max_intensity: f32,
+    #[serde(default = "default_regulation_deescalated_motion_scale")]
+    pub deescalated_motion_scale: f32,
+    #[serde(default = "default_regulation_apology_max_intensity")]
+    pub apology_max_intensity: f32,
+    #[serde(default = "default_regulation_apology_motion_scale")]
+    pub apology_motion_scale: f32,
+    #[serde(default = "default_regulation_warning_max_intensity")]
+    pub warning_max_intensity: f32,
+    #[serde(default = "default_regulation_open_trust_threshold")]
+    pub open_trust_threshold: f32,
+    #[serde(default = "default_regulation_open_familiarity_threshold")]
+    pub open_familiarity_threshold: f32,
+    #[serde(default = "default_regulation_open_positive_intensity_scale")]
+    pub open_positive_intensity_scale: f32,
+    #[serde(default = "default_regulation_open_positive_motion_scale")]
+    pub open_positive_motion_scale: f32,
+}
+
+impl Default for RegulationPolicySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_negative_expression: default_regulation_max_negative_expression(),
+            max_expressed_arousal: default_regulation_max_expressed_arousal(),
+            default_max_intensity: default_regulation_default_max_intensity(),
+            low_trust_threshold: default_regulation_low_trust_threshold(),
+            low_trust_warmth_floor: default_regulation_low_trust_warmth_floor(),
+            low_trust_max_intensity: default_regulation_low_trust_max_intensity(),
+            low_trust_motion_scale: default_regulation_low_trust_motion_scale(),
+            fatigue_threshold: default_regulation_fatigue_threshold(),
+            fatigue_max_intensity: default_regulation_fatigue_max_intensity(),
+            fatigue_motion_scale: default_regulation_fatigue_motion_scale(),
+            deescalate_arousal_threshold: default_regulation_deescalate_arousal_threshold(),
+            deescalated_arousal: default_regulation_deescalated_arousal(),
+            deescalation_warmth_floor: default_regulation_deescalation_warmth_floor(),
+            deescalated_max_intensity: default_regulation_deescalated_max_intensity(),
+            deescalated_motion_scale: default_regulation_deescalated_motion_scale(),
+            apology_max_intensity: default_regulation_apology_max_intensity(),
+            apology_motion_scale: default_regulation_apology_motion_scale(),
+            warning_max_intensity: default_regulation_warning_max_intensity(),
+            open_trust_threshold: default_regulation_open_trust_threshold(),
+            open_familiarity_threshold: default_regulation_open_familiarity_threshold(),
+            open_positive_intensity_scale: default_regulation_open_positive_intensity_scale(),
+            open_positive_motion_scale: default_regulation_open_positive_motion_scale(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AffectPolicySection {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_affect_baseline_valence")]
+    pub baseline_valence: f32,
+    #[serde(default = "default_affect_baseline_arousal")]
+    pub baseline_arousal: f32,
+    #[serde(default = "default_affect_baseline_calmness")]
+    pub baseline_calmness: f32,
+    #[serde(default = "default_affect_baseline_engagement")]
+    pub baseline_engagement: f32,
+    #[serde(default = "default_affect_baseline_fatigue")]
+    pub baseline_fatigue: f32,
+    #[serde(default = "default_affect_baseline_battery_stress")]
+    pub baseline_battery_stress: f32,
+    #[serde(default = "default_affect_baseline_thermal_stress")]
+    pub baseline_thermal_stress: f32,
+    #[serde(default = "default_affect_baseline_sleepiness")]
+    pub baseline_sleepiness: f32,
+    #[serde(default = "default_affect_baseline_interaction_load")]
+    pub baseline_interaction_load: f32,
+    #[serde(default = "default_affect_baseline_trust")]
+    pub baseline_trust: f32,
+    #[serde(default = "default_affect_baseline_familiarity")]
+    pub baseline_familiarity: f32,
+    #[serde(default = "default_affect_homeostasis_rate")]
+    pub homeostasis_rate: f32,
+    #[serde(default = "default_affect_max_delta_per_turn")]
+    pub max_delta_per_turn: f32,
+    #[serde(default = "default_affect_fatigue_per_turn")]
+    pub fatigue_per_turn: f32,
+    #[serde(default = "default_affect_long_response_fatigue_delta")]
+    pub long_response_fatigue_delta: f32,
+    #[serde(default = "default_affect_turn_appraisal_ttl")]
+    pub turn_appraisal_ttl_sec: u64,
+    #[serde(default = "default_affect_session_appraisal_ttl")]
+    pub session_appraisal_ttl_sec: u64,
+    #[serde(default = "default_affect_relationship_appraisal_ttl")]
+    pub relationship_appraisal_ttl_sec: u64,
+    #[serde(default = "default_affect_appraisal_half_life")]
+    pub appraisal_half_life_sec: u64,
+    #[serde(default = "default_affect_relationship_appraisal_half_life")]
+    pub relationship_appraisal_half_life_sec: u64,
+    #[serde(default = "default_affect_max_active_appraisal_events")]
+    pub max_active_appraisal_events: usize,
+    #[serde(default = "default_affect_min_appraisal_confidence")]
+    pub min_appraisal_confidence: f32,
+    #[serde(default = "default_true")]
+    pub relationship_persistence_enabled: bool,
+    #[serde(default = "default_true")]
+    pub prune_persisted_appraisals_on_startup: bool,
+    #[serde(default = "default_true")]
+    pub persist_appraisal_evidence: bool,
+    #[serde(default)]
+    pub persist_relationship_evidence: bool,
+    #[serde(default = "default_true")]
+    pub relationship_profile_enabled: bool,
+    #[serde(default = "default_true")]
+    pub relationship_profile_user_visible: bool,
+    #[serde(default = "default_true")]
+    pub relationship_profile_store_preferences: bool,
+    #[serde(default = "default_true")]
+    pub relationship_profile_user_clearable: bool,
+    #[serde(default = "default_affect_relationship_preferences_max_items")]
+    pub relationship_preferences_max_items: usize,
+    #[serde(default = "default_affect_relationship_summary_max_signals")]
+    pub relationship_summary_max_signals: usize,
+    #[serde(default = "default_affect_relationship_profile_prune_after")]
+    pub relationship_profile_prune_after_sec: u64,
+    #[serde(default = "default_affect_max_persisted_evidence_chars")]
+    pub max_persisted_evidence_chars: usize,
+}
+
+impl Default for AffectPolicySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            baseline_valence: default_affect_baseline_valence(),
+            baseline_arousal: default_affect_baseline_arousal(),
+            baseline_calmness: default_affect_baseline_calmness(),
+            baseline_engagement: default_affect_baseline_engagement(),
+            baseline_fatigue: default_affect_baseline_fatigue(),
+            baseline_battery_stress: default_affect_baseline_battery_stress(),
+            baseline_thermal_stress: default_affect_baseline_thermal_stress(),
+            baseline_sleepiness: default_affect_baseline_sleepiness(),
+            baseline_interaction_load: default_affect_baseline_interaction_load(),
+            baseline_trust: default_affect_baseline_trust(),
+            baseline_familiarity: default_affect_baseline_familiarity(),
+            homeostasis_rate: default_affect_homeostasis_rate(),
+            max_delta_per_turn: default_affect_max_delta_per_turn(),
+            fatigue_per_turn: default_affect_fatigue_per_turn(),
+            long_response_fatigue_delta: default_affect_long_response_fatigue_delta(),
+            turn_appraisal_ttl_sec: default_affect_turn_appraisal_ttl(),
+            session_appraisal_ttl_sec: default_affect_session_appraisal_ttl(),
+            relationship_appraisal_ttl_sec: default_affect_relationship_appraisal_ttl(),
+            appraisal_half_life_sec: default_affect_appraisal_half_life(),
+            relationship_appraisal_half_life_sec: default_affect_relationship_appraisal_half_life(),
+            max_active_appraisal_events: default_affect_max_active_appraisal_events(),
+            min_appraisal_confidence: default_affect_min_appraisal_confidence(),
+            relationship_persistence_enabled: true,
+            prune_persisted_appraisals_on_startup: true,
+            persist_appraisal_evidence: true,
+            persist_relationship_evidence: false,
+            relationship_profile_enabled: true,
+            relationship_profile_user_visible: true,
+            relationship_profile_store_preferences: true,
+            relationship_profile_user_clearable: true,
+            relationship_preferences_max_items: default_affect_relationship_preferences_max_items(),
+            relationship_summary_max_signals: default_affect_relationship_summary_max_signals(),
+            relationship_profile_prune_after_sec: default_affect_relationship_profile_prune_after(),
+            max_persisted_evidence_chars: default_affect_max_persisted_evidence_chars(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExpressionPolicySection {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub auto_motion_enabled: bool,
+    #[serde(default = "default_expression_default_style")]
+    pub default_style: String,
+    #[serde(default = "default_expression_max_intensity")]
+    pub max_expression_intensity: f32,
+    #[serde(default = "default_expression_max_motion_intensity")]
+    pub max_motion_intensity: f32,
+    #[serde(default = "default_expression_max_timeline_actions")]
+    pub max_timeline_actions: usize,
+    #[serde(default = "default_expression_max_action_duration_ms")]
+    pub max_action_duration_ms: u32,
+    #[serde(default = "default_expression_allowed_motion_actions")]
+    pub allowed_motion_actions: Vec<String>,
+    #[serde(default = "default_expression_external_plugin_timeout_ms")]
+    pub external_plugin_timeout_ms: u64,
+    #[serde(default)]
+    pub night_mode_minimal_expression: bool,
+}
+
+impl Default for ExpressionPolicySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_motion_enabled: true,
+            default_style: default_expression_default_style(),
+            max_expression_intensity: default_expression_max_intensity(),
+            max_motion_intensity: default_expression_max_motion_intensity(),
+            max_timeline_actions: default_expression_max_timeline_actions(),
+            max_action_duration_ms: default_expression_max_action_duration_ms(),
+            allowed_motion_actions: default_expression_allowed_motion_actions(),
+            external_plugin_timeout_ms: default_expression_external_plugin_timeout_ms(),
+            night_mode_minimal_expression: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -394,6 +706,8 @@ pub struct ProfilesSection {
     pub default_voice: String,
     #[serde(default)]
     pub voice: BTreeMap<String, VoiceProfileSection>,
+    #[serde(default)]
+    pub expression_styles: BTreeMap<String, ExpressionStyleSection>,
 }
 
 impl Default for ProfilesSection {
@@ -401,6 +715,7 @@ impl Default for ProfilesSection {
         Self {
             default_voice: default_voice_profile_id(),
             voice: BTreeMap::new(),
+            expression_styles: default_expression_styles(),
         }
     }
 }
@@ -420,50 +735,63 @@ fn default_voice_profile_id() -> String {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VoiceProfileSection {
+    /// Provider that owns `provider_specific` interpretation.
     #[serde(default = "default_gpt_sovits_provider")]
     pub provider: String,
+    /// Human-facing voice/model label. Adapters may map this to a native voice,
+    /// model, reference speaker, or ignore it.
     #[serde(default)]
     pub model_name: Option<String>,
+    /// Provider-neutral reference voice/audio anchor.
     #[serde(default)]
-    pub gpt_weights_path: Option<String>,
+    pub reference_voice: Option<String>,
+    /// Optional neutral prompt/style hint for providers that use text prompts.
     #[serde(default)]
-    pub sovits_weights_path: Option<String>,
-    #[serde(default)]
-    pub ref_audio_path: Option<String>,
-    #[serde(default)]
-    pub aux_ref_audio_paths: Vec<String>,
-    #[serde(default)]
-    pub prompt_text: Option<String>,
+    pub style_prompt: Option<String>,
+    /// BCP-47-ish language tag for the text to synthesize.
     #[serde(default = "default_gpt_sovits_language")]
-    pub text_lang: String,
-    #[serde(default = "default_gpt_sovits_prompt_language")]
-    pub prompt_lang: String,
-    #[serde(default = "default_gpt_sovits_text_split_method")]
-    pub text_split_method: String,
-    #[serde(default = "default_gpt_sovits_batch_size")]
-    pub batch_size: u32,
-    #[serde(default = "default_gpt_sovits_batch_threshold")]
-    pub batch_threshold: f32,
-    #[serde(default = "default_true")]
-    pub split_bucket: bool,
-    #[serde(default = "default_gpt_sovits_speed_factor")]
-    pub speed_factor: f32,
-    #[serde(default = "default_gpt_sovits_fragment_interval")]
-    pub fragment_interval: f32,
-    #[serde(default = "default_gpt_sovits_seed")]
-    pub seed: i32,
-    #[serde(default = "default_true")]
-    pub parallel_infer: bool,
-    #[serde(default = "default_gpt_sovits_repetition_penalty")]
-    pub repetition_penalty: f32,
-    #[serde(default = "default_gpt_sovits_sample_steps")]
-    pub sample_steps: u32,
+    pub language: String,
+    /// Provider-owned configuration. New TTS providers should add their native
+    /// fields here instead of extending the common voice profile.
     #[serde(default)]
-    pub super_sampling: bool,
-    #[serde(default = "default_gpt_sovits_overlap_length")]
-    pub overlap_length: u32,
-    #[serde(default = "default_gpt_sovits_min_chunk_length")]
-    pub min_chunk_length: u32,
+    pub provider_specific: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExpressionStyleSection {
+    #[serde(default)]
+    pub voice_profile: Option<String>,
+    #[serde(default = "default_expression_rate")]
+    pub rate: f32,
+    #[serde(default)]
+    pub pitch_shift: f32,
+    #[serde(default = "default_expression_energy")]
+    pub energy: f32,
+    #[serde(default)]
+    pub pause_bias: f32,
+}
+
+impl Default for ExpressionStyleSection {
+    fn default() -> Self {
+        Self {
+            voice_profile: None,
+            rate: default_expression_rate(),
+            pitch_shift: 0.0,
+            energy: default_expression_energy(),
+            pause_bias: 0.0,
+        }
+    }
+}
+
+impl ExpressionStyleSection {
+    pub fn prosody(&self) -> crate::expression::ProsodyControls {
+        crate::expression::ProsodyControls {
+            rate: self.rate.clamp(0.5, 2.0),
+            pitch_shift: self.pitch_shift.clamp(-1.0, 1.0),
+            energy: self.energy.clamp(0.0, 1.0),
+            pause_bias: self.pause_bias.clamp(-1.0, 1.0),
+        }
+    }
 }
 
 impl Default for VoiceProfileSection {
@@ -471,26 +799,10 @@ impl Default for VoiceProfileSection {
         Self {
             provider: default_gpt_sovits_provider(),
             model_name: None,
-            gpt_weights_path: None,
-            sovits_weights_path: None,
-            ref_audio_path: None,
-            aux_ref_audio_paths: Vec::new(),
-            prompt_text: None,
-            text_lang: default_gpt_sovits_language(),
-            prompt_lang: default_gpt_sovits_prompt_language(),
-            text_split_method: default_gpt_sovits_text_split_method(),
-            batch_size: default_gpt_sovits_batch_size(),
-            batch_threshold: default_gpt_sovits_batch_threshold(),
-            split_bucket: true,
-            speed_factor: default_gpt_sovits_speed_factor(),
-            fragment_interval: default_gpt_sovits_fragment_interval(),
-            seed: default_gpt_sovits_seed(),
-            parallel_infer: true,
-            repetition_penalty: default_gpt_sovits_repetition_penalty(),
-            sample_steps: default_gpt_sovits_sample_steps(),
-            super_sampling: false,
-            overlap_length: default_gpt_sovits_overlap_length(),
-            min_chunk_length: default_gpt_sovits_min_chunk_length(),
+            reference_voice: None,
+            style_prompt: None,
+            language: default_gpt_sovits_language(),
+            provider_specific: default_gpt_sovits_voice_provider_specific(),
         }
     }
 }
@@ -507,6 +819,153 @@ pub struct ResourcesSection {
     pub skills_dir: Option<String>,
     #[serde(default)]
     pub cache_policy: CachePolicyResourceSection,
+    /// Directory containing external expression plugin manifest TOML files.
+    /// Each manifest is loaded as a JSON-stdin/stdout dispatcher.
+    #[serde(default)]
+    pub external_expression_plugins_dir: Option<String>,
+    /// Language-scoped lexicons used by the local text classifier appraisal
+    /// engine. Keys are BCP-47-ish language tags such as `zh` or `en`.
+    #[serde(default)]
+    pub appraisal_lexicons: BTreeMap<String, AppraisalLexiconSection>,
+    /// Phrase lists used by the deterministic dialogue policy before
+    /// expression planning. These are separate from appraisal lexicons because
+    /// they classify the assistant's response function, not durable affect.
+    #[serde(default)]
+    pub dialogue_policy: DialoguePolicyResourceSection,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AppraisalLexiconSection {
+    #[serde(default)]
+    pub metadata: LexiconMetadataSection,
+    #[serde(default)]
+    pub positive_phrases: Vec<String>,
+    #[serde(default)]
+    pub correction_or_failure: Vec<String>,
+    #[serde(default)]
+    pub sarcasm_markers: Vec<String>,
+    #[serde(default)]
+    pub support_need: Vec<String>,
+    #[serde(default)]
+    pub safety_salience: Vec<String>,
+    #[serde(default)]
+    pub minimal_expression: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LexiconMetadataSection {
+    #[serde(default)]
+    pub source_name: Option<String>,
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub redistributable: Option<bool>,
+    #[serde(default)]
+    pub overlay: bool,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DialoguePolicyResourceSection {
+    #[serde(default = "default_dialogue_policy_frustration")]
+    pub frustration_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_safety")]
+    pub safety_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_support")]
+    pub support_need_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_celebration")]
+    pub celebration_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_explanation")]
+    pub explanation_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_technical")]
+    pub technical_phrases: Vec<String>,
+    #[serde(default = "default_dialogue_policy_question_suffixes")]
+    pub question_suffixes: Vec<String>,
+}
+
+impl Default for DialoguePolicyResourceSection {
+    fn default() -> Self {
+        Self {
+            frustration_phrases: default_dialogue_policy_frustration(),
+            safety_phrases: default_dialogue_policy_safety(),
+            support_need_phrases: default_dialogue_policy_support(),
+            celebration_phrases: default_dialogue_policy_celebration(),
+            explanation_phrases: default_dialogue_policy_explanation(),
+            technical_phrases: default_dialogue_policy_technical(),
+            question_suffixes: default_dialogue_policy_question_suffixes(),
+        }
+    }
+}
+
+fn default_dialogue_policy_frustration() -> Vec<String> {
+    strings(&[
+        "错了",
+        "不对",
+        "不是",
+        "烦",
+        "生气",
+        "wrong",
+        "incorrect",
+        "annoying",
+    ])
+}
+
+fn default_dialogue_policy_safety() -> Vec<String> {
+    strings(&[
+        "危险", "安全", "警告", "风险", "小心", "danger", "risk", "unsafe", "warning",
+    ])
+}
+
+fn default_dialogue_policy_support() -> Vec<String> {
+    strings(&[
+        "难过", "伤心", "焦虑", "害怕", "崩溃", "sad", "upset", "anxious", "scared",
+    ])
+}
+
+fn default_dialogue_policy_celebration() -> Vec<String> {
+    strings(&[
+        "成功",
+        "搞定",
+        "完成了",
+        "太好了",
+        "赢了",
+        "success",
+        "great",
+        "awesome",
+        "done",
+    ])
+}
+
+fn default_dialogue_policy_explanation() -> Vec<String> {
+    strings(&[
+        "为什么",
+        "怎么",
+        "如何",
+        "解释",
+        "原理",
+        "why",
+        "how",
+        "explain",
+    ])
+}
+
+fn default_dialogue_policy_technical() -> Vec<String> {
+    strings(&[
+        "代码", "技术", "接口", "错误", "编译", "api", "code", "error", "compile",
+    ])
+}
+
+fn default_dialogue_policy_question_suffixes() -> Vec<String> {
+    strings(&["?", "？"])
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -531,6 +990,235 @@ impl Default for CachePolicyResourceSection {
 
 fn default_router_timeout() -> u64 {
     5
+}
+fn default_regulation_max_negative_expression() -> f32 {
+    0.15
+}
+fn default_regulation_max_expressed_arousal() -> f32 {
+    0.72
+}
+fn default_regulation_default_max_intensity() -> f32 {
+    0.70
+}
+fn default_regulation_low_trust_threshold() -> f32 {
+    0.40
+}
+fn default_regulation_low_trust_warmth_floor() -> f32 {
+    0.62
+}
+fn default_regulation_low_trust_max_intensity() -> f32 {
+    0.36
+}
+fn default_regulation_low_trust_motion_scale() -> f32 {
+    0.45
+}
+fn default_regulation_fatigue_threshold() -> f32 {
+    0.62
+}
+fn default_regulation_fatigue_max_intensity() -> f32 {
+    0.34
+}
+fn default_regulation_fatigue_motion_scale() -> f32 {
+    0.35
+}
+fn default_regulation_deescalate_arousal_threshold() -> f32 {
+    0.65
+}
+fn default_regulation_deescalated_arousal() -> f32 {
+    0.42
+}
+fn default_regulation_deescalation_warmth_floor() -> f32 {
+    0.64
+}
+fn default_regulation_deescalated_max_intensity() -> f32 {
+    0.38
+}
+fn default_regulation_deescalated_motion_scale() -> f32 {
+    0.45
+}
+fn default_regulation_apology_max_intensity() -> f32 {
+    0.32
+}
+fn default_regulation_apology_motion_scale() -> f32 {
+    0.55
+}
+fn default_regulation_warning_max_intensity() -> f32 {
+    0.50
+}
+fn default_regulation_open_trust_threshold() -> f32 {
+    0.62
+}
+fn default_regulation_open_familiarity_threshold() -> f32 {
+    0.28
+}
+fn default_regulation_open_positive_intensity_scale() -> f32 {
+    1.08
+}
+fn default_regulation_open_positive_motion_scale() -> f32 {
+    1.05
+}
+fn default_affect_baseline_valence() -> f32 {
+    0.05
+}
+fn default_affect_baseline_arousal() -> f32 {
+    0.35
+}
+fn default_affect_baseline_calmness() -> f32 {
+    0.65
+}
+fn default_affect_baseline_engagement() -> f32 {
+    0.55
+}
+fn default_affect_baseline_fatigue() -> f32 {
+    0.05
+}
+fn default_affect_baseline_battery_stress() -> f32 {
+    0.0
+}
+fn default_affect_baseline_thermal_stress() -> f32 {
+    0.0
+}
+fn default_affect_baseline_sleepiness() -> f32 {
+    0.05
+}
+fn default_affect_baseline_interaction_load() -> f32 {
+    0.0
+}
+fn default_affect_baseline_trust() -> f32 {
+    0.55
+}
+fn default_affect_baseline_familiarity() -> f32 {
+    0.15
+}
+fn default_affect_homeostasis_rate() -> f32 {
+    0.08
+}
+fn default_affect_max_delta_per_turn() -> f32 {
+    0.18
+}
+fn default_affect_fatigue_per_turn() -> f32 {
+    0.015
+}
+fn default_affect_long_response_fatigue_delta() -> f32 {
+    0.025
+}
+fn default_affect_turn_appraisal_ttl() -> u64 {
+    45
+}
+fn default_affect_session_appraisal_ttl() -> u64 {
+    900
+}
+fn default_affect_relationship_appraisal_ttl() -> u64 {
+    7_776_000
+}
+fn default_affect_appraisal_half_life() -> u64 {
+    180
+}
+fn default_affect_relationship_appraisal_half_life() -> u64 {
+    604_800
+}
+fn default_affect_max_active_appraisal_events() -> usize {
+    64
+}
+fn default_affect_min_appraisal_confidence() -> f32 {
+    0.6
+}
+fn default_affect_max_persisted_evidence_chars() -> usize {
+    160
+}
+fn default_affect_relationship_preferences_max_items() -> usize {
+    24
+}
+fn default_affect_relationship_summary_max_signals() -> usize {
+    8
+}
+fn default_affect_relationship_profile_prune_after() -> u64 {
+    15_552_000
+}
+fn default_expression_default_style() -> String {
+    "gentle".to_string()
+}
+fn default_expression_max_intensity() -> f32 {
+    0.7
+}
+fn default_expression_max_motion_intensity() -> f32 {
+    0.45
+}
+fn default_expression_max_timeline_actions() -> usize {
+    8
+}
+fn default_expression_max_action_duration_ms() -> u32 {
+    2_500
+}
+fn default_expression_allowed_motion_actions() -> Vec<String> {
+    ["look_at_user", "small_nod", "small_bow"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+fn default_expression_external_plugin_timeout_ms() -> u64 {
+    750
+}
+fn default_expression_rate() -> f32 {
+    1.0
+}
+fn default_expression_energy() -> f32 {
+    0.5
+}
+fn default_expression_styles() -> BTreeMap<String, ExpressionStyleSection> {
+    [
+        (
+            "neutral".to_string(),
+            ExpressionStyleSection {
+                voice_profile: Some("default".to_string()),
+                rate: 1.0,
+                pitch_shift: 0.0,
+                energy: 0.5,
+                pause_bias: 0.0,
+            },
+        ),
+        (
+            "gentle".to_string(),
+            ExpressionStyleSection {
+                voice_profile: Some("default".to_string()),
+                rate: 0.95,
+                pitch_shift: 0.0,
+                energy: 0.42,
+                pause_bias: 0.12,
+            },
+        ),
+        (
+            "calm".to_string(),
+            ExpressionStyleSection {
+                voice_profile: Some("default".to_string()),
+                rate: 0.92,
+                pitch_shift: 0.0,
+                energy: 0.38,
+                pause_bias: 0.16,
+            },
+        ),
+        (
+            "cheerful".to_string(),
+            ExpressionStyleSection {
+                voice_profile: Some("default".to_string()),
+                rate: 1.04,
+                pitch_shift: 0.04,
+                energy: 0.62,
+                pause_bias: 0.0,
+            },
+        ),
+        (
+            "serious".to_string(),
+            ExpressionStyleSection {
+                voice_profile: Some("default".to_string()),
+                rate: 0.96,
+                pitch_shift: -0.02,
+                energy: 0.44,
+                pause_bias: 0.08,
+            },
+        ),
+    ]
+    .into()
 }
 fn default_stt_request_timeout() -> u64 {
     30
@@ -581,6 +1269,59 @@ fn default_gpt_sovits_overlap_length() -> u32 {
 }
 fn default_gpt_sovits_min_chunk_length() -> u32 {
     16
+}
+fn default_gpt_sovits_voice_provider_specific() -> BTreeMap<String, serde_json::Value> {
+    use serde_json::json;
+
+    BTreeMap::from([
+        ("gpt_weights_path".to_string(), json!("")),
+        ("sovits_weights_path".to_string(), json!("")),
+        ("aux_ref_audio_paths".to_string(), json!([])),
+        (
+            "prompt_language".to_string(),
+            json!(default_gpt_sovits_prompt_language()),
+        ),
+        (
+            "text_split_method".to_string(),
+            json!(default_gpt_sovits_text_split_method()),
+        ),
+        (
+            "batch_size".to_string(),
+            json!(default_gpt_sovits_batch_size()),
+        ),
+        (
+            "batch_threshold".to_string(),
+            json!(default_gpt_sovits_batch_threshold()),
+        ),
+        ("split_bucket".to_string(), json!(true)),
+        (
+            "speed_factor".to_string(),
+            json!(default_gpt_sovits_speed_factor()),
+        ),
+        (
+            "fragment_interval".to_string(),
+            json!(default_gpt_sovits_fragment_interval()),
+        ),
+        ("seed".to_string(), json!(default_gpt_sovits_seed())),
+        ("parallel_infer".to_string(), json!(true)),
+        (
+            "repetition_penalty".to_string(),
+            json!(default_gpt_sovits_repetition_penalty()),
+        ),
+        (
+            "sample_steps".to_string(),
+            json!(default_gpt_sovits_sample_steps()),
+        ),
+        ("super_sampling".to_string(), json!(false)),
+        (
+            "overlap_length".to_string(),
+            json!(default_gpt_sovits_overlap_length()),
+        ),
+        (
+            "min_chunk_length".to_string(),
+            json!(default_gpt_sovits_min_chunk_length()),
+        ),
+    ])
 }
 
 #[derive(Debug, Clone, Deserialize)]

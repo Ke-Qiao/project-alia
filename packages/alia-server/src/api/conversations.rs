@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::auth::AuthUser;
 use crate::entity::{chat_message, chat_session, conversation_event};
 use crate::error::{AppError, Result};
+use crate::expression::{ExpressionTrace, ExpressionTraceEvent, expression_traces_from_events};
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -44,6 +45,12 @@ pub struct AgentEvent {
 #[derive(Deserialize)]
 struct ListQuery {
     limit: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct TraceQuery {
+    limit: Option<u64>,
+    turn_id: Option<Uuid>,
 }
 
 async fn list_conversations(
@@ -126,6 +133,33 @@ async fn get_events(
     Ok(Json(events.into_iter().map(agent_event_response).collect()))
 }
 
+async fn get_expression_traces(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TraceQuery>,
+) -> Result<Json<Vec<ExpressionTrace>>> {
+    let _ = load_authorized_session(&state, &auth, id).await?;
+    let mut select = conversation_event::Entity::find()
+        .filter(conversation_event::Column::SessionId.eq(id))
+        .filter(conversation_event::Column::EventType.is_in(expression_trace_event_types()));
+    if let Some(turn_id) = query.turn_id {
+        select = select.filter(conversation_event::Column::TurnId.eq(turn_id));
+    }
+    let events = select
+        .order_by_asc(conversation_event::Column::CreatedAt)
+        .order_by_asc(conversation_event::Column::Sequence)
+        .limit(query.limit.unwrap_or(1000).min(5000))
+        .all(&state.db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .map(expression_trace_event)
+        .collect();
+
+    Ok(Json(expression_traces_from_events(events)))
+}
+
 async fn load_authorized_session(
     state: &AppState,
     auth: &AuthUser,
@@ -178,6 +212,28 @@ fn agent_event_response(event: conversation_event::Model) -> AgentEvent {
     }
 }
 
+fn expression_trace_event(event: conversation_event::Model) -> ExpressionTraceEvent {
+    ExpressionTraceEvent {
+        session_id: Some(event.session_id),
+        turn_id: event.turn_id,
+        sequence: event.sequence,
+        event_type: event.event_type,
+        actor: event.actor,
+        summary: event.summary,
+        payload: event.payload,
+        created_at: Some(event.created_at.to_rfc3339()),
+    }
+}
+
+fn expression_trace_event_types() -> [&'static str; 4] {
+    [
+        "affect_user_input",
+        "affect_state",
+        "expression_plan",
+        "tts_provider_adjustments",
+    ]
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/conversations", get(list_conversations))
@@ -187,4 +243,8 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/conversations/{id}/messages", get(get_messages))
         .route("/conversations/{id}/events", get(get_events))
+        .route(
+            "/conversations/{id}/expression-traces",
+            get(get_expression_traces),
+        )
 }

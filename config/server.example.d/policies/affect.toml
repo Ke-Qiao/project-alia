@@ -1,0 +1,49 @@
+[policies.affect]
+enabled = true
+
+# Baseline temperament and session/resource defaults. Valence is [-1, 1];
+# other axes are [0, 1].
+baseline_valence = 0.05
+baseline_arousal = 0.35
+baseline_calmness = 0.65
+baseline_engagement = 0.55
+baseline_fatigue = 0.05
+baseline_battery_stress = 0.0
+baseline_thermal_stress = 0.0
+baseline_sleepiness = 0.05
+baseline_interaction_load = 0.0
+baseline_trust = 0.55
+baseline_familiarity = 0.15
+
+# Per-turn state dynamics. Affect should color expression, not swing wildly
+# from one utterance.
+homeostasis_rate = 0.08
+max_delta_per_turn = 0.18
+fatigue_per_turn = 0.015
+long_response_fatigue_delta = 0.025
+
+# v0.3 appraisal event stack. Raw events become appraisal events first; the
+# affect snapshot is then reduced from non-expired weighted events.
+turn_appraisal_ttl_sec = 45
+session_appraisal_ttl_sec = 900
+relationship_appraisal_ttl_sec = 7776000
+appraisal_half_life_sec = 180
+relationship_appraisal_half_life_sec = 604800
+max_active_appraisal_events = 64
+min_appraisal_confidence = 0.6
+
+# User/relationship, device, and global events can provide continuity across
+# restarts. User/relationship evidence should stay privacy-minimal: runtime
+# stores typed deltas and a short summary, never raw transcript text.
+relationship_persistence_enabled = true
+prune_persisted_appraisals_on_startup = true
+persist_appraisal_evidence = true
+persist_relationship_evidence = false
+relationship_profile_enabled = true
+relationship_profile_user_visible = true
+relationship_profile_store_preferences = true
+relationship_profile_user_clearable = true
+relationship_preferences_max_items = 24
+relationship_summary_max_signals = 8
+relationship_profile_prune_after_sec = 15552000
+max_persisted_evidence_chars = 160

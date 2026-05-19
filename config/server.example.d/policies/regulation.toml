@@ -1,0 +1,38 @@
+[policies.regulation]
+enabled = true
+
+# Regulation converts internal affect/social state into a safe expressed stance.
+# Negative internal affect is acknowledged, but expression is capped so the
+# assistant de-escalates instead of mirroring user frustration.
+max_negative_expression = 0.15
+max_expressed_arousal = 0.72
+default_max_intensity = 0.70
+
+# Low trust should sound careful and warm, not overly animated.
+low_trust_threshold = 0.40
+low_trust_warmth_floor = 0.62
+low_trust_max_intensity = 0.36
+low_trust_motion_scale = 0.45
+
+# Fatigue/resource pressure should conserve energy.
+fatigue_threshold = 0.62
+fatigue_max_intensity = 0.34
+fatigue_motion_scale = 0.35
+
+# Frustration/high arousal should be de-escalated.
+deescalate_arousal_threshold = 0.65
+deescalated_arousal = 0.42
+deescalation_warmth_floor = 0.64
+deescalated_max_intensity = 0.38
+deescalated_motion_scale = 0.45
+
+# Dialogue-act specific caps.
+apology_max_intensity = 0.32
+apology_motion_scale = 0.55
+warning_max_intensity = 0.50
+
+# Familiar, positive relationships can be a little more open.
+open_trust_threshold = 0.62
+open_familiarity_threshold = 0.28
+open_positive_intensity_scale = 1.08
+open_positive_motion_scale = 1.05

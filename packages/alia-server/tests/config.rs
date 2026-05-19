@@ -76,7 +76,37 @@ fn parses_split_example_config() {
         config.providers.gpt_sovits.endpoint,
         "http://localhost:9880/tts"
     );
+    assert_eq!(config.providers.gpt_sovits.max_speed_factor, 1.15);
+    assert_eq!(config.providers.gpt_sovits.max_pitch_shift_semitones, 2.0);
+    let default_voice = config.profiles.default_voice_profile();
+    assert_eq!(default_voice.language, "zh");
+    assert!(default_voice.provider_specific.contains_key("speed_factor"));
     assert_eq!(config.policies.conversation.max_context_messages, 20);
+    assert!(config.policies.affect.enabled);
+    assert_eq!(config.policies.affect.baseline_arousal, 0.35);
+    assert_eq!(config.policies.affect.baseline_trust, 0.55);
+    assert_eq!(config.policies.affect.session_appraisal_ttl_sec, 900);
+    assert_eq!(
+        config.policies.affect.relationship_appraisal_ttl_sec,
+        7_776_000
+    );
+    assert!(config.policies.affect.relationship_persistence_enabled);
+    assert!(!config.policies.affect.persist_relationship_evidence);
+    assert!(config.policies.affect.relationship_profile_enabled);
+    assert_eq!(config.policies.affect.max_active_appraisal_events, 64);
+    assert!(config.policies.regulation.enabled);
+    assert_eq!(config.policies.regulation.max_negative_expression, 0.15);
+    assert!(config.policies.expression.enabled);
+    assert_eq!(config.policies.expression.default_style, "gentle");
+    assert!(config.profiles.expression_styles.contains_key("gentle"));
+    assert_eq!(
+        config
+            .profiles
+            .expression_styles
+            .get("cheerful")
+            .and_then(|style| style.voice_profile.as_deref()),
+        Some("default")
+    );
     assert!(config.policies.tools.indexed_search_enabled);
     assert_eq!(config.policies.tools.indexed_search_min_similarity, 0.3);
     assert!(
@@ -92,5 +122,12 @@ fn parses_split_example_config() {
             .cache_policy
             .dynamic_query_keywords
             .contains(&"latest".to_string())
+    );
+    assert!(config.resources.appraisal_lexicons.contains_key("zh"));
+    assert!(config.resources.appraisal_lexicons.contains_key("en"));
+    assert!(
+        config.resources.appraisal_lexicons["zh"]
+            .support_need
+            .contains(&"焦虑".to_string())
     );
 }

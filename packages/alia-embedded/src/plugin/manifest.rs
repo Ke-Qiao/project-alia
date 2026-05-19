@@ -77,6 +77,19 @@ pub struct PluginCapabilities {
     pub network: bool,
     #[serde(default)]
     pub usb: bool,
+    /// Expression actions this plugin can execute, such as `small_nod`.
+    ///
+    /// These names are advertised to the server as
+    /// `expression.action.<name>` capabilities. The server treats motion
+    /// support as unavailable unless the action is explicitly declared here.
+    #[serde(default)]
+    pub expression_actions: Vec<String>,
+    /// Runtime expression state claims advertised to the server.
+    ///
+    /// Supported values are intentionally small and conservative:
+    /// `ready`, `busy`, `thermal_limit`, and `battery_saver`.
+    #[serde(default)]
+    pub expression_state: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

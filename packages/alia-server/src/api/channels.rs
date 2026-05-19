@@ -111,6 +111,7 @@ async fn restart_channel(
         major_llm: Some(state.modules.major_llm.clone()),
         cache: Some(state.modules.cache.clone()),
         tools: Some(state.modules.tools.clone()),
+        expression: Some(state.modules.expression.clone()),
     };
 
     if let Err(error) = channel.init(&ctx).await {

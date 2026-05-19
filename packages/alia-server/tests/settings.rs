@@ -25,6 +25,99 @@ async fn memory_backend_schema_matches_runtime_backends() {
 }
 
 #[tokio::test]
+async fn expression_policy_settings_are_registered() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
+    let settings = SettingsRegistry::new();
+    settings.seed_from_config(&config).await;
+
+    assert!(
+        settings
+            .get_entry("core.policies.expression.enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.expression.default_style")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.providers.gpt_sovits.max_speed_factor")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.providers.gpt_sovits.max_pitch_shift_semitones")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.baseline_valence")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.baseline_trust")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.session_appraisal_ttl_sec")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.relationship_appraisal_ttl_sec")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.min_appraisal_confidence")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.relationship_persistence_enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.affect.persist_relationship_evidence")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.regulation.enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.regulation.max_negative_expression")
+            .await
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn core_services_are_not_exposed_as_replaceable_module_slots() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();

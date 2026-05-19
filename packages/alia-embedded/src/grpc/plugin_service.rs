@@ -111,6 +111,7 @@ impl PluginManagerTrait for PluginManagerService {
                 plugin_type: s.plugin_type,
                 state: plugin_state_to_proto(s.state) as i32,
                 description: s.description,
+                capabilities: s.capabilities,
             })
             .collect();
 

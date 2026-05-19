@@ -29,16 +29,26 @@ use crate::providers::adapter::{
     AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
     ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryConversationIngest,
     MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput, SemanticCacheCandidate,
-    ToolDefinition,
+    ToolDefinition, TtsRequest,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{bool_setting, f32_setting, u32_setting, u64_setting, usize_setting};
 
 mod debug;
+mod dialogue_policy;
 pub mod streaming;
 pub mod tools;
 mod turn;
+use crate::expression::orchestrator::{
+    ExpressionExecutionPhase, cancel_expression_execution, execute_expression_plan,
+    execute_expression_plan_phase, negotiate_expression_capabilities,
+};
+use crate::expression::{
+    AffectAssistantResponse, AffectUserInput, ExpressionDeviceContext, ExpressionInput,
+    ExpressionPlan, ExpressionSafetyContext, ExpressionUserState,
+};
 use debug::*;
+use dialogue_policy::DialoguePolicyInput;
 use streaming::*;
 use tools::*;
 use turn::*;
@@ -62,6 +72,7 @@ struct TextResult {
     /// Persist this interaction after downstream delivery if the caller deferred
     /// history/cache writes to avoid storing interrupted assistant output.
     pending_persistence: Option<PendingTextPersistence>,
+    expression_plan: Option<ExpressionPlan>,
 }
 
 #[derive(Debug, Clone)]
@@ -431,6 +442,18 @@ async fn process_event(
                     log_channel_delivery_failure(channel.as_ref(), error).await;
                 }
             }
+            if let Some(plan) = &result.expression_plan {
+                execute_expression_and_trace(
+                    channel.as_ref(),
+                    &target,
+                    plan,
+                    None,
+                    debug_output,
+                    &channel_id,
+                    &user_id,
+                )
+                .await;
+            }
 
             Ok(())
         }
@@ -469,6 +492,16 @@ async fn process_event(
                         );
                         tracing::debug!(error = ?error, "stop playback failure details");
                     }
+                    let expression_cancel =
+                        cancel_expression_execution(channel.as_ref(), &target, &reason).await;
+                    debug_component_text(
+                        debug_output,
+                        "expression",
+                        "cancel",
+                        &serde_json::to_string(&expression_cancel)
+                            .unwrap_or_else(|_| expression_cancel.status),
+                        Some((&channel_id, &user_id)),
+                    );
                 }
             } else {
                 tracing::debug!(
@@ -591,6 +624,19 @@ async fn process_event(
                 }
             }
 
+            if let Some(plan) = &result.expression_plan {
+                execute_expression_and_trace(
+                    channel.as_ref(),
+                    &target,
+                    plan,
+                    Some(ExpressionExecutionPhase::PreSpeech),
+                    debug_output,
+                    &channel_id,
+                    &user_id,
+                )
+                .await;
+            }
+
             if channel.capabilities().voice_output && !result.audio_streamed {
                 deliver_tts_audio(
                     modules,
@@ -599,8 +645,26 @@ async fn process_event(
                     &channel_id,
                     &user_id,
                     &result.text,
+                    result
+                        .expression_plan
+                        .as_ref()
+                        .and_then(|plan| plan.speech.as_ref()),
+                    result.expression_plan.as_ref(),
                     debug_output,
                     Some(&turn),
+                )
+                .await;
+            }
+
+            if let Some(plan) = &result.expression_plan {
+                execute_expression_and_trace(
+                    channel.as_ref(),
+                    &target,
+                    plan,
+                    Some(ExpressionExecutionPhase::PostSpeech),
+                    debug_output,
+                    &channel_id,
+                    &user_id,
                 )
                 .await;
             }
@@ -728,6 +792,7 @@ async fn process_text(
             conversation_config.max_context_messages.max(1) as u64,
         )
         .await?;
+    let prior_message_count = history.len();
     let mut trace = AgentTrace::new(session_id);
     trace
         .record(
@@ -744,6 +809,7 @@ async fn process_text(
             }),
         )
         .await;
+    observe_user_affect_for_turn(modules, &mut trace, channel_id, user_id, text).await;
 
     // 2. Check exact cache first (never streamed). Only entries with explicit
     // safe-direct metadata can bypass the LLM.
@@ -785,6 +851,17 @@ async fn process_text(
                     persist_text_interaction(modules, pending.clone(), memory_config, event_bus)
                         .await;
                 }
+                observe_assistant_affect_for_turn(
+                    modules,
+                    &mut trace,
+                    channel_id,
+                    user_id,
+                    &response_text,
+                    "cache",
+                    false,
+                    false,
+                )
+                .await;
                 trace
                     .record(
                         modules,
@@ -801,11 +878,29 @@ async fn process_text(
                     )
                     .await;
                 return Ok(TextResult {
-                    text: response_text,
+                    text: response_text.clone(),
                     streamed: false,
                     audio_streamed: false,
                     interrupted: false,
                     pending_persistence: defer_persistence.then_some(pending),
+                    expression_plan: Some(
+                        plan_expression_for_response(
+                            modules,
+                            &mut trace,
+                            channel,
+                            channel_id,
+                            user_id,
+                            &response_text,
+                            "cache",
+                            false,
+                            false,
+                            true,
+                            text,
+                            prior_message_count,
+                            memory_context_used,
+                        )
+                        .await,
+                    ),
                 });
             }
             tracing::debug!(query = text, "cache candidate ignored by safety policy");
@@ -886,6 +981,17 @@ async fn process_text(
             if !defer_persistence {
                 persist_text_interaction(modules, pending.clone(), memory_config, event_bus).await;
             }
+            observe_assistant_affect_for_turn(
+                modules,
+                &mut trace,
+                channel_id,
+                user_id,
+                &response_text,
+                "cache",
+                false,
+                false,
+            )
+            .await;
             trace
                 .record(
                     modules,
@@ -904,11 +1010,29 @@ async fn process_text(
                 )
                 .await;
             return Ok(TextResult {
-                text: response_text,
+                text: response_text.clone(),
                 streamed: false,
                 audio_streamed: false,
                 interrupted: false,
                 pending_persistence: defer_persistence.then_some(pending),
+                expression_plan: Some(
+                    plan_expression_for_response(
+                        modules,
+                        &mut trace,
+                        channel,
+                        channel_id,
+                        user_id,
+                        &response_text,
+                        "cache",
+                        false,
+                        false,
+                        true,
+                        text,
+                        prior_message_count,
+                        memory_context_used,
+                    )
+                    .await,
+                ),
             });
         }
 
@@ -964,6 +1088,7 @@ async fn process_text(
                     audio_streamed: false,
                     interrupted: true,
                     pending_persistence: None,
+                    expression_plan: None,
                 });
             }
         };
@@ -1225,6 +1350,7 @@ async fn process_text(
             audio_streamed: outcome.audio_streamed,
             interrupted: true,
             pending_persistence: None,
+            expression_plan: None,
         });
     }
 
@@ -1309,6 +1435,17 @@ async fn process_text(
         )
         .await;
     }
+    observe_assistant_affect_for_turn(
+        modules,
+        &mut trace,
+        channel_id,
+        user_id,
+        &response,
+        route_for_cache,
+        used_tools,
+        response_was_fallback,
+    )
+    .await;
     trace
         .record(
             modules,
@@ -1325,6 +1462,22 @@ async fn process_text(
             }),
         )
         .await;
+    let expression_plan = plan_expression_for_response(
+        modules,
+        &mut trace,
+        channel,
+        channel_id,
+        user_id,
+        &response,
+        route_for_cache,
+        used_tools,
+        response_was_fallback,
+        false,
+        text,
+        prior_message_count,
+        memory_context_used,
+    )
+    .await;
 
     Ok(TextResult {
         text: response,
@@ -1332,7 +1485,288 @@ async fn process_text(
         audio_streamed,
         interrupted: false,
         pending_persistence: defer_persistence.then_some(pending_persistence),
+        expression_plan: Some(expression_plan),
     })
+}
+
+async fn observe_user_affect_for_turn(
+    modules: &ModuleRegistry,
+    trace: &mut AgentTrace,
+    channel_id: &str,
+    user_id: &str,
+    user_text: &str,
+) {
+    let observation = modules
+        .expression
+        .observe_user_input(AffectUserInput {
+            channel_id,
+            user_id,
+            user_text,
+        })
+        .await;
+    trace
+        .record(
+            modules,
+            "affect_user_input",
+            "affect",
+            Some("User input adjusted affect state".to_string()),
+            serde_json::json!({
+                "affect": observation.snapshot.affect,
+                "social": observation.snapshot.social,
+                "resource": observation.snapshot.resource,
+                "dominant_causes": observation.snapshot.dominant_causes,
+                "appraisals": observation.appraisals,
+                "active_event_count": observation.active_event_count,
+            }),
+        )
+        .await;
+}
+
+async fn observe_assistant_affect_for_turn(
+    modules: &ModuleRegistry,
+    trace: &mut AgentTrace,
+    channel_id: &str,
+    user_id: &str,
+    response: &str,
+    route: &str,
+    used_tools: bool,
+    response_was_fallback: bool,
+) {
+    let observation = modules
+        .expression
+        .observe_assistant_response(AffectAssistantResponse {
+            channel_id,
+            user_id,
+            response_text: response,
+            route,
+            used_tools,
+            response_was_fallback,
+        })
+        .await;
+    trace
+        .record(
+            modules,
+            "affect_state",
+            "affect",
+            Some("Assistant response adjusted affect state".to_string()),
+            serde_json::json!({
+                "affect": observation.snapshot.affect,
+                "social": observation.snapshot.social,
+                "resource": observation.snapshot.resource,
+                "dominant_causes": observation.snapshot.dominant_causes,
+                "appraisals": observation.appraisals,
+                "active_event_count": observation.active_event_count,
+                "route": route,
+                "used_tools": used_tools,
+                "response_was_fallback": response_was_fallback,
+            }),
+        )
+        .await;
+}
+
+async fn plan_expression_for_response(
+    modules: &ModuleRegistry,
+    trace: &mut AgentTrace,
+    channel: &dyn ChannelAdapter,
+    channel_id: &str,
+    user_id: &str,
+    response: &str,
+    route: &str,
+    used_tools: bool,
+    response_was_fallback: bool,
+    cache_hit: bool,
+    user_text: &str,
+    prior_message_count: usize,
+    memory_context_used: bool,
+) -> ExpressionPlan {
+    let capabilities = channel.capabilities();
+    let expression_capabilities = if capabilities.hardware_control {
+        Some(negotiate_expression_capabilities(channel).await)
+    } else {
+        None
+    };
+    let affect = modules
+        .expression
+        .affect_snapshot(channel_id, user_id)
+        .await;
+    let dialogue_policy_input = DialoguePolicyInput {
+        route,
+        used_tools,
+        response_was_fallback,
+        cache_hit,
+        user_text,
+        memory_context_used,
+    };
+    let dialogue_policy = dialogue_policy::decide(
+        dialogue_policy_input.clone(),
+        modules.expression.dialogue_policy(),
+    );
+    let conversation_context =
+        dialogue_policy.conversation_context(&dialogue_policy_input, prior_message_count);
+    let constraints = dialogue_policy.constraints();
+    let dialogue_act = dialogue_policy.dialogue_act.clone();
+    let content_tone = dialogue_policy.content_tone.clone();
+    let user_state = expression_user_state_from_affect(&affect);
+    let device_context = expression_device_context(&capabilities, expression_capabilities.as_ref());
+    let safety_context = expression_safety_context(
+        &capabilities,
+        &content_tone,
+        expression_capabilities.as_ref(),
+    );
+    let expression_input = ExpressionInput {
+        response_text: response.to_string(),
+        route: Some(route.to_string()),
+        channel_id: channel_id.to_string(),
+        user_id: user_id.to_string(),
+        dialogue_act: dialogue_act.clone(),
+        content_tone: content_tone.clone(),
+        user_state: user_state.clone(),
+        device_context: device_context.clone(),
+        safety_context: safety_context.clone(),
+        conversation_context: conversation_context.clone(),
+        constraints: constraints.clone(),
+        voice_output: capabilities.voice_output,
+        hardware_control: capabilities.hardware_control,
+        expression_capabilities: expression_capabilities.clone(),
+    };
+    let plan = modules.expression.plan(expression_input.clone()).await;
+    trace
+        .record(
+            modules,
+            "expression_plan",
+            "expression",
+            Some(plan.intent.clone()),
+            serde_json::json!({
+                "plan_id": plan.id,
+                "intent": plan.intent,
+                "social_function": plan.social_function,
+                "style": plan.style,
+                "intensity": plan.intensity,
+                "stance": plan.stance,
+                "input": expression_input,
+                "plan": plan,
+                "timeline_actions": plan.timeline.len(),
+                "route": route,
+                "dialogue_act": dialogue_act,
+                "content_tone": content_tone,
+                "conversation_context": conversation_context,
+                "constraints": constraints,
+                "user_state": user_state,
+                "device_context": device_context,
+                "safety_context": safety_context,
+                "affect": affect.affect,
+                "social": affect.social,
+                "resource": affect.resource,
+                "dominant_causes": affect.dominant_causes,
+                "expression_capabilities": expression_capabilities,
+            }),
+        )
+        .await;
+    if let Some(speech) = plan.speech.as_ref() {
+        let request = TtsRequest::with_speech(response, speech);
+        let adjustments = modules.tts.provider_adjustments(&request).await;
+        trace
+            .record(
+                modules,
+                "tts_provider_adjustments",
+                "tts",
+                Some("TTS provider expression adjustments".to_string()),
+                serde_json::json!({
+                    "plan_id": plan.id,
+                    "request": request,
+                    "adjustments": adjustments,
+                }),
+            )
+            .await;
+    }
+    plan
+}
+
+fn expression_user_state_from_affect(
+    affect: &crate::expression::AffectSnapshot,
+) -> ExpressionUserState {
+    ExpressionUserState {
+        frustration: ((-affect.affect.valence).max(0.0)
+            + (affect.affect.arousal - 0.55).max(0.0) * 0.5)
+            .clamp(0.0, 1.0),
+        engagement: affect.social.engagement.clamp(0.0, 1.0),
+    }
+}
+
+fn expression_device_context(
+    capabilities: &crate::channels::adapter::ChannelCapabilities,
+    expression_capabilities: Option<&crate::expression::ExpressionCapabilitySnapshot>,
+) -> ExpressionDeviceContext {
+    let mut context = ExpressionDeviceContext {
+        supports_motion: capabilities.hardware_control,
+        supports_face: capabilities.rich_messages,
+        supports_light: false,
+        supports_haptics: false,
+        battery_level: None,
+        battery_saver: false,
+        thermal_limit: false,
+    };
+    if let Some(expression_capabilities) = expression_capabilities {
+        context.supports_motion &= expression_capabilities
+            .current_state
+            .motion_adapter_registered
+            || expression_capabilities
+                .capabilities
+                .values()
+                .any(|capability| capability.supported);
+        context.battery_saver = expression_capabilities.current_state.battery_saver;
+        context.thermal_limit = expression_capabilities.current_state.thermal_limit;
+        context.battery_level = expression_capabilities.current_state.battery_level;
+    }
+    context
+}
+
+fn expression_safety_context(
+    capabilities: &crate::channels::adapter::ChannelCapabilities,
+    content_tone: &str,
+    expression_capabilities: Option<&crate::expression::ExpressionCapabilitySnapshot>,
+) -> ExpressionSafetyContext {
+    ExpressionSafetyContext {
+        motion_allowed: capabilities.hardware_control,
+        active_task_serious: matches!(content_tone, "serious"),
+        minimal_expression: false,
+        night_mode: false,
+        volume_limit: None,
+        max_expression_intensity: None,
+        max_motion_intensity: expression_capabilities
+            .and_then(|snapshot| {
+                snapshot
+                    .capabilities
+                    .values()
+                    .filter_map(|capability| capability.max_intensity)
+                    .min_by(|left, right| left.total_cmp(right))
+            })
+            .map(|limit| limit.clamp(0.0, 1.0)),
+    }
+}
+
+async fn execute_expression_and_trace(
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    plan: &ExpressionPlan,
+    phase: Option<ExpressionExecutionPhase>,
+    debug_output: bool,
+    channel_id: &str,
+    user_id: &str,
+) {
+    let execution = match phase {
+        Some(phase) => execute_expression_plan_phase(channel, target, plan, phase).await,
+        None => execute_expression_plan(channel, target, plan).await,
+    };
+    debug_component_text(
+        debug_output,
+        "expression",
+        phase
+            .map(ExpressionExecutionPhase::label)
+            .unwrap_or("execution"),
+        &serde_json::to_string(&execution).unwrap_or_else(|_| execution.status),
+        Some((channel_id, user_id)),
+    );
 }
 
 fn build_llm_messages(

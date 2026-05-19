@@ -1,0 +1,11 @@
+[policies.expression]
+enabled = true
+auto_motion_enabled = true
+default_style = "gentle"
+max_expression_intensity = 0.7
+max_motion_intensity = 0.45
+max_timeline_actions = 8
+max_action_duration_ms = 2500
+allowed_motion_actions = ["look_at_user", "small_nod", "small_bow"]
+external_plugin_timeout_ms = 750
+night_mode_minimal_expression = false

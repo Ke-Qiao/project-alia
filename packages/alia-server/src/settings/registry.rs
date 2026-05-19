@@ -405,6 +405,75 @@ impl SettingsRegistry {
                 schema("GPT-SoVITS Stream Idle Timeout", "number", false),
             ),
             (
+                "core.providers.gpt_sovits.min_speed_factor",
+                json!(config.providers.gpt_sovits.min_speed_factor),
+                schema("GPT-SoVITS Min Speed Factor", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_speed_factor",
+                json!(config.providers.gpt_sovits.max_speed_factor),
+                schema("GPT-SoVITS Max Speed Factor", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.min_temperature",
+                json!(config.providers.gpt_sovits.min_temperature),
+                schema("GPT-SoVITS Min Temperature", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_temperature",
+                json!(config.providers.gpt_sovits.max_temperature),
+                schema("GPT-SoVITS Max Temperature", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.min_top_p",
+                json!(config.providers.gpt_sovits.min_top_p),
+                schema("GPT-SoVITS Min Top P", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_top_p",
+                json!(config.providers.gpt_sovits.max_top_p),
+                schema("GPT-SoVITS Max Top P", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.min_repetition_penalty",
+                json!(config.providers.gpt_sovits.min_repetition_penalty),
+                schema("GPT-SoVITS Min Repetition Penalty", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_repetition_penalty",
+                json!(config.providers.gpt_sovits.max_repetition_penalty),
+                schema("GPT-SoVITS Max Repetition Penalty", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.min_fragment_interval",
+                json!(config.providers.gpt_sovits.min_fragment_interval),
+                schema("GPT-SoVITS Min Fragment Interval", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_fragment_interval",
+                json!(config.providers.gpt_sovits.max_fragment_interval),
+                schema("GPT-SoVITS Max Fragment Interval", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.max_pitch_shift_semitones",
+                json!(config.providers.gpt_sovits.max_pitch_shift_semitones),
+                schema("GPT-SoVITS Max Pitch Shift Semitones", "number", false),
+            ),
+            (
+                "core.providers.gpt_sovits.sample_rate_pitch_fallback_enabled",
+                json!(
+                    config
+                        .providers
+                        .gpt_sovits
+                        .sample_rate_pitch_fallback_enabled
+                ),
+                schema(
+                    "Enable GPT-SoVITS Sample-Rate Pitch Fallback",
+                    "bool",
+                    false,
+                ),
+            ),
+            (
                 "core.providers.mem0.base_url",
                 json!(config.providers.mem0.base_url),
                 schema("Mem0 Base URL", "string", true),
@@ -439,6 +508,221 @@ impl SettingsRegistry {
                 "core.policies.routing.major_llm_enabled",
                 json!(config.policies.routing.major_llm_enabled),
                 schema("Enable Major LLM Routing", "bool", true),
+            ),
+            (
+                "core.policies.affect.enabled",
+                json!(config.policies.affect.enabled),
+                schema("Enable Affect Runtime", "bool", true),
+            ),
+            (
+                "core.policies.affect.baseline_valence",
+                json!(config.policies.affect.baseline_valence),
+                schema("Affect Baseline Valence", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_arousal",
+                json!(config.policies.affect.baseline_arousal),
+                schema("Affect Baseline Arousal", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_calmness",
+                json!(config.policies.affect.baseline_calmness),
+                schema("Affect Baseline Calmness", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_engagement",
+                json!(config.policies.affect.baseline_engagement),
+                schema("Social Baseline Engagement", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_fatigue",
+                json!(config.policies.affect.baseline_fatigue),
+                schema("Resource Baseline Fatigue", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_battery_stress",
+                json!(config.policies.affect.baseline_battery_stress),
+                schema("Resource Baseline Battery Stress", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_thermal_stress",
+                json!(config.policies.affect.baseline_thermal_stress),
+                schema("Resource Baseline Thermal Stress", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_sleepiness",
+                json!(config.policies.affect.baseline_sleepiness),
+                schema("Resource Baseline Sleepiness", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_interaction_load",
+                json!(config.policies.affect.baseline_interaction_load),
+                schema("Resource Baseline Interaction Load", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_trust",
+                json!(config.policies.affect.baseline_trust),
+                schema("Social Baseline Trust", "number", true),
+            ),
+            (
+                "core.policies.affect.baseline_familiarity",
+                json!(config.policies.affect.baseline_familiarity),
+                schema("Social Baseline Familiarity", "number", true),
+            ),
+            (
+                "core.policies.affect.homeostasis_rate",
+                json!(config.policies.affect.homeostasis_rate),
+                schema("Affect Homeostasis Rate", "number", true),
+            ),
+            (
+                "core.policies.affect.max_delta_per_turn",
+                json!(config.policies.affect.max_delta_per_turn),
+                schema("Affect Max Delta Per Turn", "number", true),
+            ),
+            (
+                "core.policies.affect.fatigue_per_turn",
+                json!(config.policies.affect.fatigue_per_turn),
+                schema("Affect Fatigue Per Turn", "number", true),
+            ),
+            (
+                "core.policies.affect.long_response_fatigue_delta",
+                json!(config.policies.affect.long_response_fatigue_delta),
+                schema("Affect Long Response Fatigue Delta", "number", true),
+            ),
+            (
+                "core.policies.affect.turn_appraisal_ttl_sec",
+                json!(config.policies.affect.turn_appraisal_ttl_sec),
+                schema("Affect Turn Appraisal TTL", "number", true),
+            ),
+            (
+                "core.policies.affect.session_appraisal_ttl_sec",
+                json!(config.policies.affect.session_appraisal_ttl_sec),
+                schema("Affect Session Appraisal TTL", "number", true),
+            ),
+            (
+                "core.policies.affect.relationship_appraisal_ttl_sec",
+                json!(config.policies.affect.relationship_appraisal_ttl_sec),
+                schema("Relationship Appraisal TTL", "number", true),
+            ),
+            (
+                "core.policies.affect.appraisal_half_life_sec",
+                json!(config.policies.affect.appraisal_half_life_sec),
+                schema("Affect Appraisal Half-Life", "number", true),
+            ),
+            (
+                "core.policies.affect.relationship_appraisal_half_life_sec",
+                json!(config.policies.affect.relationship_appraisal_half_life_sec),
+                schema("Relationship Appraisal Half-Life", "number", true),
+            ),
+            (
+                "core.policies.affect.max_active_appraisal_events",
+                json!(config.policies.affect.max_active_appraisal_events),
+                schema("Affect Max Active Appraisal Events", "number", true),
+            ),
+            (
+                "core.policies.affect.min_appraisal_confidence",
+                json!(config.policies.affect.min_appraisal_confidence),
+                schema("Affect Min Appraisal Confidence", "number", true),
+            ),
+            (
+                "core.policies.affect.relationship_persistence_enabled",
+                json!(config.policies.affect.relationship_persistence_enabled),
+                schema("Persist Relationship Appraisals", "bool", true),
+            ),
+            (
+                "core.policies.affect.prune_persisted_appraisals_on_startup",
+                json!(config.policies.affect.prune_persisted_appraisals_on_startup),
+                schema("Prune Persisted Appraisals On Startup", "bool", true),
+            ),
+            (
+                "core.policies.affect.persist_appraisal_evidence",
+                json!(config.policies.affect.persist_appraisal_evidence),
+                schema("Persist Appraisal Evidence", "bool", true),
+            ),
+            (
+                "core.policies.affect.persist_relationship_evidence",
+                json!(config.policies.affect.persist_relationship_evidence),
+                schema("Persist Relationship Evidence", "bool", true),
+            ),
+            (
+                "core.policies.affect.max_persisted_evidence_chars",
+                json!(config.policies.affect.max_persisted_evidence_chars),
+                schema("Max Persisted Evidence Characters", "number", true),
+            ),
+            (
+                "core.policies.regulation.enabled",
+                json!(config.policies.regulation.enabled),
+                schema("Enable Expression Regulation", "bool", true),
+            ),
+            (
+                "core.policies.regulation.max_negative_expression",
+                json!(config.policies.regulation.max_negative_expression),
+                schema("Max Negative Expression", "number", true),
+            ),
+            (
+                "core.policies.regulation.low_trust_threshold",
+                json!(config.policies.regulation.low_trust_threshold),
+                schema("Low Trust Threshold", "number", true),
+            ),
+            (
+                "core.policies.regulation.fatigue_threshold",
+                json!(config.policies.regulation.fatigue_threshold),
+                schema("Fatigue Regulation Threshold", "number", true),
+            ),
+            (
+                "core.policies.regulation.deescalated_max_intensity",
+                json!(config.policies.regulation.deescalated_max_intensity),
+                schema("De-escalated Max Intensity", "number", true),
+            ),
+            (
+                "core.policies.regulation.open_trust_threshold",
+                json!(config.policies.regulation.open_trust_threshold),
+                schema("Open Expression Trust Threshold", "number", true),
+            ),
+            (
+                "core.policies.expression.enabled",
+                json!(config.policies.expression.enabled),
+                schema("Enable Expression Runtime", "bool", true),
+            ),
+            (
+                "core.policies.expression.auto_motion_enabled",
+                json!(config.policies.expression.auto_motion_enabled),
+                schema("Enable Automatic Expression Motion", "bool", true),
+            ),
+            (
+                "core.policies.expression.default_style",
+                json!(config.policies.expression.default_style),
+                schema("Default Expression Style", "string", true),
+            ),
+            (
+                "core.policies.expression.max_expression_intensity",
+                json!(config.policies.expression.max_expression_intensity),
+                schema("Max Expression Intensity", "number", true),
+            ),
+            (
+                "core.policies.expression.max_motion_intensity",
+                json!(config.policies.expression.max_motion_intensity),
+                schema("Max Expression Motion Intensity", "number", true),
+            ),
+            (
+                "core.policies.expression.max_timeline_actions",
+                json!(config.policies.expression.max_timeline_actions),
+                schema("Max Expression Timeline Actions", "number", true),
+            ),
+            (
+                "core.policies.expression.max_action_duration_ms",
+                json!(config.policies.expression.max_action_duration_ms),
+                schema("Max Expression Action Duration", "number", true),
+            ),
+            (
+                "core.policies.expression.allowed_motion_actions",
+                json!(config.policies.expression.allowed_motion_actions),
+                schema("Allowed Expression Motion Actions", "string[]", true),
+            ),
+            (
+                "core.policies.expression.external_plugin_timeout_ms",
+                json!(config.policies.expression.external_plugin_timeout_ms),
+                schema("External Expression Plugin Timeout", "number", true),
             ),
             (
                 "core.policies.conversation.streaming_enabled",
@@ -567,38 +851,62 @@ impl SettingsRegistry {
                 schema("Voice Model Name", "string", false),
             ),
             (
-                "core.profiles.voice.default.gpt_weights_path",
-                json!(config.profiles.default_voice_profile().gpt_weights_path),
+                "core.profiles.voice.default.reference_voice",
+                json!(config.profiles.default_voice_profile().reference_voice),
+                schema("Reference Voice", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.style_prompt",
+                json!(config.profiles.default_voice_profile().style_prompt),
+                schema("Style Prompt", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.language",
+                json!(config.profiles.default_voice_profile().language),
+                schema("Voice Language", "string", false),
+            ),
+            (
+                "core.profiles.voice.default.provider_specific.gpt_weights_path",
+                json!(
+                    config
+                        .profiles
+                        .default_voice_profile()
+                        .provider_specific
+                        .get("gpt_weights_path")
+                ),
                 schema("GPT Weights Path", "string", false),
             ),
             (
-                "core.profiles.voice.default.sovits_weights_path",
-                json!(config.profiles.default_voice_profile().sovits_weights_path),
+                "core.profiles.voice.default.provider_specific.sovits_weights_path",
+                json!(
+                    config
+                        .profiles
+                        .default_voice_profile()
+                        .provider_specific
+                        .get("sovits_weights_path")
+                ),
                 schema("SoVITS Weights Path", "string", false),
             ),
             (
-                "core.profiles.voice.default.ref_audio_path",
-                json!(config.profiles.default_voice_profile().ref_audio_path),
-                schema("Reference Audio Path", "string", false),
-            ),
-            (
-                "core.profiles.voice.default.prompt_text",
-                json!(config.profiles.default_voice_profile().prompt_text),
-                schema("Reference Prompt Text", "string", false),
-            ),
-            (
-                "core.profiles.voice.default.text_lang",
-                json!(config.profiles.default_voice_profile().text_lang),
-                schema("Target Text Language", "string", false),
-            ),
-            (
-                "core.profiles.voice.default.prompt_lang",
-                json!(config.profiles.default_voice_profile().prompt_lang),
+                "core.profiles.voice.default.provider_specific.prompt_language",
+                json!(
+                    config
+                        .profiles
+                        .default_voice_profile()
+                        .provider_specific
+                        .get("prompt_language")
+                ),
                 schema("Reference Prompt Language", "string", false),
             ),
             (
-                "core.profiles.voice.default.speed_factor",
-                json!(config.profiles.default_voice_profile().speed_factor),
+                "core.profiles.voice.default.provider_specific.speed_factor",
+                json!(
+                    config
+                        .profiles
+                        .default_voice_profile()
+                        .provider_specific
+                        .get("speed_factor")
+                ),
                 schema("Voice Speed", "number", false),
             ),
             // Provider selection. Core registries/state machines are fixed

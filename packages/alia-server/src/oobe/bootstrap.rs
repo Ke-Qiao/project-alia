@@ -81,6 +81,18 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/policies/cache.toml"),
     ),
     (
+        "policies/affect.toml",
+        include_str!("../../../../config/server.example.d/policies/affect.toml"),
+    ),
+    (
+        "policies/regulation.toml",
+        include_str!("../../../../config/server.example.d/policies/regulation.toml"),
+    ),
+    (
+        "policies/expression.toml",
+        include_str!("../../../../config/server.example.d/policies/expression.toml"),
+    ),
+    (
         "policies/insights.toml",
         include_str!("../../../../config/server.example.d/policies/insights.toml"),
     ),
@@ -101,12 +113,24 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/profiles/voice.default.toml"),
     ),
     (
+        "profiles/expression_styles.toml",
+        include_str!("../../../../config/server.example.d/profiles/expression_styles.toml"),
+    ),
+    (
         "resources/skills.toml",
         include_str!("../../../../config/server.example.d/resources/skills.toml"),
     ),
     (
         "resources/cache_policy.toml",
         include_str!("../../../../config/server.example.d/resources/cache_policy.toml"),
+    ),
+    (
+        "resources/appraisal_lexicons/en.toml",
+        include_str!("../../../../config/server.example.d/resources/appraisal_lexicons/en.toml"),
+    ),
+    (
+        "resources/appraisal_lexicons/zh.toml",
+        include_str!("../../../../config/server.example.d/resources/appraisal_lexicons/zh.toml"),
     ),
 ];
 

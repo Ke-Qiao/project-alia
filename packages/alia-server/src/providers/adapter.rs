@@ -6,6 +6,7 @@ use futures::Stream;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::expression::{ProsodyControls, SpeechExpression};
 use crate::module::ModuleLifecycle;
 
 // ========== Common types ==========
@@ -114,16 +115,334 @@ pub trait SttAdapter: ModuleLifecycle {
 
 // ========== TTS Adapter ==========
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsRequest {
+    /// Text to synthesize.
+    pub text: String,
+    /// Provider-neutral expression style, such as `gentle`, `calm`, or
+    /// `cheerful`.
+    ///
+    /// Providers may map this to a native style ID, reference voice, prompt,
+    /// embedding, or ignore it when unsupported.
+    pub style: Option<String>,
+    /// Normalized expressive strength in the `[0, 1]` range.
+    pub intensity: f32,
+    /// Runtime voice profile ID, resolved by the active provider.
+    ///
+    /// This is an opaque profile name at the adapter boundary; provider-specific
+    /// profile fields must stay inside the concrete adapter implementation.
+    pub voice_profile: Option<String>,
+    /// Provider-neutral prosody controls. Concrete adapters translate these
+    /// normalized axes to native parameters and report unsupported/clamped
+    /// fields through `provider_adjustments`.
+    pub prosody: ProsodyControls,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsProviderAdjustment {
+    /// Adapter/provider that adjusted the request.
+    pub provider: String,
+    /// Stable path in `TtsRequest`, for example `speech.prosody.pitch_shift`.
+    pub path: String,
+    pub from: serde_json::Value,
+    pub to: serde_json::Value,
+    /// Machine-readable reason suitable for debug traces.
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsCapabilities {
+    pub provider: String,
+    #[serde(default)]
+    pub supports_style: bool,
+    #[serde(default)]
+    pub supports_style_embedding: bool,
+    #[serde(default)]
+    pub supports_reference_voice: bool,
+    #[serde(default)]
+    pub supports_pitch: bool,
+    #[serde(default)]
+    pub supports_rate: bool,
+    #[serde(default)]
+    pub supports_energy: bool,
+    #[serde(default)]
+    pub supports_pause: bool,
+    #[serde(default)]
+    pub supports_streaming_prosody: bool,
+    #[serde(default)]
+    pub prosody_limits: TtsProsodyLimits,
+}
+
+impl TtsCapabilities {
+    pub fn minimal(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            supports_style: false,
+            supports_style_embedding: false,
+            supports_reference_voice: false,
+            supports_pitch: false,
+            supports_rate: false,
+            supports_energy: false,
+            supports_pause: false,
+            supports_streaming_prosody: false,
+            prosody_limits: TtsProsodyLimits::default(),
+        }
+    }
+
+    pub fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
+        let mut adjustments = Vec::new();
+        if request.style.is_some() && !self.supports_style {
+            adjustments.push(tts_adjustment(
+                &self.provider,
+                "speech.style",
+                serde_json::json!(request.style),
+                serde_json::Value::Null,
+                "provider_style_control_unavailable",
+            ));
+        }
+        if request.voice_profile.is_some() && !self.supports_reference_voice {
+            adjustments.push(tts_adjustment(
+                &self.provider,
+                "speech.voice_profile",
+                serde_json::json!(request.voice_profile),
+                serde_json::Value::Null,
+                "provider_reference_voice_unavailable",
+            ));
+        }
+        adjustments.extend(prosody_capability_adjustments(self, request));
+        adjustments
+    }
+}
+
+fn prosody_capability_adjustments(
+    capabilities: &TtsCapabilities,
+    request: &TtsRequest,
+) -> Vec<TtsProviderAdjustment> {
+    let mut adjustments = Vec::new();
+    let prosody = request.prosody;
+    if !capabilities.supports_rate && (prosody.rate - 1.0).abs() > f32::EPSILON {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.rate",
+            serde_json::json!(prosody.rate),
+            serde_json::json!(1.0),
+            "provider_rate_control_unavailable",
+        ));
+    }
+    if !capabilities.supports_pitch && prosody.pitch_shift.abs() > f32::EPSILON {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.pitch_shift",
+            serde_json::json!(prosody.pitch_shift),
+            serde_json::json!(0.0),
+            "provider_pitch_control_unavailable",
+        ));
+    }
+    if !capabilities.supports_energy && (prosody.energy - 0.5).abs() > f32::EPSILON {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.energy",
+            serde_json::json!(prosody.energy),
+            serde_json::json!(0.5),
+            "provider_energy_control_unavailable",
+        ));
+    }
+    if !capabilities.supports_pause && prosody.pause_bias.abs() > f32::EPSILON {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.pause_bias",
+            serde_json::json!(prosody.pause_bias),
+            serde_json::json!(0.0),
+            "provider_pause_control_unavailable",
+        ));
+    }
+    adjustments
+}
+
+fn tts_adjustment(
+    provider: &str,
+    path: &str,
+    from: serde_json::Value,
+    to: serde_json::Value,
+    reason: &str,
+) -> TtsProviderAdjustment {
+    TtsProviderAdjustment {
+        provider: provider.to_string(),
+        path: path.to_string(),
+        from,
+        to,
+        reason: reason.to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TtsProsodyLimits {
+    pub min_rate: f32,
+    pub max_rate: f32,
+    pub min_pitch_shift: f32,
+    pub max_pitch_shift: f32,
+    pub min_energy: f32,
+    pub max_energy: f32,
+    pub min_pause_bias: f32,
+    pub max_pause_bias: f32,
+}
+
+impl Default for TtsProsodyLimits {
+    fn default() -> Self {
+        Self {
+            min_rate: 1.0,
+            max_rate: 1.0,
+            min_pitch_shift: 0.0,
+            max_pitch_shift: 0.0,
+            min_energy: 0.5,
+            max_energy: 0.5,
+            min_pause_bias: 0.0,
+            max_pause_bias: 0.0,
+        }
+    }
+}
+
+impl TtsRequest {
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: None,
+            intensity: 0.0,
+            voice_profile: None,
+            prosody: ProsodyControls::default(),
+        }
+    }
+
+    pub fn with_speech(text: impl Into<String>, speech: &SpeechExpression) -> Self {
+        Self {
+            text: text.into(),
+            style: Some(speech.style.clone()),
+            intensity: speech.intensity,
+            voice_profile: speech.voice_profile.clone(),
+            prosody: speech.prosody,
+        }
+    }
+}
+
 #[async_trait]
 pub trait TtsAdapter: ModuleLifecycle {
     /// Synthesize complete audio
     async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>>;
+
+    /// Synthesize complete audio with expression metadata.
+    ///
+    /// This is the provider-neutral expression/TTS ABI. New TTS plugins should
+    /// implement this method and map `style`, `intensity`, `voice_profile`, and
+    /// `prosody` to their own native controls. The default implementation keeps
+    /// old/simple adapters working by ignoring expression metadata.
+    async fn synthesize_request(&self, request: &TtsRequest) -> anyhow::Result<Vec<u8>> {
+        self.synthesize(&request.text).await
+    }
 
     /// Streaming synthesis
     async fn synthesize_stream(
         &self,
         text: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>>;
+
+    /// Streaming synthesis with expression metadata.
+    ///
+    /// Streaming adapters should preserve the same request semantics as
+    /// `synthesize_request`.
+    async fn synthesize_stream_request(
+        &self,
+        request: &TtsRequest,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
+        self.synthesize_stream(&request.text).await
+    }
+
+    /// Report provider-specific request degradations before synthesis.
+    ///
+    /// This lets pipelines trace provider limits without teaching the
+    /// expression system about a concrete backend. For example, GPT-SoVITS can
+    /// report that pitch control was dropped, while another provider may report
+    /// unsupported pause control or a native rate clamp.
+    async fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
+        self.tts_capabilities().await.provider_adjustments(request)
+    }
+
+    /// Provider-neutral capability/limits negotiation for expression prosody.
+    async fn tts_capabilities(&self) -> TtsCapabilities {
+        TtsCapabilities::minimal(self.name())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expression::{ProsodyControls, SpeechExpression};
+
+    #[test]
+    fn tts_request_preserves_provider_neutral_expression_metadata() {
+        let speech = SpeechExpression {
+            style: "gentle".to_string(),
+            intensity: 0.42,
+            voice_profile: Some("alia_default".to_string()),
+            prosody: ProsodyControls {
+                rate: 0.92,
+                pitch_shift: 0.03,
+                energy: 0.38,
+                pause_bias: 0.15,
+            },
+        };
+
+        let request = TtsRequest::with_speech("你好", &speech);
+
+        assert_eq!(request.text, "你好");
+        assert_eq!(request.style.as_deref(), Some("gentle"));
+        assert_eq!(request.intensity, 0.42);
+        assert_eq!(request.voice_profile.as_deref(), Some("alia_default"));
+        assert_eq!(request.prosody.rate, 0.92);
+        assert_eq!(request.prosody.pitch_shift, 0.03);
+        assert_eq!(request.prosody.energy, 0.38);
+        assert_eq!(request.prosody.pause_bias, 0.15);
+    }
+
+    #[test]
+    fn tts_capabilities_default_to_no_expression_controls() {
+        let capabilities = TtsCapabilities::minimal("plain");
+
+        assert_eq!(capabilities.provider, "plain");
+        assert!(!capabilities.supports_pitch);
+        assert_eq!(capabilities.prosody_limits.max_rate, 1.0);
+    }
+
+    #[test]
+    fn minimal_tts_capabilities_report_expression_degradations() {
+        let capabilities = TtsCapabilities::minimal("plain");
+        let request = TtsRequest::with_speech(
+            "你好",
+            &SpeechExpression {
+                style: "cheerful".to_string(),
+                intensity: 0.8,
+                voice_profile: Some("alia_default".to_string()),
+                prosody: ProsodyControls {
+                    rate: 1.1,
+                    pitch_shift: 0.2,
+                    energy: 0.8,
+                    pause_bias: 0.3,
+                },
+            },
+        );
+
+        let reasons = capabilities
+            .provider_adjustments(&request)
+            .into_iter()
+            .map(|adjustment| adjustment.reason)
+            .collect::<Vec<_>>();
+
+        assert!(reasons.contains(&"provider_style_control_unavailable".to_string()));
+        assert!(reasons.contains(&"provider_reference_voice_unavailable".to_string()));
+        assert!(reasons.contains(&"provider_rate_control_unavailable".to_string()));
+        assert!(reasons.contains(&"provider_pitch_control_unavailable".to_string()));
+        assert!(reasons.contains(&"provider_energy_control_unavailable".to_string()));
+        assert!(reasons.contains(&"provider_pause_control_unavailable".to_string()));
+    }
 }
 
 // ========== Embedding Adapter ==========

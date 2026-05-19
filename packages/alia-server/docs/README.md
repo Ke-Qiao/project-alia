@@ -12,6 +12,8 @@ settings, automation, tools, skills, sensors, and user/session state.
   fragments, provider selection, runtime settings, and restart boundaries.
 - [Channels and sensors](channels-and-sensors.md) explains channel adapters,
   embedded gRPC integration, sensor mirroring, and channel actions.
+- [Expression runtime](expression-runtime.md) explains speech style planning,
+  multimodal expression plans, and channel expression actions.
 - [Runtime systems](runtime-systems.md) explains skills/tools, automation,
   memory, cache, insights, users, auth, and traceable agent history.
 

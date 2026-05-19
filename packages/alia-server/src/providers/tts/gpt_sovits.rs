@@ -15,13 +15,12 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::ServerConfig;
+use crate::config::{ExpressionStyleSection, ServerConfig, VoiceProfileSection};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::TtsAdapter;
-use crate::settings::values::{
-    bool_setting, f32_setting, i32_setting, optional_string_setting, string_setting,
-    string_vec_setting, u32_setting, u64_setting,
+use crate::providers::adapter::{
+    TtsAdapter, TtsCapabilities, TtsProsodyLimits, TtsProviderAdjustment, TtsRequest,
 };
+use crate::settings::values::{bool_setting, f32_setting, string_setting, u64_setting};
 
 /// GPT-SoVITS synthesis request
 #[derive(Debug, Serialize)]
@@ -68,6 +67,47 @@ pub struct GptSovitsTts {
 #[derive(Debug, Clone)]
 struct SovitsConfig {
     endpoint: String,
+    default_voice: String,
+    default_profile: SovitsVoiceProfile,
+    voice_profiles: BTreeMap<String, SovitsVoiceProfile>,
+    expression_styles: BTreeMap<String, ExpressionStyleSection>,
+    prosody_limits: SovitsProsodyLimits,
+    sample_rate_pitch_fallback_enabled: bool,
+    request_timeout_sec: u64,
+    stream_idle_timeout_sec: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SovitsProsodyLimits {
+    min_speed_factor: f32,
+    max_speed_factor: f32,
+    min_temperature: f32,
+    max_temperature: f32,
+    min_top_p: f32,
+    max_top_p: f32,
+    min_repetition_penalty: f32,
+    max_repetition_penalty: f32,
+    min_fragment_interval: f32,
+    max_fragment_interval: f32,
+    max_pitch_shift_semitones: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SovitsProsodyMapping {
+    top_k: u32,
+    top_p: f32,
+    temperature: f32,
+    speed_factor: f32,
+    fragment_interval: f32,
+    repetition_penalty: f32,
+    pitch_factor: f32,
+    pitch_shift_semitones: f32,
+    requested_pitch_shift_semitones: f32,
+    sample_rate_pitch_fallback_enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SovitsVoiceProfile {
     model_name: Option<String>,
     gpt_weights_path: Option<String>,
     sovits_weights_path: Option<String>,
@@ -89,8 +129,6 @@ struct SovitsConfig {
     super_sampling: bool,
     overlap_length: u32,
     min_chunk_length: u32,
-    request_timeout_sec: u64,
-    stream_idle_timeout_sec: u64,
 }
 
 impl GptSovitsTts {
@@ -99,27 +137,12 @@ impl GptSovitsTts {
             client: Client::new(),
             config: Arc::new(RwLock::new(SovitsConfig {
                 endpoint: "http://localhost:9880".to_string(),
-                model_name: None,
-                gpt_weights_path: None,
-                sovits_weights_path: None,
-                ref_audio_path: None,
-                aux_ref_audio_paths: Vec::new(),
-                prompt_text: None,
-                text_lang: "zh".to_string(),
-                prompt_lang: "zh".to_string(),
-                text_split_method: "cut5".to_string(),
-                batch_size: 1,
-                batch_threshold: 0.75,
-                split_bucket: true,
-                speed_factor: 1.0,
-                fragment_interval: 0.3,
-                seed: -1,
-                parallel_infer: true,
-                repetition_penalty: 1.35,
-                sample_steps: 32,
-                super_sampling: false,
-                overlap_length: 2,
-                min_chunk_length: 16,
+                default_voice: "default".to_string(),
+                default_profile: SovitsVoiceProfile::default(),
+                voice_profiles: BTreeMap::new(),
+                expression_styles: BTreeMap::new(),
+                prosody_limits: SovitsProsodyLimits::default(),
+                sample_rate_pitch_fallback_enabled: false,
                 request_timeout_sec: 60,
                 stream_idle_timeout_sec: 10,
             })),
@@ -133,34 +156,370 @@ impl Default for GptSovitsTts {
     }
 }
 
+impl Default for SovitsVoiceProfile {
+    fn default() -> Self {
+        Self::from_voice_config(&VoiceProfileSection::default())
+    }
+}
+
+impl Default for SovitsProsodyLimits {
+    fn default() -> Self {
+        Self {
+            min_speed_factor: 0.85,
+            max_speed_factor: 1.15,
+            min_temperature: 0.75,
+            max_temperature: 1.25,
+            min_top_p: 0.82,
+            max_top_p: 1.0,
+            min_repetition_penalty: 1.05,
+            max_repetition_penalty: 1.55,
+            min_fragment_interval: 0.12,
+            max_fragment_interval: 0.75,
+            max_pitch_shift_semitones: 2.0,
+        }
+    }
+}
+
+impl SovitsProsodyLimits {
+    fn from_provider_config(config: &crate::config::GptSovitsProviderSection) -> Self {
+        Self {
+            min_speed_factor: config.min_speed_factor.max(0.1),
+            max_speed_factor: config
+                .max_speed_factor
+                .max(config.min_speed_factor.max(0.1)),
+            min_temperature: config.min_temperature.max(0.0),
+            max_temperature: config.max_temperature.max(config.min_temperature.max(0.0)),
+            min_top_p: config.min_top_p.clamp(0.0, 1.0),
+            max_top_p: config
+                .max_top_p
+                .clamp(config.min_top_p.clamp(0.0, 1.0), 1.0),
+            min_repetition_penalty: config.min_repetition_penalty.max(0.0),
+            max_repetition_penalty: config
+                .max_repetition_penalty
+                .max(config.min_repetition_penalty.max(0.0)),
+            min_fragment_interval: config.min_fragment_interval.max(0.0),
+            max_fragment_interval: config
+                .max_fragment_interval
+                .max(config.min_fragment_interval.max(0.0)),
+            max_pitch_shift_semitones: config.max_pitch_shift_semitones.max(0.0).min(12.0),
+        }
+    }
+}
+
+impl SovitsProsodyMapping {
+    fn provider_adjustments(&self) -> Vec<TtsProviderAdjustment> {
+        if self.sample_rate_pitch_fallback_enabled
+            || self.requested_pitch_shift_semitones.abs() <= f32::EPSILON
+        {
+            return Vec::new();
+        }
+
+        vec![TtsProviderAdjustment {
+            provider: "gpt_sovits".to_string(),
+            path: "speech.prosody.pitch_shift".to_string(),
+            from: serde_json::json!(self.requested_pitch_shift_semitones),
+            to: serde_json::json!(self.pitch_shift_semitones),
+            reason: "provider_pitch_control_unavailable_sample_rate_fallback_disabled".to_string(),
+        }]
+    }
+}
+
+impl SovitsVoiceProfile {
+    fn from_voice_config(config: &VoiceProfileSection) -> Self {
+        let specific = &config.provider_specific;
+        Self {
+            model_name: non_empty(config.model_name.as_deref()),
+            gpt_weights_path: provider_string(specific, "gpt_weights_path"),
+            sovits_weights_path: provider_string(specific, "sovits_weights_path"),
+            ref_audio_path: non_empty(config.reference_voice.as_deref()),
+            aux_ref_audio_paths: provider_string_vec(specific, "aux_ref_audio_paths"),
+            prompt_text: non_empty(config.style_prompt.as_deref()),
+            text_lang: config.language.clone(),
+            prompt_lang: provider_string(specific, "prompt_language")
+                .unwrap_or_else(|| "zh".into()),
+            text_split_method: provider_string(specific, "text_split_method")
+                .unwrap_or_else(|| "cut5".into()),
+            batch_size: provider_u32(specific, "batch_size", 1),
+            batch_threshold: provider_f32(specific, "batch_threshold", 0.75),
+            split_bucket: provider_bool(specific, "split_bucket", true),
+            speed_factor: provider_f32(specific, "speed_factor", 1.0),
+            fragment_interval: provider_f32(specific, "fragment_interval", 0.3),
+            seed: provider_i32(specific, "seed", -1),
+            parallel_infer: provider_bool(specific, "parallel_infer", true),
+            repetition_penalty: provider_f32(specific, "repetition_penalty", 1.35),
+            sample_steps: provider_u32(specific, "sample_steps", 32),
+            super_sampling: provider_bool(specific, "super_sampling", false),
+            overlap_length: provider_u32(specific, "overlap_length", 2),
+            min_chunk_length: provider_u32(specific, "min_chunk_length", 16),
+        }
+    }
+}
+
+fn provider_string(values: &BTreeMap<String, serde_json::Value>, key: &str) -> Option<String> {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| non_empty(Some(value)))
+}
+
+fn provider_string_vec(values: &BTreeMap<String, serde_json::Value>, key: &str) -> Vec<String> {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|value| non_empty(Some(value)))
+        .collect()
+}
+
+fn provider_f32(values: &BTreeMap<String, serde_json::Value>, key: &str, default: f32) -> f32 {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_f64)
+        .map(|value| value as f32)
+        .unwrap_or(default)
+}
+
+fn provider_u32(values: &BTreeMap<String, serde_json::Value>, key: &str, default: u32) -> u32 {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn provider_i32(values: &BTreeMap<String, serde_json::Value>, key: &str, default: i32) -> i32 {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .unwrap_or(default)
+}
+
+fn provider_bool(values: &BTreeMap<String, serde_json::Value>, key: &str, default: bool) -> bool {
+    values
+        .get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(default)
+}
+
+fn apply_sovits_provider_specific_setting(
+    profile: &mut SovitsVoiceProfile,
+    field: &str,
+    value: &serde_json::Value,
+) {
+    match field {
+        "gpt_weights_path" => {
+            profile.gpt_weights_path = value.as_str().and_then(|v| non_empty(Some(v)))
+        }
+        "sovits_weights_path" => {
+            profile.sovits_weights_path = value.as_str().and_then(|v| non_empty(Some(v)))
+        }
+        "aux_ref_audio_paths" => {
+            profile.aux_ref_audio_paths = value
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .filter_map(|v| non_empty(Some(v)))
+                .collect();
+        }
+        "prompt_language" => {
+            if let Some(v) = value.as_str().and_then(|v| non_empty(Some(v))) {
+                profile.prompt_lang = v;
+            }
+        }
+        "text_split_method" => {
+            if let Some(v) = value.as_str().and_then(|v| non_empty(Some(v))) {
+                profile.text_split_method = v;
+            }
+        }
+        "batch_size" => {
+            if let Some(v) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
+                profile.batch_size = v;
+            }
+        }
+        "batch_threshold" => {
+            if let Some(v) = value.as_f64() {
+                profile.batch_threshold = v as f32;
+            }
+        }
+        "split_bucket" => {
+            if let Some(v) = value.as_bool() {
+                profile.split_bucket = v;
+            }
+        }
+        "speed_factor" => {
+            if let Some(v) = value.as_f64() {
+                profile.speed_factor = v as f32;
+            }
+        }
+        "fragment_interval" => {
+            if let Some(v) = value.as_f64() {
+                profile.fragment_interval = v as f32;
+            }
+        }
+        "seed" => {
+            if let Some(v) = value.as_i64().and_then(|v| i32::try_from(v).ok()) {
+                profile.seed = v;
+            }
+        }
+        "parallel_infer" => {
+            if let Some(v) = value.as_bool() {
+                profile.parallel_infer = v;
+            }
+        }
+        "repetition_penalty" => {
+            if let Some(v) = value.as_f64() {
+                profile.repetition_penalty = v as f32;
+            }
+        }
+        "sample_steps" => {
+            if let Some(v) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
+                profile.sample_steps = v;
+            }
+        }
+        "super_sampling" => {
+            if let Some(v) = value.as_bool() {
+                profile.super_sampling = v;
+            }
+        }
+        "overlap_length" => {
+            if let Some(v) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
+                profile.overlap_length = v;
+            }
+        }
+        "min_chunk_length" => {
+            if let Some(v) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
+                profile.min_chunk_length = v;
+            }
+        }
+        _ => {}
+    }
+}
+
 impl SovitsConfig {
-    fn request(&self, text: &str, streaming_mode: u8) -> SovitsRequest {
-        SovitsRequest {
-            text: text.to_string(),
-            text_lang: Some(self.text_lang.clone()),
-            ref_audio_path: self.ref_audio_path.clone(),
-            aux_ref_audio_paths: self.aux_ref_audio_paths.clone(),
-            prompt_text: self.prompt_text.clone(),
-            prompt_lang: Some(self.prompt_lang.clone()),
-            top_k: 15,
-            top_p: 1.0,
-            temperature: 1.0,
-            text_split_method: self.text_split_method.clone(),
-            batch_size: self.batch_size,
-            batch_threshold: self.batch_threshold,
-            split_bucket: self.split_bucket,
-            speed_factor: self.speed_factor,
-            fragment_interval: self.fragment_interval,
-            seed: self.seed,
-            parallel_infer: self.parallel_infer,
-            repetition_penalty: self.repetition_penalty,
-            sample_steps: self.sample_steps,
-            super_sampling: self.super_sampling,
+    fn request(
+        &self,
+        request: &TtsRequest,
+        streaming_mode: u8,
+    ) -> (SovitsRequest, SovitsProsodyMapping) {
+        let profile = self.profile_for_request(request);
+        let prosody = self.map_prosody(profile, request);
+        let sovits_request = SovitsRequest {
+            text: request.text.clone(),
+            text_lang: Some(profile.text_lang.clone()),
+            ref_audio_path: profile.ref_audio_path.clone(),
+            aux_ref_audio_paths: profile.aux_ref_audio_paths.clone(),
+            prompt_text: profile.prompt_text.clone(),
+            prompt_lang: Some(profile.prompt_lang.clone()),
+            top_k: prosody.top_k,
+            top_p: prosody.top_p,
+            temperature: prosody.temperature,
+            text_split_method: profile.text_split_method.clone(),
+            batch_size: profile.batch_size,
+            batch_threshold: profile.batch_threshold,
+            split_bucket: profile.split_bucket,
+            speed_factor: prosody.speed_factor,
+            fragment_interval: prosody.fragment_interval,
+            seed: profile.seed,
+            parallel_infer: profile.parallel_infer,
+            repetition_penalty: prosody.repetition_penalty,
+            sample_steps: profile.sample_steps,
+            super_sampling: profile.super_sampling,
             media_type: Some("wav"),
             streaming_mode: Some(streaming_mode),
-            overlap_length: self.overlap_length,
-            min_chunk_length: self.min_chunk_length,
+            overlap_length: profile.overlap_length,
+            min_chunk_length: profile.min_chunk_length,
+        };
+        (sovits_request, prosody)
+    }
+
+    fn map_prosody(
+        &self,
+        profile: &SovitsVoiceProfile,
+        request: &TtsRequest,
+    ) -> SovitsProsodyMapping {
+        let limits = self.prosody_limits;
+        let rate = request.prosody.rate.clamp(0.5, 2.0);
+        let energy = request.prosody.energy.clamp(0.0, 1.0);
+        let intensity = request.intensity.clamp(0.0, 1.0);
+        let pause_bias = request.prosody.pause_bias.clamp(-1.0, 1.0);
+        let energy_axis = (energy - 0.5) * 2.0;
+        let intensity_axis = (intensity - 0.35) * 1.5;
+
+        let speed_factor =
+            (profile.speed_factor * rate).clamp(limits.min_speed_factor, limits.max_speed_factor);
+        let temperature = (1.0 + energy_axis * 0.12 + intensity_axis * 0.06)
+            .clamp(limits.min_temperature, limits.max_temperature);
+        let top_p = (0.94 + energy_axis * 0.04 + intensity_axis * 0.025)
+            .clamp(limits.min_top_p, limits.max_top_p);
+        let repetition_penalty =
+            (profile.repetition_penalty - energy_axis * 0.05 - intensity_axis * 0.025)
+                .clamp(limits.min_repetition_penalty, limits.max_repetition_penalty);
+        let fragment_interval = (profile.fragment_interval + pause_bias * 0.22 - intensity * 0.04)
+            .clamp(limits.min_fragment_interval, limits.max_fragment_interval);
+        let top_k = (15.0 + energy_axis * 7.0 + intensity_axis * 3.0)
+            .round()
+            .clamp(5.0, 30.0) as u32;
+        let requested_pitch_shift_semitones =
+            request.prosody.pitch_shift.clamp(-1.0, 1.0) * limits.max_pitch_shift_semitones;
+        let pitch_shift_semitones = if self.sample_rate_pitch_fallback_enabled {
+            requested_pitch_shift_semitones
+        } else {
+            0.0
+        };
+        let pitch_factor = if self.sample_rate_pitch_fallback_enabled {
+            2.0_f32.powf(pitch_shift_semitones / 12.0)
+        } else {
+            1.0
+        };
+        if !self.sample_rate_pitch_fallback_enabled
+            && requested_pitch_shift_semitones.abs() > f32::EPSILON
+        {
+            tracing::debug!(
+                requested_pitch_shift_semitones,
+                "GPT-SoVITS pitch shift skipped because sample-rate fallback is disabled"
+            );
         }
+
+        SovitsProsodyMapping {
+            top_k,
+            top_p,
+            temperature,
+            speed_factor,
+            fragment_interval,
+            repetition_penalty,
+            pitch_factor,
+            pitch_shift_semitones,
+            requested_pitch_shift_semitones,
+            sample_rate_pitch_fallback_enabled: self.sample_rate_pitch_fallback_enabled,
+        }
+    }
+
+    fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
+        let profile = self.profile_for_request(request);
+        let prosody = self.map_prosody(profile, request);
+        prosody.provider_adjustments()
+    }
+
+    fn profile_for_request(&self, request: &TtsRequest) -> &SovitsVoiceProfile {
+        let voice_profile = request
+            .voice_profile
+            .as_deref()
+            .or_else(|| {
+                request
+                    .style
+                    .as_deref()
+                    .and_then(|style| self.expression_styles.get(style))
+                    .and_then(|style| style.voice_profile.as_deref())
+            })
+            .unwrap_or(&self.default_voice);
+
+        self.voice_profiles
+            .get(voice_profile)
+            .unwrap_or(&self.default_profile)
     }
 }
 
@@ -171,9 +530,95 @@ fn non_empty(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn apply_pitch_shift_to_wav(bytes: &mut [u8], prosody: SovitsProsodyMapping) {
+    if pitch_is_neutral(prosody.pitch_factor) {
+        return;
+    }
+    if let Some((from, to)) = rewrite_wav_sample_rate(bytes, prosody.pitch_factor) {
+        tracing::debug!(
+            pitch_shift_semitones = prosody.pitch_shift_semitones,
+            sample_rate_from = from,
+            sample_rate_to = to,
+            "applied bounded GPT-SoVITS pitch shift via WAV sample-rate header"
+        );
+    }
+}
+
+fn pitch_is_neutral(pitch_factor: f32) -> bool {
+    (pitch_factor - 1.0).abs() <= 0.001
+}
+
+fn rewrite_wav_sample_rate(bytes: &mut [u8], pitch_factor: f32) -> Option<(u32, u32)> {
+    if bytes.len() < 36 || pitch_is_neutral(pitch_factor) {
+        return None;
+    }
+    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return None;
+    }
+
+    let old_sample_rate = u32::from_le_bytes(bytes[24..28].try_into().ok()?);
+    if old_sample_rate == 0 {
+        return None;
+    }
+    let new_sample_rate = ((old_sample_rate as f32) * pitch_factor)
+        .round()
+        .clamp(1.0, u32::MAX as f32) as u32;
+    if new_sample_rate == old_sample_rate {
+        return None;
+    }
+    bytes[24..28].copy_from_slice(&new_sample_rate.to_le_bytes());
+
+    if bytes.len() >= 34 {
+        let block_align = u16::from_le_bytes(bytes[32..34].try_into().ok()?) as u32;
+        if block_align > 0 && bytes.len() >= 32 {
+            let byte_rate = new_sample_rate.saturating_mul(block_align);
+            bytes[28..32].copy_from_slice(&byte_rate.to_le_bytes());
+        }
+    }
+
+    Some((old_sample_rate, new_sample_rate))
+}
+
+#[derive(Debug)]
+struct StreamingWavPitchRewriter {
+    prosody: SovitsProsodyMapping,
+    pending: Vec<u8>,
+    complete: bool,
+}
+
+impl StreamingWavPitchRewriter {
+    fn new(prosody: SovitsProsodyMapping) -> Self {
+        Self {
+            prosody,
+            pending: Vec::new(),
+            complete: pitch_is_neutral(prosody.pitch_factor),
+        }
+    }
+
+    fn push(&mut self, chunk: Vec<u8>) -> Vec<u8> {
+        if self.complete {
+            return chunk;
+        }
+
+        self.pending.extend_from_slice(&chunk);
+        if self.pending.len() < 36 {
+            return Vec::new();
+        }
+
+        apply_pitch_shift_to_wav(&mut self.pending, self.prosody);
+        self.complete = true;
+        std::mem::take(&mut self.pending)
+    }
+
+    fn finish(&mut self) -> Vec<u8> {
+        self.complete = true;
+        std::mem::take(&mut self.pending)
+    }
+}
+
 async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> anyhow::Result<()> {
     let timeout = Duration::from_secs(config.request_timeout_sec.max(1));
-    if let Some(path) = &config.gpt_weights_path {
+    if let Some(path) = &config.default_profile.gpt_weights_path {
         set_remote_weights(
             client,
             &config.endpoint,
@@ -184,7 +629,7 @@ async fn configure_remote_weights(client: &Client, config: &SovitsConfig) -> any
         )
         .await?;
     }
-    if let Some(path) = &config.sovits_weights_path {
+    if let Some(path) = &config.default_profile.sovits_weights_path {
         set_remote_weights(
             client,
             &config.endpoint,
@@ -243,40 +688,26 @@ impl ModuleLifecycle for GptSovitsTts {
         let configured = {
             let mut config = self.config.write().await;
             config.endpoint = provider_config.endpoint.clone();
-            config.model_name = non_empty(voice_config.model_name.as_deref());
-            config.gpt_weights_path = non_empty(voice_config.gpt_weights_path.as_deref());
-            config.sovits_weights_path = non_empty(voice_config.sovits_weights_path.as_deref());
-            config.ref_audio_path = voice_config
-                .ref_audio_path
-                .as_ref()
-                .filter(|value| !value.trim().is_empty())
-                .cloned();
-            config.aux_ref_audio_paths = voice_config
-                .aux_ref_audio_paths
+            config.default_voice = server_config.profiles.default_voice.clone();
+            config.default_profile = SovitsVoiceProfile::from_voice_config(&voice_config);
+            config.voice_profiles = server_config
+                .profiles
+                .voice
                 .iter()
-                .filter(|value| !value.trim().is_empty())
-                .cloned()
+                .map(|(name, profile)| {
+                    (name.clone(), SovitsVoiceProfile::from_voice_config(profile))
+                })
                 .collect();
-            config.prompt_text = voice_config
-                .prompt_text
-                .as_ref()
-                .filter(|value| !value.trim().is_empty())
-                .cloned();
-            config.text_lang = voice_config.text_lang.clone();
-            config.prompt_lang = voice_config.prompt_lang.clone();
-            config.text_split_method = voice_config.text_split_method.clone();
-            config.batch_size = voice_config.batch_size;
-            config.batch_threshold = voice_config.batch_threshold;
-            config.split_bucket = voice_config.split_bucket;
-            config.speed_factor = voice_config.speed_factor;
-            config.fragment_interval = voice_config.fragment_interval;
-            config.seed = voice_config.seed;
-            config.parallel_infer = voice_config.parallel_infer;
-            config.repetition_penalty = voice_config.repetition_penalty;
-            config.sample_steps = voice_config.sample_steps;
-            config.super_sampling = voice_config.super_sampling;
-            config.overlap_length = voice_config.overlap_length;
-            config.min_chunk_length = voice_config.min_chunk_length;
+            let default_voice = config.default_voice.clone();
+            let default_profile = config.default_profile.clone();
+            config
+                .voice_profiles
+                .entry(default_voice)
+                .or_insert(default_profile);
+            config.expression_styles = server_config.profiles.expression_styles.clone();
+            config.prosody_limits = SovitsProsodyLimits::from_provider_config(provider_config);
+            config.sample_rate_pitch_fallback_enabled =
+                provider_config.sample_rate_pitch_fallback_enabled;
             config.request_timeout_sec = provider_config.request_timeout_sec;
             config.stream_idle_timeout_sec = provider_config.stream_idle_timeout_sec;
             config.clone()
@@ -285,15 +716,15 @@ impl ModuleLifecycle for GptSovitsTts {
         if let Err(error) = configure_remote_weights(&self.client, &configured).await {
             tracing::warn!(
                 error = %error,
-                endpoint = %configured.endpoint,
-                model = configured.model_name.as_deref().unwrap_or("unspecified"),
-                "GPT-SoVITS remote weight setup failed; continuing with the model already loaded by the TTS server"
+            endpoint = %configured.endpoint,
+            model = configured.default_profile.model_name.as_deref().unwrap_or("unspecified"),
+            "GPT-SoVITS remote weight setup failed; continuing with the model already loaded by the TTS server"
             );
         }
 
         tracing::info!(
             endpoint = %configured.endpoint,
-            model = configured.model_name.as_deref().unwrap_or("unspecified"),
+            model = configured.default_profile.model_name.as_deref().unwrap_or("unspecified"),
             "GPT-SoVITS TTS initialized"
         );
         Ok(())
@@ -345,115 +776,111 @@ impl ModuleLifecycle for GptSovitsTts {
                 config.stream_idle_timeout_sec = value;
                 applied.push("core.providers.gpt_sovits.stream_idle_timeout_sec".to_string());
             }
-
-            if let Some(value) =
-                optional_string_setting(updates, "core.profiles.voice.default.model_name")
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.min_speed_factor")
             {
-                config.model_name = value;
+                config.prosody_limits.min_speed_factor = value.max(0.1);
+                applied.push("core.providers.gpt_sovits.min_speed_factor".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.max_speed_factor")
+            {
+                config.prosody_limits.max_speed_factor =
+                    value.max(config.prosody_limits.min_speed_factor);
+                applied.push("core.providers.gpt_sovits.max_speed_factor".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.min_temperature") {
+                config.prosody_limits.min_temperature = value.max(0.0);
+                applied.push("core.providers.gpt_sovits.min_temperature".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.max_temperature") {
+                config.prosody_limits.max_temperature =
+                    value.max(config.prosody_limits.min_temperature);
+                applied.push("core.providers.gpt_sovits.max_temperature".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.min_top_p") {
+                config.prosody_limits.min_top_p = value.clamp(0.0, 1.0);
+                applied.push("core.providers.gpt_sovits.min_top_p".to_string());
+            }
+            if let Some(value) = f32_setting(updates, "core.providers.gpt_sovits.max_top_p") {
+                config.prosody_limits.max_top_p = value.clamp(config.prosody_limits.min_top_p, 1.0);
+                applied.push("core.providers.gpt_sovits.max_top_p".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.providers.gpt_sovits.min_repetition_penalty")
+            {
+                config.prosody_limits.min_repetition_penalty = value.max(0.0);
+                applied.push("core.providers.gpt_sovits.min_repetition_penalty".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.providers.gpt_sovits.max_repetition_penalty")
+            {
+                config.prosody_limits.max_repetition_penalty =
+                    value.max(config.prosody_limits.min_repetition_penalty);
+                applied.push("core.providers.gpt_sovits.max_repetition_penalty".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.providers.gpt_sovits.min_fragment_interval")
+            {
+                config.prosody_limits.min_fragment_interval = value.max(0.0);
+                applied.push("core.providers.gpt_sovits.min_fragment_interval".to_string());
+            }
+            if let Some(value) =
+                f32_setting(updates, "core.providers.gpt_sovits.max_fragment_interval")
+            {
+                config.prosody_limits.max_fragment_interval =
+                    value.max(config.prosody_limits.min_fragment_interval);
+                applied.push("core.providers.gpt_sovits.max_fragment_interval".to_string());
+            }
+            if let Some(value) = f32_setting(
+                updates,
+                "core.providers.gpt_sovits.max_pitch_shift_semitones",
+            ) {
+                config.prosody_limits.max_pitch_shift_semitones = value.clamp(0.0, 12.0);
+                applied.push("core.providers.gpt_sovits.max_pitch_shift_semitones".to_string());
+            }
+            if let Some(value) = bool_setting(
+                updates,
+                "core.providers.gpt_sovits.sample_rate_pitch_fallback_enabled",
+            ) {
+                config.sample_rate_pitch_fallback_enabled = value;
+                applied.push(
+                    "core.providers.gpt_sovits.sample_rate_pitch_fallback_enabled".to_string(),
+                );
+            }
+
+            if let Some(value) = string_setting(updates, "core.profiles.voice.default.model_name") {
+                config.default_profile.model_name = non_empty(Some(&value));
                 applied.push("core.profiles.voice.default.model_name".to_string());
             }
             if let Some(value) =
-                optional_string_setting(updates, "core.profiles.voice.default.gpt_weights_path")
+                string_setting(updates, "core.profiles.voice.default.reference_voice")
             {
-                config.gpt_weights_path = value;
-                applied.push("core.profiles.voice.default.gpt_weights_path".to_string());
+                config.default_profile.ref_audio_path = non_empty(Some(&value));
+                applied.push("core.profiles.voice.default.reference_voice".to_string());
             }
-            if let Some(value) =
-                optional_string_setting(updates, "core.profiles.voice.default.sovits_weights_path")
+            if let Some(value) = string_setting(updates, "core.profiles.voice.default.style_prompt")
             {
-                config.sovits_weights_path = value;
-                applied.push("core.profiles.voice.default.sovits_weights_path".to_string());
+                config.default_profile.prompt_text = non_empty(Some(&value));
+                applied.push("core.profiles.voice.default.style_prompt".to_string());
             }
-            if let Some(value) =
-                optional_string_setting(updates, "core.profiles.voice.default.ref_audio_path")
+            if let Some(value) = string_setting(updates, "core.profiles.voice.default.language") {
+                config.default_profile.text_lang = value;
+                applied.push("core.profiles.voice.default.language".to_string());
+            }
+            let provider_prefix = "core.profiles.voice.default.provider_specific.";
+            for (key, field, value) in updates.iter().filter_map(|(key, value)| {
+                key.strip_prefix(provider_prefix)
+                    .map(|field| (key, field, value))
+            }) {
+                apply_sovits_provider_specific_setting(&mut config.default_profile, field, value);
+                applied.push(key.clone());
+            }
+            if applied
+                .iter()
+                .any(|key| key.starts_with("core.profiles.voice.default."))
             {
-                config.ref_audio_path = value;
-                applied.push("core.profiles.voice.default.ref_audio_path".to_string());
-            }
-            if let Some(value) =
-                string_vec_setting(updates, "core.profiles.voice.default.aux_ref_audio_paths")
-            {
-                config.aux_ref_audio_paths = value;
-                applied.push("core.profiles.voice.default.aux_ref_audio_paths".to_string());
-            }
-            if let Some(value) =
-                optional_string_setting(updates, "core.profiles.voice.default.prompt_text")
-            {
-                config.prompt_text = value;
-                applied.push("core.profiles.voice.default.prompt_text".to_string());
-            }
-            if let Some(value) = string_setting(updates, "core.profiles.voice.default.text_lang") {
-                config.text_lang = value;
-                applied.push("core.profiles.voice.default.text_lang".to_string());
-            }
-            if let Some(value) = string_setting(updates, "core.profiles.voice.default.prompt_lang")
-            {
-                config.prompt_lang = value;
-                applied.push("core.profiles.voice.default.prompt_lang".to_string());
-            }
-            if let Some(value) =
-                string_setting(updates, "core.profiles.voice.default.text_split_method")
-            {
-                config.text_split_method = value;
-                applied.push("core.profiles.voice.default.text_split_method".to_string());
-            }
-            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.batch_size") {
-                config.batch_size = value;
-                applied.push("core.profiles.voice.default.batch_size".to_string());
-            }
-            if let Some(value) = f32_setting(updates, "core.profiles.voice.default.batch_threshold")
-            {
-                config.batch_threshold = value;
-                applied.push("core.profiles.voice.default.batch_threshold".to_string());
-            }
-            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.split_bucket") {
-                config.split_bucket = value;
-                applied.push("core.profiles.voice.default.split_bucket".to_string());
-            }
-            if let Some(value) = f32_setting(updates, "core.profiles.voice.default.speed_factor") {
-                config.speed_factor = value;
-                applied.push("core.profiles.voice.default.speed_factor".to_string());
-            }
-            if let Some(value) =
-                f32_setting(updates, "core.profiles.voice.default.fragment_interval")
-            {
-                config.fragment_interval = value;
-                applied.push("core.profiles.voice.default.fragment_interval".to_string());
-            }
-            if let Some(value) = i32_setting(updates, "core.profiles.voice.default.seed") {
-                config.seed = value;
-                applied.push("core.profiles.voice.default.seed".to_string());
-            }
-            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.parallel_infer")
-            {
-                config.parallel_infer = value;
-                applied.push("core.profiles.voice.default.parallel_infer".to_string());
-            }
-            if let Some(value) =
-                f32_setting(updates, "core.profiles.voice.default.repetition_penalty")
-            {
-                config.repetition_penalty = value;
-                applied.push("core.profiles.voice.default.repetition_penalty".to_string());
-            }
-            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.sample_steps") {
-                config.sample_steps = value;
-                applied.push("core.profiles.voice.default.sample_steps".to_string());
-            }
-            if let Some(value) = bool_setting(updates, "core.profiles.voice.default.super_sampling")
-            {
-                config.super_sampling = value;
-                applied.push("core.profiles.voice.default.super_sampling".to_string());
-            }
-            if let Some(value) = u32_setting(updates, "core.profiles.voice.default.overlap_length")
-            {
-                config.overlap_length = value;
-                applied.push("core.profiles.voice.default.overlap_length".to_string());
-            }
-            if let Some(value) =
-                u32_setting(updates, "core.profiles.voice.default.min_chunk_length")
-            {
-                config.min_chunk_length = value;
-                applied.push("core.profiles.voice.default.min_chunk_length".to_string());
+                let default_voice = config.default_voice.clone();
+                let default_profile = config.default_profile.clone();
+                config.voice_profiles.insert(default_voice, default_profile);
             }
 
             config.clone()
@@ -463,8 +890,8 @@ impl ModuleLifecycle for GptSovitsTts {
             matches!(
                 key.as_str(),
                 "core.providers.gpt_sovits.endpoint"
-                    | "core.profiles.voice.default.gpt_weights_path"
-                    | "core.profiles.voice.default.sovits_weights_path"
+                    | "core.profiles.voice.default.provider_specific.gpt_weights_path"
+                    | "core.profiles.voice.default.provider_specific.sovits_weights_path"
             )
         }) && let Err(error) = configure_remote_weights(&self.client, &configured).await
         {
@@ -485,9 +912,13 @@ impl ModuleLifecycle for GptSovitsTts {
 #[async_trait]
 impl TtsAdapter for GptSovitsTts {
     async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>> {
+        self.synthesize_request(&TtsRequest::plain(text)).await
+    }
+
+    async fn synthesize_request(&self, tts: &TtsRequest) -> anyhow::Result<Vec<u8>> {
         let config = self.config.read().await.clone();
 
-        let request = config.request(text, 0);
+        let (request, prosody) = config.request(tts, 0);
 
         let response = self
             .client
@@ -504,16 +935,26 @@ impl TtsAdapter for GptSovitsTts {
         }
 
         let audio_bytes = response.bytes().await?;
-        Ok(audio_bytes.to_vec())
+        let mut audio_bytes = audio_bytes.to_vec();
+        apply_pitch_shift_to_wav(&mut audio_bytes, prosody);
+        Ok(audio_bytes)
     }
 
     async fn synthesize_stream(
         &self,
         text: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
+        self.synthesize_stream_request(&TtsRequest::plain(text))
+            .await
+    }
+
+    async fn synthesize_stream_request(
+        &self,
+        tts: &TtsRequest,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
         let config = self.config.read().await.clone();
 
-        let request = config.request(text, 1);
+        let (request, prosody) = config.request(tts, 1);
 
         let response = self
             .client
@@ -532,17 +973,27 @@ impl TtsAdapter for GptSovitsTts {
         let idle_timeout = Duration::from_secs(config.stream_idle_timeout_sec.max(1));
         let stream = async_stream::stream! {
             let mut byte_stream = response.bytes_stream();
+            let mut pitch_rewriter = StreamingWavPitchRewriter::new(prosody);
 
             loop {
                 match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
                     Ok(Some(Ok(chunk))) => {
-                        yield Ok(chunk.to_vec());
+                        let rewritten = pitch_rewriter.push(chunk.to_vec());
+                        if !rewritten.is_empty() {
+                            yield Ok(rewritten);
+                        }
                     }
                     Ok(Some(Err(e))) => {
                         yield Err(anyhow::anyhow!("Stream error: {}", e));
                         break;
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        let tail = pitch_rewriter.finish();
+                        if !tail.is_empty() {
+                            yield Ok(tail);
+                        }
+                        break;
+                    }
                     Err(_) => {
                         yield Err(anyhow::anyhow!(
                             "GPT-SoVITS stream idle timeout after {}s",
@@ -555,5 +1006,248 @@ impl TtsAdapter for GptSovitsTts {
         };
 
         Ok(Box::pin(stream))
+    }
+
+    async fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
+        let config = self.config.read().await.clone();
+        let adjustments = config.provider_adjustments(request);
+        for adjustment in &adjustments {
+            tracing::info!(
+                provider = adjustment.provider,
+                path = adjustment.path,
+                reason = adjustment.reason,
+                from = %adjustment.from,
+                to = %adjustment.to,
+                "TTS provider degraded requested expression prosody"
+            );
+        }
+        adjustments
+    }
+
+    async fn tts_capabilities(&self) -> TtsCapabilities {
+        let config = self.config.read().await;
+        TtsCapabilities {
+            provider: "gpt_sovits".to_string(),
+            supports_style: true,
+            supports_style_embedding: false,
+            supports_reference_voice: true,
+            supports_pitch: config.sample_rate_pitch_fallback_enabled,
+            supports_rate: true,
+            supports_energy: true,
+            supports_pause: true,
+            supports_streaming_prosody: true,
+            prosody_limits: TtsProsodyLimits {
+                min_rate: config.prosody_limits.min_speed_factor,
+                max_rate: config.prosody_limits.max_speed_factor,
+                min_pitch_shift: if config.sample_rate_pitch_fallback_enabled {
+                    -1.0
+                } else {
+                    0.0
+                },
+                max_pitch_shift: if config.sample_rate_pitch_fallback_enabled {
+                    1.0
+                } else {
+                    0.0
+                },
+                min_energy: 0.0,
+                max_energy: 1.0,
+                min_pause_bias: -1.0,
+                max_pause_bias: 1.0,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expression::ProsodyControls;
+
+    #[test]
+    fn prosody_maps_to_sovits_generation_params_with_limits() {
+        let mut config = test_config();
+        config.prosody_limits.max_speed_factor = 1.1;
+        config.prosody_limits.max_pitch_shift_semitones = 2.0;
+        let request = TtsRequest {
+            text: "hello".to_string(),
+            style: Some("cheerful".to_string()),
+            intensity: 0.8,
+            voice_profile: None,
+            prosody: ProsodyControls {
+                rate: 1.4,
+                pitch_shift: 0.5,
+                energy: 0.9,
+                pause_bias: -0.3,
+            },
+        };
+
+        let (sovits, prosody) = config.request(&request, 0);
+
+        assert_eq!(sovits.speed_factor, 1.1);
+        assert!(sovits.temperature > 1.0);
+        assert!(sovits.top_p > 0.94);
+        assert!(sovits.repetition_penalty < config.default_profile.repetition_penalty);
+        assert!(sovits.fragment_interval < config.default_profile.fragment_interval);
+        assert_eq!(prosody.pitch_factor, 1.0);
+        assert_eq!(prosody.pitch_shift_semitones, 0.0);
+    }
+
+    #[test]
+    fn pitch_degradation_is_reported_as_provider_adjustment() {
+        let mut config = test_config();
+        config.prosody_limits.max_pitch_shift_semitones = 2.0;
+        let request = TtsRequest {
+            text: "hello".to_string(),
+            style: Some("cheerful".to_string()),
+            intensity: 0.8,
+            voice_profile: None,
+            prosody: ProsodyControls {
+                rate: 1.0,
+                pitch_shift: 0.5,
+                energy: 0.5,
+                pause_bias: 0.0,
+            },
+        };
+
+        let adjustments = config.provider_adjustments(&request);
+
+        assert_eq!(adjustments.len(), 1);
+        assert_eq!(
+            adjustments[0].reason,
+            "provider_pitch_control_unavailable_sample_rate_fallback_disabled"
+        );
+        assert_eq!(adjustments[0].path, "speech.prosody.pitch_shift");
+        assert_eq!(adjustments[0].from, serde_json::json!(1.0));
+        assert_eq!(adjustments[0].to, serde_json::json!(0.0));
+    }
+
+    #[test]
+    fn pitch_shift_mapping_requires_sample_rate_fallback_opt_in() {
+        let mut config = test_config();
+        config.sample_rate_pitch_fallback_enabled = true;
+        config.prosody_limits.max_pitch_shift_semitones = 2.0;
+        let request = TtsRequest {
+            text: "hello".to_string(),
+            style: Some("cheerful".to_string()),
+            intensity: 0.8,
+            voice_profile: None,
+            prosody: ProsodyControls {
+                rate: 1.0,
+                pitch_shift: 0.5,
+                energy: 0.5,
+                pause_bias: 0.0,
+            },
+        };
+
+        let (_sovits, prosody) = config.request(&request, 0);
+
+        assert!(prosody.pitch_factor > 1.0);
+        assert_eq!(prosody.pitch_shift_semitones, 1.0);
+    }
+
+    #[test]
+    fn pause_bias_expands_fragment_interval() {
+        let config = test_config();
+        let request = TtsRequest {
+            text: "hello".to_string(),
+            style: None,
+            intensity: 0.2,
+            voice_profile: None,
+            prosody: ProsodyControls {
+                rate: 1.0,
+                pitch_shift: 0.0,
+                energy: 0.4,
+                pause_bias: 0.8,
+            },
+        };
+
+        let (sovits, _prosody) = config.request(&request, 0);
+
+        assert!(sovits.fragment_interval > config.default_profile.fragment_interval);
+    }
+
+    #[test]
+    fn pitch_shift_rewrites_wav_sample_rate() {
+        let mut wav = minimal_wav_header(24_000);
+        let prosody = SovitsProsodyMapping {
+            top_k: 15,
+            top_p: 1.0,
+            temperature: 1.0,
+            speed_factor: 1.0,
+            fragment_interval: 0.3,
+            repetition_penalty: 1.35,
+            pitch_factor: 2.0,
+            pitch_shift_semitones: 12.0,
+            requested_pitch_shift_semitones: 12.0,
+            sample_rate_pitch_fallback_enabled: true,
+        };
+
+        apply_pitch_shift_to_wav(&mut wav, prosody);
+
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 48_000);
+        assert_eq!(u32::from_le_bytes(wav[28..32].try_into().unwrap()), 96_000);
+    }
+
+    #[test]
+    fn streaming_pitch_rewriter_buffers_until_wav_header_is_available() {
+        let wav = minimal_wav_header(24_000);
+        let prosody = SovitsProsodyMapping {
+            top_k: 15,
+            top_p: 1.0,
+            temperature: 1.0,
+            speed_factor: 1.0,
+            fragment_interval: 0.3,
+            repetition_penalty: 1.35,
+            pitch_factor: 2.0,
+            pitch_shift_semitones: 12.0,
+            requested_pitch_shift_semitones: 12.0,
+            sample_rate_pitch_fallback_enabled: true,
+        };
+        let mut rewriter = StreamingWavPitchRewriter::new(prosody);
+
+        assert!(rewriter.push(wav[..12].to_vec()).is_empty());
+        let rewritten = rewriter.push(wav[12..].to_vec());
+
+        assert!(!rewritten.is_empty());
+        assert_eq!(
+            u32::from_le_bytes(rewritten[24..28].try_into().unwrap()),
+            48_000
+        );
+    }
+
+    fn test_config() -> SovitsConfig {
+        SovitsConfig {
+            endpoint: "http://localhost:9880/tts".to_string(),
+            default_voice: "default".to_string(),
+            default_profile: SovitsVoiceProfile::default(),
+            voice_profiles: BTreeMap::new(),
+            expression_styles: BTreeMap::new(),
+            prosody_limits: SovitsProsodyLimits::default(),
+            sample_rate_pitch_fallback_enabled: false,
+            request_timeout_sec: 60,
+            stream_idle_timeout_sec: 10,
+        }
+    }
+
+    fn minimal_wav_header(sample_rate: u32) -> Vec<u8> {
+        let channels = 1u16;
+        let bits_per_sample = 16u16;
+        let block_align = channels * bits_per_sample / 8;
+        let byte_rate = sample_rate * block_align as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&36u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&channels.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&byte_rate.to_le_bytes());
+        wav.extend_from_slice(&block_align.to_le_bytes());
+        wav.extend_from_slice(&bits_per_sample.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&0u32.to_le_bytes());
+        wav
     }
 }

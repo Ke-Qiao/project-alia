@@ -11,6 +11,7 @@ use crate::channels::{ChannelAdapter, ChannelRegistry, PipelinePolicies, spawn_p
 use crate::config::MemorySection;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
+use crate::expression::ExpressionRuntime;
 use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
@@ -148,6 +149,7 @@ impl ServerBuilder {
             major_llm: None,
             cache: None,
             tools: None,
+            expression: None,
         };
 
         // Create provider adapters from config; core services are fixed below.
@@ -223,6 +225,13 @@ impl ServerBuilder {
 
         let mut tools =
             factory::create_tools_with_sensors(sensor_registry.clone(), channel_registry.clone());
+        let expression_runtime = Arc::new(ExpressionRuntime::from_config(&self.config));
+        if let Err(error) = expression_runtime.attach_db(self.db.clone()).await {
+            tracing::warn!(
+                error = ?error,
+                "expression persistence unavailable; expression state will run in memory only"
+            );
+        }
 
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
@@ -247,6 +256,7 @@ impl ServerBuilder {
             major_llm: None,
             cache: None,
             tools: None,
+            expression: Some(expression_runtime.clone()),
         };
 
         // Initialize remaining modules in dependency order
@@ -380,6 +390,7 @@ impl ServerBuilder {
             rule_engine: Arc::from(rule_engine),
             scheduler,
             tools: tools_arc,
+            expression: expression_runtime,
             extensions,
         };
 

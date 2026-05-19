@@ -1,0 +1,16 @@
+[resources.appraisal_lexicons.zh]
+positive_phrases = ["厉害", "真棒", "不错"]
+correction_or_failure = ["答错", "错了", "错误", "不对", "连这个都", "又错"]
+sarcasm_markers = ["呵呵", "真行", "真有你的", "可以啊", "厉害啊"]
+support_need = ["难过", "伤心", "焦虑", "害怕", "崩溃", "压力"]
+safety_salience = ["危险", "风险", "警告", "小心", "安全"]
+minimal_expression = ["简洁", "别废话", "不要动作", "别动", "安静点"]
+
+[resources.appraisal_lexicons.zh.metadata]
+source_name = "Project Alia zh appraisal overlay"
+source_url = "local"
+license = "project"
+version = "0.1"
+redistributable = true
+overlay = true
+notes = "Small project-owned seed lexicon. Import third-party dictionaries into separate source fragments and keep this overlay for product-specific cues."

@@ -14,8 +14,10 @@ use crate::channels::adapter::{
     AudioFormat, AudioPayload, AudioPayloadStream, ChannelAdapter, ChannelTarget,
 };
 use crate::event::{EventBus, ServerEvent};
+use crate::expression::orchestrator::{ExpressionExecutionPhase, execute_expression_plan_phase};
+use crate::expression::{ExpressionPlan, SpeechExpression};
 use crate::module::ModuleRegistry;
-use crate::providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter};
+use crate::providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter, TtsRequest};
 
 const TTS_SENTENCE_MAX_CHARS: usize = 80;
 const TTS_SENTENCE_GAP_MS: u32 = 80;
@@ -27,6 +29,8 @@ pub(super) async fn deliver_tts_audio(
     channel_id: &str,
     user_id: &str,
     text: &str,
+    speech: Option<&SpeechExpression>,
+    expression_plan: Option<&ExpressionPlan>,
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) {
@@ -50,11 +54,16 @@ pub(super) async fn deliver_tts_audio(
             text,
             Some((channel_id, user_id)),
         );
+        let tts_request = speech
+            .map(|speech| TtsRequest::with_speech(text, speech))
+            .unwrap_or_else(|| TtsRequest::plain(text));
+        trace_tts_provider_adjustments(modules, debug_output, channel_id, user_id, &tts_request)
+            .await;
 
         match cancellable_stage(
             turn,
             "tts_stream_start",
-            modules.tts.synthesize_stream(text),
+            modules.tts.synthesize_stream_request(&tts_request),
         )
         .await
         {
@@ -80,6 +89,15 @@ pub(super) async fn deliver_tts_audio(
                             && turn.interrupt_config.cancel_streaming_tts_on_interrupt
                     })
                     .map(|turn| turn.token.clone());
+                execute_speech_start_expression(
+                    channel,
+                    target,
+                    expression_plan,
+                    debug_output,
+                    channel_id,
+                    user_id,
+                )
+                .await;
                 let delivery = channel.send_audio_stream(target, Box::pin(audio_stream));
                 let delivery_result = if let Some(cancel_token) = cancel_token {
                     tokio::select! {
@@ -124,20 +142,25 @@ pub(super) async fn deliver_tts_audio(
         text,
         Some((channel_id, user_id)),
     );
-    let audio_bytes = match cancellable_stage(turn, "tts", modules.tts.synthesize(text)).await {
-        Ok(Some(audio_bytes)) => audio_bytes,
-        Ok(None) => return,
-        Err(error) => {
-            tracing::error!(
-                channel_type = channel.channel_type(),
-                channel_id = channel.channel_id(),
-                error = %error,
-                "TTS synthesis failed; keeping channel enabled"
-            );
-            tracing::debug!(error = ?error, "TTS synthesis failure details");
-            return;
-        }
-    };
+    let tts_request = speech
+        .map(|speech| TtsRequest::with_speech(text, speech))
+        .unwrap_or_else(|| TtsRequest::plain(text));
+    trace_tts_provider_adjustments(modules, debug_output, channel_id, user_id, &tts_request).await;
+    let audio_bytes =
+        match cancellable_stage(turn, "tts", modules.tts.synthesize_request(&tts_request)).await {
+            Ok(Some(audio_bytes)) => audio_bytes,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::error!(
+                    channel_type = channel.channel_type(),
+                    channel_id = channel.channel_id(),
+                    error = %error,
+                    "TTS synthesis failed; keeping channel enabled"
+                );
+                tracing::debug!(error = ?error, "TTS synthesis failure details");
+                return;
+            }
+        };
     if turn_is_interrupted(turn) {
         return;
     }
@@ -155,6 +178,16 @@ pub(super) async fn deliver_tts_audio(
         channels: 1,
         format: AudioFormat::Wav,
     };
+
+    execute_speech_start_expression(
+        channel,
+        target,
+        expression_plan,
+        debug_output,
+        channel_id,
+        user_id,
+    )
+    .await;
 
     debug_component_audio(
         debug_output,
@@ -174,6 +207,49 @@ pub(super) async fn deliver_tts_audio(
     if let Err(error) = send_result {
         log_channel_delivery_failure(channel, error).await;
     }
+}
+
+async fn trace_tts_provider_adjustments(
+    modules: &ModuleRegistry,
+    debug_output: bool,
+    channel_id: &str,
+    user_id: &str,
+    request: &TtsRequest,
+) {
+    let adjustments = modules.tts.provider_adjustments(request).await;
+    if adjustments.is_empty() {
+        return;
+    }
+    debug_component_text(
+        debug_output,
+        "tts",
+        "provider_adjustments",
+        &serde_json::to_string(&adjustments).unwrap_or_else(|_| "[]".to_string()),
+        Some((channel_id, user_id)),
+    );
+}
+
+async fn execute_speech_start_expression(
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    plan: Option<&ExpressionPlan>,
+    debug_output: bool,
+    channel_id: &str,
+    user_id: &str,
+) {
+    let Some(plan) = plan else {
+        return;
+    };
+    let execution =
+        execute_expression_plan_phase(channel, target, plan, ExpressionExecutionPhase::SpeechStart)
+            .await;
+    debug_component_text(
+        debug_output,
+        "expression",
+        ExpressionExecutionPhase::SpeechStart.label(),
+        &serde_json::to_string(&execution).unwrap_or_else(|_| execution.status),
+        Some((channel_id, user_id)),
+    );
 }
 
 pub(super) async fn stream_llm_response_with_sentence_tts(
@@ -198,6 +274,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         .map(|turn| turn.token.clone());
     let tts_worker = tokio::spawn(stream_tts_sentences(
         modules.tts.clone(),
+        modules.expression.clone(),
         sentence_rx,
         audio_tx,
         audio_started.clone(),
@@ -347,6 +424,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
 
 async fn stream_tts_sentences(
     tts: Arc<dyn TtsAdapter>,
+    expression: Arc<crate::expression::ExpressionRuntime>,
     mut sentence_rx: mpsc::Receiver<String>,
     audio_tx: mpsc::Sender<anyhow::Result<AudioPayload>>,
     audio_started: Arc<AtomicBool>,
@@ -379,7 +457,21 @@ async fn stream_tts_sentences(
             sentence,
             Some((&channel_id, &user_id)),
         );
-        let synth = tts.synthesize(sentence);
+        let speech = expression
+            .speech_for_text_for_user(sentence, &channel_id, &user_id, "respond", "neutral")
+            .await;
+        let request = TtsRequest::with_speech(sentence, &speech);
+        let adjustments = tts.provider_adjustments(&request).await;
+        if !adjustments.is_empty() {
+            debug_component_text(
+                debug_output,
+                "tts",
+                "provider_adjustments",
+                &serde_json::to_string(&adjustments).unwrap_or_else(|_| "[]".to_string()),
+                Some((&channel_id, &user_id)),
+            );
+        }
+        let synth = tts.synthesize_request(&request);
         let audio_bytes = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
                 _ = cancel_token.cancelled() => return Ok(()),

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::expression::ExpressionRuntime;
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter,
@@ -32,6 +33,7 @@ pub struct ModuleRegistry {
     pub rule_engine: Arc<dyn RuleEvaluator>,
     pub scheduler: Arc<dyn SchedulerBackend>,
     pub tools: Arc<dyn ToolRegistry>,
+    pub expression: Arc<ExpressionRuntime>,
     // Custom extensions
     pub extensions: Vec<Arc<dyn ModuleLifecycle>>,
 }

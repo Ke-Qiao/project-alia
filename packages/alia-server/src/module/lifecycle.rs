@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::ServerConfig;
 use crate::event::EventBus;
+use crate::expression::ExpressionRuntime;
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, LlmAdapter, MemoryBackend, SchedulerBackend, ToolRegistry,
 };
@@ -56,6 +57,9 @@ pub struct ModuleContext {
     /// Unified executable tool registry. Plugins/components should register
     /// code-backed tool executors here instead of replacing the registry.
     pub tools: Option<Arc<dyn ToolRegistry>>,
+    /// Embodied expression runtime. Plugins/components can register appraisal
+    /// engines, affect reducers, expression planners, and safety policies here.
+    pub expression: Option<Arc<ExpressionRuntime>>,
 }
 
 /// Base trait for all pluggable modules
