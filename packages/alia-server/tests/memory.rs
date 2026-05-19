@@ -14,7 +14,7 @@ async fn test_store_and_retrieve() {
         id: None,
         memory_layer: "core".to_string(),
         node_type: "fact".to_string(),
-        content: "用户喜欢喝咖啡".to_string(),
+        content: "User likes coffee".to_string(),
         metadata: serde_json::json!({}),
         importance: 0.8,
     };
@@ -23,12 +23,12 @@ async fn test_store_and_retrieve() {
     assert!(!id.is_empty());
 
     let results = memory
-        .retrieve(user_id, "咖啡", RetrievalOpts::default())
+        .retrieve(user_id, "coffee", RetrievalOpts::default())
         .await
         .unwrap();
 
     assert_eq!(results.len(), 1);
-    assert!(results[0].content.contains("咖啡"));
+    assert!(results[0].content.contains("coffee"));
 }
 
 #[tokio::test]

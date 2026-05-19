@@ -1661,7 +1661,7 @@ mod tests {
     fn gratitude_lifts_valence_and_social_engagement() {
         let store = AffectStore::new(AffectPolicySection::default());
         let before = store.snapshot("cli", "user");
-        let after = observe_user_text(&store, "cli", "user", "谢谢你，真棒").snapshot;
+        let after = observe_user_text(&store, "cli", "user", "thank you, awesome").snapshot;
 
         assert!(after.affect.valence > before.affect.valence);
         assert!(after.social.engagement > before.social.engagement);
@@ -1677,7 +1677,7 @@ mod tests {
     fn relationship_state_follows_user_across_channels() {
         let store = AffectStore::new(AffectPolicySection::default());
         let before = store.snapshot("cli", "user");
-        observe_user_text(&store, "embedded", "user", "谢谢你，真棒");
+        observe_user_text(&store, "embedded", "user", "thank you, awesome");
         let after = store.snapshot("cli", "user");
 
         assert!(after.social.trust > before.social.trust);
@@ -1808,7 +1808,7 @@ mod tests {
     #[tokio::test]
     async fn relationship_profile_can_be_cleared_by_user_privacy_action() {
         let store = AffectStore::new(AffectPolicySection::default());
-        observe_user_text(&store, "cli", "user", "谢谢你，真棒");
+        observe_user_text(&store, "cli", "user", "thank you, awesome");
 
         let before = store.relationship_profile("user");
         assert!(before.trust > store.policy.baseline_trust);
@@ -1898,7 +1898,8 @@ mod tests {
     #[test]
     fn frustration_overrides_affirmation_appraisal() {
         let store = AffectStore::new(AffectPolicySection::default());
-        let observation = observe_user_text(&store, "cli", "user", "你真厉害啊，这都能答错");
+        let observation =
+            observe_user_text(&store, "cli", "user", "great job, you even got this wrong");
 
         assert!(
             observation

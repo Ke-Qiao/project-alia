@@ -140,8 +140,8 @@ fn parses_split_example_config() {
     assert!(config.resources.appraisal_lexicons.contains_key("zh"));
     assert!(config.resources.appraisal_lexicons.contains_key("en"));
     assert!(
-        config.resources.appraisal_lexicons["zh"]
+        config.resources.appraisal_lexicons["en"]
             .support_need
-            .contains(&"焦虑".to_string())
+            .contains(&"anxious".to_string())
     );
 }

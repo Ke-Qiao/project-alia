@@ -1146,7 +1146,8 @@ mod tests {
             safety_state: ExpressionSafetyRuntimeState::default(),
         };
 
-        let mut input = test_expression_input("太好了，这个 API 的行为可以这样解释。");
+        let mut input =
+            test_expression_input("Great, this API behavior can be explained this way.");
         input.dialogue_act = "explain".to_string();
         input.content_tone = "technical".to_string();
 
@@ -1180,14 +1181,14 @@ mod tests {
                 .observe_user_input(AffectUserInput {
                     channel_id: "cli",
                     user_id: "user",
-                    user_text: "谢谢你，真棒",
+                    user_text: "thank you, awesome",
                 })
                 .await;
             runtime
                 .observe_assistant_response(AffectAssistantResponse {
                     channel_id: "cli",
                     user_id: "user",
-                    response_text: "太好了，我很开心能帮上忙。",
+                    response_text: "Great, I am happy I could help.",
                     route: "minor_llm",
                     used_tools: false,
                     response_was_fallback: false,
@@ -1197,7 +1198,7 @@ mod tests {
 
         let plan = runtime
             .plan(ExpressionInput {
-                response_text: "好的。".to_string(),
+                response_text: "Okay.".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "cli".to_string(),
                 user_id: "user".to_string(),
@@ -1240,14 +1241,14 @@ mod tests {
                 .observe_user_input(AffectUserInput {
                     channel_id: "cli",
                     user_id: "user",
-                    user_text: "不对，你答错了",
+                    user_text: "incorrect, you got it wrong",
                 })
                 .await;
         }
 
         let plan = runtime
             .plan(ExpressionInput {
-                response_text: "我明白了，我们重新看一下。".to_string(),
+                response_text: "I understand, let us look at it again.".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "cli".to_string(),
                 user_id: "user".to_string(),
@@ -1318,7 +1319,7 @@ mod tests {
 
         let plan = runtime
             .plan(ExpressionInput {
-                response_text: "好的。".to_string(),
+                response_text: "Okay.".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "cli".to_string(),
                 user_id: "user".to_string(),
@@ -1391,7 +1392,7 @@ mod tests {
             .observe_user_input(AffectUserInput {
                 channel_id: "cli",
                 user_id: "user",
-                user_text: "普通的一句话",
+                user_text: "just a normal sentence",
             })
             .await;
 
@@ -1500,11 +1501,11 @@ mod tests {
             .observe_user_input(AffectUserInput {
                 channel_id: "cli",
                 user_id: "user",
-                user_text: "普通的一句话",
+                user_text: "just a normal sentence",
             })
             .await;
         let plan = runtime
-            .plan(test_expression_input("我会温和地处理。"))
+            .plan(test_expression_input("I will handle this gently."))
             .await;
 
         assert!(
@@ -1606,7 +1607,7 @@ mod tests {
             .observe_user_input(AffectUserInput {
                 channel_id: "cli",
                 user_id: "user",
-                user_text: "普通的一句话",
+                user_text: "just a normal sentence",
             })
             .await;
 
@@ -1636,7 +1637,7 @@ mod tests {
 
         let without_capability = runtime
             .plan(ExpressionInput {
-                response_text: "太好了，真棒！".to_string(),
+                response_text: "Great, awesome!".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "embedded".to_string(),
                 user_id: "user".to_string(),
@@ -1656,7 +1657,7 @@ mod tests {
 
         let with_capability = runtime
             .plan(ExpressionInput {
-                response_text: "太好了，真棒！".to_string(),
+                response_text: "Great, awesome!".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "embedded".to_string(),
                 user_id: "user".to_string(),
@@ -1707,7 +1708,7 @@ mod tests {
             .unwrap()
             .max_frequency_per_min = Some(1);
 
-        let mut input = test_expression_input("太好了，真棒！");
+        let mut input = test_expression_input("Great, awesome!");
         input.channel_id = "embedded".to_string();
         input.hardware_control = true;
         input.expression_capabilities = Some(capabilities.clone());
@@ -1747,7 +1748,7 @@ mod tests {
             .get_mut("small_nod")
             .unwrap()
             .safety_class = Some(ExpressionSafetyClass::HighRisk);
-        let mut risky_input = test_expression_input("太好了，真棒！");
+        let mut risky_input = test_expression_input("Great, awesome!");
         risky_input.channel_id = "embedded".to_string();
         risky_input.hardware_control = true;
         risky_input.expression_capabilities = Some(risky_capabilities);
@@ -1767,7 +1768,7 @@ mod tests {
             .get_mut("small_nod")
             .unwrap()
             .interruptible = Some(false);
-        let mut non_interruptible_input = test_expression_input("太好了，真棒！");
+        let mut non_interruptible_input = test_expression_input("Great, awesome!");
         non_interruptible_input.channel_id = "embedded_2".to_string();
         non_interruptible_input.hardware_control = true;
         non_interruptible_input.expression_capabilities = Some(non_interruptible_capabilities);
@@ -1799,7 +1800,7 @@ mod tests {
             safety_state: ExpressionSafetyRuntimeState::default(),
         };
 
-        let mut input = test_expression_input("太好了，真棒！");
+        let mut input = test_expression_input("Great, awesome!");
         input.hardware_control = true;
         input.expression_capabilities = Some(capabilities_with_action("small_nod", 0.8));
         input.safety_context.minimal_expression = true;
@@ -1881,7 +1882,7 @@ mod tests {
 
         let plan = runtime
             .plan(ExpressionInput {
-                response_text: "太好了，真棒！".to_string(),
+                response_text: "Great, awesome!".to_string(),
                 route: Some("minor_llm".to_string()),
                 channel_id: "cli".to_string(),
                 user_id: "user".to_string(),

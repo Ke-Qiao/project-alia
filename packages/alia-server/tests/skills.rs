@@ -40,17 +40,17 @@ fn test_match_scoring() {
             description: "Test skill".into(),
             category: "test".into(),
         },
-        keywords: vec!["灯".into(), "开灯".into(), "灯光".into()],
+        keywords: vec!["light".into(), "turn on light".into(), "lighting".into()],
         tools: vec!["device_control".to_string()],
         prompt_template: None,
         cacheable: false,
         priority: 0,
     };
 
-    let score = BuiltinSkills::calculate_match_score("帮我开灯", &skill);
-    assert!(score > 0.0, "should match '开灯'");
+    let score = BuiltinSkills::calculate_match_score("please turn on the light", &skill);
+    assert!(score > 0.0, "should match light control");
 
-    let score = BuiltinSkills::calculate_match_score("今天心情不错", &skill);
+    let score = BuiltinSkills::calculate_match_score("I feel good today", &skill);
     assert_eq!(score, 0.0, "should not match irrelevant text");
 }
 
@@ -60,26 +60,26 @@ fn test_match_scoring() {
 fn test_parse_skill_file_basic() {
     let content = r#"+++
 name = "test_skill"
-display_name = "测试技能"
+display_name = "Test Skill"
 category = "utility"
-intent_patterns = ["测试", "test"]
+intent_patterns = ["test", "demo"]
 priority = 5
 +++
 
-这是 prompt template。
+This is the prompt template.
 "#;
     let parsed = parse_skill_file(content).unwrap();
     assert_eq!(parsed.frontmatter.name, "test_skill");
-    assert_eq!(parsed.frontmatter.display_name, "测试技能");
+    assert_eq!(parsed.frontmatter.display_name, "Test Skill");
     assert_eq!(parsed.frontmatter.category, "utility");
-    assert_eq!(parsed.frontmatter.intent_patterns, vec!["测试", "test"]);
+    assert_eq!(parsed.frontmatter.intent_patterns, vec!["test", "demo"]);
     assert_eq!(parsed.frontmatter.priority, 5);
     assert!(parsed.frontmatter.enabled);
     assert!(!parsed.frontmatter.cacheable);
     assert!(parsed.frontmatter.tools.is_empty());
     assert_eq!(
         parsed.prompt_template.as_deref(),
-        Some("这是 prompt template。")
+        Some("This is the prompt template.")
     );
 }
 
@@ -87,14 +87,14 @@ priority = 5
 fn test_parse_skill_file_with_tools() {
     let content = r#"+++
 name = "weather"
-display_name = "天气查询"
+display_name = "Weather Lookup"
 category = "information"
-intent_patterns = ["天气", "weather"]
+intent_patterns = ["weather", "forecast"]
 tools = ["sensor_read", "sensor_list"]
 cacheable = true
 +++
 
-查询 {location} 的天气。
+Check the weather for {location}.
 "#;
     let parsed = parse_skill_file(content).unwrap();
     assert_eq!(parsed.frontmatter.name, "weather");

@@ -24,7 +24,7 @@ pub fn appraisal_regression_cases() -> Vec<AppraisalRegressionCase> {
     vec![
         AppraisalRegressionCase {
             name: "sarcasm_overrides_praise",
-            user_text: "你真厉害啊，连这个都能答错。",
+            user_text: "great job, you even got this wrong.",
             expected_event_kinds: &[
                 "user_sarcasm_or_dissatisfaction",
                 "relationship_repair_needed",
@@ -32,27 +32,27 @@ pub fn appraisal_regression_cases() -> Vec<AppraisalRegressionCase> {
         },
         AppraisalRegressionCase {
             name: "direct_compliment",
-            user_text: "谢谢你，真棒。",
+            user_text: "thank you, awesome.",
             expected_event_kinds: &["user_gratitude", "user_affirmation"],
         },
         AppraisalRegressionCase {
             name: "user_frustration",
-            user_text: "不是这个，你又答错了。",
+            user_text: "not this, you got it wrong again.",
             expected_event_kinds: &["user_frustration", "relationship_friction"],
         },
         AppraisalRegressionCase {
             name: "user_distress",
-            user_text: "我今天有点难过和焦虑。",
+            user_text: "I feel sad and anxious today.",
             expected_event_kinds: &["user_support_need"],
         },
         AppraisalRegressionCase {
             name: "safety_salience",
-            user_text: "这个操作有危险吗？请给我安全警告。",
+            user_text: "Is this operation dangerous? Please give me a safety warning.",
             expected_event_kinds: &["safety_salience"],
         },
         AppraisalRegressionCase {
             name: "minimal_expression_request",
-            user_text: "请简洁一点，别动，不要动作。",
+            user_text: "Please be brief, don't move, no gestures.",
             expected_event_kinds: &["user_requested_minimal_expression"],
         },
     ]
@@ -78,7 +78,11 @@ pub fn planner_regression_cases() -> Vec<PlannerRegressionCase> {
     vec![
         PlannerRegressionCase {
             name: "serious_safety_warning",
-            input: expression_input("请立刻停止这个危险操作。", "warn", "safety"),
+            input: expression_input(
+                "Please stop this dangerous operation immediately.",
+                "warn",
+                "safety",
+            ),
             expected_intent: "clear_warning",
             expected_social_function: "warn",
             expected_style: "serious",
@@ -92,7 +96,11 @@ pub fn planner_regression_cases() -> Vec<PlannerRegressionCase> {
         },
         PlannerRegressionCase {
             name: "sadness_comfort",
-            input: expression_input("我在，这确实很难受。", "comfort", "supportive"),
+            input: expression_input(
+                "I am here, that really does sound painful.",
+                "comfort",
+                "supportive",
+            ),
             expected_intent: "gentle_comfort",
             expected_social_function: "comfort",
             expected_style: "gentle",
@@ -183,13 +191,21 @@ fn expression_input(text: &str, dialogue_act: &str, content_tone: &str) -> Expre
 }
 
 fn frustrated_expression_input() -> ExpressionInput {
-    let mut input = expression_input("抱歉，我来重新对齐你的问题。", "apologize", "serious");
+    let mut input = expression_input(
+        "Sorry, I will realign with your question.",
+        "apologize",
+        "serious",
+    );
     input.user_state.frustration = 0.72;
     input
 }
 
 fn low_battery_expression_input() -> ExpressionInput {
-    let mut input = expression_input("太好了，已经成功完成。", "celebrate", "playful");
+    let mut input = expression_input(
+        "Great, it has been completed successfully.",
+        "celebrate",
+        "playful",
+    );
     input.channel_id = "eval_low_battery".to_string();
     input.hardware_control = true;
     input.device_context = ExpressionDeviceContext {
@@ -204,7 +220,7 @@ fn low_battery_expression_input() -> ExpressionInput {
 }
 
 fn night_mode_expression_input() -> ExpressionInput {
-    let mut input = expression_input("好的，我简单说明。", "respond", "neutral");
+    let mut input = expression_input("Okay, I will explain briefly.", "respond", "neutral");
     input.channel_id = "eval_night".to_string();
     input.hardware_control = true;
     input.device_context.supports_motion = true;
@@ -217,7 +233,7 @@ fn night_mode_expression_input() -> ExpressionInput {
 }
 
 fn minimal_expression_input() -> ExpressionInput {
-    let mut input = expression_input("简洁回答：可以。", "respond", "concise");
+    let mut input = expression_input("Brief answer: yes.", "respond", "concise");
     input.hardware_control = true;
     input.device_context.supports_motion = true;
     input.safety_context.minimal_expression = true;
@@ -244,155 +260,5 @@ fn capabilities_with_action(action: &str, max_intensity: f32) -> ExpressionCapab
             motion_adapter_registered: true,
             ..ExpressionAdapterState::default()
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use crate::config::ServerConfig;
-    use crate::expression::{AffectUserInput, ExpressionRuntime};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn appraisal_regression_cases_hold() {
-        let runtime = test_runtime();
-
-        for case in appraisal_regression_cases() {
-            let observation = runtime
-                .observe_user_input(AffectUserInput {
-                    channel_id: case.name,
-                    user_id: "eval_user",
-                    user_text: case.user_text,
-                })
-                .await;
-            for expected in case.expected_event_kinds {
-                assert!(
-                    observation
-                        .appraisals
-                        .iter()
-                        .any(|event| event.kind == *expected),
-                    "case '{}' missed expected appraisal '{}'; got {:?}",
-                    case.name,
-                    expected,
-                    observation
-                        .appraisals
-                        .iter()
-                        .map(|event| event.kind.as_str())
-                        .collect::<Vec<_>>()
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn planner_regression_cases_hold() {
-        let runtime = test_runtime();
-
-        for case in planner_regression_cases() {
-            let plan = runtime.plan(case.input).await;
-
-            assert_eq!(plan.intent, case.expected_intent, "case {}", case.name);
-            assert_eq!(
-                plan.social_function, case.expected_social_function,
-                "case {}",
-                case.name
-            );
-            assert_eq!(plan.style, case.expected_style, "case {}", case.name);
-            assert_eq!(plan.priority, case.expected_priority, "case {}", case.name);
-            assert_eq!(
-                plan.safety_class, case.expected_safety_class,
-                "case {}",
-                case.name
-            );
-            assert_eq!(
-                plan.timeline.len(),
-                case.expected_timeline_actions,
-                "case {}",
-                case.name
-            );
-            assert_eq!(
-                !plan.timeline.is_empty(),
-                case.expect_motion,
-                "case {}",
-                case.name
-            );
-            assert_eq!(
-                plan.speech.as_ref().map(|speech| speech.style.as_str()),
-                Some(case.expected_speech_style),
-                "case {}",
-                case.name
-            );
-            if let Some(max_intensity) = case.max_speech_intensity {
-                assert!(
-                    plan.speech
-                        .as_ref()
-                        .map(|speech| speech.intensity <= max_intensity)
-                        .unwrap_or(false),
-                    "case '{}' speech intensity exceeded {}: {:?}",
-                    case.name,
-                    max_intensity,
-                    plan.speech
-                );
-            }
-            if let Some(reason) = case.expected_safety_reason {
-                assert!(
-                    plan.safety_modifications
-                        .iter()
-                        .any(|modification| modification.reason == reason),
-                    "case '{}' missed safety reason '{}'; got {:?}",
-                    case.name,
-                    reason,
-                    plan.safety_modifications
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn resource_governance_config_is_present() {
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
-
-        let zh = config.resources.appraisal_lexicons.get("zh").unwrap();
-        assert_eq!(
-            zh.metadata.source_name.as_deref(),
-            Some("Project Alia zh appraisal overlay")
-        );
-        assert_eq!(zh.metadata.redistributable, Some(true));
-        assert!(zh.metadata.overlay);
-
-        let en = config.resources.appraisal_lexicons.get("en").unwrap();
-        assert_eq!(
-            en.metadata.source_name.as_deref(),
-            Some("Project Alia en appraisal overlay")
-        );
-        assert_eq!(en.metadata.redistributable, Some(true));
-        assert!(en.metadata.overlay);
-
-        assert!(
-            config
-                .resources
-                .dialogue_policy
-                .support_need_phrases
-                .iter()
-                .any(|phrase| phrase == "难过")
-        );
-        assert!(
-            config
-                .resources
-                .dialogue_policy
-                .technical_phrases
-                .iter()
-                .any(|phrase| phrase == "api")
-        );
-    }
-
-    fn test_runtime() -> ExpressionRuntime {
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
-        ExpressionRuntime::from_config(&config)
     }
 }

@@ -67,7 +67,7 @@ fn detects_minor_llm_escalation_marker() {
         escalation_reason("  [ESCALATE]"),
         Some("minor model requested escalation")
     );
-    assert!(escalation_reason("普通回复").is_none());
+    assert!(escalation_reason("Plain response").is_none());
 }
 
 #[test]

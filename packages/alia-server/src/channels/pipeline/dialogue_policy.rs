@@ -156,7 +156,7 @@ mod tests {
                 used_tools: false,
                 response_was_fallback: false,
                 cache_hit: false,
-                user_text: "我有点难过，能安慰我一下吗？",
+                user_text: "I feel sad and could use some comfort.",
                 memory_context_used: false,
             },
             &DialoguePolicyResourceSection::default(),
@@ -175,7 +175,7 @@ mod tests {
             used_tools: false,
             response_was_fallback: false,
             cache_hit: true,
-            user_text: "怎么配置接口？",
+            user_text: "How do I configure the API?",
             memory_context_used: false,
         };
         let decision = decide(input, &DialoguePolicyResourceSection::default());
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn uses_configured_phrase_lists() {
         let mut policy = DialoguePolicyResourceSection::default();
-        policy.support_need_phrases = vec!["心里堵".to_string()];
+        policy.support_need_phrases = vec!["heavy heart".to_string()];
 
         let decision = decide(
             DialoguePolicyInput {
@@ -197,7 +197,7 @@ mod tests {
                 used_tools: false,
                 response_was_fallback: false,
                 cache_hit: false,
-                user_text: "今天心里堵，想慢慢说。",
+                user_text: "I have a heavy heart today and want to talk slowly.",
                 memory_context_used: false,
             },
             &policy,
