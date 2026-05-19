@@ -169,6 +169,20 @@ async fn provider_infer_turn_memory(
     memory: &dyn MemoryBackend,
     pending: &PendingTextPersistence,
 ) -> MemoryCaptureTrace {
+    let capabilities = memory.memory_capabilities().await;
+    if !capabilities.supports_conversation_ingest {
+        return MemoryCaptureTrace::skipped(
+            MemoryCaptureMode::ProviderInferAll,
+            "provider_conversation_ingest_unsupported",
+        );
+    }
+    if !capabilities.supports_provider_infer {
+        return MemoryCaptureTrace::skipped(
+            MemoryCaptureMode::ProviderInferAll,
+            "provider_infer_unsupported",
+        );
+    }
+
     let ingest = MemoryConversationIngest {
         run_id: Some(pending.session_id.to_string()),
         messages: vec![

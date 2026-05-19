@@ -275,6 +275,8 @@ fn parses_pseudo_function_search_call() {
 fn renders_runtime_context_prompt_outside_persona() {
     let prompt = render_runtime_context_system_prompt(&RuntimePromptContext {
         core_memories: vec!["The user likes coffee.".to_string()],
+        relationship_summary: Some("developing rapport; concise interaction style".to_string()),
+        relationship_preference_summary: Some("Prefers concise responses".to_string()),
         user_preferences: vec![("Temperature".to_string(), "26 C".to_string())],
         current_time: "2026-05-16 16:30".to_string(),
         user_presence: "At home".to_string(),
@@ -285,6 +287,8 @@ fn renders_runtime_context_prompt_outside_persona() {
 
     assert!(prompt.contains("## Runtime Context"));
     assert!(prompt.contains("The user likes coffee."));
+    assert!(prompt.contains("## Relationship Context"));
+    assert!(prompt.contains("Do not mention internal relationship state"));
     assert!(prompt.contains("## Skill Routing Context"));
     assert!(prompt.contains("They are not functions to call directly"));
 }

@@ -64,6 +64,18 @@ async fn memory_backend_schema_matches_runtime_backends() {
             .await
             .is_some()
     );
+    assert!(
+        settings
+            .get_entry("core.policies.insights.memory_consolidation_prompt")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.insights.memory_extraction_prompt")
+            .await
+            .is_some()
+    );
 }
 
 #[tokio::test]

@@ -16,7 +16,7 @@ use crate::providers::adapter::{
 };
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct MemoryInfo {
     pub id: String,
     pub memory_layer: String,
@@ -81,6 +81,15 @@ struct MemoryPrivacyResponse {
     explicit_memory_enabled: bool,
     sensitive_auto_capture_allowed: bool,
     sensitive_direct_entry_allowed: bool,
+    provider_infer_available: bool,
+    supported_capture_modes: Vec<MemoryCaptureMode>,
+}
+
+#[derive(Debug, Serialize)]
+struct MemoryAuditResponse {
+    privacy: MemoryPrivacyResponse,
+    capabilities: MemoryCapabilities,
+    memories: Vec<MemoryInfo>,
 }
 
 fn default_memory_layer() -> String {
@@ -333,7 +342,8 @@ async fn get_memory_privacy(
     _auth: AuthUser,
 ) -> Result<Json<MemoryPrivacyResponse>> {
     let memory = state.pipeline_policies.read().await.memory.clone();
-    Ok(Json(memory_privacy_response(&memory)))
+    let capabilities = state.modules.memory.memory_capabilities().await;
+    Ok(Json(memory_privacy_response(&memory, &capabilities)))
 }
 
 async fn get_memory_capabilities(
@@ -365,6 +375,15 @@ async fn update_memory_privacy(
         })
     });
     if let Some(capture_mode) = capture_mode {
+        if matches!(capture_mode, MemoryCaptureMode::ProviderInferAll) {
+            let capabilities = state.modules.memory.memory_capabilities().await;
+            if !capabilities.supports_conversation_ingest || !capabilities.supports_provider_infer {
+                return Err(AppError::Validation(format!(
+                    "capture_mode provider_infer_all is not supported by memory backend '{}'",
+                    capabilities.provider
+                )));
+            }
+        }
         updates.insert(
             "core.policies.memory.capture_mode".to_string(),
             serde_json::json!(capture_mode),
@@ -384,7 +403,31 @@ async fn update_memory_privacy(
     }
 
     let memory = state.pipeline_policies.read().await.memory.clone();
-    Ok(Json(memory_privacy_response(&memory)))
+    let capabilities = state.modules.memory.memory_capabilities().await;
+    Ok(Json(memory_privacy_response(&memory, &capabilities)))
+}
+
+async fn get_memory_audit(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(query): Query<MemoryListQuery>,
+) -> Result<Json<MemoryAuditResponse>> {
+    let capabilities = state.modules.memory.memory_capabilities().await;
+    let memory = state.pipeline_policies.read().await.memory.clone();
+    let memories = state
+        .modules
+        .memory
+        .list(auth.id, list_opts(&query))
+        .await
+        .map_err(AppError::Internal)?
+        .into_iter()
+        .map(memory_info)
+        .collect();
+    Ok(Json(MemoryAuditResponse {
+        privacy: memory_privacy_response(&memory, &capabilities),
+        capabilities,
+        memories,
+    }))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -400,6 +443,7 @@ pub fn routes() -> Router<AppState> {
             get(get_memory_privacy).patch(update_memory_privacy),
         )
         .route("/memories/capabilities", get(get_memory_capabilities))
+        .route("/memories/audit", get(get_memory_audit))
         .route(
             "/memories/{id}",
             get(get_memory).patch(update_memory).delete(delete_memory),
@@ -460,7 +504,20 @@ fn merge_direct_memory_metadata(
     metadata
 }
 
-fn memory_privacy_response(memory: &crate::config::MemorySection) -> MemoryPrivacyResponse {
+fn memory_privacy_response(
+    memory: &crate::config::MemorySection,
+    capabilities: &MemoryCapabilities,
+) -> MemoryPrivacyResponse {
+    let provider_infer_available =
+        capabilities.supports_conversation_ingest && capabilities.supports_provider_infer;
+    let mut supported_capture_modes = vec![
+        MemoryCaptureMode::None,
+        MemoryCaptureMode::ExplicitToolOnly,
+        MemoryCaptureMode::LlmSelected,
+    ];
+    if provider_infer_available {
+        supported_capture_modes.push(MemoryCaptureMode::ProviderInferAll);
+    }
     MemoryPrivacyResponse {
         enabled: memory.enabled,
         capture_mode: memory.capture_mode,
@@ -472,5 +529,7 @@ fn memory_privacy_response(memory: &crate::config::MemorySection) -> MemoryPriva
         explicit_memory_enabled: memory.enabled,
         sensitive_auto_capture_allowed: false,
         sensitive_direct_entry_allowed: true,
+        provider_infer_available,
+        supported_capture_modes,
     }
 }

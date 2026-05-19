@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use alia_server::config::{MemoryCaptureMode, ServerConfig, load_config_with_fragments};
+use alia_server::config::{
+    Mem0ProviderSection, MemoryCaptureMode, ServerConfig, load_config_with_fragments,
+};
 
 #[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
@@ -127,6 +129,20 @@ fn parses_split_example_config() {
         ]
     );
     assert_eq!(config.policies.memory.max_injected_memory_chars, 1200);
+    assert!(
+        config
+            .policies
+            .insights
+            .memory_consolidation_prompt
+            .contains("consolidate a user's memory store")
+    );
+    assert!(
+        config
+            .policies
+            .insights
+            .memory_extraction_prompt
+            .contains("durable user memories")
+    );
     assert!(!config.providers.mem0.conversation_infer);
     assert!(config.policies.expression.enabled);
     assert_eq!(config.policies.expression.default_style, "gentle");
@@ -162,4 +178,17 @@ fn parses_split_example_config() {
             .support_need
             .contains(&"anxious".to_string())
     );
+}
+
+#[test]
+fn mem0_conversation_infer_defaults_to_false_when_omitted() {
+    let config: Mem0ProviderSection = toml::from_str(
+        r#"
+base_url = "https://api.mem0.ai"
+"#,
+    )
+    .unwrap();
+
+    assert!(!config.infer);
+    assert!(!config.conversation_infer);
 }

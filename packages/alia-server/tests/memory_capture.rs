@@ -172,6 +172,31 @@ async fn llm_selected_capture_does_not_store_when_model_returns_no_memories() {
 }
 
 #[tokio::test]
+async fn provider_infer_all_skips_backend_without_provider_inference() {
+    let user_id = Uuid::new_v4();
+    let pending = pending_turn(user_id);
+    let memory = SimpleMemory::new();
+    let llm = StaticLlm::new(r#"{"memories":[]}"#);
+    let mut config = memory_config();
+    config.capture_mode = MemoryCaptureMode::ProviderInferAll;
+
+    let trace = capture_turn_memory_with_backends(&llm, &memory, &pending, &config).await;
+
+    assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
+    assert_eq!(
+        trace.reason.as_deref(),
+        Some("provider_conversation_ingest_unsupported")
+    );
+    assert!(
+        memory
+            .list(user_id, MemoryListOpts::default())
+            .await
+            .expect("stored memories should list")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn llm_selected_capture_blocks_sensitive_memories() {
     let user_id = Uuid::new_v4();
     let pending = pending_turn(user_id);

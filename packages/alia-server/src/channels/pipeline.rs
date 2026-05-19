@@ -166,6 +166,8 @@ impl AgentTrace {
 #[derive(Debug, Clone, Default)]
 pub struct RuntimePromptContext {
     pub core_memories: Vec<String>,
+    pub relationship_summary: Option<String>,
+    pub relationship_preference_summary: Option<String>,
     pub user_preferences: Vec<(String, String)>,
     pub current_time: String,
     pub user_presence: String,
@@ -2897,13 +2899,37 @@ async fn build_runtime_prompt_context(
         .unwrap_or_default();
 
     let core_memories = retrieve_runtime_memories(user_id, modules, memory_config, user_text).await;
+    let (relationship_summary, relationship_preference_summary) =
+        runtime_relationship_context(user_id, modules);
 
     RuntimePromptContext {
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
         core_memories,
+        relationship_summary,
+        relationship_preference_summary,
         available_skills,
         ..RuntimePromptContext::default()
     }
+}
+
+fn runtime_relationship_context(
+    user_id: Uuid,
+    modules: &ModuleRegistry,
+) -> (Option<String>, Option<String>) {
+    if user_id.is_nil() {
+        return (None, None);
+    }
+    let profile = modules
+        .expression
+        .relationship_profile(&user_id.to_string());
+    if !profile.privacy.user_visible {
+        return (None, None);
+    }
+
+    let summary = (!profile.summary.trim().is_empty()).then(|| profile.summary.trim().to_string());
+    let preference_summary = (!profile.preference_summary.trim().is_empty())
+        .then(|| profile.preference_summary.trim().to_string());
+    (summary, preference_summary)
 }
 
 async fn retrieve_runtime_memories(
@@ -2994,6 +3020,30 @@ pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> O
                 lines.join("\n")
             ));
         }
+    }
+
+    let mut relationship_lines = Vec::new();
+    if let Some(summary) = context
+        .relationship_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        relationship_lines.push(format!("- Relationship summary: {summary}"));
+    }
+    if let Some(summary) = context
+        .relationship_preference_summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        relationship_lines.push(format!("- Preference summary: {summary}"));
+    }
+    if !relationship_lines.is_empty() {
+        sections.push(format!(
+            "## Relationship Context\nUse this as a lightweight interaction guide. Do not mention internal relationship state, scores, or affect machinery.\n{}",
+            relationship_lines.join("\n")
+        ));
     }
 
     if !context.user_preferences.is_empty() {

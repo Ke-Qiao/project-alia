@@ -188,6 +188,35 @@ impl Mem0Client {
         json!({ "user_id": self.scoped_user_id(user_id) })
     }
 
+    fn build_store_add_body(&self, user_id: Uuid, node: &MemoryNode) -> Value {
+        let mut metadata = object_metadata(node.metadata.clone());
+        metadata.insert(
+            ALIA_LAYER_KEY.to_string(),
+            Value::String(node.memory_layer.clone()),
+        );
+        metadata.insert(
+            ALIA_NODE_TYPE_KEY.to_string(),
+            Value::String(node.node_type.clone()),
+        );
+        metadata.insert(ALIA_IMPORTANCE_KEY.to_string(), json!(node.importance));
+
+        let mut body = Map::new();
+        self.add_scope_fields(&mut body, user_id);
+        body.insert(
+            "messages".to_string(),
+            json!([{ "role": "user", "content": node.content }]),
+        );
+        body.insert("metadata".to_string(), Value::Object(metadata));
+        body.insert("infer".to_string(), Value::Bool(self.config.infer));
+        if let Some(custom_instructions) = clean_optional(&self.config.custom_instructions) {
+            body.insert(
+                "custom_instructions".to_string(),
+                Value::String(custom_instructions.to_string()),
+            );
+        }
+        Value::Object(body)
+    }
+
     async fn poll_add_event(&self, event_id: &str) -> anyhow::Result<Option<String>> {
         if event_id.is_empty() || self.config.add_poll_timeout.is_zero() {
             return Ok(None);
@@ -259,29 +288,7 @@ impl ExternalMemoryClient for Mem0Client {
     }
 
     async fn store(&self, user_id: Uuid, node: MemoryNode) -> anyhow::Result<String> {
-        let mut metadata = object_metadata(node.metadata);
-        metadata.insert(ALIA_LAYER_KEY.to_string(), Value::String(node.memory_layer));
-        metadata.insert(
-            ALIA_NODE_TYPE_KEY.to_string(),
-            Value::String(node.node_type),
-        );
-        metadata.insert(ALIA_IMPORTANCE_KEY.to_string(), json!(node.importance));
-
-        let mut body = Map::new();
-        self.add_scope_fields(&mut body, user_id);
-        body.insert(
-            "messages".to_string(),
-            json!([{ "role": "user", "content": node.content }]),
-        );
-        body.insert("metadata".to_string(), Value::Object(metadata));
-        body.insert("infer".to_string(), Value::Bool(self.config.infer));
-        if let Some(custom_instructions) = clean_optional(&self.config.custom_instructions) {
-            body.insert(
-                "custom_instructions".to_string(),
-                Value::String(custom_instructions.to_string()),
-            );
-        }
-
+        let body = self.build_store_add_body(user_id, &node);
         let url = format!("{}/v3/memories/add/", self.base_url());
         let response = self.send_json(self.http.post(url).json(&body)).await?;
         if let Some(id) = extract_memory_id(&response) {
@@ -490,6 +497,15 @@ impl ExternalMemoryClient for Mem0Client {
             json!(self.config.conversation_infer),
         );
         capabilities.provider_specific.insert(
+            "non_conversational_store".to_string(),
+            json!({
+                "supported": true,
+                "request_shape": "single_user_message",
+                "infer_enabled": self.config.infer,
+                "raw_storage_when_infer_false": true
+            }),
+        );
+        capabilities.provider_specific.insert(
             "delete_by_user_implemented_as_list_delete".to_string(),
             json!(true),
         );
@@ -605,4 +621,56 @@ fn extract_string_field(value: &Value, keys: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_body_uses_single_non_conversation_message_when_infer_is_disabled() {
+        let client = Mem0Client::new(Mem0Config {
+            base_url: "http://localhost:8888".to_string(),
+            api_key: String::new(),
+            user_id_prefix: "test_".to_string(),
+            app_id: None,
+            agent_id: None,
+            run_id: None,
+            custom_instructions: Some("Prefer durable user preferences only.".to_string()),
+            infer: false,
+            conversation_infer: false,
+            request_timeout: Duration::from_secs(1),
+            page_size: 10,
+            add_poll_timeout: Duration::ZERO,
+        });
+        let user_id = Uuid::new_v4();
+
+        let body = client.build_store_add_body(
+            user_id,
+            &MemoryNode {
+                id: None,
+                memory_layer: "preference".to_string(),
+                node_type: "preference".to_string(),
+                content: "The user prefers concise answers.".to_string(),
+                metadata: serde_json::json!({"source": "llm_selected"}),
+                importance: 0.8,
+            },
+        );
+
+        assert_eq!(body["infer"], false);
+        assert_eq!(
+            body["custom_instructions"],
+            "Prefer durable user preferences only."
+        );
+        assert_eq!(body["user_id"], format!("test_{user_id}"));
+        assert_eq!(body["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(
+            body["messages"][0]["content"],
+            "The user prefers concise answers."
+        );
+        assert_eq!(body["metadata"]["alia_memory_layer"], "preference");
+        assert_eq!(body["metadata"]["alia_node_type"], "preference");
+        assert!((body["metadata"]["alia_importance"].as_f64().unwrap() - 0.8).abs() < 0.0001);
+    }
 }

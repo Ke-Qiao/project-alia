@@ -159,7 +159,7 @@ struct InsightState {
 }
 
 pub struct ScheduledInsights {
-    config: Mutex<Option<InsightsSection>>,
+    config: Arc<Mutex<Option<InsightsSection>>>,
     db: Mutex<Option<DatabaseConnection>>,
     llm: Mutex<Option<Arc<dyn LlmAdapter>>>,
     memory: Mutex<Option<Arc<dyn MemoryBackend>>>,
@@ -179,7 +179,7 @@ pub struct ScheduledInsights {
 impl ScheduledInsights {
     pub fn new() -> Self {
         Self {
-            config: Mutex::new(None),
+            config: Arc::new(Mutex::new(None)),
             db: Mutex::new(None),
             llm: Mutex::new(None),
             memory: Mutex::new(None),
@@ -211,6 +211,7 @@ impl ScheduledInsights {
         user: InsightUserContext,
         phase: &InsightPhase,
         trigger: &str,
+        config: &InsightsSection,
         semaphore: &Semaphore,
     ) -> anyhow::Result<InsightLog> {
         let _permit = semaphore
@@ -226,7 +227,7 @@ impl ScheduledInsights {
         });
 
         let start = std::time::Instant::now();
-        let result = Self::run_phase(db, llm, memory, phase, &user).await;
+        let result = Self::run_phase(db, llm, memory, phase, &user, config).await;
         let duration_ms = start.elapsed().as_millis() as i32;
 
         let log = match result {
@@ -293,13 +294,15 @@ impl ScheduledInsights {
         memory: Option<Arc<dyn MemoryBackend>>,
         phase: &InsightPhase,
         user: &InsightUserContext,
+        config: &InsightsSection,
     ) -> anyhow::Result<PhaseStats> {
         match phase {
             InsightPhase::Extraction => {
                 tracing::info!("executing Phase 1: memory extraction");
-                let stats =
-                    Self::extract_memories_from_recent_conversation(db, memory, llm, user, 24)
-                        .await?;
+                let stats = Self::extract_memories_from_recent_conversation(
+                    db, memory, llm, user, 24, config,
+                )
+                .await?;
                 Ok(PhaseStats {
                     summary: stats.summary,
                     nodes_created: stats.created as i32,
@@ -312,7 +315,8 @@ impl ScheduledInsights {
             InsightPhase::Consolidation => {
                 tracing::info!("executing Phase 2: memory consolidation");
                 let memory_stats =
-                    Self::consolidate_memories(memory.clone(), llm.clone(), user, 50).await?;
+                    Self::consolidate_memories(memory.clone(), llm.clone(), user, 50, config)
+                        .await?;
                 let cache_stats =
                     Self::review_pending_cache_entries(db, llm, user.user_id, 16).await?;
                 Ok(PhaseStats {
@@ -335,9 +339,15 @@ impl ScheduledInsights {
             }
             InsightPhase::Reflection => {
                 tracing::info!("executing Phase 3: self-reflection");
-                let memory_stats =
-                    Self::reflect_on_user_context(db, memory.clone(), llm.clone(), user, 40)
-                        .await?;
+                let memory_stats = Self::reflect_on_user_context(
+                    db,
+                    memory.clone(),
+                    llm.clone(),
+                    user,
+                    40,
+                    config,
+                )
+                .await?;
                 let cache_stats =
                     Self::review_pending_cache_entries(db, llm, user.user_id, 24).await?;
                 Ok(PhaseStats {
@@ -360,9 +370,15 @@ impl ScheduledInsights {
             }
             InsightPhase::HabitDetection => {
                 tracing::info!("executing Phase 4: habit detection");
-                let stats =
-                    Self::detect_habits_from_context(db, memory.clone(), llm.clone(), user, 40)
-                        .await?;
+                let stats = Self::detect_habits_from_context(
+                    db,
+                    memory.clone(),
+                    llm.clone(),
+                    user,
+                    40,
+                    config,
+                )
+                .await?;
                 Ok(PhaseStats {
                     summary: stats.summary,
                     nodes_created: stats.created as i32,
@@ -387,7 +403,7 @@ impl ScheduledInsights {
         pending_tasks: Arc<AtomicU32>,
         semaphore: Arc<Semaphore>,
         state: Arc<Mutex<InsightState>>,
-        config: InsightsSection,
+        config: Arc<Mutex<Option<InsightsSection>>>,
         reflection_task_id: Option<Uuid>,
         habit_task_id: Option<Uuid>,
     ) {
@@ -405,6 +421,7 @@ impl ScheduledInsights {
                             if !enabled.load(Ordering::Relaxed) {
                                 continue;
                             }
+                            let config = config.lock().await.clone().unwrap_or_default();
                             Self::handle_event(
                                 &db, &event_bus, llm.clone(), memory.clone(), &event, &enabled,
                                 &pending_tasks, &semaphore, &state, &config,
@@ -501,6 +518,7 @@ impl ScheduledInsights {
                             user,
                             &phase,
                             "schedule",
+                            config,
                             semaphore,
                         )
                         .await;
@@ -541,6 +559,7 @@ impl ScheduledInsights {
                     user,
                     &InsightPhase::Extraction,
                     "post_conversation",
+                    config,
                     semaphore_ref,
                 )
                 .await
@@ -600,6 +619,7 @@ impl ScheduledInsights {
                     user.clone(),
                     &InsightPhase::Consolidation,
                     "sensor",
+                    config,
                     semaphore,
                 )
                 .await;
@@ -611,6 +631,7 @@ impl ScheduledInsights {
                     user,
                     &InsightPhase::Reflection,
                     "sensor",
+                    config,
                     semaphore,
                 )
                 .await;
@@ -636,7 +657,7 @@ impl ScheduledInsights {
         pending_tasks: Arc<AtomicU32>,
         semaphore: Arc<Semaphore>,
         state: Arc<Mutex<InsightState>>,
-        idle_minutes: u64,
+        config: Arc<Mutex<Option<InsightsSection>>>,
     ) {
         let check_interval = std::time::Duration::from_secs(60); // Check every minute
         let mut interval = tokio::time::interval(check_interval);
@@ -651,6 +672,8 @@ impl ScheduledInsights {
                     if !enabled.load(Ordering::Relaxed) {
                         continue;
                     }
+                    let config = config.lock().await.clone().unwrap_or_default();
+                    let idle_minutes = config.consolidation_idle_minutes;
 
                     let should_trigger = {
                         let s = state.lock().await;
@@ -673,7 +696,7 @@ impl ScheduledInsights {
                         pending_tasks.fetch_add(1, Ordering::Relaxed);
                         let _ = Self::execute_phase(
                             &db, &event_bus, llm.clone(), memory.clone(), user,
-                            &InsightPhase::Consolidation, "idle", &semaphore,
+                            &InsightPhase::Consolidation, "idle", &config, &semaphore,
                         ).await;
                         pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
@@ -842,6 +865,7 @@ impl ScheduledInsights {
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         message_limit: u64,
+        config: &InsightsSection,
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
@@ -875,10 +899,7 @@ impl ScheduledInsights {
         let transcript = transcript_for_prompt(&messages, 10_000);
         let response = llm
             .chat(&[
-                ChatMessage::new(
-                    "system",
-                    "You extract durable user memories from conversations. Only store facts, preferences, stable profile details, and recurring needs explicitly stated or strongly confirmed by the user. Do not store one-off requests, assistant guesses, secrets, current time/weather/news, tool results, or anything uncertain. Return exactly one JSON object: {\"memories\":[{\"content\":\"...\",\"memory_layer\":\"core|preference|episodic\",\"node_type\":\"fact|preference|relationship|goal|habit|event\",\"importance\":0.0-1.0,\"confidence\":0.0-1.0,\"reason\":\"...\"}]}",
-                ),
+                ChatMessage::new("system", config.memory_extraction_prompt.clone()),
                 ChatMessage::new(
                     "user",
                     format!(
@@ -904,6 +925,7 @@ impl ScheduledInsights {
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         limit: u32,
+        config: &InsightsSection,
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
@@ -939,10 +961,7 @@ impl ScheduledInsights {
 
         let response = llm
             .chat(&[
-                ChatMessage::new(
-                    "system",
-                    "You consolidate a user's memory store. Merge duplicates, refine wording, remove contradicted/low-value episodic noise, and create concise durable memories when needed. Be conservative: never delete or rewrite if unsure. Return exactly one JSON object with keys: summary, updates, deletes, creates. updates items: {\"id\":\"existing id\",\"content\":\"optional refined content\",\"importance\":0.0-1.0,\"reason\":\"...\"}. deletes items: {\"id\":\"existing id\",\"reason\":\"...\"}. creates use the same fields as memory extraction candidates.",
-                ),
+                ChatMessage::new("system", config.memory_consolidation_prompt.clone()),
                 ChatMessage::new(
                     "user",
                     format!(
@@ -1026,6 +1045,7 @@ impl ScheduledInsights {
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         memory_limit: u32,
+        config: &InsightsSection,
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
@@ -1066,10 +1086,7 @@ impl ScheduledInsights {
 
         let response = llm
             .chat(&[
-                ChatMessage::new(
-                    "system",
-                    "You produce durable internal insights for a personal assistant. Identify stable preferences, habits, long-term goals, and relationship context that will improve future conversations. Do not invent facts. Avoid sensitive speculation. Return exactly one JSON object: {\"memories\":[{\"content\":\"...\",\"memory_layer\":\"reflection|core|preference\",\"node_type\":\"insight|habit|preference|goal\",\"importance\":0.0-1.0,\"confidence\":0.0-1.0,\"reason\":\"...\"}]}",
-                ),
+                ChatMessage::new("system", config.reflection_prompt.clone()),
                 ChatMessage::new(
                     "user",
                     format!(
@@ -1099,6 +1116,7 @@ impl ScheduledInsights {
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         memory_limit: u32,
+        config: &InsightsSection,
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
@@ -1140,10 +1158,7 @@ impl ScheduledInsights {
 
         let response = llm
             .chat(&[
-                ChatMessage::new(
-                    "system",
-                    "You detect durable user habits for a personal assistant. Extract only recurring behaviors, repeated preferences, routines, or stable interaction patterns that are supported by the provided memory/conversation context. Do not invent routines from a single weak clue. Return exactly one JSON object: {\"memories\":[{\"content\":\"...\",\"memory_layer\":\"reflection|preference\",\"node_type\":\"habit|preference|goal\",\"importance\":0.0-1.0,\"confidence\":0.0-1.0,\"reason\":\"...\"}]}",
-                ),
+                ChatMessage::new("system", config.habit_detection_prompt.clone()),
                 ChatMessage::new(
                     "user",
                     format!(
@@ -1957,7 +1972,7 @@ impl ModuleLifecycle for ScheduledInsights {
         let pt_clone = pending.clone();
         let sem_clone = semaphore.clone();
         let st_clone = state.clone();
-        let cfg_clone = config.clone();
+        let cfg_clone = self.config.clone();
         let listener_llm = llm.clone();
         let listener_memory = memory.clone();
         tokio::spawn(async move {
@@ -1986,7 +2001,7 @@ impl ModuleLifecycle for ScheduledInsights {
         let pt_clone = pending.clone();
         let sem_clone = semaphore.clone();
         let st_clone = state.clone();
-        let idle_minutes = config.consolidation_idle_minutes;
+        let idle_config = self.config.clone();
         tokio::spawn(async move {
             Self::idle_check_loop(
                 db_clone,
@@ -1998,7 +2013,7 @@ impl ModuleLifecycle for ScheduledInsights {
                 pt_clone,
                 sem_clone,
                 st_clone,
-                idle_minutes,
+                idle_config,
             )
             .await;
         });
@@ -2027,6 +2042,61 @@ impl ModuleLifecycle for ScheduledInsights {
         }
         ModuleHealth::Healthy
     }
+
+    async fn apply_settings(
+        &self,
+        updates: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut applied = Vec::new();
+        let mut config = self.config.lock().await;
+        let Some(config) = config.as_mut() else {
+            return Ok(applied);
+        };
+
+        apply_prompt_setting(
+            updates,
+            "core.policies.insights.memory_extraction_prompt",
+            &mut config.memory_extraction_prompt,
+            &mut applied,
+        );
+        apply_prompt_setting(
+            updates,
+            "core.policies.insights.memory_consolidation_prompt",
+            &mut config.memory_consolidation_prompt,
+            &mut applied,
+        );
+        apply_prompt_setting(
+            updates,
+            "core.policies.insights.reflection_prompt",
+            &mut config.reflection_prompt,
+            &mut applied,
+        );
+        apply_prompt_setting(
+            updates,
+            "core.policies.insights.habit_detection_prompt",
+            &mut config.habit_detection_prompt,
+            &mut applied,
+        );
+
+        Ok(applied)
+    }
+}
+
+fn apply_prompt_setting(
+    updates: &std::collections::BTreeMap<String, serde_json::Value>,
+    key: &str,
+    target: &mut String,
+    applied: &mut Vec<String>,
+) {
+    let Some(value) = updates.get(key).and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    *target = value.to_string();
+    applied.push(key.to_string());
 }
 
 #[async_trait]
@@ -2056,6 +2126,12 @@ impl InsightStrategy for ScheduledInsights {
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
+        let config = self
+            .config
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
         let users = Self::resolve_phase_users(&db, &self.state, Some(task.user_id)).await;
@@ -2079,6 +2155,7 @@ impl InsightStrategy for ScheduledInsights {
                 user,
                 &phase,
                 &task.trigger,
+                &config,
                 &self.concurrency_semaphore,
             )
             .await;
@@ -2131,6 +2208,12 @@ impl InsightStrategy for ScheduledInsights {
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
+        let config = self
+            .config
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
         let user = Self::resolve_phase_users(&db, &self.state, Some(user_id))
@@ -2154,6 +2237,7 @@ impl InsightStrategy for ScheduledInsights {
             user,
             &phase,
             "manual",
+            &config,
             &self.concurrency_semaphore,
         )
         .await;

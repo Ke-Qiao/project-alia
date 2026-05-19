@@ -79,9 +79,11 @@ Automatic memory capture is agent-policy driven by default. `capture_mode =
 "llm_selected"` asks the assistant-side LLM to extract only durable user facts,
 preferences, stable relationship context, goals, or habits before storing
 provider-neutral `MemoryNode`s. Mem0 is used as storage/retrieval, not as the
-default judge for every conversation turn. Use `capture_mode =
-"provider_infer_all"` only when you intentionally want the memory provider to
-infer from every completed turn.
+default judge for every conversation turn. Keep `providers.mem0.infer = false`
+and `providers.mem0.conversation_infer = false` for this setup. Use
+`capture_mode = "provider_infer_all"` only when you intentionally want the
+memory provider to infer from every completed turn and its capabilities report
+provider-native inference support.
 
 If the configured memory backend fails startup health checks, the memory module
 should be disabled for prompt assembly rather than advertised to the LLM.

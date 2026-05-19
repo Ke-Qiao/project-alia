@@ -5,6 +5,10 @@ user_id_prefix = ""
 app_id = ""
 agent_id = ""
 run_id = ""
+# Optional mem0-native extraction guidance. Alia's recommended personal-agent
+# setup keeps infer=false and conversation_infer=false, so selected MemoryNodes
+# are stored as provider-neutral memories and this is only used in opt-in
+# mem0-native inference modes.
 custom_instructions = ""
 infer = false
 conversation_infer = false

@@ -6,7 +6,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
-use crate::error::Result;
+use crate::config::MemoryCaptureMode;
+use crate::error::{AppError, Result};
 use crate::state::AppState;
 
 #[derive(Deserialize, Default)]
@@ -45,6 +46,32 @@ async fn update_settings(
     _auth: AuthUser,
     Json(body): Json<BTreeMap<String, serde_json::Value>>,
 ) -> Result<Json<serde_json::Value>> {
+    if body
+        .get("core.policies.memory.capture_mode")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| matches!(value, "provider_infer_all" | "provider-infer-all"))
+    {
+        let capabilities = state.modules.memory.memory_capabilities().await;
+        if !capabilities.supports_conversation_ingest || !capabilities.supports_provider_infer {
+            return Err(AppError::Validation(format!(
+                "capture_mode provider_infer_all is not supported by memory backend '{}'",
+                capabilities.provider
+            )));
+        }
+    }
+    if body
+        .get("core.policies.memory.capture_mode")
+        .is_some_and(|value| value == &serde_json::json!(MemoryCaptureMode::ProviderInferAll))
+    {
+        let capabilities = state.modules.memory.memory_capabilities().await;
+        if !capabilities.supports_conversation_ingest || !capabilities.supports_provider_infer {
+            return Err(AppError::Validation(format!(
+                "capture_mode provider_infer_all is not supported by memory backend '{}'",
+                capabilities.provider
+            )));
+        }
+    }
+
     let changed = state.settings.batch_update(&body).await;
 
     let mut requires_restart = Vec::new();

@@ -864,6 +864,26 @@ impl SettingsRegistry {
                 schema("Memory Similarity Threshold", "number", false),
             ),
             (
+                "core.policies.insights.memory_extraction_prompt",
+                json!(config.policies.insights.memory_extraction_prompt),
+                schema("Insights Memory Extraction Prompt", "string", true),
+            ),
+            (
+                "core.policies.insights.memory_consolidation_prompt",
+                json!(config.policies.insights.memory_consolidation_prompt),
+                schema("Insights Memory Consolidation Prompt", "string", true),
+            ),
+            (
+                "core.policies.insights.reflection_prompt",
+                json!(config.policies.insights.reflection_prompt),
+                schema("Insights Reflection Prompt", "string", true),
+            ),
+            (
+                "core.policies.insights.habit_detection_prompt",
+                json!(config.policies.insights.habit_detection_prompt),
+                schema("Insights Habit Detection Prompt", "string", true),
+            ),
+            (
                 "core.policies.tools.max_tool_call_depth",
                 json!(config.policies.tools.max_tool_call_depth),
                 schema("Max Tool Call Depth", "number", false),
