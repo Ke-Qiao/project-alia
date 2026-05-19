@@ -7,7 +7,7 @@ use tokio::time;
 use crate::config::TranscriptCorrectionPolicySection;
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, SttCapabilities, TranscriptionAlternative, TranscriptionResult,
-    TranscriptionSegment,
+    TranscriptionSegment, TranscriptionWord,
 };
 
 const TRANSCRIPT_CORRECTION_SYSTEM_PROMPT: &str = r#"You correct speech-to-text transcripts before they are routed to an assistant.
@@ -229,7 +229,13 @@ pub async fn correct_stt_transcript(
         provider: transcription.provider.clone(),
         confidence: transcription.confidence,
         language: transcription.language.clone(),
-        segments: transcription.segments.iter().take(8).cloned().collect(),
+        segments: transcription
+            .segments
+            .iter()
+            .take(8)
+            .cloned()
+            .map(limit_segment_words)
+            .collect(),
         alternatives: transcription.alternatives.iter().take(5).cloned().collect(),
     };
     let messages = correction_messages(&limited_transcription, stt_capabilities, context);
@@ -289,9 +295,20 @@ fn stt_trace(
         capabilities: capabilities.clone(),
         confidence: transcription.confidence,
         language: transcription.language.clone(),
-        segments: transcription.segments.iter().take(8).cloned().collect(),
+        segments: transcription
+            .segments
+            .iter()
+            .take(8)
+            .cloned()
+            .map(limit_segment_words)
+            .collect(),
         alternatives: transcription.alternatives.iter().take(5).cloned().collect(),
     }
+}
+
+fn limit_segment_words(mut segment: TranscriptionSegment) -> TranscriptionSegment {
+    segment.words.truncate(16);
+    segment
 }
 
 pub fn parse_correction_response(response: &str) -> Option<TranscriptCorrectionResult> {
@@ -346,8 +363,10 @@ fn correction_user_prompt(
 
     prompt.push_str("\n\nSTT capabilities:");
     prompt.push_str(&format!(
-        "\n- confidence: {}\n- segments: {}\n- alternatives: {}\n- language: {}\n- timestamps: {}",
+        "\n- overall confidence: {}\n- word confidence: {}\n- segment quality: {}\n- segments: {}\n- alternatives: {}\n- language: {}\n- timestamps: {}",
         stt_capabilities.supports_confidence,
+        stt_capabilities.supports_word_confidence,
+        stt_capabilities.supports_segment_quality,
         stt_capabilities.supports_segments,
         stt_capabilities.supports_alternatives,
         stt_capabilities.supports_language,
@@ -405,6 +424,34 @@ fn append_segments(prompt: &mut String, segments: &[TranscriptionSegment]) {
         prompt.push_str(&format!(
             "\n- [{timing}, confidence {confidence}] {}",
             segment.text
+        ));
+        if let Some(avg_logprob) = segment.avg_logprob {
+            prompt.push_str(&format!("\n  avg_logprob: {avg_logprob:.2}"));
+        }
+        if let Some(no_speech_prob) = segment.no_speech_prob {
+            prompt.push_str(&format!("\n  no_speech_prob: {no_speech_prob:.2}"));
+        }
+        append_words(prompt, &segment.words);
+    }
+}
+
+fn append_words(prompt: &mut String, words: &[TranscriptionWord]) {
+    if words.is_empty() {
+        return;
+    }
+    prompt.push_str("\n  words:");
+    for word in words.iter().take(16) {
+        let confidence = word
+            .confidence
+            .map(|value| format!("{value:.2}"))
+            .unwrap_or_else(|| "unknown".to_string());
+        let timing = match (word.start_ms, word.end_ms) {
+            (Some(start), Some(end)) => format!("{start}-{end}ms"),
+            _ => "no timestamp".to_string(),
+        };
+        prompt.push_str(&format!(
+            "\n  - [{timing}, confidence {confidence}] {}",
+            word.text
         ));
     }
 }
@@ -583,6 +630,14 @@ mod tests {
                 start_ms: Some(400),
                 end_ms: Some(1100),
                 confidence: Some(0.42),
+                avg_logprob: Some(-0.92),
+                no_speech_prob: Some(0.03),
+                words: vec![TranscriptionWord {
+                    text: "lite".to_string(),
+                    start_ms: Some(900),
+                    end_ms: Some(1100),
+                    confidence: Some(0.31),
+                }],
             }],
             alternatives: vec![TranscriptionAlternative {
                 text: "turn on the living room light".to_string(),
@@ -592,6 +647,8 @@ mod tests {
         let capabilities = SttCapabilities {
             provider: "test_whisper".to_string(),
             supports_confidence: true,
+            supports_word_confidence: true,
+            supports_segment_quality: true,
             supports_segments: true,
             supports_alternatives: true,
             supports_language: true,
@@ -606,8 +663,13 @@ mod tests {
         let prompt = correction_user_prompt(&transcription, &capabilities, &context);
 
         assert!(prompt.contains("STT provider: test_whisper"));
+        assert!(prompt.contains("- word confidence: true"));
+        assert!(prompt.contains("- segment quality: true"));
         assert!(prompt.contains("- alternatives: true"));
         assert!(prompt.contains("[400-1100ms, confidence 0.42] living room lite"));
+        assert!(prompt.contains("avg_logprob: -0.92"));
+        assert!(prompt.contains("no_speech_prob: 0.03"));
+        assert!(prompt.contains("[900-1100ms, confidence 0.31] lite"));
         assert!(prompt.contains("[confidence 0.66] turn on the living room light"));
         assert!(prompt.contains("Known device names:"));
         assert!(prompt.contains("Living Room Light"));

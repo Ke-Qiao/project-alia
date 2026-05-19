@@ -108,6 +108,23 @@ pub struct TranscriptionSegment {
     pub end_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_logprob: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_speech_prob: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<TranscriptionWord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionWord {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +140,10 @@ pub struct SttCapabilities {
     #[serde(default)]
     pub supports_confidence: bool,
     #[serde(default)]
+    pub supports_word_confidence: bool,
+    #[serde(default)]
+    pub supports_segment_quality: bool,
+    #[serde(default)]
     pub supports_segments: bool,
     #[serde(default)]
     pub supports_alternatives: bool,
@@ -137,6 +158,8 @@ impl SttCapabilities {
         Self {
             provider: provider.into(),
             supports_confidence: false,
+            supports_word_confidence: false,
+            supports_segment_quality: false,
             supports_segments: false,
             supports_alternatives: false,
             supports_language: false,

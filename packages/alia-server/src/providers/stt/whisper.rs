@@ -19,7 +19,7 @@ use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     AudioEncoding, SttAdapter, SttCapabilities, TranscribeChunk, TranscriptionResult,
-    TranscriptionSegment,
+    TranscriptionSegment, TranscriptionWord,
 };
 use crate::settings::values::{string_setting, u64_setting};
 
@@ -44,6 +44,27 @@ struct WhisperResponseSegment {
     confidence: Option<f32>,
     #[serde(default)]
     probability: Option<f32>,
+    #[serde(default)]
+    avg_logprob: Option<f32>,
+    #[serde(default)]
+    no_speech_prob: Option<f32>,
+    #[serde(default)]
+    words: Vec<WhisperResponseWord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WhisperResponseWord {
+    #[serde(alias = "text")]
+    #[serde(default)]
+    word: String,
+    #[serde(default)]
+    start: Option<f64>,
+    #[serde(default)]
+    end: Option<f64>,
+    #[serde(default)]
+    probability: Option<f32>,
+    #[serde(default)]
+    confidence: Option<f32>,
 }
 
 /// Whisper.cpp streaming response segment
@@ -110,7 +131,8 @@ impl WhisperCppStt {
                     .mime_str(Self::encoding_to_mime(encoding))?,
             )
             .text("language", config.language.clone())
-            .text("response_format", "json");
+            .text("response_format", "verbose_json")
+            .text("token_timestamps", "true");
 
         let response = self
             .client
@@ -218,12 +240,7 @@ impl SttAdapter for WhisperCppStt {
             segments: whisper_response
                 .segments
                 .into_iter()
-                .map(|segment| TranscriptionSegment {
-                    text: segment.text.trim().to_string(),
-                    start_ms: segment.start.map(seconds_to_ms),
-                    end_ms: segment.end.map(seconds_to_ms),
-                    confidence: segment.confidence.or(segment.probability),
-                })
+                .map(whisper_segment_to_transcription_segment)
                 .filter(|segment| !segment.text.is_empty())
                 .collect(),
             alternatives: Vec::new(),
@@ -234,6 +251,8 @@ impl SttAdapter for WhisperCppStt {
         SttCapabilities {
             provider: self.name().to_string(),
             supports_confidence: false,
+            supports_word_confidence: true,
+            supports_segment_quality: true,
             supports_segments: true,
             supports_alternatives: false,
             supports_language: true,
@@ -269,7 +288,8 @@ impl SttAdapter for WhisperCppStt {
                                 .unwrap(),
                         )
                         .text("language", config.language.clone())
-                        .text("response_format", "json");
+                        .text("response_format", "verbose_json")
+                        .text("token_timestamps", "true");
 
                     match client
                         .post(format!("{}/inference", config.endpoint))
@@ -310,7 +330,8 @@ impl SttAdapter for WhisperCppStt {
                             .unwrap(),
                     )
                     .text("language", config.language.clone())
-                    .text("response_format", "json");
+                    .text("response_format", "verbose_json")
+                    .text("token_timestamps", "true");
 
                 match client
                     .post(format!("{}/inference", config.endpoint))
@@ -346,6 +367,32 @@ fn seconds_to_ms(seconds: f64) -> u64 {
     (seconds.max(0.0) * 1000.0).round() as u64
 }
 
+fn whisper_segment_to_transcription_segment(
+    segment: WhisperResponseSegment,
+) -> TranscriptionSegment {
+    TranscriptionSegment {
+        text: segment.text.trim().to_string(),
+        start_ms: segment.start.map(seconds_to_ms),
+        end_ms: segment.end.map(seconds_to_ms),
+        confidence: segment.confidence.or(segment.probability),
+        avg_logprob: segment.avg_logprob,
+        no_speech_prob: segment.no_speech_prob,
+        words: segment
+            .words
+            .into_iter()
+            .filter_map(|word| {
+                let text = word.word.trim().to_string();
+                (!text.is_empty()).then_some(TranscriptionWord {
+                    text,
+                    start_ms: word.start.map(seconds_to_ms),
+                    end_ms: word.end.map(seconds_to_ms),
+                    confidence: word.confidence.or(word.probability),
+                })
+            })
+            .collect(),
+    }
+}
+
 fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     let data_len = pcm.len() as u32;
     let byte_rate = sample_rate * channels as u32 * 2;
@@ -368,4 +415,50 @@ fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
     wav.extend_from_slice(pcm);
 
     wav
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_verbose_json_segment_quality_metadata() {
+        let response: WhisperResponse = serde_json::from_str(
+            r#"{
+              "text": " turn on the living room light",
+              "language": "en",
+              "segments": [
+                {
+                  "text": " living room lite",
+                  "start": 0.4,
+                  "end": 1.1,
+                  "avg_logprob": -0.92,
+                  "no_speech_prob": 0.03,
+                  "words": [
+                    {"word": "living", "start": 0.4, "end": 0.7, "probability": 0.91},
+                    {"word": "lite", "start": 0.9, "end": 1.1, "probability": 0.31}
+                  ]
+                }
+              ]
+            }"#,
+        )
+        .expect("verbose_json response should parse");
+
+        assert_eq!(response.language.as_deref(), Some("en"));
+        let segment = whisper_segment_to_transcription_segment(
+            response
+                .segments
+                .into_iter()
+                .next()
+                .expect("sample contains one segment"),
+        );
+        assert_eq!(segment.text, "living room lite");
+        assert_eq!(segment.start_ms, Some(400));
+        assert_eq!(segment.end_ms, Some(1100));
+        assert_eq!(segment.avg_logprob, Some(-0.92));
+        assert_eq!(segment.no_speech_prob, Some(0.03));
+        assert_eq!(segment.words.len(), 2);
+        assert_eq!(segment.words[1].text, "lite");
+        assert_eq!(segment.words[1].confidence, Some(0.31));
+    }
 }

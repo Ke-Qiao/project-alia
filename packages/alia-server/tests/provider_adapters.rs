@@ -9,6 +9,9 @@ use alia_server::providers::adapter::{
 use async_trait::async_trait;
 use futures::Stream;
 
+#[cfg(feature = "stt-whisper")]
+use alia_server::providers::stt::WhisperCppStt;
+
 struct MinimalStt;
 
 #[async_trait]
@@ -57,6 +60,22 @@ async fn stt_minimal_result_and_capabilities_are_provider_neutral() {
     assert_eq!(result.text, "hello from audio");
     assert_eq!(result.provider, "minimal_stt");
     assert!(!capabilities.supports_segments);
+    assert!(!capabilities.supports_alternatives);
+}
+
+#[cfg(feature = "stt-whisper")]
+#[tokio::test]
+async fn whisper_capabilities_match_verbose_json_metadata() {
+    let stt = WhisperCppStt::new();
+    let capabilities = stt.stt_capabilities().await;
+
+    assert_eq!(capabilities.provider, "whisper");
+    assert!(!capabilities.supports_confidence);
+    assert!(capabilities.supports_word_confidence);
+    assert!(capabilities.supports_segment_quality);
+    assert!(capabilities.supports_segments);
+    assert!(capabilities.supports_language);
+    assert!(capabilities.supports_timestamps);
     assert!(!capabilities.supports_alternatives);
 }
 
