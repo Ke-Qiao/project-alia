@@ -69,6 +69,10 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/policies/routing.toml"),
     ),
     (
+        "policies/transcript_correction.toml",
+        include_str!("../../../../config/server.example.d/policies/transcript_correction.toml"),
+    ),
+    (
         "policies/conversation.toml",
         include_str!("../../../../config/server.example.d/policies/conversation.toml"),
     ),

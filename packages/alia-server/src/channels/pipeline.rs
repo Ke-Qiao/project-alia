@@ -32,12 +32,15 @@ use crate::providers::adapter::{
     ToolDefinition, TtsRequest,
 };
 use crate::providers::sensor::SensorRegistry;
-use crate::settings::values::{bool_setting, f32_setting, u32_setting, u64_setting, usize_setting};
+use crate::settings::values::{
+    bool_setting, f32_setting, string_setting, u32_setting, u64_setting, usize_setting,
+};
 
 mod debug;
 mod dialogue_policy;
 pub mod streaming;
 pub mod tools;
+mod transcript_correction;
 mod turn;
 use crate::expression::orchestrator::{
     ExpressionExecutionPhase, cancel_expression_execution, execute_expression_plan,
@@ -51,6 +54,9 @@ use debug::*;
 use dialogue_policy::DialoguePolicyInput;
 use streaming::*;
 use tools::*;
+use transcript_correction::{
+    TranscriptCorrectionContext, TranscriptCorrectionResult, correct_stt_transcript,
+};
 use turn::*;
 
 const EMPTY_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
@@ -171,6 +177,7 @@ pub struct PipelinePolicies {
     pub cache: CacheSection,
     pub cache_policy: CachePolicyResourceSection,
     pub memory: MemorySection,
+    pub transcript_correction: crate::config::TranscriptCorrectionPolicySection,
 }
 
 pub type SharedPipelinePolicies = Arc<RwLock<PipelinePolicies>>;
@@ -182,6 +189,7 @@ impl PipelinePolicies {
         cache: CacheSection,
         cache_policy: CachePolicyResourceSection,
         memory: MemorySection,
+        transcript_correction: crate::config::TranscriptCorrectionPolicySection,
     ) -> Self {
         Self {
             conversation,
@@ -189,6 +197,7 @@ impl PipelinePolicies {
             cache,
             cache_policy,
             memory,
+            transcript_correction,
         }
     }
 
@@ -304,6 +313,58 @@ impl PipelinePolicies {
             applied
                 .push("core.policies.tools.indexed_search_refresh_missing_embeddings".to_string());
         }
+        if let Some(value) = bool_setting(updates, "core.policies.transcript_correction.enabled") {
+            self.transcript_correction.enabled = value;
+            applied.push("core.policies.transcript_correction.enabled".to_string());
+        }
+        if let Some(value) =
+            bool_setting(updates, "core.policies.transcript_correction.apply_to_stt")
+        {
+            self.transcript_correction.apply_to_stt = value;
+            applied.push("core.policies.transcript_correction.apply_to_stt".to_string());
+        }
+        if let Some(value) = string_setting(updates, "core.policies.transcript_correction.provider")
+        {
+            self.transcript_correction.provider = value;
+            applied.push("core.policies.transcript_correction.provider".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.transcript_correction.timeout_sec")
+        {
+            self.transcript_correction.timeout_sec = value.max(1);
+            applied.push("core.policies.transcript_correction.timeout_sec".to_string());
+        }
+        if let Some(value) = usize_setting(
+            updates,
+            "core.policies.transcript_correction.max_input_chars",
+        ) {
+            self.transcript_correction.max_input_chars = value;
+            applied.push("core.policies.transcript_correction.max_input_chars".to_string());
+        }
+        if let Some(value) = f32_setting(
+            updates,
+            "core.policies.transcript_correction.min_confidence_to_replace",
+        ) {
+            self.transcript_correction.min_confidence_to_replace = value.clamp(0.0, 1.0);
+            applied
+                .push("core.policies.transcript_correction.min_confidence_to_replace".to_string());
+        }
+        if let Some(value) = bool_setting(
+            updates,
+            "core.policies.transcript_correction.require_confirmation_on_medium_risk",
+        ) {
+            self.transcript_correction
+                .require_confirmation_on_medium_risk = value;
+            applied.push(
+                "core.policies.transcript_correction.require_confirmation_on_medium_risk"
+                    .to_string(),
+            );
+        }
+        if let Some(value) =
+            bool_setting(updates, "core.policies.transcript_correction.trace_enabled")
+        {
+            self.transcript_correction.trace_enabled = value;
+            applied.push("core.policies.transcript_correction.trace_enabled".to_string());
+        }
 
         applied
     }
@@ -346,7 +407,7 @@ pub fn spawn_pipeline(
                             let voice_turns = voice_turns.clone();
                             // Process each event concurrently
                             tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.cache_policy, &policy_snapshot.memory).await {
+                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.cache_policy, &policy_snapshot.memory, &policy_snapshot.transcript_correction).await {
                                     tracing::error!(error = %e, "pipeline processing failed");
                                     tracing::debug!(error = ?e, "pipeline processing failure details");
                                     if let Some(channel_id) = channel_id {
@@ -390,6 +451,7 @@ async fn process_event(
     cache_config: &CacheSection,
     cache_policy: &CachePolicyResourceSection,
     memory_config: &MemorySection,
+    transcript_correction_config: &crate::config::TranscriptCorrectionPolicySection,
 ) -> anyhow::Result<()> {
     match event {
         ChannelEvent::TextMessage {
@@ -426,6 +488,7 @@ async fn process_event(
                 memory_config,
                 None,
                 false,
+                None,
             )
             .await?;
 
@@ -538,16 +601,16 @@ async fn process_event(
                 audio.data.len(),
                 Some((&channel_id, &user_id)),
             );
-            let transcript = match cancellable_stage(
+            let transcription = match cancellable_stage(
                 Some(&turn),
                 "stt",
                 modules
                     .stt
-                    .transcribe(&audio.data, AudioEncoding::Pcm16kMono),
+                    .transcribe_result(&audio.data, AudioEncoding::Pcm16kMono),
             )
             .await
             {
-                Ok(Some(transcript)) => transcript,
+                Ok(Some(transcription)) => transcription,
                 Ok(None) => {
                     voice_turns.finish(&turn).await;
                     return Ok(());
@@ -557,6 +620,8 @@ async fn process_event(
                     return Err(error);
                 }
             };
+            let stt_capabilities = modules.stt.stt_capabilities().await;
+            let transcript = transcription.text.clone();
             debug_component_text(
                 debug_output,
                 "stt",
@@ -576,8 +641,55 @@ async fn process_event(
                 return Ok(());
             }
 
+            let correction_context = build_transcript_correction_context(
+                modules,
+                sensors,
+                &channel_id,
+                &user_id,
+                conversation_config,
+            )
+            .await;
+            let correction = correct_stt_transcript(
+                &transcription,
+                &stt_capabilities,
+                &correction_context,
+                transcript_correction_config,
+                transcript_correction_llm(modules, transcript_correction_config),
+            )
+            .await;
+            if correction.requires_user_confirmation(transcript_correction_config) {
+                let clarification = correction.clarification_prompt();
+                handle_transcript_correction_confirmation(
+                    modules,
+                    channel.as_ref(),
+                    &target,
+                    &channel_id,
+                    &user_id,
+                    &clarification,
+                    &correction,
+                    debug_output,
+                    Some(&turn),
+                )
+                .await;
+                voice_turns.finish(&turn).await;
+                return Ok(());
+            }
+            let corrected_text = correction
+                .text_for_processing(transcript_correction_config)
+                .to_string();
+            let correction_trace = transcript_correction_config
+                .trace_enabled
+                .then_some(correction.clone());
+            debug_component_text(
+                debug_output,
+                "stt",
+                "corrected",
+                &corrected_text,
+                Some((&channel_id, &user_id)),
+            );
+
             let result = match process_text(
-                &transcript,
+                &corrected_text,
                 &user_id,
                 modules,
                 channel.as_ref(),
@@ -593,6 +705,7 @@ async fn process_event(
                 memory_config,
                 Some(&turn),
                 turn.interrupt_config.discard_interrupted_turn_history,
+                correction_trace,
             )
             .await
             {
@@ -774,6 +887,7 @@ async fn process_text(
     memory_config: &MemorySection,
     turn: Option<&VoiceTurn>,
     defer_persistence: bool,
+    transcript_correction: Option<TranscriptCorrectionResult>,
 ) -> anyhow::Result<TextResult> {
     let uid = stable_user_uuid(user_id);
     let (mut base_system_messages, runtime_context) =
@@ -809,6 +923,19 @@ async fn process_text(
             }),
         )
         .await;
+    if let Some(correction) = transcript_correction.as_ref()
+        && correction.status != transcript_correction::TranscriptCorrectionStatus::Disabled
+    {
+        trace
+            .record(
+                modules,
+                "stt_correction",
+                "stt",
+                Some("STT transcript correction completed".to_string()),
+                transcript_correction_trace_payload(correction, text),
+            )
+            .await;
+    }
     observe_user_affect_for_turn(modules, &mut trace, channel_id, user_id, text).await;
 
     // 2. Check exact cache first (never streamed). Only entries with explicit
@@ -1743,6 +1870,261 @@ fn expression_safety_context(
             })
             .map(|limit| limit.clamp(0.0, 1.0)),
     }
+}
+
+fn transcript_correction_llm(
+    modules: &ModuleRegistry,
+    policy: &crate::config::TranscriptCorrectionPolicySection,
+) -> Option<Arc<dyn LlmAdapter>> {
+    match policy.provider.trim() {
+        "transcript_correction_llm" => modules.transcript_correction_llm.clone(),
+        "minor_llm" => Some(modules.minor_llm.clone()),
+        "major_llm" => Some(modules.major_llm.clone()),
+        "default_llm" => {
+            if let Some(llm) = &modules.transcript_correction_llm {
+                Some(llm.clone())
+            } else if modules.minor_llm.name() != "noop_llm" {
+                Some(modules.minor_llm.clone())
+            } else if modules.major_llm.name() != "noop_llm" {
+                Some(modules.major_llm.clone())
+            } else {
+                None
+            }
+        }
+        "none" => None,
+        other => {
+            tracing::warn!(
+                provider = other,
+                "unknown transcript correction provider; falling back to default_llm"
+            );
+            if let Some(llm) = &modules.transcript_correction_llm {
+                Some(llm.clone())
+            } else if modules.minor_llm.name() != "noop_llm" {
+                Some(modules.minor_llm.clone())
+            } else if modules.major_llm.name() != "noop_llm" {
+                Some(modules.major_llm.clone())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+async fn build_transcript_correction_context(
+    modules: &ModuleRegistry,
+    sensors: &SensorRegistry,
+    channel_id: &str,
+    user_id: &str,
+    conversation_config: &ConversationSection,
+) -> TranscriptCorrectionContext {
+    let mut context = TranscriptCorrectionContext::new(channel_id, user_id);
+
+    if let Ok(skills) = modules.skills.list_skills().await {
+        context.active_skill_names = skills
+            .into_iter()
+            .map(|skill| {
+                if skill.display_name.trim().is_empty() {
+                    skill.name
+                } else {
+                    format!("{} ({})", skill.display_name, skill.name)
+                }
+            })
+            .take(24)
+            .collect();
+    }
+
+    if let Ok(sensor_summaries) = sensors.list_sensors().await {
+        let mut known_device_names = Vec::new();
+        let mut room_names = Vec::new();
+        for sensor in sensor_summaries.into_iter().take(48) {
+            push_unique(&mut known_device_names, sensor.display_name.clone(), 48);
+            push_unique(&mut known_device_names, sensor.sensor_id.clone(), 48);
+            for room in inferred_room_names(&sensor.sensor_id, &sensor.display_name) {
+                push_unique(&mut room_names, room, 24);
+            }
+        }
+        context.known_device_names = known_device_names;
+        context.room_names = room_names;
+    }
+
+    if let Ok(session_id) = modules
+        .conversation
+        .get_or_create_active_session(channel_id, user_id)
+        .await
+        && let Ok(history) = modules
+            .conversation
+            .get_history(
+                session_id,
+                conversation_config.max_context_messages.max(1) as u64,
+            )
+            .await
+    {
+        context.last_assistant_question = history
+            .iter()
+            .rev()
+            .find(|message| {
+                message.role == "assistant" && {
+                    let trimmed = message.content.trim();
+                    trimmed.ends_with('?') || trimmed.ends_with('？')
+                }
+            })
+            .map(|message| preview_for_prompt(&message.content, 280));
+    }
+
+    context
+}
+
+fn push_unique(values: &mut Vec<String>, value: String, max_len: usize) {
+    let value = value.trim();
+    if value.is_empty() || values.len() >= max_len {
+        return;
+    }
+    if !values.iter().any(|existing| existing == value) {
+        values.push(value.to_string());
+    }
+}
+
+fn inferred_room_names(sensor_id: &str, display_name: &str) -> Vec<String> {
+    let mut rooms = Vec::new();
+    for text in [sensor_id, display_name] {
+        let lower = text.to_ascii_lowercase();
+        for marker in [
+            "kitchen",
+            "living room",
+            "bedroom",
+            "bathroom",
+            "office",
+            "study",
+            "hallway",
+            "garage",
+            "balcony",
+        ] {
+            if lower.contains(marker) {
+                push_unique(&mut rooms, marker.to_string(), 12);
+            }
+        }
+    }
+    rooms
+}
+
+async fn handle_transcript_correction_confirmation(
+    modules: &ModuleRegistry,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    channel_id: &str,
+    user_id: &str,
+    clarification: &str,
+    correction: &TranscriptCorrectionResult,
+    debug_output: bool,
+    turn: Option<&VoiceTurn>,
+) {
+    match modules
+        .conversation
+        .get_or_create_active_session(channel_id, user_id)
+        .await
+    {
+        Ok(session_id) => {
+            let mut trace = AgentTrace::new(session_id);
+            trace
+                .record(
+                    modules,
+                    "stt_correction",
+                    "stt",
+                    Some("STT transcript correction requires confirmation".to_string()),
+                    transcript_correction_trace_payload(correction, &correction.raw_text),
+                )
+                .await;
+            trace
+                .record(
+                    modules,
+                    "correction_confirmation_requested",
+                    "pipeline",
+                    Some("Ambiguous STT correction was paused for user confirmation".to_string()),
+                    serde_json::json!({
+                        "clarification_text": clarification,
+                        "raw_text": correction.raw_text,
+                        "corrected_text": correction.corrected_text,
+                        "risk": correction.risk,
+                    }),
+                )
+                .await;
+            let _ = modules
+                .conversation
+                .append_message(
+                    session_id,
+                    ChatMessage {
+                        role: "user".into(),
+                        content: correction.raw_text.clone(),
+                        name: Some(user_id.to_string()),
+                        ..ChatMessage::default()
+                    },
+                )
+                .await;
+            let _ = modules
+                .conversation
+                .append_message(
+                    session_id,
+                    ChatMessage {
+                        role: "assistant".into(),
+                        content: clarification.to_string(),
+                        name: None,
+                        ..ChatMessage::default()
+                    },
+                )
+                .await;
+        }
+        Err(error) => {
+            tracing::debug!(error = ?error, "failed to create session for STT correction confirmation");
+        }
+    }
+
+    debug_component_text(
+        debug_output,
+        "stt",
+        "clarification",
+        clarification,
+        Some((channel_id, user_id)),
+    );
+    if let Err(error) = channel.send_message(target, clarification).await {
+        log_channel_delivery_failure(channel, error).await;
+        return;
+    }
+    if channel.capabilities().voice_output {
+        deliver_tts_audio(
+            modules,
+            channel,
+            target,
+            channel_id,
+            user_id,
+            clarification,
+            None,
+            None,
+            debug_output,
+            turn,
+        )
+        .await;
+    }
+}
+
+fn transcript_correction_trace_payload(
+    correction: &TranscriptCorrectionResult,
+    text_used: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "raw_text": correction.raw_text,
+        "corrected_text": correction.corrected_text,
+        "text_used": text_used,
+        "confidence": correction.confidence,
+        "changed": correction.changed,
+        "corrections": correction.corrections,
+        "ambiguities": correction.ambiguities,
+        "requires_confirmation": correction.requires_confirmation,
+        "clarification_text": correction.clarification_text,
+        "risk": correction.risk,
+        "status": correction.status,
+        "provider": correction.provider,
+        "stt": correction.stt,
+    })
 }
 
 async fn execute_expression_and_trace(

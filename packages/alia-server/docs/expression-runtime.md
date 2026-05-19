@@ -349,6 +349,7 @@ GET /api/v1/conversations/{session_id}/expression-traces?turn_id={turn_id}
 
 Each `ExpressionTrace` stitches together:
 
+- STT transcript correction, when the turn came from audio
 - user and assistant appraisal events
 - the reduced affect/social/resource snapshot
 - the explicit `ExpressionInput`

@@ -52,6 +52,7 @@ pub struct ModuleContext {
     pub llm: Option<Arc<dyn LlmAdapter>>,
     pub minor_llm: Option<Arc<dyn LlmAdapter>>,
     pub major_llm: Option<Arc<dyn LlmAdapter>>,
+    pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     /// Cache backend for modules that review or maintain cache entries.
     pub cache: Option<Arc<dyn CacheBackend>>,
     /// Unified executable tool registry. Plugins/components should register

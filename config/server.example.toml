@@ -54,6 +54,9 @@ discard_interrupted_turn_history = true
 [modules]
 minor_llm = "ollama"
 major_llm = "openai"
+# Optional dedicated LLM for STT transcript correction. Omit to fall back to
+# the configured minor/major LLMs.
+# transcript_correction_llm = "ollama"
 stt = "whisper_cpp"
 tts = "gpt_sovits"
 embedding = "ollama"

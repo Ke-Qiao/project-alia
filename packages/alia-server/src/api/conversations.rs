@@ -225,8 +225,9 @@ fn expression_trace_event(event: conversation_event::Model) -> ExpressionTraceEv
     }
 }
 
-fn expression_trace_event_types() -> [&'static str; 4] {
+fn expression_trace_event_types() -> [&'static str; 5] {
     [
+        "stt_correction",
         "affect_user_input",
         "affect_state",
         "expression_plan",

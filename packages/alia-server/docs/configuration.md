@@ -30,6 +30,7 @@ config/
       mem0.toml
     policies/
       routing.toml
+      transcript_correction.toml
       conversation.toml
       cache.toml
       memory.toml
@@ -55,7 +56,8 @@ Keep these in `server.toml`:
 - server bind address, port, and basic logging
 - database connection and auth key material paths
 - channel topology in `[[channels]]`
-- provider selection in `[modules]`
+- provider selection in `[modules]`, including optional
+  `transcript_correction_llm`
 
 Do not bury provider selection inside provider fragments. If a frontend changes
 a provider setting at runtime, it should not accidentally change which provider
@@ -71,8 +73,8 @@ pipeline. Plugins extend these services through their registries.
 Use fragments for implementation details:
 
 - `providers/*.toml`: OpenAI-compatible, Ollama, whisper.cpp, GPT-SoVITS, Mem0
-- `policies/*.toml`: routing, conversation, cache, memory, affect, regulation,
-  expression, insights, rules, scheduler, tools
+- `policies/*.toml`: routing, transcript correction, conversation, cache,
+  memory, affect, regulation, expression, insights, rules, scheduler, tools
 - `profiles/*.toml`: voice profile, expression styles, and TTS reference
   parameters
 - `resources/*.toml`: directories, runtime roots, model/service resource paths,

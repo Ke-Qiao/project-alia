@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
-use crate::providers::adapter::AudioEncoding;
+use crate::providers::adapter::{
+    AudioEncoding, TranscriptionAlternative, TranscriptionResult, TranscriptionSegment,
+};
 use crate::state::AppState;
 
 // ========== Request / Response types ==========
@@ -43,6 +45,28 @@ fn default_encoding() -> AudioEncoding {
 #[derive(Serialize)]
 pub struct TranscribeResponse {
     pub text: String,
+    pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<TranscriptionSegment>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<TranscriptionAlternative>,
+}
+
+impl From<TranscriptionResult> for TranscribeResponse {
+    fn from(result: TranscriptionResult) -> Self {
+        Self {
+            text: result.text,
+            provider: result.provider,
+            confidence: result.confidence,
+            language: result.language,
+            segments: result.segments,
+            alternatives: result.alternatives,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -90,14 +114,15 @@ async fn voice_chat(
         let transcription = state
             .modules
             .stt
-            .transcribe(&audio_bytes, encoding)
+            .transcribe_result(&audio_bytes, encoding)
             .await
             .map_err(|e| AppError::AiService(format!("STT failed: {e}")))?;
+        let text = transcription.text.trim().to_string();
 
-        if transcription.is_empty() {
+        if text.is_empty() {
             return Err(AppError::Validation("no speech detected in audio".into()));
         }
-        transcription
+        text
     } else if let Some(text) = req.text {
         if text.trim().is_empty() {
             return Err(AppError::Validation("text or audio_base64 required".into()));
@@ -160,14 +185,14 @@ async fn transcribe(
         return Err(AppError::Validation("empty audio body".into()));
     }
 
-    let text = state
+    let transcription = state
         .modules
         .stt
-        .transcribe(&body, params.encoding)
+        .transcribe_result(&body, params.encoding)
         .await
         .map_err(|e| AppError::AiService(format!("STT failed: {e}")))?;
 
-    Ok(Json(TranscribeResponse { text }))
+    Ok(Json(transcription.into()))
 }
 
 /// TTS endpoint: text → synthesized audio bytes.

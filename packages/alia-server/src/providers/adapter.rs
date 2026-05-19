@@ -72,6 +72,79 @@ pub struct TranscribeChunk {
     pub is_final: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResult {
+    pub text: String,
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<TranscriptionSegment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<TranscriptionAlternative>,
+}
+
+impl TranscriptionResult {
+    pub fn plain(provider: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            provider: provider.into(),
+            confidence: None,
+            language: None,
+            segments: Vec::new(),
+            alternatives: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionSegment {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionAlternative {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SttCapabilities {
+    pub provider: String,
+    #[serde(default)]
+    pub supports_confidence: bool,
+    #[serde(default)]
+    pub supports_segments: bool,
+    #[serde(default)]
+    pub supports_alternatives: bool,
+    #[serde(default)]
+    pub supports_language: bool,
+    #[serde(default)]
+    pub supports_timestamps: bool,
+}
+
+impl SttCapabilities {
+    pub fn minimal(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            supports_confidence: false,
+            supports_segments: false,
+            supports_alternatives: false,
+            supports_language: false,
+            supports_timestamps: false,
+        }
+    }
+}
+
 // ========== LLM Adapter ==========
 
 #[async_trait]
@@ -102,8 +175,16 @@ pub trait LlmAdapter: ModuleLifecycle {
 
 #[async_trait]
 pub trait SttAdapter: ModuleLifecycle {
-    /// Transcribe complete audio buffer
-    async fn transcribe(&self, audio: &[u8], encoding: AudioEncoding) -> anyhow::Result<String>;
+    /// Transcribe complete audio buffer with provider-neutral metadata.
+    async fn transcribe_result(
+        &self,
+        audio: &[u8],
+        encoding: AudioEncoding,
+    ) -> anyhow::Result<TranscriptionResult>;
+
+    async fn stt_capabilities(&self) -> SttCapabilities {
+        SttCapabilities::minimal(self.name())
+    }
 
     /// Streaming transcription
     async fn transcribe_stream(
@@ -376,6 +457,59 @@ pub trait TtsAdapter: ModuleLifecycle {
 mod tests {
     use super::*;
     use crate::expression::{ProsodyControls, SpeechExpression};
+    use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+
+    struct MinimalStt;
+
+    #[async_trait]
+    impl ModuleLifecycle for MinimalStt {
+        fn name(&self) -> &'static str {
+            "minimal_stt"
+        }
+
+        async fn health_check(&self) -> ModuleHealth {
+            ModuleHealth::Healthy
+        }
+    }
+
+    #[async_trait]
+    impl SttAdapter for MinimalStt {
+        async fn transcribe_result(
+            &self,
+            _audio: &[u8],
+            _encoding: AudioEncoding,
+        ) -> anyhow::Result<TranscriptionResult> {
+            Ok(TranscriptionResult::plain(
+                self.name(),
+                "hello from audio".to_string(),
+            ))
+        }
+
+        async fn transcribe_stream(
+            &self,
+            _audio_stream: Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>,
+            _encoding: AudioEncoding,
+        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<TranscribeChunk>> + Send>>>
+        {
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn stt_minimal_result_and_capabilities_are_provider_neutral() {
+        let stt = MinimalStt;
+
+        let result = stt
+            .transcribe_result(&[0, 1, 2], AudioEncoding::Pcm16kMono)
+            .await
+            .expect("minimal STT should return a provider-neutral result");
+        let capabilities = stt.stt_capabilities().await;
+
+        assert_eq!(result.text, "hello from audio");
+        assert_eq!(result.provider, "minimal_stt");
+        assert!(!capabilities.supports_segments);
+        assert!(!capabilities.supports_alternatives);
+    }
 
     #[test]
     fn tts_request_preserves_provider_neutral_expression_metadata() {

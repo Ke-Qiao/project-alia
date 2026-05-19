@@ -72,6 +72,8 @@ pub struct ExpressionTrace {
     pub session_id: Option<Uuid>,
     pub turn_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stt_correction: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_observation: Option<ExpressionTraceObservation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_observation: Option<ExpressionTraceObservation>,
@@ -98,6 +100,7 @@ impl ExpressionTrace {
         Self {
             session_id: event.session_id,
             turn_id: event.turn_id,
+            stt_correction: None,
             user_observation: None,
             assistant_observation: None,
             affect_snapshot: None,
@@ -131,6 +134,9 @@ pub fn expression_traces_from_events(
         });
 
         match event.event_type.as_str() {
+            "stt_correction" => {
+                trace.stt_correction = Some(event.payload.clone());
+            }
             "affect_user_input" => {
                 if let Some(observation) = observation_from_payload(&event.payload) {
                     trace.affect_snapshot = Some(observation.snapshot.clone());

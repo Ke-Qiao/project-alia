@@ -66,8 +66,15 @@ impl ModuleLifecycle for NoopStt {
 
 #[async_trait]
 impl SttAdapter for NoopStt {
-    async fn transcribe(&self, _audio: &[u8], _encoding: AudioEncoding) -> anyhow::Result<String> {
-        Ok(String::new())
+    async fn transcribe_result(
+        &self,
+        _audio: &[u8],
+        _encoding: AudioEncoding,
+    ) -> anyhow::Result<crate::providers::adapter::TranscriptionResult> {
+        Ok(crate::providers::adapter::TranscriptionResult::plain(
+            self.name(),
+            String::new(),
+        ))
     }
 
     async fn transcribe_stream(

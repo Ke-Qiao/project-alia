@@ -10,7 +10,7 @@ and plugin-owned prompt/context contributions. Place implementation details by
 semantic role:
 
 - `providers/` configures external services and provider-specific adapters.
-- `policies/` configures runtime behavior such as routing, affect, regulation, expression, cache, and tools.
+- `policies/` configures runtime behavior such as routing, transcript correction, affect, regulation, expression, cache, and tools.
 - `profiles/` configures named user-facing profiles such as voices and expression styles.
 - `resources/` configures local resource locations, resource policies, optional dialogue policy overrides, and language-scoped appraisal lexicons with source/license metadata.
 - `plugins/` is reserved for future plugin-owned fragments.

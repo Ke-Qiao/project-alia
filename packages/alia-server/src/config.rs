@@ -141,6 +141,8 @@ pub struct ModulesSection {
     pub minor_llm: String,
     #[serde(default = "default_major_llm_module")]
     pub major_llm: String,
+    #[serde(default)]
+    pub transcript_correction_llm: Option<String>,
     pub stt: String,
     pub tts: String,
     pub embedding: String,
@@ -408,6 +410,8 @@ pub struct PoliciesSection {
     #[serde(default)]
     pub routing: RoutingPolicySection,
     #[serde(default)]
+    pub transcript_correction: TranscriptCorrectionPolicySection,
+    #[serde(default)]
     pub affect: AffectPolicySection,
     #[serde(default)]
     pub regulation: RegulationPolicySection,
@@ -427,6 +431,57 @@ pub struct PoliciesSection {
     pub scheduler: SchedulerSection,
     #[serde(default)]
     pub tools: ToolsSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TranscriptCorrectionPolicySection {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub apply_to_stt: bool,
+    #[serde(default = "default_transcript_correction_provider")]
+    pub provider: String,
+    #[serde(default = "default_transcript_correction_timeout")]
+    pub timeout_sec: u64,
+    #[serde(default = "default_transcript_correction_max_input_chars")]
+    pub max_input_chars: usize,
+    #[serde(default = "default_transcript_correction_min_confidence")]
+    pub min_confidence_to_replace: f32,
+    #[serde(default = "default_true")]
+    pub require_confirmation_on_medium_risk: bool,
+    #[serde(default = "default_true")]
+    pub trace_enabled: bool,
+}
+
+impl Default for TranscriptCorrectionPolicySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            apply_to_stt: true,
+            provider: default_transcript_correction_provider(),
+            timeout_sec: default_transcript_correction_timeout(),
+            max_input_chars: default_transcript_correction_max_input_chars(),
+            min_confidence_to_replace: default_transcript_correction_min_confidence(),
+            require_confirmation_on_medium_risk: true,
+            trace_enabled: true,
+        }
+    }
+}
+
+fn default_transcript_correction_provider() -> String {
+    "default_llm".to_string()
+}
+
+fn default_transcript_correction_timeout() -> u64 {
+    2
+}
+
+fn default_transcript_correction_max_input_chars() -> usize {
+    500
+}
+
+fn default_transcript_correction_min_confidence() -> f32 {
+    0.55
 }
 
 #[derive(Debug, Clone, Deserialize)]

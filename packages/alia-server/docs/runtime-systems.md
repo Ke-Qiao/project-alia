@@ -73,6 +73,31 @@ voice pipeline must keep user ids explicit so memory, conversation history,
 settings, tools, and future voiceprint identification can remain multi-user
 safe.
 
+For audio turns, raw STT output is normalized before it enters routing,
+appraisal, cache, conversation history, or memory ingest:
+
+```text
+AudioInput
+  -> STT raw transcript
+  -> transcript correction
+  -> corrected user text
+  -> router/cache/appraisal/memory
+```
+
+The correction stage uses a structured JSON prompt and is conservative: it may
+fix likely recognition errors, punctuation, and homophones, but it must not
+answer the user or change intent. Risky or ambiguous corrections keep the raw
+text for processing and are recorded in agent history. This means the memory
+system receives the same corrected user text that downstream routing sees,
+while the raw transcript remains available only in trace/debug events.
+
+Deployments may configure an optional `modules.transcript_correction_llm`
+backend for this stage. It is disabled by default; when absent, the default
+correction provider falls back to the configured minor LLM and then major LLM.
+Set `[policies.transcript_correction].provider = "transcript_correction_llm"`
+to require the dedicated backend, or `provider = "none"` to trace no correction
+model at all.
+
 ## Agent History
 
 Agent history is separate from chat transcript messages. It records route

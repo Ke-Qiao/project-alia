@@ -18,6 +18,7 @@ pub struct ModuleRegistry {
     pub llm: Arc<dyn LlmAdapter>,
     pub minor_llm: Arc<dyn LlmAdapter>,
     pub major_llm: Arc<dyn LlmAdapter>,
+    pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub stt: Arc<dyn SttAdapter>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
@@ -57,24 +58,27 @@ impl ModuleRegistry {
         }
 
         // Stop core modules in reverse dependency order
-        let modules: Vec<&dyn ModuleLifecycle> = vec![
-            self.scheduler.as_ref(),
-            self.tools.as_ref(),
-            self.insights.as_ref(),
-            self.rule_engine.as_ref(),
-            self.router.as_ref(),
-            self.persona.as_ref(),
-            self.skills.as_ref(),
-            self.cache.as_ref(),
-            self.memory.as_ref(),
-            self.conversation.as_ref(),
-            self.tts.as_ref(),
-            self.stt.as_ref(),
-            self.embedding.as_ref(),
-            self.major_llm.as_ref(),
-            self.minor_llm.as_ref(),
+        let modules: Vec<Option<&dyn ModuleLifecycle>> = vec![
+            Some(self.scheduler.as_ref()),
+            Some(self.tools.as_ref()),
+            Some(self.insights.as_ref()),
+            Some(self.rule_engine.as_ref()),
+            Some(self.router.as_ref()),
+            Some(self.persona.as_ref()),
+            Some(self.skills.as_ref()),
+            Some(self.cache.as_ref()),
+            Some(self.memory.as_ref()),
+            Some(self.conversation.as_ref()),
+            Some(self.tts.as_ref()),
+            Some(self.stt.as_ref()),
+            Some(self.embedding.as_ref()),
+            self.transcript_correction_llm
+                .as_deref()
+                .map(|module| module as &dyn ModuleLifecycle),
+            Some(self.major_llm.as_ref()),
+            Some(self.minor_llm.as_ref()),
         ];
-        for m in modules {
+        for m in modules.into_iter().flatten() {
             if let Err(e) = m.stop().await {
                 tracing::warn!(module = m.name(), error = ?e, "module stop failed");
             }
@@ -86,6 +90,12 @@ impl ModuleRegistry {
         let mut results = HashMap::new();
         results.insert("llm.minor".to_string(), self.minor_llm.health_check().await);
         results.insert("llm.major".to_string(), self.major_llm.health_check().await);
+        if let Some(llm) = &self.transcript_correction_llm {
+            results.insert(
+                "llm.transcript_correction".to_string(),
+                llm.health_check().await,
+            );
+        }
         results.insert("stt".to_string(), self.stt.health_check().await);
         results.insert("tts".to_string(), self.tts.health_check().await);
         results.insert("embedding".to_string(), self.embedding.health_check().await);
@@ -113,22 +123,25 @@ impl ModuleRegistry {
         &self,
         updates: &BTreeMap<String, Value>,
     ) -> Vec<ModuleSettingsApplyReport> {
-        let modules: Vec<&dyn ModuleLifecycle> = vec![
-            self.minor_llm.as_ref(),
-            self.major_llm.as_ref(),
-            self.stt.as_ref(),
-            self.tts.as_ref(),
-            self.embedding.as_ref(),
-            self.cache.as_ref(),
-            self.skills.as_ref(),
-            self.router.as_ref(),
-            self.insights.as_ref(),
-            self.rule_engine.as_ref(),
-            self.tools.as_ref(),
+        let modules: Vec<Option<&dyn ModuleLifecycle>> = vec![
+            Some(self.minor_llm.as_ref()),
+            Some(self.major_llm.as_ref()),
+            self.transcript_correction_llm
+                .as_deref()
+                .map(|module| module as &dyn ModuleLifecycle),
+            Some(self.stt.as_ref()),
+            Some(self.tts.as_ref()),
+            Some(self.embedding.as_ref()),
+            Some(self.cache.as_ref()),
+            Some(self.skills.as_ref()),
+            Some(self.router.as_ref()),
+            Some(self.insights.as_ref()),
+            Some(self.rule_engine.as_ref()),
+            Some(self.tools.as_ref()),
         ];
 
         let mut reports = Vec::new();
-        for module in modules {
+        for module in modules.into_iter().flatten() {
             match module.apply_settings(updates).await {
                 Ok(applied) if !applied.is_empty() => reports.push(ModuleSettingsApplyReport {
                     module: module.name().to_string(),

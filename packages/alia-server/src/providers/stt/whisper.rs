@@ -17,13 +17,33 @@ use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{AudioEncoding, SttAdapter, TranscribeChunk};
+use crate::providers::adapter::{
+    AudioEncoding, SttAdapter, SttCapabilities, TranscribeChunk, TranscriptionResult,
+    TranscriptionSegment,
+};
 use crate::settings::values::{string_setting, u64_setting};
 
 /// Whisper.cpp transcription response
 #[derive(Debug, Deserialize)]
 struct WhisperResponse {
     text: String,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    segments: Vec<WhisperResponseSegment>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WhisperResponseSegment {
+    text: String,
+    #[serde(default)]
+    start: Option<f64>,
+    #[serde(default)]
+    end: Option<f64>,
+    #[serde(default)]
+    confidence: Option<f32>,
+    #[serde(default)]
+    probability: Option<f32>,
 }
 
 /// Whisper.cpp streaming response segment
@@ -72,6 +92,41 @@ impl WhisperCppStt {
             AudioEncoding::Pcm16kMono => pcm16le_to_wav(audio, 16_000, 1),
             AudioEncoding::Opus | AudioEncoding::Wav => audio.to_vec(),
         }
+    }
+
+    async fn whisper_inference(
+        &self,
+        audio: &[u8],
+        encoding: AudioEncoding,
+    ) -> anyhow::Result<WhisperResponse> {
+        let config = self.config.read().await.clone();
+
+        let upload_audio = Self::normalize_audio_for_upload(audio, encoding);
+        let form = reqwest::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::multipart::Part::bytes(upload_audio)
+                    .file_name("audio.wav")
+                    .mime_str(Self::encoding_to_mime(encoding))?,
+            )
+            .text("language", config.language.clone())
+            .text("response_format", "json");
+
+        let response = self
+            .client
+            .post(format!("{}/inference", config.endpoint))
+            .multipart(form)
+            .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Whisper API error {}: {}", status, body);
+        }
+
+        Ok(response.json().await?)
     }
 }
 
@@ -147,36 +202,43 @@ impl ModuleLifecycle for WhisperCppStt {
 
 #[async_trait]
 impl SttAdapter for WhisperCppStt {
-    async fn transcribe(&self, audio: &[u8], encoding: AudioEncoding) -> anyhow::Result<String> {
-        let config = self.config.read().await.clone();
+    async fn transcribe_result(
+        &self,
+        audio: &[u8],
+        encoding: AudioEncoding,
+    ) -> anyhow::Result<TranscriptionResult> {
+        let whisper_response = self.whisper_inference(audio, encoding).await?;
+        Ok(TranscriptionResult {
+            text: whisper_response.text.trim().to_string(),
+            provider: self.name().to_string(),
+            confidence: None,
+            language: whisper_response
+                .language
+                .filter(|value| !value.trim().is_empty()),
+            segments: whisper_response
+                .segments
+                .into_iter()
+                .map(|segment| TranscriptionSegment {
+                    text: segment.text.trim().to_string(),
+                    start_ms: segment.start.map(seconds_to_ms),
+                    end_ms: segment.end.map(seconds_to_ms),
+                    confidence: segment.confidence.or(segment.probability),
+                })
+                .filter(|segment| !segment.text.is_empty())
+                .collect(),
+            alternatives: Vec::new(),
+        })
+    }
 
-        let upload_audio = Self::normalize_audio_for_upload(audio, encoding);
-        let form = reqwest::multipart::Form::new()
-            .part(
-                "file",
-                reqwest::multipart::Part::bytes(upload_audio)
-                    .file_name("audio.wav")
-                    .mime_str(Self::encoding_to_mime(encoding))?,
-            )
-            .text("language", config.language.clone())
-            .text("response_format", "json");
-
-        let response = self
-            .client
-            .post(format!("{}/inference", config.endpoint))
-            .multipart(form)
-            .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Whisper API error {}: {}", status, body);
+    async fn stt_capabilities(&self) -> SttCapabilities {
+        SttCapabilities {
+            provider: self.name().to_string(),
+            supports_confidence: false,
+            supports_segments: true,
+            supports_alternatives: false,
+            supports_language: true,
+            supports_timestamps: true,
         }
-
-        let whisper_response: WhisperResponse = response.json().await?;
-        Ok(whisper_response.text.trim().to_string())
     }
 
     async fn transcribe_stream(
@@ -278,6 +340,10 @@ impl SttAdapter for WhisperCppStt {
 
         Ok(Box::pin(stream))
     }
+}
+
+fn seconds_to_ms(seconds: f64) -> u64 {
+    (seconds.max(0.0) * 1000.0).round() as u64
 }
 
 fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
