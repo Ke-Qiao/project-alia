@@ -953,6 +953,15 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "最喜欢",
             "偏好",
         ],
+        "memory_forget" => &[
+            "forget",
+            "delete memory",
+            "remove memory",
+            "forgot",
+            "忘记",
+            "删除记忆",
+            "移除记忆",
+        ],
         "schedule_task" => &[
             "schedule", "remind", "reminder", "timer", "alarm", "cron", "later", "提醒", "定时",
             "闹钟", "日程",

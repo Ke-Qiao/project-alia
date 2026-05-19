@@ -75,8 +75,30 @@ config/server.d/providers/mem0.toml
 config/server.d/policies/memory.toml
 ```
 
+Automatic memory capture is agent-policy driven by default. `capture_mode =
+"llm_selected"` asks the assistant-side LLM to extract only durable user facts,
+preferences, stable relationship context, goals, or habits before storing
+provider-neutral `MemoryNode`s. Mem0 is used as storage/retrieval, not as the
+default judge for every conversation turn. Use `capture_mode =
+"provider_infer_all"` only when you intentionally want the memory provider to
+infer from every completed turn.
+
 If the configured memory backend fails startup health checks, the memory module
 should be disabled for prompt assembly rather than advertised to the LLM.
+
+Memory privacy controls are available through `/api/v1/memories/privacy`.
+Setting `automatic_capture_enabled = false` switches capture to
+`explicit_tool_only`, while the memory backend remains available for explicit
+user actions such as the memory UI/API or `memory_store` / `memory_forget`.
+Automatic and chat-tool memory writes block sensitive categories by default
+(credentials, identifiers, health details, religious views, and political
+views). Sensitive memories are only accepted through direct user-managed memory
+entry.
+
+Prompt injection uses only configured retrieval layers, defaults to
+`core`, `preference`, and `relationship`, strips metadata, filters sensitive
+content, and applies a bounded character budget before adding memories to the
+runtime prompt.
 
 ## Deployment Reminder
 
@@ -87,3 +109,5 @@ architecture docs.
 
 Server provider configuration is described in
 [alia-server configuration](../../packages/alia-server/docs/configuration.md).
+Memory capture modes and provider-neutral capabilities are described in
+[memory operations](./memory.md).

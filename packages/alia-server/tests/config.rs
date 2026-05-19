@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use alia_server::config::{ServerConfig, load_config_with_fragments};
+use alia_server::config::{MemoryCaptureMode, ServerConfig, load_config_with_fragments};
 
 #[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
@@ -64,6 +64,7 @@ fn parses_split_example_config() {
     assert_eq!(config.modules.minor_llm, "ollama");
     assert_eq!(config.modules.major_llm, "openai");
     assert!(config.modules.transcript_correction_llm.is_none());
+    assert!(config.modules.memory_capture_llm.is_none());
     assert_eq!(config.modules.stt, "whisper_cpp");
     assert_eq!(config.modules.tts, "gpt_sovits");
     assert_eq!(config.modules.embedding, "ollama");
@@ -110,6 +111,23 @@ fn parses_split_example_config() {
             .min_confidence_to_replace,
         0.55
     );
+    assert_eq!(
+        config.policies.memory.capture_mode,
+        MemoryCaptureMode::LlmSelected
+    );
+    assert_eq!(config.policies.memory.capture_timeout_sec, 3);
+    assert_eq!(config.policies.memory.capture_min_confidence, 0.65);
+    assert!(config.policies.memory.sensitive_filter_enabled);
+    assert_eq!(
+        config.policies.memory.retrieval_layers,
+        vec![
+            "core".to_string(),
+            "preference".to_string(),
+            "relationship".to_string()
+        ]
+    );
+    assert_eq!(config.policies.memory.max_injected_memory_chars, 1200);
+    assert!(!config.providers.mem0.conversation_infer);
     assert!(config.policies.expression.enabled);
     assert_eq!(config.policies.expression.default_style, "gentle");
     assert!(config.profiles.expression_styles.contains_key("gentle"));

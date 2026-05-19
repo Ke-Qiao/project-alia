@@ -1,5 +1,6 @@
 use alia_server::providers::MemoryBackend;
 use alia_server::providers::adapter::{MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts};
+use alia_server::providers::memory::NoopMemory;
 use alia_server::providers::memory::simple::SimpleMemory;
 use uuid::Uuid;
 
@@ -135,4 +136,20 @@ async fn test_list_get_and_clear() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn memory_capabilities_are_provider_neutral() {
+    let simple = SimpleMemory::new();
+    let simple_caps = simple.memory_capabilities().await;
+    assert_eq!(simple_caps.abi_version, 1);
+    assert!(simple_caps.supports_store);
+    assert!(simple_caps.supports_layer_filters);
+    assert!(simple_caps.supports_similarity_threshold);
+    assert!(!simple_caps.supports_provider_infer);
+
+    let noop = NoopMemory;
+    let noop_caps = noop.memory_capabilities().await;
+    assert!(!noop_caps.supports_store);
+    assert!(!noop_caps.supports_retrieve);
 }

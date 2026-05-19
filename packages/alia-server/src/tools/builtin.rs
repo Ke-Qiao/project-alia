@@ -34,11 +34,15 @@ use uuid::Uuid;
 
 use crate::entity::tool;
 use crate::event::{EventBus, ServerEvent};
+use crate::memory_policy::{
+    detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
+    normalize_memory_layer,
+};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MemoryBackend, MemoryNode, RetrievalOpts, ScheduleConfig, ScheduledTask, SchedulerBackend,
-    ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
-    ToolRoutingEmbedding, ToolRoutingIndexEntry,
+    MemoryBackend, MemoryListOpts, MemoryNode, RetrievalOpts, ScheduleConfig, ScheduledTask,
+    SchedulerBackend, ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry,
+    ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
@@ -166,6 +170,14 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "保存",
             "记录",
         ],
+        "memory_forget" => &[
+            "forget",
+            "delete memory",
+            "remove memory",
+            "忘记",
+            "删除记忆",
+            "移除记忆",
+        ],
         "device_control" => &[
             "device",
             "smart home",
@@ -249,6 +261,11 @@ impl BuiltinToolRegistry {
             self.executors.write().unwrap().insert(
                 "memory_store".to_string(),
                 Arc::new(MemoryStore::new(Some(memory.clone()))),
+            );
+
+            self.executors.write().unwrap().insert(
+                "memory_forget".to_string(),
+                Arc::new(MemoryForget::new(Some(memory.clone()))),
             );
         } else {
             tracing::info!("memory backend unavailable; memory tools are not registered");
@@ -1226,7 +1243,7 @@ impl ToolExecutor for MemoryStore {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "memory_store".to_string(),
-            description: "Store a piece of information to the user's memory.".to_string(),
+            description: "Store information only when the user explicitly asks the assistant to remember it. Do not store secrets, identifiers, health details, religious views, or political views from chat; sensitive memories must be added by the user in the memory UI/API.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1236,7 +1253,7 @@ impl ToolExecutor for MemoryStore {
                     },
                     "layer": {
                         "type": "string",
-                        "enum": ["core", "episodic", "procedural"],
+                        "enum": ["core", "preference", "relationship", "episodic", "procedural"],
                         "description": "Memory layer to store in. Defaults to 'episodic'."
                     },
                     "importance": {
@@ -1263,6 +1280,19 @@ impl ToolExecutor for MemoryStore {
         ctx: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
         let content = required_str(&arguments, "content")?.trim().to_string();
+        if let Some(sensitive) = detect_sensitive_memory(&content) {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: false,
+                output: serde_json::json!({
+                    "error": "sensitive_memory_blocked",
+                    "category": sensitive.category,
+                    "reason": sensitive.reason,
+                    "message": "Sensitive memories must be added directly by the user in the memory UI/API."
+                }),
+                display: Some("I cannot store sensitive memory from chat. Add it directly in memory settings if you want it saved.".to_string()),
+            });
+        }
         let Some(memory) = &self.memory else {
             return Ok(ToolResult {
                 call_id: String::new(),
@@ -1290,39 +1320,201 @@ impl ToolExecutor for MemoryStore {
             .unwrap_or("fact")
             .trim()
             .to_string();
-        let node_id = memory
-            .store(
-                ctx.user_id,
-                MemoryNode {
-                    id: None,
-                    memory_layer: layer.clone(),
-                    node_type: node_type.clone(),
-                    content: content.clone(),
-                    metadata: serde_json::json!({
-                        "source": ctx.source,
-                        "channel_id": ctx.channel_id,
-                        "conversation_id": ctx.conversation_id,
-                        "stored_by": "memory_store_tool",
-                    }),
-                    importance,
-                },
-            )
-            .await?;
+        let incoming = MemoryNode {
+            id: None,
+            memory_layer: layer.clone(),
+            node_type: node_type.clone(),
+            content: content.clone(),
+            metadata: serde_json::json!({
+                "source": ctx.source,
+                "channel_id": ctx.channel_id,
+                "conversation_id": ctx.conversation_id,
+                "stored_by": "memory_store_tool",
+            }),
+            importance,
+        };
+        let action = upsert_tool_memory(memory.as_ref(), ctx.user_id, &incoming).await?;
 
         Ok(ToolResult {
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
-                "stored": true,
-                "id": node_id,
+                "stored": action != "duplicate",
+                "action": action,
                 "layer": layer,
                 "type": node_type,
                 "content": content,
                 "importance": importance,
             }),
-            display: Some("Memory stored".to_string()),
+            display: Some(match action {
+                "updated" => "Memory updated".to_string(),
+                "duplicate" => "That memory is already saved".to_string(),
+                _ => "Memory stored".to_string(),
+            }),
         })
     }
+}
+
+/// Delete information from memory when the user explicitly asks to forget it.
+pub struct MemoryForget {
+    memory: Option<Arc<dyn MemoryBackend>>,
+}
+
+impl MemoryForget {
+    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+        Self { memory }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for MemoryForget {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_forget".to_string(),
+            description: "Forget/delete saved user memories only when the user explicitly asks to forget something.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Exact memory id to delete when known."
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Text query describing the memory to forget."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum matching memories to delete. Defaults to 1, maximum 10."
+                    }
+                },
+                "anyOf": [
+                    {"required": ["id"]},
+                    {"required": ["query"]}
+                ]
+            }),
+            routing_hints: Vec::new(),
+            source: "builtin".to_string(),
+            require_confirmation: false,
+            required_role: None,
+        }
+    }
+
+    async fn execute(
+        &self,
+        arguments: serde_json::Value,
+        ctx: &ToolContext,
+    ) -> anyhow::Result<ToolResult> {
+        let Some(memory) = &self.memory else {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: false,
+                output: serde_json::json!({"error": "memory_backend_unavailable"}),
+                display: Some("Memory backend is not available".to_string()),
+            });
+        };
+
+        if let Some(id) = arguments
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            if memory.get(ctx.user_id, id).await?.is_none() {
+                return Ok(ToolResult {
+                    call_id: String::new(),
+                    success: false,
+                    output: serde_json::json!({"error": "memory_not_found", "id": id}),
+                    display: Some("Memory not found".to_string()),
+                });
+            }
+            memory.delete(id).await?;
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: true,
+                output: serde_json::json!({"deleted": 1, "ids": [id]}),
+                display: Some("Memory forgotten".to_string()),
+            });
+        }
+
+        let query = required_str(&arguments, "query")?;
+        let max_results = arguments
+            .get("max_results")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1)
+            .clamp(1, 10) as u32;
+        let opts = RetrievalOpts {
+            max_results: Some(max_results),
+            min_similarity: None,
+            layers: None,
+        };
+        let mut matches = memory.retrieve(ctx.user_id, query, opts.clone()).await?;
+        if matches.is_empty() {
+            matches = retrieve_memory_by_terms(memory.as_ref(), ctx.user_id, query, &opts).await?;
+        }
+        let mut deleted = Vec::new();
+        for node in matches.into_iter().take(max_results as usize) {
+            if let Some(id) = node.id {
+                memory.delete(&id).await?;
+                deleted.push(id);
+            }
+        }
+        let deleted_count = deleted.len();
+
+        Ok(ToolResult {
+            call_id: String::new(),
+            success: true,
+            output: serde_json::json!({
+                "deleted": deleted_count,
+                "ids": deleted,
+                "query": query,
+            }),
+            display: Some(if deleted_count == 0 {
+                "No matching memories found".to_string()
+            } else {
+                "Memory forgotten".to_string()
+            }),
+        })
+    }
+}
+
+async fn upsert_tool_memory(
+    memory: &dyn MemoryBackend,
+    user_id: Uuid,
+    incoming: &MemoryNode,
+) -> anyhow::Result<&'static str> {
+    let merge_key = memory_merge_key(
+        &incoming.memory_layer,
+        &incoming.node_type,
+        &incoming.content,
+    );
+    let existing = memory
+        .list(
+            user_id,
+            MemoryListOpts {
+                max_results: Some(200),
+                layers: Some(vec![incoming.memory_layer.clone()]),
+            },
+        )
+        .await?;
+    for node in existing {
+        if memory_content_equivalent(&node.content, &incoming.content) {
+            return Ok("duplicate");
+        }
+        let Some(existing_id) = node.id.as_deref() else {
+            continue;
+        };
+        if merge_key.is_some()
+            && merge_key == memory_merge_key(&node.memory_layer, &node.node_type, &node.content)
+        {
+            memory
+                .update(existing_id, merge_memory_patch(&node, incoming))
+                .await?;
+            return Ok("updated");
+        }
+    }
+    memory.store(user_id, incoming.clone()).await?;
+    Ok("stored")
 }
 
 /// Schedule a task
@@ -1620,15 +1812,6 @@ fn parse_memory_layers(value: Option<&serde_json::Value>) -> anyhow::Result<Opti
         Ok(None)
     } else {
         Ok(Some(layers))
-    }
-}
-
-fn normalize_memory_layer(layer: &str) -> String {
-    match layer {
-        "core" | "episodic" | "procedural" => layer.to_string(),
-        "semantic" => "procedural".to_string(),
-        "" => "episodic".to_string(),
-        _ => "episodic".to_string(),
     }
 }
 

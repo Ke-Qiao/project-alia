@@ -21,15 +21,16 @@ use uuid::Uuid;
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
 use crate::config::{
-    CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
+    CachePolicyResourceSection, CacheSection, ConversationSection, MemoryCaptureMode,
+    MemorySection, ToolsSection,
 };
 use crate::event::{EventBus, ServerEvent};
+use crate::memory_policy::{detect_sensitive_memory, memory_prompt_line, normalize_memory_layers};
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
-    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryConversationIngest,
-    MemoryConversationMessage, RetrievalOpts, RouteDecision, RouterInput, SemanticCacheCandidate,
-    ToolDefinition, TtsRequest,
+    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, RetrievalOpts, RouteDecision,
+    RouterInput, SemanticCacheCandidate, ToolDefinition, TtsRequest,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{
@@ -38,6 +39,7 @@ use crate::settings::values::{
 
 mod debug;
 mod dialogue_policy;
+pub mod memory_capture;
 pub mod streaming;
 pub mod tools;
 mod transcript_correction;
@@ -52,6 +54,7 @@ use crate::expression::{
 };
 use debug::*;
 use dialogue_policy::DialoguePolicyInput;
+use memory_capture::{MemoryCaptureTrace, capture_turn_memory};
 use streaming::*;
 use tools::*;
 use transcript_correction::{
@@ -182,6 +185,15 @@ pub struct PipelinePolicies {
 
 pub type SharedPipelinePolicies = Arc<RwLock<PipelinePolicies>>;
 
+fn parse_memory_capture_mode(value: &str) -> MemoryCaptureMode {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => MemoryCaptureMode::None,
+        "explicit_tool_only" | "explicit-tool-only" => MemoryCaptureMode::ExplicitToolOnly,
+        "provider_infer_all" | "provider-infer-all" => MemoryCaptureMode::ProviderInferAll,
+        _ => MemoryCaptureMode::LlmSelected,
+    }
+}
+
 impl PipelinePolicies {
     pub fn new(
         conversation: ConversationSection,
@@ -247,11 +259,38 @@ impl PipelinePolicies {
             self.memory.enabled = value;
             applied.push("core.policies.memory.enabled".to_string());
         }
-        if let Some(value) =
-            bool_setting(updates, "core.policies.memory.conversation_ingest_enabled")
+        if let Some(value) = string_setting(updates, "core.policies.memory.capture_mode") {
+            self.memory.capture_mode = parse_memory_capture_mode(&value);
+            applied.push("core.policies.memory.capture_mode".to_string());
+        }
+        if let Some(value) = u64_setting(updates, "core.policies.memory.capture_timeout_sec") {
+            self.memory.capture_timeout_sec = value.max(1);
+            applied.push("core.policies.memory.capture_timeout_sec".to_string());
+        }
+        if let Some(value) = f32_setting(updates, "core.policies.memory.capture_min_confidence") {
+            self.memory.capture_min_confidence = value.clamp(0.0, 1.0);
+            applied.push("core.policies.memory.capture_min_confidence".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.memory.sensitive_filter_enabled")
         {
-            self.memory.conversation_ingest_enabled = value;
-            applied.push("core.policies.memory.conversation_ingest_enabled".to_string());
+            self.memory.sensitive_filter_enabled = value;
+            applied.push("core.policies.memory.sensitive_filter_enabled".to_string());
+        }
+        if let Some(value) = updates
+            .get("core.policies.memory.retrieval_layers")
+            .and_then(|value| value.as_array())
+        {
+            self.memory.retrieval_layers = value
+                .iter()
+                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                .collect();
+            applied.push("core.policies.memory.retrieval_layers".to_string());
+        }
+        if let Some(value) =
+            usize_setting(updates, "core.policies.memory.max_injected_memory_chars")
+        {
+            self.memory.max_injected_memory_chars = value.clamp(256, 12_000);
+            applied.push("core.policies.memory.max_injected_memory_chars".to_string());
         }
         if let Some(value) = u32_setting(updates, "core.policies.memory.max_retrieval_results") {
             self.memory.max_retrieval_results = value;
@@ -788,7 +827,7 @@ async fn process_event(
             }
 
             if let Some(pending) = result.pending_persistence {
-                persist_text_interaction(modules, pending, memory_config, event_bus).await;
+                persist_text_interaction(modules, pending, memory_config, event_bus, None).await;
             }
 
             voice_turns.finish(&turn).await;
@@ -975,8 +1014,14 @@ async fn process_text(
                     cache_write: None,
                 };
                 if !defer_persistence {
-                    persist_text_interaction(modules, pending.clone(), memory_config, event_bus)
-                        .await;
+                    persist_text_interaction(
+                        modules,
+                        pending.clone(),
+                        memory_config,
+                        event_bus,
+                        Some(&mut trace),
+                    )
+                    .await;
                 }
                 observe_assistant_affect_for_turn(
                     modules,
@@ -1106,7 +1151,14 @@ async fn process_text(
                 cache_write: None,
             };
             if !defer_persistence {
-                persist_text_interaction(modules, pending.clone(), memory_config, event_bus).await;
+                persist_text_interaction(
+                    modules,
+                    pending.clone(),
+                    memory_config,
+                    event_bus,
+                    Some(&mut trace),
+                )
+                .await;
             }
             observe_assistant_affect_for_turn(
                 modules,
@@ -1559,6 +1611,7 @@ async fn process_text(
             pending_persistence.clone(),
             memory_config,
             event_bus,
+            Some(&mut trace),
         )
         .await;
     }
@@ -2652,6 +2705,7 @@ async fn persist_text_interaction(
     pending: PendingTextPersistence,
     memory_config: &MemorySection,
     event_bus: &EventBus,
+    trace: Option<&mut AgentTrace>,
 ) {
     let completed_channel_id = pending.channel_id.clone();
     let completed_user_id = pending.user_id_text.clone();
@@ -2697,44 +2751,14 @@ async fn persist_text_interaction(
         }
     }
 
-    if memory_config.enabled
-        && memory_config.conversation_ingest_enabled
-        && !pending.user_id.is_nil()
-    {
-        let ingest = MemoryConversationIngest {
-            run_id: Some(pending.session_id.to_string()),
-            messages: vec![
-                MemoryConversationMessage {
-                    role: "user".to_string(),
-                    content: pending.query_text,
-                    name: Some(pending.user_id_text),
-                },
-                MemoryConversationMessage {
-                    role: "assistant".to_string(),
-                    content: pending.response_text,
-                    name: None,
-                },
-            ],
-            metadata: serde_json::json!({
-                "source": "pipeline",
-                "channel_id": pending.channel_id,
-                "conversation_id": pending.session_id,
-            }),
-        };
-
-        if let Err(error) = modules
-            .memory
-            .ingest_conversation(pending.user_id, ingest)
-            .await
-        {
-            tracing::warn!(
-                user_id = %pending.user_id,
-                session_id = %pending.session_id,
-                error = ?error,
-                "failed to ingest conversation into memory backend"
-            );
-        }
-    }
+    let capture_trace = if !memory_config.enabled {
+        MemoryCaptureTrace::skipped(memory_config.capture_mode, "memory_policy_disabled")
+    } else if pending.user_id.is_nil() {
+        MemoryCaptureTrace::skipped(memory_config.capture_mode, "anonymous_user")
+    } else {
+        capture_turn_memory(modules, &pending, memory_config).await
+    };
+    record_memory_capture_trace(modules, &pending, capture_trace, trace).await;
 
     event_bus.publish(ServerEvent::ConversationTurnCompleted {
         channel_id: completed_channel_id,
@@ -2742,6 +2766,54 @@ async fn persist_text_interaction(
         user_uuid: completed_user_uuid,
         session_id: completed_session_id,
     });
+}
+
+async fn record_memory_capture_trace(
+    modules: &ModuleRegistry,
+    pending: &PendingTextPersistence,
+    capture_trace: MemoryCaptureTrace,
+    trace: Option<&mut AgentTrace>,
+) {
+    let status = format!("{:?}", capture_trace.status).to_ascii_lowercase();
+    let summary = match capture_trace.reason.as_deref() {
+        Some(reason) => format!("Memory capture {status}: {reason}"),
+        None => format!(
+            "Memory capture {status}: {} stored, {} skipped",
+            capture_trace.stored, capture_trace.skipped
+        ),
+    };
+    let payload = serde_json::json!({
+        "memory_capture": capture_trace,
+        "context": {
+            "channel_id": pending.channel_id,
+            "conversation_id": pending.session_id,
+            "user_id_text": pending.user_id_text,
+        }
+    });
+    if let Some(trace) = trace {
+        trace
+            .record(modules, "memory_capture", "memory", Some(summary), payload)
+            .await;
+        return;
+    }
+    let event = ConversationEventEntry {
+        turn_id: Uuid::new_v4(),
+        sequence: 0,
+        event_type: "memory_capture".to_string(),
+        actor: "memory".to_string(),
+        summary: Some(summary),
+        payload,
+    };
+    if let Err(error) = modules
+        .conversation
+        .append_event(pending.session_id, event)
+        .await
+    {
+        tracing::debug!(
+            error = ?error,
+            "failed to append standalone memory capture event"
+        );
+    }
 }
 
 pub fn cache_entry_for_pending(pending: &PendingTextPersistence) -> Option<CacheEntry> {
@@ -2844,6 +2916,8 @@ async fn retrieve_runtime_memories(
         return Vec::new();
     }
 
+    let layers = normalize_memory_layers(memory_config.retrieval_layers.clone());
+    let layers = (!layers.is_empty()).then_some(layers);
     match modules
         .memory
         .retrieve(
@@ -2852,16 +2926,34 @@ async fn retrieve_runtime_memories(
             RetrievalOpts {
                 max_results: Some(memory_config.max_retrieval_results.max(1).min(12)),
                 min_similarity: Some(memory_config.similarity_threshold.clamp(0.0, 1.0)),
-                layers: None,
+                layers,
             },
         )
         .await
     {
-        Ok(nodes) => nodes
-            .into_iter()
-            .filter(|node| !node.content.trim().is_empty())
-            .map(|node| node.content)
-            .collect(),
+        Ok(nodes) => {
+            let mut total_chars = 0usize;
+            let max_chars = memory_config.max_injected_memory_chars.max(256);
+            let mut memories = Vec::new();
+            for node in nodes {
+                if node.content.trim().is_empty() {
+                    continue;
+                }
+                if memory_config.sensitive_filter_enabled
+                    && detect_sensitive_memory(&node.content).is_some()
+                {
+                    continue;
+                }
+                let remaining = max_chars.saturating_sub(total_chars);
+                if remaining == 0 {
+                    break;
+                }
+                let line = memory_prompt_line(&node.content, remaining.min(240));
+                total_chars += line.chars().count();
+                memories.push(line);
+            }
+            memories
+        }
         Err(error) => {
             tracing::warn!(user_id = %user_id, error = ?error, "failed to retrieve runtime memories");
             Vec::new()
@@ -2897,7 +2989,10 @@ pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> O
             .map(|memory| format!("- {}", memory.trim()))
             .collect::<Vec<_>>();
         if !lines.is_empty() {
-            sections.push(format!("## User Memory\n{}", lines.join("\n")));
+            sections.push(format!(
+                "## User Memory\nUse these private memories only when they are relevant. Do not expose internal memory details or claim certainty beyond the listed wording.\n{}",
+                lines.join("\n")
+            ));
         }
     }
 

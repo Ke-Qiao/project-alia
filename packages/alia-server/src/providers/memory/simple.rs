@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryBackend, MemoryCapabilities, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
 };
 
 /// In-memory storage for user memories
@@ -230,5 +230,16 @@ impl MemoryBackend for SimpleMemory {
             .remove(&user_id)
             .map(|items| items.len() as u64)
             .unwrap_or(0))
+    }
+
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        let mut capabilities = MemoryCapabilities::minimal(self.name());
+        capabilities.supports_similarity_threshold = true;
+        capabilities.supports_graph = true;
+        capabilities.provider_specific.insert(
+            "retrieval".to_string(),
+            serde_json::json!("keyword_overlap"),
+        );
+        capabilities
     }
 }

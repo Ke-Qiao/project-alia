@@ -22,6 +22,48 @@ async fn memory_backend_schema_matches_runtime_backends() {
         schema.options.as_deref(),
         Some(&["mem0".to_string(), "simple".to_string(), "noop".to_string()][..])
     );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.capture_mode")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.capture_timeout_sec")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.capture_min_confidence")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.sensitive_filter_enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.retrieval_layers")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.memory.max_injected_memory_chars")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.modules.memory_capture_llm")
+            .await
+            .is_some()
+    );
 }
 
 #[tokio::test]

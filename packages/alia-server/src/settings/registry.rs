@@ -824,9 +824,34 @@ impl SettingsRegistry {
                 schema("Enable Memory", "bool", true),
             ),
             (
-                "core.policies.memory.conversation_ingest_enabled",
-                json!(config.policies.memory.conversation_ingest_enabled),
-                schema("Memory Conversation Ingest", "bool", false),
+                "core.policies.memory.capture_mode",
+                json!(config.policies.memory.capture_mode),
+                schema("Memory Capture Mode", "string", false),
+            ),
+            (
+                "core.policies.memory.capture_timeout_sec",
+                json!(config.policies.memory.capture_timeout_sec),
+                schema("Memory Capture Timeout", "number", false),
+            ),
+            (
+                "core.policies.memory.capture_min_confidence",
+                json!(config.policies.memory.capture_min_confidence),
+                schema("Memory Capture Min Confidence", "number", false),
+            ),
+            (
+                "core.policies.memory.sensitive_filter_enabled",
+                json!(config.policies.memory.sensitive_filter_enabled),
+                schema("Block Sensitive Automatic Memories", "bool", false),
+            ),
+            (
+                "core.policies.memory.retrieval_layers",
+                json!(config.policies.memory.retrieval_layers),
+                schema("Memory Retrieval Layers", "array", false),
+            ),
+            (
+                "core.policies.memory.max_injected_memory_chars",
+                json!(config.policies.memory.max_injected_memory_chars),
+                schema("Max Injected Memory Characters", "number", false),
             ),
             (
                 "core.policies.memory.max_retrieval_results",
@@ -980,6 +1005,15 @@ impl SettingsRegistry {
                 json!(config.modules.transcript_correction_llm),
                 schema_select(
                     "Transcript Correction LLM Backend",
+                    &["ollama", "openai", "noop"],
+                    true,
+                ),
+            ),
+            (
+                "core.modules.memory_capture_llm",
+                json!(config.modules.memory_capture_llm),
+                schema_select(
+                    "Memory Capture LLM Backend",
                     &["ollama", "openai", "noop"],
                     true,
                 ),

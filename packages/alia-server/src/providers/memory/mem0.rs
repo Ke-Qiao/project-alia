@@ -16,7 +16,8 @@ use uuid::Uuid;
 use crate::config::{Mem0ProviderSection, MemorySection};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::adapter::{
-    MemoryConversationIngest, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryCapabilities, MemoryConversationIngest, MemoryListOpts, MemoryNode, MemoryPatch,
+    RetrievalOpts,
 };
 
 use super::external::ExternalMemoryClient;
@@ -463,6 +464,36 @@ impl ExternalMemoryClient for Mem0Client {
             return Ok(Some(memory_id));
         }
         Ok(event_id)
+    }
+
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        let mut capabilities = MemoryCapabilities::minimal(self.name());
+        capabilities.supports_conversation_ingest = true;
+        capabilities.supports_provider_infer = self.config.infer || self.config.conversation_infer;
+        capabilities.supports_search_filters = true;
+        capabilities.supports_layer_filters = true;
+        capabilities.supports_similarity_threshold = true;
+        capabilities.supports_graph = false;
+        capabilities.supports_relationship_edges = false;
+        capabilities.async_writes = !self.config.add_poll_timeout.is_zero();
+        capabilities.max_content_chars = Some(16_000);
+        capabilities.max_metadata_bytes = Some(64 * 1024);
+        capabilities.max_batch_messages = Some(64);
+        capabilities
+            .provider_specific
+            .insert("api_family".to_string(), json!("mem0_v1_v3"));
+        capabilities
+            .provider_specific
+            .insert("store_infer_enabled".to_string(), json!(self.config.infer));
+        capabilities.provider_specific.insert(
+            "conversation_infer_enabled".to_string(),
+            json!(self.config.conversation_infer),
+        );
+        capabilities.provider_specific.insert(
+            "delete_by_user_implemented_as_list_delete".to_string(),
+            json!(true),
+        );
+        capabilities
     }
 }
 

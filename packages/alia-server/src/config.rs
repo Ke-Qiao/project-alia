@@ -143,6 +143,8 @@ pub struct ModulesSection {
     pub major_llm: String,
     #[serde(default)]
     pub transcript_correction_llm: Option<String>,
+    #[serde(default)]
+    pub memory_capture_llm: Option<String>,
     pub stt: String,
     pub tts: String,
     pub embedding: String,
@@ -397,7 +399,7 @@ impl Default for Mem0ProviderSection {
             run_id: None,
             custom_instructions: None,
             infer: false,
-            conversation_infer: true,
+            conversation_infer: false,
             request_timeout_sec: default_mem0_request_timeout(),
             page_size: default_mem0_page_size(),
             add_poll_timeout_ms: 0,
@@ -1397,8 +1399,18 @@ impl Default for ConversationSection {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MemorySection {
     pub enabled: bool,
-    #[serde(default = "default_true")]
-    pub conversation_ingest_enabled: bool,
+    #[serde(default)]
+    pub capture_mode: MemoryCaptureMode,
+    #[serde(default = "default_memory_capture_timeout_sec")]
+    pub capture_timeout_sec: u64,
+    #[serde(default = "default_memory_capture_min_confidence")]
+    pub capture_min_confidence: f32,
+    #[serde(default = "default_memory_sensitive_filter_enabled")]
+    pub sensitive_filter_enabled: bool,
+    #[serde(default = "default_memory_retrieval_layers")]
+    pub retrieval_layers: Vec<String>,
+    #[serde(default = "default_memory_max_injected_chars")]
+    pub max_injected_memory_chars: usize,
     pub max_retrieval_results: u32,
     pub similarity_threshold: f32,
     #[serde(default = "default_memory_health_check_attempts")]
@@ -1411,13 +1423,57 @@ impl Default for MemorySection {
     fn default() -> Self {
         Self {
             enabled: true,
-            conversation_ingest_enabled: true,
+            capture_mode: MemoryCaptureMode::default(),
+            capture_timeout_sec: default_memory_capture_timeout_sec(),
+            capture_min_confidence: default_memory_capture_min_confidence(),
+            sensitive_filter_enabled: default_memory_sensitive_filter_enabled(),
+            retrieval_layers: default_memory_retrieval_layers(),
+            max_injected_memory_chars: default_memory_max_injected_chars(),
             max_retrieval_results: 10,
             similarity_threshold: 0.3,
             health_check_attempts: default_memory_health_check_attempts(),
             health_check_interval_ms: default_memory_health_check_interval_ms(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCaptureMode {
+    None,
+    ExplicitToolOnly,
+    LlmSelected,
+    ProviderInferAll,
+}
+
+impl Default for MemoryCaptureMode {
+    fn default() -> Self {
+        Self::LlmSelected
+    }
+}
+
+fn default_memory_capture_timeout_sec() -> u64 {
+    3
+}
+
+fn default_memory_capture_min_confidence() -> f32 {
+    0.65
+}
+
+fn default_memory_sensitive_filter_enabled() -> bool {
+    true
+}
+
+fn default_memory_retrieval_layers() -> Vec<String> {
+    vec![
+        "core".to_string(),
+        "preference".to_string(),
+        "relationship".to_string(),
+    ]
+}
+
+fn default_memory_max_injected_chars() -> usize {
+    1200
 }
 
 fn default_memory_health_check_attempts() -> u32 {

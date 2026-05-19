@@ -719,6 +719,89 @@ pub struct MemoryConversationIngest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryCapabilities {
+    pub provider: String,
+    pub abi_version: u32,
+    pub supports_store: bool,
+    pub supports_list: bool,
+    pub supports_get: bool,
+    pub supports_retrieve: bool,
+    pub supports_update: bool,
+    pub supports_delete: bool,
+    pub supports_clear_user: bool,
+    pub supports_conversation_ingest: bool,
+    pub supports_provider_infer: bool,
+    pub supports_metadata: bool,
+    pub supports_search_filters: bool,
+    pub supports_layer_filters: bool,
+    pub supports_similarity_threshold: bool,
+    pub supports_graph: bool,
+    pub supports_relationship_edges: bool,
+    pub async_writes: bool,
+    pub max_content_chars: Option<usize>,
+    pub max_metadata_bytes: Option<usize>,
+    pub max_batch_messages: Option<usize>,
+    #[serde(default)]
+    pub provider_specific: BTreeMap<String, serde_json::Value>,
+}
+
+impl MemoryCapabilities {
+    pub fn minimal(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            abi_version: 1,
+            supports_store: true,
+            supports_list: true,
+            supports_get: true,
+            supports_retrieve: true,
+            supports_update: true,
+            supports_delete: true,
+            supports_clear_user: true,
+            supports_conversation_ingest: false,
+            supports_provider_infer: false,
+            supports_metadata: true,
+            supports_search_filters: false,
+            supports_layer_filters: true,
+            supports_similarity_threshold: false,
+            supports_graph: false,
+            supports_relationship_edges: false,
+            async_writes: false,
+            max_content_chars: None,
+            max_metadata_bytes: None,
+            max_batch_messages: None,
+            provider_specific: BTreeMap::new(),
+        }
+    }
+
+    pub fn unavailable(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            abi_version: 1,
+            supports_store: false,
+            supports_list: false,
+            supports_get: false,
+            supports_retrieve: false,
+            supports_update: false,
+            supports_delete: false,
+            supports_clear_user: false,
+            supports_conversation_ingest: false,
+            supports_provider_infer: false,
+            supports_metadata: false,
+            supports_search_filters: false,
+            supports_layer_filters: false,
+            supports_similarity_threshold: false,
+            supports_graph: false,
+            supports_relationship_edges: false,
+            async_writes: false,
+            max_content_chars: None,
+            max_metadata_bytes: None,
+            max_batch_messages: None,
+            provider_specific: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphFragment {
     pub nodes: Vec<MemoryNode>,
     pub edges: Vec<MemoryEdge>,
@@ -752,6 +835,9 @@ pub trait MemoryBackend: ModuleLifecycle {
         _ingest: MemoryConversationIngest,
     ) -> anyhow::Result<Option<String>> {
         Ok(None)
+    }
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::minimal(self.name())
     }
     async fn graph_for_user(
         &self,

@@ -5,7 +5,7 @@ use alia_server::providers::memory::simple::SimpleMemory;
 #[cfg(feature = "tools-http")]
 use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
-    Calculate, GetCurrentTime, MemorySearch, MemoryStore, parse_openai_tool_call,
+    Calculate, GetCurrentTime, MemoryForget, MemorySearch, MemoryStore, parse_openai_tool_call,
     to_openai_functions,
 };
 use uuid::Uuid;
@@ -201,5 +201,79 @@ async fn memory_store_and_search_use_memory_backend() {
     assert_eq!(
         found.output["results"][0]["content"],
         "KeQiao likes tsukuyomi"
+    );
+}
+
+#[tokio::test]
+async fn memory_store_blocks_sensitive_chat_memory() {
+    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: Some("test".to_string()),
+    };
+    let store = MemoryStore::new(Some(memory.clone()));
+
+    let result = store
+        .execute(
+            serde_json::json!({
+                "content": "The user's API key is sk-live-12345678901234567890abcdef.",
+                "layer": "core",
+                "importance": 1.0
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.success);
+    assert_eq!(result.output["error"], "sensitive_memory_blocked");
+    assert!(
+        memory
+            .list(ctx.user_id, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn memory_forget_deletes_matching_memory() {
+    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+    let ctx = ToolContext {
+        user_id: Uuid::new_v4(),
+        conversation_id: None,
+        source: "test".to_string(),
+        channel_id: Some("test".to_string()),
+    };
+    let store = MemoryStore::new(Some(memory.clone()));
+    let forget = MemoryForget::new(Some(memory.clone()));
+
+    store
+        .execute(
+            serde_json::json!({
+                "content": "The user likes short summaries.",
+                "layer": "preference",
+                "importance": 0.8
+            }),
+            &ctx,
+        )
+        .await
+        .unwrap();
+
+    let result = forget
+        .execute(serde_json::json!({"query": "short summaries"}), &ctx)
+        .await
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.output["deleted"], 1);
+    assert!(
+        memory
+            .list(ctx.user_id, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

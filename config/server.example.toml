@@ -57,6 +57,9 @@ major_llm = "openai"
 # Optional dedicated LLM for STT transcript correction. Omit to fall back to
 # the configured minor/major LLMs.
 # transcript_correction_llm = "ollama"
+# Optional dedicated LLM for selective memory capture. Omit to fall back to the
+# configured minor LLM.
+# memory_capture_llm = "ollama"
 stt = "whisper_cpp"
 tts = "gpt_sovits"
 embedding = "ollama"

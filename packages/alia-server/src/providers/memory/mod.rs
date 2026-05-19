@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::module::ModuleLifecycle;
 use crate::providers::adapter::{
-    MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryBackend, MemoryCapabilities, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
 };
 
 pub struct NoopMemory;
@@ -64,5 +64,9 @@ impl MemoryBackend for NoopMemory {
 
     async fn clear(&self, _user_id: Uuid) -> anyhow::Result<u64> {
         Ok(0)
+    }
+
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::unavailable(self.name())
     }
 }

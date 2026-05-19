@@ -27,11 +27,12 @@ use crate::channels::adapter::ChannelEvent;
 use crate::config::InsightsSection;
 use crate::entity::{chat_message, chat_session, insight_log, llm_cache};
 use crate::event::{EventBus, ServerEvent};
+use crate::memory_policy::detect_sensitive_memory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     CACHE_METADATA_SCHEMA, ChatMessage, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
-    LlmAdapter, MemoryBackend, MemoryConversationIngest, MemoryConversationMessage, MemoryListOpts,
-    MemoryNode, MemoryPatch, ScheduleConfig, ScheduledTask, SchedulerBackend,
+    LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, ScheduleConfig,
+    ScheduledTask, SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
@@ -859,48 +860,17 @@ impl ScheduledInsights {
             });
         }
 
+        let Some(llm) = llm else {
+            return Ok(MemoryInsightStats {
+                summary: "Extraction skipped: LLM is unavailable.".to_string(),
+                model_used: memory.name().to_string(),
+                ..MemoryInsightStats::default()
+            });
+        };
         let mut stats = MemoryInsightStats {
-            model_used: memory.name().to_string(),
+            model_used: join_model_labels(&[memory.name().to_string(), llm.name().to_string()]),
             ..MemoryInsightStats::default()
         };
-
-        let ingest_messages = messages
-            .iter()
-            .map(|message| MemoryConversationMessage {
-                role: message.role.clone(),
-                content: message.content.clone(),
-                name: message.name.clone(),
-            })
-            .collect::<Vec<_>>();
-        if memory
-            .ingest_conversation(
-                user.user_id,
-                MemoryConversationIngest {
-                    run_id: user.session_id.map(|id| id.to_string()),
-                    messages: ingest_messages,
-                    metadata: serde_json::json!({
-                        "source": "insights",
-                        "phase": "extraction",
-                        "channel_id": user.channel_id.clone(),
-                        "user_id_text": user.user_id_text.clone(),
-                    }),
-                },
-            )
-            .await
-            .is_ok()
-        {
-            stats.ingested += 1;
-        }
-
-        let Some(llm) = llm else {
-            stats.summary = format!(
-                "Extraction ingested {} recent messages through {}.",
-                messages.len(),
-                memory.name()
-            );
-            return Ok(stats);
-        };
-        stats.model_used = join_model_labels(&[stats.model_used, llm.name().to_string()]);
 
         let transcript = transcript_for_prompt(&messages, 10_000);
         let response = llm
@@ -923,7 +893,7 @@ impl ScheduledInsights {
             Self::store_memory_candidates(memory.as_ref(), user, extracted.memories, "extraction")
                 .await?;
         stats.summary = format!(
-            "Extraction ingested recent conversation and stored {} memory candidates.",
+            "Extraction stored {} selected memory candidates.",
             stats.created
         );
         Ok(stats)
@@ -1211,6 +1181,15 @@ impl ScheduledInsights {
         for candidate in candidates {
             let content = candidate.content.trim();
             if content.is_empty() || candidate.confidence.unwrap_or(1.0) < 0.6 {
+                continue;
+            }
+            if let Some(sensitive) = detect_sensitive_memory(content) {
+                tracing::debug!(
+                    user_id = %user.user_id,
+                    category = sensitive.category,
+                    phase,
+                    "skipped sensitive insight memory candidate"
+                );
                 continue;
             }
             let layer = candidate

@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MemoryBackend, MemoryConversationIngest, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryBackend, MemoryCapabilities, MemoryConversationIngest, MemoryListOpts, MemoryNode,
+    MemoryPatch, RetrievalOpts,
 };
 
 #[async_trait]
@@ -43,6 +44,10 @@ pub trait ExternalMemoryClient: Send + Sync {
         _ingest: MemoryConversationIngest,
     ) -> anyhow::Result<Option<String>> {
         Ok(None)
+    }
+
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::minimal(self.name())
     }
 }
 
@@ -118,5 +123,9 @@ where
         ingest: MemoryConversationIngest,
     ) -> anyhow::Result<Option<String>> {
         self.client.ingest_conversation(user_id, ingest).await
+    }
+
+    async fn memory_capabilities(&self) -> MemoryCapabilities {
+        self.client.memory_capabilities().await
     }
 }

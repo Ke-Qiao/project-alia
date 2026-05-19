@@ -47,6 +47,7 @@ pub struct ServerBuilder {
     minor_llm: Option<Box<dyn LlmAdapter>>,
     major_llm: Option<Box<dyn LlmAdapter>>,
     transcript_correction_llm: Option<Box<dyn LlmAdapter>>,
+    memory_capture_llm: Option<Box<dyn LlmAdapter>>,
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
@@ -71,6 +72,7 @@ impl ServerBuilder {
             minor_llm: None,
             major_llm: None,
             transcript_correction_llm: None,
+            memory_capture_llm: None,
             stt: None,
             tts: None,
             embedding: None,
@@ -96,6 +98,11 @@ impl ServerBuilder {
 
     pub fn with_transcript_correction_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
         self.transcript_correction_llm = Some(Box::new(llm));
+        self
+    }
+
+    pub fn with_memory_capture_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
+        self.memory_capture_llm = Some(Box::new(llm));
         self
     }
 
@@ -155,6 +162,7 @@ impl ServerBuilder {
             minor_llm: None,
             major_llm: None,
             transcript_correction_llm: None,
+            memory_capture_llm: None,
             cache: None,
             tools: None,
             expression: None,
@@ -179,6 +187,13 @@ impl ServerBuilder {
             self.config
                 .modules
                 .transcript_correction_llm
+                .as_deref()
+                .map(factory::create_llm)
+        });
+        let mut memory_capture_llm = self.memory_capture_llm.or_else(|| {
+            self.config
+                .modules
+                .memory_capture_llm
                 .as_deref()
                 .map(factory::create_llm)
         });
@@ -270,6 +285,7 @@ impl ServerBuilder {
             minor_llm: None,
             major_llm: None,
             transcript_correction_llm: None,
+            memory_capture_llm: None,
             cache: None,
             tools: None,
             expression: Some(expression_runtime.clone()),
@@ -288,10 +304,14 @@ impl ServerBuilder {
         if let Some(llm) = transcript_correction_llm.as_mut() {
             init_module(llm.as_mut(), &ctx).await;
         }
+        if let Some(llm) = memory_capture_llm.as_mut() {
+            init_module(llm.as_mut(), &ctx).await;
+        }
         let minor_llm: Arc<dyn LlmAdapter> = Arc::from(minor_llm);
         let major_llm: Arc<dyn LlmAdapter> = Arc::from(major_llm);
         let transcript_correction_llm: Option<Arc<dyn LlmAdapter>> =
             transcript_correction_llm.map(Arc::from);
+        let memory_capture_llm: Option<Arc<dyn LlmAdapter>> = memory_capture_llm.map(Arc::from);
         let default_llm = if self.config.policies.routing.major_llm_enabled {
             major_llm.clone()
         } else {
@@ -302,6 +322,7 @@ impl ServerBuilder {
             minor_llm: Some(minor_llm.clone()),
             major_llm: Some(major_llm.clone()),
             transcript_correction_llm: transcript_correction_llm.clone(),
+            memory_capture_llm: memory_capture_llm.clone(),
             ..ctx
         };
         init_module(stt.as_mut(), &ctx).await;
@@ -400,6 +421,7 @@ impl ServerBuilder {
             minor_llm,
             major_llm,
             transcript_correction_llm,
+            memory_capture_llm,
             stt: Arc::from(stt),
             tts: Arc::from(tts),
             embedding: Arc::from(embedding),
@@ -423,6 +445,9 @@ impl ServerBuilder {
         start_module(registry.minor_llm.as_ref()).await;
         start_module(registry.major_llm.as_ref()).await;
         if let Some(llm) = &registry.transcript_correction_llm {
+            start_module(llm.as_ref()).await;
+        }
+        if let Some(llm) = &registry.memory_capture_llm {
             start_module(llm.as_ref()).await;
         }
         start_module(registry.stt.as_ref()).await;
