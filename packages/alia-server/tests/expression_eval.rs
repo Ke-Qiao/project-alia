@@ -2,8 +2,10 @@ use std::path::Path;
 
 use alia_server::config::ServerConfig;
 use alia_server::expression::{
-    AffectUserInput, ExpressionRuntime, appraisal_regression_cases, planner_regression_cases,
+    AffectUserInput, ExpressionInput, ExpressionRuntime, appraisal_regression_cases,
+    planner_regression_cases,
 };
+use alia_server::providers::adapter::TtsCapabilities;
 
 #[tokio::test]
 async fn appraisal_regression_cases_hold() {
@@ -137,6 +139,39 @@ fn resource_governance_config_is_present() {
             .iter()
             .any(|phrase| phrase == "api")
     );
+}
+
+#[tokio::test]
+async fn planner_respects_tts_capability_limits_before_synthesis() {
+    let runtime = test_runtime();
+    let plan = runtime
+        .plan(ExpressionInput {
+            response_text: "Great, I can help with that.".to_string(),
+            route: Some("minor_llm".to_string()),
+            channel_id: "cli".to_string(),
+            user_id: "user".to_string(),
+            dialogue_act: "celebrate".to_string(),
+            content_tone: "positive".to_string(),
+            user_state: Default::default(),
+            device_context: Default::default(),
+            safety_context: Default::default(),
+            conversation_context: Default::default(),
+            constraints: Default::default(),
+            voice_output: true,
+            hardware_control: false,
+            tts_capabilities: Some(TtsCapabilities::minimal("plain_tts")),
+            expression_capabilities: None,
+        })
+        .await;
+
+    let speech = plan.speech.expect("voice output should produce speech");
+    assert_eq!(speech.style, "neutral");
+    assert_eq!(speech.intensity, 0.0);
+    assert!(speech.voice_profile.is_none());
+    assert_eq!(speech.prosody.rate, 1.0);
+    assert_eq!(speech.prosody.pitch_shift, 0.0);
+    assert_eq!(speech.prosody.energy, 0.5);
+    assert_eq!(speech.prosody.pause_bias, 0.0);
 }
 
 fn test_runtime() -> ExpressionRuntime {

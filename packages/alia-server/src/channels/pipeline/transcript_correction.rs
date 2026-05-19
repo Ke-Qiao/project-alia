@@ -363,15 +363,35 @@ fn correction_user_prompt(
 
     prompt.push_str("\n\nSTT capabilities:");
     prompt.push_str(&format!(
-        "\n- overall confidence: {}\n- word confidence: {}\n- segment quality: {}\n- segments: {}\n- alternatives: {}\n- language: {}\n- timestamps: {}",
+        "\n- streaming: {}\n- partial results: {}\n- overall confidence: {}\n- word confidence: {}\n- segment quality: {}\n- segments: {}\n- alternatives: {}\n- language detection: {}\n- language hint: {}\n- timestamps: {}\n- vad: {}\n- diarization: {}\n- translation: {}\n- punctuation: {}\n- text normalization: {}",
+        stt_capabilities.supports_streaming,
+        stt_capabilities.supports_partial_results,
         stt_capabilities.supports_confidence,
         stt_capabilities.supports_word_confidence,
         stt_capabilities.supports_segment_quality,
         stt_capabilities.supports_segments,
         stt_capabilities.supports_alternatives,
         stt_capabilities.supports_language,
+        stt_capabilities.supports_language_hint,
         stt_capabilities.supports_timestamps,
+        stt_capabilities.supports_vad,
+        stt_capabilities.supports_diarization,
+        stt_capabilities.supports_translation,
+        stt_capabilities.supports_punctuation,
+        stt_capabilities.supports_text_normalization,
     ));
+    if !stt_capabilities.supported_input_encodings.is_empty() {
+        prompt.push_str(&format!(
+            "\n- input encodings: {:?}",
+            stt_capabilities.supported_input_encodings
+        ));
+    }
+    if !stt_capabilities.supported_languages.is_empty() {
+        prompt.push_str(&format!(
+            "\n- supported languages: {}",
+            stt_capabilities.supported_languages.join(", ")
+        ));
+    }
 
     if let Some(confidence) = transcription.confidence {
         prompt.push_str(&format!("\n\nOverall STT confidence: {confidence:.2}"));
@@ -549,6 +569,7 @@ fn json_object_slice(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::adapter::AudioEncoding;
 
     fn test_policy() -> TranscriptCorrectionPolicySection {
         TranscriptCorrectionPolicySection {
@@ -646,13 +667,26 @@ mod tests {
         };
         let capabilities = SttCapabilities {
             provider: "test_whisper".to_string(),
+            supported_input_encodings: vec![AudioEncoding::Pcm16kMono, AudioEncoding::Wav],
+            supports_streaming: true,
+            supports_partial_results: true,
             supports_confidence: true,
             supports_word_confidence: true,
             supports_segment_quality: true,
             supports_segments: true,
             supports_alternatives: true,
             supports_language: true,
+            supports_language_hint: true,
             supports_timestamps: true,
+            supports_vad: false,
+            supports_diarization: false,
+            supports_translation: false,
+            supports_punctuation: true,
+            supports_text_normalization: false,
+            supported_languages: vec!["en".to_string()],
+            max_audio_duration_ms: Some(60_000),
+            max_audio_bytes: Some(2_000_000),
+            provider_specific: Default::default(),
         };
         let mut context = TranscriptCorrectionContext::new("voice", "user-1");
         context.known_device_names = vec!["Living Room Light".to_string()];
@@ -663,9 +697,12 @@ mod tests {
         let prompt = correction_user_prompt(&transcription, &capabilities, &context);
 
         assert!(prompt.contains("STT provider: test_whisper"));
+        assert!(prompt.contains("- streaming: true"));
         assert!(prompt.contains("- word confidence: true"));
         assert!(prompt.contains("- segment quality: true"));
         assert!(prompt.contains("- alternatives: true"));
+        assert!(prompt.contains("- punctuation: true"));
+        assert!(prompt.contains("supported languages: en"));
         assert!(prompt.contains("[400-1100ms, confidence 0.42] living room lite"));
         assert!(prompt.contains("avg_logprob: -0.92"));
         assert!(prompt.contains("no_speech_prob: 0.03"));

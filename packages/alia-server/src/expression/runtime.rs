@@ -6,6 +6,7 @@ use crate::config::{
     DialoguePolicyResourceSection, ExpressionPolicySection, ExpressionStyleSection,
     RegulationPolicySection, ServerConfig,
 };
+use crate::providers::adapter::TtsCapabilities;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::DatabaseConnection;
 
@@ -439,11 +440,18 @@ impl ExpressionRuntime {
         let voice_profile = style.and_then(|style| style.voice_profile.clone());
 
         let intensity = expression_intensity(intent.intensity, &stance, &self.policy);
-        let speech = input.voice_output.then(|| SpeechExpression {
-            style: style_name.clone(),
-            intensity,
-            voice_profile,
-            prosody,
+        let speech = input.voice_output.then(|| {
+            let speech = SpeechExpression {
+                style: style_name.clone(),
+                intensity,
+                voice_profile,
+                prosody,
+            };
+            input
+                .tts_capabilities
+                .as_ref()
+                .map(|capabilities| adapt_speech_to_tts_capabilities(speech.clone(), capabilities))
+                .unwrap_or(speech)
         });
 
         let device_context = input.effective_device_context();
@@ -507,6 +515,7 @@ impl ExpressionRuntime {
             constraints: Default::default(),
             voice_output: true,
             hardware_control: false,
+            tts_capabilities: None,
             expression_capabilities: None,
         })
         .await
@@ -716,6 +725,54 @@ fn apply_stance_to_prosody(
         + stance.pause_bias_offset)
         .clamp(-1.0, 1.0);
     prosody
+}
+
+fn adapt_speech_to_tts_capabilities(
+    mut speech: SpeechExpression,
+    capabilities: &TtsCapabilities,
+) -> SpeechExpression {
+    if !capabilities.supports_style {
+        speech.style = "neutral".to_string();
+    }
+    if !capabilities.supports_intensity {
+        speech.intensity = 0.0;
+    }
+    if !capabilities.supports_reference_voice {
+        speech.voice_profile = None;
+    }
+    if !capabilities.supports_rate {
+        speech.prosody.rate = 1.0;
+    } else {
+        speech.prosody.rate = speech.prosody.rate.clamp(
+            capabilities.prosody_limits.min_rate,
+            capabilities.prosody_limits.max_rate,
+        );
+    }
+    if !capabilities.supports_pitch {
+        speech.prosody.pitch_shift = 0.0;
+    } else {
+        speech.prosody.pitch_shift = speech.prosody.pitch_shift.clamp(
+            capabilities.prosody_limits.min_pitch_shift,
+            capabilities.prosody_limits.max_pitch_shift,
+        );
+    }
+    if !capabilities.supports_energy {
+        speech.prosody.energy = 0.5;
+    } else {
+        speech.prosody.energy = speech.prosody.energy.clamp(
+            capabilities.prosody_limits.min_energy,
+            capabilities.prosody_limits.max_energy,
+        );
+    }
+    if !capabilities.supports_pause {
+        speech.prosody.pause_bias = 0.0;
+    } else {
+        speech.prosody.pause_bias = speech.prosody.pause_bias.clamp(
+            capabilities.prosody_limits.min_pause_bias,
+            capabilities.prosody_limits.max_pause_bias,
+        );
+    }
+    speech
 }
 
 fn motion_timeline(
@@ -1211,6 +1268,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: false,
+                tts_capabilities: None,
                 expression_capabilities: None,
             })
             .await;
@@ -1261,6 +1319,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: true,
+                tts_capabilities: None,
                 expression_capabilities: None,
             })
             .await;
@@ -1332,6 +1391,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: false,
+                tts_capabilities: None,
                 expression_capabilities: None,
             })
             .await;
@@ -1650,6 +1710,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: true,
+                tts_capabilities: None,
                 expression_capabilities: None,
             })
             .await;
@@ -1670,6 +1731,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: true,
+                tts_capabilities: None,
                 expression_capabilities: Some(capabilities_with_action("small_nod", 0.3)),
             })
             .await;
@@ -1895,6 +1957,7 @@ mod tests {
                 constraints: Default::default(),
                 voice_output: true,
                 hardware_control: true,
+                tts_capabilities: None,
                 expression_capabilities: None,
             })
             .await;
@@ -1941,6 +2004,7 @@ mod tests {
             constraints: Default::default(),
             voice_output: true,
             hardware_control: false,
+            tts_capabilities: None,
             expression_capabilities: None,
         }
     }

@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::providers::adapter::TtsCapabilities;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AffectAxes {
     pub valence: f32,
@@ -137,6 +139,8 @@ pub struct ExpressionInput {
     pub constraints: ExpressionConstraints,
     pub voice_output: bool,
     pub hardware_control: bool,
+    #[serde(default)]
+    pub tts_capabilities: Option<TtsCapabilities>,
     #[serde(default)]
     pub expression_capabilities: Option<ExpressionCapabilitySnapshot>,
 }

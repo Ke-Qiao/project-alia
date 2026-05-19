@@ -250,13 +250,36 @@ impl SttAdapter for WhisperCppStt {
     async fn stt_capabilities(&self) -> SttCapabilities {
         SttCapabilities {
             provider: self.name().to_string(),
+            supported_input_encodings: vec![
+                AudioEncoding::Pcm16kMono,
+                AudioEncoding::Wav,
+                AudioEncoding::Opus,
+            ],
+            supports_streaming: true,
+            supports_partial_results: true,
             supports_confidence: false,
             supports_word_confidence: true,
             supports_segment_quality: true,
             supports_segments: true,
             supports_alternatives: false,
             supports_language: true,
+            supports_language_hint: true,
             supports_timestamps: true,
+            supports_vad: false,
+            supports_diarization: false,
+            supports_translation: false,
+            supports_punctuation: true,
+            supports_text_normalization: false,
+            supported_languages: Vec::new(),
+            max_audio_duration_ms: None,
+            max_audio_bytes: None,
+            provider_specific: BTreeMap::from([
+                (
+                    "response_format".to_string(),
+                    serde_json::json!("verbose_json"),
+                ),
+                ("token_timestamps".to_string(), serde_json::json!(true)),
+            ]),
         }
     }
 

@@ -1735,6 +1735,11 @@ async fn plan_expression_for_response(
     let content_tone = dialogue_policy.content_tone.clone();
     let user_state = expression_user_state_from_affect(&affect);
     let device_context = expression_device_context(&capabilities, expression_capabilities.as_ref());
+    let tts_capabilities = if capabilities.voice_output {
+        Some(modules.tts.tts_capabilities().await)
+    } else {
+        None
+    };
     let safety_context = expression_safety_context(
         &capabilities,
         &content_tone,
@@ -1754,6 +1759,7 @@ async fn plan_expression_for_response(
         constraints: constraints.clone(),
         voice_output: capabilities.voice_output,
         hardware_control: capabilities.hardware_control,
+        tts_capabilities: tts_capabilities.clone(),
         expression_capabilities: expression_capabilities.clone(),
     };
     let plan = modules.expression.plan(expression_input.clone()).await;
@@ -1781,6 +1787,7 @@ async fn plan_expression_for_response(
                 "user_state": user_state,
                 "device_context": device_context,
                 "safety_context": safety_context,
+                "tts_capabilities": tts_capabilities,
                 "affect": affect.affect,
                 "social": affect.social,
                 "resource": affect.resource,

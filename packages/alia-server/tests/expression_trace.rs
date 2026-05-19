@@ -48,6 +48,7 @@ fn replays_expression_turn_from_agent_events() {
         constraints: Default::default(),
         voice_output: true,
         hardware_control: false,
+        tts_capabilities: None,
         expression_capabilities: None,
     };
     let events = vec![

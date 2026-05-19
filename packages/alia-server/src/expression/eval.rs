@@ -186,6 +186,7 @@ fn expression_input(text: &str, dialogue_act: &str, content_tone: &str) -> Expre
         constraints: Default::default(),
         voice_output: true,
         hardware_control: false,
+        tts_capabilities: None,
         expression_capabilities: None,
     }
 }

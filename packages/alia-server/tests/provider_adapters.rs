@@ -4,7 +4,8 @@ use alia_server::expression::{ProsodyControls, SpeechExpression};
 use alia_server::module::ModuleLifecycle;
 use alia_server::module::lifecycle::ModuleHealth;
 use alia_server::providers::adapter::{
-    AudioEncoding, SttAdapter, TranscribeChunk, TranscriptionResult, TtsCapabilities, TtsRequest,
+    AudioEncoding, SttAdapter, TranscribeChunk, TranscriptionResult, TtsCapabilities,
+    TtsLatencyClass, TtsProsodyLimits, TtsRequest,
 };
 use async_trait::async_trait;
 use futures::Stream;
@@ -59,6 +60,9 @@ async fn stt_minimal_result_and_capabilities_are_provider_neutral() {
 
     assert_eq!(result.text, "hello from audio");
     assert_eq!(result.provider, "minimal_stt");
+    assert!(capabilities.supported_input_encodings.is_empty());
+    assert!(!capabilities.supports_streaming);
+    assert!(!capabilities.supports_partial_results);
     assert!(!capabilities.supports_segments);
     assert!(!capabilities.supports_alternatives);
 }
@@ -70,12 +74,21 @@ async fn whisper_capabilities_match_verbose_json_metadata() {
     let capabilities = stt.stt_capabilities().await;
 
     assert_eq!(capabilities.provider, "whisper");
+    assert!(
+        capabilities
+            .supported_input_encodings
+            .contains(&AudioEncoding::Pcm16kMono)
+    );
+    assert!(capabilities.supports_streaming);
+    assert!(capabilities.supports_partial_results);
     assert!(!capabilities.supports_confidence);
     assert!(capabilities.supports_word_confidence);
     assert!(capabilities.supports_segment_quality);
     assert!(capabilities.supports_segments);
     assert!(capabilities.supports_language);
+    assert!(capabilities.supports_language_hint);
     assert!(capabilities.supports_timestamps);
+    assert!(capabilities.supports_punctuation);
     assert!(!capabilities.supports_alternatives);
 }
 
@@ -110,6 +123,8 @@ fn tts_capabilities_default_to_no_expression_controls() {
     let capabilities = TtsCapabilities::minimal("plain");
 
     assert_eq!(capabilities.provider, "plain");
+    assert!(capabilities.supported_output_formats.is_empty());
+    assert_eq!(capabilities.latency_class, TtsLatencyClass::Unknown);
     assert!(!capabilities.supports_pitch);
     assert_eq!(capabilities.prosody_limits.max_rate, 1.0);
 }
@@ -139,9 +154,55 @@ fn minimal_tts_capabilities_report_expression_degradations() {
         .collect::<Vec<_>>();
 
     assert!(reasons.contains(&"provider_style_control_unavailable".to_string()));
+    assert!(reasons.contains(&"provider_intensity_control_unavailable".to_string()));
     assert!(reasons.contains(&"provider_reference_voice_unavailable".to_string()));
     assert!(reasons.contains(&"provider_rate_control_unavailable".to_string()));
     assert!(reasons.contains(&"provider_pitch_control_unavailable".to_string()));
     assert!(reasons.contains(&"provider_energy_control_unavailable".to_string()));
     assert!(reasons.contains(&"provider_pause_control_unavailable".to_string()));
+}
+
+#[test]
+fn tts_capabilities_report_limits_and_text_bounds() {
+    let mut capabilities = TtsCapabilities::minimal("bounded");
+    capabilities.supports_intensity = true;
+    capabilities.supports_rate = true;
+    capabilities.supports_energy = true;
+    capabilities.supports_pause = true;
+    capabilities.prosody_limits = TtsProsodyLimits {
+        min_rate: 0.8,
+        max_rate: 1.2,
+        min_pitch_shift: 0.0,
+        max_pitch_shift: 0.0,
+        min_energy: 0.2,
+        max_energy: 0.7,
+        min_pause_bias: -0.2,
+        max_pause_bias: 0.2,
+    };
+    capabilities.max_text_chars = Some(4);
+
+    let request = TtsRequest {
+        text: "hello".to_string(),
+        style: None,
+        intensity: 0.5,
+        voice_profile: None,
+        prosody: ProsodyControls {
+            rate: 1.4,
+            pitch_shift: 0.2,
+            energy: 0.9,
+            pause_bias: -0.5,
+        },
+    };
+
+    let reasons = capabilities
+        .provider_adjustments(&request)
+        .into_iter()
+        .map(|adjustment| adjustment.reason)
+        .collect::<Vec<_>>();
+
+    assert!(reasons.contains(&"provider_text_length_limit_exceeded".to_string()));
+    assert!(reasons.contains(&"provider_rate_limit_clamped".to_string()));
+    assert!(reasons.contains(&"provider_pitch_control_unavailable".to_string()));
+    assert!(reasons.contains(&"provider_energy_limit_clamped".to_string()));
+    assert!(reasons.contains(&"provider_pause_limit_clamped".to_string()));
 }

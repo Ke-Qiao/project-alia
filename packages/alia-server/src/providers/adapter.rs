@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -58,7 +59,7 @@ impl ChatMessage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioEncoding {
     Pcm16kMono,
@@ -137,6 +138,12 @@ pub struct TranscriptionAlternative {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SttCapabilities {
     pub provider: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_input_encodings: Vec<AudioEncoding>,
+    #[serde(default)]
+    pub supports_streaming: bool,
+    #[serde(default)]
+    pub supports_partial_results: bool,
     #[serde(default)]
     pub supports_confidence: bool,
     #[serde(default)]
@@ -150,20 +157,53 @@ pub struct SttCapabilities {
     #[serde(default)]
     pub supports_language: bool,
     #[serde(default)]
+    pub supports_language_hint: bool,
+    #[serde(default)]
     pub supports_timestamps: bool,
+    #[serde(default)]
+    pub supports_vad: bool,
+    #[serde(default)]
+    pub supports_diarization: bool,
+    #[serde(default)]
+    pub supports_translation: bool,
+    #[serde(default)]
+    pub supports_punctuation: bool,
+    #[serde(default)]
+    pub supports_text_normalization: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_languages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_audio_duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_audio_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_specific: BTreeMap<String, serde_json::Value>,
 }
 
 impl SttCapabilities {
     pub fn minimal(provider: impl Into<String>) -> Self {
         Self {
             provider: provider.into(),
+            supported_input_encodings: Vec::new(),
+            supports_streaming: false,
+            supports_partial_results: false,
             supports_confidence: false,
             supports_word_confidence: false,
             supports_segment_quality: false,
             supports_segments: false,
             supports_alternatives: false,
             supports_language: false,
+            supports_language_hint: false,
             supports_timestamps: false,
+            supports_vad: false,
+            supports_diarization: false,
+            supports_translation: false,
+            supports_punctuation: false,
+            supports_text_normalization: false,
+            supported_languages: Vec::new(),
+            max_audio_duration_ms: None,
+            max_audio_bytes: None,
+            provider_specific: BTreeMap::new(),
         }
     }
 }
@@ -257,12 +297,32 @@ pub struct TtsProviderAdjustment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsCapabilities {
     pub provider: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_output_formats: Vec<String>,
+    #[serde(default)]
+    pub supports_streaming: bool,
     #[serde(default)]
     pub supports_style: bool,
     #[serde(default)]
+    pub supports_intensity: bool,
+    #[serde(default)]
     pub supports_style_embedding: bool,
     #[serde(default)]
+    pub supports_emotion_labels: bool,
+    #[serde(default)]
     pub supports_reference_voice: bool,
+    #[serde(default)]
+    pub supports_voice_cloning: bool,
+    #[serde(default)]
+    pub supports_voice_selection: bool,
+    #[serde(default)]
+    pub supports_multilingual_voice: bool,
+    #[serde(default)]
+    pub supports_ssml: bool,
+    #[serde(default)]
+    pub supports_phoneme_control: bool,
+    #[serde(default)]
+    pub supports_sentence_level_prosody: bool,
     #[serde(default)]
     pub supports_pitch: bool,
     #[serde(default)]
@@ -275,26 +335,56 @@ pub struct TtsCapabilities {
     pub supports_streaming_prosody: bool,
     #[serde(default)]
     pub prosody_limits: TtsProsodyLimits,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_text_chars: Option<usize>,
+    #[serde(default)]
+    pub latency_class: TtsLatencyClass,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_specific: BTreeMap<String, serde_json::Value>,
 }
 
 impl TtsCapabilities {
     pub fn minimal(provider: impl Into<String>) -> Self {
         Self {
             provider: provider.into(),
+            supported_output_formats: Vec::new(),
+            supports_streaming: false,
             supports_style: false,
+            supports_intensity: false,
             supports_style_embedding: false,
+            supports_emotion_labels: false,
             supports_reference_voice: false,
+            supports_voice_cloning: false,
+            supports_voice_selection: false,
+            supports_multilingual_voice: false,
+            supports_ssml: false,
+            supports_phoneme_control: false,
+            supports_sentence_level_prosody: false,
             supports_pitch: false,
             supports_rate: false,
             supports_energy: false,
             supports_pause: false,
             supports_streaming_prosody: false,
             prosody_limits: TtsProsodyLimits::default(),
+            max_text_chars: None,
+            latency_class: TtsLatencyClass::Unknown,
+            provider_specific: BTreeMap::new(),
         }
     }
 
     pub fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
         let mut adjustments = Vec::new();
+        if let Some(max_chars) = self.max_text_chars
+            && request.text.chars().count() > max_chars
+        {
+            adjustments.push(tts_adjustment(
+                &self.provider,
+                "speech.text",
+                serde_json::json!(request.text.chars().count()),
+                serde_json::json!(max_chars),
+                "provider_text_length_limit_exceeded",
+            ));
+        }
         if request.style.is_some() && !self.supports_style {
             adjustments.push(tts_adjustment(
                 &self.provider,
@@ -302,6 +392,15 @@ impl TtsCapabilities {
                 serde_json::json!(request.style),
                 serde_json::Value::Null,
                 "provider_style_control_unavailable",
+            ));
+        }
+        if request.intensity.abs() > f32::EPSILON && !self.supports_intensity {
+            adjustments.push(tts_adjustment(
+                &self.provider,
+                "speech.intensity",
+                serde_json::json!(request.intensity),
+                serde_json::json!(0.0),
+                "provider_intensity_control_unavailable",
             ));
         }
         if request.voice_profile.is_some() && !self.supports_reference_voice {
@@ -332,6 +431,23 @@ fn prosody_capability_adjustments(
             serde_json::json!(1.0),
             "provider_rate_control_unavailable",
         ));
+    } else if capabilities.supports_rate
+        && outside_range(
+            prosody.rate,
+            capabilities.prosody_limits.min_rate,
+            capabilities.prosody_limits.max_rate,
+        )
+    {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.rate",
+            serde_json::json!(prosody.rate),
+            serde_json::json!(prosody.rate.clamp(
+                capabilities.prosody_limits.min_rate,
+                capabilities.prosody_limits.max_rate
+            )),
+            "provider_rate_limit_clamped",
+        ));
     }
     if !capabilities.supports_pitch && prosody.pitch_shift.abs() > f32::EPSILON {
         adjustments.push(tts_adjustment(
@@ -340,6 +456,23 @@ fn prosody_capability_adjustments(
             serde_json::json!(prosody.pitch_shift),
             serde_json::json!(0.0),
             "provider_pitch_control_unavailable",
+        ));
+    } else if capabilities.supports_pitch
+        && outside_range(
+            prosody.pitch_shift,
+            capabilities.prosody_limits.min_pitch_shift,
+            capabilities.prosody_limits.max_pitch_shift,
+        )
+    {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.pitch_shift",
+            serde_json::json!(prosody.pitch_shift),
+            serde_json::json!(prosody.pitch_shift.clamp(
+                capabilities.prosody_limits.min_pitch_shift,
+                capabilities.prosody_limits.max_pitch_shift
+            )),
+            "provider_pitch_limit_clamped",
         ));
     }
     if !capabilities.supports_energy && (prosody.energy - 0.5).abs() > f32::EPSILON {
@@ -350,6 +483,23 @@ fn prosody_capability_adjustments(
             serde_json::json!(0.5),
             "provider_energy_control_unavailable",
         ));
+    } else if capabilities.supports_energy
+        && outside_range(
+            prosody.energy,
+            capabilities.prosody_limits.min_energy,
+            capabilities.prosody_limits.max_energy,
+        )
+    {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.energy",
+            serde_json::json!(prosody.energy),
+            serde_json::json!(prosody.energy.clamp(
+                capabilities.prosody_limits.min_energy,
+                capabilities.prosody_limits.max_energy
+            )),
+            "provider_energy_limit_clamped",
+        ));
     }
     if !capabilities.supports_pause && prosody.pause_bias.abs() > f32::EPSILON {
         adjustments.push(tts_adjustment(
@@ -359,8 +509,29 @@ fn prosody_capability_adjustments(
             serde_json::json!(0.0),
             "provider_pause_control_unavailable",
         ));
+    } else if capabilities.supports_pause
+        && outside_range(
+            prosody.pause_bias,
+            capabilities.prosody_limits.min_pause_bias,
+            capabilities.prosody_limits.max_pause_bias,
+        )
+    {
+        adjustments.push(tts_adjustment(
+            &capabilities.provider,
+            "speech.prosody.pause_bias",
+            serde_json::json!(prosody.pause_bias),
+            serde_json::json!(prosody.pause_bias.clamp(
+                capabilities.prosody_limits.min_pause_bias,
+                capabilities.prosody_limits.max_pause_bias
+            )),
+            "provider_pause_limit_clamped",
+        ));
     }
     adjustments
+}
+
+fn outside_range(value: f32, min: f32, max: f32) -> bool {
+    value < min || value > max
 }
 
 fn tts_adjustment(
@@ -403,6 +574,21 @@ impl Default for TtsProsodyLimits {
             min_pause_bias: 0.0,
             max_pause_bias: 0.0,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsLatencyClass {
+    Realtime,
+    Interactive,
+    Batch,
+    Unknown,
+}
+
+impl Default for TtsLatencyClass {
+    fn default() -> Self {
+        Self::Unknown
     }
 }
 

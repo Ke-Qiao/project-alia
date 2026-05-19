@@ -1,12 +1,13 @@
 use axum::extract::{Path, State};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::providers::adapter::{
-    AudioEncoding, TranscriptionAlternative, TranscriptionResult, TranscriptionSegment,
+    AudioEncoding, SttCapabilities, TranscriptionAlternative, TranscriptionResult,
+    TranscriptionSegment, TtsCapabilities,
 };
 use crate::state::AppState;
 
@@ -72,6 +73,12 @@ impl From<TranscriptionResult> for TranscribeResponse {
 #[derive(Deserialize)]
 pub struct SynthesizeRequest {
     pub text: String,
+}
+
+#[derive(Serialize)]
+pub struct VoiceCapabilitiesResponse {
+    pub stt: SttCapabilities,
+    pub tts: TtsCapabilities,
 }
 
 // ========== Handlers ==========
@@ -215,12 +222,23 @@ async fn synthesize(
     Ok(axum::body::Bytes::from(audio))
 }
 
+/// Provider-neutral STT/TTS ability declaration.
+async fn capabilities(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Result<Json<VoiceCapabilitiesResponse>> {
+    let stt = state.modules.stt.stt_capabilities().await;
+    let tts = state.modules.tts.tts_capabilities().await;
+    Ok(Json(VoiceCapabilitiesResponse { stt, tts }))
+}
+
 // ========== Routes ==========
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/voice/chat", post(voice_chat_global))
         .route("/voice/chat/{channel_id}", post(voice_chat_with_channel))
+        .route("/voice/capabilities", get(capabilities))
         .route("/voice/transcribe", post(transcribe))
         .route("/voice/synthesize", post(synthesize))
 }

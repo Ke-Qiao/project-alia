@@ -504,6 +504,64 @@ impl SovitsConfig {
         prosody.provider_adjustments()
     }
 
+    fn tts_capabilities(&self) -> TtsCapabilities {
+        TtsCapabilities {
+            provider: "gpt_sovits".to_string(),
+            supported_output_formats: vec!["audio/wav".to_string()],
+            supports_streaming: true,
+            supports_style: true,
+            supports_intensity: true,
+            supports_style_embedding: false,
+            supports_emotion_labels: true,
+            supports_reference_voice: true,
+            supports_voice_cloning: false,
+            supports_voice_selection: true,
+            supports_multilingual_voice: true,
+            supports_ssml: false,
+            supports_phoneme_control: false,
+            supports_sentence_level_prosody: true,
+            supports_pitch: self.sample_rate_pitch_fallback_enabled,
+            supports_rate: true,
+            supports_energy: true,
+            supports_pause: true,
+            supports_streaming_prosody: true,
+            prosody_limits: TtsProsodyLimits {
+                min_rate: self.prosody_limits.min_speed_factor,
+                max_rate: self.prosody_limits.max_speed_factor,
+                min_pitch_shift: if self.sample_rate_pitch_fallback_enabled {
+                    -1.0
+                } else {
+                    0.0
+                },
+                max_pitch_shift: if self.sample_rate_pitch_fallback_enabled {
+                    1.0
+                } else {
+                    0.0
+                },
+                min_energy: 0.0,
+                max_energy: 1.0,
+                min_pause_bias: -1.0,
+                max_pause_bias: 1.0,
+            },
+            max_text_chars: None,
+            latency_class: crate::providers::adapter::TtsLatencyClass::Interactive,
+            provider_specific: BTreeMap::from([
+                (
+                    "native_provider".to_string(),
+                    serde_json::json!("gpt_sovits"),
+                ),
+                (
+                    "pitch_control_mode".to_string(),
+                    serde_json::json!(if self.sample_rate_pitch_fallback_enabled {
+                        "sample_rate_fallback"
+                    } else {
+                        "unsupported"
+                    }),
+                ),
+            ]),
+        }
+    }
+
     fn profile_for_request(&self, request: &TtsRequest) -> &SovitsVoiceProfile {
         let voice_profile = request
             .voice_profile
@@ -1010,7 +1068,15 @@ impl TtsAdapter for GptSovitsTts {
 
     async fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
         let config = self.config.read().await.clone();
-        let adjustments = config.provider_adjustments(request);
+        let mut adjustments = config.tts_capabilities().provider_adjustments(request);
+        let provider_specific_adjustments = config.provider_adjustments(request);
+        if provider_specific_adjustments
+            .iter()
+            .any(|adjustment| adjustment.path == "speech.prosody.pitch_shift")
+        {
+            adjustments.retain(|adjustment| adjustment.path != "speech.prosody.pitch_shift");
+        }
+        adjustments.extend(provider_specific_adjustments);
         for adjustment in &adjustments {
             tracing::info!(
                 provider = adjustment.provider,
@@ -1026,35 +1092,7 @@ impl TtsAdapter for GptSovitsTts {
 
     async fn tts_capabilities(&self) -> TtsCapabilities {
         let config = self.config.read().await;
-        TtsCapabilities {
-            provider: "gpt_sovits".to_string(),
-            supports_style: true,
-            supports_style_embedding: false,
-            supports_reference_voice: true,
-            supports_pitch: config.sample_rate_pitch_fallback_enabled,
-            supports_rate: true,
-            supports_energy: true,
-            supports_pause: true,
-            supports_streaming_prosody: true,
-            prosody_limits: TtsProsodyLimits {
-                min_rate: config.prosody_limits.min_speed_factor,
-                max_rate: config.prosody_limits.max_speed_factor,
-                min_pitch_shift: if config.sample_rate_pitch_fallback_enabled {
-                    -1.0
-                } else {
-                    0.0
-                },
-                max_pitch_shift: if config.sample_rate_pitch_fallback_enabled {
-                    1.0
-                } else {
-                    0.0
-                },
-                min_energy: 0.0,
-                max_energy: 1.0,
-                min_pause_bias: -1.0,
-                max_pause_bias: 1.0,
-            },
-        }
+        config.tts_capabilities()
     }
 }
 
