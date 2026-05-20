@@ -8,6 +8,7 @@
 
 #[cfg(feature = "llm-anthropic")]
 pub mod anthropic;
+#[cfg(any(feature = "llm-openai", feature = "llm-anthropic", feature = "llm-gemini"))]
 pub mod errors;
 #[cfg(feature = "llm-gemini")]
 pub mod gemini;
