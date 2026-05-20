@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::{LlmRequestOptionsSection, ServerConfig};
+use crate::config::{LlmProfileKind, LlmRequestOptionsSection, ServerConfig};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
@@ -89,6 +89,7 @@ struct AnthropicResponse {
 
 pub struct AnthropicLlm {
     client: Client,
+    profile_id: String,
     config: Arc<RwLock<AnthropicConfig>>,
 }
 
@@ -104,8 +105,13 @@ struct AnthropicConfig {
 
 impl AnthropicLlm {
     pub fn new() -> Self {
+        Self::for_profile("major")
+    }
+
+    pub fn for_profile(profile_id: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
+            profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(AnthropicConfig {
                 api_key: String::new(),
                 base_url: "https://api.anthropic.com/v1".to_string(),
@@ -231,17 +237,29 @@ impl ModuleLifecycle for AnthropicLlm {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
+        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
+        if profile.provider != "anthropic" || profile.kind != LlmProfileKind::Chat {
+            anyhow::bail!(
+                "LLM profile '{}' is not an Anthropic chat profile",
+                self.profile_id
+            );
+        }
         let mut config = self.config.write().await;
         config.api_key = server_config.providers.anthropic.api_key.clone();
         config.base_url = server_config.providers.anthropic.base_url.clone();
-        config.model = server_config.providers.anthropic.chat_model.clone();
+        config.model = profile.model.clone();
         config.version = server_config.providers.anthropic.version.clone();
-        config.request = server_config.providers.anthropic.request.clone();
+        config.request = profile.request.clone();
         config.health_probe_enabled = server_config.providers.anthropic.health_probe_enabled;
         if config.api_key.is_empty() {
             tracing::warn!("Anthropic API key not configured");
         }
-        tracing::info!(model = %config.model, base_url = %config.base_url, "Anthropic LLM initialized");
+        tracing::info!(
+            profile = %self.profile_id,
+            model = %config.model,
+            base_url = %config.base_url,
+            "Anthropic LLM initialized"
+        );
         Ok(())
     }
 
@@ -273,25 +291,29 @@ impl ModuleLifecycle for AnthropicLlm {
             config.base_url = value;
             applied.push("core.providers.anthropic.base_url".to_string());
         }
-        if let Some(value) = string_setting(updates, "core.providers.anthropic.chat_model") {
+        let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
+        if let Some(value) = string_setting(updates, &model_key) {
             config.model = value;
-            applied.push("core.providers.anthropic.chat_model".to_string());
+            applied.push(model_key);
         }
         if let Some(value) = string_setting(updates, "core.providers.anthropic.version") {
             config.version = value;
             applied.push("core.providers.anthropic.version".to_string());
         }
-        if let Some(value) = u64_setting(updates, "core.providers.anthropic.max_output_tokens") {
+        let max_tokens_key = format!("core.profiles.llm.{}.max_output_tokens", self.profile_id);
+        if let Some(value) = u64_setting(updates, &max_tokens_key) {
             config.request.max_output_tokens = value.min(u32::MAX as u64) as u32;
-            applied.push("core.providers.anthropic.max_output_tokens".to_string());
+            applied.push(max_tokens_key);
         }
-        if let Some(value) = f32_setting(updates, "core.providers.anthropic.temperature") {
+        let temperature_key = format!("core.profiles.llm.{}.temperature", self.profile_id);
+        if let Some(value) = f32_setting(updates, &temperature_key) {
             config.request.temperature = value;
-            applied.push("core.providers.anthropic.temperature".to_string());
+            applied.push(temperature_key);
         }
-        if let Some(value) = f32_setting(updates, "core.providers.anthropic.top_p") {
+        let top_p_key = format!("core.profiles.llm.{}.top_p", self.profile_id);
+        if let Some(value) = f32_setting(updates, &top_p_key) {
             config.request.top_p = Some(value);
-            applied.push("core.providers.anthropic.top_p".to_string());
+            applied.push(top_p_key);
         }
 
         if !applied.is_empty() {

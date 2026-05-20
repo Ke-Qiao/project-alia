@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use alia_server::config::{MemoryCaptureMode, ServerConfig, load_config_with_fragments};
+use alia_server::config::{
+    LlmProfileKind, MemoryCaptureMode, ServerConfig, load_config_with_fragments,
+};
 
 #[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
@@ -22,7 +24,7 @@ fn loads_config_fragments_recursively_in_sorted_order() {
 value = "base"
 
 [providers.openai]
-chat_model = "base"
+base_url = "https://base.example/v1"
 "#,
     )
     .unwrap();
@@ -31,8 +33,9 @@ chat_model = "base"
         r#"
 value = "second"
 
-[providers.gemini]
-chat_model = "gemini-2.5-flash"
+[profiles.llm.minor]
+provider = "gemini"
+model = "gemini-2.5-flash"
 "#,
     )
     .unwrap();
@@ -44,11 +47,11 @@ chat_model = "gemini-2.5-flash"
     let loaded: toml::Value = loaded.parse().unwrap();
     assert_eq!(loaded["value"].as_str(), Some("plugin"));
     assert_eq!(
-        loaded["providers"]["openai"]["chat_model"].as_str(),
-        Some("base")
+        loaded["providers"]["openai"]["base_url"].as_str(),
+        Some("https://base.example/v1")
     );
     assert_eq!(
-        loaded["providers"]["gemini"]["chat_model"].as_str(),
+        loaded["profiles"]["llm"]["minor"]["model"].as_str(),
         Some("gemini-2.5-flash")
     );
     assert!(loaded.get("ignored").is_none());
@@ -61,19 +64,27 @@ fn parses_split_example_config() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
 
-    assert_eq!(config.modules.minor_llm, "gemini");
-    assert_eq!(config.modules.major_llm, "openai");
-    assert!(config.modules.transcript_correction_llm.is_none());
-    assert!(config.modules.memory_capture_llm.is_none());
     assert_eq!(config.modules.stt, "whisper_cpp");
     assert_eq!(config.modules.tts, "gpt_sovits");
-    assert_eq!(config.modules.embedding, "openai");
-    assert_eq!(config.providers.gemini.chat_model, "gemini-2.5-flash");
-    assert_eq!(
-        config.providers.anthropic.chat_model,
-        "claude-sonnet-4-20250514"
-    );
-    assert_eq!(config.providers.openai.chat_model, "qwen2.5-7b-instruct");
+    assert_eq!(config.llm.roles.minor, "minor");
+    assert_eq!(config.llm.roles.major, "major");
+    assert!(config.llm.roles.transcript_correction.is_none());
+    assert!(config.llm.roles.memory_capture.is_none());
+    assert_eq!(config.llm.roles.embedding, "embedding");
+    let minor_llm = config.profiles.llm_profile("minor").unwrap();
+    assert_eq!(minor_llm.provider, "gemini");
+    assert_eq!(minor_llm.model, "gemini-2.5-flash");
+    assert_eq!(minor_llm.kind, LlmProfileKind::Chat);
+    assert_eq!(minor_llm.request.temperature, 0.4);
+    let major_llm = config.profiles.llm_profile("major").unwrap();
+    assert_eq!(major_llm.provider, "openai");
+    assert_eq!(major_llm.model, "qwen2.5-7b-instruct");
+    assert_eq!(major_llm.request.max_output_tokens, 4096);
+    let embedding = config.profiles.llm_profile("embedding").unwrap();
+    assert_eq!(embedding.provider, "openai");
+    assert_eq!(embedding.kind, LlmProfileKind::Embedding);
+    assert_eq!(embedding.model, "text-embedding-3-small");
+    assert_eq!(embedding.dimensions, Some(1536));
     assert_eq!(
         config.providers.whisper_cpp.endpoint,
         "http://localhost:8080"

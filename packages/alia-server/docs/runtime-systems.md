@@ -122,9 +122,9 @@ text for processing and are recorded in agent history. This means the memory
 system receives the same corrected user text that downstream routing sees,
 while the raw transcript remains available only in trace/debug events.
 
-Deployments may configure an optional `modules.transcript_correction_llm`
-backend for this stage. It is disabled by default; when absent, the default
-correction provider falls back to the configured minor LLM and then major LLM.
+Deployments may configure an optional `llm.roles.transcript_correction` profile
+for this stage. It is disabled by default; when absent, the default correction
+provider falls back to the configured minor LLM and then major LLM.
 Set `[policies.transcript_correction].provider = "transcript_correction_llm"`
 to require the dedicated backend, or `provider = "none"` to trace no correction
 model at all.

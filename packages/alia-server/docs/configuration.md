@@ -56,12 +56,13 @@ Keep these in `server.toml`:
 - server bind address, port, and basic logging
 - database connection and auth key material paths
 - channel topology in `[[channels]]`
-- provider selection in `[modules]`, including optional
-  `transcript_correction_llm`
+- non-LLM module selection in `[modules]`
+- LLM role binding in `[llm.roles]`, including optional
+  `transcript_correction`
 
-Do not bury provider selection inside provider fragments. If a frontend changes
-a provider setting at runtime, it should not accidentally change which provider
-adapter is active.
+Do not bury LLM role binding inside provider fragments. Provider fragments
+configure external service connections; `profiles/llm.toml` chooses concrete
+models and inference parameters.
 
 Core server services are not configurable slots. The server always owns one
 tool registry, skill registry, rule engine, scheduler, settings registry, sensor
@@ -73,9 +74,10 @@ pipeline. Plugins extend these services through their registries.
 Use fragments for implementation details:
 
 - `providers/*.toml`: OpenAI-compatible, Anthropic, Gemini, whisper.cpp, GPT-SoVITS
+- `profiles/llm.toml`: named chat and embedding model profiles
 - `policies/*.toml`: routing, transcript correction, conversation, cache,
   memory, affect, regulation, expression, insights, rules, scheduler, tools
-- `profiles/*.toml`: voice profile, expression styles, and TTS reference
+- `profiles/*.toml`: LLM profiles, voice profile, expression styles, and TTS reference
   parameters
 - `resources/*.toml`: directories, runtime roots, model/service resource paths,
   and resource policy lists such as cache exclusion keywords
@@ -91,7 +93,7 @@ were ignored by current runtime components.
 
 Hot-updatable areas include many provider parameters and pipeline policies:
 
-- LLM endpoints, model names, and timeouts
+- LLM provider endpoints, model profile names, and timeouts
 - STT/TTS endpoints and timeouts
 - voice profile fields
 - routing, affect, regulation, expression, cache, memory retrieval, and tool policies
@@ -101,7 +103,7 @@ Restart is expected for:
 - server host/port boot behavior
 - database connection settings
 - auth secrets and server key material
-- provider selection in `[modules]`
+- non-LLM adapter selection in `[modules]` and LLM role binding in `[llm.roles]`
 - channel topology changes requiring adapter construction
 
 ## Feature Flags

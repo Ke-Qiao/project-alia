@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::ServerConfig;
+use crate::config::{LlmProfileKind, ServerConfig};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::EmbeddingAdapter;
-use crate::settings::values::string_setting;
+use crate::settings::values::{string_setting, usize_setting};
 
 /// OpenAI embedding request
 #[derive(Debug, Serialize)]
@@ -40,6 +40,7 @@ struct EmbeddingData {
 /// OpenAI embedding adapter
 pub struct OpenAiEmbedding {
     client: Client,
+    profile_id: String,
     config: Arc<RwLock<OpenAiEmbedConfig>>,
 }
 
@@ -53,8 +54,13 @@ struct OpenAiEmbedConfig {
 
 impl OpenAiEmbedding {
     pub fn new() -> Self {
+        Self::for_profile("embedding")
+    }
+
+    pub fn for_profile(profile_id: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
+            profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(OpenAiEmbedConfig {
                 api_key: String::new(),
                 base_url: "https://api.openai.com/v1".to_string(),
@@ -88,20 +94,32 @@ impl ModuleLifecycle for OpenAiEmbedding {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
+        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
+        if profile.provider != "openai" || profile.kind != LlmProfileKind::Embedding {
+            anyhow::bail!(
+                "LLM profile '{}' is not an OpenAI embedding profile",
+                self.profile_id
+            );
+        }
 
         let mut config = self.config.write().await;
         config.api_key = server_config.providers.openai.api_key.clone();
         config.base_url = server_config.providers.openai.base_url.clone();
-        config.model = server_config.providers.openai.embedding_model.clone();
-
-        // Set dimension based on model
-        config.dimension = openai_embedding_dimension(&config.model);
+        config.model = profile.model.clone();
+        config.dimension = profile
+            .dimensions
+            .unwrap_or_else(|| openai_embedding_dimension(&config.model));
 
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured for embedding");
         }
 
-        tracing::info!(model = %config.model, dimension = config.dimension, "OpenAI Embedding initialized");
+        tracing::info!(
+            profile = %self.profile_id,
+            model = %config.model,
+            dimension = config.dimension,
+            "OpenAI Embedding initialized"
+        );
         Ok(())
     }
 
@@ -129,10 +147,16 @@ impl ModuleLifecycle for OpenAiEmbedding {
             config.base_url = value;
             applied.push("core.providers.openai.base_url".to_string());
         }
-        if let Some(value) = string_setting(updates, "core.providers.openai.embedding_model") {
+        let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
+        if let Some(value) = string_setting(updates, &model_key) {
             config.dimension = openai_embedding_dimension(&value);
             config.model = value;
-            applied.push("core.providers.openai.embedding_model".to_string());
+            applied.push(model_key);
+        }
+        let dimensions_key = format!("core.profiles.llm.{}.dimensions", self.profile_id);
+        if let Some(value) = usize_setting(updates, &dimensions_key) {
+            config.dimension = value;
+            applied.push(dimensions_key);
         }
 
         if !applied.is_empty() {
@@ -185,6 +209,9 @@ impl EmbeddingAdapter for OpenAiEmbedding {
     }
 
     fn dimension(&self) -> usize {
-        1536 // Default, actual value set during init
+        self.config
+            .try_read()
+            .map(|config| config.dimension)
+            .unwrap_or(1536)
     }
 }

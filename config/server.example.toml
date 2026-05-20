@@ -6,7 +6,7 @@
 #   3. ~/.config/alia/server.toml  (XDG / macOS Library)
 #   4. /etc/alia/server.toml
 #
-# This base file owns instance-level settings and provider selection.
+# This base file owns instance-level settings and LLM role binding.
 # Implementation details live in ./server.example.d/**/*.toml and are
 # deep-merged in sorted order. For a runtime config named server.toml,
 # fragments live in ./server.d/**/*.toml. Prefer semantic folders such as
@@ -54,14 +54,17 @@ cancel_streaming_tts_on_interrupt = true
 discard_interrupted_turn_history = true
 
 [modules]
-minor_llm = "gemini"
-major_llm = "openai"
-# Optional dedicated LLM for STT transcript correction. Omit to fall back to
-# the configured minor/major LLMs.
-# transcript_correction_llm = "gemini"
-# Optional dedicated LLM for selective memory capture. Omit to fall back to the
-# configured minor LLM.
-# memory_capture_llm = "gemini"
 stt = "whisper_cpp"
 tts = "gpt_sovits"
-embedding = "openai"
+
+[llm.roles]
+minor = "minor"
+major = "major"
+default = "major"
+embedding = "embedding"
+# Optional dedicated LLM for STT transcript correction. Omit to fall back to
+# the configured minor/major LLMs.
+# transcript_correction = "transcript_correction"
+# Optional dedicated LLM for selective memory capture. Omit to fall back to the
+# configured minor LLM.
+# memory_capture = "memory_capture"

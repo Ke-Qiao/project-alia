@@ -1,0 +1,51 @@
+[profiles.llm.minor]
+provider = "gemini"
+kind = "chat"
+model = "gemini-2.5-flash"
+max_output_tokens = 1024
+temperature = 0.4
+top_p = 1.0
+stop_sequences = []
+tool_choice = "auto"
+json_mode = false
+
+[profiles.llm.major]
+provider = "openai"
+kind = "chat"
+model = "qwen2.5-7b-instruct"
+max_output_tokens = 4096
+temperature = 0.7
+top_p = 1.0
+presence_penalty = 0.0
+frequency_penalty = 0.0
+stop_sequences = []
+tool_choice = "auto"
+json_mode = false
+
+[profiles.llm.transcript_correction]
+provider = "gemini"
+kind = "chat"
+model = "gemini-2.5-flash"
+max_output_tokens = 256
+temperature = 0.0
+top_p = 1.0
+stop_sequences = []
+tool_choice = "auto"
+json_mode = false
+
+[profiles.llm.memory_capture]
+provider = "gemini"
+kind = "chat"
+model = "gemini-2.5-flash"
+max_output_tokens = 1024
+temperature = 0.1
+top_p = 1.0
+stop_sequences = []
+tool_choice = "auto"
+json_mode = true
+
+[profiles.llm.embedding]
+provider = "openai"
+kind = "embedding"
+model = "text-embedding-3-small"
+dimensions = 1536

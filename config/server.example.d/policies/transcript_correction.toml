@@ -2,7 +2,7 @@
 enabled = true
 apply_to_stt = true
 # Options: transcript_correction_llm, minor_llm, major_llm, default_llm, none.
-# default_llm uses transcript_correction_llm when configured, then minor, then major.
+# default_llm uses llm.roles.transcript_correction when configured, then minor, then major.
 provider = "default_llm"
 timeout_sec = 2
 max_input_chars = 500

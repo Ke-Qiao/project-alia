@@ -3,13 +3,14 @@
 Copy `server.example.toml` to `server.toml`, and copy this directory to
 `server.d/` when creating a runtime config from the example.
 
-Fragments are deep-merged after the base config. Keep provider selection in
-`server.toml` under `[modules]`. Core server services are not replaceable slots;
+Fragments are deep-merged after the base config. Keep LLM role binding in
+`server.toml` under `[llm.roles]`. Core server services are not replaceable slots;
 extend them through registries for tools, skills, conditions, actions, sensors,
 and plugin-owned prompt/context contributions. Place implementation details by
 semantic role:
 
-- `providers/` configures external services and provider-specific adapters.
+- `providers/` configures external service connection settings.
+- `profiles/llm.toml` configures named chat and embedding model profiles.
 - `policies/` configures runtime behavior such as routing, transcript correction, affect, regulation, expression, cache, and tools.
 - `profiles/` configures named user-facing profiles such as voices and expression styles.
 - `resources/` configures local resource locations, resource policies, optional dialogue policy overrides, and language-scoped appraisal lexicons with source/license metadata.

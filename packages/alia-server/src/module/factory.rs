@@ -7,7 +7,7 @@ use crate::channels::cli::CliChannel;
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, MemorySection};
+use crate::config::{ChannelConfig, LlmProfileKind, MemorySection, ServerConfig};
 use crate::event::EventBus;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
@@ -42,30 +42,42 @@ use crate::providers::stt::WhisperCppStt;
 #[cfg(feature = "tts-sovits")]
 use crate::providers::tts::GptSovitsTts;
 
-pub fn create_llm(name: &str) -> Box<dyn LlmAdapter> {
-    match name {
+pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box<dyn LlmAdapter>> {
+    if profile_id == "noop" {
+        tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
+        return Ok(Box::new(NoopLlm));
+    }
+    let profile = config.profiles.llm_profile(profile_id)?;
+    if profile.kind != LlmProfileKind::Chat {
+        anyhow::bail!("LLM profile '{profile_id}' is not a chat profile");
+    }
+    match profile.provider.as_str() {
         #[cfg(feature = "llm-openai")]
         "openai" => {
-            tracing::info!(module = name, "creating LLM adapter (OpenAI)");
-            Box::new(OpenAiLlm::new())
+            tracing::info!(profile = profile_id, "creating LLM adapter (OpenAI)");
+            Ok(Box::new(OpenAiLlm::for_profile(profile_id)))
         }
         #[cfg(feature = "llm-anthropic")]
         "anthropic" => {
-            tracing::info!(module = name, "creating LLM adapter (Anthropic)");
-            Box::new(AnthropicLlm::new())
+            tracing::info!(profile = profile_id, "creating LLM adapter (Anthropic)");
+            Ok(Box::new(AnthropicLlm::for_profile(profile_id)))
         }
         #[cfg(feature = "llm-gemini")]
         "gemini" => {
-            tracing::info!(module = name, "creating LLM adapter (Gemini)");
-            Box::new(GeminiLlm::new())
+            tracing::info!(profile = profile_id, "creating LLM adapter (Gemini)");
+            Ok(Box::new(GeminiLlm::for_profile(profile_id)))
         }
         "noop" => {
-            tracing::info!(module = name, "creating LLM adapter (noop)");
-            Box::new(NoopLlm)
+            tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
+            Ok(Box::new(NoopLlm))
         }
         _ => {
-            tracing::warn!(module = name, "unknown LLM adapter, using noop");
-            Box::new(NoopLlm)
+            tracing::warn!(
+                profile = profile_id,
+                provider = %profile.provider,
+                "unknown LLM adapter, using noop"
+            );
+            Ok(Box::new(NoopLlm))
         }
     }
 }
@@ -106,20 +118,35 @@ pub fn create_tts(name: &str) -> Box<dyn TtsAdapter> {
     }
 }
 
-pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
-    match name {
+pub fn create_embedding(
+    config: &ServerConfig,
+    profile_id: &str,
+) -> anyhow::Result<Box<dyn EmbeddingAdapter>> {
+    if profile_id == "noop" {
+        tracing::info!(profile = profile_id, "creating embedding adapter (noop)");
+        return Ok(Box::new(NoopEmbedding));
+    }
+    let profile = config.profiles.llm_profile(profile_id)?;
+    if profile.kind != LlmProfileKind::Embedding {
+        anyhow::bail!("LLM profile '{profile_id}' is not an embedding profile");
+    }
+    match profile.provider.as_str() {
         #[cfg(feature = "embed-openai")]
         "openai" => {
-            tracing::info!(module = name, "creating embedding adapter (OpenAI)");
-            Box::new(OpenAiEmbedding::new())
+            tracing::info!(profile = profile_id, "creating embedding adapter (OpenAI)");
+            Ok(Box::new(OpenAiEmbedding::for_profile(profile_id)))
         }
         "noop" => {
-            tracing::info!(module = name, "creating embedding adapter (noop)");
-            Box::new(NoopEmbedding)
+            tracing::info!(profile = profile_id, "creating embedding adapter (noop)");
+            Ok(Box::new(NoopEmbedding))
         }
         _ => {
-            tracing::warn!(module = name, "unknown embedding adapter, using noop");
-            Box::new(NoopEmbedding)
+            tracing::warn!(
+                profile = profile_id,
+                provider = %profile.provider,
+                "unknown embedding adapter, using noop"
+            );
+            Ok(Box::new(NoopEmbedding))
         }
     }
 }

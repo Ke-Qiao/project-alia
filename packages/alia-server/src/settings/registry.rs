@@ -335,11 +335,6 @@ impl SettingsRegistry {
                 schema_secret("OpenAI API Key", false),
             ),
             (
-                "core.providers.openai.chat_model",
-                json!(config.providers.openai.chat_model),
-                schema("OpenAI Model", "string", false),
-            ),
-            (
                 "core.providers.openai.api_family",
                 json!(match config.providers.openai.api_family {
                     crate::config::OpenAiApiFamily::ChatCompletions => "chat_completions",
@@ -352,26 +347,6 @@ impl SettingsRegistry {
                 ),
             ),
             (
-                "core.providers.openai.embedding_model",
-                json!(config.providers.openai.embedding_model),
-                schema("OpenAI Embedding Model", "string", false),
-            ),
-            (
-                "core.providers.openai.temperature",
-                json!(config.providers.openai.request.temperature),
-                schema("OpenAI Temperature", "number", false),
-            ),
-            (
-                "core.providers.openai.max_output_tokens",
-                json!(config.providers.openai.request.max_output_tokens),
-                schema("OpenAI Max Output Tokens", "number", false),
-            ),
-            (
-                "core.providers.openai.top_p",
-                json!(config.providers.openai.request.top_p),
-                schema("OpenAI Top P", "number", false),
-            ),
-            (
                 "core.providers.openai.base_url",
                 json!(config.providers.openai.base_url),
                 schema("OpenAI Base URL", "string", false),
@@ -380,11 +355,6 @@ impl SettingsRegistry {
                 "core.providers.anthropic.api_key",
                 json!(config.providers.anthropic.api_key),
                 schema_secret("Anthropic API Key", false),
-            ),
-            (
-                "core.providers.anthropic.chat_model",
-                json!(config.providers.anthropic.chat_model),
-                schema("Anthropic Model", "string", false),
             ),
             (
                 "core.providers.anthropic.base_url",
@@ -397,49 +367,14 @@ impl SettingsRegistry {
                 schema("Anthropic API Version", "string", false),
             ),
             (
-                "core.providers.anthropic.max_output_tokens",
-                json!(config.providers.anthropic.request.max_output_tokens),
-                schema("Anthropic Max Output Tokens", "number", false),
-            ),
-            (
-                "core.providers.anthropic.temperature",
-                json!(config.providers.anthropic.request.temperature),
-                schema("Anthropic Temperature", "number", false),
-            ),
-            (
-                "core.providers.anthropic.top_p",
-                json!(config.providers.anthropic.request.top_p),
-                schema("Anthropic Top P", "number", false),
-            ),
-            (
                 "core.providers.gemini.api_key",
                 json!(config.providers.gemini.api_key),
                 schema_secret("Gemini API Key", false),
             ),
             (
-                "core.providers.gemini.chat_model",
-                json!(config.providers.gemini.chat_model),
-                schema("Gemini Model", "string", false),
-            ),
-            (
                 "core.providers.gemini.base_url",
                 json!(config.providers.gemini.base_url),
                 schema("Gemini Base URL", "string", false),
-            ),
-            (
-                "core.providers.gemini.max_output_tokens",
-                json!(config.providers.gemini.request.max_output_tokens),
-                schema("Gemini Max Output Tokens", "number", false),
-            ),
-            (
-                "core.providers.gemini.temperature",
-                json!(config.providers.gemini.request.temperature),
-                schema("Gemini Temperature", "number", false),
-            ),
-            (
-                "core.providers.gemini.top_p",
-                json!(config.providers.gemini.request.top_p),
-                schema("Gemini Top P", "number", false),
             ),
             (
                 "core.providers.whisper_cpp.endpoint",
@@ -1093,40 +1028,34 @@ impl SettingsRegistry {
             // Provider selection. Core registries/state machines are fixed
             // services and expose extension registries instead of backend slots.
             (
-                "core.modules.minor_llm",
-                json!(config.modules.minor_llm),
-                schema_select(
-                    "Minor LLM Backend",
-                    &["openai", "anthropic", "gemini", "noop"],
-                    true,
-                ),
+                "core.llm.roles.minor",
+                json!(config.llm.roles.minor),
+                schema("Minor LLM Profile", "string", true),
             ),
             (
-                "core.modules.major_llm",
-                json!(config.modules.major_llm),
-                schema_select(
-                    "Major LLM Backend",
-                    &["openai", "anthropic", "gemini", "noop"],
-                    true,
-                ),
+                "core.llm.roles.major",
+                json!(config.llm.roles.major),
+                schema("Major LLM Profile", "string", true),
             ),
             (
-                "core.modules.transcript_correction_llm",
-                json!(config.modules.transcript_correction_llm),
-                schema_select(
-                    "Transcript Correction LLM Backend",
-                    &["openai", "anthropic", "gemini", "noop"],
-                    true,
-                ),
+                "core.llm.roles.transcript_correction",
+                json!(config.llm.roles.transcript_correction),
+                schema("Transcript Correction LLM Profile", "string", true),
             ),
             (
-                "core.modules.memory_capture_llm",
-                json!(config.modules.memory_capture_llm),
-                schema_select(
-                    "Memory Capture LLM Backend",
-                    &["openai", "anthropic", "gemini", "noop"],
-                    true,
-                ),
+                "core.llm.roles.memory_capture",
+                json!(config.llm.roles.memory_capture),
+                schema("Memory Capture LLM Profile", "string", true),
+            ),
+            (
+                "core.llm.roles.default",
+                json!(config.llm.roles.default),
+                schema("Default LLM Profile", "string", true),
+            ),
+            (
+                "core.llm.roles.embedding",
+                json!(config.llm.roles.embedding),
+                schema("Embedding Profile", "string", true),
             ),
             (
                 "core.modules.stt",
@@ -1138,16 +1067,70 @@ impl SettingsRegistry {
                 json!(config.modules.tts),
                 schema_select("TTS Backend", &["gpt_sovits", "noop"], true),
             ),
-            (
-                "core.modules.embedding",
-                json!(config.modules.embedding),
-                schema_select("Embedding Backend", &["openai", "noop"], true),
-            ),
         ];
+
+        let mut profile_entries = Vec::new();
+        for (profile_id, profile) in &config.profiles.llm {
+            let prefix = format!("core.profiles.llm.{profile_id}");
+            profile_entries.push((
+                format!("{prefix}.provider"),
+                json!(profile.provider),
+                schema_select(
+                    "LLM Provider",
+                    &["openai", "anthropic", "gemini", "noop"],
+                    true,
+                ),
+            ));
+            profile_entries.push((
+                format!("{prefix}.kind"),
+                json!(match profile.kind {
+                    crate::config::LlmProfileKind::Chat => "chat",
+                    crate::config::LlmProfileKind::Embedding => "embedding",
+                }),
+                schema_select("LLM Profile Kind", &["chat", "embedding"], true),
+            ));
+            profile_entries.push((
+                format!("{prefix}.model"),
+                json!(profile.model),
+                schema("LLM Model", "string", false),
+            ));
+            if profile.kind == crate::config::LlmProfileKind::Embedding {
+                profile_entries.push((
+                    format!("{prefix}.dimensions"),
+                    json!(profile.dimensions),
+                    schema("Embedding Dimensions", "number", false),
+                ));
+            } else {
+                profile_entries.push((
+                    format!("{prefix}.temperature"),
+                    json!(profile.request.temperature),
+                    schema("LLM Temperature", "number", false),
+                ));
+                profile_entries.push((
+                    format!("{prefix}.max_output_tokens"),
+                    json!(profile.request.max_output_tokens),
+                    schema("LLM Max Output Tokens", "number", false),
+                ));
+                profile_entries.push((
+                    format!("{prefix}.top_p"),
+                    json!(profile.request.top_p),
+                    schema("LLM Top P", "number", false),
+                ));
+            }
+        }
 
         for (key, value, s) in entries {
             inner.entries.insert(
                 key.to_string(),
+                SettingEntry {
+                    value,
+                    schema: Some(s),
+                },
+            );
+        }
+        for (key, value, s) in profile_entries {
+            inner.entries.insert(
+                key,
                 SettingEntry {
                     value,
                     schema: Some(s),

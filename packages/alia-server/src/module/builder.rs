@@ -164,43 +164,52 @@ impl ServerBuilder {
         };
 
         // Create provider adapters from config; core services are fixed below.
-        let mut minor_llm = self.minor_llm.unwrap_or_else(|| {
-            if self.config.policies.routing.minor_llm_enabled {
-                factory::create_llm(&self.config.modules.minor_llm)
-            } else {
-                factory::create_llm("noop")
+        let mut minor_llm = match self.minor_llm {
+            Some(llm) => llm,
+            None if self.config.policies.routing.minor_llm_enabled => {
+                factory::create_llm(&self.config, &self.config.llm.roles.minor)?
             }
-        });
-        let mut major_llm = self.major_llm.unwrap_or_else(|| {
-            if self.config.policies.routing.major_llm_enabled {
-                factory::create_llm(&self.config.modules.major_llm)
-            } else {
-                factory::create_llm("noop")
+            None => factory::create_llm(&self.config, "noop")?,
+        };
+        let mut major_llm = match self.major_llm {
+            Some(llm) => llm,
+            None if self.config.policies.routing.major_llm_enabled => {
+                factory::create_llm(&self.config, &self.config.llm.roles.major)?
             }
-        });
-        let mut transcript_correction_llm = self.transcript_correction_llm.or_else(|| {
-            self.config
-                .modules
-                .transcript_correction_llm
+            None => factory::create_llm(&self.config, "noop")?,
+        };
+        let mut transcript_correction_llm = match self.transcript_correction_llm {
+            Some(llm) => Some(llm),
+            None => self
+                .config
+                .llm
+                .roles
+                .transcript_correction
                 .as_deref()
-                .map(factory::create_llm)
-        });
-        let mut memory_capture_llm = self.memory_capture_llm.or_else(|| {
-            self.config
-                .modules
-                .memory_capture_llm
+                .map(|profile| factory::create_llm(&self.config, profile))
+                .transpose()?,
+        };
+        let mut memory_capture_llm = match self.memory_capture_llm {
+            Some(llm) => Some(llm),
+            None => self
+                .config
+                .llm
+                .roles
+                .memory_capture
                 .as_deref()
-                .map(factory::create_llm)
-        });
+                .map(|profile| factory::create_llm(&self.config, profile))
+                .transpose()?,
+        };
         let mut stt = self
             .stt
             .unwrap_or_else(|| factory::create_stt(&self.config.modules.stt));
         let mut tts = self
             .tts
             .unwrap_or_else(|| factory::create_tts(&self.config.modules.tts));
-        let mut embedding = self
-            .embedding
-            .unwrap_or_else(|| factory::create_embedding(&self.config.modules.embedding));
+        let mut embedding = match self.embedding {
+            Some(embedding) => embedding,
+            None => factory::create_embedding(&self.config, &self.config.llm.roles.embedding)?,
+        };
         let mut conversation: Box<dyn ConversationBackend> =
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
         let mut memory = factory::create_memory(&self.config.policies.memory);
@@ -307,10 +316,10 @@ impl ServerBuilder {
         let transcript_correction_llm: Option<Arc<dyn LlmAdapter>> =
             transcript_correction_llm.map(Arc::from);
         let memory_capture_llm: Option<Arc<dyn LlmAdapter>> = memory_capture_llm.map(Arc::from);
-        let default_llm = if self.config.policies.routing.major_llm_enabled {
-            major_llm.clone()
-        } else {
+        let default_llm = if self.config.llm.roles.default == self.config.llm.roles.minor {
             minor_llm.clone()
+        } else {
+            major_llm.clone()
         };
         let ctx = ModuleContext {
             llm: Some(default_llm.clone()),

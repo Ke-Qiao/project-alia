@@ -49,7 +49,7 @@ async fn memory_policy_settings_are_registered_without_backend_slot() {
     );
     assert!(
         settings
-            .get_entry("core.modules.memory_capture_llm")
+            .get_entry("core.llm.roles.memory_capture")
             .await
             .is_some()
     );

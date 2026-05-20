@@ -30,10 +30,11 @@ cp -R config/server.example.d config/server.d
 # Edit config/server.toml and semantic fragments under config/server.d/.
 ```
 
-`server.toml` is the base config and owns `[modules]` provider selection. Files
+`server.toml` is the base config and owns `[modules]` adapter selection plus
+`[llm.roles]` model-profile binding. Files
 under `server.d/**/*.toml` are loaded recursively in sorted order and
 deep-merged. Keep external service settings in `server.d/providers/`, behavior
-settings in `server.d/policies/`, voice/profile settings in
+settings in `server.d/policies/`, LLM/voice/profile settings in
 `server.d/profiles/`, and future plugin settings in `server.d/plugins/`.
 
 The `mise.toml` at the workspace root automatically sets `ALIA_CONFIG_PATH=config/server.toml`.

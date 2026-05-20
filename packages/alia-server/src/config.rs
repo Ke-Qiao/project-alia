@@ -12,6 +12,8 @@ pub struct ServerConfig {
     pub channels: Vec<ChannelConfig>,
     pub modules: ModulesSection,
     #[serde(default)]
+    pub llm: LlmSection,
+    #[serde(default)]
     pub providers: ProvidersSection,
     #[serde(default)]
     pub policies: PoliciesSection,
@@ -139,24 +141,61 @@ fn default_grpc_timeout() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModulesSection {
-    #[serde(default = "default_minor_llm_module")]
-    pub minor_llm: String,
-    #[serde(default = "default_major_llm_module")]
-    pub major_llm: String,
-    #[serde(default)]
-    pub transcript_correction_llm: Option<String>,
-    #[serde(default)]
-    pub memory_capture_llm: Option<String>,
     pub stt: String,
     pub tts: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmSection {
+    #[serde(default)]
+    pub roles: LlmRolesSection,
+}
+
+impl Default for LlmSection {
+    fn default() -> Self {
+        Self {
+            roles: LlmRolesSection::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmRolesSection {
+    #[serde(default = "default_minor_llm_profile")]
+    pub minor: String,
+    #[serde(default = "default_major_llm_profile")]
+    pub major: String,
+    #[serde(default)]
+    pub transcript_correction: Option<String>,
+    #[serde(default)]
+    pub memory_capture: Option<String>,
+    #[serde(default = "default_major_llm_profile")]
+    pub default: String,
+    #[serde(default = "default_embedding_profile")]
     pub embedding: String,
 }
 
-fn default_minor_llm_module() -> String {
-    "gemini".to_string()
+impl Default for LlmRolesSection {
+    fn default() -> Self {
+        Self {
+            minor: default_minor_llm_profile(),
+            major: default_major_llm_profile(),
+            transcript_correction: None,
+            memory_capture: None,
+            default: default_major_llm_profile(),
+            embedding: default_embedding_profile(),
+        }
+    }
 }
-fn default_major_llm_module() -> String {
-    "openai".to_string()
+
+fn default_minor_llm_profile() -> String {
+    "minor".to_string()
+}
+fn default_major_llm_profile() -> String {
+    "major".to_string()
+}
+fn default_embedding_profile() -> String {
+    "embedding".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -177,16 +216,10 @@ pub struct ProvidersSection {
 pub struct OpenAiProviderSection {
     #[serde(default)]
     pub api_key: String,
-    #[serde(default = "default_openai_chat_model")]
-    pub chat_model: String,
-    #[serde(default = "default_openai_embedding_model")]
-    pub embedding_model: String,
     #[serde(default = "default_openai_base_url")]
     pub base_url: String,
     #[serde(default)]
     pub api_family: OpenAiApiFamily,
-    #[serde(flatten)]
-    pub request: LlmRequestOptionsSection,
     #[serde(default)]
     pub health_probe_enabled: bool,
 }
@@ -195,11 +228,8 @@ impl Default for OpenAiProviderSection {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            chat_model: default_openai_chat_model(),
-            embedding_model: default_openai_embedding_model(),
             base_url: default_openai_base_url(),
             api_family: OpenAiApiFamily::default(),
-            request: LlmRequestOptionsSection::default(),
             health_probe_enabled: false,
         }
     }
@@ -218,14 +248,6 @@ impl Default for OpenAiApiFamily {
     }
 }
 
-fn default_openai_chat_model() -> String {
-    "gpt-4o-mini".to_string()
-}
-
-fn default_openai_embedding_model() -> String {
-    "text-embedding-3-small".to_string()
-}
-
 fn default_openai_base_url() -> String {
     "https://api.openai.com/v1".to_string()
 }
@@ -234,14 +256,10 @@ fn default_openai_base_url() -> String {
 pub struct AnthropicProviderSection {
     #[serde(default)]
     pub api_key: String,
-    #[serde(default = "default_anthropic_chat_model")]
-    pub chat_model: String,
     #[serde(default = "default_anthropic_base_url")]
     pub base_url: String,
     #[serde(default = "default_anthropic_version")]
     pub version: String,
-    #[serde(flatten)]
-    pub request: LlmRequestOptionsSection,
     #[serde(default)]
     pub health_probe_enabled: bool,
 }
@@ -250,17 +268,11 @@ impl Default for AnthropicProviderSection {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            chat_model: default_anthropic_chat_model(),
             base_url: default_anthropic_base_url(),
             version: default_anthropic_version(),
-            request: LlmRequestOptionsSection::default(),
             health_probe_enabled: false,
         }
     }
-}
-
-fn default_anthropic_chat_model() -> String {
-    "claude-sonnet-4-20250514".to_string()
 }
 
 fn default_anthropic_base_url() -> String {
@@ -275,12 +287,8 @@ fn default_anthropic_version() -> String {
 pub struct GeminiProviderSection {
     #[serde(default)]
     pub api_key: String,
-    #[serde(default = "default_gemini_chat_model")]
-    pub chat_model: String,
     #[serde(default = "default_gemini_base_url")]
     pub base_url: String,
-    #[serde(flatten)]
-    pub request: LlmRequestOptionsSection,
     #[serde(default)]
     pub health_probe_enabled: bool,
 }
@@ -289,16 +297,10 @@ impl Default for GeminiProviderSection {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            chat_model: default_gemini_chat_model(),
             base_url: default_gemini_base_url(),
-            request: LlmRequestOptionsSection::default(),
             health_probe_enabled: false,
         }
     }
-}
-
-fn default_gemini_chat_model() -> String {
-    "gemini-2.5-flash".to_string()
 }
 
 fn default_gemini_base_url() -> String {
@@ -829,6 +831,8 @@ fn default_router_temperature() -> f32 {
 pub struct ProfilesSection {
     #[serde(default = "default_voice_profile_id")]
     pub default_voice: String,
+    #[serde(default = "default_llm_profiles")]
+    pub llm: BTreeMap<String, LlmProfileSection>,
     #[serde(default)]
     pub voice: BTreeMap<String, VoiceProfileSection>,
     #[serde(default)]
@@ -839,6 +843,7 @@ impl Default for ProfilesSection {
     fn default() -> Self {
         Self {
             default_voice: default_voice_profile_id(),
+            llm: default_llm_profiles(),
             voice: BTreeMap::new(),
             expression_styles: default_expression_styles(),
         }
@@ -852,10 +857,81 @@ impl ProfilesSection {
             .cloned()
             .unwrap_or_default()
     }
+
+    pub fn llm_profile(&self, id: &str) -> anyhow::Result<&LlmProfileSection> {
+        self.llm
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("LLM profile '{id}' is not configured"))
+    }
 }
 
 fn default_voice_profile_id() -> String {
     "default".to_string()
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmProfileKind {
+    Chat,
+    Embedding,
+}
+
+impl Default for LlmProfileKind {
+    fn default() -> Self {
+        Self::Chat
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmProfileSection {
+    pub provider: String,
+    pub model: String,
+    #[serde(default)]
+    pub kind: LlmProfileKind,
+    #[serde(default)]
+    pub dimensions: Option<usize>,
+    #[serde(flatten)]
+    pub request: LlmRequestOptionsSection,
+    #[serde(default)]
+    pub provider_specific: BTreeMap<String, serde_json::Value>,
+}
+
+fn default_llm_profiles() -> BTreeMap<String, LlmProfileSection> {
+    BTreeMap::from([
+        (
+            "minor".to_string(),
+            LlmProfileSection {
+                provider: "gemini".to_string(),
+                model: "gemini-2.5-flash".to_string(),
+                kind: LlmProfileKind::Chat,
+                dimensions: None,
+                request: LlmRequestOptionsSection::default(),
+                provider_specific: BTreeMap::new(),
+            },
+        ),
+        (
+            "major".to_string(),
+            LlmProfileSection {
+                provider: "openai".to_string(),
+                model: "gpt-4o-mini".to_string(),
+                kind: LlmProfileKind::Chat,
+                dimensions: None,
+                request: LlmRequestOptionsSection::default(),
+                provider_specific: BTreeMap::new(),
+            },
+        ),
+        (
+            "embedding".to_string(),
+            LlmProfileSection {
+                provider: "openai".to_string(),
+                model: "text-embedding-3-small".to_string(),
+                kind: LlmProfileKind::Embedding,
+                dimensions: Some(1536),
+                request: LlmRequestOptionsSection::default(),
+                provider_specific: BTreeMap::new(),
+            },
+        ),
+    ])
 }
 
 #[derive(Debug, Clone, Deserialize)]

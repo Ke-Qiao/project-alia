@@ -17,17 +17,20 @@ exposes APIs for the frontend and future plugins.
 
 ## Provider Selection And Core Services
 
-The `[modules]` section in `config/server.toml` selects provider adapters only.
-Core services are constructed by the server builder and expose extension
-registries instead of replacement slots.
+The `[modules]` section in `config/server.toml` selects non-LLM edge adapters.
+LLM and embedding roles live under `[llm.roles]` and point at named
+`[profiles.llm.*]` entries, so multiple roles can share the same provider
+connection while using different models and generation settings. Core services
+are constructed by the server builder and expose extension registries instead
+of replacement slots.
 
 | Provider key | Typical implementation | Purpose |
 | --- | --- | --- |
-| `minor_llm` | `gemini` | Lightweight model for routing, tool narrowing, and simple work. |
-| `major_llm` | `openai` | Stronger model for complex turns. |
+| `llm.roles.minor` | `profiles.llm.minor` | Lightweight model for routing, tool narrowing, and simple work. |
+| `llm.roles.major` | `profiles.llm.major` | Stronger model for complex turns. |
 | `stt` | `whisper_cpp` | Server-side speech recognition. |
 | `tts` | `gpt_sovits` | Server-side speech synthesis. |
-| `embedding` | `openai` | Embeddings for semantic cache and retrieval. |
+| `llm.roles.embedding` | `profiles.llm.embedding` | Embeddings for semantic cache and retrieval. |
 | `memory` | built-in Alia memory | User memory, privacy controls, relationship context, and retrieval. |
 
 These services are fixed core runtime pieces:

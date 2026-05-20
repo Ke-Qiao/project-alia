@@ -113,6 +113,10 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/policies/tools.toml"),
     ),
     (
+        "profiles/llm.toml",
+        include_str!("../../../../config/server.example.d/profiles/llm.toml"),
+    ),
+    (
         "profiles/voice.default.toml",
         include_str!("../../../../config/server.example.d/profiles/voice.default.toml"),
     ),
