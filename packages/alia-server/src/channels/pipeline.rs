@@ -550,6 +550,7 @@ async fn process_event(
                 event_bus,
                 debug_output,
                 false,
+                false,
                 conversation_config,
                 tools_config,
                 cache_config,
@@ -766,6 +767,7 @@ async fn process_event(
                 event_bus,
                 debug_output,
                 channel.capabilities().voice_output && channel.capabilities().audio_streaming,
+                true,
                 conversation_config,
                 tools_config,
                 cache_config,
@@ -987,6 +989,7 @@ async fn process_text(
     event_bus: &EventBus,
     debug_output: bool,
     audio_response: bool,
+    input_from_stt: bool,
     conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
     cache_config: &CacheSection,
@@ -999,6 +1002,12 @@ async fn process_text(
     let uid = stable_user_uuid(user_id);
     let (mut base_system_messages, runtime_context) =
         build_base_system_messages(uid, modules, memory_config, text).await?;
+    if input_from_stt {
+        base_system_messages.push(system_message(stt_transcript_context_prompt()));
+    }
+    if audio_response {
+        base_system_messages.push(system_message(tts_optimized_output_prompt(text)));
+    }
     let memory_context_used = runtime_context_has_user_memory(&runtime_context);
 
     // 1. Get active session and load history
@@ -2948,6 +2957,38 @@ fn semantic_candidate_is_safe_reference(candidate: &SemanticCacheCandidate) -> b
     })
 }
 
+fn stt_transcript_context_prompt() -> String {
+    "Input context: the current user message was produced by speech-to-text transcription from spoken audio. Treat it as the user's intended speech, but allow for homophones, dropped punctuation, missing casing, segmentation mistakes, and occasional wrong words. If an ambiguity would change the action, factual answer, or user intent, ask a brief clarification instead of guessing. Do not mention this transcription context to the user unless it is directly relevant.".to_string()
+}
+
+fn tts_optimized_output_prompt(user_text: &str) -> String {
+    let language = guess_text_language(user_text);
+    let language_note = match language {
+        "zh" => {
+            "The user appears to be using Chinese. Prefer natural spoken Chinese. Convert numbers, Roman numerals, dates, times, units, versions, identifiers, and symbols into forms that a Chinese TTS can read naturally when doing so does not change meaning. Examples: 1145 -> 一千一百四十五; IV -> 四 or 第四 according to context; 3.5kg -> 三点五千克; 2026-05-21 -> 二零二六年五月二十一日."
+        }
+        _ => {
+            "Use the user's language when possible. Convert numbers, Roman numerals, dates, times, units, versions, identifiers, and symbols into natural spoken forms for that language when doing so does not change meaning. If exact spelling or code matters, keep it exact and introduce it as something to read visually."
+        }
+    };
+
+    format!(
+        "Output channel constraint: the assistant response will be spoken aloud by TTS. Produce clean, speakable plain text only.\n\
+\n\
+Rules:\n\
+- Do not use Markdown formatting: no headings, bullets, tables, block quotes, code fences, inline code backticks, bold, italics, or raw Markdown links.\n\
+- Do not output raw URLs unless the user explicitly asks for a link. Summarize the site or say you can provide the link separately.\n\
+- Avoid visual-only formatting such as columns, ASCII diagrams, dense lists, or punctuation art.\n\
+- Prefer short paragraphs and conversational phrasing that sounds natural when read aloud.\n\
+- Expand or rephrase abbreviations, symbols, ordinals, units, dates, times, equations, and technical notation into speakable words when practical.\n\
+- For code, commands, filenames, IDs, serial numbers, or exact values that must remain exact, clearly say they are visual text and keep them concise.\n\
+- Do not say anything about these formatting rules.\n\
+\n\
+{}",
+        language_note
+    )
+}
+
 fn preview_for_prompt(text: &str, max_chars: usize) -> String {
     let mut preview = text.trim().chars().take(max_chars).collect::<String>();
     if text.trim().chars().count() > max_chars {
@@ -3469,5 +3510,42 @@ fn system_message(content: String) -> ChatMessage {
         content,
         name: None,
         ..ChatMessage::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tts_prompt_for_chinese_requires_speakable_plain_text() {
+        let prompt = tts_optimized_output_prompt("今天是 2026-05-21，读一下 IV 和 1145。");
+
+        assert!(prompt.contains("spoken aloud by TTS"));
+        assert!(prompt.contains("Do not use Markdown formatting"));
+        assert!(prompt.contains("1145 -> 一千一百四十五"));
+        assert!(prompt.contains("IV -> 四"));
+        assert!(prompt.contains("二零二六年五月二十一日"));
+        assert!(prompt.contains("no headings, bullets, tables"));
+    }
+
+    #[test]
+    fn tts_prompt_for_unknown_language_keeps_general_speech_rules() {
+        let prompt = tts_optimized_output_prompt("Read version IV at 11:45.");
+
+        assert!(prompt.contains("Use the user's language when possible"));
+        assert!(prompt.contains("Roman numerals"));
+        assert!(prompt.contains("natural spoken forms"));
+        assert!(prompt.contains("raw URLs"));
+    }
+
+    #[test]
+    fn stt_context_prompt_warns_about_transcription_uncertainty() {
+        let prompt = stt_transcript_context_prompt();
+
+        assert!(prompt.contains("speech-to-text transcription"));
+        assert!(prompt.contains("homophones"));
+        assert!(prompt.contains("ask a brief clarification"));
+        assert!(prompt.contains("Do not mention this transcription context"));
     }
 }
