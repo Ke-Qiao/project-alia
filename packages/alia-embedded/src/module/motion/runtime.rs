@@ -127,8 +127,8 @@ impl MotionRuntime {
             "current_state": {
                 "busy": state.busy,
                 "motion_adapter_registered": ready,
-                "thermal_limit": null,
-                "battery_saver": null,
+                "thermal_limit": false,
+                "battery_saver": false,
                 "battery_level": null
             },
             "receipt_model": {
@@ -655,6 +655,18 @@ impl ResultReason for serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn capabilities_use_boolean_power_and_thermal_state() {
+        let runtime = MotionRuntime::disabled(MotionConfig::default());
+
+        let capabilities = runtime.capabilities_json().await;
+        let state = &capabilities["current_state"];
+
+        assert_eq!(state["thermal_limit"], serde_json::json!(false));
+        assert_eq!(state["battery_saver"], serde_json::json!(false));
+        assert!(state["battery_level"].is_null());
+    }
 
     #[test]
     fn samples_path_by_linear_segments() {
