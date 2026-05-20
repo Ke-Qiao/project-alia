@@ -2,16 +2,23 @@
 //!
 //! Available implementations:
 //! - `OpenAiLlm`: OpenAI GPT models (gpt-4o, gpt-4-turbo, etc.)
-//! - `OllamaLlm`: Local Ollama models (qwen2.5, llama3, etc.)
+//! - `AnthropicLlm`: Anthropic Messages API models
+//! - `GeminiLlm`: Google Gemini API models
 //! - `NoopLlm`: No-op placeholder
 
-#[cfg(feature = "llm-ollama")]
-pub mod ollama;
+#[cfg(feature = "llm-anthropic")]
+pub mod anthropic;
+pub mod errors;
+#[cfg(feature = "llm-gemini")]
+pub mod gemini;
 #[cfg(feature = "llm-openai")]
 pub mod openai;
+pub mod streaming;
 
-#[cfg(feature = "llm-ollama")]
-pub use ollama::OllamaLlm;
+#[cfg(feature = "llm-anthropic")]
+pub use anthropic::AnthropicLlm;
+#[cfg(feature = "llm-gemini")]
+pub use gemini::GeminiLlm;
 #[cfg(feature = "llm-openai")]
 pub use openai::OpenAiLlm;
 
@@ -23,7 +30,8 @@ use futures::stream;
 
 use crate::module::ModuleLifecycle;
 use crate::providers::adapter::{
-    AudioEncoding, ChatMessage, LlmAdapter, SttAdapter, TranscribeChunk, TtsAdapter,
+    AudioEncoding, ChatMessage, LlmAdapter, LlmCapabilities, SttAdapter, TranscribeChunk,
+    TtsAdapter,
 };
 
 // ========== Noop LLM ==========
@@ -39,6 +47,10 @@ impl ModuleLifecycle for NoopLlm {
 
 #[async_trait]
 impl LlmAdapter for NoopLlm {
+    async fn llm_capabilities(&self) -> LlmCapabilities {
+        LlmCapabilities::minimal(self.name())
+    }
+
     async fn chat(&self, _messages: &[ChatMessage]) -> anyhow::Result<String> {
         Ok("LLM module not configured".into())
     }

@@ -11,8 +11,7 @@ use crate::memory_policy::{
 };
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    ChatMessage, LlmAdapter, MemoryBackend, MemoryConversationIngest, MemoryConversationMessage,
-    MemoryListOpts, MemoryNode,
+    ChatMessage, LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode,
 };
 
 const MEMORY_CAPTURE_SYSTEM_PROMPT: &str = r#"You decide whether a personal AI assistant should remember anything from one completed conversation turn.
@@ -158,76 +157,8 @@ pub async fn capture_turn_memory_with_backends(
         MemoryCaptureMode::ExplicitToolOnly => {
             MemoryCaptureTrace::skipped(memory_config.capture_mode, "explicit_tool_only")
         }
-        MemoryCaptureMode::ProviderInferAll => provider_infer_turn_memory(memory, pending).await,
         MemoryCaptureMode::LlmSelected => {
             llm_selected_turn_memory(llm, memory, pending, memory_config).await
-        }
-    }
-}
-
-async fn provider_infer_turn_memory(
-    memory: &dyn MemoryBackend,
-    pending: &PendingTextPersistence,
-) -> MemoryCaptureTrace {
-    let capabilities = memory.memory_capabilities().await;
-    if !capabilities.supports_conversation_ingest {
-        return MemoryCaptureTrace::skipped(
-            MemoryCaptureMode::ProviderInferAll,
-            "provider_conversation_ingest_unsupported",
-        );
-    }
-    if !capabilities.supports_provider_infer {
-        return MemoryCaptureTrace::skipped(
-            MemoryCaptureMode::ProviderInferAll,
-            "provider_infer_unsupported",
-        );
-    }
-
-    let ingest = MemoryConversationIngest {
-        run_id: Some(pending.session_id.to_string()),
-        messages: vec![
-            MemoryConversationMessage {
-                role: "user".to_string(),
-                content: pending.query_text.clone(),
-                name: Some(pending.user_id_text.clone()),
-            },
-            MemoryConversationMessage {
-                role: "assistant".to_string(),
-                content: pending.response_text.clone(),
-                name: None,
-            },
-        ],
-        metadata: serde_json::json!({
-            "source": "pipeline",
-            "capture_mode": "provider_infer_all",
-            "channel_id": pending.channel_id,
-            "conversation_id": pending.session_id,
-        }),
-    };
-
-    match memory.ingest_conversation(pending.user_id, ingest).await {
-        Ok(_) => MemoryCaptureTrace {
-            mode: MemoryCaptureMode::ProviderInferAll,
-            model: None,
-            candidates: 0,
-            stored: 0,
-            skipped: 0,
-            status: MemoryCaptureStatus::Completed,
-            reason: None,
-            candidate_traces: Vec::new(),
-        },
-        Err(error) => {
-            tracing::warn!(
-                user_id = %pending.user_id,
-                session_id = %pending.session_id,
-                error = ?error,
-                "failed to ingest conversation into memory backend"
-            );
-            MemoryCaptureTrace::failed(
-                MemoryCaptureMode::ProviderInferAll,
-                None,
-                "provider_ingest_failed",
-            )
         }
     }
 }

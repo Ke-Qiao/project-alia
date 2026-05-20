@@ -148,11 +148,10 @@ pub struct ModulesSection {
     pub stt: String,
     pub tts: String,
     pub embedding: String,
-    pub memory: String,
 }
 
 fn default_minor_llm_module() -> String {
-    "ollama".to_string()
+    "gemini".to_string()
 }
 fn default_major_llm_module() -> String {
     "openai".to_string()
@@ -163,13 +162,13 @@ pub struct ProvidersSection {
     #[serde(default)]
     pub openai: OpenAiProviderSection,
     #[serde(default)]
-    pub ollama: OllamaProviderSection,
+    pub anthropic: AnthropicProviderSection,
+    #[serde(default)]
+    pub gemini: GeminiProviderSection,
     #[serde(default)]
     pub whisper_cpp: WhisperCppProviderSection,
     #[serde(default)]
     pub gpt_sovits: GptSovitsProviderSection,
-    #[serde(default)]
-    pub mem0: Mem0ProviderSection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -182,6 +181,12 @@ pub struct OpenAiProviderSection {
     pub embedding_model: String,
     #[serde(default = "default_openai_base_url")]
     pub base_url: String,
+    #[serde(default)]
+    pub api_family: OpenAiApiFamily,
+    #[serde(flatten)]
+    pub request: LlmRequestOptionsSection,
+    #[serde(default)]
+    pub health_probe_enabled: bool,
 }
 
 impl Default for OpenAiProviderSection {
@@ -191,7 +196,23 @@ impl Default for OpenAiProviderSection {
             chat_model: default_openai_chat_model(),
             embedding_model: default_openai_embedding_model(),
             base_url: default_openai_base_url(),
+            api_family: OpenAiApiFamily::default(),
+            request: LlmRequestOptionsSection::default(),
+            health_probe_enabled: false,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiApiFamily {
+    ChatCompletions,
+    Responses,
+}
+
+impl Default for OpenAiApiFamily {
+    fn default() -> Self {
+        Self::ChatCompletions
     }
 }
 
@@ -208,35 +229,127 @@ fn default_openai_base_url() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct OllamaProviderSection {
-    #[serde(default = "default_ollama_endpoint")]
-    pub endpoint: String,
-    #[serde(default = "default_ollama_chat_model")]
+pub struct AnthropicProviderSection {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_anthropic_chat_model")]
     pub chat_model: String,
-    #[serde(default = "default_ollama_embedding_model")]
-    pub embedding_model: String,
+    #[serde(default = "default_anthropic_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_anthropic_version")]
+    pub version: String,
+    #[serde(flatten)]
+    pub request: LlmRequestOptionsSection,
+    #[serde(default)]
+    pub health_probe_enabled: bool,
 }
 
-impl Default for OllamaProviderSection {
+impl Default for AnthropicProviderSection {
     fn default() -> Self {
         Self {
-            endpoint: default_ollama_endpoint(),
-            chat_model: default_ollama_chat_model(),
-            embedding_model: default_ollama_embedding_model(),
+            api_key: String::new(),
+            chat_model: default_anthropic_chat_model(),
+            base_url: default_anthropic_base_url(),
+            version: default_anthropic_version(),
+            request: LlmRequestOptionsSection::default(),
+            health_probe_enabled: false,
         }
     }
 }
 
-fn default_ollama_endpoint() -> String {
-    "http://localhost:11434".to_string()
+fn default_anthropic_chat_model() -> String {
+    "claude-sonnet-4-20250514".to_string()
 }
 
-fn default_ollama_chat_model() -> String {
-    "qwen2.5:7b".to_string()
+fn default_anthropic_base_url() -> String {
+    "https://api.anthropic.com/v1".to_string()
 }
 
-fn default_ollama_embedding_model() -> String {
-    "bge-m3".to_string()
+fn default_anthropic_version() -> String {
+    "2023-06-01".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GeminiProviderSection {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_gemini_chat_model")]
+    pub chat_model: String,
+    #[serde(default = "default_gemini_base_url")]
+    pub base_url: String,
+    #[serde(flatten)]
+    pub request: LlmRequestOptionsSection,
+    #[serde(default)]
+    pub health_probe_enabled: bool,
+}
+
+impl Default for GeminiProviderSection {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            chat_model: default_gemini_chat_model(),
+            base_url: default_gemini_base_url(),
+            request: LlmRequestOptionsSection::default(),
+            health_probe_enabled: false,
+        }
+    }
+}
+
+fn default_gemini_chat_model() -> String {
+    "gemini-2.5-flash".to_string()
+}
+
+fn default_gemini_base_url() -> String {
+    "https://generativelanguage.googleapis.com/v1beta".to_string()
+}
+
+fn default_llm_max_tokens() -> u32 {
+    1024
+}
+
+fn default_llm_temperature() -> f32 {
+    0.7
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LlmRequestOptionsSection {
+    #[serde(default = "default_llm_max_tokens")]
+    pub max_output_tokens: u32,
+    #[serde(default = "default_llm_temperature")]
+    pub temperature: f32,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub presence_penalty: Option<f32>,
+    #[serde(default)]
+    pub frequency_penalty: Option<f32>,
+    #[serde(default)]
+    pub stop_sequences: Vec<String>,
+    #[serde(default)]
+    pub tool_choice: Option<String>,
+    #[serde(default)]
+    pub json_mode: bool,
+    #[serde(default)]
+    pub json_schema_name: Option<String>,
+    #[serde(default)]
+    pub json_schema: Option<serde_json::Value>,
+}
+
+impl Default for LlmRequestOptionsSection {
+    fn default() -> Self {
+        Self {
+            max_output_tokens: default_llm_max_tokens(),
+            temperature: default_llm_temperature(),
+            top_p: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            stop_sequences: Vec::new(),
+            tool_choice: None,
+            json_mode: false,
+            json_schema_name: None,
+            json_schema: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -358,53 +471,6 @@ fn default_gpt_sovits_max_fragment_interval() -> f32 {
 }
 fn default_gpt_sovits_max_pitch_shift_semitones() -> f32 {
     2.0
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Mem0ProviderSection {
-    #[serde(default = "default_mem0_base_url")]
-    pub base_url: String,
-    #[serde(default)]
-    pub api_key: String,
-    #[serde(default)]
-    pub user_id_prefix: String,
-    #[serde(default)]
-    pub app_id: Option<String>,
-    #[serde(default)]
-    pub agent_id: Option<String>,
-    #[serde(default)]
-    pub run_id: Option<String>,
-    #[serde(default)]
-    pub custom_instructions: Option<String>,
-    #[serde(default)]
-    pub infer: bool,
-    #[serde(default)]
-    pub conversation_infer: bool,
-    #[serde(default = "default_mem0_request_timeout")]
-    pub request_timeout_sec: u64,
-    #[serde(default = "default_mem0_page_size")]
-    pub page_size: u32,
-    #[serde(default)]
-    pub add_poll_timeout_ms: u64,
-}
-
-impl Default for Mem0ProviderSection {
-    fn default() -> Self {
-        Self {
-            base_url: default_mem0_base_url(),
-            api_key: String::new(),
-            user_id_prefix: String::new(),
-            app_id: None,
-            agent_id: None,
-            run_id: None,
-            custom_instructions: None,
-            infer: false,
-            conversation_infer: false,
-            request_timeout_sec: default_mem0_request_timeout(),
-            page_size: default_mem0_page_size(),
-            add_poll_timeout_ms: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1405,8 +1471,16 @@ pub struct MemorySection {
     pub capture_timeout_sec: u64,
     #[serde(default = "default_memory_capture_min_confidence")]
     pub capture_min_confidence: f32,
+    #[serde(default = "default_memory_capture_min_importance")]
+    pub capture_min_importance: f32,
     #[serde(default = "default_memory_sensitive_filter_enabled")]
     pub sensitive_filter_enabled: bool,
+    #[serde(default = "default_memory_active_embedding_profile")]
+    pub active_embedding_profile: String,
+    #[serde(default = "default_memory_graph_depth")]
+    pub graph_depth: u32,
+    #[serde(default = "default_memory_consolidation_enabled")]
+    pub consolidation_enabled: bool,
     #[serde(default = "default_memory_retrieval_layers")]
     pub retrieval_layers: Vec<String>,
     #[serde(default = "default_memory_max_injected_chars")]
@@ -1426,7 +1500,11 @@ impl Default for MemorySection {
             capture_mode: MemoryCaptureMode::default(),
             capture_timeout_sec: default_memory_capture_timeout_sec(),
             capture_min_confidence: default_memory_capture_min_confidence(),
+            capture_min_importance: default_memory_capture_min_importance(),
             sensitive_filter_enabled: default_memory_sensitive_filter_enabled(),
+            active_embedding_profile: default_memory_active_embedding_profile(),
+            graph_depth: default_memory_graph_depth(),
+            consolidation_enabled: default_memory_consolidation_enabled(),
             retrieval_layers: default_memory_retrieval_layers(),
             max_injected_memory_chars: default_memory_max_injected_chars(),
             max_retrieval_results: 10,
@@ -1443,7 +1521,6 @@ pub enum MemoryCaptureMode {
     None,
     ExplicitToolOnly,
     LlmSelected,
-    ProviderInferAll,
 }
 
 impl Default for MemoryCaptureMode {
@@ -1460,7 +1537,23 @@ fn default_memory_capture_min_confidence() -> f32 {
     0.65
 }
 
+fn default_memory_capture_min_importance() -> f32 {
+    0.45
+}
+
 fn default_memory_sensitive_filter_enabled() -> bool {
+    true
+}
+
+pub fn default_memory_active_embedding_profile() -> String {
+    "openai.text-embedding-3-small.1536.cosine.v1".to_string()
+}
+
+fn default_memory_graph_depth() -> u32 {
+    2
+}
+
+fn default_memory_consolidation_enabled() -> bool {
     true
 }
 
@@ -1482,18 +1575,6 @@ fn default_memory_health_check_attempts() -> u32 {
 
 fn default_memory_health_check_interval_ms() -> u64 {
     500
-}
-
-fn default_mem0_base_url() -> String {
-    "https://api.mem0.ai".to_string()
-}
-
-fn default_mem0_request_timeout() -> u64 {
-    20
-}
-
-fn default_mem0_page_size() -> u32 {
-    50
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1720,11 +1801,11 @@ impl ServerConfig {
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             config.providers.openai.api_key = key;
         }
-        if let Ok(key) = std::env::var("MEM0_API_KEY") {
-            config.providers.mem0.api_key = key;
+        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+            config.providers.anthropic.api_key = key;
         }
-        if let Ok(url) = std::env::var("MEM0_BASE_URL") {
-            config.providers.mem0.base_url = url;
+        if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+            config.providers.gemini.api_key = key;
         }
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =

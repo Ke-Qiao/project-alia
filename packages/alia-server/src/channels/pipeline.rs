@@ -191,7 +191,6 @@ fn parse_memory_capture_mode(value: &str) -> MemoryCaptureMode {
     match value.trim().to_ascii_lowercase().as_str() {
         "none" => MemoryCaptureMode::None,
         "explicit_tool_only" | "explicit-tool-only" => MemoryCaptureMode::ExplicitToolOnly,
-        "provider_infer_all" | "provider-infer-all" => MemoryCaptureMode::ProviderInferAll,
         _ => MemoryCaptureMode::LlmSelected,
     }
 }

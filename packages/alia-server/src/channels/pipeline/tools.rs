@@ -92,13 +92,20 @@ pub(super) async fn run_llm_tool_loop(
             Some((channel_id, user_id_text)),
         );
 
-        let mut response = match cancellable_stage(
-            turn,
-            "llm_tool_call",
-            llm.chat_with_tools(&messages, &tools),
-        )
-        .await?
-        {
+        let capabilities = llm.llm_capabilities().await;
+        let tool_call_future = async {
+            if capabilities.supports_streaming_tool_calls {
+                llm.chat_stream_with_tools(&messages, &tools).await
+            } else {
+                llm.chat_with_tools(&messages, &tools).await
+            }
+        };
+        let stage = if capabilities.supports_streaming_tool_calls {
+            "llm_tool_call_stream"
+        } else {
+            "llm_tool_call"
+        };
+        let mut response = match cancellable_stage(turn, stage, tool_call_future).await? {
             Some(response) => response,
             None => {
                 return Ok(ToolLoopOutcome {

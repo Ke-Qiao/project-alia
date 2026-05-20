@@ -1,5 +1,3 @@
-#![cfg(feature = "llm-ollama")]
-
 use alia_server::providers::adapter::RouteDecision;
 use alia_server::providers::router::multi_layer::{
     Classification, LlmMode, MultiLayerRouter, RouterConfig, parse_tool_selection_response,
@@ -26,43 +24,56 @@ fn test_strip_code_fences_without_tag() {
 
 #[test]
 fn test_to_decision_skill() {
-    let c = Classification {
+    let classification = Classification {
         route: "skill".to_string(),
-        skill_name: Some("smart_home".to_string()),
+        skill_name: Some("smart_light_control".to_string()),
         confidence: Some(0.95),
         reasoning: Some("deterministic command".to_string()),
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
+
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
         RouteDecision::Skill { skill_name } => {
-            assert_eq!(skill_name, "smart_home");
+            assert_eq!(skill_name, "smart_light_control");
         }
         other => panic!("expected Skill, got {other:?}"),
     }
 }
 
 #[test]
+fn test_to_decision_skill_without_name_falls_back() {
+    let classification = Classification {
+        route: "skill".to_string(),
+        skill_name: None,
+        confidence: Some(0.4),
+        reasoning: None,
+    };
+
+    assert!(matches!(
+        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled),
+        RouteDecision::MajorLlm { .. }
+    ));
+}
+
+#[test]
 fn test_to_decision_minor_llm_both_mode() {
-    let c = Classification {
+    let classification = Classification {
         route: "minor_llm".to_string(),
         skill_name: None,
         confidence: Some(0.8),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
+
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
         RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
-            assert!(
-                prompt.contains("[ESCALATE]"),
-                "both-mode minor prompt should mention escalation"
-            );
+            assert!(prompt.contains("[ESCALATE]"));
             assert!(
                 escalation_prompt
                     .as_deref()
-                    .is_some_and(|prompt| prompt.contains("primary reasoning model")),
-                "both-mode minor route should carry a major escalation prompt"
+                    .is_some_and(|prompt| prompt.contains("primary reasoning model"))
             );
         }
         other => panic!("expected MinorLlm, got {other:?}"),
@@ -71,30 +82,22 @@ fn test_to_decision_minor_llm_both_mode() {
 
 #[test]
 fn test_to_decision_minor_llm_solo_mode() {
-    let c = Classification {
+    let classification = Classification {
         route: "minor_llm".to_string(),
         skill_name: None,
         confidence: Some(0.8),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::MinorOnly) {
+
+    match MultiLayerRouter::to_decision(classification, LlmMode::MinorOnly) {
         RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
-            assert!(
-                !prompt.contains("[ESCALATE]"),
-                "solo-mode minor prompt should NOT mention escalation"
-            );
-            assert!(
-                prompt.contains("primary and only"),
-                "solo prompt should indicate it's the only model"
-            );
-            assert!(
-                escalation_prompt.is_none(),
-                "minor-only mode must not carry a major escalation prompt"
-            );
+            assert!(!prompt.contains("[ESCALATE]"));
+            assert!(prompt.contains("primary and only"));
+            assert!(escalation_prompt.is_none());
         }
         other => panic!("expected MinorLlm, got {other:?}"),
     }
@@ -102,13 +105,14 @@ fn test_to_decision_minor_llm_solo_mode() {
 
 #[test]
 fn test_to_decision_major_llm_both_mode() {
-    let c = Classification {
+    let classification = Classification {
         route: "major_llm".to_string(),
         skill_name: None,
         confidence: Some(0.9),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::BothEnabled) {
+
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
         RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
             assert!(prompt.contains("primary reasoning model"));
@@ -119,13 +123,14 @@ fn test_to_decision_major_llm_both_mode() {
 
 #[test]
 fn test_to_decision_major_llm_solo_mode() {
-    let c = Classification {
+    let classification = Classification {
         route: "major_llm".to_string(),
         skill_name: None,
         confidence: Some(0.9),
         reasoning: None,
     };
-    match MultiLayerRouter::to_decision(c, LlmMode::MajorOnly) {
+
+    match MultiLayerRouter::to_decision(classification, LlmMode::MajorOnly) {
         RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
             assert!(prompt.contains("all conversations"));
@@ -136,36 +141,36 @@ fn test_to_decision_major_llm_solo_mode() {
 
 #[test]
 fn test_to_decision_unknown_falls_back() {
-    let c = Classification {
+    let classification = Classification {
         route: "unknown_thing".to_string(),
         skill_name: None,
         confidence: None,
         reasoning: None,
     };
+
     assert!(matches!(
-        MultiLayerRouter::to_decision(c, LlmMode::BothEnabled),
+        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled),
         RouteDecision::MajorLlm { .. }
     ));
 }
 
 #[test]
 fn test_llm_mode() {
-    let mut cfg = RouterConfig {
-        ollama_endpoint: String::new(),
+    let mut config = RouterConfig {
         model: String::new(),
         temperature: 0.0,
         timeout_sec: 5,
         minor_llm_enabled: true,
         major_llm_enabled: true,
     };
-    assert_eq!(cfg.llm_mode(), LlmMode::BothEnabled);
+    assert_eq!(config.llm_mode(), LlmMode::BothEnabled);
 
-    cfg.major_llm_enabled = false;
-    assert_eq!(cfg.llm_mode(), LlmMode::MinorOnly);
+    config.major_llm_enabled = false;
+    assert_eq!(config.llm_mode(), LlmMode::MinorOnly);
 
-    cfg.minor_llm_enabled = false;
-    cfg.major_llm_enabled = true;
-    assert_eq!(cfg.llm_mode(), LlmMode::MajorOnly);
+    config.minor_llm_enabled = false;
+    config.major_llm_enabled = true;
+    assert_eq!(config.llm_mode(), LlmMode::MajorOnly);
 }
 
 #[test]

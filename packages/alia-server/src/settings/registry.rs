@@ -340,14 +340,36 @@ impl SettingsRegistry {
                 schema("OpenAI Model", "string", false),
             ),
             (
+                "core.providers.openai.api_family",
+                json!(match config.providers.openai.api_family {
+                    crate::config::OpenAiApiFamily::ChatCompletions => "chat_completions",
+                    crate::config::OpenAiApiFamily::Responses => "responses",
+                }),
+                schema_select(
+                    "OpenAI API Family",
+                    &["chat_completions", "responses"],
+                    false,
+                ),
+            ),
+            (
                 "core.providers.openai.embedding_model",
                 json!(config.providers.openai.embedding_model),
                 schema("OpenAI Embedding Model", "string", false),
             ),
             (
                 "core.providers.openai.temperature",
-                json!(0.7),
+                json!(config.providers.openai.request.temperature),
                 schema("OpenAI Temperature", "number", false),
+            ),
+            (
+                "core.providers.openai.max_output_tokens",
+                json!(config.providers.openai.request.max_output_tokens),
+                schema("OpenAI Max Output Tokens", "number", false),
+            ),
+            (
+                "core.providers.openai.top_p",
+                json!(config.providers.openai.request.top_p),
+                schema("OpenAI Top P", "number", false),
             ),
             (
                 "core.providers.openai.base_url",
@@ -355,24 +377,69 @@ impl SettingsRegistry {
                 schema("OpenAI Base URL", "string", false),
             ),
             (
-                "core.providers.ollama.endpoint",
-                json!(config.providers.ollama.endpoint),
-                schema("Ollama Endpoint", "string", false),
+                "core.providers.anthropic.api_key",
+                json!(config.providers.anthropic.api_key),
+                schema_secret("Anthropic API Key", false),
             ),
             (
-                "core.providers.ollama.chat_model",
-                json!(config.providers.ollama.chat_model),
-                schema("Ollama Model", "string", false),
+                "core.providers.anthropic.chat_model",
+                json!(config.providers.anthropic.chat_model),
+                schema("Anthropic Model", "string", false),
             ),
             (
-                "core.providers.ollama.embedding_model",
-                json!(config.providers.ollama.embedding_model),
-                schema("Ollama Embedding Model", "string", false),
+                "core.providers.anthropic.base_url",
+                json!(config.providers.anthropic.base_url),
+                schema("Anthropic Base URL", "string", false),
             ),
             (
-                "core.providers.ollama.temperature",
-                json!(0.7),
-                schema("Ollama Temperature", "number", false),
+                "core.providers.anthropic.version",
+                json!(config.providers.anthropic.version),
+                schema("Anthropic API Version", "string", false),
+            ),
+            (
+                "core.providers.anthropic.max_output_tokens",
+                json!(config.providers.anthropic.request.max_output_tokens),
+                schema("Anthropic Max Output Tokens", "number", false),
+            ),
+            (
+                "core.providers.anthropic.temperature",
+                json!(config.providers.anthropic.request.temperature),
+                schema("Anthropic Temperature", "number", false),
+            ),
+            (
+                "core.providers.anthropic.top_p",
+                json!(config.providers.anthropic.request.top_p),
+                schema("Anthropic Top P", "number", false),
+            ),
+            (
+                "core.providers.gemini.api_key",
+                json!(config.providers.gemini.api_key),
+                schema_secret("Gemini API Key", false),
+            ),
+            (
+                "core.providers.gemini.chat_model",
+                json!(config.providers.gemini.chat_model),
+                schema("Gemini Model", "string", false),
+            ),
+            (
+                "core.providers.gemini.base_url",
+                json!(config.providers.gemini.base_url),
+                schema("Gemini Base URL", "string", false),
+            ),
+            (
+                "core.providers.gemini.max_output_tokens",
+                json!(config.providers.gemini.request.max_output_tokens),
+                schema("Gemini Max Output Tokens", "number", false),
+            ),
+            (
+                "core.providers.gemini.temperature",
+                json!(config.providers.gemini.request.temperature),
+                schema("Gemini Temperature", "number", false),
+            ),
+            (
+                "core.providers.gemini.top_p",
+                json!(config.providers.gemini.request.top_p),
+                schema("Gemini Top P", "number", false),
             ),
             (
                 "core.providers.whisper_cpp.endpoint",
@@ -472,16 +539,6 @@ impl SettingsRegistry {
                     "bool",
                     false,
                 ),
-            ),
-            (
-                "core.providers.mem0.base_url",
-                json!(config.providers.mem0.base_url),
-                schema("Mem0 Base URL", "string", true),
-            ),
-            (
-                "core.providers.mem0.api_key",
-                json!(config.providers.mem0.api_key),
-                schema_secret("Mem0 API Key", true),
             ),
             // Policies
             (
@@ -1013,19 +1070,27 @@ impl SettingsRegistry {
             (
                 "core.modules.minor_llm",
                 json!(config.modules.minor_llm),
-                schema_select("Minor LLM Backend", &["ollama", "openai", "noop"], true),
+                schema_select(
+                    "Minor LLM Backend",
+                    &["openai", "anthropic", "gemini", "noop"],
+                    true,
+                ),
             ),
             (
                 "core.modules.major_llm",
                 json!(config.modules.major_llm),
-                schema_select("Major LLM Backend", &["openai", "ollama", "noop"], true),
+                schema_select(
+                    "Major LLM Backend",
+                    &["openai", "anthropic", "gemini", "noop"],
+                    true,
+                ),
             ),
             (
                 "core.modules.transcript_correction_llm",
                 json!(config.modules.transcript_correction_llm),
                 schema_select(
                     "Transcript Correction LLM Backend",
-                    &["ollama", "openai", "noop"],
+                    &["openai", "anthropic", "gemini", "noop"],
                     true,
                 ),
             ),
@@ -1034,7 +1099,7 @@ impl SettingsRegistry {
                 json!(config.modules.memory_capture_llm),
                 schema_select(
                     "Memory Capture LLM Backend",
-                    &["ollama", "openai", "noop"],
+                    &["openai", "anthropic", "gemini", "noop"],
                     true,
                 ),
             ),
@@ -1051,12 +1116,7 @@ impl SettingsRegistry {
             (
                 "core.modules.embedding",
                 json!(config.modules.embedding),
-                schema_select("Embedding Backend", &["ollama", "openai", "noop"], true),
-            ),
-            (
-                "core.modules.memory",
-                json!(config.modules.memory),
-                schema_select("Memory Backend", &["mem0", "simple", "noop"], true),
+                schema_select("Embedding Backend", &["openai", "noop"], true),
             ),
         ];
 

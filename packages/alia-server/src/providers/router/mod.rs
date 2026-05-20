@@ -1,4 +1,3 @@
-#[cfg(feature = "llm-ollama")]
 pub mod multi_layer;
 
 use async_trait::async_trait;
@@ -6,7 +5,6 @@ use async_trait::async_trait;
 use crate::module::ModuleLifecycle;
 use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy};
 
-#[cfg(feature = "llm-ollama")]
 pub use multi_layer::MultiLayerRouter;
 
 /// Passthrough router: always routes to the major LLM.

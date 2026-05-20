@@ -1,62 +1,25 @@
-//! MultiLayerRouter: Intent classification via the minor LLM.
+//! Multi-layer router backed by the configured minor LLM.
 //!
-//! Uses a lightweight minor model (e.g. Qwen3-4B) to classify user intent,
-//! then routes to the appropriate execution path:
-//!   - SKILL → matched skill context and bound tools
-//!   - MINOR_LLM → simple chat handled by the minor model
-//!   - MAJOR_LLM → complex reasoning forwarded to the major model
+//! The router asks the minor model to classify the current turn, then routes to
+//! a skill context, the minor LLM, or the major LLM. It is intentionally
+//! provider-neutral: the minor model is supplied through `LlmAdapter`, so the
+//! server does not depend on a specific local model runtime.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput};
+use crate::providers::adapter::{
+    ChatMessage, LlmAdapter, RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput,
+};
 use crate::settings::values::{bool_setting, f32_setting, string_setting, u64_setting};
-
-// ── Ollama API types (local to this module) ────────────────────────────
-
-#[derive(Debug, Serialize)]
-struct OllamaRequest {
-    model: String,
-    messages: Vec<OllamaMessage>,
-    stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    options: Option<OllamaOptions>,
-}
-
-#[derive(Debug, Serialize)]
-struct OllamaOptions {
-    temperature: f32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OllamaResponse {
-    message: OllamaMessage,
-    #[allow(dead_code)]
-    done: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ToolSelectionResponse {
-    #[serde(default)]
-    selected: Vec<String>,
-    #[serde(default)]
-    reasoning: Option<String>,
-}
-
-// ── Classification result ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct Classification {
@@ -69,11 +32,16 @@ pub struct Classification {
     pub reasoning: Option<String>,
 }
 
-// ── Config ─────────────────────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+struct ToolSelectionResponse {
+    #[serde(default)]
+    selected: Vec<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct RouterConfig {
-    pub ollama_endpoint: String,
     pub model: String,
     pub temperature: f32,
     pub timeout_sec: u64,
@@ -81,7 +49,6 @@ pub struct RouterConfig {
     pub major_llm_enabled: bool,
 }
 
-/// Which LLM tiers are available for routing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmMode {
     BothEnabled,
@@ -95,15 +62,18 @@ impl RouterConfig {
             (true, true) => LlmMode::BothEnabled,
             (true, false) => LlmMode::MinorOnly,
             (false, true) => LlmMode::MajorOnly,
-            // Should be caught at init, but fall back to major
             (false, false) => LlmMode::MajorOnly,
         }
     }
 }
 
-// ── System prompts ─────────────────────────────────────────────────────
+#[derive(Clone)]
+struct RouterState {
+    config: RouterConfig,
+    minor_llm: Option<Arc<dyn LlmAdapter>>,
+}
 
-/// Classification prompt when both LLMs are available
+/// Classification prompt when both LLM tiers are available.
 const CLASSIFICATION_PROMPT_BOTH: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of three execution routes so the correct downstream system handles it.
 
 ## Your output
@@ -116,7 +86,7 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 
 ## Routes
 
-### "skill" — deterministic device/system commands
+### "skill" - deterministic device/system commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
 | skill_name | When to use |
@@ -132,32 +102,32 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
-### "minor_llm" — simple, short replies
+### "minor_llm" - simple, short replies
 Use when a lightweight model can handle it in one turn:
 - Greetings ("Hi", "Good morning"), farewells, thanks, acknowledgments
 - Yes/no confirmations, simple follow-ups ("OK", "got it", "and then?")
 - Single-fact questions with short answers ("What day is it?", "What's 2+2?")
-- Casual chit-chat that doesn't reference user history or need personalization
+- Casual chit-chat that does not reference user history or need personalization
 
-### "major_llm" — complex reasoning (default when uncertain)
+### "major_llm" - complex reasoning, personalization, or uncertainty
 Use for anything that needs deep thinking, creativity, or user context:
 - Multi-step reasoning, analysis, comparisons, advice
 - Creative writing, stories, code generation
-- Questions about user preferences, past conversations, personalized responses
+- Questions about user preferences, past conversations, or personalized responses
 - Long or nuanced conversations, emotional support
 - Ambiguous requests that need interpretation
 - Anything referencing prior context deeply ("based on what we discussed...")
 
 ## Decision priority
 
-1. If the message is a clear device/system command → "skill"
-2. If it's trivial small-talk or a one-word reply → "minor_llm"
-3. Everything else → "major_llm"
+1. If the message is a clear device/system command, choose "skill".
+2. If it is trivial small-talk or a one-word/simple reply, choose "minor_llm".
+3. Everything else chooses "major_llm".
 
 When in doubt between "minor_llm" and "major_llm", always choose "major_llm".
-When in doubt between "skill" and "major_llm", choose "major_llm" (let the LLM figure it out with tool use)."#;
+When in doubt between "skill" and "major_llm", choose "major_llm" so the downstream LLM can reason with tools."#;
 
-/// Classification prompt when only the minor LLM is available (no major option)
+/// Classification prompt when only the minor LLM tier is available.
 const CLASSIFICATION_PROMPT_MINOR_ONLY: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
 
 ## Your output
@@ -170,7 +140,7 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 
 ## Routes
 
-### "skill" — deterministic device/system commands
+### "skill" - deterministic device/system commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
 | skill_name | When to use |
@@ -186,16 +156,15 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
 
-### "minor_llm" — all other messages
+### "minor_llm" - all other messages
 Route everything that is not a skill command to the minor LLM. This is the only general-purpose model available.
 
 ## Decision priority
 
-1. If the message is a clear device/system command → "skill"
-2. Everything else → "minor_llm""#;
+1. If the message is a clear device/system command, choose "skill".
+2. Everything else chooses "minor_llm"."#;
 
-/// System prompt given to the **minor LLM** when it handles a conversation (both-mode).
-/// Tells it to stay in scope and escalate complex tasks.
+/// System prompt given to the minor LLM when both tiers are available.
 const MINOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, a friendly and concise smart home AI assistant running on the minor model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
 
 Guidelines:
@@ -203,14 +172,13 @@ Guidelines:
 - Be warm and natural, not robotic.
 - Do NOT attempt complex reasoning, creative writing, code generation, or multi-step analysis.
 - If the user's request seems too complex, requires deep personalization, or involves long context reasoning, respond with exactly: [ESCALATE] followed by a one-sentence explanation of why.
-  Example: "[ESCALATE] This question requires analyzing your past conversations and preferences."
-- You do NOT have access to the user's memory, preferences, or conversation history. If asked about those, escalate.
-- If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer.
+  Example: "[ESCALATE] This question requires analyzing past context and preferences."
+- Do not perform deep memory or preference reasoning. If the answer depends on memory, preferences, or conversation history beyond the visible system context, escalate.
+- If tools are available, use tool calls instead of writing tool JSON or hidden arguments.
 - Answer in the same language the user uses."#;
 
-/// System prompt given to the **minor LLM** when it's the only model (minor-only mode).
-/// No escalation — it handles everything.
-const MINOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations — from simple greetings to complex reasoning.
+/// System prompt given to the minor LLM when it is the only available tier.
+const MINOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations - from simple greetings to complex reasoning.
 
 Guidelines:
 - Be warm, natural, and helpful.
@@ -218,22 +186,22 @@ Guidelines:
 - Answer in the same language the user uses.
 - For complex tasks, think step by step.
 - You may not have full conversation history, so ask for clarification when needed.
-- If tools are available, use tool calls instead of writing tool JSON or internal arguments in the answer."#;
+- If tools are available, use tool calls instead of writing tool JSON or hidden arguments."#;
 
-/// System prompt given to the **major LLM** when handling a conversation.
+/// System prompt given to the major LLM when handling routed complex turns.
 const MAJOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
 
 Guidelines:
 - Be warm, thoughtful, and personalized. Use the user's memory and context when available.
-- Adapt response length and depth to the question — short for simple follow-ups, thorough for complex topics.
+- Adapt response length and depth to the question - short for simple follow-ups, thorough for complex topics.
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
 - When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
-/// System prompt given to the **major LLM** when it's the only model (major-only mode).
-const MAJOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations — from casual greetings to complex reasoning and creative tasks.
+/// System prompt given to the major LLM when it is the only available tier.
+const MAJOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations - from casual greetings to complex reasoning and creative tasks.
 
 Guidelines:
 - Be warm, natural, and personalized. Use the user's memory and context when available.
@@ -256,129 +224,81 @@ Rules:
 - Skills are cognitive context, not callable tools.
 "#;
 
-// ── Implementation ─────────────────────────────────────────────────────
+fn classification_prompt_for_mode(mode: LlmMode) -> Option<&'static str> {
+    match mode {
+        LlmMode::BothEnabled => Some(CLASSIFICATION_PROMPT_BOTH),
+        LlmMode::MinorOnly => Some(CLASSIFICATION_PROMPT_MINOR_ONLY),
+        LlmMode::MajorOnly => None,
+    }
+}
 
+#[derive(Default)]
 pub struct MultiLayerRouter {
-    client: Client,
-    config: Arc<RwLock<Option<RouterConfig>>>,
+    state: Arc<RwLock<Option<RouterState>>>,
 }
 
 impl MultiLayerRouter {
     pub fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .build()
-                .unwrap_or_default(),
-            config: Arc::new(RwLock::new(None)),
-        }
+        Self::default()
     }
 
-    /// Call the minor Ollama model for intent classification.
     async fn classify(
-        &self,
+        minor_llm: Arc<dyn LlmAdapter>,
         config: &RouterConfig,
         input: &RouterInput,
     ) -> anyhow::Result<Classification> {
         let mode = config.llm_mode();
-
-        // Pick classification prompt based on available LLM tiers
-        let classification_prompt = match mode {
-            LlmMode::MajorOnly => {
-                // No minor LLM — skip classification entirely, always major.
-                return Ok(Classification {
-                    route: "major_llm".to_string(),
-                    skill_name: None,
-                    confidence: Some(1.0),
-                    reasoning: Some("major-only mode, skipping classification".to_string()),
-                });
-            }
-            LlmMode::MinorOnly => CLASSIFICATION_PROMPT_MINOR_ONLY,
-            LlmMode::BothEnabled => CLASSIFICATION_PROMPT_BOTH,
+        let Some(prompt) = classification_prompt_for_mode(mode) else {
+            return Ok(Classification {
+                route: "major_llm".to_string(),
+                skill_name: None,
+                confidence: Some(1.0),
+                reasoning: Some("major-only mode, skipping classification".to_string()),
+            });
         };
 
-        // Build messages: system prompt + conversation context (last few) + user message
-        let mut messages = vec![OllamaMessage {
-            role: "system".to_string(),
-            content: classification_prompt.to_string(),
-        }];
-
-        // Include recent conversation context (last 4 turns max) for better classification
+        let mut messages = vec![ChatMessage::new("system", prompt)];
         let context_window = input.conversation_context.len().min(4);
-        for msg in input
+        for message in input
             .conversation_context
             .iter()
             .rev()
             .take(context_window)
             .rev()
         {
-            messages.push(OllamaMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            });
+            messages.push(message.clone());
         }
+        messages.push(ChatMessage::new("user", input.text.clone()));
 
-        // Current user message
-        messages.push(OllamaMessage {
-            role: "user".to_string(),
-            content: input.text.clone(),
-        });
+        let raw = timeout(
+            Duration::from_secs(config.timeout_sec),
+            minor_llm.chat(&messages),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("router classification timed out"))??;
 
-        let request = OllamaRequest {
-            model: config.model.clone(),
-            messages,
-            stream: false,
-            options: Some(OllamaOptions {
-                temperature: config.temperature,
-            }),
-        };
-
-        let url = format!("{}/api/chat", config.ollama_endpoint);
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("ollama request failed: {e}"))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("ollama returned {status}: {body}");
-        }
-
-        let ollama_resp: OllamaResponse = response
-            .json()
-            .await
-            .map_err(|e| anyhow::anyhow!("ollama response parse failed: {e}"))?;
-
-        let raw = ollama_resp.message.content.trim().to_string();
-
-        // Strip markdown code fences if present (models sometimes wrap in ```json...```)
-        let json_str = strip_code_fences(&raw);
-
-        let classification: Classification = serde_json::from_str(json_str).map_err(|e| {
-            tracing::warn!(
-                raw_response = %raw,
-                error = %e,
-                "failed to parse classification, falling back to major_llm"
-            );
-            anyhow::anyhow!("classification parse error: {e}")
-        })?;
+        let classification: Classification = serde_json::from_str(strip_code_fences(&raw))
+            .map_err(|error| {
+                tracing::warn!(
+                    raw_response = %raw,
+                    error = %error,
+                    "failed to parse router classification"
+                );
+                anyhow::anyhow!("classification parse error: {error}")
+            })?;
 
         tracing::debug!(
             route = %classification.route,
+            skill = ?classification.skill_name,
             confidence = ?classification.confidence,
             reasoning = ?classification.reasoning,
             "router classification result"
         );
-
         Ok(classification)
     }
 
     async fn select_tools_with_minor_model(
-        &self,
+        minor_llm: Arc<dyn LlmAdapter>,
         config: &RouterConfig,
         input: &ToolSelectionInput,
     ) -> anyhow::Result<Option<Vec<String>>> {
@@ -400,70 +320,32 @@ impl MultiLayerRouter {
             "max_tools": input.max_tools,
             "candidates": &input.candidates,
         });
+        let messages = vec![
+            ChatMessage::new("system", TOOL_SELECTION_PROMPT),
+            ChatMessage::new("user", payload.to_string()),
+        ];
 
-        let request = OllamaRequest {
-            model: config.model.clone(),
-            messages: vec![
-                OllamaMessage {
-                    role: "system".to_string(),
-                    content: TOOL_SELECTION_PROMPT.to_string(),
-                },
-                OllamaMessage {
-                    role: "user".to_string(),
-                    content: payload.to_string(),
-                },
-            ],
-            stream: false,
-            options: Some(OllamaOptions {
-                temperature: config.temperature.min(0.2),
-            }),
-        };
-
-        let url = format!("{}/api/chat", config.ollama_endpoint);
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("ollama tool selection request failed: {e}"))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("ollama tool selection returned {status}: {body}");
-        }
-
-        let ollama_resp: OllamaResponse = response
-            .json()
-            .await
-            .map_err(|e| anyhow::anyhow!("ollama tool selection response parse failed: {e}"))?;
-        let raw = ollama_resp.message.content.trim().to_string();
-        let selected = parse_tool_selection_response(&raw, &candidate_names, input.max_tools)
-            .map_err(|e| {
-                tracing::warn!(
-                    raw_response = %raw,
-                    error = %e,
-                    "failed to parse minor tool selection"
-                );
-                e
-            })?;
-
-        tracing::debug!(
-            selected = ?selected,
-            "minor LLM tool candidate selection result"
-        );
+        let raw = timeout(
+            Duration::from_secs(config.timeout_sec),
+            minor_llm.chat(&messages),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("minor tool selection timed out"))??;
+        let selected = parse_tool_selection_response(&raw, &candidate_names, input.max_tools)?;
+        tracing::debug!(selected = ?selected, "minor LLM tool candidate selection result");
         Ok(Some(selected))
     }
 
-    /// Convert a Classification into a RouteDecision, attaching the appropriate
-    /// system prompt for the target LLM based on which tiers are enabled.
     pub fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
-        match classification.route.as_str() {
+        match classification.route.trim().to_ascii_lowercase().as_str() {
             "skill" => {
-                let skill_name = classification
+                let Some(skill_name) = classification
                     .skill_name
-                    .unwrap_or_else(|| "unknown".to_string());
+                    .map(|name| name.trim().to_string())
+                    .filter(|name| !name.is_empty())
+                else {
+                    return Self::fallback_decision(mode);
+                };
                 RouteDecision::Skill { skill_name }
             }
             "minor_llm" => {
@@ -480,16 +362,22 @@ impl MultiLayerRouter {
                     escalation_prompt,
                 }
             }
-            // Default to major for any unrecognized classification.
-            _ => {
-                let prompt = match mode {
-                    LlmMode::MajorOnly => MAJOR_LLM_SYSTEM_PROMPT_SOLO,
-                    _ => MAJOR_LLM_SYSTEM_PROMPT,
-                };
-                RouteDecision::MajorLlm {
-                    system_prompt: Some(prompt.to_string()),
-                }
-            }
+            _ => Self::fallback_decision(mode),
+        }
+    }
+
+    fn fallback_decision(mode: LlmMode) -> RouteDecision {
+        match mode {
+            LlmMode::MinorOnly => RouteDecision::MinorLlm {
+                system_prompt: Some(MINOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                escalation_prompt: None,
+            },
+            LlmMode::MajorOnly => RouteDecision::MajorLlm {
+                system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+            },
+            LlmMode::BothEnabled => RouteDecision::MajorLlm {
+                system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
+            },
         }
     }
 }
@@ -502,63 +390,50 @@ impl ModuleLifecycle for MultiLayerRouter {
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let routing = &ctx.config.policies.routing;
-        let minor_enabled = routing.minor_llm_enabled;
-        let major_enabled = routing.major_llm_enabled;
-
-        if !minor_enabled && !major_enabled {
+        if !routing.minor_llm_enabled && !routing.major_llm_enabled {
             anyhow::bail!(
-                "invalid routing policy: both policies.routing.minor_llm_enabled and \
-                 policies.routing.major_llm_enabled are false — at least one must be true"
+                "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must be true"
             );
         }
 
-        let timeout_sec = routing.timeout_sec;
-        self.client = Client::builder()
-            .timeout(std::time::Duration::from_secs(timeout_sec))
-            .build()
-            .unwrap_or_default();
-        let cfg = RouterConfig {
-            ollama_endpoint: ctx.config.providers.ollama.endpoint.clone(),
+        let config = RouterConfig {
             model: routing.model.clone(),
             temperature: routing.temperature,
-            timeout_sec,
-            minor_llm_enabled: minor_enabled,
-            major_llm_enabled: major_enabled,
+            timeout_sec: routing.timeout_sec,
+            minor_llm_enabled: routing.minor_llm_enabled,
+            major_llm_enabled: routing.major_llm_enabled,
         };
         tracing::info!(
-            model = %cfg.model,
-            endpoint = %cfg.ollama_endpoint,
-            temperature = cfg.temperature,
-            timeout_sec = cfg.timeout_sec,
-            minor_llm = minor_enabled,
-            major_llm = major_enabled,
-            mode = ?cfg.llm_mode(),
+            model = %config.model,
+            temperature = config.temperature,
+            timeout_sec = config.timeout_sec,
+            minor_llm = config.minor_llm_enabled,
+            major_llm = config.major_llm_enabled,
+            mode = ?config.llm_mode(),
             "MultiLayerRouter initialized"
         );
-        *self.config.write().await = Some(cfg);
+
+        *self.state.write().await = Some(RouterState {
+            config,
+            minor_llm: ctx.minor_llm.clone(),
+        });
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        let config = self.config.read().await;
-        if let Some(cfg) = config.as_ref() {
-            if matches!(cfg.llm_mode(), LlmMode::MajorOnly) {
-                return ModuleHealth::Healthy;
-            }
-            match self
-                .client
-                .get(format!("{}/api/version", cfg.ollama_endpoint))
-                .send()
-                .await
-            {
-                Ok(r) if r.status().is_success() => ModuleHealth::Healthy,
-                Ok(r) => ModuleHealth::Degraded(format!("ollama returned {}", r.status())),
-                Err(e) => ModuleHealth::Degraded(format!(
-                    "ollama unreachable: {e}, routing will fall back to major"
-                )),
-            }
-        } else {
-            ModuleHealth::Unhealthy("not initialized".to_string())
+        let state = self.state.read().await;
+        let Some(state) = state.as_ref() else {
+            return ModuleHealth::Unhealthy("not initialized".to_string());
+        };
+        if matches!(state.config.llm_mode(), LlmMode::MajorOnly) {
+            return ModuleHealth::Healthy;
+        }
+        let Some(minor_llm) = &state.minor_llm else {
+            return ModuleHealth::Degraded("minor LLM unavailable; routing falls back".to_string());
+        };
+        match minor_llm.health_check().await {
+            ModuleHealth::Healthy => ModuleHealth::Healthy,
+            other => other,
         }
     }
 
@@ -566,18 +441,13 @@ impl ModuleLifecycle for MultiLayerRouter {
         &self,
         updates: &BTreeMap<String, Value>,
     ) -> anyhow::Result<Vec<String>> {
-        let mut config_guard = self.config.write().await;
-        let Some(config) = config_guard.as_mut() else {
+        let mut state_guard = self.state.write().await;
+        let Some(state) = state_guard.as_mut() else {
             return Ok(Vec::new());
         };
 
-        let mut next = config.clone();
+        let mut next = state.config.clone();
         let mut applied = Vec::new();
-
-        if let Some(value) = string_setting(updates, "core.providers.ollama.endpoint") {
-            next.ollama_endpoint = value;
-            applied.push("core.providers.ollama.endpoint".to_string());
-        }
         if let Some(value) = string_setting(updates, "core.policies.routing.model") {
             next.model = value;
             applied.push("core.policies.routing.model".to_string());
@@ -598,16 +468,13 @@ impl ModuleLifecycle for MultiLayerRouter {
             next.major_llm_enabled = value;
             applied.push("core.policies.routing.major_llm_enabled".to_string());
         }
-
         if !next.minor_llm_enabled && !next.major_llm_enabled {
             anyhow::bail!(
                 "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must stay enabled"
             );
         }
-
         if !applied.is_empty() {
-            *config = next;
-            tracing::info!(module = self.name(), applied = ?applied, "runtime settings applied");
+            state.config = next;
         }
         Ok(applied)
     }
@@ -616,34 +483,24 @@ impl ModuleLifecycle for MultiLayerRouter {
 #[async_trait]
 impl RouterStrategy for MultiLayerRouter {
     async fn route(&self, input: &RouterInput) -> anyhow::Result<RouteDecision> {
-        let config = self.config.read().await;
-        let cfg = config
+        let state = self
+            .state
+            .read()
+            .await
             .as_ref()
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
+        let mode = state.config.llm_mode();
 
-        let mode = cfg.llm_mode();
+        let Some(minor_llm) = state.minor_llm else {
+            return Ok(Self::fallback_decision(mode));
+        };
 
-        match self.classify(cfg, input).await {
+        match Self::classify(minor_llm, &state.config, input).await {
             Ok(classification) => Ok(Self::to_decision(classification, mode)),
-            Err(e) => {
-                // On classification failure, fall back to the best available LLM.
-                tracing::warn!(
-                    error = %e,
-                    "router classification failed, falling back"
-                );
-                let fallback = match mode {
-                    LlmMode::MinorOnly => RouteDecision::MinorLlm {
-                        system_prompt: Some(MINOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
-                        escalation_prompt: None,
-                    },
-                    LlmMode::MajorOnly => RouteDecision::MajorLlm {
-                        system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
-                    },
-                    _ => RouteDecision::MajorLlm {
-                        system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
-                    },
-                };
-                Ok(fallback)
+            Err(error) => {
+                tracing::warn!(error = %error, "router classification failed, falling back");
+                Ok(Self::fallback_decision(mode))
             }
         }
     }
@@ -652,28 +509,28 @@ impl RouterStrategy for MultiLayerRouter {
         &self,
         input: &ToolSelectionInput,
     ) -> anyhow::Result<Option<Vec<String>>> {
-        let config = self.config.read().await;
-        let cfg = config
+        let state = self
+            .state
+            .read()
+            .await
             .as_ref()
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
-        self.select_tools_with_minor_model(cfg, input).await
+        let Some(minor_llm) = state.minor_llm else {
+            return Ok(None);
+        };
+        Self::select_tools_with_minor_model(minor_llm, &state.config, input).await
     }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
-
-/// Strip optional markdown code fences from LLM output.
-/// Handles ```json\n...\n```, ```\n...\n```, and bare JSON.
 pub fn strip_code_fences(s: &str) -> &str {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```") {
-        // Skip optional language tag on first line
         let rest = if let Some(nl) = rest.find('\n') {
             &rest[nl + 1..]
         } else {
             rest
         };
-        // Strip trailing ```
         rest.strip_suffix("```").unwrap_or(rest).trim()
     } else {
         trimmed
@@ -699,7 +556,54 @@ pub fn parse_tool_selection_response(
             selected.push(name);
         }
     }
-
     tracing::debug!(reasoning = ?selection.reasoning, "parsed minor tool selection");
     Ok(selected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn both_mode_classification_prompt_preserves_route_boundaries() {
+        let prompt = classification_prompt_for_mode(LlmMode::BothEnabled).unwrap();
+
+        assert!(prompt.contains("Respond with a single JSON object"));
+        assert!(prompt.contains("No markdown fences"));
+        assert!(prompt.contains(r#""skill""#));
+        assert!(prompt.contains(r#""minor_llm""#));
+        assert!(prompt.contains(r#""major_llm""#));
+        assert!(prompt.contains("smart_light_control"));
+        assert!(prompt.contains("Do not extract action parameters here"));
+        assert!(prompt.contains("When in doubt between \"minor_llm\" and \"major_llm\""));
+        assert!(prompt.contains("always choose \"major_llm\""));
+    }
+
+    #[test]
+    fn minor_only_classification_prompt_removes_major_route() {
+        let prompt = classification_prompt_for_mode(LlmMode::MinorOnly).unwrap();
+
+        assert!(prompt.contains(r#""skill""#));
+        assert!(prompt.contains(r#""minor_llm""#));
+        assert!(!prompt.contains("### \"major_llm\""));
+        assert!(prompt.contains("This is the only general-purpose model available"));
+        assert!(prompt.contains("Everything else chooses \"minor_llm\""));
+    }
+
+    #[test]
+    fn major_only_mode_skips_classification_prompt() {
+        assert!(classification_prompt_for_mode(LlmMode::MajorOnly).is_none());
+    }
+
+    #[test]
+    fn conversation_prompts_preserve_escalation_and_tool_rules() {
+        assert!(MINOR_LLM_SYSTEM_PROMPT.contains("[ESCALATE]"));
+        assert!(MINOR_LLM_SYSTEM_PROMPT.contains("deep memory or preference reasoning"));
+        assert!(MINOR_LLM_SYSTEM_PROMPT_SOLO.contains("primary and only language model"));
+        assert!(MAJOR_LLM_SYSTEM_PROMPT.contains("primary reasoning model"));
+        assert!(MAJOR_LLM_SYSTEM_PROMPT.contains("Do not call skills directly"));
+        assert!(MAJOR_LLM_SYSTEM_PROMPT_SOLO.contains("all conversations"));
+        assert!(TOOL_SELECTION_PROMPT.contains("Select only tools that are likely useful"));
+        assert!(TOOL_SELECTION_PROMPT.contains("Skills are cognitive context, not callable tools"));
+    }
 }

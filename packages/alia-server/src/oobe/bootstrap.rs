@@ -49,8 +49,12 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
         include_str!("../../../../config/server.example.d/providers/openai.toml"),
     ),
     (
-        "providers/ollama.toml",
-        include_str!("../../../../config/server.example.d/providers/ollama.toml"),
+        "providers/anthropic.toml",
+        include_str!("../../../../config/server.example.d/providers/anthropic.toml"),
+    ),
+    (
+        "providers/gemini.toml",
+        include_str!("../../../../config/server.example.d/providers/gemini.toml"),
     ),
     (
         "providers/whisper_cpp.toml",
@@ -59,10 +63,6 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
     (
         "providers/gpt_sovits.toml",
         include_str!("../../../../config/server.example.d/providers/gpt_sovits.toml"),
-    ),
-    (
-        "providers/mem0.toml",
-        include_str!("../../../../config/server.example.d/providers/mem0.toml"),
     ),
     (
         "policies/routing.toml",

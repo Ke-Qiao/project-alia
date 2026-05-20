@@ -5,7 +5,7 @@
 //! - `fetch`: Fetch a public HTTP(S) URL and return bounded text content
 //! - `calculate`: Evaluate a basic arithmetic expression
 //! - `get_weather`: Get weather for a location (stub, requires plugin)
-//! - `memory_search`: Search user's configured third-party memory backend
+//! - `memory_search`: Search the user's Alia memory store
 //! - `memory_store`: Store information to memory
 //! - `device_control`: Control connected devices
 //! - `schedule_task`: Create a scheduled task
@@ -268,7 +268,7 @@ impl BuiltinToolRegistry {
                 Arc::new(MemoryForget::new(Some(memory.clone()))),
             );
         } else {
-            tracing::info!("memory backend unavailable; memory tools are not registered");
+            tracing::info!("memory system unavailable; memory tools are not registered");
         }
 
         // schedule_task
