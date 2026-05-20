@@ -20,6 +20,7 @@ pub struct ModuleRegistry {
     pub major_llm: Arc<dyn LlmAdapter>,
     pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
+    pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     pub stt: Arc<dyn SttAdapter>,
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
@@ -79,6 +80,9 @@ impl ModuleRegistry {
             self.memory_capture_llm
                 .as_deref()
                 .map(|module| module as &dyn ModuleLifecycle),
+            self.sentence_expression_llm
+                .as_deref()
+                .map(|module| module as &dyn ModuleLifecycle),
             Some(self.major_llm.as_ref()),
             Some(self.minor_llm.as_ref()),
         ];
@@ -102,6 +106,12 @@ impl ModuleRegistry {
         }
         if let Some(llm) = &self.memory_capture_llm {
             results.insert("llm.memory_capture".to_string(), llm.health_check().await);
+        }
+        if let Some(llm) = &self.sentence_expression_llm {
+            results.insert(
+                "llm.sentence_expression".to_string(),
+                llm.health_check().await,
+            );
         }
         results.insert("stt".to_string(), self.stt.health_check().await);
         results.insert("tts".to_string(), self.tts.health_check().await);
@@ -134,6 +144,9 @@ impl ModuleRegistry {
             Some(self.minor_llm.as_ref()),
             Some(self.major_llm.as_ref()),
             self.memory_capture_llm
+                .as_deref()
+                .map(|module| module as &dyn ModuleLifecycle),
+            self.sentence_expression_llm
                 .as_deref()
                 .map(|module| module as &dyn ModuleLifecycle),
             self.transcript_correction_llm

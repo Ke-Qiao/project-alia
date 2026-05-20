@@ -55,6 +55,7 @@ pub struct ModuleContext {
     pub major_llm: Option<Arc<dyn LlmAdapter>>,
     pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
+    pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     /// Embedding adapter for built-in runtimes that need semantic indexing.
     pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
     /// Cache backend for modules that review or maintain cache entries.

@@ -92,6 +92,8 @@ pub struct ExpressionTrace {
     #[serde(default)]
     pub tts_provider_adjustments: Vec<Value>,
     #[serde(default)]
+    pub sentence_expression_llm: Vec<Value>,
+    #[serde(default)]
     pub source_events: Vec<ExpressionTraceEventSummary>,
 }
 
@@ -110,6 +112,7 @@ impl ExpressionTrace {
             safety_modifications: Vec::new(),
             tts_requests: Vec::new(),
             tts_provider_adjustments: Vec::new(),
+            sentence_expression_llm: Vec::new(),
             source_events: Vec::new(),
         }
     }
@@ -183,6 +186,9 @@ pub fn expression_traces_from_events(
                         .tts_provider_adjustments
                         .extend(adjustments.iter().cloned());
                 }
+            }
+            "sentence_expression_llm" => {
+                trace.sentence_expression_llm.push(event.payload.clone());
             }
             _ => {}
         }

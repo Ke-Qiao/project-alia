@@ -4,7 +4,7 @@ use std::time::Duration as StdDuration;
 
 use crate::config::{
     DialoguePolicyResourceSection, ExpressionPolicySection, ExpressionStyleSection,
-    RegulationPolicySection, ServerConfig,
+    RegulationPolicySection, SentenceExpressionLlmPolicySection, ServerConfig,
 };
 use crate::providers::adapter::{MemoryRecallEvent, TtsCapabilities};
 use chrono::{DateTime, Duration, Utc};
@@ -620,6 +620,10 @@ impl ExpressionRuntime {
     pub async fn speech_for_sentence(&self, mut input: ExpressionInput) -> SpeechExpression {
         apply_sentence_speech_overrides(&mut input);
         self.speech_for_expression_input(input).await
+    }
+
+    pub fn sentence_llm_policy(&self) -> SentenceExpressionLlmPolicySection {
+        self.policy.sentence_llm.clone()
     }
 
     pub async fn speech_for_text_for_user(

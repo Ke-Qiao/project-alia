@@ -19,7 +19,7 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput,
 };
-use crate::settings::values::{bool_setting, f32_setting, string_setting, u64_setting};
+use crate::settings::values::{bool_setting, u64_setting};
 
 #[derive(Debug, Deserialize)]
 pub struct Classification {
@@ -42,8 +42,6 @@ struct ToolSelectionResponse {
 
 #[derive(Debug, Clone)]
 pub struct RouterConfig {
-    pub model: String,
-    pub temperature: f32,
     pub timeout_sec: u64,
     pub minor_llm_enabled: bool,
     pub major_llm_enabled: bool,
@@ -397,15 +395,11 @@ impl ModuleLifecycle for MultiLayerRouter {
         }
 
         let config = RouterConfig {
-            model: routing.model.clone(),
-            temperature: routing.temperature,
             timeout_sec: routing.timeout_sec,
             minor_llm_enabled: routing.minor_llm_enabled,
             major_llm_enabled: routing.major_llm_enabled,
         };
         tracing::info!(
-            model = %config.model,
-            temperature = config.temperature,
             timeout_sec = config.timeout_sec,
             minor_llm = config.minor_llm_enabled,
             major_llm = config.major_llm_enabled,
@@ -448,14 +442,6 @@ impl ModuleLifecycle for MultiLayerRouter {
 
         let mut next = state.config.clone();
         let mut applied = Vec::new();
-        if let Some(value) = string_setting(updates, "core.policies.routing.model") {
-            next.model = value;
-            applied.push("core.policies.routing.model".to_string());
-        }
-        if let Some(value) = f32_setting(updates, "core.policies.routing.temperature") {
-            next.temperature = value;
-            applied.push("core.policies.routing.temperature".to_string());
-        }
         if let Some(value) = u64_setting(updates, "core.policies.routing.timeout_sec") {
             next.timeout_sec = value;
             applied.push("core.policies.routing.timeout_sec".to_string());

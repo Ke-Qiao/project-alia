@@ -91,6 +91,22 @@ fn replays_expression_turn_from_agent_events() {
             session_id: None,
             turn_id,
             sequence: 2,
+            event_type: "sentence_expression_llm".to_string(),
+            actor: "expression".to_string(),
+            summary: Some("Sentence expression LLM applied".to_string()),
+            payload: serde_json::json!({
+                "sentence": "I will explain this.",
+                "baseline": {"style": "gentle", "intensity": 0.4},
+                "patch": {"style": "calm", "confidence": 0.8},
+                "final": {"style": "calm", "intensity": 0.32},
+                "decision": "applied"
+            }),
+            created_at: None,
+        },
+        ExpressionTraceEvent {
+            session_id: None,
+            turn_id,
+            sequence: 3,
             event_type: "tts_provider_adjustments".to_string(),
             actor: "tts".to_string(),
             summary: Some("TTS provider expression adjustments".to_string()),
@@ -111,6 +127,7 @@ fn replays_expression_turn_from_agent_events() {
     );
     assert_eq!(traces[0].safety_modifications.len(), 1);
     assert_eq!(traces[0].tts_provider_adjustments.len(), 1);
+    assert_eq!(traces[0].sentence_expression_llm.len(), 1);
     assert_eq!(
         traces[0].expression_input.as_ref().unwrap().dialogue_act,
         "explain"

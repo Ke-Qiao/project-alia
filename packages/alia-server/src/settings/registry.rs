@@ -477,16 +477,6 @@ impl SettingsRegistry {
             ),
             // Policies
             (
-                "core.policies.routing.model",
-                json!(config.policies.routing.model),
-                schema("Router Model", "string", false),
-            ),
-            (
-                "core.policies.routing.temperature",
-                json!(config.policies.routing.temperature),
-                schema("Router Temperature", "number", false),
-            ),
-            (
                 "core.policies.routing.timeout_sec",
                 json!(config.policies.routing.timeout_sec),
                 schema("Router Timeout", "number", false),
@@ -771,6 +761,26 @@ impl SettingsRegistry {
                 schema("External Expression Plugin Timeout", "number", true),
             ),
             (
+                "core.policies.expression.sentence_llm.enabled",
+                json!(config.policies.expression.sentence_llm.enabled),
+                schema("Enable Sentence Expression LLM", "bool", true),
+            ),
+            (
+                "core.policies.expression.sentence_llm.timeout_ms",
+                json!(config.policies.expression.sentence_llm.timeout_ms),
+                schema("Sentence Expression LLM Timeout", "number", true),
+            ),
+            (
+                "core.policies.expression.sentence_llm.min_confidence",
+                json!(config.policies.expression.sentence_llm.min_confidence),
+                schema("Sentence Expression LLM Min Confidence", "number", true),
+            ),
+            (
+                "core.policies.expression.sentence_llm.cache_enabled",
+                json!(config.policies.expression.sentence_llm.cache_enabled),
+                schema("Enable Sentence Expression LLM Cache", "bool", true),
+            ),
+            (
                 "core.policies.conversation.streaming_enabled",
                 json!(config.policies.conversation.streaming_enabled),
                 schema("Streaming", "bool", false),
@@ -1046,6 +1056,11 @@ impl SettingsRegistry {
                 "core.llm.roles.memory_capture",
                 json!(config.llm.roles.memory_capture),
                 schema("Memory Capture LLM Profile", "string", true),
+            ),
+            (
+                "core.llm.roles.sentence_expression",
+                json!(config.llm.roles.sentence_expression),
+                schema("Sentence Expression LLM Profile", "string", true),
             ),
             (
                 "core.llm.roles.default",

@@ -111,6 +111,7 @@ async fn restart_channel(
         major_llm: Some(state.modules.major_llm.clone()),
         transcript_correction_llm: state.modules.transcript_correction_llm.clone(),
         memory_capture_llm: state.modules.memory_capture_llm.clone(),
+        sentence_expression_llm: state.modules.sentence_expression_llm.clone(),
         embedding: Some(state.modules.embedding.clone()),
         cache: Some(state.modules.cache.clone()),
         tools: Some(state.modules.tools.clone()),

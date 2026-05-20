@@ -84,6 +84,13 @@ struct TextResult {
     /// history/cache writes to avoid storing interrupted assistant output.
     pending_persistence: Option<PendingTextPersistence>,
     expression_plan: Option<ExpressionPlan>,
+    expression_input: Option<ExpressionInput>,
+    tts_trace: Option<TtsTraceContext>,
+}
+
+struct PlannedExpression {
+    plan: ExpressionPlan,
+    input: ExpressionInput,
 }
 
 #[derive(Debug, Clone)]
@@ -833,6 +840,8 @@ async fn process_event(
                         .as_ref()
                         .and_then(|plan| plan.speech.as_ref()),
                     result.expression_plan.as_ref(),
+                    result.expression_input.as_ref(),
+                    result.tts_trace.clone(),
                     debug_output,
                     Some(&turn),
                 )
@@ -1126,31 +1135,33 @@ async fn process_text(
                         }),
                     )
                     .await;
+                let planned_expression = plan_expression_for_response(
+                    modules,
+                    &mut trace,
+                    channel,
+                    channel_id,
+                    user_id,
+                    &response_text,
+                    "cache",
+                    false,
+                    false,
+                    true,
+                    text,
+                    prior_message_count,
+                    memory_context_used,
+                    memory_config,
+                )
+                .await;
+                let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
                 return Ok(TextResult {
                     text: response_text.clone(),
                     streamed: false,
                     audio_streamed: false,
                     interrupted: false,
                     pending_persistence: defer_persistence.then_some(pending),
-                    expression_plan: Some(
-                        plan_expression_for_response(
-                            modules,
-                            &mut trace,
-                            channel,
-                            channel_id,
-                            user_id,
-                            &response_text,
-                            "cache",
-                            false,
-                            false,
-                            true,
-                            text,
-                            prior_message_count,
-                            memory_context_used,
-                            memory_config,
-                        )
-                        .await,
-                    ),
+                    expression_plan: Some(planned_expression.plan),
+                    expression_input: Some(planned_expression.input),
+                    tts_trace: Some(tts_trace),
                 });
             }
             tracing::debug!(query = text, "cache candidate ignored by safety policy");
@@ -1266,31 +1277,33 @@ async fn process_text(
                     }),
                 )
                 .await;
+            let planned_expression = plan_expression_for_response(
+                modules,
+                &mut trace,
+                channel,
+                channel_id,
+                user_id,
+                &response_text,
+                "cache",
+                false,
+                false,
+                true,
+                text,
+                prior_message_count,
+                memory_context_used,
+                memory_config,
+            )
+            .await;
+            let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
             return Ok(TextResult {
                 text: response_text.clone(),
                 streamed: false,
                 audio_streamed: false,
                 interrupted: false,
                 pending_persistence: defer_persistence.then_some(pending),
-                expression_plan: Some(
-                    plan_expression_for_response(
-                        modules,
-                        &mut trace,
-                        channel,
-                        channel_id,
-                        user_id,
-                        &response_text,
-                        "cache",
-                        false,
-                        false,
-                        true,
-                        text,
-                        prior_message_count,
-                        memory_context_used,
-                        memory_config,
-                    )
-                    .await,
-                ),
+                expression_plan: Some(planned_expression.plan),
+                expression_input: Some(planned_expression.input),
+                tts_trace: Some(tts_trace),
             });
         }
 
@@ -1347,6 +1360,8 @@ async fn process_text(
                     interrupted: true,
                     pending_persistence: None,
                     expression_plan: None,
+                    expression_input: None,
+                    tts_trace: Some(TtsTraceContext::from_agent_trace(modules, &trace)),
                 });
             }
         };
@@ -1692,6 +1707,8 @@ async fn process_text(
             interrupted: true,
             pending_persistence: None,
             expression_plan: None,
+            expression_input: None,
+            tts_trace: Some(TtsTraceContext::from_agent_trace(modules, &trace)),
         });
     }
 
@@ -1804,7 +1821,7 @@ async fn process_text(
             }),
         )
         .await;
-    let expression_plan = plan_expression_for_response(
+    let planned_expression = plan_expression_for_response(
         modules,
         &mut trace,
         channel,
@@ -1821,6 +1838,7 @@ async fn process_text(
         memory_config,
     )
     .await;
+    let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
 
     Ok(TextResult {
         text: response,
@@ -1828,7 +1846,9 @@ async fn process_text(
         audio_streamed,
         interrupted: false,
         pending_persistence: defer_persistence.then_some(pending_persistence),
-        expression_plan: Some(expression_plan),
+        expression_plan: Some(planned_expression.plan),
+        expression_input: Some(planned_expression.input),
+        tts_trace: Some(tts_trace),
     })
 }
 
@@ -1922,7 +1942,7 @@ async fn plan_expression_for_response(
     prior_message_count: usize,
     memory_context_used: bool,
     memory_config: &MemorySection,
-) -> ExpressionPlan {
+) -> PlannedExpression {
     let capabilities = channel.capabilities();
     let expression_capabilities = if capabilities.hardware_control {
         Some(negotiate_expression_capabilities(channel).await)
@@ -2026,7 +2046,7 @@ async fn plan_expression_for_response(
                 "style": plan.style,
                 "intensity": plan.intensity,
                 "stance": plan.stance,
-                "input": expression_input,
+                "input": &expression_input,
                 "plan": plan,
                 "timeline_actions": plan.timeline.len(),
                 "route": route,
@@ -2063,7 +2083,10 @@ async fn plan_expression_for_response(
             )
             .await;
     }
-    plan
+    PlannedExpression {
+        plan,
+        input: expression_input,
+    }
 }
 
 fn expression_user_state_from_affect(
@@ -2356,6 +2379,8 @@ async fn handle_transcript_correction_confirmation(
             clarification,
             None,
             None,
+            None,
+            None,
             debug_output,
             turn,
         )
@@ -2626,6 +2651,7 @@ async fn execute_llm_response(
                 event_bus,
                 &messages,
                 sentence_speech_context,
+                Some(TtsTraceContext::from_agent_trace(modules, trace)),
                 debug_output,
                 turn,
             )

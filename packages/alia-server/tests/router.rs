@@ -157,8 +157,6 @@ fn test_to_decision_unknown_falls_back() {
 #[test]
 fn test_llm_mode() {
     let mut config = RouterConfig {
-        model: String::new(),
-        temperature: 0.0,
         timeout_sec: 5,
         minor_llm_enabled: true,
         major_llm_enabled: true,

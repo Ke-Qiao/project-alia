@@ -55,6 +55,12 @@ async fn memory_policy_settings_are_registered_without_backend_slot() {
     );
     assert!(
         settings
+            .get_entry("core.llm.roles.sentence_expression")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
             .get_entry("core.policies.insights.memory_consolidation_prompt")
             .await
             .is_some()
@@ -83,6 +89,30 @@ async fn expression_policy_settings_are_registered() {
     assert!(
         settings
             .get_entry("core.policies.expression.default_style")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.expression.sentence_llm.enabled")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.expression.sentence_llm.timeout_ms")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.expression.sentence_llm.min_confidence")
+            .await
+            .is_some()
+    );
+    assert!(
+        settings
+            .get_entry("core.policies.expression.sentence_llm.cache_enabled")
             .await
             .is_some()
     );

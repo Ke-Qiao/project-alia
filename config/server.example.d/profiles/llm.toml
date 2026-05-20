@@ -44,6 +44,17 @@ stop_sequences = []
 tool_choice = "auto"
 json_mode = true
 
+[profiles.llm.sentence_expression]
+provider = "gemini"
+kind = "chat"
+model = "gemini-2.5-flash"
+max_output_tokens = 256
+temperature = 0.0
+top_p = 1.0
+stop_sequences = []
+tool_choice = "auto"
+json_mode = true
+
 [profiles.llm.embedding]
 provider = "openai"
 kind = "embedding"

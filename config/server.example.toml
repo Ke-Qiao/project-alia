@@ -68,3 +68,6 @@ embedding = "embedding"
 # Optional dedicated LLM for selective memory capture. Omit to fall back to the
 # configured minor LLM.
 # memory_capture = "memory_capture"
+# Optional dedicated LLM for sentence-level TTS expression judgement. Omit to
+# use deterministic expression rules only.
+sentence_expression = "sentence_expression"

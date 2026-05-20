@@ -9,3 +9,9 @@ max_action_duration_ms = 2500
 allowed_motion_actions = ["look_at_user", "small_nod", "small_bow"]
 external_plugin_timeout_ms = 750
 night_mode_minimal_expression = false
+
+[policies.expression.sentence_llm]
+enabled = true
+timeout_ms = 250
+min_confidence = 0.65
+cache_enabled = true

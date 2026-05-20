@@ -169,6 +169,8 @@ pub struct LlmRolesSection {
     pub transcript_correction: Option<String>,
     #[serde(default)]
     pub memory_capture: Option<String>,
+    #[serde(default)]
+    pub sentence_expression: Option<String>,
     #[serde(default = "default_major_llm_profile")]
     pub default: String,
     #[serde(default = "default_embedding_profile")]
@@ -182,6 +184,7 @@ impl Default for LlmRolesSection {
             major: default_major_llm_profile(),
             transcript_correction: None,
             memory_capture: None,
+            sentence_expression: None,
             default: default_major_llm_profile(),
             embedding: default_embedding_profile(),
         }
@@ -774,6 +777,8 @@ pub struct ExpressionPolicySection {
     pub external_plugin_timeout_ms: u64,
     #[serde(default)]
     pub night_mode_minimal_expression: bool,
+    #[serde(default)]
+    pub sentence_llm: SentenceExpressionLlmPolicySection,
 }
 
 impl Default for ExpressionPolicySection {
@@ -789,16 +794,36 @@ impl Default for ExpressionPolicySection {
             allowed_motion_actions: default_expression_allowed_motion_actions(),
             external_plugin_timeout_ms: default_expression_external_plugin_timeout_ms(),
             night_mode_minimal_expression: false,
+            sentence_llm: SentenceExpressionLlmPolicySection::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SentenceExpressionLlmPolicySection {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_sentence_expression_timeout_ms")]
+    pub timeout_ms: u64,
+    #[serde(default = "default_sentence_expression_min_confidence")]
+    pub min_confidence: f32,
+    #[serde(default = "default_true")]
+    pub cache_enabled: bool,
+}
+
+impl Default for SentenceExpressionLlmPolicySection {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            timeout_ms: default_sentence_expression_timeout_ms(),
+            min_confidence: default_sentence_expression_min_confidence(),
+            cache_enabled: true,
         }
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoutingPolicySection {
-    #[serde(default = "default_router_model")]
-    pub model: String,
-    #[serde(default = "default_router_temperature")]
-    pub temperature: f32,
     #[serde(default = "default_router_timeout")]
     pub timeout_sec: u64,
     #[serde(default = "default_true")]
@@ -810,21 +835,11 @@ pub struct RoutingPolicySection {
 impl Default for RoutingPolicySection {
     fn default() -> Self {
         Self {
-            model: default_router_model(),
-            temperature: default_router_temperature(),
             timeout_sec: default_router_timeout(),
             minor_llm_enabled: true,
             major_llm_enabled: true,
         }
     }
-}
-
-fn default_router_model() -> String {
-    "qwen3:4b".to_string()
-}
-
-fn default_router_temperature() -> f32 {
-    0.1
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1359,6 +1374,12 @@ fn default_expression_allowed_motion_actions() -> Vec<String> {
 }
 fn default_expression_external_plugin_timeout_ms() -> u64 {
     750
+}
+fn default_sentence_expression_timeout_ms() -> u64 {
+    250
+}
+fn default_sentence_expression_min_confidence() -> f32 {
+    0.65
 }
 fn default_expression_rate() -> f32 {
     1.0

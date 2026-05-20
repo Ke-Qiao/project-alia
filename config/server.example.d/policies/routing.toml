@@ -1,6 +1,4 @@
 [policies.routing]
-model = "qwen3:4b"
-temperature = 0.1
 timeout_sec = 5
 minor_llm_enabled = true
 major_llm_enabled = true

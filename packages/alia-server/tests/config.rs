@@ -70,6 +70,10 @@ fn parses_split_example_config() {
     assert_eq!(config.llm.roles.major, "major");
     assert!(config.llm.roles.transcript_correction.is_none());
     assert!(config.llm.roles.memory_capture.is_none());
+    assert_eq!(
+        config.llm.roles.sentence_expression.as_deref(),
+        Some("sentence_expression")
+    );
     assert_eq!(config.llm.roles.embedding, "embedding");
     let minor_llm = config.profiles.llm_profile("minor").unwrap();
     assert_eq!(minor_llm.provider, "gemini");
@@ -85,6 +89,9 @@ fn parses_split_example_config() {
     assert_eq!(embedding.kind, LlmProfileKind::Embedding);
     assert_eq!(embedding.model, "text-embedding-3-small");
     assert_eq!(embedding.dimensions, Some(1536));
+    let sentence_expression = config.profiles.llm_profile("sentence_expression").unwrap();
+    assert_eq!(sentence_expression.kind, LlmProfileKind::Chat);
+    assert!(sentence_expression.request.json_mode);
     assert_eq!(
         config.providers.whisper_cpp.endpoint,
         "http://localhost:8080"
@@ -158,6 +165,10 @@ fn parses_split_example_config() {
     );
     assert!(config.policies.expression.enabled);
     assert_eq!(config.policies.expression.default_style, "gentle");
+    assert!(config.policies.expression.sentence_llm.enabled);
+    assert_eq!(config.policies.expression.sentence_llm.timeout_ms, 250);
+    assert_eq!(config.policies.expression.sentence_llm.min_confidence, 0.65);
+    assert!(config.policies.expression.sentence_llm.cache_enabled);
     assert!(config.profiles.expression_styles.contains_key("gentle"));
     assert_eq!(
         config
