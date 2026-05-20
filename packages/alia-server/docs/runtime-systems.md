@@ -44,17 +44,48 @@ closed if only stale data is available. Individual conditions can opt into
 
 ## Memory and Insights
 
-Memory is provider-backed. Mem0 is the main external target; `simple` is kept as
-a minimal fallback for local development and tests. If memory health checks fail
-at startup, memory should be disabled for prompt assembly instead of advertised
-to the LLM.
+Memory is a built-in Alia runtime, parallel to Affect and Expression. It owns
+what the assistant remembers, why it believes it, and which evidence supports
+it. The runtime uses PostgreSQL canonical records, pgvector embedding side
+tables, and PostgreSQL graph edge tables:
+
+```text
+Observation
+  -> Memory Extractor
+  -> Memory Policy / Dedup / Privacy
+  -> Memory Store
+  -> Graph Projection
+  -> Hybrid Retrieval
+  -> MemoryContextPack
+```
+
+Prompt assembly consumes `MemoryContextPack` sections, not raw memory rows:
+preferences, projects, boundaries, affective guidance, relevant episodes, graph
+context, and do-not-mention rules. Suppressed or private-runtime memories are
+reported as hidden reasons for UI/debug views but are not injected into LLM
+prompts.
+
+The context pack also carries retrieval trace data for server-side replay:
+retrieval path, component scores, graph relevance, affect relevance, and the
+reason a memory was selected. This trace is for API/debug use only and is not
+rendered into natural-language prompts.
+
+Memory does not directly modify affect state. It emits `MemoryRecallEvent`
+records, and Expression Runtime converts those into bounded appraisal events
+before Affect Runtime reducers run. Expression planning reads only style
+preferences, boundaries, project context, and constructive affective guidance.
 
 Insights are background analysis hooks. Scheduled insights can ingest recent
-conversation into the memory backend, ask an LLM to extract durable memories,
+conversation into the memory system, ask an LLM to extract durable memories,
 consolidate existing memories, reflect on stable user context, detect repeated
 habits, and review pending cache entries before enabling or deleting them. If
 LLM or memory is unavailable, each phase degrades to a logged skip instead of
 crashing the server.
+
+The Memory Runtime also exposes explicit consolidation and user-control APIs for
+dedupe, promotion, demotion, superseding, contradiction handling, topic/kind
+deletion, hidden/private-runtime deletion, export, hidden reason inspection,
+pause/resume controls, and privacy-mode updates.
 
 ## Cache
 

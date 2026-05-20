@@ -942,7 +942,7 @@ pub struct MemoryListOpts {
     pub layers: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryPatch {
     pub content: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -955,6 +955,8 @@ pub struct MemoryPatch {
     pub visibility: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub superseded_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1071,6 +1073,21 @@ pub struct SuppressedMemory {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryRetrievalTrace {
+    pub memory_id: String,
+    pub retrieval_path: String,
+    pub semantic_similarity: f32,
+    pub recency_score: f32,
+    pub salience: f32,
+    pub importance: f32,
+    pub graph_relevance: f32,
+    pub confidence: f32,
+    pub affect_relevance: f32,
+    pub final_score: f32,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryContextPack {
     pub user_preferences: Vec<MemorySnippet>,
@@ -1081,6 +1098,7 @@ pub struct MemoryContextPack {
     pub graph_context: Vec<GraphSnippet>,
     pub suppressed: Vec<SuppressedMemory>,
     pub recall_events: Vec<MemoryRecallEvent>,
+    pub retrieval_trace: Vec<MemoryRetrievalTrace>,
 }
 
 impl MemoryContextPack {
@@ -1122,6 +1140,30 @@ pub struct MemoryExplanation {
     pub evidence_summary: String,
     pub source_event_ids: Vec<Uuid>,
     pub superseded_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryConsolidationResult {
+    pub scanned: usize,
+    pub deduplicated: usize,
+    pub promoted: usize,
+    pub demoted: usize,
+    pub superseded: usize,
+    pub contradictions: usize,
+    pub transformed_affective_guidance: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryExport {
+    pub memories: Vec<MemoryNode>,
+    pub suppressed: Vec<SuppressedMemory>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySuppressedExplanation {
+    pub memory_id: String,
+    pub suppressed: bool,
+    pub reason: Option<String>,
 }
 
 #[async_trait]
@@ -1196,6 +1238,137 @@ pub trait MemoryBackend: ModuleLifecycle {
             evidence_summary,
         }))
     }
+
+    async fn consolidate_user(&self, user_id: Uuid) -> anyhow::Result<MemoryConsolidationResult> {
+        let memories = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(10_000),
+                    layers: None,
+                },
+            )
+            .await?;
+        Ok(MemoryConsolidationResult {
+            scanned: memories.len(),
+            ..MemoryConsolidationResult::default()
+        })
+    }
+
+    async fn delete_by_topic(&self, user_id: Uuid, topic: &str) -> anyhow::Result<u64> {
+        let topic = topic.trim().to_ascii_lowercase();
+        if topic.is_empty() {
+            return Ok(0);
+        }
+        let memories = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(10_000),
+                    layers: None,
+                },
+            )
+            .await?;
+        let mut deleted = 0;
+        for memory in memories {
+            let matches_topic = memory
+                .topic_tags
+                .iter()
+                .any(|tag| tag.trim().eq_ignore_ascii_case(&topic))
+                || memory.content.to_ascii_lowercase().contains(&topic);
+            if matches_topic && let Some(id) = memory.id {
+                self.delete(&id).await?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn delete_by_kind(&self, user_id: Uuid, kind: &str) -> anyhow::Result<u64> {
+        let kind = kind.trim().to_ascii_lowercase();
+        if kind.is_empty() {
+            return Ok(0);
+        }
+        let memories = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(10_000),
+                    layers: None,
+                },
+            )
+            .await?;
+        let mut deleted = 0;
+        for memory in memories {
+            if memory.kind == kind
+                && let Some(id) = memory.id
+            {
+                self.delete(&id).await?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn export_user(&self, user_id: Uuid) -> anyhow::Result<MemoryExport> {
+        let memories = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(10_000),
+                    layers: None,
+                },
+            )
+            .await?;
+        Ok(MemoryExport {
+            memories,
+            suppressed: Vec::new(),
+        })
+    }
+
+    async fn delete_hidden(&self, user_id: Uuid) -> anyhow::Result<u64> {
+        let memories = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(10_000),
+                    layers: None,
+                },
+            )
+            .await?;
+        let mut deleted = 0;
+        for memory in memories {
+            let hidden = memory.visibility == "private_runtime"
+                || (memory.sensitive && memory.visibility != "user_visible");
+            if hidden && let Some(id) = memory.id {
+                self.delete(&id).await?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn explain_suppressed(
+        &self,
+        user_id: Uuid,
+        node_id: &str,
+    ) -> anyhow::Result<Option<MemorySuppressedExplanation>> {
+        let Some(memory) = self.get(user_id, node_id).await? else {
+            return Ok(None);
+        };
+        let reason = if memory.visibility == "private_runtime" {
+            Some("private_runtime_memory_hidden_from_user_export".to_string())
+        } else if memory.sensitive && memory.visibility != "user_visible" {
+            Some("sensitive_internal_memory_hidden_from_user_export".to_string())
+        } else {
+            None
+        };
+        Ok(Some(MemorySuppressedExplanation {
+            memory_id: node_id.to_string(),
+            suppressed: reason.is_some(),
+            reason,
+        }))
+    }
 }
 
 pub fn memory_context_pack_from_nodes(
@@ -1234,6 +1407,9 @@ pub fn memory_context_pack_from_nodes(
             "boundary" => pack.boundaries.push(snippet),
             _ => pack.relevant_episodes.push(snippet),
         }
+        if let Some(trace) = memory_retrieval_trace_from_node(&node) {
+            pack.retrieval_trace.push(trace);
+        }
         pack.recall_events.push(MemoryRecallEvent {
             memory_id: id.clone(),
             memory_kind: node.kind.clone(),
@@ -1246,6 +1422,47 @@ pub fn memory_context_pack_from_nodes(
         });
     }
     pack
+}
+
+fn memory_retrieval_trace_from_node(node: &MemoryNode) -> Option<MemoryRetrievalTrace> {
+    let metadata = node.metadata.as_object()?;
+    let memory_id = node.id.clone().unwrap_or_default();
+    Some(MemoryRetrievalTrace {
+        memory_id,
+        retrieval_path: metadata
+            .get("retrieval_path")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown")
+            .to_string(),
+        semantic_similarity: metadata
+            .get("semantic_similarity")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        recency_score: metadata
+            .get("recency_score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        salience: node.salience,
+        importance: node.importance,
+        graph_relevance: metadata
+            .get("graph_relevance")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        confidence: node.confidence,
+        affect_relevance: metadata
+            .get("affect_relevance")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        final_score: metadata
+            .get("retrieval_score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        reason: metadata
+            .get("retrieval_reason")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Memory matched the retrieval query.")
+            .to_string(),
+    })
 }
 
 fn constructive_memory_content(node: &MemoryNode) -> String {

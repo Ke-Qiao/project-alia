@@ -114,11 +114,11 @@ src/
 ├── module/            # Module lifecycle, registry, builder, factory
 ├── providers/         # AI adapter trait definitions + implementations
 │   ├── adapter.rs     # All trait definitions (LlmAdapter, SttAdapter, etc.)
-│   ├── llm/           # LLM adapters (OpenAI, Ollama)
+│   ├── llm/           # LLM adapters (OpenAI, Anthropic, Gemini)
 │   ├── stt/           # Speech-to-text (whisper.cpp)
 │   ├── tts/           # Text-to-speech (GPT-SoVITS)
-│   ├── embedding/     # Embedding adapters (Ollama, OpenAI)
-│   ├── memory/        # Memory backends (Mem0 + simple fallback)
+│   ├── embedding/     # Embedding adapters (OpenAI)
+│   ├── memory/        # Built-in Alia memory system
 │   ├── cache/         # Cache backend (two-layer: exact + semantic)
 │   ├── skills/        # Skill provider (builtin skills engine)
 │   ├── persona/       # Persona/prompt provider (Handlebars templates)
@@ -159,12 +159,11 @@ All features are enabled by default. Disable with `--no-default-features` and se
 |------|-------------|----------|
 | `channel-embedded` | gRPC channel adapter for alia-embedded devices | `alia-proto`, `tonic` |
 | `llm-openai` | OpenAI ChatGPT adapter | `reqwest` |
-| `llm-ollama` | Ollama LLM adapter + multi-layer intent router | `reqwest` |
+| `llm-anthropic` | Anthropic Messages API adapter | `reqwest` |
+| `llm-gemini` | Google Gemini API adapter | `reqwest` |
 | `stt-whisper` | whisper.cpp STT adapter | `reqwest` |
 | `tts-sovits` | GPT-SoVITS TTS adapter | `reqwest` |
-| `embed-ollama` | Ollama embedding adapter | `reqwest` |
 | `embed-openai` | OpenAI embedding adapter | `reqwest` |
-| `memory-mem0` | Mem0 memory backend | `reqwest` |
 | `insights` | Background insights/reflection | — |
 
 ```bash
@@ -172,7 +171,7 @@ All features are enabled by default. Disable with `--no-default-features` and se
 cargo build -p alia-server --no-default-features
 
 # Only local AI + voice
-cargo build -p alia-server --no-default-features --features "llm-ollama,stt-whisper,tts-sovits"
+cargo build -p alia-server --no-default-features --features "llm-gemini,stt-whisper,tts-sovits"
 
 # Full build (default)
 cargo build -p alia-server

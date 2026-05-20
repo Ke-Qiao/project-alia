@@ -46,6 +46,7 @@ fn replays_expression_turn_from_agent_events() {
         safety_context: Default::default(),
         conversation_context: Default::default(),
         constraints: Default::default(),
+        memory_context: None,
         voice_output: true,
         hardware_control: false,
         tts_capabilities: None,

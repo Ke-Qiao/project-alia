@@ -896,9 +896,34 @@ impl SettingsRegistry {
                 schema("Memory Capture Min Confidence", "number", false),
             ),
             (
+                "core.policies.memory.capture_min_importance",
+                json!(config.policies.memory.capture_min_importance),
+                schema("Memory Capture Min Importance", "number", false),
+            ),
+            (
                 "core.policies.memory.sensitive_filter_enabled",
                 json!(config.policies.memory.sensitive_filter_enabled),
                 schema("Block Sensitive Automatic Memories", "bool", false),
+            ),
+            (
+                "core.policies.memory.active_embedding_profile",
+                json!(config.policies.memory.active_embedding_profile),
+                schema("Active Memory Embedding Profile", "string", false),
+            ),
+            (
+                "core.policies.memory.graph_depth",
+                json!(config.policies.memory.graph_depth),
+                schema("Memory Graph Depth", "number", false),
+            ),
+            (
+                "core.policies.memory.consolidation_enabled",
+                json!(config.policies.memory.consolidation_enabled),
+                schema("Memory Consolidation", "bool", false),
+            ),
+            (
+                "core.policies.memory.paused_until",
+                json!(config.policies.memory.paused_until),
+                schema("Memory Paused Until", "string", false),
             ),
             (
                 "core.policies.memory.retrieval_layers",

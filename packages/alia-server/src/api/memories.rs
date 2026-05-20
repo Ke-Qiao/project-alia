@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use std::collections::BTreeMap;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,9 @@ use crate::memory_policy::{
     detect_sensitive_memory, normalize_memory_layer, normalize_memory_layers,
 };
 use crate::providers::adapter::{
-    MemoryCapabilities, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    MemoryCapabilities, MemoryConsolidationResult, MemoryContextPack, MemoryExplanation,
+    MemoryExport, MemoryListOpts, MemoryNode, MemoryPatch, MemorySuppressedExplanation,
+    RetrievalOpts,
 };
 use crate::state::AppState;
 
@@ -21,8 +23,18 @@ pub struct MemoryInfo {
     pub id: String,
     pub memory_layer: String,
     pub node_type: String,
+    pub kind: String,
+    pub scope: String,
     pub content: String,
     pub importance: f32,
+    pub confidence: f32,
+    pub salience: f32,
+    pub visibility: String,
+    pub sensitive: bool,
+    pub status: String,
+    pub topic_tags: Vec<String>,
+    pub affect_tags: Vec<String>,
+    pub evidence_summary: Option<String>,
     pub metadata: serde_json::Value,
 }
 
@@ -45,6 +57,10 @@ struct CreateMemoryRequest {
     memory_layer: String,
     #[serde(default = "default_node_type")]
     node_type: String,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
     #[serde(default)]
     metadata: serde_json::Value,
     #[serde(default = "default_importance")]
@@ -71,6 +87,8 @@ struct MemoryPrivacyUpdateRequest {
     enabled: Option<bool>,
     automatic_capture_enabled: Option<bool>,
     capture_mode: Option<MemoryCaptureMode>,
+    pause_days: Option<u32>,
+    clear_pause: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,10 +96,10 @@ struct MemoryPrivacyResponse {
     enabled: bool,
     capture_mode: MemoryCaptureMode,
     automatic_capture_enabled: bool,
+    paused_until: Option<String>,
     explicit_memory_enabled: bool,
     sensitive_auto_capture_allowed: bool,
     sensitive_direct_entry_allowed: bool,
-    provider_infer_available: bool,
     supported_capture_modes: Vec<MemoryCaptureMode>,
 }
 
@@ -133,14 +151,25 @@ async fn create_memory(
 
     let sensitive = detect_sensitive_memory(content);
     let metadata = merge_direct_memory_metadata(body.metadata, sensitive.as_ref());
-    let memory = MemoryNode {
-        id: None,
-        memory_layer: normalize_layer(&body.memory_layer),
-        node_type: body.node_type.trim().to_string(),
-        content: content.to_string(),
-        metadata,
-        importance: body.importance.clamp(0.0, 1.0),
-    };
+    let mut memory = MemoryNode::new(
+        normalize_layer(&body.memory_layer),
+        body.node_type.trim().to_string(),
+        content.to_string(),
+        body.importance.clamp(0.0, 1.0),
+    )
+    .with_metadata(metadata)
+    .with_runtime_fields(
+        body.kind.unwrap_or_else(|| "semantic".to_string()),
+        body.scope.unwrap_or_else(|| "user".to_string()),
+        1.0,
+        body.importance.clamp(0.0, 1.0),
+        "user_visible",
+    );
+    memory.sensitive = sensitive.is_some();
+    memory.evidence = serde_json::json!({
+        "source": "direct_user_memory_api",
+        "summary": "The user directly added this memory.",
+    });
     let fallback = memory.clone();
     let id = state
         .modules
@@ -154,9 +183,10 @@ async fn create_memory(
         .get(auth.id, &id)
         .await
         .map_err(AppError::Internal)?
-        .unwrap_or(MemoryNode {
-            id: Some(id),
-            ..fallback
+        .unwrap_or_else(|| {
+            let mut fallback = fallback;
+            fallback.id = Some(id);
+            fallback
         });
 
     Ok(Json(memory_info(memory)))
@@ -217,6 +247,7 @@ async fn update_memory(
                     .metadata
                     .map(|metadata| merge_direct_memory_metadata(metadata, sensitive.as_ref())),
                 importance: body.importance.map(|importance| importance.clamp(0.0, 1.0)),
+                ..MemoryPatch::default()
             },
         )
         .await
@@ -304,10 +335,10 @@ async fn search_memories(
         ));
     }
 
-    let memories = state
+    let pack = state
         .modules
         .memory
-        .retrieve(
+        .retrieve_context_pack(
             auth.id,
             query,
             RetrievalOpts {
@@ -319,7 +350,37 @@ async fn search_memories(
         .await
         .map_err(AppError::Internal)?;
 
+    let memories = memory_context_pack_to_infos(pack);
     Ok(Json(memories.into_iter().map(memory_info).collect()))
+}
+
+async fn search_memory_context(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(body): Json<SearchMemoriesRequest>,
+) -> Result<Json<MemoryContextPack>> {
+    let query = body.query.trim();
+    if query.is_empty() {
+        return Err(AppError::Validation(
+            "memory search query cannot be empty".into(),
+        ));
+    }
+
+    let pack = state
+        .modules
+        .memory
+        .retrieve_context_pack(
+            auth.id,
+            query,
+            RetrievalOpts {
+                max_results: Some(body.max_results.unwrap_or(10).clamp(1, 50)),
+                min_similarity: body.min_similarity,
+                layers: body.layers.map(normalize_layers),
+            },
+        )
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(pack))
 }
 
 async fn clear_memories(
@@ -335,6 +396,102 @@ async fn clear_memories(
     Ok(Json(
         serde_json::json!({"success": true, "deleted": deleted}),
     ))
+}
+
+async fn delete_memories_by_topic(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(topic): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    let topic = topic.trim();
+    if topic.is_empty() {
+        return Err(AppError::Validation("memory topic cannot be empty".into()));
+    }
+    let deleted = state
+        .modules
+        .memory
+        .delete_by_topic(auth.id, topic)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(
+        serde_json::json!({"success": true, "topic": topic, "deleted": deleted}),
+    ))
+}
+
+async fn delete_memories_by_kind(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(kind): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    let kind = kind.trim();
+    if kind.is_empty() {
+        return Err(AppError::Validation("memory kind cannot be empty".into()));
+    }
+    let deleted = state
+        .modules
+        .memory
+        .delete_by_kind(auth.id, kind)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(
+        serde_json::json!({"success": true, "kind": kind, "deleted": deleted}),
+    ))
+}
+
+async fn delete_hidden_memories(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>> {
+    let deleted = state
+        .modules
+        .memory
+        .delete_hidden(auth.id)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(
+        serde_json::json!({"success": true, "deleted": deleted}),
+    ))
+}
+
+async fn explain_suppressed_memory(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<MemorySuppressedExplanation>> {
+    let explanation = state
+        .modules
+        .memory
+        .explain_suppressed(auth.id, &id)
+        .await
+        .map_err(AppError::Internal)?
+        .ok_or_else(|| AppError::NotFound(format!("memory '{id}' not found")))?;
+    Ok(Json(explanation))
+}
+
+async fn export_memories(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<MemoryExport>> {
+    let export = state
+        .modules
+        .memory
+        .export_user(auth.id)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(export))
+}
+
+async fn consolidate_memories(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<MemoryConsolidationResult>> {
+    let result = state
+        .modules
+        .memory
+        .consolidate_user(auth.id)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(Json(result))
 }
 
 async fn get_memory_privacy(
@@ -375,18 +532,21 @@ async fn update_memory_privacy(
         })
     });
     if let Some(capture_mode) = capture_mode {
-        if matches!(capture_mode, MemoryCaptureMode::ProviderInferAll) {
-            let capabilities = state.modules.memory.memory_capabilities().await;
-            if !capabilities.supports_conversation_ingest || !capabilities.supports_provider_infer {
-                return Err(AppError::Validation(format!(
-                    "capture_mode provider_infer_all is not supported by memory backend '{}'",
-                    capabilities.provider
-                )));
-            }
-        }
         updates.insert(
             "core.policies.memory.capture_mode".to_string(),
             serde_json::json!(capture_mode),
+        );
+    }
+    if body.clear_pause.unwrap_or(false) {
+        updates.insert(
+            "core.policies.memory.paused_until".to_string(),
+            serde_json::json!(null),
+        );
+    } else if let Some(days) = body.pause_days {
+        let until = chrono::Utc::now() + chrono::Duration::days(i64::from(days.clamp(1, 365)));
+        updates.insert(
+            "core.policies.memory.paused_until".to_string(),
+            serde_json::json!(until.to_rfc3339()),
         );
     }
 
@@ -430,6 +590,21 @@ async fn get_memory_audit(
     }))
 }
 
+async fn explain_memory(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<MemoryExplanation>> {
+    let explanation = state
+        .modules
+        .memory
+        .explain(auth.id, &id)
+        .await
+        .map_err(AppError::Internal)?
+        .ok_or_else(|| AppError::NotFound(format!("memory '{id}' not found")))?;
+    Ok(Json(explanation))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -444,12 +619,20 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/memories/capabilities", get(get_memory_capabilities))
         .route("/memories/audit", get(get_memory_audit))
+        .route("/memories/export", get(export_memories))
+        .route("/memories/consolidate", post(consolidate_memories))
+        .route("/memories/search/context", post(search_memory_context))
+        .route("/memories/hidden", delete(delete_hidden_memories))
+        .route("/memories/topic/{topic}", delete(delete_memories_by_topic))
+        .route("/memories/kind/{kind}", delete(delete_memories_by_kind))
+        .route("/memories/graph", get(get_graph))
+        .route("/memories/search", post(search_memories))
+        .route("/memories/{id}/explain", get(explain_memory))
+        .route("/memories/{id}/suppressed", get(explain_suppressed_memory))
         .route(
             "/memories/{id}",
             get(get_memory).patch(update_memory).delete(delete_memory),
         )
-        .route("/memories/graph", get(get_graph))
-        .route("/memories/search", post(search_memories))
 }
 
 fn list_opts(query: &MemoryListQuery) -> MemoryListOpts {
@@ -463,14 +646,59 @@ fn list_opts(query: &MemoryListQuery) -> MemoryListOpts {
 }
 
 fn memory_info(memory: MemoryNode) -> MemoryInfo {
+    let evidence_summary = memory
+        .evidence
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
     MemoryInfo {
         id: memory.id.unwrap_or_default(),
         memory_layer: memory.memory_layer,
         node_type: memory.node_type,
+        kind: memory.kind,
+        scope: memory.scope,
         content: memory.content,
         importance: memory.importance,
+        confidence: memory.confidence,
+        salience: memory.salience,
+        visibility: memory.visibility,
+        sensitive: memory.sensitive,
+        status: memory.status,
+        topic_tags: memory.topic_tags,
+        affect_tags: memory.affect_tags,
+        evidence_summary,
         metadata: memory.metadata,
     }
+}
+
+fn memory_context_pack_to_infos(pack: MemoryContextPack) -> Vec<MemoryNode> {
+    let mut nodes = Vec::new();
+    for snippet in pack
+        .user_preferences
+        .into_iter()
+        .chain(pack.project_context)
+        .chain(pack.relevant_episodes)
+        .chain(pack.affective_guidance)
+        .chain(pack.boundaries)
+    {
+        let mut node = MemoryNode::new(
+            snippet.kind.clone(),
+            snippet.kind.clone(),
+            snippet.content,
+            0.5,
+        )
+        .with_runtime_fields(
+            snippet.kind,
+            "user",
+            snippet.confidence,
+            0.5,
+            "user_visible",
+        )
+        .with_metadata(serde_json::json!({ "source": snippet.source }));
+        node.id = Some(snippet.id);
+        nodes.push(node);
+    }
+    nodes
 }
 
 fn normalize_layers(layers: Vec<String>) -> Vec<String> {
@@ -506,30 +734,42 @@ fn merge_direct_memory_metadata(
 
 fn memory_privacy_response(
     memory: &crate::config::MemorySection,
-    capabilities: &MemoryCapabilities,
+    _capabilities: &MemoryCapabilities,
 ) -> MemoryPrivacyResponse {
-    let provider_infer_available =
-        capabilities.supports_conversation_ingest && capabilities.supports_provider_infer;
-    let mut supported_capture_modes = vec![
+    let supported_capture_modes = vec![
         MemoryCaptureMode::None,
         MemoryCaptureMode::ExplicitToolOnly,
         MemoryCaptureMode::LlmSelected,
     ];
-    if provider_infer_available {
-        supported_capture_modes.push(MemoryCaptureMode::ProviderInferAll);
-    }
     MemoryPrivacyResponse {
         enabled: memory.enabled,
         capture_mode: memory.capture_mode,
-        automatic_capture_enabled: memory.enabled
-            && matches!(
-                memory.capture_mode,
-                MemoryCaptureMode::LlmSelected | MemoryCaptureMode::ProviderInferAll
-            ),
-        explicit_memory_enabled: memory.enabled,
+        automatic_capture_enabled: memory_effectively_enabled(memory)
+            && matches!(memory.capture_mode, MemoryCaptureMode::LlmSelected),
+        paused_until: memory
+            .paused_until
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        explicit_memory_enabled: memory_effectively_enabled(memory),
         sensitive_auto_capture_allowed: false,
         sensitive_direct_entry_allowed: true,
-        provider_infer_available,
         supported_capture_modes,
     }
+}
+
+fn memory_effectively_enabled(memory: &crate::config::MemorySection) -> bool {
+    if !memory.enabled {
+        return false;
+    }
+    let Some(paused_until) = memory.paused_until.as_deref().map(str::trim) else {
+        return true;
+    };
+    if paused_until.is_empty() {
+        return true;
+    }
+    chrono::DateTime::parse_from_rfc3339(paused_until)
+        .map(|until| until.with_timezone(&chrono::Utc) <= chrono::Utc::now())
+        .unwrap_or(true)
 }

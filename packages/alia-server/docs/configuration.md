@@ -24,10 +24,10 @@ config/
   server.d/
     providers/
       openai.toml
-      ollama.toml
+      anthropic.toml
+      gemini.toml
       whisper_cpp.toml
       gpt_sovits.toml
-      mem0.toml
     policies/
       routing.toml
       transcript_correction.toml
@@ -72,7 +72,7 @@ pipeline. Plugins extend these services through their registries.
 
 Use fragments for implementation details:
 
-- `providers/*.toml`: OpenAI-compatible, Ollama, whisper.cpp, GPT-SoVITS, Mem0
+- `providers/*.toml`: OpenAI-compatible, Anthropic, Gemini, whisper.cpp, GPT-SoVITS
 - `policies/*.toml`: routing, transcript correction, conversation, cache,
   memory, affect, regulation, expression, insights, rules, scheduler, tools
 - `profiles/*.toml`: voice profile, expression styles, and TTS reference
@@ -103,7 +103,6 @@ Restart is expected for:
 - auth secrets and server key material
 - provider selection in `[modules]`
 - channel topology changes requiring adapter construction
-- memory backend identity/API key changes that must pass startup health checks
 
 ## Feature Flags
 
@@ -112,9 +111,8 @@ Default features enable the common runtime. Optional feature groups include:
 | Feature | Purpose |
 | --- | --- |
 | `channel-embedded` | gRPC channel adapter for `alia-embedded`. |
-| `llm-openai`, `llm-ollama` | LLM providers. |
+| `llm-openai`, `llm-anthropic`, `llm-gemini` | LLM providers. |
 | `stt-whisper`, `tts-sovits` | Speech provider adapters. |
-| `embed-ollama`, `embed-openai` | Embedding providers. |
-| `memory-mem0` | Mem0 memory backend. |
+| `embed-openai` | Embedding provider. |
 | `tools-http` | Built-in HTTP/fetch tools. |
 | `insights` | Background insights support. |

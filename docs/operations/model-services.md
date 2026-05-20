@@ -43,7 +43,8 @@ Configure these under:
 
 ```text
 config/server.d/providers/openai.toml
-config/server.d/providers/ollama.toml
+config/server.d/providers/gemini.toml
+config/server.d/providers/anthropic.toml
 config/server.d/policies/routing.toml
 ```
 
@@ -67,30 +68,26 @@ local files inside `alia-server`.
 
 ## Memory
 
-Memory is provider-backed. The primary external target is Mem0; `simple` exists
-as a minimal fallback for local use and tests. Configure Mem0 under:
+Memory is an Alia-owned core system. Capture policy, privacy filtering,
+relationship modeling, and scheduled memory meditation live in the server
+runtime instead of a replaceable provider adapter. Configure memory policy
+under:
 
 ```text
-config/server.d/providers/mem0.toml
 config/server.d/policies/memory.toml
 ```
 
 Automatic memory capture is agent-policy driven by default. `capture_mode =
 "llm_selected"` asks the assistant-side LLM to extract only durable user facts,
 preferences, stable relationship context, goals, or habits before storing
-provider-neutral `MemoryNode`s. Mem0 is used as storage/retrieval, not as the
-default judge for every conversation turn. Keep `providers.mem0.infer = false`
-and `providers.mem0.conversation_infer = false` for this setup. Use
-`capture_mode = "provider_infer_all"` only when you intentionally want the
-memory provider to infer from every completed turn and its capabilities report
-provider-native inference support.
+Alia `MemoryNode`s. External services do not decide what should be remembered.
 
-If the configured memory backend fails startup health checks, the memory module
-should be disabled for prompt assembly rather than advertised to the LLM.
+If the built-in memory system fails startup health checks, memory should be
+disabled for prompt assembly rather than advertised to the LLM.
 
 Memory privacy controls are available through `/api/v1/memories/privacy`.
 Setting `automatic_capture_enabled = false` switches capture to
-`explicit_tool_only`, while the memory backend remains available for explicit
+`explicit_tool_only`, while the memory system remains available for explicit
 user actions such as the memory UI/API or `memory_store` / `memory_forget`.
 Automatic and chat-tool memory writes block sensitive categories by default
 (credentials, identifiers, health details, religious views, and political

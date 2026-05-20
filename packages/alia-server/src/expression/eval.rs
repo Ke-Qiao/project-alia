@@ -184,6 +184,7 @@ fn expression_input(text: &str, dialogue_act: &str, content_tone: &str) -> Expre
         safety_context: Default::default(),
         conversation_context: Default::default(),
         constraints: Default::default(),
+        memory_context: None,
         voice_output: true,
         hardware_control: false,
         tts_capabilities: None,

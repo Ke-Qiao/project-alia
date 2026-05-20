@@ -1481,6 +1481,8 @@ pub struct MemorySection {
     pub graph_depth: u32,
     #[serde(default = "default_memory_consolidation_enabled")]
     pub consolidation_enabled: bool,
+    #[serde(default)]
+    pub paused_until: Option<String>,
     #[serde(default = "default_memory_retrieval_layers")]
     pub retrieval_layers: Vec<String>,
     #[serde(default = "default_memory_max_injected_chars")]
@@ -1505,6 +1507,7 @@ impl Default for MemorySection {
             active_embedding_profile: default_memory_active_embedding_profile(),
             graph_depth: default_memory_graph_depth(),
             consolidation_enabled: default_memory_consolidation_enabled(),
+            paused_until: None,
             retrieval_layers: default_memory_retrieval_layers(),
             max_injected_memory_chars: default_memory_max_injected_chars(),
             max_retrieval_results: 10,

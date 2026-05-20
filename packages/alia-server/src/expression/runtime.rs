@@ -6,12 +6,15 @@ use crate::config::{
     DialoguePolicyResourceSection, ExpressionPolicySection, ExpressionStyleSection,
     RegulationPolicySection, ServerConfig,
 };
-use crate::providers::adapter::TtsCapabilities;
+use crate::providers::adapter::{MemoryRecallEvent, TtsCapabilities};
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::DatabaseConnection;
 
 use super::abi::{ExternalExpressionPlugin, load_external_expression_plugins};
-use super::affect::{AffectAssistantResponse, AffectObservation, AffectStore, AffectUserInput};
+use super::affect::{
+    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectStore, AffectUserInput,
+    AppraisalEvent, AppraisalScope, AppraisalSource, AppraisalTarget,
+};
 use super::appraisal::{
     AppraisalContext, AppraisalEnginePlugin, RuleBasedAppraisalEngine,
     TextClassifierAppraisalEngine,
@@ -143,6 +146,88 @@ impl ExpressionRuntime {
                     channel_id: input.channel_id,
                     user_id: input.user_id,
                     route: Some(input.route),
+                },
+                &mut observation.snapshot,
+                self.external_plugin_timeout(),
+            )
+            .await;
+        observation
+    }
+
+    pub async fn observe_memory_recall(
+        &self,
+        channel_id: &str,
+        user_id: &str,
+        recall_events: &[MemoryRecallEvent],
+    ) -> AffectObservation {
+        if recall_events.is_empty() {
+            return AffectObservation {
+                snapshot: self.affect_snapshot(channel_id, user_id).await,
+                appraisals: Vec::new(),
+                active_event_count: 0,
+            };
+        }
+
+        let now = Utc::now();
+        let appraisals = recall_events
+            .iter()
+            .map(|event| {
+                let frustration_risk = event
+                    .affect_hint
+                    .frustration_risk_delta
+                    .unwrap_or_default()
+                    .clamp(-0.04, 0.04);
+                AppraisalEvent::new(
+                    "memory_recall",
+                    AppraisalSource::Runtime,
+                    AppraisalTarget::Dialogue,
+                    event.confidence,
+                    AppraisalScope::User,
+                    now,
+                    self.affect.policy(),
+                    AffectDeltas {
+                        valence: event
+                            .affect_hint
+                            .valence_delta
+                            .unwrap_or_default()
+                            .clamp(-0.05, 0.05),
+                        arousal: event
+                            .affect_hint
+                            .arousal_delta
+                            .unwrap_or_default()
+                            .clamp(-0.04, 0.04),
+                        calmness: (-frustration_risk).clamp(-0.04, 0.04),
+                        engagement: event
+                            .affect_hint
+                            .engagement_delta
+                            .unwrap_or_default()
+                            .clamp(-0.08, 0.08),
+                        trust: event
+                            .affect_hint
+                            .trust_delta
+                            .unwrap_or_default()
+                            .clamp(-0.02, 0.02),
+                        ..AffectDeltas::default()
+                    },
+                    format!(
+                        "Memory recall bias from {} memory {}",
+                        event.memory_kind, event.memory_id
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        let input = AffectUserInput {
+            channel_id,
+            user_id,
+            user_text: "",
+        };
+        let mut observation = self.affect.observe_user_appraisals(input, appraisals);
+        self.extensions
+            .apply_reducers(
+                &AffectReducerContext {
+                    channel_id,
+                    user_id,
+                    route: None,
                 },
                 &mut observation.snapshot,
                 self.external_plugin_timeout(),
@@ -405,9 +490,41 @@ impl ExpressionRuntime {
             intent.intensity = intent.intensity.min(0.32);
         }
 
+        let memory_guidance = memory_expression_guidance(input);
+        if memory_guidance.prefers_structured || memory_guidance.prefers_direct {
+            if !matches!(
+                intent.social_function.as_str(),
+                "warn" | "apologize" | "decline" | "comfort"
+            ) {
+                intent.intent = "focused_response".to_string();
+                intent.social_function = "focus".to_string();
+                intent.style = "calm".to_string();
+            }
+            intent.intensity = intent.intensity.min(0.30);
+        }
+        if memory_guidance.calm_supportive {
+            intent.intent = "calm_supportive_response".to_string();
+            intent.style = "calm".to_string();
+            if !matches!(intent.social_function.as_str(), "warn" | "apologize") {
+                intent.social_function = "focus".to_string();
+            }
+            intent.intensity = intent.intensity.min(0.28);
+        }
+        if memory_guidance.project_focus && !matches!(intent.social_function.as_str(), "warn") {
+            intent.style = "calm".to_string();
+            intent.intensity = intent.intensity.min(0.34);
+        }
+        if memory_guidance.avoid_playful && intent.social_function == "celebrate" {
+            intent.intent = "warm_response".to_string();
+            intent.social_function = "acknowledge".to_string();
+            intent.style = "gentle".to_string();
+            intent.intensity = intent.intensity.min(0.32);
+        }
+
         if input.constraints.prefer_minimal
             || input.safety_context.minimal_expression
             || input.safety_context.night_mode
+            || memory_guidance.prefers_minimal
         {
             intent.intent = "minimal_clear_response".to_string();
             intent.social_function = "focus".to_string();
@@ -513,6 +630,7 @@ impl ExpressionRuntime {
             safety_context: Default::default(),
             conversation_context: Default::default(),
             constraints: Default::default(),
+            memory_context: None,
             voice_output: true,
             hardware_control: false,
             tts_capabilities: None,
@@ -843,7 +961,8 @@ fn apply_builtin_safety_policy(
                 .max_motion_intensity
                 .unwrap_or(1.0)
                 .clamp(0.0, 1.0),
-        );
+        )
+        .min(memory_motion_intensity_limit(input).unwrap_or(1.0));
     let night_or_minimal =
         policy.night_mode_minimal_expression || safety.night_mode || safety.minimal_expression;
 
@@ -1118,6 +1237,103 @@ fn apply_builtin_safety_policy(
     plan.safety_modifications.extend(modifications);
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct MemoryExpressionGuidance {
+    prefers_minimal: bool,
+    prefers_structured: bool,
+    prefers_direct: bool,
+    avoid_playful: bool,
+    calm_supportive: bool,
+    project_focus: bool,
+}
+
+fn memory_expression_guidance(input: &ExpressionInput) -> MemoryExpressionGuidance {
+    let Some(memory_context) = &input.memory_context else {
+        return MemoryExpressionGuidance::default();
+    };
+    let mut guidance = MemoryExpressionGuidance::default();
+    for snippet in memory_context
+        .user_preferences
+        .iter()
+        .chain(memory_context.boundaries.iter())
+    {
+        let content = snippet.content.to_ascii_lowercase();
+        guidance.prefers_minimal |= content.contains("concise")
+            || content.contains("brief")
+            || content.contains("minimal")
+            || content.contains("less movement")
+            || content.contains("do not move")
+            || content.contains("don't move")
+            || content.contains("少动")
+            || content.contains("简洁");
+        guidance.prefers_structured |= content.contains("structured")
+            || content.contains("structure")
+            || content.contains("step-by-step")
+            || content.contains("bullet")
+            || content.contains("分点")
+            || content.contains("结构化");
+        guidance.prefers_direct |= content.contains("direct")
+            || content.contains("precise")
+            || content.contains("implementation")
+            || content.contains("具体")
+            || content.contains("落地");
+        guidance.avoid_playful |= content.contains("not playful")
+            || content.contains("avoid playful")
+            || content.contains("too exaggerated")
+            || content.contains("not exaggerated")
+            || content.contains("不要太夸张");
+    }
+    for snippet in &memory_context.affective_guidance {
+        let content = snippet.content.to_ascii_lowercase();
+        guidance.calm_supportive |= content.contains("calmer")
+            || content.contains("calm")
+            || content.contains("clearer")
+            || content.contains("more specific")
+            || content.contains("constructive guidance")
+            || content.contains("deescalate");
+    }
+    guidance.project_focus = !memory_context.project_context.is_empty();
+    guidance
+}
+
+fn memory_prefers_minimal_expression(input: &ExpressionInput) -> bool {
+    memory_expression_guidance(input).prefers_minimal
+}
+
+fn memory_motion_intensity_limit(input: &ExpressionInput) -> Option<f32> {
+    let memory_context = input.memory_context.as_ref()?;
+    let mut limit: Option<f32> = None;
+    for snippet in memory_context
+        .user_preferences
+        .iter()
+        .chain(memory_context.boundaries.iter())
+    {
+        let content = snippet.content.to_ascii_lowercase();
+        let candidate = if content.contains("do not move")
+            || content.contains("don't move")
+            || content.contains("no motion")
+            || content.contains("别动")
+            || content.contains("不要动")
+        {
+            Some(0.0)
+        } else if content.contains("less movement")
+            || content.contains("low intensity motion")
+            || content.contains("not exaggerated")
+            || content.contains("too exaggerated")
+            || content.contains("少动")
+            || content.contains("不要太夸张")
+        {
+            Some(0.45)
+        } else {
+            None
+        };
+        if let Some(candidate) = candidate {
+            limit = Some(limit.map_or(candidate, |current| current.min(candidate)));
+        }
+    }
+    limit
+}
+
 fn clamp_expression_plan(plan: &mut ExpressionPlan) {
     plan.intensity = plan.intensity.clamp(0.0, 1.0);
     if let Some(speech) = &mut plan.speech {
@@ -1266,6 +1482,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: false,
                 tts_capabilities: None,
@@ -1317,6 +1534,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: true,
                 tts_capabilities: None,
@@ -1389,6 +1607,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: false,
                 tts_capabilities: None,
@@ -1708,6 +1927,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: true,
                 tts_capabilities: None,
@@ -1729,6 +1949,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: true,
                 tts_capabilities: None,
@@ -1955,6 +2176,7 @@ mod tests {
                 safety_context: Default::default(),
                 conversation_context: Default::default(),
                 constraints: Default::default(),
+                memory_context: None,
                 voice_output: true,
                 hardware_control: true,
                 tts_capabilities: None,
@@ -2002,6 +2224,7 @@ mod tests {
             safety_context: Default::default(),
             conversation_context: Default::default(),
             constraints: Default::default(),
+            memory_context: None,
             voice_output: true,
             hardware_control: false,
             tts_capabilities: None,

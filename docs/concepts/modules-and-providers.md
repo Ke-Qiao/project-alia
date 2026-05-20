@@ -14,7 +14,7 @@ Package-specific module details live in:
 | Term | Meaning |
 | --- | --- |
 | Core service | A fixed runtime subsystem with shared invariants, such as pipeline orchestration, tools, skills, rules, scheduler, settings, sensors, and dependency ownership. |
-| Provider | A replaceable adapter selected by config, such as OpenAI-compatible LLM, Ollama, whisper.cpp, GPT-SoVITS, or Mem0. |
+| Provider | A replaceable adapter selected by config, such as OpenAI-compatible LLM, Anthropic, Gemini, whisper.cpp, or GPT-SoVITS. |
 | Channel | A multi-instance I/O path, such as embedded gRPC or CLI. |
 | Extension | Plugin/component code that registers tools, skills, settings, conditions, actions, sensors, prompt/context sections, or health checks. |
 | Lifecycle | Shared initialization, health check, runtime setting application, and shutdown contract. |
@@ -34,8 +34,8 @@ This keeps these decisions separate:
 
 ## Provider Traits
 
-The server defines provider traits for LLM, STT, TTS, embeddings, memory, and
-tool execution.
+The server defines provider traits for LLM, STT, TTS, embeddings, and tool
+execution.
 
 Provider implementations should be boring adapters: translate Alia's internal
 types into provider calls, return normalized results, and avoid owning pipeline
@@ -64,10 +64,9 @@ making the global pipeline assume every channel is a speaker/microphone device.
 Cargo features compile optional backend support:
 
 - server channel support: `channel-embedded`
-- LLM providers: `llm-openai`, `llm-ollama`
+- LLM providers: `llm-openai`, `llm-anthropic`, `llm-gemini`
 - speech providers: `stt-whisper`, `tts-sovits`
-- embeddings: `embed-ollama`, `embed-openai`
-- memory: `memory-mem0`
+- embeddings: `embed-openai`
 - built-in HTTP tools: `tools-http`
 - insights: `insights`
 

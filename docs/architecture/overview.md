@@ -16,10 +16,10 @@ graph LR
     CLI["CLI channel"] <-->|"Channel events"| Server
     Server <-->|"gRPC audio + control"| Embedded["alia-embedded<br/>Rust edge node"]
     Server --- Postgres[("PostgreSQL<br/>SeaORM")]
-    Server -.-> LLM["LLM providers<br/>OpenAI-compatible / Ollama"]
+    Server -.-> LLM["LLM providers<br/>OpenAI-compatible / Anthropic / Gemini"]
     Server -.-> STT["STT provider<br/>whisper.cpp"]
     Server -.-> TTS["TTS provider<br/>GPT-SoVITS"]
-    Server -.-> Memory["Memory provider<br/>Mem0 or simple"]
+    Server -.-> Memory["Alia memory<br/>privacy / relationship / retrieval"]
     Embedded --- LocalModels["sherpa-onnx<br/>wake word / edge STT / VAD"]
     Embedded --- Audio["Microphone / speaker"]
 ```

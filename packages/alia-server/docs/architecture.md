@@ -23,12 +23,12 @@ registries instead of replacement slots.
 
 | Provider key | Typical implementation | Purpose |
 | --- | --- | --- |
-| `minor_llm` | `ollama` | Lightweight model for routing, tool narrowing, and simple work. |
+| `minor_llm` | `gemini` | Lightweight model for routing, tool narrowing, and simple work. |
 | `major_llm` | `openai` | Stronger model for complex turns. |
 | `stt` | `whisper_cpp` | Server-side speech recognition. |
 | `tts` | `gpt_sovits` | Server-side speech synthesis. |
-| `embedding` | `ollama` or `openai` | Embeddings for semantic cache and retrieval. |
-| `memory` | `mem0` or `simple` | User memory backend behind the fixed memory integration boundary. |
+| `embedding` | `openai` | Embeddings for semantic cache and retrieval. |
+| `memory` | built-in Alia memory | User memory, privacy controls, relationship context, and retrieval. |
 
 These services are fixed core runtime pieces:
 

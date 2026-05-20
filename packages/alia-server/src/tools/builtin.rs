@@ -1320,19 +1320,23 @@ impl ToolExecutor for MemoryStore {
             .unwrap_or("fact")
             .trim()
             .to_string();
-        let incoming = MemoryNode {
-            id: None,
-            memory_layer: layer.clone(),
-            node_type: node_type.clone(),
-            content: content.clone(),
-            metadata: serde_json::json!({
-                "source": ctx.source,
-                "channel_id": ctx.channel_id,
-                "conversation_id": ctx.conversation_id,
-                "stored_by": "memory_store_tool",
-            }),
+        let mut incoming = MemoryNode::new(
+            layer.clone(),
+            node_type.clone(),
+            content.clone(),
             importance,
-        };
+        )
+        .with_metadata(serde_json::json!({
+            "source": ctx.source,
+            "channel_id": ctx.channel_id,
+            "conversation_id": ctx.conversation_id,
+            "stored_by": "memory_store_tool",
+        }))
+        .with_runtime_fields("semantic", "user", 1.0, importance, "user_visible");
+        incoming.evidence = serde_json::json!({
+            "source": "direct_memory_tool",
+            "summary": "The user explicitly asked the assistant to remember this.",
+        });
         let action = upsert_tool_memory(memory.as_ref(), ctx.user_id, &incoming).await?;
 
         Ok(ToolResult {

@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use alia_server::config::{
-    Mem0ProviderSection, MemoryCaptureMode, ServerConfig, load_config_with_fragments,
-};
+use alia_server::config::{MemoryCaptureMode, ServerConfig, load_config_with_fragments};
 
 #[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
@@ -33,8 +31,8 @@ chat_model = "base"
         r#"
 value = "second"
 
-[providers.ollama]
-chat_model = "qwen2.5:7b"
+[providers.gemini]
+chat_model = "gemini-2.5-flash"
 "#,
     )
     .unwrap();
@@ -50,8 +48,8 @@ chat_model = "qwen2.5:7b"
         Some("base")
     );
     assert_eq!(
-        loaded["providers"]["ollama"]["chat_model"].as_str(),
-        Some("qwen2.5:7b")
+        loaded["providers"]["gemini"]["chat_model"].as_str(),
+        Some("gemini-2.5-flash")
     );
     assert!(loaded.get("ignored").is_none());
 
@@ -63,14 +61,18 @@ fn parses_split_example_config() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
 
-    assert_eq!(config.modules.minor_llm, "ollama");
+    assert_eq!(config.modules.minor_llm, "gemini");
     assert_eq!(config.modules.major_llm, "openai");
     assert!(config.modules.transcript_correction_llm.is_none());
     assert!(config.modules.memory_capture_llm.is_none());
     assert_eq!(config.modules.stt, "whisper_cpp");
     assert_eq!(config.modules.tts, "gpt_sovits");
-    assert_eq!(config.modules.embedding, "ollama");
-    assert_eq!(config.modules.memory, "mem0");
+    assert_eq!(config.modules.embedding, "openai");
+    assert_eq!(config.providers.gemini.chat_model, "gemini-2.5-flash");
+    assert_eq!(
+        config.providers.anthropic.chat_model,
+        "claude-sonnet-4-20250514"
+    );
     assert_eq!(config.providers.openai.chat_model, "qwen2.5-7b-instruct");
     assert_eq!(
         config.providers.whisper_cpp.endpoint,
@@ -143,7 +145,6 @@ fn parses_split_example_config() {
             .memory_extraction_prompt
             .contains("durable user memories")
     );
-    assert!(!config.providers.mem0.conversation_infer);
     assert!(config.policies.expression.enabled);
     assert_eq!(config.policies.expression.default_style, "gentle");
     assert!(config.profiles.expression_styles.contains_key("gentle"));
@@ -178,17 +179,4 @@ fn parses_split_example_config() {
             .support_need
             .contains(&"anxious".to_string())
     );
-}
-
-#[test]
-fn mem0_conversation_infer_defaults_to_false_when_omitted() {
-    let config: Mem0ProviderSection = toml::from_str(
-        r#"
-base_url = "https://api.mem0.ai"
-"#,
-    )
-    .unwrap();
-
-    assert!(!config.infer);
-    assert!(!config.conversation_infer);
 }

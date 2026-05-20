@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::providers::adapter::TtsCapabilities;
+use crate::providers::adapter::{MemoryContextPack, TtsCapabilities};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AffectAxes {
@@ -137,6 +137,8 @@ pub struct ExpressionInput {
     pub conversation_context: ExpressionConversationContext,
     #[serde(default)]
     pub constraints: ExpressionConstraints,
+    #[serde(default)]
+    pub memory_context: Option<MemoryContextPack>,
     pub voice_output: bool,
     pub hardware_control: bool,
     #[serde(default)]

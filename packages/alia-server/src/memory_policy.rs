@@ -172,6 +172,9 @@ pub fn merge_memory_patch(existing: &MemoryNode, incoming: &MemoryNode) -> Memor
         content: Some(incoming.content.clone()),
         metadata: Some(metadata),
         importance: Some(existing.importance.max(incoming.importance)),
+        confidence: Some(existing.confidence.max(incoming.confidence)),
+        salience: Some(existing.salience.max(incoming.salience)),
+        ..MemoryPatch::default()
     }
 }
 

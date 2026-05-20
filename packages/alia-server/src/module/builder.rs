@@ -43,7 +43,8 @@ pub struct ServerBuilder {
     // Channel adapters (multi-instance)
     channels: Vec<Box<dyn ChannelAdapter>>,
 
-    // Provider override slots (None = use config selection).
+    // Provider override slots (None = use config selection). Core domain
+    // systems such as memory are built in below, not selected through slots.
     minor_llm: Option<Box<dyn LlmAdapter>>,
     major_llm: Option<Box<dyn LlmAdapter>>,
     transcript_correction_llm: Option<Box<dyn LlmAdapter>>,
@@ -51,7 +52,6 @@ pub struct ServerBuilder {
     stt: Option<Box<dyn SttAdapter>>,
     tts: Option<Box<dyn TtsAdapter>>,
     embedding: Option<Box<dyn EmbeddingAdapter>>,
-    memory: Option<Box<dyn MemoryBackend>>,
 
     extensions: Vec<Box<dyn ModuleLifecycle>>,
 }
@@ -76,7 +76,6 @@ impl ServerBuilder {
             stt: None,
             tts: None,
             embedding: None,
-            memory: None,
             extensions: Vec::new(),
         }
     }
@@ -121,11 +120,6 @@ impl ServerBuilder {
         self
     }
 
-    pub fn with_memory(mut self, mem: impl MemoryBackend + 'static) -> Self {
-        self.memory = Some(Box::new(mem));
-        self
-    }
-
     pub fn with_extension(mut self, ext: impl ModuleLifecycle + 'static) -> Self {
         self.extensions.push(Box::new(ext));
         self
@@ -163,6 +157,7 @@ impl ServerBuilder {
             major_llm: None,
             transcript_correction_llm: None,
             memory_capture_llm: None,
+            embedding: None,
             cache: None,
             tools: None,
             expression: None,
@@ -208,13 +203,7 @@ impl ServerBuilder {
             .unwrap_or_else(|| factory::create_embedding(&self.config.modules.embedding));
         let mut conversation: Box<dyn ConversationBackend> =
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
-        let mut memory = self.memory.unwrap_or_else(|| {
-            factory::create_memory(
-                &self.config.modules.memory,
-                &self.config.policies.memory,
-                &self.config.providers.mem0,
-            )
-        });
+        let mut memory = factory::create_memory(&self.config.policies.memory);
         let mut cache = factory::create_cache();
         let mut skills = factory::create_skills();
         let mut persona = factory::create_persona();
@@ -286,6 +275,7 @@ impl ServerBuilder {
             major_llm: None,
             transcript_correction_llm: None,
             memory_capture_llm: None,
+            embedding: None,
             cache: None,
             tools: None,
             expression: Some(expression_runtime.clone()),
@@ -293,6 +283,11 @@ impl ServerBuilder {
 
         // Initialize remaining modules in dependency order
         init_module(embedding.as_mut(), &ctx).await;
+        let embedding_arc: Arc<dyn EmbeddingAdapter> = Arc::from(embedding);
+        let ctx = ModuleContext {
+            embedding: Some(embedding_arc.clone()),
+            ..ctx
+        };
         init_module(conversation.as_mut(), &ctx).await;
         let conversation_arc: Arc<dyn ConversationBackend> = Arc::from(conversation);
         let ctx = ModuleContext {
@@ -336,7 +331,7 @@ impl ServerBuilder {
             tracing::warn!(
                 module = memory.name(),
                 reason = %reason,
-                "memory backend health checks failed; disabling memory module for this server run"
+                "memory system health checks failed; disabling memory module for this server run"
             );
             effective_memory_config.enabled = false;
             memory = Box::new(NoopMemory);
@@ -424,7 +419,7 @@ impl ServerBuilder {
             memory_capture_llm,
             stt: Arc::from(stt),
             tts: Arc::from(tts),
-            embedding: Arc::from(embedding),
+            embedding: embedding_arc,
             conversation: conversation_arc,
             memory: memory_arc,
             cache: cache_arc,
@@ -614,7 +609,7 @@ async fn verify_memory_health(
                     attempt,
                     attempts,
                     reason = %reason,
-                    "memory backend health check degraded; keeping memory enabled"
+                    "memory system health check degraded; keeping memory enabled"
                 );
                 return Ok(());
             }
@@ -624,7 +619,7 @@ async fn verify_memory_health(
                     attempt,
                     attempts,
                     reason = %reason,
-                    "memory backend health check failed"
+                    "memory system health check failed"
                 );
                 if attempt == attempts {
                     return Err(reason);
@@ -636,7 +631,7 @@ async fn verify_memory_health(
         }
     }
 
-    Err("memory backend health check failed".to_string())
+    Err("memory system health check failed".to_string())
 }
 
 async fn start_module(module: &dyn ModuleLifecycle) {

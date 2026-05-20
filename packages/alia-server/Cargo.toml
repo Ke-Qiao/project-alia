@@ -6,9 +6,9 @@ edition.workspace = true
 [features]
 default = [
     "channel-embedded",
-    "llm-openai", "llm-ollama",
+    "llm-openai", "llm-anthropic", "llm-gemini",
     "stt-whisper", "tts-sovits",
-    "embed-ollama", "memory-mem0",
+    "embed-openai",
     "tools-http",
     "insights",
 ]
@@ -18,21 +18,18 @@ channel-embedded = ["dep:alia-proto", "dep:tonic", "dep:alia-transport"]
 
 # LLM backends
 llm-openai = ["dep:reqwest"]
-llm-ollama = ["dep:reqwest"]
+llm-anthropic = ["dep:reqwest"]
+llm-gemini = ["dep:reqwest"]
 
 # STT / TTS backends
 stt-whisper = ["dep:reqwest"]
 tts-sovits = ["dep:reqwest"]
 
 # Embedding backends
-embed-ollama = ["dep:reqwest"]
 embed-openai = ["dep:reqwest"]
 
 # Built-in tools
 tools-http = ["dep:reqwest"]
-
-# Memory backend
-memory-mem0 = ["dep:reqwest"]
 
 # Insights system
 insights = []

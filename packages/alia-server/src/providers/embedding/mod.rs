@@ -1,17 +1,12 @@
 //! Embedding adapters for text embedding.
 //!
 //! Available implementations:
-//! - `OllamaEmbedding`: Local Ollama embedding models
 //! - `OpenAiEmbedding`: OpenAI embedding models
 //! - `NoopEmbedding`: No-op placeholder
 
-#[cfg(feature = "embed-ollama")]
-pub mod ollama;
 #[cfg(feature = "embed-openai")]
 pub mod openai;
 
-#[cfg(feature = "embed-ollama")]
-pub use ollama::OllamaEmbedding;
 #[cfg(feature = "embed-openai")]
 pub use openai::OpenAiEmbedding;
 

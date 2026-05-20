@@ -10,7 +10,8 @@ use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, LlmAdapter, MemoryBackend, SchedulerBackend, ToolRegistry,
+    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
+    SchedulerBackend, ToolRegistry,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
@@ -54,6 +55,8 @@ pub struct ModuleContext {
     pub major_llm: Option<Arc<dyn LlmAdapter>>,
     pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
+    /// Embedding adapter for built-in runtimes that need semantic indexing.
+    pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
     /// Cache backend for modules that review or maintain cache entries.
     pub cache: Option<Arc<dyn CacheBackend>>,
     /// Unified executable tool registry. Plugins/components should register

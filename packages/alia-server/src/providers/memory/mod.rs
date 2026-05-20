@@ -1,18 +1,11 @@
-//! Memory backends for storing and retrieving user memories.
+//! Built-in memory system for storing and retrieving user memories.
 //!
-//! Available implementations:
-//! - `SimpleMemory`: In-memory storage with keyword-based retrieval
-//! - `ExternalMemoryBackend`: Adapter wrapper for third-party memory services
-//! - `NoopMemory`: No-op placeholder (returns empty results)
+//! Memory is part of Alia's core domain. External providers should not decide
+//! what the assistant remembers or how relationship state evolves.
 
-pub mod external;
-#[cfg(feature = "memory-mem0")]
-pub mod mem0;
 pub mod simple;
 
-#[cfg(feature = "memory-mem0")]
-pub use mem0::Mem0Client;
-pub use simple::SimpleMemory;
+pub use simple::AliaMemory;
 
 use async_trait::async_trait;
 use uuid::Uuid;

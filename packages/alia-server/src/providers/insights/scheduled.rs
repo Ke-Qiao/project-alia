@@ -869,7 +869,7 @@ impl ScheduledInsights {
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
-                summary: "Extraction skipped: memory backend is unavailable.".to_string(),
+                summary: "Extraction skipped: memory system is unavailable.".to_string(),
                 model_used: "none".to_string(),
                 ..MemoryInsightStats::default()
             });
@@ -929,7 +929,7 @@ impl ScheduledInsights {
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
-                summary: "Memory consolidation skipped: memory backend is unavailable.".to_string(),
+                summary: "Memory consolidation skipped: memory system is unavailable.".to_string(),
                 model_used: "none".to_string(),
                 ..MemoryInsightStats::default()
             });
@@ -1006,6 +1006,7 @@ impl ScheduledInsights {
                             .map(ToOwned::to_owned),
                         metadata,
                         importance: update.importance.map(clamp_score),
+                        ..MemoryPatch::default()
                     },
                 )
                 .await
@@ -1049,7 +1050,7 @@ impl ScheduledInsights {
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
-                summary: "Reflection skipped: memory backend is unavailable.".to_string(),
+                summary: "Reflection skipped: memory system is unavailable.".to_string(),
                 model_used: "none".to_string(),
                 ..MemoryInsightStats::default()
             });
@@ -1120,7 +1121,7 @@ impl ScheduledInsights {
     ) -> anyhow::Result<MemoryInsightStats> {
         let Some(memory) = memory else {
             return Ok(MemoryInsightStats {
-                summary: "Habit detection skipped: memory backend is unavailable.".to_string(),
+                summary: "Habit detection skipped: memory system is unavailable.".to_string(),
                 model_used: "none".to_string(),
                 ..MemoryInsightStats::default()
             });
@@ -1230,14 +1231,9 @@ impl ScheduledInsights {
             match memory
                 .store(
                     user.user_id,
-                    MemoryNode {
-                        id: None,
-                        memory_layer: layer,
-                        node_type,
-                        content: content.to_string(),
-                        metadata,
-                        importance,
-                    },
+                    MemoryNode::new(layer, node_type, content.to_string(), importance)
+                        .with_metadata(metadata)
+                        .with_runtime_fields("semantic", "user", 0.8, importance, "internal"),
                 )
                 .await
             {

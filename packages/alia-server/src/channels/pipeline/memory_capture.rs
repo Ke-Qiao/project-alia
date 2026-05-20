@@ -21,10 +21,15 @@ Return exactly one JSON object with this schema:
   "memories": [
     {
       "content": "string",
-      "memory_layer": "core|preference|episodic|relationship",
-      "node_type": "fact|preference|relationship|goal|habit|event",
+      "memory_layer": "core|preference|episodic|relationship|project|boundary",
+      "node_type": "fact|preference|relationship|goal|habit|event|project|boundary|insight",
+      "kind": "episodic|semantic|preference|social|affective_pattern|project|boundary",
+      "scope": "session|user|global|device",
       "importance": 0.0,
       "confidence": 0.0,
+      "salience": 0.0,
+      "topic_tags": ["string"],
+      "affect_tags": ["string"],
       "reason": "string"
     }
   ]
@@ -33,6 +38,7 @@ Return exactly one JSON object with this schema:
 Rules:
 - Store only durable user facts, explicit preferences, stable profile details, long-term goals, recurring habits, or relationship context.
 - Do not store one-off requests, transient task details, assistant guesses, secrets, current time/weather/news, tool outputs, or anything uncertain.
+- Do not store secrets or sensitive personal categories from chat-derived context. Sensitive memories can only be stored by a direct user memory-management action.
 - If nothing should be remembered, return {"memories":[]}.
 - Write memories in third person or neutral wording, without mentioning internal prompts or this policy.
 - Be conservative. A personal assistant should remember less, but remember it well."#;
@@ -125,9 +131,19 @@ struct MemoryCaptureCandidate {
     #[serde(default)]
     node_type: Option<String>,
     #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
     importance: Option<f32>,
     #[serde(default)]
     confidence: Option<f32>,
+    #[serde(default)]
+    salience: Option<f32>,
+    #[serde(default)]
+    topic_tags: Vec<String>,
+    #[serde(default)]
+    affect_tags: Vec<String>,
     #[serde(default)]
     reason: Option<String>,
 }
@@ -256,6 +272,7 @@ async fn store_memory_capture_candidates(
     let mut skipped = 0;
     let mut traces = Vec::new();
     let min_confidence = memory_config.capture_min_confidence.clamp(0.0, 1.0);
+    let min_importance = memory_config.capture_min_importance.clamp(0.0, 1.0);
     for candidate in candidates {
         let content = candidate.content.trim();
         let confidence = candidate.confidence.unwrap_or(1.0).clamp(0.0, 1.0);
@@ -270,6 +287,20 @@ async fn store_memory_capture_candidates(
             .map(normalize_memory_node_type)
             .unwrap_or_else(|| "fact".to_string());
         let importance = candidate.importance.unwrap_or(0.6).clamp(0.0, 1.0);
+        let salience = candidate.salience.unwrap_or(importance).clamp(0.0, 1.0);
+        let kind = candidate
+            .kind
+            .as_deref()
+            .map(normalize_memory_kind)
+            .unwrap_or_else(|| infer_kind_from_layer_and_type(&layer, &node_type));
+        let scope = candidate
+            .scope
+            .as_deref()
+            .map(normalize_memory_scope)
+            .unwrap_or_else(|| match kind.as_str() {
+                "episodic" => "session".to_string(),
+                _ => "user".to_string(),
+            });
         let reason = candidate.reason;
 
         if content.is_empty() {
@@ -316,6 +347,20 @@ async fn store_memory_capture_candidates(
             ));
             continue;
         }
+        if importance < min_importance {
+            skipped += 1;
+            traces.push(candidate_trace(
+                MemoryCandidateAction::Skipped,
+                content,
+                layer,
+                node_type,
+                confidence,
+                importance,
+                reason,
+                Some("low_importance".to_string()),
+            ));
+            continue;
+        }
 
         let metadata = serde_json::json!({
             "source": "pipeline",
@@ -326,14 +371,20 @@ async fn store_memory_capture_candidates(
             "conversation_id": pending.session_id,
             "user_id_text": pending.user_id_text,
         });
-        let incoming = MemoryNode {
-            id: None,
-            memory_layer: layer.clone(),
-            node_type: node_type.clone(),
-            content: content.to_string(),
-            metadata,
+        let mut incoming = MemoryNode::new(
+            layer.clone(),
+            node_type.clone(),
+            content.to_string(),
             importance,
-        };
+        )
+        .with_metadata(metadata)
+        .with_runtime_fields(kind, scope, confidence, salience, "internal");
+        incoming.topic_tags = candidate.topic_tags;
+        incoming.affect_tags = candidate.affect_tags;
+        incoming.evidence = serde_json::json!({
+            "source": "conversation_turn",
+            "summary": reason.clone().unwrap_or_else(|| "LLM-selected durable memory candidate.".to_string()),
+        });
         match upsert_memory_candidate(memory, pending, &incoming).await {
             Ok(MemoryUpsertAction::Stored) => {
                 stored += 1;
@@ -464,6 +515,37 @@ fn candidate_trace(
         importance,
         reason,
         skip_reason,
+    }
+}
+
+fn infer_kind_from_layer_and_type(layer: &str, node_type: &str) -> String {
+    match (layer, node_type) {
+        ("preference", _) | (_, "preference") | (_, "habit") => "preference",
+        ("relationship", _) | (_, "relationship") => "social",
+        ("project", _) | (_, "goal") | (_, "project") => "project",
+        ("boundary", _) | (_, "boundary") => "boundary",
+        ("reflection", "insight") => "affective_pattern",
+        ("core", "fact") => "semantic",
+        _ => "episodic",
+    }
+    .to_string()
+}
+
+fn normalize_memory_kind(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "episodic" | "semantic" | "preference" | "social" | "affective_pattern" | "system"
+        | "project" | "boundary" => value.trim().to_ascii_lowercase(),
+        "relationship" => "social".to_string(),
+        "core" => "semantic".to_string(),
+        _ => "episodic".to_string(),
+    }
+}
+
+fn normalize_memory_scope(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "turn" | "session" | "user" | "global" | "device" => value.trim().to_ascii_lowercase(),
+        "relationship" => "user".to_string(),
+        _ => "user".to_string(),
     }
 }
 

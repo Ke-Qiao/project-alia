@@ -1,90 +1,158 @@
-# Memory Capture And Provider ABI
+# Memory Runtime
 
-Alia treats memory as a provider-neutral service. Pipelines, tools, and prompt
-assembly talk to `MemoryBackend`; provider details stay inside adapters such as
-`mem0`.
+Alia treats memory as a built-in personal-agent runtime, not as a replaceable
+provider slot. Memory decides what the assistant remembers, why it believes it,
+and which evidence supports it. It does not directly modify affect state or
+drive expression devices.
 
-Design boundary: Alia decides whether something should become memory; providers
-store, search, and report their capabilities. This keeps privacy, sensitivity,
-relationship modeling, and prompt-injection defenses in the agent runtime
-instead of delegating them to a backend-specific inference loop.
+```text
+completed turn / runtime event
+  -> Memory Extractor
+  -> Memory Policy
+  -> canonical memory_items
+  -> memory_embeddings_1536
+  -> memory_nodes / memory_edges
+  -> MemoryContextPack
+```
+
+## Storage
+
+The production path uses PostgreSQL plus pgvector:
+
+- `embedding_profiles` stores embedding-space metadata.
+- `memory_items` is the canonical memory table.
+- `memory_embeddings_1536` stores vectors for the active 1536-dimension profile.
+- `memory_nodes` and `memory_edges` project lightweight graph context.
+
+The default embedding profile is
+`openai.text-embedding-3-small.1536.cosine.v1`. The 1536 dimension is isolated
+to the profile and side table so future 1024 or 3072 profiles do not require
+changing the canonical memory model.
+
+If embeddings are unavailable, memory writes still succeed. Retrieval degrades
+to keyword/metadata matching and `/api/v1/memories/capabilities` reports a
+degraded embedding probe.
 
 ## Capture Modes
 
 - `none`: memory stays available for direct API management, but the assistant
   does not capture conversation memories.
-- `explicit_tool_only`: no automatic capture; the assistant may store or forget
+- `explicit_tool_only`: no automatic capture; the assistant stores or forgets
   memory only through explicit user-requested tools such as `memory_store` and
   `memory_forget`.
 - `llm_selected`: recommended default for a personal assistant. A dedicated
   `memory_capture_llm`, when configured, extracts only durable facts,
-  preferences, goals, habits, and relationship context before writing memory.
-  If no dedicated model is configured, the minor LLM is used.
-- `provider_infer_all`: sends each completed turn to the memory provider for
-  provider-native inference. This is opt-in because it gives the provider broad
-  authority over what gets remembered.
+  preferences, projects, boundaries, and relationship context before writing
+  memory. If no dedicated model is configured, the minor LLM is used.
 
-Recommended personal-agent setup:
+Recommended setup:
 
 ```toml
 [policies.memory]
 enabled = true
 capture_mode = "llm_selected"
 sensitive_filter_enabled = true
-retrieval_layers = ["core", "preference", "relationship"]
+capture_min_importance = 0.45
+active_embedding_profile = "openai.text-embedding-3-small.1536.cosine.v1"
+graph_depth = 2
+consolidation_enabled = true
+paused_until = ""
+retrieval_layers = ["core", "preference", "relationship", "project", "boundary"]
 max_injected_memory_chars = 1200
 
 [modules]
 # Optional. Omit to fall back to minor_llm.
-# memory_capture_llm = "ollama"
-
-[providers.mem0]
-infer = false
-conversation_infer = false
+# memory_capture_llm = "gemini"
 ```
 
 Sensitive chat-derived memories are blocked before storage. Credentials,
 government or financial identifiers, health details, religious views, and
 political views are only accepted through direct user-managed memory entry.
 
-With this setup, mem0 receives selected `MemoryNode`s as single user-message
-adds with `infer = false`. Mem0's v3 add API supports one or more messages and
-documents `infer = false` as raw storage of the provided text, so this path does
-not require sending a full conversation transcript to the provider. Set
-`infer = true` or `conversation_infer = true` only for deployments that
-intentionally opt into mem0-native extraction; `custom_instructions` then become
-provider-side extraction guidance, not Alia's primary memory policy.
+## Retrieval
 
-## Provider ABI
+Runtime retrieval returns a `MemoryContextPack`, not raw database rows:
 
-Every memory backend exposes `memory_capabilities()` with `abi_version = 1`.
-Capabilities describe what a backend can actually do, without leaking concrete
-provider APIs into the rest of the server:
+- `user_preferences`
+- `project_context`
+- `relevant_episodes`
+- `affective_guidance`
+- `boundaries`
+- `graph_context`
+- `suppressed`
+- `recall_events`
 
-- store/list/get/retrieve/update/delete/clear-user
-- conversation ingest and provider-native inference
-- metadata support
-- search filters, layer filters, and similarity threshold support
-- graph and relationship edge support
-- async write behavior and size limits
+The pipeline injects these as separate prompt sections and includes a
+`Do Not Mention` section that forbids exposing memory IDs, confidence scores,
+affect scores, suppressed records, or runtime internals.
 
-Runtime clients can inspect `/api/v1/memories/capabilities` to adapt UI and
-plugin behavior. For example, a backend without graph support should hide graph
-relationship views, while a backend without provider inference should not offer
-`provider_infer_all`.
+Hybrid retrieval combines vector search, keyword fallback, graph snippets,
+policy memories, and reranking signals such as semantic similarity, recency,
+salience, importance, confidence, graph relevance, and affect relevance.
+`MemoryContextPack.retrieval_trace` records the component scores and retrieval
+path for debugging and replay. Prompt injection ignores the trace and only uses
+the safe snippet categories.
 
-Runtime clients can inspect `/api/v1/memories/privacy` for available capture
-modes and can use `/api/v1/memories/audit` to show the user's current memory
-controls, provider capabilities, and stored memories in one backend-facing
-response. The API rejects `provider_infer_all` when the active backend does not
-declare provider-native inference support.
+Graph projection is deliberately lightweight in v1. The runtime normalizes
+explicit `topic_tags`, `metadata.topics`, `metadata.entities`, and
+`metadata.devices`; it also derives coarse topics and entities from durable
+memory content so graph retrieval works even before a dedicated extractor is
+introduced.
 
-Future memory plugins should implement the same `MemoryBackend` contract and
-return accurate capabilities. Plugin-specific details belong in
-`provider_specific`, not in pipeline or prompt code.
+## Affect And Expression
 
-Alia-side scheduled memory prompts are configured under
-`[policies.insights]`: `memory_extraction_prompt`,
-`memory_consolidation_prompt`, `reflection_prompt`, and
-`habit_detection_prompt`. Keep these prompts in English because the tasks expect
-structured JSON and are regression-tested as internal system jobs.
+Memory emits `MemoryRecallEvent` records. Expression Runtime converts them into
+bounded appraisal events before Affect Runtime updates state. Single recall
+events are capped before reducers run: trust is capped at `0.02`, valence at
+`0.05`, and engagement at `0.08`.
+
+Expression planning reads only the context pack categories. Boundaries can cap
+motion, style preferences can prefer direct or structured responses, project
+context can bias toward focused technical expression, and affective guidance is
+converted into calm constructive tone guidance. Raw memory scores are not
+exposed to the natural-language generation layer.
+
+## Consolidation
+
+Online writes perform light reinforcement for exact repeated preferences,
+boundaries, and projects. The runtime also exposes user consolidation for
+deeper maintenance:
+
+- deduplicate equivalent durable memories;
+- promote preference-like episodes into preference memories;
+- demote low-confidence or low-importance memories;
+- supersede or mark contradictory preferences;
+- reframe negative affective memories into constructive guidance.
+
+## Runtime APIs
+
+- `GET /api/v1/memories`
+- `POST /api/v1/memories`
+- `DELETE /api/v1/memories`
+- `GET /api/v1/memories/{id}`
+- `PATCH /api/v1/memories/{id}`
+- `DELETE /api/v1/memories/{id}`
+- `GET /api/v1/memories/{id}/explain`
+- `POST /api/v1/memories/search`
+- `POST /api/v1/memories/search/context`
+- `GET /api/v1/memories/graph`
+- `DELETE /api/v1/memories/topic/{topic}`
+- `DELETE /api/v1/memories/kind/{kind}`
+- `DELETE /api/v1/memories/hidden`
+- `GET /api/v1/memories/{id}/suppressed`
+- `GET /api/v1/memories/export`
+- `POST /api/v1/memories/consolidate`
+- `GET /api/v1/memories/privacy`
+- `PATCH /api/v1/memories/privacy`
+- `GET /api/v1/memories/audit`
+- `GET /api/v1/memories/capabilities`
+
+`/api/v1/memories/export` returns user-visible memories and suppressed reasons
+for hidden private-runtime records. `/api/v1/memories/search/context` returns
+the full context pack for debugging UI and user privacy views.
+
+`PATCH /api/v1/memories/privacy` accepts `pause_days` and `clear_pause` in
+addition to `enabled`, `automatic_capture_enabled`, and `capture_mode`. Pausing
+memory disables automatic capture and runtime retrieval until `paused_until`;
+direct user-managed memory APIs remain available so users can inspect or delete
+stored records.

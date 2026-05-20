@@ -83,7 +83,7 @@ streamed audio, it can buffer and play the complete response.
 
 - Embedded wake word, edge STT, and VAD: sherpa-onnx.
 - Server STT: whisper.cpp HTTP server.
-- Server LLM: OpenAI-compatible provider, Ollama, or LM Studio-compatible
+- Server LLM: OpenAI-compatible provider, Anthropic, Gemini, or LM Studio-compatible
   OpenAI API endpoint.
 - Server TTS: GPT-SoVITS HTTP API.
-- Memory: Mem0 or simple in-memory fallback.
+- Memory: built-in Alia memory system.

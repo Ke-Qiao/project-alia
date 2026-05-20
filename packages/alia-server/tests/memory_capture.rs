@@ -9,7 +9,7 @@ use alia_server::module::ModuleLifecycle;
 use alia_server::providers::adapter::{
     ChatMessage, LlmAdapter, LlmResponse, MemoryBackend, MemoryListOpts,
 };
-use alia_server::providers::memory::SimpleMemory;
+use alia_server::providers::memory::AliaMemory;
 use async_trait::async_trait;
 use futures::Stream;
 use futures::stream;
@@ -83,7 +83,12 @@ fn memory_config() -> MemorySection {
         capture_mode: MemoryCaptureMode::LlmSelected,
         capture_timeout_sec: 3,
         capture_min_confidence: 0.65,
+        capture_min_importance: 0.45,
         sensitive_filter_enabled: true,
+        active_embedding_profile: "openai.text-embedding-3-small.1536.cosine.v1".to_string(),
+        graph_depth: 2,
+        consolidation_enabled: true,
+        paused_until: None,
         retrieval_layers: vec![
             "core".to_string(),
             "preference".to_string(),
@@ -101,7 +106,7 @@ fn memory_config() -> MemorySection {
 async fn llm_selected_capture_stores_only_high_confidence_durable_memories() {
     let user_id = Uuid::new_v4();
     let pending = pending_turn(user_id);
-    let memory = SimpleMemory::new();
+    let memory = AliaMemory::new();
     let llm = StaticLlm::new(
         r#"{"memories":[
             {
@@ -153,7 +158,7 @@ async fn llm_selected_capture_stores_only_high_confidence_durable_memories() {
 async fn llm_selected_capture_does_not_store_when_model_returns_no_memories() {
     let user_id = Uuid::new_v4();
     let pending = pending_turn(user_id);
-    let memory = SimpleMemory::new();
+    let memory = AliaMemory::new();
     let llm = StaticLlm::new(r#"{"memories":[]}"#);
 
     let trace = capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
@@ -172,35 +177,10 @@ async fn llm_selected_capture_does_not_store_when_model_returns_no_memories() {
 }
 
 #[tokio::test]
-async fn provider_infer_all_skips_backend_without_provider_inference() {
-    let user_id = Uuid::new_v4();
-    let pending = pending_turn(user_id);
-    let memory = SimpleMemory::new();
-    let llm = StaticLlm::new(r#"{"memories":[]}"#);
-    let mut config = memory_config();
-    config.capture_mode = MemoryCaptureMode::ProviderInferAll;
-
-    let trace = capture_turn_memory_with_backends(&llm, &memory, &pending, &config).await;
-
-    assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
-    assert_eq!(
-        trace.reason.as_deref(),
-        Some("provider_conversation_ingest_unsupported")
-    );
-    assert!(
-        memory
-            .list(user_id, MemoryListOpts::default())
-            .await
-            .expect("stored memories should list")
-            .is_empty()
-    );
-}
-
-#[tokio::test]
 async fn llm_selected_capture_blocks_sensitive_memories() {
     let user_id = Uuid::new_v4();
     let pending = pending_turn(user_id);
-    let memory = SimpleMemory::new();
+    let memory = AliaMemory::new();
     let llm = StaticLlm::new(
         r#"{"memories":[
             {
@@ -238,18 +218,18 @@ async fn llm_selected_capture_blocks_sensitive_memories() {
 async fn llm_selected_capture_updates_existing_preference_memory() {
     let user_id = Uuid::new_v4();
     let pending = pending_turn(user_id);
-    let memory = SimpleMemory::new();
+    let memory = AliaMemory::new();
     memory
         .store(
             user_id,
-            alia_server::providers::adapter::MemoryNode {
-                id: None,
-                memory_layer: "preference".to_string(),
-                node_type: "preference".to_string(),
-                content: "The user prefers detailed replies.".to_string(),
-                metadata: serde_json::json!({"source": "test"}),
-                importance: 0.4,
-            },
+            alia_server::providers::adapter::MemoryNode::new(
+                "preference",
+                "preference",
+                "The user prefers detailed replies.",
+                0.4,
+            )
+            .with_metadata(serde_json::json!({"source": "test"}))
+            .with_runtime_fields("preference", "user", 0.8, 0.5, "internal"),
         )
         .await
         .unwrap();

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alia_server::providers::adapter::{MemoryBackend, ToolContext, ToolDefinition, ToolExecutor};
-use alia_server::providers::memory::simple::SimpleMemory;
+use alia_server::providers::memory::simple::AliaMemory;
 #[cfg(feature = "tools-http")]
 use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
@@ -159,8 +159,8 @@ fn test_parse_openai_tool_call() {
 }
 
 #[tokio::test]
-async fn memory_store_and_search_use_memory_backend() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+async fn memory_store_and_search_use_memory_system() {
+    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
         user_id: Uuid::new_v4(),
         conversation_id: None,
@@ -206,7 +206,7 @@ async fn memory_store_and_search_use_memory_backend() {
 
 #[tokio::test]
 async fn memory_store_blocks_sensitive_chat_memory() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
         user_id: Uuid::new_v4(),
         conversation_id: None,
@@ -240,7 +240,7 @@ async fn memory_store_blocks_sensitive_chat_memory() {
 
 #[tokio::test]
 async fn memory_forget_deletes_matching_memory() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(SimpleMemory::new());
+    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
         user_id: Uuid::new_v4(),
         conversation_id: None,

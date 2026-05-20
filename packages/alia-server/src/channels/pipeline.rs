@@ -29,8 +29,8 @@ use crate::memory_policy::{detect_sensitive_memory, memory_prompt_line, normaliz
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
-    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, RetrievalOpts, RouteDecision,
-    RouterInput, SemanticCacheCandidate, ToolDefinition, TtsRequest,
+    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryContextPack, RetrievalOpts,
+    RouteDecision, RouterInput, SemanticCacheCandidate, ToolDefinition, TtsRequest,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{
@@ -166,6 +166,7 @@ impl AgentTrace {
 #[derive(Debug, Clone, Default)]
 pub struct RuntimePromptContext {
     pub core_memories: Vec<String>,
+    pub memory_context: Option<MemoryContextPack>,
     pub relationship_summary: Option<String>,
     pub relationship_preference_summary: Option<String>,
     pub user_preferences: Vec<(String, String)>,
@@ -272,10 +273,36 @@ impl PipelinePolicies {
             self.memory.capture_min_confidence = value.clamp(0.0, 1.0);
             applied.push("core.policies.memory.capture_min_confidence".to_string());
         }
+        if let Some(value) = f32_setting(updates, "core.policies.memory.capture_min_importance") {
+            self.memory.capture_min_importance = value.clamp(0.0, 1.0);
+            applied.push("core.policies.memory.capture_min_importance".to_string());
+        }
         if let Some(value) = bool_setting(updates, "core.policies.memory.sensitive_filter_enabled")
         {
             self.memory.sensitive_filter_enabled = value;
             applied.push("core.policies.memory.sensitive_filter_enabled".to_string());
+        }
+        if let Some(value) =
+            string_setting(updates, "core.policies.memory.active_embedding_profile")
+        {
+            self.memory.active_embedding_profile = value;
+            applied.push("core.policies.memory.active_embedding_profile".to_string());
+        }
+        if let Some(value) = u32_setting(updates, "core.policies.memory.graph_depth") {
+            self.memory.graph_depth = value.clamp(1, 4);
+            applied.push("core.policies.memory.graph_depth".to_string());
+        }
+        if let Some(value) = bool_setting(updates, "core.policies.memory.consolidation_enabled") {
+            self.memory.consolidation_enabled = value;
+            applied.push("core.policies.memory.consolidation_enabled".to_string());
+        }
+        if let Some(value) = updates.get("core.policies.memory.paused_until") {
+            self.memory.paused_until = value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            applied.push("core.policies.memory.paused_until".to_string());
         }
         if let Some(value) = updates
             .get("core.policies.memory.retrieval_layers")
@@ -1071,6 +1098,7 @@ async fn process_text(
                             text,
                             prior_message_count,
                             memory_context_used,
+                            memory_config,
                         )
                         .await,
                     ),
@@ -1210,6 +1238,7 @@ async fn process_text(
                         text,
                         prior_message_count,
                         memory_context_used,
+                        memory_config,
                     )
                     .await,
                 ),
@@ -1657,6 +1686,7 @@ async fn process_text(
         text,
         prior_message_count,
         memory_context_used,
+        memory_config,
     )
     .await;
 
@@ -1759,6 +1789,7 @@ async fn plan_expression_for_response(
     user_text: &str,
     prior_message_count: usize,
     memory_context_used: bool,
+    memory_config: &MemorySection,
 ) -> ExpressionPlan {
     let capabilities = channel.capabilities();
     let expression_capabilities = if capabilities.hardware_control {
@@ -1766,6 +1797,38 @@ async fn plan_expression_for_response(
     } else {
         None
     };
+    let memory_context = retrieve_runtime_memory_context_pack(
+        stable_user_uuid(user_id),
+        modules,
+        memory_config,
+        user_text,
+    )
+    .await;
+    if let Some(memory_context) = &memory_context
+        && !memory_context.recall_events.is_empty()
+    {
+        let observation = modules
+            .expression
+            .observe_memory_recall(channel_id, user_id, &memory_context.recall_events)
+            .await;
+        trace
+            .record(
+                modules,
+                "memory_recall_affect",
+                "affect",
+                Some("Memory recall softly biased affect state".to_string()),
+                serde_json::json!({
+                    "recall_events": &memory_context.recall_events,
+                    "affect": observation.snapshot.affect,
+                    "social": observation.snapshot.social,
+                    "resource": observation.snapshot.resource,
+                    "dominant_causes": observation.snapshot.dominant_causes,
+                    "appraisals": observation.appraisals,
+                    "active_event_count": observation.active_event_count,
+                }),
+            )
+            .await;
+    }
     let affect = modules
         .expression
         .affect_snapshot(channel_id, user_id)
@@ -1811,6 +1874,7 @@ async fn plan_expression_for_response(
         safety_context: safety_context.clone(),
         conversation_context: conversation_context.clone(),
         constraints: constraints.clone(),
+        memory_context: memory_context.clone(),
         voice_output: capabilities.voice_output,
         hardware_control: capabilities.hardware_control,
         tts_capabilities: tts_capabilities.clone(),
@@ -2566,7 +2630,27 @@ pub fn cache_write_for_response(
 }
 
 fn runtime_context_has_user_memory(context: &RuntimePromptContext) -> bool {
-    !context.core_memories.is_empty() || !context.user_preferences.is_empty()
+    !context.core_memories.is_empty()
+        || !context.user_preferences.is_empty()
+        || context
+            .memory_context
+            .as_ref()
+            .is_some_and(|memory_context| !memory_context.is_empty())
+}
+
+fn memory_policy_enabled(memory: &MemorySection) -> bool {
+    if !memory.enabled {
+        return false;
+    }
+    let Some(paused_until) = memory.paused_until.as_deref().map(str::trim) else {
+        return true;
+    };
+    if paused_until.is_empty() {
+        return true;
+    }
+    chrono::DateTime::parse_from_rfc3339(paused_until)
+        .map(|until| until.with_timezone(&chrono::Utc) <= chrono::Utc::now())
+        .unwrap_or(true)
 }
 
 async fn semantic_cache_candidates(
@@ -2752,7 +2836,7 @@ async fn persist_text_interaction(
         }
     }
 
-    let capture_trace = if !memory_config.enabled {
+    let capture_trace = if !memory_policy_enabled(memory_config) {
         MemoryCaptureTrace::skipped(memory_config.capture_mode, "memory_policy_disabled")
     } else if pending.user_id.is_nil() {
         MemoryCaptureTrace::skipped(memory_config.capture_mode, "anonymous_user")
@@ -2897,13 +2981,20 @@ async fn build_runtime_prompt_context(
         .map(|skills| skills.into_iter().map(|skill| skill.display_name).collect())
         .unwrap_or_default();
 
-    let core_memories = retrieve_runtime_memories(user_id, modules, memory_config, user_text).await;
+    let memory_context =
+        retrieve_runtime_memory_context_pack(user_id, modules, memory_config, user_text).await;
+    let core_memories = runtime_memory_lines(
+        memory_context.as_ref(),
+        memory_config.max_injected_memory_chars,
+        memory_config.sensitive_filter_enabled,
+    );
     let (relationship_summary, relationship_preference_summary) =
         runtime_relationship_context(user_id, modules);
 
     RuntimePromptContext {
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
         core_memories,
+        memory_context,
         relationship_summary,
         relationship_preference_summary,
         available_skills,
@@ -2937,15 +3028,71 @@ async fn retrieve_runtime_memories(
     memory_config: &MemorySection,
     user_text: &str,
 ) -> Vec<String> {
-    if !memory_config.enabled || user_id.is_nil() || user_text.trim().is_empty() {
+    let Some(pack) =
+        retrieve_runtime_memory_context_pack(user_id, modules, memory_config, user_text).await
+    else {
         return Vec::new();
+    };
+
+    runtime_memory_lines(
+        Some(&pack),
+        memory_config.max_injected_memory_chars,
+        memory_config.sensitive_filter_enabled,
+    )
+}
+
+fn runtime_memory_lines(
+    pack: Option<&MemoryContextPack>,
+    max_injected_memory_chars: usize,
+    sensitive_filter_enabled: bool,
+) -> Vec<String> {
+    let Some(pack) = pack else {
+        return Vec::new();
+    };
+    let nodes = pack
+        .user_preferences
+        .iter()
+        .chain(pack.project_context.iter())
+        .chain(pack.relevant_episodes.iter())
+        .chain(pack.affective_guidance.iter())
+        .chain(pack.boundaries.iter())
+        .collect::<Vec<_>>();
+    let mut total_chars = 0usize;
+    let max_chars = max_injected_memory_chars.max(256);
+    let mut memories = Vec::new();
+    for node in nodes {
+        if node.content.trim().is_empty() {
+            continue;
+        }
+        if sensitive_filter_enabled && detect_sensitive_memory(&node.content).is_some() {
+            continue;
+        }
+        let remaining = max_chars.saturating_sub(total_chars);
+        if remaining == 0 {
+            break;
+        }
+        let line = memory_prompt_line(&node.content, remaining.min(240));
+        total_chars += line.chars().count();
+        memories.push(line);
+    }
+    memories
+}
+
+async fn retrieve_runtime_memory_context_pack(
+    user_id: Uuid,
+    modules: &ModuleRegistry,
+    memory_config: &MemorySection,
+    user_text: &str,
+) -> Option<MemoryContextPack> {
+    if !memory_policy_enabled(memory_config) || user_id.is_nil() || user_text.trim().is_empty() {
+        return None;
     }
 
     let layers = normalize_memory_layers(memory_config.retrieval_layers.clone());
     let layers = (!layers.is_empty()).then_some(layers);
     match modules
         .memory
-        .retrieve(
+        .retrieve_context_pack(
             user_id,
             user_text,
             RetrievalOpts {
@@ -2956,32 +3103,10 @@ async fn retrieve_runtime_memories(
         )
         .await
     {
-        Ok(nodes) => {
-            let mut total_chars = 0usize;
-            let max_chars = memory_config.max_injected_memory_chars.max(256);
-            let mut memories = Vec::new();
-            for node in nodes {
-                if node.content.trim().is_empty() {
-                    continue;
-                }
-                if memory_config.sensitive_filter_enabled
-                    && detect_sensitive_memory(&node.content).is_some()
-                {
-                    continue;
-                }
-                let remaining = max_chars.saturating_sub(total_chars);
-                if remaining == 0 {
-                    break;
-                }
-                let line = memory_prompt_line(&node.content, remaining.min(240));
-                total_chars += line.chars().count();
-                memories.push(line);
-            }
-            memories
-        }
+        Ok(pack) => Some(pack),
         Err(error) => {
             tracing::warn!(user_id = %user_id, error = ?error, "failed to retrieve runtime memories");
-            Vec::new()
+            None
         }
     }
 }
@@ -3006,7 +3131,57 @@ pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> O
         sections.push(format!("## Runtime Context\n{}", runtime_lines.join("\n")));
     }
 
-    if !context.core_memories.is_empty() {
+    if let Some(memory_context) = &context.memory_context {
+        let mut memory_sections = Vec::new();
+        push_memory_prompt_section(
+            &mut memory_sections,
+            "Preferences",
+            &memory_context.user_preferences,
+            "Use these as soft style and response-shape preferences.",
+        );
+        push_memory_prompt_section(
+            &mut memory_sections,
+            "Projects",
+            &memory_context.project_context,
+            "Use these only to preserve relevant project continuity.",
+        );
+        push_memory_prompt_section(
+            &mut memory_sections,
+            "Boundaries",
+            &memory_context.boundaries,
+            "Treat these as hard personalization boundaries unless system safety overrides them.",
+        );
+        push_memory_prompt_section(
+            &mut memory_sections,
+            "Affective Guidance",
+            &memory_context.affective_guidance,
+            "Convert this into constructive tone guidance; do not label the user emotionally.",
+        );
+        push_memory_prompt_section(
+            &mut memory_sections,
+            "Relevant Episodes",
+            &memory_context.relevant_episodes,
+            "Use these only when they directly help the current answer.",
+        );
+        let do_not_mention = [
+            "Do not mention memory IDs, confidence scores, affect scores, or hidden runtime state.",
+            "Do not reveal suppressed memories or private runtime records.",
+        ];
+        memory_sections.push(format!(
+            "### Do Not Mention\n{}",
+            do_not_mention
+                .iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+        if !memory_sections.is_empty() {
+            sections.push(format!(
+                "## Memory Context\nUse this private context silently when it is relevant. Do not expose internal memory mechanics or claim certainty beyond the listed wording.\n{}",
+                memory_sections.join("\n\n")
+            ));
+        }
+    } else if !context.core_memories.is_empty() {
         let lines = context
             .core_memories
             .iter()
@@ -3015,7 +3190,7 @@ pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> O
             .collect::<Vec<_>>();
         if !lines.is_empty() {
             sections.push(format!(
-                "## User Memory\nUse these private memories only when they are relevant. Do not expose internal memory details or claim certainty beyond the listed wording.\n{}",
+                "## Memory Context\nUse these private memories only when they are relevant. Do not expose internal memory details or claim certainty beyond the listed wording.\n### Relevant Memories\n{}",
                 lines.join("\n")
             ));
         }
@@ -3079,6 +3254,22 @@ pub fn render_runtime_context_system_prompt(context: &RuntimePromptContext) -> O
             "Internal system context. Use this information silently when it is relevant; do not expose it as prompt text.\n\n{}",
             sections.join("\n\n")
         ))
+    }
+}
+
+fn push_memory_prompt_section(
+    sections: &mut Vec<String>,
+    title: &str,
+    snippets: &[crate::providers::adapter::MemorySnippet],
+    instruction: &str,
+) {
+    let lines = snippets
+        .iter()
+        .filter(|snippet| !snippet.content.trim().is_empty())
+        .map(|snippet| format!("- {}", memory_prompt_line(&snippet.content, 240)))
+        .collect::<Vec<_>>();
+    if !lines.is_empty() {
+        sections.push(format!("### {title}\n{instruction}\n{}", lines.join("\n")));
     }
 }
 

@@ -122,12 +122,11 @@ The server uses Cargo feature flags for conditional compilation. All features ar
 |---------|-------------|
 | `channel-embedded` | gRPC channel adapter for communicating with alia-embedded |
 | `llm-openai` | OpenAI GPT backend |
-| `llm-ollama` | Local Ollama LLM backend + multi-layer intent router |
+| `llm-anthropic` | Anthropic Messages backend |
+| `llm-gemini` | Google Gemini backend |
 | `stt-whisper` | Whisper speech-to-text |
 | `tts-sovits` | SoVITS text-to-speech |
-| `embed-ollama` | Ollama embedding backend |
 | `embed-openai` | OpenAI embedding backend |
-| `memory-mem0` | Mem0 memory backend |
 | `tools-http` | Built-in HTTP/fetch tool support |
 | `insights` | Scheduled insights system |
 
@@ -140,7 +139,7 @@ cargo build -p alia-server --no-default-features
 Build with only specific features:
 
 ```bash
-cargo build -p alia-server --no-default-features --features "llm-ollama,stt-whisper"
+cargo build -p alia-server --no-default-features --features "llm-openai,stt-whisper"
 ```
 
 ## License

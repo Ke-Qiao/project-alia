@@ -7,7 +7,7 @@ use crate::channels::cli::CliChannel;
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, Mem0ProviderSection, MemorySection};
+use crate::config::{ChannelConfig, MemorySection};
 use crate::event::EventBus;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
@@ -20,28 +20,21 @@ use crate::providers::insights::NoopInsights;
 #[cfg(feature = "insights")]
 use crate::providers::insights::ScheduledInsights;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-#[cfg(feature = "memory-mem0")]
-use crate::providers::memory::external::ExternalMemoryBackend;
-#[cfg(feature = "memory-mem0")]
-use crate::providers::memory::mem0::{Mem0Client, Mem0Config};
-use crate::providers::memory::{NoopMemory, SimpleMemory};
+use crate::providers::memory::{AliaMemory, NoopMemory};
 use crate::providers::persona::TemplatePersona;
-#[cfg(feature = "llm-ollama")]
 use crate::providers::router::MultiLayerRouter;
-#[cfg(not(feature = "llm-ollama"))]
-use crate::providers::router::PassthroughRouter;
 use crate::providers::sensor::SensorRegistry;
 use crate::providers::skills::BuiltinSkills;
 use crate::rules::EventRuleEngine;
 use crate::scheduler::{ActionRegistry, AutomationScheduler, ConditionRegistry};
 use crate::tools::BuiltinToolRegistry;
 
-#[cfg(feature = "embed-ollama")]
-use crate::providers::embedding::OllamaEmbedding;
 #[cfg(feature = "embed-openai")]
 use crate::providers::embedding::OpenAiEmbedding;
-#[cfg(feature = "llm-ollama")]
-use crate::providers::llm::OllamaLlm;
+#[cfg(feature = "llm-anthropic")]
+use crate::providers::llm::AnthropicLlm;
+#[cfg(feature = "llm-gemini")]
+use crate::providers::llm::GeminiLlm;
 #[cfg(feature = "llm-openai")]
 use crate::providers::llm::OpenAiLlm;
 #[cfg(feature = "stt-whisper")]
@@ -56,10 +49,15 @@ pub fn create_llm(name: &str) -> Box<dyn LlmAdapter> {
             tracing::info!(module = name, "creating LLM adapter (OpenAI)");
             Box::new(OpenAiLlm::new())
         }
-        #[cfg(feature = "llm-ollama")]
-        "ollama" => {
-            tracing::info!(module = name, "creating LLM adapter (Ollama)");
-            Box::new(OllamaLlm::new())
+        #[cfg(feature = "llm-anthropic")]
+        "anthropic" => {
+            tracing::info!(module = name, "creating LLM adapter (Anthropic)");
+            Box::new(AnthropicLlm::new())
+        }
+        #[cfg(feature = "llm-gemini")]
+        "gemini" => {
+            tracing::info!(module = name, "creating LLM adapter (Gemini)");
+            Box::new(GeminiLlm::new())
         }
         "noop" => {
             tracing::info!(module = name, "creating LLM adapter (noop)");
@@ -110,11 +108,6 @@ pub fn create_tts(name: &str) -> Box<dyn TtsAdapter> {
 
 pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
     match name {
-        #[cfg(feature = "embed-ollama")]
-        "ollama" => {
-            tracing::info!(module = name, "creating embedding adapter (Ollama)");
-            Box::new(OllamaEmbedding::new())
-        }
         #[cfg(feature = "embed-openai")]
         "openai" => {
             tracing::info!(module = name, "creating embedding adapter (OpenAI)");
@@ -131,37 +124,14 @@ pub fn create_embedding(name: &str) -> Box<dyn EmbeddingAdapter> {
     }
 }
 
-pub fn create_memory(
-    name: &str,
-    config: &MemorySection,
-    _mem0_config: &Mem0ProviderSection,
-) -> Box<dyn MemoryBackend> {
+pub fn create_memory(config: &MemorySection) -> Box<dyn MemoryBackend> {
     if !config.enabled {
-        tracing::info!(module = name, "memory disabled by config");
+        tracing::info!("memory disabled by config");
         return Box::new(NoopMemory);
     }
 
-    match name {
-        "simple" => {
-            tracing::info!(module = name, "creating memory backend (SimpleMemory)");
-            Box::new(SimpleMemory::new())
-        }
-        #[cfg(feature = "memory-mem0")]
-        "mem0" => {
-            tracing::info!(module = name, "creating memory backend (mem0)");
-            Box::new(ExternalMemoryBackend::new(Mem0Client::new(
-                Mem0Config::from_config(config, _mem0_config),
-            )))
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating memory backend (noop)");
-            Box::new(NoopMemory)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown memory backend, using noop");
-            Box::new(NoopMemory)
-        }
-    }
+    tracing::info!("creating built-in memory system (AliaMemory)");
+    Box::new(AliaMemory::new())
 }
 
 pub fn create_cache() -> Box<dyn CacheBackend> {
@@ -199,17 +169,8 @@ pub fn create_insights(enabled: bool) -> Box<dyn InsightStrategy> {
 }
 
 pub fn create_router() -> Box<dyn RouterStrategy> {
-    #[cfg(feature = "llm-ollama")]
-    {
-        tracing::info!("creating core router strategy (MultiLayerRouter)");
-        return Box::new(MultiLayerRouter::new());
-    }
-
-    #[cfg(not(feature = "llm-ollama"))]
-    {
-        tracing::info!("creating core router strategy (passthrough)");
-        Box::new(PassthroughRouter)
-    }
+    tracing::info!("creating core router strategy (multi_layer)");
+    Box::new(MultiLayerRouter::new())
 }
 
 pub fn create_rule_engine() -> Box<dyn RuleEvaluator> {
