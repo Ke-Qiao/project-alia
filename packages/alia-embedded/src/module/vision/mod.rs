@@ -163,6 +163,7 @@ fn run_yunet_loop(
             config.yunet_model_path.display()
         );
     }
+    validate_yunet_model_payload(&config.yunet_model_path)?;
 
     let detector_size = Size::new(config.input_width, config.input_height);
     let mut detector = FaceDetectorYN::create(
@@ -266,6 +267,43 @@ fn run_yunet_loop(
         }
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "vision-opencv")]
+fn validate_yunet_model_payload(path: &std::path::Path) -> Result<()> {
+    use anyhow::Context;
+    use std::io::Read;
+
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("reading metadata for {}", path.display()))?;
+    let mut file =
+        std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let mut header = [0_u8; 128];
+    let n = file
+        .read(&mut header)
+        .with_context(|| format!("reading header from {}", path.display()))?;
+    let head = String::from_utf8_lossy(&header[..n]);
+    if head.starts_with("version https://git-lfs.github.com/spec/v1") {
+        bail!(
+            "YuNet model file is a Git LFS pointer, not an ONNX payload: {}. Re-download it from https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+            path.display()
+        );
+    }
+    let trimmed = head.trim_start();
+    if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") {
+        bail!(
+            "YuNet model file contains HTML, not an ONNX payload: {}",
+            path.display()
+        );
+    }
+    if metadata.len() < 100_000 {
+        bail!(
+            "YuNet model file is unexpectedly small ({} bytes): {}",
+            metadata.len(),
+            path.display()
+        );
+    }
     Ok(())
 }
 

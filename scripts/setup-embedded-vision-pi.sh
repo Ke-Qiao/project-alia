@@ -31,7 +31,7 @@ EOF
 fi
 
 MODEL_NAME="face_detection_yunet_2023mar.onnx"
-MODEL_URL="${MODEL_URL:-https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_detection_yunet/${MODEL_NAME}}"
+MODEL_URL="${MODEL_URL:-https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/${MODEL_NAME}}"
 MODELS_DIR="${MODELS_DIR:-$ROOT_DIR/config/models}"
 VISION_MODEL_DIR="${VISION_MODEL_DIR:-$MODELS_DIR/vision}"
 MODEL_PATH="${MODEL_PATH:-$VISION_MODEL_DIR/$MODEL_NAME}"
@@ -100,17 +100,75 @@ EOF
 
 download_model() {
   if [[ "$SKIP_MODEL" -eq 1 ]]; then
+    validate_model_file
     return
   fi
   if [[ -f "$MODEL_PATH" ]]; then
-    echo "Using existing YuNet model: $MODEL_PATH"
-    return
+    if validate_model_file; then
+      echo "Using existing YuNet model: $MODEL_PATH"
+      return
+    fi
+    echo "Existing YuNet model is invalid; re-downloading: $MODEL_PATH"
+    rm -f "$MODEL_PATH"
   fi
 
   mkdir -p "$(dirname "$MODEL_PATH")"
   echo "Downloading YuNet model:"
   echo "  $MODEL_URL"
   curl -L --fail --retry 3 --output "$MODEL_PATH" "$MODEL_URL"
+  validate_model_file
+}
+
+validate_model_file() {
+  if [[ ! -f "$MODEL_PATH" ]]; then
+    if [[ "$SKIP_MODEL" -eq 1 ]]; then
+      cat >&2 <<EOF
+error: YuNet model does not exist:
+  $MODEL_PATH
+
+Rerun without --skip-model, or pass --model-path to an existing ONNX file.
+EOF
+      exit 1
+    fi
+    return
+  fi
+
+  local size
+  size="$(wc -c < "$MODEL_PATH" | tr -d ' ')"
+  local head
+  head="$(head -c 128 "$MODEL_PATH" || true)"
+
+  if [[ "$head" == version\ https://git-lfs.github.com/spec/v1* ]]; then
+    cat >&2 <<EOF
+error: YuNet model is a Git LFS pointer, not the ONNX payload:
+  $MODEL_PATH
+
+Use the GitHub media URL or Hugging Face raw URL instead of raw.githubusercontent.com.
+Current default:
+  https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/$MODEL_NAME
+EOF
+    return 1
+  fi
+
+  if [[ "$head" == \<html* || "$head" == \<\!DOCTYPE* ]]; then
+    cat >&2 <<EOF
+error: YuNet model path contains HTML, not an ONNX payload:
+  $MODEL_PATH
+EOF
+    return 1
+  fi
+
+  if [[ "$size" -lt 100000 ]]; then
+    cat >&2 <<EOF
+error: YuNet model file is unexpectedly small (${size} bytes):
+  $MODEL_PATH
+
+The expected face_detection_yunet_2023mar.onnx payload is roughly 230 KB.
+EOF
+    return 1
+  fi
+
+  echo "YuNet model validated: $MODEL_PATH (${size} bytes)"
 }
 
 check_opencv() {

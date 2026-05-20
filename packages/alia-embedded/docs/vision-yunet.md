@@ -38,8 +38,12 @@ config/models/vision/face_detection_yunet_2023mar.onnx
 The model is downloaded from the OpenCV Zoo YuNet model path:
 
 ```text
-https://raw.githubusercontent.com/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 ```
+
+Use the GitHub media URL for this model. The `raw.githubusercontent.com`
+OpenCV Zoo path can return a Git LFS pointer file instead of the ONNX payload on
+some systems; OpenCV then reports `Failed to parse ONNX model`.
 
 ## Manual Dependencies
 
@@ -117,7 +121,8 @@ enable hardware and calibrate on the real neck assembly.
 ## Validation Checklist
 
 - `pkg-config --modversion opencv4` prints an OpenCV version.
-- `config/models/vision/face_detection_yunet_2023mar.onnx` exists.
+- `config/models/vision/face_detection_yunet_2023mar.onnx` exists and is roughly
+  230 KB, not a small Git LFS pointer text file.
 - `/dev/video0` or the configured camera device exists.
 - `cargo check -p alia-embedded --features vision-opencv` passes on the Pi.
 - Starting `alia-embedded` logs `yunet_face_tracker` as healthy after camera open.
