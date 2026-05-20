@@ -108,3 +108,10 @@ fn has_audio_debug_defaults() {
     assert!(settings.audio_debug.record_playback);
     assert_eq!(settings.audio_debug.capture_segment_ms, 10_000);
 }
+
+#[test]
+fn has_hmmd_debug_default() {
+    let settings = EmbeddedRuntimeSettings::default();
+
+    assert!(!settings.hmmd_mmwave.debug);
+}

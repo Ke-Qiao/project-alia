@@ -648,6 +648,8 @@ pub struct HmmdMmWaveConfig {
     pub reconnect_delay_ms: u64,
     #[serde(default = "default_hmmd_stale_after_ms")]
     pub stale_after_ms: u64,
+    #[serde(default)]
+    pub debug: bool,
 }
 
 impl Default for HmmdMmWaveConfig {
@@ -661,6 +663,7 @@ impl Default for HmmdMmWaveConfig {
             read_timeout_ms: default_hmmd_read_timeout_ms(),
             reconnect_delay_ms: default_hmmd_reconnect_delay_ms(),
             stale_after_ms: default_hmmd_stale_after_ms(),
+            debug: false,
         }
     }
 }

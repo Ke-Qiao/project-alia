@@ -321,11 +321,7 @@ fn run_hmmd_serial_session_unix(
             Ok(n) => {
                 parser_buf.extend_from_slice(&serial_buf[..n]);
                 for reading in parse_hmmd_serial_buffer(&mut parser_buf) {
-                    debug!(
-                        presence = reading.presence,
-                        target_distance_cm = reading.target_distance_cm,
-                        "HMMD mmWave reading"
-                    );
+                    log_hmmd_reading(&reading, config.debug);
                     set_latest(state, reading);
                 }
                 if parser_buf.len() > 4096 {
@@ -503,6 +499,24 @@ fn set_latest(state: &Arc<RwLock<HmmdState>>, reading: HmmdMmWaveReading) {
         reading,
         received_at: Instant::now(),
     });
+}
+
+fn log_hmmd_reading(reading: &HmmdMmWaveReading, debug_enabled: bool) {
+    if debug_enabled {
+        info!(
+            presence = reading.presence,
+            target_distance_cm = reading.target_distance_cm,
+            raw_payload_hex = %reading.raw_payload_hex,
+            "HMMD mmWave live reading"
+        );
+    } else {
+        debug!(
+            presence = reading.presence,
+            target_distance_cm = reading.target_distance_cm,
+            raw_payload_hex = %reading.raw_payload_hex,
+            "HMMD mmWave reading"
+        );
+    }
 }
 
 fn set_error(state: &Arc<RwLock<HmmdState>>, error: String) {

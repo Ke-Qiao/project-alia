@@ -140,6 +140,7 @@ configure_report_mode = true
 read_timeout_ms = 200
 reconnect_delay_ms = 1000
 stale_after_ms = 3000
+debug = false
 
 [motion]
 # Native embedded expression/motion control. The Rust runtime owns neck mapping,
