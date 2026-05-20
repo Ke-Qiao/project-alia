@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod factory;
 pub mod hmmd_mmwave;
 pub mod lifecycle;
+pub mod motion;
 pub mod noop;
 pub mod registry;
 pub mod sensor;
@@ -14,6 +15,7 @@ pub mod sensor;
 pub mod sherpa;
 pub mod speech;
 pub mod traits;
+pub mod vision;
 pub mod volume;
 
 pub use builder::EmbeddedBuilder;

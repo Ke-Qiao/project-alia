@@ -1,11 +1,12 @@
 # alia-embedded
 
-Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-word detection, local audio, plugin sandboxing, sensors, and device binding — all exposed over gRPC to the upper machine (`alia-server`).
+Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-word detection, local audio, native expression/motion, YuNet face tracking, plugin sandboxing, sensors, and device binding — all exposed over gRPC to the upper machine (`alia-server`).
 
 ## Prerequisites
 
 - Rust toolchain (edition 2024)
 - `protoc` (Protocol Buffers compiler)
+- OpenCV development libraries when building with `--features vision-opencv`
 
 ## Project Structure
 
@@ -24,7 +25,8 @@ alia-embedded/
 
 Package docs live in [docs/](docs/README.md). Start there for the current edge
 runtime architecture, configuration, audio/voice flow, gRPC services, and sensor
-provider model.
+provider model. For Raspberry Pi YuNet/OpenCV setup, see
+[docs/vision-yunet.md](docs/vision-yunet.md).
 
 ## Quick Start
 
@@ -59,6 +61,8 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 | `[runtime]` | Provisioning state (`false` means accessory-style OOBE mode) |
 | `[identity]` | Device ID, friendly name, keypair path |
 | `[audio]` | Capture/playback backend selection, device names, Opus params, and Linux ALSA names such as `alsa:plughw:0,0` |
+| `[motion]` | Neck matrix/animation assets, PCA9685/I2C settings, and face-center to rotation tuning |
+| `[vision]` | Camera and OpenCV YuNet face tracker settings |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
 
 ## Development
@@ -68,6 +72,12 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 ```sh
 # Check only (fast)
 cargo check -p alia-embedded
+
+# Check YuNet/OpenCV vision on a machine with OpenCV installed
+cargo check -p alia-embedded --features vision-opencv
+
+# Prepare Pi 5 OpenCV/YuNet dependencies and model
+./scripts/setup-embedded-vision-pi.sh
 
 # Full build
 cargo build -p alia-embedded

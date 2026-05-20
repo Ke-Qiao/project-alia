@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package alia.expression;
+
+service EmbeddedExpression {
+  rpc GetCapabilities(ExpressionCapabilitiesRequest) returns (ExpressionCapabilitiesResponse);
+  rpc ExecuteExpression(ExecuteExpressionRequest) returns (ExecuteExpressionResponse);
+  rpc CancelExpression(CancelExpressionRequest) returns (CancelExpressionResponse);
+}
+
+message ExpressionCapabilitiesRequest {}
+
+message ExpressionCapabilitiesResponse {
+  string capabilities_json = 1;
+}
+
+message ExecuteExpressionRequest {
+  string plan_json = 1;
+}
+
+message ExecuteExpressionResponse {
+  string result_json = 1;
+}
+
+message CancelExpressionRequest {
+  string reason = 1;
+}
+
+message CancelExpressionResponse {
+  string result_json = 1;
+}

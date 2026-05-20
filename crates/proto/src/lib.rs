@@ -6,6 +6,10 @@ pub mod binding {
     tonic::include_proto!("alia.binding");
 }
 
+pub mod expression {
+    tonic::include_proto!("alia.expression");
+}
+
 pub mod plugin {
     tonic::include_proto!("alia.plugin");
 }

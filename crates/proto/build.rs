@@ -6,6 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "proto/audio.proto",
                 "proto/binding.proto",
+                "proto/expression.proto",
                 "proto/plugin.proto",
                 "proto/settings.proto",
                 "proto/sensor.proto",

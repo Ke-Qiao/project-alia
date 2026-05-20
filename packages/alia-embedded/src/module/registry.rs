@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
+use super::motion::MotionRuntime;
 use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
@@ -25,6 +26,9 @@ pub struct EmbeddedModuleRegistry {
     // Vision
     pub face_tracker: Arc<dyn FaceTracker>,
 
+    // Motion / expression hardware
+    pub motion: Arc<MotionRuntime>,
+
     // Network
     pub discovery: Arc<dyn DiscoveryBackend>,
 
@@ -42,6 +46,7 @@ impl EmbeddedModuleRegistry {
         for module in self.sensor_modules.iter().rev() {
             let _ = module.stop().await;
         }
+        let _ = self.motion.stop().await;
         let _ = self.face_tracker.stop().await;
         let _ = self.mixer.stop().await;
         let _ = self.audio_playback.stop().await;
@@ -80,6 +85,7 @@ impl EmbeddedModuleRegistry {
             self.face_tracker.name(),
             self.face_tracker.health_check().await,
         );
+        map.insert(self.motion.name(), self.motion.health_check().await);
         map.insert(self.discovery.name(), self.discovery.health_check().await);
         for module in &self.sensor_modules {
             map.insert(module.name(), module.health_check().await);

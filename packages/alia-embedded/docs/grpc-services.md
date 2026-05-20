@@ -1,7 +1,7 @@
 # gRPC Services
 
 `alia-embedded` hosts gRPC services for server control, playback, settings,
-binding, plugin management, and sensors. Shared protobuf definitions live in
+binding, plugin management, expression motion, and sensors. Shared protobuf definitions live in
 `crates/proto/proto/` and generated Rust code lives in `crates/proto`.
 
 ## Embedded-Hosted Services
@@ -13,6 +13,7 @@ binding, plugin management, and sensors. Shared protobuf definitions live in
 | `alia.binding.DeviceBinding` | Device binding and auth handshake support. |
 | `alia.plugin.PluginManager` | Embedded plugin/package lifecycle control. |
 | `alia.sensor.EmbeddedSensor` | Sensor discovery, reads, and optional sensor commands. |
+| `alia.expression.EmbeddedExpression` | Generic expression capabilities, execution, and cancellation routed to native motion. |
 
 ## Server-Hosted Services Used by Embedded
 

@@ -36,6 +36,8 @@ The example file is `config/embedded.example.toml`.
 | `[direct_response]` | Local response directory and matching behavior. |
 | `[continuous_dialogue]` | Follow-up listening windows and turn limits. |
 | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
+| `[motion]` | Native neck mapping, animation assets, expression actions, and PCA9685 output. |
+| `[vision]` | OpenCV YuNet camera tracking parameters. |
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 
 ## Runtime State
@@ -61,6 +63,7 @@ expected for changes that rebuild core resources:
 - identity keypair path
 - module implementation choices
 - model file paths that require recreating sherpa-onnx instances
+- YuNet model/camera settings that require recreating the face tracker
 - audio backend/device choices that require reopening hardware
 - runtime directory layout
 

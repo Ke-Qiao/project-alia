@@ -18,6 +18,7 @@ use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
 use super::hmmd_mmwave::HmmdMmWaveModule;
 use super::lifecycle::ModuleLifecycle;
+use super::motion::MotionRuntime;
 use super::noop::{
     NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
     NoopFaceTracker, NoopMixer, NoopVad, NoopWakeWord,
@@ -48,14 +49,15 @@ impl EmbeddedNode {
     pub async fn run(self) -> Result<()> {
         use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
+        use alia_proto::expression::embedded_expression_server::EmbeddedExpressionServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
         use alia_proto::settings::embedded_settings_server::EmbeddedSettingsServer;
         use tonic::transport::Server;
 
         use crate::grpc::{
-            AudioStreamService, DeviceBindingService, EmbeddedSettingsService,
-            PluginManagerService, SensorService,
+            AudioStreamService, DeviceBindingService, EmbeddedExpressionService,
+            EmbeddedSettingsService, PluginManagerService, SensorService,
         };
 
         let audio_svc = AudioStreamServer::new(AudioStreamService::new(
@@ -95,6 +97,10 @@ impl EmbeddedNode {
             self.registry.sensors.clone(),
             self.binding_manager.clone(),
         ));
+        let expression_svc = EmbeddedExpressionServer::new(EmbeddedExpressionService::new(
+            self.binding_manager.clone(),
+            self.registry.motion.clone(),
+        ));
 
         let addr: SocketAddr = "0.0.0.0:50051".parse()?;
         info!(%addr, "gRPC server listening");
@@ -106,6 +112,7 @@ impl EmbeddedNode {
             .add_service(binding_svc)
             .add_service(settings_svc)
             .add_service(sensor_svc)
+            .add_service(expression_svc)
             .serve_with_shutdown(addr, async move {
                 cancel.cancelled().await;
             })
@@ -307,13 +314,6 @@ impl EmbeddedBuilder {
                 Box::new(NoopMixer)
             }),
         };
-        let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
-            Some(m) => m,
-            None => factory::create_face_tracker(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "face tracker module creation failed; using noop");
-                Box::new(NoopFaceTracker)
-            }),
-        };
         let mut discovery: Box<dyn DiscoveryBackend> = match self.discovery {
             Some(m) => m,
             None => factory::create_discovery(&config).unwrap_or_else(|error| {
@@ -325,6 +325,10 @@ impl EmbeddedBuilder {
         if config.hmmd_mmwave.enabled {
             sensor_modules.push(Box::new(HmmdMmWaveModule::new(config.hmmd_mmwave.clone())));
         }
+        let mut motion = MotionRuntime::new(config.motion.clone()).unwrap_or_else(|error| {
+            warn!(error = ?error, "motion module creation failed; using disabled motion runtime");
+            MotionRuntime::disabled(config.motion.clone())
+        });
 
         // Initialize all modules
         info!("initializing modules");
@@ -335,6 +339,15 @@ impl EmbeddedBuilder {
         init_embedded_module(audio_capture.as_mut(), &ctx).await;
         init_embedded_module(audio_playback.as_mut(), &ctx).await;
         init_embedded_module(mixer.as_mut(), &ctx).await;
+        init_embedded_module(&mut motion, &ctx).await;
+        let motion = Arc::new(motion);
+        let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
+            Some(m) => m,
+            None => factory::create_face_tracker(&config, motion.clone()).unwrap_or_else(|error| {
+                warn!(error = ?error, "face tracker module creation failed; using noop");
+                Box::new(NoopFaceTracker)
+            }),
+        };
         init_embedded_module(face_tracker.as_mut(), &ctx).await;
         init_embedded_module(discovery.as_mut(), &ctx).await;
         for module in &mut sensor_modules {
@@ -425,6 +438,7 @@ impl EmbeddedBuilder {
                 "audio capture stream failed to start; continuing without microphone capture"
             );
         }
+        start_embedded_module(motion.as_ref()).await;
         start_embedded_module(face_tracker.as_ref()).await;
         start_embedded_module(discovery.as_ref()).await;
         for module in &sensor_modules {
@@ -458,6 +472,7 @@ impl EmbeddedBuilder {
             mixer,
             speech_pipeline,
             face_tracker,
+            motion,
             discovery,
             sensors,
             sensor_modules,

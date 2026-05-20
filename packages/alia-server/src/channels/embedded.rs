@@ -22,10 +22,11 @@ use alia_proto::audio::{
     AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest, StopPlaybackRequest,
 };
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
-use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
-use alia_proto::plugin::{
-    ListPluginsRequest, PluginCommandRequest, PluginInfo, PluginState, StreamEventsRequest,
+use alia_proto::expression::embedded_expression_client::EmbeddedExpressionClient;
+use alia_proto::expression::{
+    CancelExpressionRequest, ExecuteExpressionRequest, ExpressionCapabilitiesRequest,
 };
+use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
@@ -48,47 +49,6 @@ const AUDIO_STREAM_GRPC_CHUNK_BYTES: usize = 8 * 1024;
 const AUDIO_STREAM_BACKPRESSURE_CHUNKS: usize = 8;
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
-const EMBEDDED_EXPRESSION_PLUGIN_NAMES: &[&str] = &[
-    "expression_motion",
-    "expression-adapter",
-    "motion_adapter",
-    "motion-adapter",
-];
-const EMBEDDED_EXPRESSION_ACK_TIMEOUT_MS: u64 = 1_500;
-
-#[derive(Debug, Clone)]
-struct EmbeddedExpressionPlugin {
-    name: String,
-    capabilities: HashSet<String>,
-}
-
-impl EmbeddedExpressionPlugin {
-    fn supports_action(&self, action: &str) -> bool {
-        self.capabilities
-            .contains(&format!("expression.action.{action}"))
-            || self.capabilities.contains(action)
-    }
-
-    fn has_state(&self, state: &str) -> bool {
-        self.capabilities
-            .contains(&format!("expression.state.{state}"))
-    }
-
-    fn battery_level(&self) -> Option<f32> {
-        self.capabilities.iter().find_map(|capability| {
-            capability
-                .strip_prefix("expression.state.battery_level.")
-                .and_then(|value| value.parse::<f32>().ok())
-                .map(|value| value.clamp(0.0, 1.0))
-        })
-    }
-
-    fn supports_any_expression_action(&self) -> bool {
-        self.supports_action("look_at_user")
-            || self.supports_action("small_nod")
-            || self.supports_action("small_bow")
-    }
-}
 
 /// Configuration for a single EmbeddedChannel instance.
 #[derive(Debug, Clone)]
@@ -138,6 +98,7 @@ pub struct EmbeddedChannel {
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
     sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
+    expression_client: Arc<RwLock<Option<EmbeddedExpressionClient<Channel>>>>,
     sensor_registry: Arc<RwLock<Option<Arc<SensorRegistry>>>>,
     discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
     discovery_cancel: CancellationToken,
@@ -257,6 +218,7 @@ impl EmbeddedChannel {
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
             sensor_client: Arc::new(RwLock::new(None)),
+            expression_client: Arc::new(RwLock::new(None)),
             sensor_registry: Arc::new(RwLock::new(None)),
             discovered_candidate: Arc::new(RwLock::new(None)),
             discovery_cancel: CancellationToken::new(),
@@ -463,6 +425,8 @@ impl EmbeddedChannel {
                         Some(DeviceBindingClient::new(channel.clone()));
                     *self.settings_client.write().await =
                         Some(EmbeddedSettingsClient::new(channel.clone()));
+                    *self.expression_client.write().await =
+                        Some(EmbeddedExpressionClient::new(channel.clone()));
                     let sensor_client = EmbeddedSensorClient::new(channel);
                     *self.sensor_client.write().await = Some(sensor_client.clone());
                     *self.status.write().await = ConnectionStatus::Connected;
@@ -568,6 +532,17 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
+    pub async fn expression_client(&self) -> anyhow::Result<EmbeddedExpressionClient<Channel>> {
+        if self.expression_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        self.expression_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
     async fn sync_embedded_sensors(&self) -> anyhow::Result<usize> {
         if self.sensor_client.read().await.is_none() {
             self.connect().await?;
@@ -615,168 +590,6 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
         auth_request_with_signing_key(signing_key, &self.default_server_id, message)
     }
-
-    async fn expression_motion_plugin(&self) -> anyhow::Result<Option<EmbeddedExpressionPlugin>> {
-        let mut client = self.plugin_client().await?;
-        let plugins = client
-            .list_plugins(self.auth_request(ListPluginsRequest {})?)
-            .await?
-            .into_inner()
-            .plugins;
-        Ok(plugins
-            .into_iter()
-            .filter_map(expression_plugin_from_info)
-            .find(EmbeddedExpressionPlugin::supports_any_expression_action))
-    }
-
-    async fn send_expression_plugin_command(
-        &self,
-        plugin_name: &str,
-        action: &str,
-        payload: serde_json::Value,
-    ) -> anyhow::Result<String> {
-        let command_id = uuid::Uuid::new_v4().to_string();
-        self.send_expression_plugin_command_with_id(plugin_name, &command_id, action, payload)
-            .await?;
-        Ok(command_id)
-    }
-
-    async fn send_expression_plugin_command_with_id(
-        &self,
-        plugin_name: &str,
-        command_id: &str,
-        action: &str,
-        payload: serde_json::Value,
-    ) -> anyhow::Result<()> {
-        let mut client = self.plugin_client().await?;
-        let payload_json = serde_json::to_vec(&payload)?;
-        let response = client
-            .send_command(self.auth_request(PluginCommandRequest {
-                plugin_name: plugin_name.to_string(),
-                command_id: command_id.to_string(),
-                action: action.to_string(),
-                payload_json,
-            })?)
-            .await?
-            .into_inner();
-        if !response.success {
-            anyhow::bail!(
-                "embedded expression plugin command failed: {}",
-                response.message
-            );
-        }
-        Ok(())
-    }
-
-    async fn open_expression_plugin_events(
-        &self,
-        plugin_name: &str,
-    ) -> anyhow::Result<tonic::Streaming<alia_proto::plugin::PluginEvent>> {
-        let mut client = self.plugin_client().await?;
-        let response = client
-            .stream_events(self.auth_request(StreamEventsRequest {
-                plugin_names: vec![plugin_name.to_string()],
-                event_types: vec![
-                    "expression_execution".to_string(),
-                    "expression_ack".to_string(),
-                    "expression".to_string(),
-                ],
-            })?)
-            .await?;
-        Ok(response.into_inner())
-    }
-
-    async fn wait_expression_plugin_ack(
-        &self,
-        mut stream: tonic::Streaming<alia_proto::plugin::PluginEvent>,
-        command_id: &str,
-        fallback_actions: Vec<String>,
-    ) -> anyhow::Result<Option<serde_json::Value>> {
-        let timeout = Duration::from_millis(
-            (self.config.grpc_timeout_sec.saturating_mul(1000))
-                .clamp(250, EMBEDDED_EXPRESSION_ACK_TIMEOUT_MS),
-        );
-        let command_id = command_id.to_string();
-
-        let ack = tokio::time::timeout(timeout, async move {
-            while let Some(event) = stream.message().await? {
-                let payload = serde_json::from_slice::<serde_json::Value>(&event.payload_json)
-                    .unwrap_or_else(|_| serde_json::json!({}));
-                if payload
-                    .get("command_id")
-                    .and_then(serde_json::Value::as_str)
-                    != Some(command_id.as_str())
-                {
-                    continue;
-                }
-                let status = payload
-                    .get("status")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("completed");
-                return Ok::<_, tonic::Status>(Some(serde_json::json!({
-                    "status": status,
-                    "command_id": command_id,
-                    "completion_acknowledged": true,
-                    "action_receipts": payload
-                        .get("action_receipts")
-                        .cloned()
-                        .unwrap_or_else(|| expression_action_receipts_json(
-                            payload
-                                .get("executed_actions")
-                                .and_then(serde_json::Value::as_array)
-                                .map(|actions| actions.iter().filter_map(|action| action.as_str().map(str::to_string)).collect::<Vec<_>>())
-                                .unwrap_or_else(|| fallback_actions.clone()),
-                            status,
-                            None,
-                        )),
-                    "executed_actions": payload
-                        .get("executed_actions")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!(fallback_actions)),
-                    "skipped_actions": payload
-                        .get("skipped_actions")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!([])),
-                    "safety_modifications": payload
-                        .get("safety_modifications")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!([])),
-                })));
-            }
-            Ok::<_, tonic::Status>(None)
-        })
-        .await;
-
-        match ack {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(error)) => Err(error.into()),
-            Err(_) => Ok(None),
-        }
-    }
-}
-
-fn expression_action_receipts_json(
-    actions: Vec<String>,
-    status: &str,
-    reason: Option<&str>,
-) -> serde_json::Value {
-    serde_json::json!(
-        actions
-            .into_iter()
-            .map(|action| {
-                let mut receipt = serde_json::json!({
-                    "action": action,
-                    "status": status,
-                });
-                if let Some(reason) = reason
-                    && let Some(object) = receipt.as_object_mut()
-                {
-                    object.insert("reason".to_string(), serde_json::json!(reason));
-                }
-                receipt
-            })
-            .collect::<Vec<_>>()
-    )
 }
 
 #[async_trait]
@@ -1393,198 +1206,42 @@ impl ChannelAdapter for EmbeddedChannel {
                 Ok(volume_settings_to_json(resp))
             }
             "expression_capabilities" => {
-                let plugin = self.expression_motion_plugin().await?;
-                let plugin_name = plugin.as_ref().map(|plugin| plugin.name.clone());
-                let supports_look_at_user = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.supports_action("look_at_user"));
-                let supports_small_nod = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.supports_action("small_nod"));
-                let supports_small_bow = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.supports_action("small_bow"));
-                let state_ready = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.has_state("ready"));
-                let state_busy = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.has_state("busy") || !plugin.has_state("ready"));
-                let thermal_limit = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.has_state("thermal_limit"));
-                let battery_saver = plugin
-                    .as_ref()
-                    .is_some_and(|plugin| plugin.has_state("battery_saver"));
-                let battery_level = plugin
-                    .as_ref()
-                    .and_then(EmbeddedExpressionPlugin::battery_level);
-                Ok(serde_json::json!({
-                "adapter": plugin_name
-                    .as_ref()
-                    .map(|name| format!("embedded_expression_plugin:{name}"))
-                    .unwrap_or_else(|| "embedded_expression_v0".to_string()),
-                "plugin_name": plugin_name,
-                "state_source": if state_ready { "plugin_capability_ready" } else { "unverified_plugin_state" },
-                "capabilities": {
-                    "look_at_user": {
-                        "supported": supports_look_at_user && state_ready,
-                        "params": ["intensity", "duration_ms", "target"],
-                        "safety_class": "low_risk",
-                        "max_intensity": 0.45,
-                        "max_duration_ms": 1200,
-                        "max_frequency_per_min": 6
-                    },
-                    "small_nod": {
-                        "supported": supports_small_nod && state_ready,
-                        "params": ["intensity", "duration_ms"],
-                        "safety_class": "low_risk",
-                        "max_intensity": 0.45,
-                        "max_duration_ms": 900,
-                        "max_frequency_per_min": 6
-                    },
-                    "small_bow": {
-                        "supported": supports_small_bow && state_ready,
-                        "params": ["intensity", "duration_ms"],
-                        "safety_class": "low_risk",
-                        "max_intensity": 0.35,
-                        "max_duration_ms": 1200,
-                        "max_frequency_per_min": 4
-                    }
-                },
-                "current_state": {
-                    "busy": state_busy,
-                    "motion_adapter_registered": plugin.is_some(),
-                    "thermal_limit": thermal_limit,
-                    "battery_saver": battery_saver,
-                    "battery_level": battery_level,
-                }
-                }))
+                let mut client = self.expression_client().await?;
+                let resp = client
+                    .get_capabilities(self.auth_request(ExpressionCapabilitiesRequest {})?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::from_str::<serde_json::Value>(
+                    &resp.capabilities_json,
+                )?)
             }
             "execute_expression" => {
-                let timeline = action
-                    .params
-                    .get("timeline")
-                    .and_then(serde_json::Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                if timeline.is_empty() {
-                    return Ok(serde_json::json!({
-                        "status": "skipped",
-                        "action_receipts": [{
-                            "action": "execute_expression",
-                            "status": "failed",
-                            "reason": "empty expression timeline"
-                        }],
-                        "executed_actions": [],
-                        "skipped_actions": [{
-                            "action": "execute_expression",
-                            "reason": "empty expression timeline"
-                        }],
-                        "safety_modifications": [],
-                    }));
-                }
-                let Some(plugin) = self.expression_motion_plugin().await? else {
-                    return Ok(serde_json::json!({
-                        "status": "skipped",
-                        "action_receipts": timeline.iter().map(|item| {
-                            serde_json::json!({
-                                "action": item.get("action").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
-                                "status": "failed",
-                                "reason": "no embedded expression motion adapter registered"
-                            })
-                        }).collect::<Vec<_>>(),
-                        "executed_actions": [],
-                        "skipped_actions": timeline.into_iter().map(|item| {
-                        serde_json::json!({
-                            "action": item.get("action").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
-                            "reason": "no embedded expression motion adapter registered"
-                        })
-                    }).collect::<Vec<_>>(),
-                        "safety_modifications": [],
-                    }));
-                };
-                if !plugin.has_state("ready") {
-                    return Ok(serde_json::json!({
-                        "status": "blocked",
-                        "action_receipts": timeline.iter().map(|item| {
-                            serde_json::json!({
-                                "action": item.get("action").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
-                                "status": "failed",
-                                "reason": "embedded expression adapter state is not verified ready"
-                            })
-                        }).collect::<Vec<_>>(),
-                        "executed_actions": [],
-                        "skipped_actions": timeline.into_iter().map(|item| {
-                        serde_json::json!({
-                            "action": item.get("action").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
-                            "reason": "embedded expression adapter state is not verified ready"
-                        })
-                    }).collect::<Vec<_>>(),
-                        "safety_modifications": [],
-                    }));
-                }
-                let executed_actions = timeline
-                    .iter()
-                    .filter_map(|item| {
-                        item.get("action")
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::to_string)
-                    })
-                    .collect::<Vec<_>>();
-                let command_id = uuid::Uuid::new_v4().to_string();
-                let event_stream = self.open_expression_plugin_events(&plugin.name).await.ok();
-                self.send_expression_plugin_command_with_id(
-                    &plugin.name,
-                    &command_id,
-                    "execute_expression",
-                    action.params.clone(),
-                )
-                .await?;
-                if let Some(event_stream) = event_stream
-                    && let Some(ack) = self
-                        .wait_expression_plugin_ack(
-                            event_stream,
-                            &command_id,
-                            executed_actions.clone(),
-                        )
-                        .await?
-                {
-                    return Ok(ack);
-                }
-                Ok(serde_json::json!({
-                    "status": "timed_out",
-                    "command_id": command_id,
-                    "completion_acknowledged": false,
-                    "action_receipts": expression_action_receipts_json(
-                        executed_actions.clone(),
-                        "timed_out",
-                        Some("embedded expression command was accepted but no completion acknowledgement arrived before timeout"),
-                    ),
-                    "executed_actions": executed_actions,
-                    "skipped_actions": [],
-                    "safety_modifications": [],
-                }))
+                let mut client = self.expression_client().await?;
+                let resp = client
+                    .execute_expression(self.auth_request(ExecuteExpressionRequest {
+                        plan_json: serde_json::to_string(&action.params)?,
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::from_str::<serde_json::Value>(
+                    &resp.result_json,
+                )?)
             }
             "cancel_expression" => {
-                if let Some(plugin) = self.expression_motion_plugin().await? {
-                    self.send_expression_plugin_command(
-                        &plugin.name,
-                        "cancel_expression",
-                        action.params.clone(),
-                    )
-                    .await?;
-                }
-                Ok(serde_json::json!({
-                    "status": "completed",
-                    "action_receipts": [{
-                        "action": "cancel_expression",
-                        "status": "completed"
-                    }],
-                    "executed_actions": ["cancel_expression"],
-                    "skipped_actions": [],
-                    "safety_modifications": [],
-                }))
+                let mut client = self.expression_client().await?;
+                let reason = action
+                    .params
+                    .get("reason")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("cancelled by server")
+                    .to_string();
+                let resp = client
+                    .cancel_expression(self.auth_request(CancelExpressionRequest { reason })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::from_str::<serde_json::Value>(
+                    &resp.result_json,
+                )?)
             }
             "list_direct_responses" => {
                 let mut client = self.settings_client().await?;
@@ -2353,38 +2010,6 @@ fn pcm16_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<i16>, u32)>> {
     )))
 }
 
-fn expression_plugin_from_info(plugin: PluginInfo) -> Option<EmbeddedExpressionPlugin> {
-    if plugin.state != PluginState::Running as i32
-        || !matches!(plugin.plugin_type.as_str(), "actuator" | "bridge")
-    {
-        return None;
-    }
-
-    let capabilities = plugin
-        .capabilities
-        .into_iter()
-        .map(|capability| capability.trim().to_string())
-        .filter(|capability| !capability.is_empty())
-        .collect::<HashSet<_>>();
-
-    let name_matches_expression_adapter = EMBEDDED_EXPRESSION_PLUGIN_NAMES
-        .iter()
-        .any(|name| plugin.name == *name)
-        || plugin.name.contains("expression")
-        || plugin.name.contains("motion");
-    let has_expression_capability = capabilities
-        .iter()
-        .any(|capability| capability.starts_with("expression.action."));
-    if !name_matches_expression_adapter && !has_expression_capability {
-        return None;
-    }
-
-    Some(EmbeddedExpressionPlugin {
-        name: plugin.name,
-        capabilities,
-    })
-}
-
 pub fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
     pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect()
 }
@@ -2412,46 +2037,4 @@ fn downmix_pcm16(samples: &[i16], channels: usize) -> Vec<i16> {
             (sum / frame.len() as i32) as i16
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn expression_plugin_requires_explicit_action_capabilities() {
-        let plugin = PluginInfo {
-            name: "expression_motion".to_string(),
-            version: "0.1.0".to_string(),
-            plugin_type: "actuator".to_string(),
-            state: PluginState::Running as i32,
-            description: String::new(),
-            capabilities: Vec::new(),
-        };
-
-        assert!(
-            expression_plugin_from_info(plugin)
-                .is_some_and(|plugin| !plugin.supports_any_expression_action())
-        );
-    }
-
-    #[test]
-    fn expression_plugin_accepts_declared_action_and_ready_state() {
-        let plugin = PluginInfo {
-            name: "head_motion".to_string(),
-            version: "0.1.0".to_string(),
-            plugin_type: "actuator".to_string(),
-            state: PluginState::Running as i32,
-            description: String::new(),
-            capabilities: vec![
-                "expression.action.small_nod".to_string(),
-                "expression.state.ready".to_string(),
-            ],
-        };
-        let plugin = expression_plugin_from_info(plugin).expect("expression plugin");
-
-        assert!(plugin.supports_action("small_nod"));
-        assert!(!plugin.supports_action("look_at_user"));
-        assert!(plugin.has_state("ready"));
-    }
 }

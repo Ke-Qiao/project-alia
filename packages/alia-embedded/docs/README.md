@@ -13,8 +13,12 @@ providers.
   runtime state, local development mode, model paths, and restart boundaries.
 - [Audio and voice](audio-and-voice.md) explains capture/playback, wake word,
   VAD, direct responses, continuous dialogue, interruption, and debug WAVs.
+- [Neck motion assets](motion-assets.md) documents migrated neck matrix and
+  `.anim` files plus the native animation expression action.
 - [Sensors](sensors.md) explains the embedded `SensorRegistry`, provider model,
   gRPC service, and server mirroring flow.
+- [YuNet vision](vision-yunet.md) covers Raspberry Pi OpenCV setup, model
+  placement, runtime checks, and face tracking tuning.
 - [gRPC services](grpc-services.md) summarizes the embedded-hosted services and
   how they fit with server-hosted audio ingress.
 

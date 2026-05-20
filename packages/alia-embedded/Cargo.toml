@@ -6,6 +6,7 @@ edition.workspace = true
 [features]
 default = ["wakeword-sherpa", "stt-sherpa", "direct-response"]
 direct-response = []
+vision-opencv = ["dep:opencv"]
 sherpa-onnx = ["dep:sherpa-onnx"]
 wakeword-sherpa = ["sherpa-onnx"]
 stt-sherpa = ["sherpa-onnx"]
@@ -21,6 +22,7 @@ futures.workspace = true
 libc.workspace = true
 prost.workspace = true
 rand.workspace = true
+opencv = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sherpa-onnx = { workspace = true, optional = true }

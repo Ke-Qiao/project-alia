@@ -13,6 +13,8 @@
 # - [interrupt]
 # - [continuous_dialogue]
 # - [hmmd_mmwave]
+# - [motion]
+# - [vision]
 # - [discovery]
 
 [runtime]
@@ -138,6 +140,48 @@ configure_report_mode = true
 read_timeout_ms = 200
 reconnect_delay_ms = 1000
 stale_after_ms = 3000
+
+[motion]
+# Native embedded expression/motion control. The Rust runtime owns neck mapping,
+# trajectories, cancellation, and PCA9685 output.
+enabled = true
+neck_config_file = "../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json"
+animation_dir = "../packages/alia-embedded/assets/neck/anim_data"
+servo_count = 8
+i2c_device = "/dev/i2c-1"
+pca9685_addresses = [64]
+pca_frequency_hz = 50
+min_pulse_us = 500
+max_pulse_us = 2500
+# Keep false for development; set true on the Pi after I2C/PCA9685 wiring is verified.
+hardware_enabled = false
+fps = 30
+center_angle = 90.0
+face_max_yaw = 25.0
+face_max_pitch = 18.0
+face_deadzone = 0.04
+face_smooth_alpha = 0.2
+face_center_offset_x = 0.0
+face_center_offset_y = 0.0
+face_camera_roll_deg = 0.0
+
+[vision]
+# Rust/OpenCV YuNet face tracking. Build alia-embedded with
+# `--features vision-opencv` on the Pi and place the ONNX model at this path.
+enabled = true
+camera_index = 0
+camera_width = 640
+camera_height = 480
+capture_fps = 30.0
+detector_fps = 12
+yunet_model_path = "models/vision/face_detection_yunet_2023mar.onnx"
+input_width = 320
+input_height = 320
+score_threshold = 0.75
+nms_threshold = 0.3
+top_k = 256
+min_motion_interval_ms = 80
+min_face_delta_px = 6.0
 
 [discovery]
 mdns_enabled = true

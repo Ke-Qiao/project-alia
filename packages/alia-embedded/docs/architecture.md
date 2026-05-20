@@ -12,7 +12,8 @@ macOS and Windows practical where the selected backends are available.
 - play direct response clips for wake word, cancel, fallback, and listening cues
 - stream captured utterances to `alia-server`
 - receive server TTS audio streams and play them with interruption support
-- expose settings, binding, plugin, audio, and sensor services over gRPC
+- expose settings, binding, plugin, audio, expression, and sensor services over gRPC
+- run local YuNet face tracking and feed face-center targets into native motion
 - store runtime-owned state in SQLite while keeping large assets on disk
 
 ## Module Slots
@@ -30,7 +31,7 @@ compiled defaults when the config file is missing.
 | `audio_playback` | `cpal` or ALSA fallback | Speaker output. |
 | `mixer` | `priority` | Playback priority and interruption behavior. |
 | `discovery` | `mdns` | Device discovery and binding support. |
-| `face_tracker` | placeholder | Future local perception. |
+| `face_tracker` | `yunet` | OpenCV YuNet face center tracking for neck motion. |
 
 ## Runtime Lifecycle
 

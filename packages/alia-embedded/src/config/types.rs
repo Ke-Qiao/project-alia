@@ -22,6 +22,10 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub hmmd_mmwave: HmmdMmWaveConfig,
     #[serde(default)]
+    pub motion: MotionConfig,
+    #[serde(default)]
+    pub vision: VisionConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -106,7 +110,7 @@ fn default_mixer_module() -> String {
     "priority".to_string()
 }
 fn default_face_tracker_module() -> String {
-    "mediapipe".to_string()
+    "yunet".to_string()
 }
 fn default_discovery_module() -> String {
     "mdns".to_string()
@@ -680,6 +684,209 @@ fn default_hmmd_stale_after_ms() -> u64 {
     3_000
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MotionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_motion_neck_config_file")]
+    pub neck_config_file: PathBuf,
+    #[serde(default = "default_motion_animation_dir")]
+    pub animation_dir: PathBuf,
+    #[serde(default = "default_motion_servo_count")]
+    pub servo_count: usize,
+    #[serde(default = "default_motion_i2c_device")]
+    pub i2c_device: PathBuf,
+    #[serde(default = "default_motion_pca9685_addresses")]
+    pub pca9685_addresses: Vec<u16>,
+    #[serde(default = "default_motion_pca_frequency_hz")]
+    pub pca_frequency_hz: u16,
+    #[serde(default = "default_motion_min_pulse_us")]
+    pub min_pulse_us: u16,
+    #[serde(default = "default_motion_max_pulse_us")]
+    pub max_pulse_us: u16,
+    #[serde(default)]
+    pub hardware_enabled: bool,
+    #[serde(default = "default_motion_fps")]
+    pub fps: u32,
+    #[serde(default = "default_motion_center_angle")]
+    pub center_angle: f32,
+    #[serde(default = "default_motion_face_max_yaw")]
+    pub face_max_yaw: f32,
+    #[serde(default = "default_motion_face_max_pitch")]
+    pub face_max_pitch: f32,
+    #[serde(default = "default_motion_face_deadzone")]
+    pub face_deadzone: f32,
+    #[serde(default = "default_motion_face_smooth_alpha")]
+    pub face_smooth_alpha: f32,
+    #[serde(default)]
+    pub face_center_offset_x: f32,
+    #[serde(default)]
+    pub face_center_offset_y: f32,
+    #[serde(default)]
+    pub face_camera_roll_deg: f32,
+}
+
+impl Default for MotionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            neck_config_file: default_motion_neck_config_file(),
+            animation_dir: default_motion_animation_dir(),
+            servo_count: default_motion_servo_count(),
+            i2c_device: default_motion_i2c_device(),
+            pca9685_addresses: default_motion_pca9685_addresses(),
+            pca_frequency_hz: default_motion_pca_frequency_hz(),
+            min_pulse_us: default_motion_min_pulse_us(),
+            max_pulse_us: default_motion_max_pulse_us(),
+            hardware_enabled: false,
+            fps: default_motion_fps(),
+            center_angle: default_motion_center_angle(),
+            face_max_yaw: default_motion_face_max_yaw(),
+            face_max_pitch: default_motion_face_max_pitch(),
+            face_deadzone: default_motion_face_deadzone(),
+            face_smooth_alpha: default_motion_face_smooth_alpha(),
+            face_center_offset_x: 0.0,
+            face_center_offset_y: 0.0,
+            face_camera_roll_deg: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_vision_camera_index")]
+    pub camera_index: i32,
+    #[serde(default = "default_vision_camera_width")]
+    pub camera_width: i32,
+    #[serde(default = "default_vision_camera_height")]
+    pub camera_height: i32,
+    #[serde(default = "default_vision_capture_fps")]
+    pub capture_fps: f64,
+    #[serde(default = "default_vision_detector_fps")]
+    pub detector_fps: u32,
+    #[serde(default = "default_vision_yunet_model_path")]
+    pub yunet_model_path: PathBuf,
+    #[serde(default = "default_vision_input_width")]
+    pub input_width: i32,
+    #[serde(default = "default_vision_input_height")]
+    pub input_height: i32,
+    #[serde(default = "default_vision_score_threshold")]
+    pub score_threshold: f32,
+    #[serde(default = "default_vision_nms_threshold")]
+    pub nms_threshold: f32,
+    #[serde(default = "default_vision_top_k")]
+    pub top_k: i32,
+    #[serde(default = "default_vision_min_motion_interval_ms")]
+    pub min_motion_interval_ms: u64,
+    #[serde(default = "default_vision_min_face_delta_px")]
+    pub min_face_delta_px: f32,
+}
+
+impl Default for VisionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            camera_index: default_vision_camera_index(),
+            camera_width: default_vision_camera_width(),
+            camera_height: default_vision_camera_height(),
+            capture_fps: default_vision_capture_fps(),
+            detector_fps: default_vision_detector_fps(),
+            yunet_model_path: default_vision_yunet_model_path(),
+            input_width: default_vision_input_width(),
+            input_height: default_vision_input_height(),
+            score_threshold: default_vision_score_threshold(),
+            nms_threshold: default_vision_nms_threshold(),
+            top_k: default_vision_top_k(),
+            min_motion_interval_ms: default_vision_min_motion_interval_ms(),
+            min_face_delta_px: default_vision_min_face_delta_px(),
+        }
+    }
+}
+
+fn default_motion_neck_config_file() -> PathBuf {
+    PathBuf::from("../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json")
+}
+fn default_motion_animation_dir() -> PathBuf {
+    PathBuf::from("../packages/alia-embedded/assets/neck/anim_data")
+}
+fn default_motion_servo_count() -> usize {
+    8
+}
+fn default_motion_i2c_device() -> PathBuf {
+    PathBuf::from("/dev/i2c-1")
+}
+fn default_motion_pca9685_addresses() -> Vec<u16> {
+    vec![0x40]
+}
+fn default_motion_pca_frequency_hz() -> u16 {
+    50
+}
+fn default_motion_min_pulse_us() -> u16 {
+    500
+}
+fn default_motion_max_pulse_us() -> u16 {
+    2500
+}
+fn default_motion_fps() -> u32 {
+    30
+}
+fn default_motion_center_angle() -> f32 {
+    90.0
+}
+fn default_motion_face_max_yaw() -> f32 {
+    25.0
+}
+fn default_motion_face_max_pitch() -> f32 {
+    18.0
+}
+fn default_motion_face_deadzone() -> f32 {
+    0.04
+}
+fn default_motion_face_smooth_alpha() -> f32 {
+    0.2
+}
+fn default_vision_camera_index() -> i32 {
+    0
+}
+fn default_vision_camera_width() -> i32 {
+    640
+}
+fn default_vision_camera_height() -> i32 {
+    480
+}
+fn default_vision_capture_fps() -> f64 {
+    30.0
+}
+fn default_vision_detector_fps() -> u32 {
+    12
+}
+fn default_vision_yunet_model_path() -> PathBuf {
+    PathBuf::from("models/vision/face_detection_yunet_2023mar.onnx")
+}
+fn default_vision_input_width() -> i32 {
+    320
+}
+fn default_vision_input_height() -> i32 {
+    320
+}
+fn default_vision_score_threshold() -> f32 {
+    0.75
+}
+fn default_vision_nms_threshold() -> f32 {
+    0.3
+}
+fn default_vision_top_k() -> i32 {
+    256
+}
+fn default_vision_min_motion_interval_ms() -> u64 {
+    80
+}
+fn default_vision_min_face_delta_px() -> f32 {
+    6.0
+}
+
 fn default_true() -> bool {
     true
 }
@@ -777,6 +984,10 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub hmmd_mmwave: HmmdMmWaveConfig,
     #[serde(default)]
+    pub motion: MotionConfig,
+    #[serde(default)]
+    pub vision: VisionConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -796,6 +1007,8 @@ impl Default for EmbeddedConfig {
             audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
             hmmd_mmwave: HmmdMmWaveConfig::default(),
+            motion: MotionConfig::default(),
+            vision: VisionConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
             dev: DevConfig::default(),
             direct_response: Vec::new(),
@@ -817,6 +1030,8 @@ impl EmbeddedConfig {
         self.continuous_dialogue = runtime.continuous_dialogue;
         self.discovery = runtime.discovery;
         self.hmmd_mmwave = runtime.hmmd_mmwave;
+        self.motion = runtime.motion;
+        self.vision = runtime.vision;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
         self.provisioning_mode = !runtime.runtime.provisioned;
@@ -837,6 +1052,8 @@ impl EmbeddedConfig {
             continuous_dialogue: self.continuous_dialogue.clone(),
             discovery: self.discovery.clone(),
             hmmd_mmwave: self.hmmd_mmwave.clone(),
+            motion: self.motion.clone(),
+            vision: self.vision.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),
         }

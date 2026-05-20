@@ -3,6 +3,8 @@
 //! Each slot checks the `[modules]` config section and instantiates the
 //! appropriate implementation. Unknown values produce an error at startup.
 
+use std::sync::Arc;
+
 use anyhow::{Result, bail};
 
 use crate::config::EmbeddedConfig;
@@ -10,10 +12,12 @@ use crate::config::EmbeddedConfig;
 use super::cpal_audio::{CpalAudioCapture, CpalAudioPlayback};
 use super::direct_response::KeywordMatcher;
 use super::discovery::{BleDiscovery, MdnsDiscovery};
+use super::motion::MotionRuntime;
 use super::noop::*;
 #[cfg(feature = "sherpa-onnx")]
 use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt, SherpaOnnxVad};
 use super::traits::*;
+use super::vision::YuNetFaceTracker;
 use super::volume::AudioVolumeState;
 
 /// Create the wake word engine based on config.
@@ -131,13 +135,15 @@ pub fn create_mixer(config: &EmbeddedConfig) -> Result<Box<dyn AudioMixer>> {
 }
 
 /// Create the face tracker based on config.
-pub fn create_face_tracker(config: &EmbeddedConfig) -> Result<Box<dyn FaceTracker>> {
+pub fn create_face_tracker(
+    config: &EmbeddedConfig,
+    motion: Arc<MotionRuntime>,
+) -> Result<Box<dyn FaceTracker>> {
     match config.modules.face_tracker.as_str() {
-        "mediapipe" => {
-            // TODO: Replace with MediaPipeFace (Python subprocess)
-            tracing::warn!("mediapipe face_tracker not yet implemented, using noop");
-            Ok(Box::new(NoopFaceTracker))
-        }
+        "yunet" => Ok(Box::new(YuNetFaceTracker::new(
+            config.vision.clone(),
+            motion,
+        )?)),
         "noop" => Ok(Box::new(NoopFaceTracker)),
         other => bail!("unknown face_tracker: {other}"),
     }
