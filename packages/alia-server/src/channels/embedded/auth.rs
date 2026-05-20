@@ -1,4 +1,4 @@
-use alia_transport::{DEFAULT_GRPC_AUTH_TTL, mint_auth_token};
+use alia_transport::{DEFAULT_GRPC_AUTH_TTL, EMBEDDED_CONTROL_SCOPE, mint_auth_token};
 use ed25519_dalek::SigningKey;
 use tonic::Request;
 
@@ -10,7 +10,7 @@ pub(super) fn auth_request_with_signing_key<T>(
     let token = mint_auth_token(
         signing_key,
         server_id,
-        "embedded:control",
+        EMBEDDED_CONTROL_SCOPE,
         DEFAULT_GRPC_AUTH_TTL,
     )?;
     let mut request = Request::new(message);

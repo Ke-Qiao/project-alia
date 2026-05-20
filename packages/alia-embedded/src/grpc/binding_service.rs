@@ -126,6 +126,8 @@ impl DeviceBindingTrait for DeviceBindingService {
                 crate::binding::BindingState::Bound => 1,
                 crate::binding::BindingState::HandoffPending => 2,
             },
+            device_id: self.identity.device_id.clone(),
+            device_public_key: self.public_key.clone(),
         }))
     }
 

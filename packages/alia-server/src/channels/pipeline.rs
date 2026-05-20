@@ -19,7 +19,9 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
+use crate::channels::adapter::{
+    AudioFormat, AudioPayload, ChannelAdapter, ChannelEvent, ChannelTarget,
+};
 use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemoryCaptureMode,
     MemorySection, ToolsSection,
@@ -668,12 +670,11 @@ async fn process_event(
                 audio.data.len(),
                 Some((&channel_id, &user_id)),
             );
+            let (stt_audio, stt_encoding) = prepare_audio_for_stt(&audio);
             let transcription = match cancellable_stage(
                 Some(&turn),
                 "stt",
-                modules
-                    .stt
-                    .transcribe_result(&audio.data, AudioEncoding::Pcm16kMono),
+                modules.stt.transcribe_result(&stt_audio, stt_encoding),
             )
             .await
             {
@@ -887,6 +888,45 @@ async fn process_event(
         }
         ChannelEvent::StatusChange { .. } => Ok(()),
     }
+}
+
+fn prepare_audio_for_stt(audio: &AudioPayload) -> (Vec<u8>, AudioEncoding) {
+    match audio.format {
+        AudioFormat::Opus => (audio.data.clone(), AudioEncoding::Opus),
+        AudioFormat::Wav => (audio.data.clone(), AudioEncoding::Wav),
+        AudioFormat::Pcm16 if audio.sample_rate == 16_000 && audio.channels == 1 => {
+            (audio.data.clone(), AudioEncoding::Pcm16kMono)
+        }
+        AudioFormat::Pcm16 => (
+            pcm16le_to_wav(&audio.data, audio.sample_rate, audio.channels),
+            AudioEncoding::Wav,
+        ),
+    }
+}
+
+fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
+    let channels = channels.max(1);
+    let sample_rate = sample_rate.max(1);
+    let data_len = pcm.len() as u32;
+    let byte_rate = sample_rate * channels as u32 * 2;
+    let block_align = channels * 2;
+
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend_from_slice(pcm);
+    wav
 }
 
 fn channel_event_id(event: &ChannelEvent) -> Option<&str> {

@@ -1,10 +1,12 @@
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use alia_transport::{
-    bind_payload, current_unix_timestamp, discover_service, discover_service_endpoint,
-    handoff_completion_payload, handoff_intent_payload, sign_payload,
+    DEFAULT_AUTH_MAX_SKEW, EMBEDDED_INGRESS_SCOPE, bind_payload, current_unix_timestamp,
+    discover_service, discover_service_endpoint, embedded_device_auth_subject,
+    handoff_completion_payload, handoff_intent_payload, sign_payload, verify_auth_token,
 };
 use async_trait::async_trait;
 use base64::Engine;
@@ -108,6 +110,8 @@ pub struct EmbeddedChannel {
     discovery_cancel: CancellationToken,
     signing_key: Option<SigningKey>,
     server_public_key: Vec<u8>,
+    device_id: Arc<RwLock<Option<String>>>,
+    device_public_key: Arc<RwLock<Option<Vec<u8>>>>,
     default_server_id: String,
     default_server_name: String,
     default_server_endpoint: String,
@@ -139,6 +143,8 @@ impl EmbeddedChannel {
             discovery_cancel: CancellationToken::new(),
             signing_key: None,
             server_public_key: Vec::new(),
+            device_id: Arc::new(RwLock::new(None)),
+            device_public_key: Arc::new(RwLock::new(None)),
             default_server_id: "alia-server".to_string(),
             default_server_name: "alia-server".to_string(),
             default_server_endpoint: String::new(),
@@ -336,8 +342,8 @@ impl EmbeddedChannel {
                     ));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
-                    *self.binding_client.write().await =
-                        Some(DeviceBindingClient::new(channel.clone()));
+                    let binding_client = DeviceBindingClient::new(channel.clone());
+                    *self.binding_client.write().await = Some(binding_client.clone());
                     *self.settings_client.write().await =
                         Some(EmbeddedSettingsClient::new(channel.clone()));
                     *self.expression_client.write().await =
@@ -345,6 +351,16 @@ impl EmbeddedChannel {
                     let sensor_client = EmbeddedSensorClient::new(channel);
                     *self.sensor_client.write().await = Some(sensor_client.clone());
                     *self.status.write().await = ConnectionStatus::Connected;
+                    if let Err(error) = self
+                        .refresh_bound_device_from_status_with_client(binding_client)
+                        .await
+                    {
+                        tracing::warn!(
+                            channel_id = %self.config.id,
+                            error = %error,
+                            "failed to refresh embedded binding identity"
+                        );
+                    }
                     if let Err(error) = self.sync_embedded_sensors_with_client(sensor_client).await
                     {
                         tracing::warn!(
@@ -505,6 +521,53 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?;
         auth_request_with_signing_key(signing_key, &self.default_server_id, message)
     }
+
+    async fn verify_audio_ingress_auth(&self, token: &str) -> anyhow::Result<()> {
+        let device_public_key = self
+            .device_public_key
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded device public key is not available"))?;
+        let device_id = self.device_id.read().await.clone().unwrap_or_default();
+        let subject = embedded_device_auth_subject(&device_id, &device_public_key);
+        verify_auth_token(
+            token,
+            &device_public_key,
+            &subject,
+            EMBEDDED_INGRESS_SCOPE,
+            DEFAULT_AUTH_MAX_SKEW,
+        )?;
+        Ok(())
+    }
+
+    async fn remember_bound_device(
+        &self,
+        device_id: String,
+        device_public_key: Vec<u8>,
+    ) -> anyhow::Result<()> {
+        if device_public_key.is_empty() {
+            anyhow::bail!("embedded bind response did not include device public key");
+        }
+        *self.device_id.write().await = Some(device_id);
+        *self.device_public_key.write().await = Some(device_public_key);
+        Ok(())
+    }
+
+    async fn refresh_bound_device_from_status_with_client(
+        &self,
+        mut client: DeviceBindingClient<Channel>,
+    ) -> anyhow::Result<()> {
+        let status = client
+            .get_binding_status(self.auth_request(())?)
+            .await?
+            .into_inner();
+        if status.is_bound && !status.device_public_key.is_empty() {
+            self.remember_bound_device(status.device_id, status.device_public_key)
+                .await?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -520,9 +583,10 @@ impl ModuleLifecycle for EmbeddedChannel {
         self.signing_key = Some(keypair.signing_key().clone());
         self.default_server_id = _ctx.config.server.id.clone();
         self.default_server_name = format!("alia-server@{}", _ctx.config.server.host);
-        self.default_server_endpoint = format!(
-            "http://{}:{}",
-            _ctx.config.server.host, _ctx.config.server.port
+        self.default_server_endpoint = default_server_endpoint_for_embedded(
+            &_ctx.config.server.host,
+            _ctx.config.server.port,
+            _ctx.config.server.public_endpoint.as_deref(),
         );
         let signing_key = self
             .signing_key
@@ -753,6 +817,11 @@ impl ChannelAdapter for EmbeddedChannel {
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
         // Route actions to the appropriate gRPC service on the Pi
         match action.name.as_str() {
+            "verify_audio_ingress_auth" => {
+                let token = required_action_str(&action.params, "token")?;
+                self.verify_audio_ingress_auth(token).await?;
+                Ok(serde_json::json!({ "ok": true }))
+            }
             "list_plugins" => {
                 let mut client = self.plugin_client().await?;
                 let resp = client
@@ -878,6 +947,7 @@ impl ChannelAdapter for EmbeddedChannel {
                     "bound_server_name": resp.bound_server_name,
                     "bound_since": resp.bound_since,
                     "state": resp.state,
+                    "device_id": resp.device_id,
                 }))
             }
             "discovery_status" => Ok(serde_json::json!({
@@ -897,6 +967,11 @@ impl ChannelAdapter for EmbeddedChannel {
                 let server_endpoint = action.params["server_endpoint"]
                     .as_str()
                     .unwrap_or(&self.default_server_endpoint);
+                if server_endpoint.trim().is_empty() {
+                    anyhow::bail!(
+                        "bind_device requires server_endpoint when server.host is a wildcard address; configure server.public_endpoint or pass a LAN-reachable endpoint"
+                    );
+                }
                 if action.params["require_confirmation"]
                     .as_bool()
                     .unwrap_or(true)
@@ -937,6 +1012,13 @@ impl ChannelAdapter for EmbeddedChannel {
                     })
                     .await?
                     .into_inner();
+                if resp.success {
+                    self.remember_bound_device(
+                        resp.device_id.clone(),
+                        resp.device_public_key.clone(),
+                    )
+                    .await?;
+                }
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "device_id": resp.device_id,
@@ -955,6 +1037,10 @@ impl ChannelAdapter for EmbeddedChannel {
                     })?)
                     .await?
                     .into_inner();
+                if resp.success {
+                    *self.device_id.write().await = None;
+                    *self.device_public_key.write().await = None;
+                }
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "message": resp.message,
@@ -1062,6 +1148,13 @@ impl ChannelAdapter for EmbeddedChannel {
                     )?)
                     .await?
                     .into_inner();
+                if resp.success {
+                    self.remember_bound_device(
+                        resp.device_id.clone(),
+                        resp.device_public_key.clone(),
+                    )
+                    .await?;
+                }
                 Ok(serde_json::json!({
                     "success": resp.success,
                     "device_id": resp.device_id,
@@ -1274,4 +1367,34 @@ impl ChannelAdapter for EmbeddedChannel {
             )),
         }
     }
+}
+
+fn default_server_endpoint_for_embedded(
+    host: &str,
+    port: u16,
+    public_endpoint: Option<&str>,
+) -> String {
+    if let Some(endpoint) = public_endpoint
+        && !endpoint.trim().is_empty()
+    {
+        return endpoint.trim().to_string();
+    }
+
+    if is_unspecified_host(host) {
+        tracing::warn!(
+            host,
+            "server.host is a wildcard address; embedded binding requires server.public_endpoint or explicit server_endpoint"
+        );
+        String::new()
+    } else {
+        format!("http://{}:{}", host, port)
+    }
+}
+
+fn is_unspecified_host(host: &str) -> bool {
+    let trimmed = host.trim().trim_matches(['[', ']']);
+    trimmed
+        .parse::<IpAddr>()
+        .map(|addr| addr.is_unspecified())
+        .unwrap_or(false)
 }

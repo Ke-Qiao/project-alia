@@ -11,6 +11,10 @@ impl DeviceKeypair {
     pub fn public_key_bytes(&self) -> [u8; 32] {
         self.signing_key.verifying_key().to_bytes()
     }
+
+    pub fn signing_key(&self) -> &SigningKey {
+        &self.signing_key
+    }
 }
 
 pub fn load_device_public_key(path: &Path) -> Result<Vec<u8>> {

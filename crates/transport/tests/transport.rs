@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use alia_transport::{
-    DEFAULT_EMBEDDED_DISCOVERY_SERVICE, bind_payload, mint_auth_token, normalize_service_name,
-    sign_payload, verify_auth_token, verify_payload,
+    DEFAULT_EMBEDDED_DISCOVERY_SERVICE, EMBEDDED_INGRESS_SCOPE, bind_payload,
+    embedded_device_auth_subject, mint_auth_token, normalize_service_name, sign_payload,
+    verify_auth_token, verify_payload,
 };
 use ed25519_dalek::SigningKey;
 
@@ -16,6 +17,31 @@ fn normalizes_embedded_service_name() {
         normalize_service_name(DEFAULT_EMBEDDED_DISCOVERY_SERVICE),
         "_alia-embedded._tcp.local."
     );
+}
+
+#[test]
+fn device_ingress_auth_subject_falls_back_to_public_key() {
+    let secret: [u8; 32] = rand::random();
+    let signing_key = SigningKey::from_bytes(&secret);
+    let public_key = signing_key.verifying_key().to_bytes();
+    let subject = embedded_device_auth_subject("", &public_key);
+
+    let token = mint_auth_token(
+        &signing_key,
+        &subject,
+        EMBEDDED_INGRESS_SCOPE,
+        Duration::from_secs(900),
+    )
+    .unwrap();
+    let claims = verify_auth_token(
+        &token,
+        &public_key,
+        &subject,
+        EMBEDDED_INGRESS_SCOPE,
+        Duration::from_secs(300),
+    )
+    .unwrap();
+    assert_eq!(claims.server_id, subject);
 }
 
 #[test]

@@ -11,6 +11,8 @@ use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelEvent};
 use crate::channels::registry::ChannelRegistry;
 use crate::event::{EventBus, ServerEvent};
 
+const CHANNEL_ID_METADATA: &str = "x-alia-channel-id";
+
 pub struct ServerAudioIngressService {
     event_bus: EventBus,
     channels: Arc<ChannelRegistry>,
@@ -45,6 +47,55 @@ impl ServerAudioIngressService {
             .map_err(|error| Status::failed_precondition(error.to_string()))?
             .ok_or_else(|| Status::invalid_argument(format!("channel '{requested}' not found")))
     }
+
+    async fn authenticate_ingress<T>(
+        &self,
+        request: &Request<T>,
+        requested_channel_id: Option<&str>,
+    ) -> Result<String, Status> {
+        let metadata_channel_id = request
+            .metadata()
+            .get(CHANNEL_ID_METADATA)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let token = bearer_token(request)?;
+        self.authenticate_ingress_token(
+            token,
+            requested_channel_id.map(str::to_string),
+            metadata_channel_id,
+        )
+        .await
+    }
+
+    async fn authenticate_ingress_token(
+        &self,
+        token: String,
+        requested_channel_id: Option<String>,
+        metadata_channel_id: Option<String>,
+    ) -> Result<String, Status> {
+        let requested = requested_channel_id.or(metadata_channel_id);
+        let channel_id = self.resolve_channel_id(requested).await?;
+
+        let channel =
+            self.channels.get(&channel_id).await.ok_or_else(|| {
+                Status::invalid_argument(format!("channel '{channel_id}' not found"))
+            })?;
+        if channel.channel_type() != "embedded" {
+            return Err(Status::permission_denied(format!(
+                "channel '{channel_id}' does not accept embedded ingress"
+            )));
+        }
+
+        channel
+            .execute_action(crate::channels::adapter::ChannelAction {
+                name: "verify_audio_ingress_auth".to_string(),
+                params: serde_json::json!({ "token": token }),
+            })
+            .await
+            .map_err(|error| Status::unauthenticated(error.to_string()))?;
+
+        Ok(channel_id)
+    }
 }
 
 #[tonic::async_trait]
@@ -53,9 +104,17 @@ impl ServerAudioIngress for ServerAudioIngressService {
         &self,
         request: Request<tonic::Streaming<CapturedAudioChunk>>,
     ) -> Result<Response<AudioUploadResponse>, Status> {
+        let metadata_channel_id = request
+            .metadata()
+            .get(CHANNEL_ID_METADATA)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let token = bearer_token(&request)?;
+        let authenticated_channel_id = self
+            .authenticate_ingress_token(token, None, metadata_channel_id)
+            .await?;
         let mut stream = request.into_inner();
         let mut audio = Vec::new();
-        let mut channel_id = None;
         let mut user_id = None;
         let mut sample_rate = 16_000;
         let mut channels = 1;
@@ -63,7 +122,12 @@ impl ServerAudioIngress for ServerAudioIngressService {
 
         while let Some(frame) = stream.message().await? {
             if !frame.channel_id.is_empty() {
-                channel_id = Some(frame.channel_id);
+                let frame_channel_id = self.resolve_channel_id(Some(frame.channel_id)).await?;
+                if frame_channel_id != authenticated_channel_id {
+                    return Err(Status::permission_denied(
+                        "captured audio channel_id does not match authenticated channel",
+                    ));
+                }
             }
             if !frame.user_id.is_empty() {
                 user_id = Some(frame.user_id);
@@ -84,7 +148,6 @@ impl ServerAudioIngress for ServerAudioIngressService {
         if audio.is_empty() {
             return Err(Status::invalid_argument("captured audio stream was empty"));
         }
-        let channel_id = self.resolve_channel_id(channel_id).await?;
 
         let format = match encoding {
             ProtoAudioEncoding::PcmS16le => AudioFormat::Pcm16,
@@ -93,7 +156,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
 
         self.event_bus
             .publish(ServerEvent::ChannelInput(ChannelEvent::AudioInput {
-                channel_id,
+                channel_id: authenticated_channel_id,
                 user_id: user_id.unwrap_or_else(|| self.default_user_id.clone()),
                 audio: AudioPayload {
                     data: audio,
@@ -110,8 +173,10 @@ impl ServerAudioIngress for ServerAudioIngressService {
         &self,
         request: Request<InterruptActiveTurnRequest>,
     ) -> Result<Response<TurnInterruptResponse>, Status> {
+        let channel_id = self
+            .authenticate_ingress(&request, Some(&request.get_ref().channel_id))
+            .await?;
         let req = request.into_inner();
-        let channel_id = self.resolve_channel_id(Some(req.channel_id)).await?;
         let user_id = if req.user_id.trim().is_empty() {
             self.default_user_id.clone()
         } else {
@@ -141,8 +206,10 @@ impl ServerAudioIngress for ServerAudioIngressService {
         &self,
         request: Request<SensorDataRequest>,
     ) -> Result<Response<SensorDataResponse>, Status> {
+        let channel_id = self
+            .authenticate_ingress(&request, Some(&request.get_ref().channel_id))
+            .await?;
         let req = request.into_inner();
-        let channel_id = self.resolve_channel_id(Some(req.channel_id)).await?;
         let sensor_type = req.sensor_type.trim();
         if sensor_type.is_empty() {
             return Err(Status::invalid_argument("sensor_type is required"));
@@ -167,4 +234,17 @@ impl ServerAudioIngress for ServerAudioIngressService {
             sensor_id,
         }))
     }
+}
+
+fn bearer_token<T>(request: &Request<T>) -> Result<String, Status> {
+    let raw = request
+        .metadata()
+        .get("authorization")
+        .ok_or_else(|| Status::unauthenticated("missing authorization metadata"))?;
+    let raw = raw
+        .to_str()
+        .map_err(|_| Status::unauthenticated("invalid authorization metadata"))?;
+    raw.strip_prefix("Bearer ")
+        .map(str::to_string)
+        .ok_or_else(|| Status::unauthenticated("expected Bearer token"))
 }

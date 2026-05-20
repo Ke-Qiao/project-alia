@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use tracing::{debug, info, warn};
@@ -31,6 +32,8 @@ pub(super) async fn handle_utterance(
     audio_debug: AudioDebugRecorder,
     event_bus: EventBus,
     max_duration_ms: u32,
+    device_id: &str,
+    keypair_path: &Path,
 ) -> UtteranceOutcome {
     if capture.pcm.is_empty() {
         return UtteranceOutcome::Ignored;
@@ -61,6 +64,8 @@ pub(super) async fn handle_utterance(
                 playback,
                 event_bus,
                 audio_debug,
+                device_id,
+                keypair_path,
             )
             .await;
         }
@@ -73,6 +78,8 @@ pub(super) async fn handle_utterance(
                 playback,
                 event_bus,
                 audio_debug,
+                device_id,
+                keypair_path,
             )
             .await;
         }
@@ -87,6 +94,8 @@ pub(super) async fn handle_utterance(
             playback,
             event_bus,
             audio_debug,
+            device_id,
+            keypair_path,
         )
         .await;
     };
@@ -107,8 +116,10 @@ async fn upload_or_play_fallback(
     playback: Arc<dyn AudioPlaybackBackend>,
     event_bus: EventBus,
     audio_debug: AudioDebugRecorder,
+    device_id: &str,
+    keypair_path: &Path,
 ) -> UtteranceOutcome {
-    if upload_to_server(capture, binding).await {
+    if upload_to_server(capture, binding, device_id, keypair_path).await {
         return UtteranceOutcome::UploadedToServer;
     }
 

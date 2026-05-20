@@ -127,9 +127,13 @@ impl MotionRuntime {
             "current_state": {
                 "busy": state.busy,
                 "motion_adapter_registered": ready,
-                "thermal_limit": false,
-                "battery_saver": false,
+                "thermal_limit": null,
+                "battery_saver": null,
                 "battery_level": null
+            },
+            "receipt_model": {
+                "statuses": ["accepted", "started", "completed", "failed", "timed_out"],
+                "state_quality": "unknown_when_no_sensor_provider"
             }
         })
     }

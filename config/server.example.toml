@@ -19,6 +19,8 @@
 id = "alia-main"
 host = "0.0.0.0"
 port = 3000
+# Set this when binding LAN embedded devices. Do not use 0.0.0.0 here.
+# public_endpoint = "http://192.168.1.10:3000"
 log_level = "info"
 debug_output = false
 

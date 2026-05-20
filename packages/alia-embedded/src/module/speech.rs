@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ use super::traits::{
     VoiceActivityState, WakeWordEngine,
 };
 use crate::binding::BindingManager;
-use crate::config::{ContinuousDialogueConfig, EdgeSttConfig, InterruptConfig};
+use crate::config::{ContinuousDialogueConfig, EdgeSttConfig, IdentityConfig, InterruptConfig};
 
 pub struct SpeechPipeline {
     audio_bus: AudioBus,
@@ -48,6 +49,8 @@ pub struct SpeechPipeline {
     post_wake_response_delay_ms: u32,
     interrupt_config: InterruptConfig,
     continuous_config: ContinuousDialogueConfig,
+    device_id: String,
+    keypair_path: PathBuf,
     cancel_token: CancellationToken,
     task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -65,6 +68,7 @@ impl SpeechPipeline {
         edge_stt_config: &EdgeSttConfig,
         interrupt_config: &InterruptConfig,
         continuous_config: &ContinuousDialogueConfig,
+        identity_config: &IdentityConfig,
         audio_debug: AudioDebugRecorder,
         cancel_token: CancellationToken,
     ) -> Self {
@@ -84,6 +88,8 @@ impl SpeechPipeline {
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
             interrupt_config: interrupt_config.clone(),
             continuous_config: continuous_config.clone(),
+            device_id: identity_config.device_id.clone(),
+            keypair_path: identity_config.keypair_path.clone(),
             cancel_token,
             task: Mutex::new(None),
         }
@@ -121,6 +127,8 @@ impl ModuleLifecycle for SpeechPipeline {
         let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
         let interrupt_config = self.interrupt_config.clone();
         let continuous_config = self.continuous_config.clone();
+        let device_id = self.device_id.clone();
+        let keypair_path = self.keypair_path.clone();
         let cancel = self.cancel_token.child_token();
 
         *task = Some(tokio::spawn(async move {
@@ -294,6 +302,8 @@ impl ModuleLifecycle for SpeechPipeline {
                                     audio_debug.clone(),
                                     event_bus.clone(),
                                     max_duration_ms,
+                                    &device_id,
+                                    &keypair_path,
                                 )
                                 .await;
                                 match outcome {
@@ -343,6 +353,8 @@ impl ModuleLifecycle for SpeechPipeline {
                                 });
 
                                 let binding = Arc::clone(&binding);
+                                let device_id = device_id.clone();
+                                let keypair_path = keypair_path.clone();
                                 let timestamp_us = event.timestamp_us;
                                 tokio::spawn(async move {
                                     interrupt_server_active_turn(
@@ -351,6 +363,8 @@ impl ModuleLifecycle for SpeechPipeline {
                                         "embedded-user".to_string(),
                                         "wakeword_during_playback".to_string(),
                                         timestamp_us,
+                                        device_id,
+                                        keypair_path,
                                     )
                                     .await;
                                 });

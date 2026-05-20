@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_EMBEDDED_DISCOVERY_SERVICE: &str = "_alia-embedded._tcp.local.";
 pub const DEFAULT_AUTH_MAX_SKEW: Duration = Duration::from_secs(300);
 pub const DEFAULT_GRPC_AUTH_TTL: Duration = Duration::from_secs(15 * 60);
+pub const EMBEDDED_CONTROL_SCOPE: &str = "embedded:control";
+pub const EMBEDDED_INGRESS_SCOPE: &str = "embedded:ingress";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiscoveredService {
@@ -234,6 +236,15 @@ pub fn verify_auth_token(
         anyhow::bail!("auth token expired");
     }
     Ok(claims)
+}
+
+pub fn embedded_device_auth_subject(device_id: &str, device_public_key: &[u8]) -> String {
+    let device_id = device_id.trim();
+    if !device_id.is_empty() {
+        return device_id.to_string();
+    }
+
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(device_public_key)
 }
 
 fn framed_payload(parts: &[&[u8]]) -> Vec<u8> {

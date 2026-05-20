@@ -1,9 +1,9 @@
 use tonic::{Request, Status, metadata::MetadataMap};
 
+use alia_transport::EMBEDDED_CONTROL_SCOPE;
+
 use crate::binding::BindingManager;
 use crate::binding::BindingState;
-
-pub const EMBEDDED_CONTROL_SCOPE: &str = "embedded:control";
 
 pub async fn require_auth<T>(binding: &BindingManager, request: &Request<T>) -> Result<(), Status> {
     let token = extract_bearer_token(request.metadata())?;

@@ -1,18 +1,28 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use alia_proto::audio::server_audio_ingress_client::ServerAudioIngressClient;
 use alia_proto::audio::{
     AudioChunk, AudioEncoding, CapturedAudioChunk, InterruptActiveTurnRequest,
 };
+use alia_transport::{
+    DEFAULT_GRPC_AUTH_TTL, EMBEDDED_INGRESS_SCOPE, embedded_device_auth_subject, mint_auth_token,
+};
 use anyhow::{Context, Result};
 use futures::stream;
 use tracing::{debug, warn};
 
 use crate::binding::BindingManager;
+use crate::identity;
 
 use super::capture::SpeechCapture;
 
-pub(super) async fn upload_to_server(capture: &SpeechCapture, binding: &BindingManager) -> bool {
+pub(super) async fn upload_to_server(
+    capture: &SpeechCapture,
+    binding: &BindingManager,
+    device_id: &str,
+    keypair_path: &Path,
+) -> bool {
     let status = binding.status().await;
     let Some(server_endpoint) = status.server_endpoint.as_deref() else {
         warn!("cannot upload speech to server before device is bound");
@@ -30,8 +40,16 @@ pub(super) async fn upload_to_server(capture: &SpeechCapture, binding: &BindingM
     let channel_id = "embedded".to_string();
     let user_id = "embedded-user".to_string();
 
+    let auth = match ingress_auth(device_id, keypair_path) {
+        Ok(auth) => auth,
+        Err(error) => {
+            warn!(error = %error, "failed to build server ingress auth token");
+            return false;
+        }
+    };
+
     if let Err(error) =
-        upload_pcm16_to_server(endpoint, pcm, sample_rate, channel_id, user_id).await
+        upload_pcm16_to_server(endpoint, pcm, sample_rate, channel_id, user_id, auth).await
     {
         warn!(error = %error, "failed to upload captured speech to server");
         return false;
@@ -45,6 +63,8 @@ pub(super) async fn interrupt_server_active_turn(
     user_id: String,
     reason: String,
     timestamp_us: u64,
+    device_id: String,
+    keypair_path: std::path::PathBuf,
 ) {
     let status = binding.status().await;
     let Some(server_endpoint) = status.server_endpoint.as_deref() else {
@@ -59,8 +79,16 @@ pub(super) async fn interrupt_server_active_turn(
         }
     };
 
+    let auth = match ingress_auth(&device_id, &keypair_path) {
+        Ok(auth) => auth,
+        Err(error) => {
+            warn!(error = %error, "failed to build server interrupt auth token");
+            return;
+        }
+    };
+
     if let Err(error) =
-        interrupt_active_turn(endpoint, channel_id, user_id, reason, timestamp_us).await
+        interrupt_active_turn(endpoint, channel_id, user_id, reason, timestamp_us, auth).await
     {
         warn!(error = %error, "failed to interrupt active server voice turn");
         debug!(error = ?error, "server turn interrupt failure details");
@@ -90,11 +118,13 @@ async fn upload_pcm16_to_server(
     sample_rate: u32,
     channel_id: String,
     user_id: String,
+    auth: IngressAuth,
 ) -> Result<()> {
     let mut client = ServerAudioIngressClient::connect(endpoint.clone())
         .await
         .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
 
+    let auth_channel_id = channel_id.clone();
     let upload_stream = stream::unfold(
         (pcm, 0usize, 0u64, channel_id, user_id),
         move |(pcm, offset, sequence, channel_id, user_id)| async move {
@@ -119,8 +149,11 @@ async fn upload_pcm16_to_server(
         },
     );
 
+    let mut request = tonic::Request::new(upload_stream);
+    attach_ingress_auth(request.metadata_mut(), &auth, &auth_channel_id)?;
+
     client
-        .upload_captured_audio(upload_stream)
+        .upload_captured_audio(request)
         .await
         .context("uploading captured speech to server")?;
     Ok(())
@@ -132,20 +165,62 @@ async fn interrupt_active_turn(
     user_id: String,
     reason: String,
     timestamp_us: u64,
+    auth: IngressAuth,
 ) -> Result<()> {
     let mut client = ServerAudioIngressClient::connect(endpoint.clone())
         .await
         .with_context(|| format!("connecting to server audio ingress at {endpoint}"))?;
 
+    let mut request = tonic::Request::new(InterruptActiveTurnRequest {
+        channel_id,
+        user_id,
+        reason,
+        timestamp_us,
+    });
+    let auth_channel_id = request.get_ref().channel_id.clone();
+    attach_ingress_auth(request.metadata_mut(), &auth, &auth_channel_id)?;
+
     client
-        .interrupt_active_turn(InterruptActiveTurnRequest {
-            channel_id,
-            user_id,
-            reason,
-            timestamp_us,
-        })
+        .interrupt_active_turn(request)
         .await
         .context("interrupting active server voice turn")?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct IngressAuth {
+    token: String,
+}
+
+fn ingress_auth(device_id: &str, keypair_path: &Path) -> Result<IngressAuth> {
+    let keypair = identity::load_device_keypair(keypair_path)?;
+    let public_key = keypair.public_key_bytes();
+    let subject = embedded_device_auth_subject(device_id, &public_key);
+    let token = mint_auth_token(
+        keypair.signing_key(),
+        &subject,
+        EMBEDDED_INGRESS_SCOPE,
+        DEFAULT_GRPC_AUTH_TTL,
+    )?;
+    Ok(IngressAuth { token })
+}
+
+fn attach_ingress_auth(
+    metadata: &mut tonic::metadata::MetadataMap,
+    auth: &IngressAuth,
+    channel_id: &str,
+) -> Result<()> {
+    let authorization = format!("Bearer {}", auth.token)
+        .parse()
+        .context("building authorization metadata")?;
+    metadata.insert("authorization", authorization);
+
+    if !channel_id.trim().is_empty() {
+        metadata.insert(
+            "x-alia-channel-id",
+            channel_id.parse().context("building channel id metadata")?,
+        );
+    }
     Ok(())
 }
 

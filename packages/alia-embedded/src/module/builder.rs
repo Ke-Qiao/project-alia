@@ -417,6 +417,7 @@ impl EmbeddedBuilder {
             &config.edge_stt,
             &config.interrupt,
             &config.continuous_dialogue,
+            &config.identity,
             audio_debug.clone(),
             self.cancel_token.clone(),
         ));

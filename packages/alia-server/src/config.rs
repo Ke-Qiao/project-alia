@@ -32,6 +32,8 @@ pub struct ServerSection {
     pub id: String,
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub public_endpoint: Option<String>,
     pub log_level: String,
     #[serde(default)]
     pub debug_output: bool,
