@@ -95,6 +95,7 @@ struct DiscoveryCandidate {
 }
 
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
+#[derive(Clone)]
 pub struct EmbeddedChannel {
     config: EmbeddedChannelConfig,
     event_bus: EventBus,
@@ -307,6 +308,55 @@ impl EmbeddedChannel {
                                 );
                             }
                         }
+                    }
+                }
+            }
+        });
+    }
+
+    fn spawn_connection_loop(&self) {
+        let channel = self.clone();
+        let cancel = self.discovery_cancel.child_token();
+
+        tokio::spawn(async move {
+            let base_delay = Duration::from_secs(channel.config.reconnect_interval_sec.max(1));
+            let max_delay = Duration::from_secs(channel.config.reconnect_max_backoff_sec.max(1));
+            let mut delay = Duration::ZERO;
+
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = tokio::time::sleep(delay) => {
+                        let connected = matches!(
+                            &*channel.status.read().await,
+                            ConnectionStatus::Connected
+                        ) && channel.sensor_client.read().await.is_some();
+
+                        if connected {
+                            delay = base_delay;
+                            continue;
+                        }
+
+                        if let Err(error) = channel.connect().await {
+                            tracing::warn!(
+                                channel_id = %channel.config.id,
+                                error = %error,
+                                "embedded connection attempt failed"
+                            );
+                        }
+
+                        let connected = matches!(
+                            &*channel.status.read().await,
+                            ConnectionStatus::Connected
+                        ) && channel.sensor_client.read().await.is_some();
+
+                        delay = if connected {
+                            base_delay
+                        } else if delay.is_zero() {
+                            base_delay
+                        } else {
+                            std::cmp::min(delay.saturating_mul(2), max_delay)
+                        };
                     }
                 }
             }
@@ -610,6 +660,7 @@ impl ModuleLifecycle for EmbeddedChannel {
 
     async fn start(&self) -> anyhow::Result<()> {
         self.spawn_discovery_loop();
+        self.spawn_connection_loop();
         self.spawn_sensor_sync_loop();
         Ok(())
     }
