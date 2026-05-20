@@ -610,6 +610,18 @@ impl ExpressionRuntime {
             .await
     }
 
+    pub async fn speech_for_expression_input(&self, input: ExpressionInput) -> SpeechExpression {
+        self.plan(input)
+            .await
+            .speech
+            .unwrap_or_else(|| self.default_speech())
+    }
+
+    pub async fn speech_for_sentence(&self, mut input: ExpressionInput) -> SpeechExpression {
+        apply_sentence_speech_overrides(&mut input);
+        self.speech_for_expression_input(input).await
+    }
+
     pub async fn speech_for_text_for_user(
         &self,
         text: &str,
@@ -618,7 +630,7 @@ impl ExpressionRuntime {
         dialogue_act: &str,
         content_tone: &str,
     ) -> SpeechExpression {
-        self.plan(ExpressionInput {
+        self.speech_for_sentence(ExpressionInput {
             response_text: text.to_string(),
             route: None,
             channel_id: channel_id.to_string(),
@@ -637,8 +649,10 @@ impl ExpressionRuntime {
             expression_capabilities: None,
         })
         .await
-        .speech
-        .unwrap_or_else(|| SpeechExpression {
+    }
+
+    fn default_speech(&self) -> SpeechExpression {
+        SpeechExpression {
             style: self.policy.default_style.clone(),
             intensity: 0.3,
             voice_profile: self
@@ -650,7 +664,7 @@ impl ExpressionRuntime {
                 .get(&self.policy.default_style)
                 .map(ExpressionStyleSection::prosody)
                 .unwrap_or_default(),
-        })
+        }
     }
 
     fn resolve_style_name(&self, intent: &ExpressionIntent, stance: &ExpressiveStance) -> String {
@@ -1235,6 +1249,187 @@ fn apply_builtin_safety_policy(
     }
     plan.timeline = kept;
     plan.safety_modifications.extend(modifications);
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct SentenceSpeechCue {
+    dialogue_act: Option<&'static str>,
+    content_tone: Option<&'static str>,
+    max_intensity: Option<f32>,
+    require_clarity: bool,
+}
+
+fn apply_sentence_speech_overrides(input: &mut ExpressionInput) {
+    let cue = sentence_speech_cue(&input.response_text);
+
+    if let Some(dialogue_act) = cue.dialogue_act {
+        let can_use_positive_lift = !input.safety_context.active_task_serious
+            && !input.safety_context.minimal_expression
+            && !input.safety_context.night_mode
+            && input.user_state.frustration < 0.35
+            && input.constraints.allow_playful;
+        let always_safe_override = matches!(dialogue_act, "warn" | "apologize" | "comfort");
+        if always_safe_override || dialogue_act != "celebrate" || can_use_positive_lift {
+            input.dialogue_act = dialogue_act.to_string();
+        }
+    }
+
+    if let Some(content_tone) = cue.content_tone {
+        if content_tone != "playful"
+            || (!input.safety_context.active_task_serious
+                && !input.safety_context.night_mode
+                && input.constraints.allow_playful)
+        {
+            input.content_tone = content_tone.to_string();
+        }
+    }
+
+    if cue.require_clarity {
+        input.constraints.require_clarity = true;
+    }
+    if let Some(max_intensity) = cue.max_intensity {
+        input.constraints.max_intensity = Some(
+            input
+                .constraints
+                .max_intensity
+                .unwrap_or(1.0)
+                .min(max_intensity.clamp(0.0, 1.0)),
+        );
+    }
+}
+
+fn sentence_speech_cue(text: &str) -> SentenceSpeechCue {
+    let lower = text.to_ascii_lowercase();
+    let compact = lower.trim();
+    if compact.is_empty() {
+        return SentenceSpeechCue::default();
+    }
+
+    let has_negative_guard = contains_any(
+        compact,
+        &[
+            "not great",
+            "not good",
+            "not done",
+            "not safe",
+            "failed",
+            "failure",
+            "error",
+        ],
+    );
+
+    if contains_any(
+        compact,
+        &[
+            "danger",
+            "unsafe",
+            "warning",
+            "be careful",
+            "do not",
+            "don't",
+            "must not",
+            "risk",
+            "stop",
+        ],
+    ) {
+        return SentenceSpeechCue {
+            dialogue_act: Some("warn"),
+            content_tone: Some("safety"),
+            max_intensity: Some(0.4),
+            require_clarity: true,
+        };
+    }
+
+    if contains_any(
+        compact,
+        &[
+            "sorry",
+            "i apologize",
+            "my mistake",
+            "i was wrong",
+            "that was wrong",
+        ],
+    ) {
+        return SentenceSpeechCue {
+            dialogue_act: Some("apologize"),
+            content_tone: Some("serious"),
+            max_intensity: Some(0.34),
+            require_clarity: false,
+        };
+    }
+
+    if contains_any(
+        compact,
+        &[
+            "i understand",
+            "that sounds",
+            "frustrating",
+            "i know this is hard",
+            "i'm here",
+            "you are not alone",
+        ],
+    ) {
+        return SentenceSpeechCue {
+            dialogue_act: Some("comfort"),
+            content_tone: Some("supportive"),
+            max_intensity: Some(0.34),
+            require_clarity: false,
+        };
+    }
+
+    if !has_negative_guard
+        && (contains_any(
+            compact,
+            &[
+                "great",
+                "excellent",
+                "nice",
+                "good news",
+                "it works",
+                "it passed",
+                "complete",
+                "completed",
+                "success",
+                "congratulations",
+            ],
+        ) || compact.ends_with('!'))
+    {
+        return SentenceSpeechCue {
+            dialogue_act: Some("celebrate"),
+            content_tone: Some("playful"),
+            max_intensity: Some(0.55),
+            require_clarity: false,
+        };
+    }
+
+    if contains_any(
+        compact,
+        &[
+            "because",
+            "therefore",
+            "specifically",
+            "for example",
+            "api",
+            "function",
+            "config",
+            "schema",
+            "test",
+            "step",
+        ],
+    ) {
+        return SentenceSpeechCue {
+            dialogue_act: Some("explain"),
+            content_tone: Some("technical"),
+            max_intensity: Some(0.36),
+            require_clarity: true,
+        };
+    }
+
+    SentenceSpeechCue::default()
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
 }
 
 #[derive(Debug, Clone, Copy, Default)]

@@ -15,12 +15,59 @@ use crate::channels::adapter::{
 };
 use crate::event::{EventBus, ServerEvent};
 use crate::expression::orchestrator::{ExpressionExecutionPhase, execute_expression_plan_phase};
-use crate::expression::{ExpressionPlan, SpeechExpression};
+use crate::expression::{
+    ExpressionConstraints, ExpressionConversationContext, ExpressionDeviceContext, ExpressionInput,
+    ExpressionPlan, ExpressionSafetyContext, ExpressionUserState, SpeechExpression,
+};
 use crate::module::ModuleRegistry;
-use crate::providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter, TtsRequest};
+use crate::providers::adapter::{
+    ChatMessage, LlmAdapter, MemoryContextPack, TtsAdapter, TtsCapabilities, TtsRequest,
+};
 
 const TTS_SENTENCE_MAX_CHARS: usize = 80;
 const TTS_SENTENCE_GAP_MS: u32 = 80;
+
+#[derive(Debug, Clone)]
+pub(super) struct SentenceSpeechContext {
+    pub route: Option<String>,
+    pub channel_id: String,
+    pub user_id: String,
+    pub dialogue_act: String,
+    pub content_tone: String,
+    pub user_state: ExpressionUserState,
+    pub device_context: ExpressionDeviceContext,
+    pub safety_context: ExpressionSafetyContext,
+    pub conversation_context: ExpressionConversationContext,
+    pub constraints: ExpressionConstraints,
+    pub memory_context: Option<MemoryContextPack>,
+    pub tts_capabilities: Option<TtsCapabilities>,
+}
+
+impl SentenceSpeechContext {
+    fn input_for_sentence(&self, sentence: &str) -> ExpressionInput {
+        ExpressionInput {
+            response_text: sentence.to_string(),
+            route: self.route.clone(),
+            channel_id: self.channel_id.clone(),
+            user_id: self.user_id.clone(),
+            dialogue_act: self.dialogue_act.clone(),
+            content_tone: self.content_tone.clone(),
+            user_state: self.user_state.clone(),
+            device_context: self.device_context.clone(),
+            safety_context: self.safety_context.clone(),
+            conversation_context: ExpressionConversationContext {
+                turn_kind: "streaming_sentence_tts".to_string(),
+                ..self.conversation_context.clone()
+            },
+            constraints: self.constraints.clone(),
+            memory_context: self.memory_context.clone(),
+            voice_output: true,
+            hardware_control: false,
+            tts_capabilities: self.tts_capabilities.clone(),
+            expression_capabilities: None,
+        }
+    }
+}
 
 pub(super) async fn deliver_tts_audio(
     modules: &ModuleRegistry,
@@ -261,6 +308,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     user_id: &str,
     event_bus: &EventBus,
     messages: &[ChatMessage],
+    speech_context: Option<SentenceSpeechContext>,
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<(String, bool)> {
@@ -278,6 +326,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         sentence_rx,
         audio_tx,
         audio_started.clone(),
+        speech_context,
         debug_output,
         channel_id.to_string(),
         user_id.to_string(),
@@ -428,6 +477,7 @@ async fn stream_tts_sentences(
     mut sentence_rx: mpsc::Receiver<String>,
     audio_tx: mpsc::Sender<anyhow::Result<AudioPayload>>,
     audio_started: Arc<AtomicBool>,
+    speech_context: Option<SentenceSpeechContext>,
     debug_output: bool,
     channel_id: String,
     user_id: String,
@@ -458,7 +508,32 @@ async fn stream_tts_sentences(
             Some((&channel_id, &user_id)),
         );
         let speech = expression
-            .speech_for_text_for_user(sentence, &channel_id, &user_id, "respond", "neutral")
+            .speech_for_sentence(
+                speech_context
+                    .as_ref()
+                    .map(|context| context.input_for_sentence(sentence))
+                    .unwrap_or_else(|| ExpressionInput {
+                        response_text: sentence.to_string(),
+                        route: None,
+                        channel_id: channel_id.clone(),
+                        user_id: user_id.clone(),
+                        dialogue_act: "respond".to_string(),
+                        content_tone: "neutral".to_string(),
+                        user_state: Default::default(),
+                        device_context: Default::default(),
+                        safety_context: Default::default(),
+                        conversation_context: ExpressionConversationContext {
+                            turn_kind: "streaming_sentence_tts".to_string(),
+                            ..Default::default()
+                        },
+                        constraints: Default::default(),
+                        memory_context: None,
+                        voice_output: true,
+                        hardware_control: false,
+                        tts_capabilities: None,
+                        expression_capabilities: None,
+                    }),
+            )
             .await;
         let request = TtsRequest::with_speech(sentence, &speech);
         let adjustments = tts.provider_adjustments(&request).await;

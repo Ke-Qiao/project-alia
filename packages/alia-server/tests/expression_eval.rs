@@ -180,6 +180,29 @@ async fn planner_respects_tts_capability_limits_before_synthesis() {
 }
 
 #[tokio::test]
+async fn sentence_speech_uses_local_cues_without_markup() {
+    let runtime = test_runtime();
+
+    let celebratory = runtime
+        .speech_for_sentence(sentence_input("Great, the test passed!"))
+        .await;
+    assert_eq!(celebratory.style, "cheerful");
+    assert!(celebratory.intensity > 0.3);
+
+    let warning = runtime
+        .speech_for_sentence(sentence_input("This is unsafe. Do not continue."))
+        .await;
+    assert_eq!(warning.style, "serious");
+    assert!(warning.intensity <= 0.4);
+
+    let technical = runtime
+        .speech_for_sentence(sentence_input("Specifically, the API call uses a schema."))
+        .await;
+    assert_eq!(technical.style, "calm");
+    assert!(technical.intensity <= 0.36);
+}
+
+#[tokio::test]
 async fn planner_uses_memory_boundaries_to_reduce_motion_intensity() {
     let runtime = test_runtime();
     let mut capabilities = BTreeMap::new();
@@ -275,4 +298,27 @@ fn test_runtime() -> ExpressionRuntime {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
     ExpressionRuntime::from_config(&config)
+}
+
+fn sentence_input(text: &str) -> ExpressionInput {
+    let mut constraints = alia_server::expression::ExpressionConstraints::default();
+    constraints.allow_playful = true;
+    ExpressionInput {
+        response_text: text.to_string(),
+        route: Some("minor_llm".to_string()),
+        channel_id: "cli".to_string(),
+        user_id: "user".to_string(),
+        dialogue_act: "explain".to_string(),
+        content_tone: "technical".to_string(),
+        user_state: Default::default(),
+        device_context: Default::default(),
+        safety_context: Default::default(),
+        conversation_context: Default::default(),
+        constraints,
+        memory_context: None,
+        voice_output: true,
+        hardware_control: false,
+        tts_capabilities: None,
+        expression_capabilities: None,
+    }
 }

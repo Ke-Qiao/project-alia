@@ -1387,6 +1387,27 @@ async fn process_text(
                 select_tools_for_skill(modules, &resolution.tools, text, tools_config, channel_id)
                     .await?;
             let skill_cacheable = resolution.cacheable;
+            let sentence_speech_context = build_sentence_speech_context(
+                modules,
+                channel,
+                channel_id,
+                user_id,
+                "skill",
+                false,
+                false,
+                false,
+                text,
+                prior_message_count,
+                memory_context_used,
+                runtime_context.memory_context.clone(),
+                audio_response
+                    && allow_streaming_for_tools(
+                        &tools,
+                        conversation_config.streaming_enabled,
+                        channel,
+                    ),
+            )
+            .await;
             let outcome = execute_llm_response(
                 modules,
                 modules.llm.as_ref(),
@@ -1406,6 +1427,7 @@ async fn process_text(
                 debug_output,
                 &mut trace,
                 turn,
+                sentence_speech_context,
             )
             .await?;
             (outcome, Some(skill_cacheable), "skill")
@@ -1426,6 +1448,22 @@ async fn process_text(
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
             let allow_minor_streaming =
                 conversation_config.streaming_enabled && escalation_prompt.is_none();
+            let sentence_speech_context = build_sentence_speech_context(
+                modules,
+                channel,
+                channel_id,
+                user_id,
+                "minor_llm",
+                false,
+                false,
+                false,
+                text,
+                prior_message_count,
+                memory_context_used,
+                runtime_context.memory_context.clone(),
+                audio_response && allow_streaming_for_tools(&tools, allow_minor_streaming, channel),
+            )
+            .await;
             let minor_outcome = execute_llm_response(
                 modules,
                 modules.minor_llm.as_ref(),
@@ -1445,6 +1483,7 @@ async fn process_text(
                 debug_output,
                 &mut trace,
                 turn,
+                sentence_speech_context,
             )
             .await?;
 
@@ -1478,6 +1517,27 @@ async fn process_text(
                     ),
                 ));
                 let major_tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+                let sentence_speech_context = build_sentence_speech_context(
+                    modules,
+                    channel,
+                    channel_id,
+                    user_id,
+                    "major_llm_escalated",
+                    false,
+                    false,
+                    false,
+                    text,
+                    prior_message_count,
+                    memory_context_used,
+                    runtime_context.memory_context.clone(),
+                    audio_response
+                        && allow_streaming_for_tools(
+                            &major_tools,
+                            conversation_config.streaming_enabled,
+                            channel,
+                        ),
+                )
+                .await;
                 let major_outcome = execute_llm_response(
                     modules,
                     modules.major_llm.as_ref(),
@@ -1497,6 +1557,7 @@ async fn process_text(
                     debug_output,
                     &mut trace,
                     turn,
+                    sentence_speech_context,
                 )
                 .await?;
                 (major_outcome, None, "major_llm_escalated")
@@ -1513,6 +1574,27 @@ async fn process_text(
                 user_id,
             );
             let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+            let sentence_speech_context = build_sentence_speech_context(
+                modules,
+                channel,
+                channel_id,
+                user_id,
+                "major_llm",
+                false,
+                false,
+                false,
+                text,
+                prior_message_count,
+                memory_context_used,
+                runtime_context.memory_context.clone(),
+                audio_response
+                    && allow_streaming_for_tools(
+                        &tools,
+                        conversation_config.streaming_enabled,
+                        channel,
+                    ),
+            )
+            .await;
             let outcome = execute_llm_response(
                 modules,
                 modules.major_llm.as_ref(),
@@ -1532,6 +1614,7 @@ async fn process_text(
                 debug_output,
                 &mut trace,
                 turn,
+                sentence_speech_context,
             )
             .await?;
             (outcome, None, "major_llm")
@@ -2302,6 +2385,71 @@ fn build_llm_messages(
     messages
 }
 
+fn allow_streaming_for_tools(
+    tools: &[ToolDefinition],
+    allow_streaming: bool,
+    channel: &dyn ChannelAdapter,
+) -> bool {
+    allow_streaming && tools.is_empty() && channel.capabilities().streaming
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn build_sentence_speech_context(
+    modules: &ModuleRegistry,
+    channel: &dyn ChannelAdapter,
+    channel_id: &str,
+    user_id: &str,
+    route: &'static str,
+    used_tools: bool,
+    response_was_fallback: bool,
+    cache_hit: bool,
+    user_text: &str,
+    prior_message_count: usize,
+    memory_context_used: bool,
+    memory_context: Option<MemoryContextPack>,
+    enabled: bool,
+) -> Option<SentenceSpeechContext> {
+    if !enabled || !channel.capabilities().voice_output {
+        return None;
+    }
+
+    let affect = modules
+        .expression
+        .affect_snapshot(channel_id, user_id)
+        .await;
+    let dialogue_policy_input = DialoguePolicyInput {
+        route,
+        used_tools,
+        response_was_fallback,
+        cache_hit,
+        user_text,
+        memory_context_used,
+    };
+    let dialogue_policy = dialogue_policy::decide(
+        dialogue_policy_input.clone(),
+        modules.expression.dialogue_policy(),
+    );
+    let capabilities = channel.capabilities();
+    let conversation_context =
+        dialogue_policy.conversation_context(&dialogue_policy_input, prior_message_count);
+    let constraints = dialogue_policy.constraints();
+    let content_tone = dialogue_policy.content_tone.clone();
+    Some(SentenceSpeechContext {
+        route: Some(route.to_string()),
+        channel_id: channel_id.to_string(),
+        user_id: user_id.to_string(),
+        dialogue_act: dialogue_policy.dialogue_act,
+        content_tone: content_tone.clone(),
+        user_state: expression_user_state_from_affect(&affect),
+        device_context: expression_device_context(&capabilities, None),
+        safety_context: expression_safety_context(&capabilities, &content_tone, None),
+        conversation_context,
+        constraints,
+        memory_context,
+        tts_capabilities: Some(modules.tts.tts_capabilities().await),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn execute_llm_response(
     modules: &ModuleRegistry,
@@ -2322,6 +2470,7 @@ async fn execute_llm_response(
     debug_output: bool,
     trace: &mut AgentTrace,
     turn: Option<&VoiceTurn>,
+    sentence_speech_context: Option<SentenceSpeechContext>,
 ) -> anyhow::Result<LlmExecutionOutcome> {
     if !tools.is_empty() {
         debug_component_tools(
@@ -2427,6 +2576,7 @@ async fn execute_llm_response(
                 user_id,
                 event_bus,
                 &messages,
+                sentence_speech_context,
                 debug_output,
                 turn,
             )
