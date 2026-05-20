@@ -326,7 +326,10 @@ impl EmbeddedBuilder {
             sensor_modules.push(Box::new(HmmdMmWaveModule::new(config.hmmd_mmwave.clone())));
         }
         let mut motion = MotionRuntime::new(config.motion.clone()).unwrap_or_else(|error| {
-            warn!(error = ?error, "motion module creation failed; using disabled motion runtime");
+            warn!(
+                error = %format!("{error:#}"),
+                "motion module creation failed; using disabled motion runtime"
+            );
             MotionRuntime::disabled(config.motion.clone())
         });
 
@@ -344,7 +347,10 @@ impl EmbeddedBuilder {
         let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
             Some(m) => m,
             None => factory::create_face_tracker(&config, motion.clone()).unwrap_or_else(|error| {
-                warn!(error = ?error, "face tracker module creation failed; using noop");
+                warn!(
+                    error = %format!("{error:#}"),
+                    "face tracker module creation failed; using noop"
+                );
                 Box::new(NoopFaceTracker)
             }),
         };

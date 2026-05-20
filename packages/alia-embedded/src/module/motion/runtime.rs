@@ -52,7 +52,15 @@ struct ExpressionTimelineAction {
 
 impl MotionRuntime {
     pub fn new(config: MotionConfig) -> Result<Self> {
-        let servo: Arc<dyn ServoBackend> = create_servo_backend(&config)?.into();
+        let servo_config = if config.enabled {
+            config.clone()
+        } else {
+            MotionConfig {
+                hardware_enabled: false,
+                ..config.clone()
+            }
+        };
+        let servo: Arc<dyn ServoBackend> = create_servo_backend(&servo_config)?.into();
         let mapper = if config.enabled {
             Some(Mutex::new(NeckMapper::load(&config.neck_config_file)?))
         } else {

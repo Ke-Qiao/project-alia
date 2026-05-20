@@ -71,7 +71,7 @@ impl ModuleLifecycle for YuNetFaceTracker {
         *self.task.lock().await = Some(tokio::task::spawn_blocking(move || {
             let result = run_yunet_loop(config, latest_faces, motion, runtime, cancel);
             if let Err(error) = result {
-                warn!(error = %error, "YuNet face tracker stopped with error");
+                warn!(error = %format!("{error:#}"), "YuNet face tracker stopped with error");
             }
             running.store(false, Ordering::SeqCst);
         }));
@@ -175,16 +175,29 @@ fn run_yunet_loop(
         0,
         0,
     )
-    .context("creating OpenCV YuNet detector")?;
+    .with_context(|| {
+        format!(
+            "creating OpenCV YuNet detector from {} with input {}x{}",
+            config.yunet_model_path.display(),
+            config.input_width,
+            config.input_height
+        )
+    })?;
     detector
         .set_input_size(detector_size)
         .context("setting YuNet input size")?;
 
     let mut capture = videoio::VideoCapture::new(config.camera_index, videoio::CAP_ANY)
-        .context("opening camera capture")?;
-    capture.set(videoio::CAP_PROP_FRAME_WIDTH, config.camera_width as f64)?;
-    capture.set(videoio::CAP_PROP_FRAME_HEIGHT, config.camera_height as f64)?;
-    capture.set(videoio::CAP_PROP_FPS, config.capture_fps)?;
+        .with_context(|| format!("opening camera capture index {}", config.camera_index))?;
+    capture
+        .set(videoio::CAP_PROP_FRAME_WIDTH, config.camera_width as f64)
+        .with_context(|| format!("setting camera width to {}", config.camera_width))?;
+    capture
+        .set(videoio::CAP_PROP_FRAME_HEIGHT, config.camera_height as f64)
+        .with_context(|| format!("setting camera height to {}", config.camera_height))?;
+    capture
+        .set(videoio::CAP_PROP_FPS, config.capture_fps)
+        .with_context(|| format!("setting camera FPS to {}", config.capture_fps))?;
     if !capture.is_opened()? {
         bail!("camera {} is not open", config.camera_index);
     }

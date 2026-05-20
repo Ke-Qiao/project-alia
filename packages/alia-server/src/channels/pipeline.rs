@@ -756,6 +756,13 @@ async fn process_event(
             let correction_trace = transcript_correction_config
                 .trace_enabled
                 .then_some(correction.clone());
+            debug_component_json(
+                debug_output,
+                "stt",
+                "correction_detail",
+                &transcript_correction_debug_payload(&correction, &corrected_text),
+                Some((&channel_id, &user_id)),
+            );
             debug_component_text(
                 debug_output,
                 "stt",
@@ -1061,7 +1068,8 @@ async fn process_text(
             )
             .await;
     }
-    observe_user_affect_for_turn(modules, &mut trace, channel_id, user_id, text).await;
+    observe_user_affect_for_turn(modules, &mut trace, channel_id, user_id, text, debug_output)
+        .await;
 
     // 2. Check exact cache first (never streamed). Only entries with explicit
     // safe-direct metadata can bypass the LLM.
@@ -1118,6 +1126,7 @@ async fn process_text(
                     "cache",
                     false,
                     false,
+                    debug_output,
                 )
                 .await;
                 trace
@@ -1150,6 +1159,7 @@ async fn process_text(
                     prior_message_count,
                     memory_context_used,
                     memory_config,
+                    debug_output,
                 )
                 .await;
                 let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
@@ -1258,6 +1268,7 @@ async fn process_text(
                 "cache",
                 false,
                 false,
+                debug_output,
             )
             .await;
             trace
@@ -1292,6 +1303,7 @@ async fn process_text(
                 prior_message_count,
                 memory_context_used,
                 memory_config,
+                debug_output,
             )
             .await;
             let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
@@ -1803,6 +1815,7 @@ async fn process_text(
         route_for_cache,
         used_tools,
         response_was_fallback,
+        debug_output,
     )
     .await;
     trace
@@ -1836,6 +1849,7 @@ async fn process_text(
         prior_message_count,
         memory_context_used,
         memory_config,
+        debug_output,
     )
     .await;
     let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
@@ -1858,6 +1872,7 @@ async fn observe_user_affect_for_turn(
     channel_id: &str,
     user_id: &str,
     user_text: &str,
+    debug_output: bool,
 ) {
     let observation = modules
         .expression
@@ -1867,20 +1882,28 @@ async fn observe_user_affect_for_turn(
             user_text,
         })
         .await;
+    let payload = serde_json::json!({
+        "affect": observation.snapshot.affect,
+        "social": observation.snapshot.social,
+        "resource": observation.snapshot.resource,
+        "dominant_causes": observation.snapshot.dominant_causes,
+        "appraisals": observation.appraisals,
+        "active_event_count": observation.active_event_count,
+    });
+    debug_component_json(
+        debug_output,
+        "affect",
+        "user_input",
+        &payload,
+        Some((channel_id, user_id)),
+    );
     trace
         .record(
             modules,
             "affect_user_input",
             "affect",
             Some("User input adjusted affect state".to_string()),
-            serde_json::json!({
-                "affect": observation.snapshot.affect,
-                "social": observation.snapshot.social,
-                "resource": observation.snapshot.resource,
-                "dominant_causes": observation.snapshot.dominant_causes,
-                "appraisals": observation.appraisals,
-                "active_event_count": observation.active_event_count,
-            }),
+            payload,
         )
         .await;
 }
@@ -1894,6 +1917,7 @@ async fn observe_assistant_affect_for_turn(
     route: &str,
     used_tools: bool,
     response_was_fallback: bool,
+    debug_output: bool,
 ) {
     let observation = modules
         .expression
@@ -1906,23 +1930,31 @@ async fn observe_assistant_affect_for_turn(
             response_was_fallback,
         })
         .await;
+    let payload = serde_json::json!({
+        "affect": observation.snapshot.affect,
+        "social": observation.snapshot.social,
+        "resource": observation.snapshot.resource,
+        "dominant_causes": observation.snapshot.dominant_causes,
+        "appraisals": observation.appraisals,
+        "active_event_count": observation.active_event_count,
+        "route": route,
+        "used_tools": used_tools,
+        "response_was_fallback": response_was_fallback,
+    });
+    debug_component_json(
+        debug_output,
+        "affect",
+        "assistant_response",
+        &payload,
+        Some((channel_id, user_id)),
+    );
     trace
         .record(
             modules,
             "affect_state",
             "affect",
             Some("Assistant response adjusted affect state".to_string()),
-            serde_json::json!({
-                "affect": observation.snapshot.affect,
-                "social": observation.snapshot.social,
-                "resource": observation.snapshot.resource,
-                "dominant_causes": observation.snapshot.dominant_causes,
-                "appraisals": observation.appraisals,
-                "active_event_count": observation.active_event_count,
-                "route": route,
-                "used_tools": used_tools,
-                "response_was_fallback": response_was_fallback,
-            }),
+            payload,
         )
         .await;
 }
@@ -1942,6 +1974,7 @@ async fn plan_expression_for_response(
     prior_message_count: usize,
     memory_context_used: bool,
     memory_config: &MemorySection,
+    debug_output: bool,
 ) -> PlannedExpression {
     let capabilities = channel.capabilities();
     let expression_capabilities = if capabilities.hardware_control {
@@ -1963,6 +1996,21 @@ async fn plan_expression_for_response(
             .expression
             .observe_memory_recall(channel_id, user_id, &memory_context.recall_events)
             .await;
+        debug_component_json(
+            debug_output,
+            "affect",
+            "memory_recall",
+            &serde_json::json!({
+                "recall_events": &memory_context.recall_events,
+                "affect": observation.snapshot.affect,
+                "social": observation.snapshot.social,
+                "resource": observation.snapshot.resource,
+                "dominant_causes": observation.snapshot.dominant_causes,
+                "appraisals": &observation.appraisals,
+                "active_event_count": observation.active_event_count,
+            }),
+            Some((channel_id, user_id)),
+        );
         trace
             .record(
                 modules,
@@ -2033,6 +2081,34 @@ async fn plan_expression_for_response(
         expression_capabilities: expression_capabilities.clone(),
     };
     let plan = modules.expression.plan(expression_input.clone()).await;
+    debug_component_json(
+        debug_output,
+        "expression",
+        "plan",
+        &serde_json::json!({
+            "plan_id": plan.id,
+            "intent": &plan.intent,
+            "social_function": &plan.social_function,
+            "style": &plan.style,
+            "intensity": plan.intensity,
+            "priority": plan.priority,
+            "safety_class": plan.safety_class,
+            "timeline_actions": plan.timeline.len(),
+            "route": route,
+            "dialogue_act": &dialogue_act,
+            "content_tone": &content_tone,
+            "conversation_context": &conversation_context,
+            "constraints": &constraints,
+            "user_state": &user_state,
+            "safety_context": &safety_context,
+            "affect": affect.affect,
+            "social": affect.social,
+            "resource": affect.resource,
+            "dominant_causes": affect.dominant_causes,
+            "expression_capabilities": &expression_capabilities,
+        }),
+        Some((channel_id, user_id)),
+    );
     trace
         .record(
             modules,
@@ -2409,6 +2485,27 @@ fn transcript_correction_trace_payload(
     })
 }
 
+fn transcript_correction_debug_payload(
+    correction: &TranscriptCorrectionResult,
+    text_used: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "raw_text": correction.raw_text,
+        "corrected_text": correction.corrected_text,
+        "text_used": text_used,
+        "confidence": correction.confidence,
+        "changed": correction.changed,
+        "corrections": correction.corrections,
+        "ambiguities": correction.ambiguities,
+        "requires_confirmation": correction.requires_confirmation,
+        "risk": correction.risk,
+        "status": correction.status,
+        "provider": correction.provider,
+        "stt_confidence": correction.stt.as_ref().and_then(|stt| stt.confidence),
+        "stt_language": correction.stt.as_ref().and_then(|stt| stt.language.as_deref()),
+    })
+}
+
 async fn execute_expression_and_trace(
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
@@ -2422,13 +2519,17 @@ async fn execute_expression_and_trace(
         Some(phase) => execute_expression_plan_phase(channel, target, plan, phase).await,
         None => execute_expression_plan(channel, target, plan).await,
     };
-    debug_component_text(
+    debug_component_json(
         debug_output,
         "expression",
         phase
             .map(ExpressionExecutionPhase::label)
             .unwrap_or("execution"),
-        &serde_json::to_string(&execution).unwrap_or_else(|_| execution.status),
+        &serde_json::json!({
+            "plan_id": plan.id,
+            "timeline_actions": plan.timeline.len(),
+            "execution": execution,
+        }),
         Some((channel_id, user_id)),
     );
 }

@@ -95,8 +95,19 @@ impl Pca9685ServoBackend {
                 config.pca_frequency_hz,
                 config.min_pulse_us,
                 config.max_pulse_us,
-            )?;
-            device.initialize()?;
+            )
+            .with_context(|| {
+                format!(
+                    "opening PCA9685 servo controller at 0x{address:02x} on {}",
+                    config.i2c_device.display()
+                )
+            })?;
+            device.initialize().with_context(|| {
+                format!(
+                    "initializing PCA9685 servo controller at 0x{address:02x} on {}",
+                    config.i2c_device.display()
+                )
+            })?;
             boards.push(Mutex::new(device));
         }
         Ok(Self {
@@ -228,9 +239,19 @@ impl Pca9685Device {
     }
 
     fn read_reg(&mut self, reg: u8) -> Result<u8> {
-        self.file.write_all(&[reg])?;
+        self.file.write_all(&[reg]).with_context(|| {
+            format!(
+                "writing register pointer 0x{reg:02x} to PCA9685 address 0x{:02x}",
+                self.address
+            )
+        })?;
         let mut out = [0_u8; 1];
-        self.file.read_exact(&mut out)?;
+        self.file.read_exact(&mut out).with_context(|| {
+            format!(
+                "reading register 0x{reg:02x} from PCA9685 address 0x{:02x}",
+                self.address
+            )
+        })?;
         Ok(out[0])
     }
 
@@ -239,7 +260,14 @@ impl Pca9685Device {
     }
 
     fn write_many(&mut self, bytes: &[u8]) -> Result<()> {
-        self.file.write_all(bytes)?;
+        let register = bytes.first().copied().unwrap_or_default();
+        self.file.write_all(bytes).with_context(|| {
+            format!(
+                "writing {} bytes starting at register 0x{register:02x} to PCA9685 address 0x{:02x}",
+                bytes.len(),
+                self.address
+            )
+        })?;
         Ok(())
     }
 }

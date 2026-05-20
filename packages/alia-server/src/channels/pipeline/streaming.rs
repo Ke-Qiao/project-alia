@@ -12,8 +12,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use super::debug::{
-    debug_component, debug_component_audio, debug_component_stream_chunk, debug_component_text,
-    log_channel_delivery_failure,
+    debug_component, debug_component_audio, debug_component_json, debug_component_stream_chunk,
+    debug_component_text, log_channel_delivery_failure,
 };
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::{
@@ -366,11 +366,15 @@ async fn execute_speech_start_expression(
     let execution =
         execute_expression_plan_phase(channel, target, plan, ExpressionExecutionPhase::SpeechStart)
             .await;
-    debug_component_text(
+    debug_component_json(
         debug_output,
         "expression",
         ExpressionExecutionPhase::SpeechStart.label(),
-        &serde_json::to_string(&execution).unwrap_or_else(|_| execution.status),
+        &json!({
+            "plan_id": plan.id,
+            "timeline_actions": plan.timeline.len(),
+            "execution": execution,
+        }),
         Some((channel_id, user_id)),
     );
 }
@@ -600,6 +604,16 @@ async fn resolve_sentence_speech(
 ) -> SpeechExpression {
     let policy = expression.sentence_llm_policy();
     let Some(llm) = sentence_expression_llm else {
+        debug_sentence_expression_decision(
+            debug_output,
+            channel_id,
+            user_id,
+            &input,
+            &baseline,
+            None,
+            &baseline,
+            "unavailable",
+        );
         record_sentence_expression_trace(
             trace_context.as_ref(),
             &input,
@@ -612,6 +626,16 @@ async fn resolve_sentence_speech(
         return baseline;
     };
     if !policy.enabled || policy.timeout_ms == 0 {
+        debug_sentence_expression_decision(
+            debug_output,
+            channel_id,
+            user_id,
+            &input,
+            &baseline,
+            None,
+            &baseline,
+            "disabled",
+        );
         record_sentence_expression_trace(
             trace_context.as_ref(),
             &input,
@@ -630,6 +654,16 @@ async fn resolve_sentence_speech(
     if let Some(key) = cache_key.as_ref()
         && let Some(cached) = sentence_expression_cache_get(key)
     {
+        debug_sentence_expression_decision(
+            debug_output,
+            channel_id,
+            user_id,
+            &input,
+            &baseline,
+            None,
+            &cached,
+            "cache_hit",
+        );
         record_sentence_expression_trace(
             trace_context.as_ref(),
             &input,
@@ -644,6 +678,16 @@ async fn resolve_sentence_speech(
 
     let Some(patch) = sentence_expression_llm_patch(llm.as_ref(), &policy, &input, &baseline).await
     else {
+        debug_sentence_expression_decision(
+            debug_output,
+            channel_id,
+            user_id,
+            &input,
+            &baseline,
+            None,
+            &baseline,
+            "fallback",
+        );
         record_sentence_expression_trace(
             trace_context.as_ref(),
             &input,
@@ -657,17 +701,15 @@ async fn resolve_sentence_speech(
     };
 
     if patch.confidence < policy.min_confidence.clamp(0.0, 1.0) {
-        debug_component_text(
+        debug_sentence_expression_decision(
             debug_output,
-            "expression",
-            "sentence_llm_rejected",
-            &json!({
-                "reason": "low_confidence",
-                "min_confidence": policy.min_confidence,
-                "patch": patch,
-            })
-            .to_string(),
-            Some((channel_id, user_id)),
+            channel_id,
+            user_id,
+            &input,
+            &baseline,
+            Some(&patch),
+            &baseline,
+            "rejected_low_confidence",
         );
         record_sentence_expression_trace(
             trace_context.as_ref(),
@@ -709,18 +751,15 @@ async fn resolve_sentence_speech(
         apply_sentence_prosody_delta(&mut final_speech, delta, &input);
     }
 
-    debug_component_text(
+    debug_sentence_expression_decision(
         debug_output,
-        "expression",
-        "sentence_llm_patch",
-        &json!({
-            "sentence": input.response_text,
-            "baseline": baseline,
-            "patch": patch,
-            "final": final_speech,
-        })
-        .to_string(),
-        Some((channel_id, user_id)),
+        channel_id,
+        user_id,
+        &input,
+        &baseline,
+        Some(&patch),
+        &final_speech,
+        "applied",
     );
 
     record_sentence_expression_trace(
@@ -779,6 +818,34 @@ fn sentence_expression_cache_key(input: &ExpressionInput, baseline: &SpeechExpre
         "frustration": (input.user_state.frustration * 100.0).round() as i32,
     })
     .to_string()
+}
+
+fn debug_sentence_expression_decision(
+    debug_output: bool,
+    channel_id: &str,
+    user_id: &str,
+    input: &ExpressionInput,
+    baseline: &SpeechExpression,
+    patch: Option<&SentenceExpressionLlmPatch>,
+    final_speech: &SpeechExpression,
+    decision: &str,
+) {
+    debug_component_json(
+        debug_output,
+        "expression",
+        "sentence_llm",
+        &json!({
+            "sentence": input.response_text,
+            "route": input.route,
+            "dialogue_act": input.dialogue_act,
+            "content_tone": input.content_tone,
+            "baseline": baseline,
+            "patch": patch,
+            "final": final_speech,
+            "decision": decision,
+        }),
+        Some((channel_id, user_id)),
+    );
 }
 
 async fn record_sentence_expression_trace(

@@ -2,6 +2,7 @@ use crate::channels::adapter::ChannelAdapter;
 use crate::providers::adapter::{
     ChatMessage, LlmToolCall, RouteDecision, ToolDefinition, ToolResult,
 };
+use serde_json::Value;
 
 pub(super) async fn log_channel_delivery_failure(
     channel: &dyn ChannelAdapter,
@@ -95,6 +96,44 @@ pub(super) fn debug_component_text(
             event,
             content = %preview_text(content, 240),
             "component text"
+        ),
+    }
+}
+
+pub(super) fn debug_component_json(
+    enabled: bool,
+    component: &'static str,
+    event: &'static str,
+    payload: &Value,
+    channel: Option<(&str, &str)>,
+) {
+    if !enabled {
+        tracing::debug!(
+            target: "alia_server::debug_output",
+            component,
+            event,
+            payload = %payload,
+            "component json"
+        );
+        return;
+    }
+
+    match channel {
+        Some((channel_id, user_id)) => tracing::info!(
+            target: "alia_server::debug_output",
+            component,
+            event,
+            channel_id,
+            user_id,
+            payload = %payload,
+            "component json"
+        ),
+        None => tracing::info!(
+            target: "alia_server::debug_output",
+            component,
+            event,
+            payload = %payload,
+            "component json"
         ),
     }
 }
