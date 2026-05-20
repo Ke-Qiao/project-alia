@@ -164,6 +164,7 @@ fn run_yunet_loop(
         );
     }
     validate_yunet_model_payload(&config.yunet_model_path)?;
+    validate_opencv_yunet_compatibility(&config.yunet_model_path)?;
 
     let detector_size = Size::new(config.input_width, config.input_height);
     let mut detector = FaceDetectorYN::create(
@@ -267,6 +268,23 @@ fn run_yunet_loop(
         }
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "vision-opencv")]
+fn validate_opencv_yunet_compatibility(path: &std::path::Path) -> Result<()> {
+    let major = opencv::core::get_version_major();
+    let minor = opencv::core::get_version_minor();
+    let revision = opencv::core::get_version_revision();
+    let model_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if model_name.contains("2023mar") && (major < 4 || (major == 4 && minor < 8)) {
+        bail!(
+            "OpenCV {major}.{minor}.{revision} is too old for {model_name}; OpenCV 4.6/4.7 can parse the model but fails during FaceDetectorYN::detect with 'Layer with requested id=-1 not found'. Install OpenCV 4.8 or newer, or point vision.yunet_model_path at an older YuNet model compatible with your OpenCV build."
+        );
+    }
     Ok(())
 }
 

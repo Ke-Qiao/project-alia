@@ -73,6 +73,13 @@ pkg-config --modversion opencv4
 If OpenCV is installed in a custom location, export `PKG_CONFIG_PATH` to the
 directory containing `opencv4.pc`.
 
+The default `face_detection_yunet_2023mar.onnx` model should be paired with
+OpenCV 4.8 or newer. Raspberry Pi OS / Debian Bookworm commonly ships OpenCV
+4.6; that version may load the model but fail during `FaceDetectorYN::detect`
+with `Layer with requested id=-1 not found`. In that case, install a newer
+OpenCV build or point `vision.yunet_model_path` at an older YuNet ONNX model
+that is compatible with the system OpenCV.
+
 ## Configuration
 
 The relevant defaults live in `[vision]` and `[motion]`:
@@ -121,6 +128,7 @@ enable hardware and calibrate on the real neck assembly.
 ## Validation Checklist
 
 - `pkg-config --modversion opencv4` prints an OpenCV version.
+- OpenCV is 4.8 or newer when using `face_detection_yunet_2023mar.onnx`.
 - `config/models/vision/face_detection_yunet_2023mar.onnx` exists and is roughly
   230 KB, not a small Git LFS pointer text file.
 - `/dev/video0` or the configured camera device exists.

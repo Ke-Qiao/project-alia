@@ -63,7 +63,7 @@ Options:
   -h, --help            Show this help
 
 Environment overrides: CAMERA_INDEX, ALIA_EMBEDDED_CONFIG_PATH, MODEL_URL,
-MODELS_DIR, VISION_MODEL_DIR, MODEL_PATH
+MODELS_DIR, VISION_MODEL_DIR, MODEL_PATH, ALLOW_OLD_OPENCV=1
 EOF
 }
 
@@ -172,12 +172,17 @@ EOF
 }
 
 check_opencv() {
+  local version=""
   if pkg-config --modversion opencv4 >/dev/null 2>&1; then
-    echo "OpenCV pkg-config: opencv4 $(pkg-config --modversion opencv4)"
+    version="$(pkg-config --modversion opencv4)"
+    echo "OpenCV pkg-config: opencv4 $version"
+    check_opencv_version "$version"
     return
   fi
   if pkg-config --modversion opencv >/dev/null 2>&1; then
-    echo "OpenCV pkg-config: opencv $(pkg-config --modversion opencv)"
+    version="$(pkg-config --modversion opencv)"
+    echo "OpenCV pkg-config: opencv $version"
+    check_opencv_version "$version"
     return
   fi
 
@@ -192,6 +197,34 @@ If OpenCV is installed in a custom prefix, set PKG_CONFIG_PATH to the directory
 that contains opencv4.pc.
 EOF
   exit 1
+}
+
+check_opencv_version() {
+  local version="$1"
+  local clean="${version%%[-+~]*}"
+  local major=0
+  local minor=0
+  IFS=. read -r major minor _ <<<"$clean"
+  major="${major:-0}"
+  minor="${minor:-0}"
+
+  if [[ "${ALLOW_OLD_OPENCV:-0}" == "1" ]]; then
+    return
+  fi
+
+  if (( major < 4 || (major == 4 && minor < 8) )); then
+    cat >&2 <<EOF
+error: OpenCV $version is too old for the default YuNet 2023mar model.
+
+OpenCV 4.6/4.7 can load the model, then fail at runtime with:
+  Layer with requested id=-1 not found
+
+Install OpenCV 4.8 or newer, or set MODEL_PATH/MODEL_URL to an older YuNet
+model compatible with your OpenCV build. To bypass this check intentionally:
+  ALLOW_OLD_OPENCV=1 $0 ...
+EOF
+    exit 1
+  fi
 }
 
 check_camera() {
