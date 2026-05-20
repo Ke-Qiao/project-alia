@@ -32,6 +32,8 @@ Rules and scheduler tasks share condition and action registries.
 - Rules are event-driven.
 - Scheduler tasks can be cron, one-shot, interval, condition-polling, or
   event-subscription based.
+- Cron accepts both 5-field Unix expressions and 6-field expressions with an
+  explicit seconds column.
 - Conditions include sensor, time range, event field, event pattern, and future
   plugin-defined evaluators.
 - Actions include log, emit event, tool call, insights hooks, and future

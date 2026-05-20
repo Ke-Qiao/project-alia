@@ -33,6 +33,9 @@ Scheduler tasks are time or polling driven:
 - `interval`: repeated run every N seconds
 - `condition`: poll conditions every `poll_interval_sec`
 
+Cron accepts both standard 5-field Unix expressions such as `0 3 * * *` and
+6-field expressions with explicit seconds such as `0 0 3 * * *`.
+
 Scheduler also supports event subscriptions, which are useful when the user
 wants event-triggered behavior to live beside their scheduled tasks. Event
 subscriptions and rules use the same condition and action model; rules are the

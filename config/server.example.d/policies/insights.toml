@@ -2,8 +2,8 @@
 enabled = true
 extraction_enabled = false
 consolidation_idle_minutes = 30
-reflection_schedule = "0 3 * * *"
-habit_detection_schedule = "0 4 * * *"
+reflection_schedule = "0 0 3 * * *"
+habit_detection_schedule = "0 0 4 * * *"
 memory_threshold = 50
 max_concurrent_insights = 1
 presence_sensor_id = "presence"

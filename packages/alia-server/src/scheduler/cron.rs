@@ -698,9 +698,24 @@ fn parse_cron_schedule(schedule: &ScheduleConfig) -> anyhow::Result<Option<Sched
         .cron_expression
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cron schedule requires cron_expression"))?;
-    Ok(Some(Schedule::from_str(expr).map_err(|e| {
+    let normalized_expr = normalize_cron_expression(expr)?;
+    Ok(Some(Schedule::from_str(&normalized_expr).map_err(|e| {
         anyhow::anyhow!("invalid cron expression: {e}")
     })?))
+}
+
+fn normalize_cron_expression(expr: &str) -> anyhow::Result<String> {
+    let trimmed = expr.trim();
+    let field_count = trimmed.split_whitespace().count();
+    match field_count {
+        // Accept standard Unix 5-field cron and make seconds explicit for the
+        // `cron` crate, which expects seconds as the first field.
+        5 => Ok(format!("0 {trimmed}")),
+        6 | 7 => Ok(trimmed.to_string()),
+        _ => anyhow::bail!(
+            "cron expression must have 5, 6, or 7 fields; got {field_count}: {trimmed}"
+        ),
+    }
 }
 
 fn compute_next_check(
@@ -899,4 +914,43 @@ async fn upsert_subscription(
     ))
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cron_config(expr: &str) -> ScheduleConfig {
+        ScheduleConfig {
+            schedule_type: "cron".to_string(),
+            cron_expression: Some(expr.to_string()),
+            run_at: None,
+            every_sec: None,
+            poll_interval_sec: None,
+        }
+    }
+
+    #[test]
+    fn parses_standard_five_field_cron_by_adding_seconds() {
+        let schedule = parse_cron_schedule(&cron_config("0 3 * * *"))
+            .unwrap()
+            .expect("cron schedule");
+        assert!(schedule.upcoming(Utc).next().is_some());
+    }
+
+    #[test]
+    fn parses_explicit_seconds_cron() {
+        let schedule = parse_cron_schedule(&cron_config("0 0 3 * * *"))
+            .unwrap()
+            .expect("cron schedule");
+        assert!(schedule.upcoming(Utc).next().is_some());
+    }
+
+    #[test]
+    fn rejects_malformed_cron_field_counts() {
+        let error = parse_cron_schedule(&cron_config("0 3 * *"))
+            .expect_err("invalid cron should fail")
+            .to_string();
+        assert!(error.contains("5, 6, or 7 fields"));
+    }
 }

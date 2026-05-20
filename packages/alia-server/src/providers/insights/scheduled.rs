@@ -1559,7 +1559,7 @@ impl ScheduledInsights {
     ) -> anyhow::Result<(Option<Uuid>, Option<Uuid>)> {
         let conditions_json = serde_json::Value::Array(conditions.to_vec());
 
-        // Phase 3: Reflection (e.g., "0 3 * * *")
+        // Phase 3: Reflection (e.g., "0 0 3 * * *"; 5-field Unix cron is accepted too)
         let reflection_task = ScheduledTask {
             id: Uuid::new_v4(),
             user_id: Uuid::nil(), // System-level task
@@ -1588,7 +1588,7 @@ impl ScheduledInsights {
             "registered insights reflection task with scheduler"
         );
 
-        // Phase 4: Habit detection (e.g., "0 4 * * *")
+        // Phase 4: Habit detection (e.g., "0 0 4 * * *"; 5-field Unix cron is accepted too)
         let habit_task = ScheduledTask {
             id: Uuid::new_v4(),
             user_id: Uuid::nil(),
