@@ -23,12 +23,15 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::markdown;
-use crate::entity::{skill, skill_tool, tool};
+use crate::entity::{registry_artifact, registry_dependency, skill, skill_tool, tool};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
 };
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_SKILL};
+
+const OBSOLETE_BUILTIN_SKILLS: &[&str] =
+    &["smart_light_control", "smart_ac_control", "smart_appliance"];
 
 /// A loaded skill with its metadata for in-memory matching.
 ///
@@ -143,6 +146,7 @@ impl BuiltinSkills {
     /// Ensure default built-in skills are present.
     async fn seed_defaults(&self) -> anyhow::Result<()> {
         let db = self.db()?;
+        self.remove_obsolete_builtin_skills().await?;
         let defaults = builtin_skill_seeds();
         tracing::info!(count = defaults.len(), "ensuring default built-in skills");
         skill::Entity::insert_many(defaults)
@@ -166,6 +170,46 @@ impl BuiltinSkills {
             .await?;
         self.artifacts()?.sync_existing_skill_artifacts().await?;
 
+        Ok(())
+    }
+
+    async fn remove_obsolete_builtin_skills(&self) -> anyhow::Result<()> {
+        let db = self.db()?;
+        let tx = db.begin().await?;
+        let skill_names = OBSOLETE_BUILTIN_SKILLS.to_vec();
+
+        registry_dependency::Entity::delete_many()
+            .filter(registry_dependency::Column::DependentKind.eq(KIND_SKILL))
+            .filter(registry_dependency::Column::DependentName.is_in(skill_names.clone()))
+            .exec(&tx)
+            .await?;
+        registry_dependency::Entity::delete_many()
+            .filter(registry_dependency::Column::DependencyKind.eq(KIND_SKILL))
+            .filter(registry_dependency::Column::DependencyName.is_in(skill_names.clone()))
+            .exec(&tx)
+            .await?;
+
+        let skill_delete = skill::Entity::delete_many()
+            .filter(skill::Column::Source.eq("builtin"))
+            .filter(skill::Column::Name.is_in(skill_names.clone()))
+            .exec(&tx)
+            .await?;
+        let artifact_delete = registry_artifact::Entity::delete_many()
+            .filter(registry_artifact::Column::ArtifactKind.eq(KIND_SKILL))
+            .filter(registry_artifact::Column::ArtifactName.is_in(skill_names))
+            .filter(registry_artifact::Column::OwnerKind.eq("builtin"))
+            .exec(&tx)
+            .await?;
+        tx.commit().await?;
+
+        if skill_delete.rows_affected > 0 || artifact_delete.rows_affected > 0 {
+            tracing::info!(
+                skills = ?OBSOLETE_BUILTIN_SKILLS,
+                rows = skill_delete.rows_affected,
+                artifacts = artifact_delete.rows_affected,
+                "removed obsolete built-in noop skills"
+            );
+        }
         Ok(())
     }
 
@@ -664,9 +708,6 @@ async fn ensure_builtin_skill_tool_bindings(
 
 pub fn builtin_skill_tool_bindings() -> &'static [(&'static str, &'static [&'static str])] {
     &[
-        ("smart_light_control", &["device_control"]),
-        ("smart_ac_control", &["device_control"]),
-        ("smart_appliance", &["device_control"]),
         ("timer_alarm", &["schedule_task"]),
         ("weather_query", &["sensor_read"]),
         ("device_status", &["sensor_read", "sensor_list"]),
@@ -680,103 +721,6 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
     let now = Utc::now();
 
     vec![
-        // smart_light_control
-        skill::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            name: Set("smart_light_control".into()),
-            display_name: Set("智能灯光控制".into()),
-            description: Set(Some("控制智能灯的开关、亮度、色温".into())),
-            category: Set("smart_home".into()),
-            intent_patterns: Set(serde_json::json!([
-                "灯",
-                "灯光",
-                "开灯",
-                "关灯",
-                "亮度",
-                "调暗",
-                "调亮",
-                "色温",
-                "light",
-                "lights",
-                "lamp",
-                "brightness",
-                "把灯"
-            ])),
-            source: Set("builtin".to_string()),
-            prompt_template: Set(Some(
-                "You are in the smart-light skill context. Use the bound device_control tool for lights, brightness, and color temperature. Do not invent device state; use tools when action or state is needed.".into(),
-            )),
-            cacheable: Set(false),
-            enabled: Set(true),
-            priority: Set(10),
-            created_at: Set(now),
-            updated_at: Set(now),
-        },
-        // smart_ac_control
-        skill::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            name: Set("smart_ac_control".into()),
-            display_name: Set("空调控制".into()),
-            description: Set(Some("控制空调的开关、温度、模式".into())),
-            category: Set("smart_home".into()),
-            intent_patterns: Set(serde_json::json!([
-                "空调",
-                "冷气",
-                "暖气",
-                "温度",
-                "制冷",
-                "制热",
-                "除湿",
-                "ac",
-                "air conditioner",
-                "调温",
-                "度"
-            ])),
-            source: Set("builtin".to_string()),
-            prompt_template: Set(Some(
-                "You are in the smart-AC skill context. Use the bound device_control tool for AC power, temperature, mode, fan, heat, cool, or dehumidify actions. Ask a short clarification only when the target or value is missing.".into(),
-            )),
-            cacheable: Set(false),
-            enabled: Set(true),
-            priority: Set(10),
-            created_at: Set(now),
-            updated_at: Set(now),
-        },
-        // smart_appliance
-        skill::ActiveModel {
-            id: Set(Uuid::new_v4()),
-            name: Set("smart_appliance".into()),
-            display_name: Set("通用家电控制".into()),
-            description: Set(Some("控制通用智能家电（插座、窗帘、风扇等）".into())),
-            category: Set("smart_home".into()),
-            intent_patterns: Set(serde_json::json!([
-                "窗帘",
-                "风扇",
-                "插座",
-                "电视",
-                "扫地机",
-                "加湿器",
-                "curtain",
-                "fan",
-                "plug",
-                "tv",
-                "vacuum",
-                "humidifier",
-                "打开",
-                "关闭",
-                "开",
-                "关"
-            ])),
-            source: Set("builtin".to_string()),
-            prompt_template: Set(Some(
-                "You are in the smart-appliance skill context. Use the bound device_control tool for curtains, fans, plugs, TV, vacuums, humidifiers, and similar controllable devices. Keep confirmations concise.".into(),
-            )),
-            cacheable: Set(false),
-            enabled: Set(true),
-            priority: Set(5),
-            created_at: Set(now),
-            updated_at: Set(now),
-        },
         // timer_alarm
         skill::ActiveModel {
             id: Set(Uuid::new_v4()),

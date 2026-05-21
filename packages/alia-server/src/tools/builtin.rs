@@ -4,12 +4,9 @@
 //! - `get_current_time`: Get current date/time in specified timezone
 //! - `fetch`: Fetch a public HTTP(S) URL and return bounded text content
 //! - `calculate`: Evaluate a basic arithmetic expression
-//! - `get_weather`: Get weather for a location (stub, requires plugin)
 //! - `memory_search`: Search the user's Alia memory store
 //! - `memory_store`: Store information to memory
-//! - `device_control`: Control connected devices
 //! - `schedule_task`: Create a scheduled task
-//! - `send_notification`: Send notification to user
 //!
 //! ## Plugin Tools
 //! Plugins can register custom tools at runtime.
@@ -32,7 +29,7 @@ use sea_orm::{
 use tokio::net::lookup_host;
 use uuid::Uuid;
 
-use crate::entity::tool;
+use crate::entity::{registry_artifact, registry_dependency, skill_tool, tool};
 use crate::event::{EventBus, ServerEvent};
 use crate::memory_policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
@@ -52,6 +49,7 @@ const FETCH_DEFAULT_MAX_BYTES: usize = 64 * 1024;
 const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
 const FETCH_DEFAULT_TIMEOUT_SEC: u64 = 10;
 const FETCH_HARD_TIMEOUT_SEC: u64 = 30;
+const OBSOLETE_BUILTIN_TOOLS: &[&str] = &["device_control", "send_notification"];
 
 struct ToolCatalogFields {
     routing_keywords: serde_json::Value,
@@ -178,14 +176,6 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
             "删除记忆",
             "移除记忆",
         ],
-        "device_control" => &[
-            "device",
-            "smart home",
-            "control",
-            "设备",
-            "智能家居",
-            "控制",
-        ],
         _ => &[],
     }
 }
@@ -195,8 +185,6 @@ pub struct BuiltinToolRegistry {
     /// Code-backed tools. Built-ins, Rust components, and in-process Rust
     /// plugins all live here; DB rows are only the discoverable catalog.
     executors: Arc<RwLock<HashMap<String, Arc<dyn ToolExecutor>>>>,
-    /// Plugin-registered tools (in-memory cache, backed by DB)
-    plugins: Arc<RwLock<HashMap<String, ToolDefinition>>>,
     /// Event bus for publishing tool events
     event_bus: tokio::sync::Mutex<Option<EventBus>>,
     /// DB connection for persisting plugin tools
@@ -213,7 +201,6 @@ impl BuiltinToolRegistry {
     pub fn new() -> Self {
         Self {
             executors: Arc::new(RwLock::new(HashMap::new())),
-            plugins: Arc::new(RwLock::new(HashMap::new())),
             event_bus: tokio::sync::Mutex::new(None),
             db: None,
             artifacts: None,
@@ -280,18 +267,6 @@ impl BuiltinToolRegistry {
         } else {
             tracing::info!("scheduler unavailable; schedule_task tool is not registered");
         }
-
-        // send_notification
-        self.executors
-            .write()
-            .unwrap()
-            .insert("send_notification".to_string(), Arc::new(SendNotification));
-
-        // device_control
-        self.executors
-            .write()
-            .unwrap()
-            .insert("device_control".to_string(), Arc::new(DeviceControl));
     }
 
     /// Register an additional tool executor at runtime (for tools that need external state).
@@ -304,38 +279,6 @@ impl BuiltinToolRegistry {
         self.artifacts
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("BuiltinToolRegistry not initialized"))
-    }
-
-    /// Load plugin tools from DB into in-memory cache.
-    async fn load_plugin_tools_from_db(&self) -> anyhow::Result<()> {
-        let Some(db) = &self.db else { return Ok(()) };
-
-        let rows = tool::Entity::find()
-            .filter(tool::Column::Enabled.eq(true))
-            .filter(tool::Column::Source.ne("builtin"))
-            .all(db)
-            .await?;
-
-        let mut plugins = self.plugins.write().unwrap();
-        for row in rows {
-            if !is_plugin_source(&row.source) {
-                continue;
-            }
-            plugins.insert(
-                row.name.clone(),
-                ToolDefinition {
-                    name: row.name,
-                    description: row.description,
-                    parameters: row.parameters,
-                    routing_hints: Vec::new(),
-                    source: row.source,
-                    require_confirmation: row.require_confirmation,
-                    required_role: row.required_role,
-                },
-            );
-        }
-
-        Ok(())
     }
 
     /// Persist built-in tool definitions so skills can bind to them through
@@ -410,6 +353,60 @@ impl BuiltinToolRegistry {
         self.artifacts()?.sync_existing_tool_artifacts().await?;
         Ok(())
     }
+
+    async fn remove_obsolete_builtin_tools(&self) -> anyhow::Result<()> {
+        let Some(db) = &self.db else { return Ok(()) };
+        let tx = db.begin().await?;
+        let tool_names = OBSOLETE_BUILTIN_TOOLS.to_vec();
+        let obsolete_tool_ids = tool::Entity::find()
+            .filter(tool::Column::Source.eq("builtin"))
+            .filter(tool::Column::Name.is_in(tool_names.clone()))
+            .all(&tx)
+            .await?
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>();
+
+        if !obsolete_tool_ids.is_empty() {
+            skill_tool::Entity::delete_many()
+                .filter(skill_tool::Column::ToolId.is_in(obsolete_tool_ids))
+                .exec(&tx)
+                .await?;
+        }
+        registry_dependency::Entity::delete_many()
+            .filter(registry_dependency::Column::DependentKind.eq(KIND_TOOL))
+            .filter(registry_dependency::Column::DependentName.is_in(tool_names.clone()))
+            .exec(&tx)
+            .await?;
+        registry_dependency::Entity::delete_many()
+            .filter(registry_dependency::Column::DependencyKind.eq(KIND_TOOL))
+            .filter(registry_dependency::Column::DependencyName.is_in(tool_names.clone()))
+            .exec(&tx)
+            .await?;
+
+        let tool_delete = tool::Entity::delete_many()
+            .filter(tool::Column::Source.eq("builtin"))
+            .filter(tool::Column::Name.is_in(tool_names.clone()))
+            .exec(&tx)
+            .await?;
+        let artifact_delete = registry_artifact::Entity::delete_many()
+            .filter(registry_artifact::Column::ArtifactKind.eq(KIND_TOOL))
+            .filter(registry_artifact::Column::ArtifactName.is_in(tool_names))
+            .filter(registry_artifact::Column::OwnerKind.eq("builtin"))
+            .exec(&tx)
+            .await?;
+        tx.commit().await?;
+
+        if tool_delete.rows_affected > 0 || artifact_delete.rows_affected > 0 {
+            tracing::info!(
+                tools = ?OBSOLETE_BUILTIN_TOOLS,
+                rows = tool_delete.rows_affected,
+                artifacts = artifact_delete.rows_affected,
+                "removed obsolete built-in noop tools"
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Default for BuiltinToolRegistry {
@@ -430,21 +427,17 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         self.artifacts = Some(ctx.artifacts.clone());
         self.memory = ctx.memory.clone();
         self.scheduler = ctx.scheduler.clone();
+        if let Err(e) = self.remove_obsolete_builtin_tools().await {
+            tracing::warn!(error = %e, "failed to remove obsolete built-in noop tools");
+        }
         self.register_builtins();
 
         if let Err(e) = self.upsert_executor_tools_to_db().await {
             tracing::warn!(error = %e, "failed to persist executor tool definitions");
         }
 
-        // Load plugin-registered tools from DB
-        if let Err(e) = self.load_plugin_tools_from_db().await {
-            tracing::warn!(error = %e, "failed to load plugin tools from DB");
-        }
-
-        let plugin_count = self.plugins.read().unwrap().len();
         tracing::info!(
             executor_count = self.executors.read().unwrap().len(),
-            plugin_count,
             "BuiltinToolRegistry initialized"
         );
         Ok(())
@@ -458,17 +451,13 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 #[async_trait]
 impl ToolRegistry for BuiltinToolRegistry {
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>> {
-        let mut tools: Vec<ToolDefinition> = self
+        let tools: Vec<ToolDefinition> = self
             .executors
             .read()
             .unwrap()
             .values()
             .map(|executor| executor.definition())
             .collect();
-
-        // Add plugin tools
-        let plugins = self.plugins.read().unwrap();
-        tools.extend(plugins.values().cloned());
 
         Ok(tools)
     }
@@ -479,9 +468,7 @@ impl ToolRegistry for BuiltinToolRegistry {
             return Ok(Some(executor.definition()));
         }
 
-        // Check plugins
-        let plugins = self.plugins.read().unwrap();
-        Ok(plugins.get(name).cloned())
+        Ok(None)
     }
 
     async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult> {
@@ -504,27 +491,12 @@ impl ToolRegistry for BuiltinToolRegistry {
         let result = if let Some(executor) = executor {
             executor.execute(call.arguments, ctx).await
         } else {
-            // Check if it's a plugin tool
-            let is_plugin = {
-                let plugins = self.plugins.read().unwrap();
-                plugins.contains_key(&call.tool_name)
-            };
-
-            if is_plugin {
-                Ok(ToolResult {
-                    call_id: call_id.clone(),
-                    success: false,
-                    output: serde_json::json!({"error": "plugin tool execution not implemented"}),
-                    display: Some("Plugin tool execution not yet implemented".to_string()),
-                })
-            } else {
-                Ok(ToolResult {
-                    call_id: call_id.clone(),
-                    success: false,
-                    output: serde_json::json!({"error": format!("unknown tool: {}", call.tool_name)}),
-                    display: Some(format!("Unknown tool: {}", call.tool_name)),
-                })
-            }
+            Ok(ToolResult {
+                call_id: call_id.clone(),
+                success: false,
+                output: serde_json::json!({"error": format!("unknown tool: {}", call.tool_name)}),
+                display: Some(format!("Unknown tool: {}", call.tool_name)),
+            })
         };
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -548,77 +520,10 @@ impl ToolRegistry for BuiltinToolRegistry {
     }
 
     async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()> {
-        if self.executors.read().unwrap().contains_key(&tool.name) {
-            anyhow::bail!("cannot override code-backed tool: {}", tool.name);
-        }
-        if !is_plugin_source(&tool.source) {
-            anyhow::bail!(
-                "plugin tool '{}' must use its plugin name as source, got '{}'",
-                tool.name,
-                tool.source
-            );
-        }
-
-        // Persist to DB
-        if let Some(db) = &self.db {
-            let now = Utc::now();
-            let artifact = ArtifactRef::tool(tool.name.clone());
-            let existing = tool::Entity::find()
-                .filter(tool::Column::Name.eq(&tool.name))
-                .one(db)
-                .await?;
-
-            match existing {
-                Some(row) => {
-                    let existing_routing_text = row.routing_text.clone();
-                    let existing_embedding = row.routing_embedding.clone();
-                    let mut active: tool::ActiveModel = row.into();
-                    active.description = Set(tool.description.clone());
-                    active.parameters = Set(tool.parameters.clone());
-                    active.source = Set(tool.source.clone());
-                    active.require_confirmation = Set(tool.require_confirmation);
-                    active.required_role = Set(tool.required_role.clone());
-                    set_tool_catalog(
-                        &mut active,
-                        &tool,
-                        Some(&existing_routing_text),
-                        existing_embedding,
-                    );
-                    active.enabled = Set(true);
-                    active.updated_at = Set(now);
-                    active.update(db).await?;
-                }
-                None => {
-                    let catalog = tool_catalog_fields(&tool);
-                    let active = tool::ActiveModel {
-                        id: Set(Uuid::new_v4()),
-                        name: Set(tool.name.clone()),
-                        description: Set(tool.description.clone()),
-                        parameters: Set(tool.parameters.clone()),
-                        source: Set(tool.source.clone()),
-                        require_confirmation: Set(tool.require_confirmation),
-                        required_role: Set(tool.required_role.clone()),
-                        routing_keywords: Set(catalog.routing_keywords),
-                        routing_examples: Set(catalog.routing_examples),
-                        routing_text: Set(catalog.routing_text),
-                        routing_embedding: Set(None),
-                        enabled: Set(true),
-                        created_at: Set(now),
-                        updated_at: Set(now),
-                    };
-                    active.insert(db).await?;
-                }
-            }
-            self.artifacts()?
-                .upsert_artifact_in(db, &artifact, &tool.source)
-                .await?;
-        }
-
-        // Update in-memory cache
-        let mut plugins = self.plugins.write().unwrap();
-        tracing::info!(tool = %tool.name, source = %tool.source, "registered plugin tool");
-        plugins.insert(tool.name.clone(), tool);
-        Ok(())
+        anyhow::bail!(
+            "metadata-only plugin tool '{}' is not executable; register a code-backed ToolExecutor with register_tool_executor",
+            tool.name
+        )
     }
 
     async fn register_tool_executor(
@@ -691,7 +596,6 @@ impl ToolRegistry for BuiltinToolRegistry {
                 .await?;
         }
 
-        self.plugins.write().unwrap().remove(&definition.name);
         self.executors
             .write()
             .unwrap()
@@ -731,11 +635,8 @@ impl ToolRegistry for BuiltinToolRegistry {
             tx.commit().await?;
         }
 
-        // Remove from in-memory cache
-        let mut plugins = self.plugins.write().unwrap();
-        let metadata_removed = plugins.remove(tool_name).is_some();
         let executor_removed = self.executors.write().unwrap().remove(tool_name).is_some();
-        if !metadata_removed && !executor_removed {
+        if !executor_removed {
             anyhow::bail!("plugin tool not found: {tool_name}");
         }
         tracing::info!(tool = %tool_name, "unregistered plugin tool");
@@ -766,9 +667,7 @@ impl ToolRegistry for BuiltinToolRegistry {
 
         tx.commit().await?;
 
-        let mut plugins = self.plugins.write().unwrap();
         for artifact in &artifacts {
-            plugins.remove(&artifact.name);
             self.executors.write().unwrap().remove(&artifact.name);
         }
 
@@ -1655,132 +1554,6 @@ impl ToolExecutor for ScheduleTask {
                 "schedule": task.schedule,
             }),
             display: Some(format!("Scheduled task '{name}'")),
-        })
-    }
-}
-
-/// Send notification
-struct SendNotification;
-
-#[async_trait]
-impl ToolExecutor for SendNotification {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "send_notification".to_string(),
-            description: "Send a notification to the user.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "Notification title"
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": "Notification body text"
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "normal", "high"],
-                        "description": "Notification priority. Defaults to 'normal'."
-                    }
-                },
-                "required": ["title", "body"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: false,
-            required_role: None,
-        }
-    }
-
-    async fn execute(
-        &self,
-        arguments: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> anyhow::Result<ToolResult> {
-        let title = arguments
-            .get("title")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("title is required"))?;
-        let body = arguments
-            .get("body")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("body is required"))?;
-
-        // TODO: Send via push notification service or WebSocket
-        tracing::info!(%title, body_len = body.len(), "send_notification called (stub)");
-
-        Ok(ToolResult {
-            call_id: String::new(),
-            success: true,
-            output: serde_json::json!({
-                "sent": false,
-                "message": "Notification service pending integration"
-            }),
-            display: Some(format!("Notification '{}' pending", title)),
-        })
-    }
-}
-
-/// Control connected devices
-struct DeviceControl;
-
-#[async_trait]
-impl ToolExecutor for DeviceControl {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: "device_control".to_string(),
-            description: "Control a connected smart home device.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "device_id": {
-                        "type": "string",
-                        "description": "ID of the device to control"
-                    },
-                    "action": {
-                        "type": "string",
-                        "description": "Action to perform (e.g., 'turn_on', 'turn_off', 'set_brightness')"
-                    },
-                    "params": {
-                        "type": "object",
-                        "description": "Action parameters (e.g., brightness level)"
-                    }
-                },
-                "required": ["device_id", "action"]
-            }),
-            routing_hints: Vec::new(),
-            source: "builtin".to_string(),
-            require_confirmation: true,
-            required_role: None,
-        }
-    }
-
-    async fn execute(
-        &self,
-        arguments: serde_json::Value,
-        _ctx: &ToolContext,
-    ) -> anyhow::Result<ToolResult> {
-        let device_id = arguments
-            .get("device_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("device_id is required"))?;
-        let action = arguments
-            .get("action")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("action is required"))?;
-
-        tracing::info!(%device_id, %action, "device_control called (stub)");
-
-        Ok(ToolResult {
-            call_id: String::new(),
-            success: true,
-            output: serde_json::json!({
-                "executed": false,
-                "message": "Device control pending adapter integration"
-            }),
-            display: Some(format!("Device {} action '{}' pending", device_id, action)),
         })
     }
 }

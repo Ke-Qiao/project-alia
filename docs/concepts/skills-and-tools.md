@@ -7,7 +7,7 @@ prompt assembly, plugin ownership, and frontend inspection much easier.
 
 | Concept | Role | Example |
 | --- | --- | --- |
-| Tool | Atomic execution unit. It has a name, description, JSON parameters, ownership, optional confirmation, and Rust/plugin executor code. | `fetch`, `get_current_time`, `device_control`, `memory_search` |
+| Tool | Atomic execution unit. It has a name, description, JSON parameters, ownership, optional confirmation, and Rust/plugin executor code. | `fetch`, `get_current_time`, `sensor_read`, `memory_search` |
 | Skill | Cognitive context. It helps route intent, contributes a domain prompt, and declares which tools are relevant. | smart home control, web research, memory-aware conversation |
 
 A skill should not behave like a giant function call. It should prepare the LLM

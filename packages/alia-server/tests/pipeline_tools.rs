@@ -26,7 +26,7 @@ fn tool(name: &str, description: &str) -> ToolDefinition {
 fn routes_global_tools_by_query_relevance() {
     let selected = rank_and_limit_tools(
         vec![
-            tool("device_control", "Control smart home devices"),
+            tool("sensor_read", "Read a sensor value"),
             tool("get_current_time", "Get the current date and time"),
             tool("fetch", "Fetch a public HTTP URL"),
         ],
@@ -44,7 +44,7 @@ fn routes_global_tools_by_query_relevance() {
 fn avoids_global_tool_injection_when_no_tool_matches() {
     let selected = rank_and_limit_tools(
         vec![
-            tool("device_control", "Control smart home devices"),
+            tool("sensor_read", "Read a sensor value"),
             tool("fetch", "Fetch a public HTTP URL"),
         ],
         "tell me a bedtime story",
@@ -104,10 +104,7 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
         "volume".to_string(),
     ];
     let selected = rank_and_limit_tools(
-        vec![
-            tool("device_control", "Control smart home devices"),
-            volume_tool,
-        ],
+        vec![tool("sensor_read", "Read a sensor value"), volume_tool],
         "set microphone volume to 2",
         1,
         false,
@@ -142,7 +139,7 @@ fn routes_goodbye_to_continuous_dialogue_end_tool() {
 fn routes_search_language_to_fetch_candidate() {
     let selected = rank_and_limit_tools(
         vec![
-            tool("device_control", "Control smart home devices"),
+            tool("sensor_read", "Read a sensor value"),
             tool("fetch", "Fetch a public HTTP URL"),
         ],
         "search for the latest sherpa onnx version",
@@ -159,7 +156,7 @@ fn native_tool_history_uses_normalized_call_ids() {
     let call = normalize_tool_call(
         &LlmToolCall {
             id: String::new(),
-            tool_name: "device_control".to_string(),
+            tool_name: "embedded_volume_control".to_string(),
             arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
         },
         0,
@@ -169,7 +166,7 @@ fn native_tool_history_uses_normalized_call_ids() {
         tool_call_request_message(ToolCallProtocol::Native, "", std::slice::from_ref(&call));
     let result = tool_result_message(
         ToolCallProtocol::Native,
-        "device_control",
+        "embedded_volume_control",
         ToolResult {
             call_id: call.id.clone(),
             success: false,
@@ -189,7 +186,7 @@ fn text_fallback_tool_history_does_not_use_native_tool_roles() {
     let call = normalize_tool_call(
         &LlmToolCall {
             id: String::new(),
-            tool_name: "device_control".to_string(),
+            tool_name: "embedded_volume_control".to_string(),
             arguments: serde_json::json!({"kind": "microphone", "volume": 2.0}),
         },
         0,
@@ -202,7 +199,7 @@ fn text_fallback_tool_history_does_not_use_native_tool_roles() {
     );
     let result = tool_result_message(
         ToolCallProtocol::TextFallback,
-        "device_control",
+        "embedded_volume_control",
         ToolResult {
             call_id: call.id,
             success: false,

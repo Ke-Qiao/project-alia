@@ -2066,7 +2066,10 @@ pub trait ToolRegistry: ModuleLifecycle {
     async fn get_tool(&self, name: &str) -> anyhow::Result<Option<ToolDefinition>>;
     /// Execute a tool call
     async fn execute(&self, call: ToolCall, ctx: &ToolContext) -> anyhow::Result<ToolResult>;
-    /// Register a plugin tool
+    /// Register plugin tool metadata only.
+    ///
+    /// Implementations may reject this because tools should be executable
+    /// units. Rust/server plugins should prefer `register_tool_executor`.
     async fn register_plugin_tool(&self, tool: ToolDefinition) -> anyhow::Result<()>;
     /// Register a code-backed tool executor. This is the preferred path for
     /// Rust plugins/components because tools are executable units, not only DB

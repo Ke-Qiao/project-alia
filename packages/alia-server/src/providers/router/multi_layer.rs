@@ -87,17 +87,14 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 
 ## Routes
 
-### "skill" - deterministic device/system commands
+### "skill" - deterministic system, sensor, memory, or automation commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
 | skill_name | When to use |
 |---|---|
-| smart_light_control | Turn on/off lights, set brightness/color temp |
-| smart_ac_control | AC on/off, set temperature/mode |
-| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. |
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
-| device_status | "Is the light on?", "What's the temperature?" |
+| device_status | Available sensors, device status, local temperature/readings |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 
@@ -121,7 +118,7 @@ Use for anything that needs deep thinking, creativity, or user context:
 
 ## Decision priority
 
-1. If the message is a clear device/system command, choose "skill".
+1. If the message is a clear supported system command, choose "skill".
 2. If it is trivial small-talk or a one-word/simple reply, choose "minor_llm".
 3. Everything else chooses "major_llm".
 
@@ -141,17 +138,14 @@ Respond with a single JSON object. No markdown fences, no explanation, no extra 
 
 ## Routes
 
-### "skill" - deterministic device/system commands
+### "skill" - deterministic system, sensor, memory, or automation commands
 Use when the user gives a clear, actionable command that maps to one of these skills:
 
 | skill_name | When to use |
 |---|---|
-| smart_light_control | Turn on/off lights, set brightness/color temp |
-| smart_ac_control | AC on/off, set temperature/mode |
-| smart_appliance | Curtains, fans, plugs, TV, vacuum, etc. |
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
-| device_status | "Is the light on?", "What's the temperature?" |
+| device_status | Available sensors, device status, local temperature/readings |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 
@@ -162,7 +156,7 @@ Route everything that is not a skill command to the minor LLM. This is the only 
 
 ## Decision priority
 
-1. If the message is a clear device/system command, choose "skill".
+1. If the message is a clear supported system command, choose "skill".
 2. Everything else chooses "minor_llm"."#;
 
 /// System prompt given to the minor LLM when both tiers are available.
@@ -604,7 +598,8 @@ mod tests {
         assert!(prompt.contains(r#""skill""#));
         assert!(prompt.contains(r#""minor_llm""#));
         assert!(prompt.contains(r#""major_llm""#));
-        assert!(prompt.contains("smart_light_control"));
+        assert!(prompt.contains("timer_alarm"));
+        assert!(!prompt.contains("smart_light_control"));
         assert!(prompt.contains("Do not extract action parameters here"));
         assert!(prompt.contains("When in doubt between \"minor_llm\" and \"major_llm\""));
         assert!(prompt.contains("always choose \"major_llm\""));

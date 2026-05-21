@@ -11,7 +11,7 @@
 //! display_name = "我的技能"
 //! category = "utility"
 //! intent_patterns = ["关键词1", "关键词2"]
-//! tools = ["device_control", "sensor_read"]
+//! tools = ["sensor_read", "memory_search"]
 //! priority = 5
 //! +++
 //!

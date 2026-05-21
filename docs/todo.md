@@ -7,11 +7,10 @@ codebase. Completed or no-longer-accurate items have been removed.
 
 ## High Priority
 
-- [ ] Implement plugin tool execution.
-  `packages/alia-server/src/tools/builtin.rs` can register plugin tool
-  metadata, but plugin-owned tool calls still return
-  `plugin tool execution not implemented`. This needs a plugin/runtime
-  dispatcher so tools backed by external Rust/plugin components can execute.
+- [ ] Implement out-of-process plugin tool dispatch.
+  The tool registry now exposes only real executor-backed tools. External
+  plugins still need a dispatcher executor that can call their runtime process
+  and register through `register_tool_executor`.
 
 - [ ] Reload the active skill catalog after skill API mutations.
   `packages/alia-server/src/api/skills.rs` persists create/update/delete
@@ -19,16 +18,11 @@ codebase. Completed or no-longer-accurate items have been removed.
   Frontend edits can still require a restart before routing and prompt assembly
   see the updated skills.
 
-- [ ] Connect generic `device_control` to real channel/device execution.
-  The embedded volume tool is wired separately, but the generic
-  `device_control` executor in `packages/alia-server/src/tools/builtin.rs`
-  remains a stub and does not dispatch commands to embedded channels, device
-  registries, or future plugins.
-
-- [ ] Implement notification delivery.
-  `send_notification` validates input and logs the request, but it does not
-  deliver through WebSocket, push notifications, frontend inbox, or another
-  user-visible channel.
+- [ ] Reintroduce device control and notification tools only with real
+  executors.
+  The old stub built-ins were removed so the LLM cannot claim actions that the
+  server cannot execute. Future versions should register these as channel- or
+  plugin-backed tools with real execution and ownership metadata.
 
 ## Configuration And Cleanup
 

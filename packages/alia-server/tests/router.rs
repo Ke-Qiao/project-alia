@@ -28,14 +28,14 @@ fn test_strip_code_fences_without_tag() {
 fn test_to_decision_skill() {
     let classification = Classification {
         route: "skill".to_string(),
-        skill_name: Some("smart_light_control".to_string()),
+        skill_name: Some("timer_alarm".to_string()),
         confidence: Some(0.95),
         reasoning: Some("deterministic command".to_string()),
     };
 
     match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME) {
         RouteDecision::Skill { skill_name } => {
-            assert_eq!(skill_name, "smart_light_control");
+            assert_eq!(skill_name, "timer_alarm");
         }
         other => panic!("expected Skill, got {other:?}"),
     }
