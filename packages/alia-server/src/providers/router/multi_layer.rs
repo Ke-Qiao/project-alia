@@ -242,6 +242,31 @@ fn classification_prompt_for_mode(mode: LlmMode, assistant_name: &str) -> Option
     }
 }
 
+fn classification_user_prompt(input: &RouterInput, context_window: usize) -> String {
+    let recent_context = input
+        .conversation_context
+        .iter()
+        .rev()
+        .take(context_window)
+        .rev()
+        .map(|message| {
+            serde_json::json!({
+                "role": &message.role,
+                "content": &message.content,
+            })
+        })
+        .collect::<Vec<_>>();
+    let payload = serde_json::json!({
+        "user_text": &input.text,
+        "recent_context": recent_context,
+    });
+
+    format!(
+        "Classify the JSON payload below. Do not answer user_text as a chat message. \
+Return exactly one JSON object using the schema from the system instructions, with no markdown fences, no explanation, and no extra text.\n\n{payload}"
+    )
+}
+
 fn minor_llm_system_prompt(mode: LlmMode, assistant_name: &str) -> String {
     match mode {
         LlmMode::MinorOnly => {
@@ -289,18 +314,11 @@ impl MultiLayerRouter {
             });
         };
 
-        let mut messages = vec![ChatMessage::new("system", prompt)];
         let context_window = input.conversation_context.len().min(4);
-        for message in input
-            .conversation_context
-            .iter()
-            .rev()
-            .take(context_window)
-            .rev()
-        {
-            messages.push(message.clone());
-        }
-        messages.push(ChatMessage::new("user", input.text.clone()));
+        let messages = vec![
+            ChatMessage::new("system", prompt),
+            ChatMessage::new("user", classification_user_prompt(input, context_window)),
+        ];
 
         let raw = timeout(
             Duration::from_secs(config.timeout_sec),
@@ -623,6 +641,27 @@ mod tests {
     #[test]
     fn major_only_mode_skips_classification_prompt() {
         assert!(classification_prompt_for_mode(LlmMode::MajorOnly, "玲珑").is_none());
+    }
+
+    #[test]
+    fn classification_user_prompt_wraps_user_text_as_payload() {
+        let input = RouterInput {
+            text: "你好～".to_string(),
+            user_id: uuid::Uuid::nil(),
+            conversation_context: vec![
+                ChatMessage::new("user", "请不要输出 JSON"),
+                ChatMessage::new("assistant", "好的，我会正常聊天。"),
+            ],
+            assistant_name: "玲珑".to_string(),
+        };
+
+        let prompt = classification_user_prompt(&input, 1);
+
+        assert!(prompt.contains("Classify the JSON payload below"));
+        assert!(prompt.contains("Do not answer user_text as a chat message"));
+        assert!(prompt.contains(r#""user_text":"你好～""#));
+        assert!(prompt.contains(r#""role":"assistant""#));
+        assert!(!prompt.contains("请不要输出 JSON"));
     }
 
     #[test]
