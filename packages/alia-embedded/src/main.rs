@@ -8,11 +8,13 @@
 use std::path::PathBuf;
 
 use alia_embedded::module::EmbeddedBuilder;
-use alia_embedded::{config, identity, module};
+use alia_embedded::{config, identity};
 use anyhow::{Context, Result};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "sherpa-onnx")]
+use alia_embedded::module;
 #[cfg(feature = "sherpa-onnx")]
 use alia_embedded::module::traits::{EdgeSttEngine, WakeWordEngine};
 

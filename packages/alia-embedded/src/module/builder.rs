@@ -27,6 +27,7 @@ use super::registry::EmbeddedModuleRegistry;
 use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
+use super::vision_debug::{VisionDebugHub, VisionDebugServer};
 use super::volume::{AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState};
 
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
@@ -260,6 +261,7 @@ impl EmbeddedBuilder {
         };
         let volume_state = AudioVolumeState::new(volume_config);
         let audio_debug = AudioDebugRecorder::new(config.audio_debug.clone());
+        let vision_debug_hub = Arc::new(VisionDebugHub::new(config.vision_debug.clone()));
 
         // Resolve modules: use overrides or fall back to factory
         let mut wakeword: Box<dyn WakeWordEngine> = match self.wakeword {
@@ -347,7 +349,12 @@ impl EmbeddedBuilder {
         let motion = Arc::new(motion);
         let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
             Some(m) => m,
-            None => factory::create_face_tracker(&config, motion.clone()).unwrap_or_else(|error| {
+            None => factory::create_face_tracker(
+                &config,
+                motion.clone(),
+                Some(vision_debug_hub.clone()),
+            )
+            .unwrap_or_else(|error| {
                 warn!(
                     error = %format!("{error:#}"),
                     "face tracker module creation failed; using noop"
@@ -355,7 +362,10 @@ impl EmbeddedBuilder {
                 Box::new(NoopFaceTracker)
             }),
         };
+        let mut vision_debug =
+            VisionDebugServer::new(config.vision_debug.clone(), vision_debug_hub.clone());
         init_embedded_module(face_tracker.as_mut(), &ctx).await;
+        init_embedded_module(&mut vision_debug, &ctx).await;
         init_embedded_module(discovery.as_mut(), &ctx).await;
         for module in &mut sensor_modules {
             init_embedded_module(module.as_mut(), &ctx).await;
@@ -409,6 +419,7 @@ impl EmbeddedBuilder {
         let audio_playback: Arc<dyn AudioPlaybackBackend> = Arc::from(audio_playback);
         let mixer: Arc<dyn AudioMixer> = Arc::from(mixer);
         let face_tracker: Arc<dyn FaceTracker> = Arc::from(face_tracker);
+        let vision_debug = Arc::new(vision_debug);
         let discovery: Arc<dyn DiscoveryBackend> = Arc::from(discovery);
         let sensor_modules: Vec<Arc<dyn ModuleLifecycle>> =
             sensor_modules.into_iter().map(Arc::from).collect();
@@ -449,6 +460,7 @@ impl EmbeddedBuilder {
         }
         start_embedded_module(motion.as_ref()).await;
         start_embedded_module(face_tracker.as_ref()).await;
+        start_embedded_module(vision_debug.as_ref()).await;
         start_embedded_module(discovery.as_ref()).await;
         for module in &sensor_modules {
             start_embedded_module(module.as_ref()).await;
@@ -481,6 +493,7 @@ impl EmbeddedBuilder {
             mixer,
             speech_pipeline,
             face_tracker,
+            vision_debug,
             motion,
             discovery,
             sensors,

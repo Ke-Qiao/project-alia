@@ -6,6 +6,7 @@ use super::motion::MotionRuntime;
 use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
+use super::vision_debug::VisionDebugServer;
 use crate::plugin::PluginRegistry;
 
 /// Central registry holding all active module instances.
@@ -25,6 +26,7 @@ pub struct EmbeddedModuleRegistry {
 
     // Vision
     pub face_tracker: Arc<dyn FaceTracker>,
+    pub vision_debug: Arc<VisionDebugServer>,
 
     // Motion / expression hardware
     pub motion: Arc<MotionRuntime>,
@@ -47,6 +49,7 @@ impl EmbeddedModuleRegistry {
             let _ = module.stop().await;
         }
         let _ = self.motion.stop().await;
+        let _ = self.vision_debug.stop().await;
         let _ = self.face_tracker.stop().await;
         let _ = self.mixer.stop().await;
         let _ = self.audio_playback.stop().await;
@@ -84,6 +87,10 @@ impl EmbeddedModuleRegistry {
         map.insert(
             self.face_tracker.name(),
             self.face_tracker.health_check().await,
+        );
+        map.insert(
+            self.vision_debug.name(),
+            self.vision_debug.health_check().await,
         );
         map.insert(self.motion.name(), self.motion.health_check().await);
         map.insert(self.discovery.name(), self.discovery.health_check().await);

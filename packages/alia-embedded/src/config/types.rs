@@ -28,6 +28,8 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub vision: VisionConfig,
     #[serde(default)]
+    pub vision_debug: VisionDebugConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -845,6 +847,32 @@ impl Default for VisionConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionDebugConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_vision_debug_bind_addr")]
+    pub bind_addr: String,
+    #[serde(default = "default_vision_debug_stream_fps")]
+    pub stream_fps: u32,
+    #[serde(default = "default_vision_debug_jpeg_quality")]
+    pub jpeg_quality: i32,
+    #[serde(default = "default_true")]
+    pub draw_overlay: bool,
+}
+
+impl Default for VisionDebugConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bind_addr: default_vision_debug_bind_addr(),
+            stream_fps: default_vision_debug_stream_fps(),
+            jpeg_quality: default_vision_debug_jpeg_quality(),
+            draw_overlay: true,
+        }
+    }
+}
+
 fn default_motion_neck_config_file() -> PathBuf {
     PathBuf::from("../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json")
 }
@@ -925,6 +953,15 @@ fn default_vision_min_motion_interval_ms() -> u64 {
 }
 fn default_vision_min_face_delta_px() -> f32 {
     6.0
+}
+fn default_vision_debug_bind_addr() -> String {
+    "127.0.0.1:50052".to_string()
+}
+fn default_vision_debug_stream_fps() -> u32 {
+    5
+}
+fn default_vision_debug_jpeg_quality() -> i32 {
+    75
 }
 
 fn default_true() -> bool {
@@ -1030,6 +1067,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub vision: VisionConfig,
     #[serde(default)]
+    pub vision_debug: VisionDebugConfig,
+    #[serde(default)]
     pub direct_response_defaults: DirectResponseDefaultsConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -1052,6 +1091,7 @@ impl Default for EmbeddedConfig {
             hmmd_mmwave: HmmdMmWaveConfig::default(),
             motion: MotionConfig::default(),
             vision: VisionConfig::default(),
+            vision_debug: VisionDebugConfig::default(),
             direct_response_defaults: DirectResponseDefaultsConfig::default(),
             dev: DevConfig::default(),
             direct_response: Vec::new(),
@@ -1076,6 +1116,7 @@ impl EmbeddedConfig {
         self.hmmd_mmwave = runtime.hmmd_mmwave;
         self.motion = runtime.motion;
         self.vision = runtime.vision;
+        self.vision_debug = runtime.vision_debug;
         self.direct_response_defaults = runtime.direct_response_defaults;
         self.dev = runtime.dev;
         self.provisioning_mode = !runtime.runtime.provisioned;
@@ -1099,6 +1140,7 @@ impl EmbeddedConfig {
             hmmd_mmwave: self.hmmd_mmwave.clone(),
             motion: self.motion.clone(),
             vision: self.vision.clone(),
+            vision_debug: self.vision_debug.clone(),
             direct_response_defaults: self.direct_response_defaults.clone(),
             dev: self.dev.clone(),
         }

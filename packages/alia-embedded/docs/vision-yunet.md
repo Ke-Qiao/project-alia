@@ -101,6 +101,13 @@ top_k = 256
 min_motion_interval_ms = 80
 min_face_delta_px = 6.0
 
+[vision_debug]
+enabled = false
+bind_addr = "127.0.0.1:50052"
+stream_fps = 5
+jpeg_quality = 75
+draw_overlay = true
+
 [motion]
 face_max_yaw = 25.0
 face_max_pitch = 18.0
@@ -121,6 +128,22 @@ ALIA_EMBEDDED_CONFIG_PATH=config/embedded.toml \
 RUST_LOG=alia_embedded::module::vision=debug,alia_embedded::module::motion=debug,info \
 cargo run -p alia-embedded --features vision-opencv
 ```
+
+## Web Debug Preview
+
+For camera/model debugging, enable `[vision_debug]` and open:
+
+```text
+http://127.0.0.1:50052/debug/vision
+```
+
+The web preview is served by `alia-embedded` itself. It does not register a
+sensor and does not open a second camera. The active YuNet loop publishes a
+rate-limited JPEG snapshot after detection, so the page can show the live frame
+with face boxes, primary face confidence, inference latency, and frame size.
+
+Use `bind_addr = "0.0.0.0:50052"` only on a trusted LAN if you need to view it
+from another device.
 
 Keep `motion.hardware_enabled = false` until the camera path is confirmed. Then
 enable hardware and calibrate on the real neck assembly.

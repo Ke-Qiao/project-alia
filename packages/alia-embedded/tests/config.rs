@@ -125,3 +125,14 @@ fn has_hmmd_debug_default() {
 
     assert!(!settings.hmmd_mmwave.debug);
 }
+
+#[test]
+fn has_vision_debug_defaults() {
+    let settings = EmbeddedRuntimeSettings::default();
+
+    assert!(!settings.vision_debug.enabled);
+    assert_eq!(settings.vision_debug.bind_addr, "127.0.0.1:50052");
+    assert_eq!(settings.vision_debug.stream_fps, 5);
+    assert_eq!(settings.vision_debug.jpeg_quality, 75);
+    assert!(settings.vision_debug.draw_overlay);
+}

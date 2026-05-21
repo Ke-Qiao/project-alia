@@ -17,6 +17,7 @@ pub mod sherpa;
 pub mod speech;
 pub mod traits;
 pub mod vision;
+pub mod vision_debug;
 pub mod volume;
 
 pub use builder::EmbeddedBuilder;

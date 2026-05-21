@@ -13,10 +13,14 @@ use crate::module::context::ModuleContext;
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::module::motion::MotionRuntime;
 use crate::module::traits::{FaceDetection, FaceTracker};
+use crate::module::vision_debug::VisionDebugHub;
+#[cfg(feature = "vision-opencv")]
+use crate::module::vision_debug::{VisionDebugFrame, vision_debug_meta};
 
 pub struct YuNetFaceTracker {
     config: VisionConfig,
     motion: Arc<MotionRuntime>,
+    debug_hub: Option<Arc<VisionDebugHub>>,
     latest_faces: Arc<StdMutex<Vec<FaceDetection>>>,
     running: Arc<AtomicBool>,
     cancel: Mutex<Option<CancellationToken>>,
@@ -24,13 +28,18 @@ pub struct YuNetFaceTracker {
 }
 
 impl YuNetFaceTracker {
-    pub fn new(config: VisionConfig, motion: Arc<MotionRuntime>) -> Result<Self> {
+    pub fn new(
+        config: VisionConfig,
+        motion: Arc<MotionRuntime>,
+        debug_hub: Option<Arc<VisionDebugHub>>,
+    ) -> Result<Self> {
         if config.enabled {
             validate_vision_config(&config)?;
         }
         Ok(Self {
             config,
             motion,
+            debug_hub,
             latest_faces: Arc::new(StdMutex::new(Vec::new())),
             running: Arc::new(AtomicBool::new(false)),
             cancel: Mutex::new(None),
@@ -65,11 +74,12 @@ impl ModuleLifecycle for YuNetFaceTracker {
         let running = self.running.clone();
         let config = self.config.clone();
         let motion = self.motion.clone();
+        let debug_hub = self.debug_hub.clone();
         let runtime = tokio::runtime::Handle::current();
 
         *self.cancel.lock().await = Some(cancel.clone());
         *self.task.lock().await = Some(tokio::task::spawn_blocking(move || {
-            let result = run_yunet_loop(config, latest_faces, motion, runtime, cancel);
+            let result = run_yunet_loop(config, latest_faces, motion, debug_hub, runtime, cancel);
             if let Err(error) = result {
                 warn!(error = %format!("{error:#}"), "YuNet face tracker stopped with error");
             }
@@ -146,6 +156,7 @@ fn run_yunet_loop(
     config: VisionConfig,
     latest_faces: Arc<StdMutex<Vec<FaceDetection>>>,
     motion: Arc<MotionRuntime>,
+    debug_hub: Option<Arc<VisionDebugHub>>,
     runtime: tokio::runtime::Handle,
     cancel: CancellationToken,
 ) -> Result<()> {
@@ -206,8 +217,14 @@ fn run_yunet_loop(
 
     let target_period = Duration::from_millis((1000 / config.detector_fps.max(1) as u64).max(1));
     let min_motion_interval = Duration::from_millis(config.min_motion_interval_ms);
+    let debug_period = debug_hub
+        .as_ref()
+        .filter(|hub| hub.enabled())
+        .map(|hub| hub.frame_period());
     let mut previous_center: Option<(f32, f32)> = None;
     let mut last_motion = Instant::now() - min_motion_interval;
+    let mut last_debug_frame =
+        Instant::now() - debug_period.unwrap_or_else(|| Duration::from_secs(60));
 
     while !cancel.is_cancelled() {
         let loop_started = Instant::now();
@@ -231,9 +248,11 @@ fn run_yunet_loop(
         .context("resizing frame for YuNet")?;
 
         let mut raw_faces = Mat::default();
+        let inference_started = Instant::now();
         detector
             .detect(&detector_frame, &mut raw_faces)
             .context("running YuNet face detector")?;
+        let inference_ms = inference_started.elapsed().as_secs_f32() * 1_000.0;
         let faces = parse_yunet_faces(
             &raw_faces,
             frame_w / config.input_width as f32,
@@ -243,7 +262,35 @@ fn run_yunet_loop(
             *latest = faces.clone();
         }
 
-        if let Some(face) = primary_face(&faces) {
+        let primary = primary_face(&faces);
+
+        if let (Some(hub), Some(period)) = (debug_hub.as_ref(), debug_period)
+            && last_debug_frame.elapsed() >= period
+        {
+            let encode_started = Instant::now();
+            match encode_debug_frame(&frame, &faces, primary, hub) {
+                Ok(jpeg) => {
+                    let encode_ms = encode_started.elapsed().as_secs_f32() * 1_000.0;
+                    hub.publish(VisionDebugFrame {
+                        meta: vision_debug_meta(
+                            frame.cols(),
+                            frame.rows(),
+                            config.input_width,
+                            config.input_height,
+                            inference_ms,
+                            encode_ms,
+                            &faces,
+                            primary,
+                        ),
+                        jpeg,
+                    });
+                    last_debug_frame = Instant::now();
+                }
+                Err(error) => warn!(error = %error, "vision debug frame encode failed"),
+            }
+        }
+
+        if let Some(face) = primary {
             let center = (face.x + face.width * 0.5, face.y + face.height * 0.5);
             let elapsed = last_motion.elapsed();
             if elapsed >= min_motion_interval
@@ -330,6 +377,7 @@ fn run_yunet_loop(
     _config: VisionConfig,
     _latest_faces: Arc<StdMutex<Vec<FaceDetection>>>,
     _motion: Arc<MotionRuntime>,
+    _debug_hub: Option<Arc<VisionDebugHub>>,
     _runtime: tokio::runtime::Handle,
     _cancel: CancellationToken,
 ) -> Result<()> {
@@ -355,6 +403,118 @@ fn parse_yunet_faces(
         });
     }
     Ok(detections)
+}
+
+#[cfg(feature = "vision-opencv")]
+fn encode_debug_frame(
+    frame: &opencv::core::Mat,
+    faces: &[FaceDetection],
+    primary: Option<&FaceDetection>,
+    hub: &VisionDebugHub,
+) -> Result<Vec<u8>> {
+    use opencv::core::{Point, Rect, Scalar, Vector};
+    use opencv::prelude::*;
+    use opencv::{imgcodecs, imgproc};
+
+    let mut debug_frame = frame.try_clone().context("cloning vision debug frame")?;
+    if hub.draw_overlay() {
+        let width = debug_frame.cols().max(1);
+        let height = debug_frame.rows().max(1);
+        let center_color = Scalar::new(95.0, 255.0, 213.0, 0.0);
+        let face_color = Scalar::new(74.0, 111.0, 255.0, 0.0);
+        let primary_color = Scalar::new(95.0, 255.0, 125.0, 0.0);
+        let text_color = Scalar::new(231.0, 240.0, 242.0, 0.0);
+
+        imgproc::line(
+            &mut debug_frame,
+            Point::new(width / 2, 0),
+            Point::new(width / 2, height),
+            center_color,
+            1,
+            imgproc::LINE_8,
+            0,
+        )
+        .context("drawing vision debug vertical center")?;
+        imgproc::line(
+            &mut debug_frame,
+            Point::new(0, height / 2),
+            Point::new(width, height / 2),
+            center_color,
+            1,
+            imgproc::LINE_8,
+            0,
+        )
+        .context("drawing vision debug horizontal center")?;
+
+        for face in faces {
+            let is_primary = primary.is_some_and(|candidate| std::ptr::eq(candidate, face));
+            let rect = face_rect(face, width, height);
+            let color = if is_primary {
+                primary_color
+            } else {
+                face_color
+            };
+            imgproc::rectangle(&mut debug_frame, rect, color, 2, imgproc::LINE_8, 0)
+                .context("drawing vision debug face box")?;
+            let face_center = Point::new(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            imgproc::circle(
+                &mut debug_frame,
+                face_center,
+                4,
+                color,
+                -1,
+                imgproc::LINE_8,
+                0,
+            )
+            .context("drawing vision debug face center")?;
+            imgproc::put_text(
+                &mut debug_frame,
+                &format!("{:.2}", face.confidence),
+                Point::new(rect.x, (rect.y - 6).max(14)),
+                imgproc::FONT_HERSHEY_SIMPLEX,
+                0.5,
+                text_color,
+                1,
+                imgproc::LINE_AA,
+                false,
+            )
+            .context("drawing vision debug confidence")?;
+        }
+
+        imgproc::put_text(
+            &mut debug_frame,
+            &format!("faces: {}", faces.len()),
+            Point::new(12, 24),
+            imgproc::FONT_HERSHEY_SIMPLEX,
+            0.6,
+            text_color,
+            1,
+            imgproc::LINE_AA,
+            false,
+        )
+        .context("drawing vision debug label")?;
+    }
+
+    let mut encoded = Vector::<u8>::new();
+    let mut params = Vector::<i32>::new();
+    params.push(imgcodecs::IMWRITE_JPEG_QUALITY);
+    params.push(hub.jpeg_quality());
+    imgcodecs::imencode(".jpg", &debug_frame, &mut encoded, &params)
+        .context("encoding vision debug JPEG")?;
+    Ok(encoded.to_vec())
+}
+
+#[cfg(feature = "vision-opencv")]
+fn face_rect(face: &FaceDetection, frame_width: i32, frame_height: i32) -> opencv::core::Rect {
+    let max_x = frame_width.saturating_sub(1) as f32;
+    let max_y = frame_height.saturating_sub(1) as f32;
+    let x1 = face.x.clamp(0.0, max_x).round() as i32;
+    let y1 = face.y.clamp(0.0, max_y).round() as i32;
+    let x2 = (face.x + face.width).clamp(0.0, frame_width as f32).round() as i32;
+    let y2 = (face.y + face.height)
+        .clamp(0.0, frame_height as f32)
+        .round() as i32;
+    opencv::core::Rect::new(x1, y1, (x2 - x1).max(1), (y2 - y1).max(1))
 }
 
 fn primary_face(faces: &[FaceDetection]) -> Option<&FaceDetection> {
