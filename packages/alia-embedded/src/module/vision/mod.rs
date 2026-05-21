@@ -412,7 +412,8 @@ fn encode_debug_frame(
     primary: Option<&FaceDetection>,
     hub: &VisionDebugHub,
 ) -> Result<Vec<u8>> {
-    use opencv::core::{Point, Rect, Scalar, Vector};
+    use anyhow::Context;
+    use opencv::core::{Point, Scalar, Vector};
     use opencv::prelude::*;
     use opencv::{imgcodecs, imgproc};
 
