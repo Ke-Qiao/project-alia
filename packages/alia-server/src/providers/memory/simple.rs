@@ -2363,7 +2363,7 @@ fn extract_capitalized_entities(content: &str) -> Vec<String> {
     }
     entities
         .into_iter()
-        .filter(|entity| !matches!(entity.as_str(), "The" | "User" | "Alia"))
+        .filter(|entity| !matches!(entity.as_str(), "The" | "User" | "Assistant"))
         .take(8)
         .collect()
 }

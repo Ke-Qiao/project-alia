@@ -197,7 +197,7 @@ impl ModuleLifecycle for CliChannel {
                                 println!("  /session list         — list recent sessions");
                                 println!("  /session switch <id>  — switch to session ID");
                                 println!();
-                                println!("Type anything else to chat with Alia.");
+                                println!("Type anything else to chat with the assistant.");
                                 continue;
                             }
                             "/clear" => {

@@ -4,6 +4,8 @@ use alia_server::providers::router::multi_layer::{
     strip_code_fences,
 };
 
+const TEST_ASSISTANT_NAME: &str = "玲珑";
+
 #[test]
 fn test_strip_code_fences_bare_json() {
     let input = r#"{"route": "major_llm", "confidence": 0.9}"#;
@@ -31,7 +33,7 @@ fn test_to_decision_skill() {
         reasoning: Some("deterministic command".to_string()),
     };
 
-    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME) {
         RouteDecision::Skill { skill_name } => {
             assert_eq!(skill_name, "smart_light_control");
         }
@@ -49,7 +51,7 @@ fn test_to_decision_skill_without_name_falls_back() {
     };
 
     assert!(matches!(
-        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled),
+        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME),
         RouteDecision::MajorLlm { .. }
     ));
 }
@@ -63,12 +65,13 @@ fn test_to_decision_minor_llm_both_mode() {
         reasoning: None,
     };
 
-    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME) {
         RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
+            assert!(prompt.contains(TEST_ASSISTANT_NAME));
             assert!(prompt.contains("[ESCALATE]"));
             assert!(
                 escalation_prompt
@@ -89,12 +92,13 @@ fn test_to_decision_minor_llm_solo_mode() {
         reasoning: None,
     };
 
-    match MultiLayerRouter::to_decision(classification, LlmMode::MinorOnly) {
+    match MultiLayerRouter::to_decision(classification, LlmMode::MinorOnly, TEST_ASSISTANT_NAME) {
         RouteDecision::MinorLlm {
             system_prompt,
             escalation_prompt,
         } => {
             let prompt = system_prompt.unwrap();
+            assert!(prompt.contains(TEST_ASSISTANT_NAME));
             assert!(!prompt.contains("[ESCALATE]"));
             assert!(prompt.contains("primary and only"));
             assert!(escalation_prompt.is_none());
@@ -112,9 +116,10 @@ fn test_to_decision_major_llm_both_mode() {
         reasoning: None,
     };
 
-    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled) {
+    match MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME) {
         RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
+            assert!(prompt.contains(TEST_ASSISTANT_NAME));
             assert!(prompt.contains("primary reasoning model"));
         }
         other => panic!("expected MajorLlm, got {other:?}"),
@@ -130,9 +135,10 @@ fn test_to_decision_major_llm_solo_mode() {
         reasoning: None,
     };
 
-    match MultiLayerRouter::to_decision(classification, LlmMode::MajorOnly) {
+    match MultiLayerRouter::to_decision(classification, LlmMode::MajorOnly, TEST_ASSISTANT_NAME) {
         RouteDecision::MajorLlm { system_prompt } => {
             let prompt = system_prompt.unwrap();
+            assert!(prompt.contains(TEST_ASSISTANT_NAME));
             assert!(prompt.contains("all conversations"));
         }
         other => panic!("expected MajorLlm, got {other:?}"),
@@ -149,7 +155,7 @@ fn test_to_decision_unknown_falls_back() {
     };
 
     assert!(matches!(
-        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled),
+        MultiLayerRouter::to_decision(classification, LlmMode::BothEnabled, TEST_ASSISTANT_NAME),
         RouteDecision::MajorLlm { .. }
     ));
 }

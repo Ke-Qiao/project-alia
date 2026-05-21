@@ -1222,7 +1222,9 @@ pub trait MemoryBackend: ModuleLifecycle {
                     .get("reason")
                     .and_then(serde_json::Value::as_str)
             })
-            .unwrap_or("This memory was stored because it passed Alia's memory policy.")
+            .unwrap_or(
+                "This memory was stored because it passed the configured assistant memory policy.",
+            )
             .to_string();
         let evidence_summary = memory
             .evidence
@@ -1645,10 +1647,36 @@ pub struct Persona {
     pub behavior_guidelines: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderedPersonaPrompt {
+    pub persona: Persona,
+    pub system_prompt: String,
+}
+
+pub const DEFAULT_ASSISTANT_NAME: &str = "the assistant";
+
+pub fn sanitize_assistant_name(input: &str) -> String {
+    let normalized = input
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>();
+    let compact = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = compact.trim();
+    if trimmed.is_empty() {
+        return DEFAULT_ASSISTANT_NAME.to_string();
+    }
+
+    trimmed.chars().take(80).collect()
+}
+
 #[async_trait]
 pub trait PersonaProvider: ModuleLifecycle {
     async fn get_effective_persona(&self, user_id: Uuid) -> anyhow::Result<Persona>;
-    async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String>;
+    async fn render_prompt(&self, user_id: Uuid) -> anyhow::Result<RenderedPersonaPrompt>;
+
+    async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String> {
+        Ok(self.render_prompt(user_id).await?.system_prompt)
+    }
 }
 
 // ========== Conversation Backend ==========
@@ -1752,6 +1780,7 @@ pub struct RouterInput {
     pub text: String,
     pub user_id: Uuid,
     pub conversation_context: Vec<ChatMessage>,
+    pub assistant_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1768,6 +1797,7 @@ pub struct ToolCandidateInfo {
 pub struct ToolSelectionInput {
     pub text: String,
     pub channel_id: String,
+    pub assistant_name: String,
     pub candidates: Vec<ToolCandidateInfo>,
     pub max_tools: usize,
 }

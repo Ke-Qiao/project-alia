@@ -274,6 +274,7 @@ fn parses_pseudo_function_search_call() {
 #[test]
 fn renders_runtime_context_prompt_outside_persona() {
     let prompt = render_runtime_context_system_prompt(&RuntimePromptContext {
+        assistant_name: "玲珑".to_string(),
         core_memories: vec!["The user likes coffee.".to_string()],
         memory_context: None,
         relationship_summary: Some("developing rapport; concise interaction style".to_string()),

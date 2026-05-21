@@ -18,6 +18,7 @@ use tokio::time::timeout;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput,
+    sanitize_assistant_name,
 };
 use crate::settings::values::{bool_setting, u64_setting};
 
@@ -71,8 +72,10 @@ struct RouterState {
     minor_llm: Option<Arc<dyn LlmAdapter>>,
 }
 
+const ASSISTANT_NAME_PLACEHOLDER: &str = "{assistant_name}";
+
 /// Classification prompt when both LLM tiers are available.
-const CLASSIFICATION_PROMPT_BOTH: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of three execution routes so the correct downstream system handles it.
+const CLASSIFICATION_PROMPT_BOTH_TEMPLATE: &str = r#"You are an intent classifier inside the smart home AI assistant named {assistant_name}. You do NOT answer the user. Your only job is to classify the user's message into one of three execution routes so the correct downstream system handles it.
 
 ## Your output
 
@@ -126,7 +129,7 @@ When in doubt between "minor_llm" and "major_llm", always choose "major_llm".
 When in doubt between "skill" and "major_llm", choose "major_llm" so the downstream LLM can reason with tools."#;
 
 /// Classification prompt when only the minor LLM tier is available.
-const CLASSIFICATION_PROMPT_MINOR_ONLY: &str = r#"You are an intent classifier inside a smart home AI assistant called "Alia". You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
+const CLASSIFICATION_PROMPT_MINOR_ONLY_TEMPLATE: &str = r#"You are an intent classifier inside the smart home AI assistant named {assistant_name}. You do NOT answer the user. Your only job is to classify the user's message into one of two execution routes so the correct downstream system handles it.
 
 ## Your output
 
@@ -163,7 +166,7 @@ Route everything that is not a skill command to the minor LLM. This is the only 
 2. Everything else chooses "minor_llm"."#;
 
 /// System prompt given to the minor LLM when both tiers are available.
-const MINOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, a friendly and concise smart home AI assistant running on the minor model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
+const MINOR_LLM_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are {assistant_name}, a friendly and concise smart home AI assistant running on the minor model. You handle simple conversations: greetings, casual chat, quick factual answers, and short confirmations.
 
 Guidelines:
 - Keep responses brief (1-3 sentences).
@@ -176,7 +179,7 @@ Guidelines:
 - Answer in the same language the user uses."#;
 
 /// System prompt given to the minor LLM when it is the only available tier.
-const MINOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations - from simple greetings to complex reasoning.
+const MINOR_LLM_SYSTEM_PROMPT_SOLO_TEMPLATE: &str = r#"You are {assistant_name}, a friendly and helpful smart home AI assistant. You are the primary and only language model, so you handle all conversations - from simple greetings to complex reasoning.
 
 Guidelines:
 - Be warm, natural, and helpful.
@@ -187,7 +190,7 @@ Guidelines:
 - If tools are available, use tool calls instead of writing tool JSON or hidden arguments."#;
 
 /// System prompt given to the major LLM when handling routed complex turns.
-const MAJOR_LLM_SYSTEM_PROMPT: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
+const MAJOR_LLM_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are {assistant_name}, an intelligent and empathetic smart home AI assistant. You are the primary reasoning model, handling complex conversations that require deep thinking, creativity, personalization, or multi-step analysis.
 
 Guidelines:
 - Be warm, thoughtful, and personalized. Use the user's memory and context when available.
@@ -199,7 +202,7 @@ Guidelines:
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 /// System prompt given to the major LLM when it is the only available tier.
-const MAJOR_LLM_SYSTEM_PROMPT_SOLO: &str = r#"You are Alia, an intelligent and empathetic smart home AI assistant. You handle all conversations - from casual greetings to complex reasoning and creative tasks.
+const MAJOR_LLM_SYSTEM_PROMPT_SOLO_TEMPLATE: &str = r#"You are {assistant_name}, an intelligent and empathetic smart home AI assistant. You handle all conversations - from casual greetings to complex reasoning and creative tasks.
 
 Guidelines:
 - Be warm, natural, and personalized. Use the user's memory and context when available.
@@ -210,7 +213,7 @@ Guidelines:
 - When a skill context is active, use the tools provided by that context. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
-const TOOL_SELECTION_PROMPT: &str = r#"You are a fast tool candidate selector inside Alia.
+const TOOL_SELECTION_PROMPT_TEMPLATE: &str = r#"You are a fast tool candidate selector inside {assistant_name}.
 You do NOT answer the user. Select only tools that are likely useful for this exact user request.
 
 Rules:
@@ -222,12 +225,47 @@ Rules:
 - Skills are cognitive context, not callable tools.
 "#;
 
-fn classification_prompt_for_mode(mode: LlmMode) -> Option<&'static str> {
+fn render_assistant_prompt(template: &str, assistant_name: &str) -> String {
+    template.replace(
+        ASSISTANT_NAME_PLACEHOLDER,
+        &sanitize_assistant_name(assistant_name),
+    )
+}
+
+fn classification_prompt_for_mode(mode: LlmMode, assistant_name: &str) -> Option<String> {
     match mode {
-        LlmMode::BothEnabled => Some(CLASSIFICATION_PROMPT_BOTH),
-        LlmMode::MinorOnly => Some(CLASSIFICATION_PROMPT_MINOR_ONLY),
+        LlmMode::BothEnabled => Some(render_assistant_prompt(
+            CLASSIFICATION_PROMPT_BOTH_TEMPLATE,
+            assistant_name,
+        )),
+        LlmMode::MinorOnly => Some(render_assistant_prompt(
+            CLASSIFICATION_PROMPT_MINOR_ONLY_TEMPLATE,
+            assistant_name,
+        )),
         LlmMode::MajorOnly => None,
     }
+}
+
+fn minor_llm_system_prompt(mode: LlmMode, assistant_name: &str) -> String {
+    match mode {
+        LlmMode::MinorOnly => {
+            render_assistant_prompt(MINOR_LLM_SYSTEM_PROMPT_SOLO_TEMPLATE, assistant_name)
+        }
+        _ => render_assistant_prompt(MINOR_LLM_SYSTEM_PROMPT_TEMPLATE, assistant_name),
+    }
+}
+
+fn major_llm_system_prompt(mode: LlmMode, assistant_name: &str) -> String {
+    match mode {
+        LlmMode::MajorOnly => {
+            render_assistant_prompt(MAJOR_LLM_SYSTEM_PROMPT_SOLO_TEMPLATE, assistant_name)
+        }
+        _ => render_assistant_prompt(MAJOR_LLM_SYSTEM_PROMPT_TEMPLATE, assistant_name),
+    }
+}
+
+fn tool_selection_prompt(assistant_name: &str) -> String {
+    render_assistant_prompt(TOOL_SELECTION_PROMPT_TEMPLATE, assistant_name)
 }
 
 #[derive(Default)]
@@ -246,7 +284,7 @@ impl MultiLayerRouter {
         input: &RouterInput,
     ) -> anyhow::Result<Classification> {
         let mode = config.llm_mode();
-        let Some(prompt) = classification_prompt_for_mode(mode) else {
+        let Some(prompt) = classification_prompt_for_mode(mode, &input.assistant_name) else {
             return Ok(Classification {
                 route: "major_llm".to_string(),
                 skill_name: None,
@@ -319,7 +357,7 @@ impl MultiLayerRouter {
             "candidates": &input.candidates,
         });
         let messages = vec![
-            ChatMessage::new("system", TOOL_SELECTION_PROMPT),
+            ChatMessage::new("system", tool_selection_prompt(&input.assistant_name)),
             ChatMessage::new("user", payload.to_string()),
         ];
 
@@ -334,7 +372,11 @@ impl MultiLayerRouter {
         Ok(Some(selected))
     }
 
-    pub fn to_decision(classification: Classification, mode: LlmMode) -> RouteDecision {
+    pub fn to_decision(
+        classification: Classification,
+        mode: LlmMode,
+        assistant_name: &str,
+    ) -> RouteDecision {
         match classification.route.trim().to_ascii_lowercase().as_str() {
             "skill" => {
                 let Some(skill_name) = classification
@@ -342,39 +384,36 @@ impl MultiLayerRouter {
                     .map(|name| name.trim().to_string())
                     .filter(|name| !name.is_empty())
                 else {
-                    return Self::fallback_decision(mode);
+                    return Self::fallback_decision(mode, assistant_name);
                 };
                 RouteDecision::Skill { skill_name }
             }
             "minor_llm" => {
-                let prompt = match mode {
-                    LlmMode::MinorOnly => MINOR_LLM_SYSTEM_PROMPT_SOLO,
-                    _ => MINOR_LLM_SYSTEM_PROMPT,
-                };
+                let prompt = minor_llm_system_prompt(mode, assistant_name);
                 let escalation_prompt = match mode {
-                    LlmMode::BothEnabled => Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
+                    LlmMode::BothEnabled => Some(major_llm_system_prompt(mode, assistant_name)),
                     _ => None,
                 };
                 RouteDecision::MinorLlm {
-                    system_prompt: Some(prompt.to_string()),
+                    system_prompt: Some(prompt),
                     escalation_prompt,
                 }
             }
-            _ => Self::fallback_decision(mode),
+            _ => Self::fallback_decision(mode, assistant_name),
         }
     }
 
-    fn fallback_decision(mode: LlmMode) -> RouteDecision {
+    fn fallback_decision(mode: LlmMode, assistant_name: &str) -> RouteDecision {
         match mode {
             LlmMode::MinorOnly => RouteDecision::MinorLlm {
-                system_prompt: Some(MINOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                system_prompt: Some(minor_llm_system_prompt(mode, assistant_name)),
                 escalation_prompt: None,
             },
             LlmMode::MajorOnly => RouteDecision::MajorLlm {
-                system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT_SOLO.to_string()),
+                system_prompt: Some(major_llm_system_prompt(mode, assistant_name)),
             },
             LlmMode::BothEnabled => RouteDecision::MajorLlm {
-                system_prompt: Some(MAJOR_LLM_SYSTEM_PROMPT.to_string()),
+                system_prompt: Some(major_llm_system_prompt(mode, assistant_name)),
             },
         }
     }
@@ -479,14 +518,18 @@ impl RouterStrategy for MultiLayerRouter {
         let mode = state.config.llm_mode();
 
         let Some(minor_llm) = state.minor_llm else {
-            return Ok(Self::fallback_decision(mode));
+            return Ok(Self::fallback_decision(mode, &input.assistant_name));
         };
 
         match Self::classify(minor_llm, &state.config, input).await {
-            Ok(classification) => Ok(Self::to_decision(classification, mode)),
+            Ok(classification) => Ok(Self::to_decision(
+                classification,
+                mode,
+                &input.assistant_name,
+            )),
             Err(error) => {
                 tracing::warn!(error = %error, "router classification failed, falling back");
-                Ok(Self::fallback_decision(mode))
+                Ok(Self::fallback_decision(mode, &input.assistant_name))
             }
         }
     }
@@ -552,8 +595,10 @@ mod tests {
 
     #[test]
     fn both_mode_classification_prompt_preserves_route_boundaries() {
-        let prompt = classification_prompt_for_mode(LlmMode::BothEnabled).unwrap();
+        let prompt = classification_prompt_for_mode(LlmMode::BothEnabled, "玲珑").unwrap();
 
+        assert!(prompt.contains("玲珑"));
+        assert!(!prompt.contains("Alia"));
         assert!(prompt.contains("Respond with a single JSON object"));
         assert!(prompt.contains("No markdown fences"));
         assert!(prompt.contains(r#""skill""#));
@@ -567,8 +612,10 @@ mod tests {
 
     #[test]
     fn minor_only_classification_prompt_removes_major_route() {
-        let prompt = classification_prompt_for_mode(LlmMode::MinorOnly).unwrap();
+        let prompt = classification_prompt_for_mode(LlmMode::MinorOnly, "玲珑").unwrap();
 
+        assert!(prompt.contains("玲珑"));
+        assert!(!prompt.contains("Alia"));
         assert!(prompt.contains(r#""skill""#));
         assert!(prompt.contains(r#""minor_llm""#));
         assert!(!prompt.contains("### \"major_llm\""));
@@ -578,18 +625,28 @@ mod tests {
 
     #[test]
     fn major_only_mode_skips_classification_prompt() {
-        assert!(classification_prompt_for_mode(LlmMode::MajorOnly).is_none());
+        assert!(classification_prompt_for_mode(LlmMode::MajorOnly, "玲珑").is_none());
     }
 
     #[test]
     fn conversation_prompts_preserve_escalation_and_tool_rules() {
-        assert!(MINOR_LLM_SYSTEM_PROMPT.contains("[ESCALATE]"));
-        assert!(MINOR_LLM_SYSTEM_PROMPT.contains("deep memory or preference reasoning"));
-        assert!(MINOR_LLM_SYSTEM_PROMPT_SOLO.contains("primary and only language model"));
-        assert!(MAJOR_LLM_SYSTEM_PROMPT.contains("primary reasoning model"));
-        assert!(MAJOR_LLM_SYSTEM_PROMPT.contains("Do not call skills directly"));
-        assert!(MAJOR_LLM_SYSTEM_PROMPT_SOLO.contains("all conversations"));
-        assert!(TOOL_SELECTION_PROMPT.contains("Select only tools that are likely useful"));
-        assert!(TOOL_SELECTION_PROMPT.contains("Skills are cognitive context, not callable tools"));
+        let minor = minor_llm_system_prompt(LlmMode::BothEnabled, "玲珑");
+        let minor_solo = minor_llm_system_prompt(LlmMode::MinorOnly, "玲珑");
+        let major = major_llm_system_prompt(LlmMode::BothEnabled, "玲珑");
+        let major_solo = major_llm_system_prompt(LlmMode::MajorOnly, "玲珑");
+        let tool_prompt = tool_selection_prompt("玲珑");
+
+        for prompt in [&minor, &minor_solo, &major, &major_solo, &tool_prompt] {
+            assert!(prompt.contains("玲珑"));
+            assert!(!prompt.contains("Alia"));
+        }
+        assert!(minor.contains("[ESCALATE]"));
+        assert!(minor.contains("deep memory or preference reasoning"));
+        assert!(minor_solo.contains("primary and only language model"));
+        assert!(major.contains("primary reasoning model"));
+        assert!(major.contains("Do not call skills directly"));
+        assert!(major_solo.contains("all conversations"));
+        assert!(tool_prompt.contains("Select only tools that are likely useful"));
+        assert!(tool_prompt.contains("Skills are cognitive context, not callable tools"));
     }
 }

@@ -308,6 +308,7 @@ pub(super) async fn select_tools_for_skill(
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
+    assistant_name: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
     if allowed_names.is_empty() {
         return Ok(Vec::new());
@@ -319,6 +320,7 @@ pub(super) async fn select_tools_for_skill(
         user_text,
         tools_config,
         channel_id,
+        assistant_name,
     )
     .await
 }
@@ -328,8 +330,17 @@ pub(super) async fn select_all_tools(
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
+    assistant_name: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
-    select_tools(modules, None, user_text, tools_config, channel_id).await
+    select_tools(
+        modules,
+        None,
+        user_text,
+        tools_config,
+        channel_id,
+        assistant_name,
+    )
+    .await
 }
 
 async fn select_tools(
@@ -338,6 +349,7 @@ async fn select_tools(
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
+    assistant_name: &str,
 ) -> anyhow::Result<Vec<ToolDefinition>> {
     let all_tools = modules.tools.list_tools().await?;
     let skill_scoped = allowed_names.is_some();
@@ -378,6 +390,7 @@ async fn select_tools(
         tools_config,
         skill_scoped,
         channel_id,
+        assistant_name,
     )
     .await;
     if selected.len() < total {
@@ -399,6 +412,7 @@ async fn select_ranked_or_llm_filtered_tools(
     tools_config: &ToolsSection,
     skill_scoped: bool,
     channel_id: &str,
+    assistant_name: &str,
 ) -> Vec<ToolDefinition> {
     let max_tools_per_turn = tools_config.max_tools_per_turn;
     if tools.is_empty() || max_tools_per_turn == 0 {
@@ -439,6 +453,7 @@ async fn select_ranked_or_llm_filtered_tools(
         let input = ToolSelectionInput {
             text: user_text.to_string(),
             channel_id: channel_id.to_string(),
+            assistant_name: assistant_name.to_string(),
             candidates: candidate_infos,
             max_tools: max_tools_per_turn,
         };

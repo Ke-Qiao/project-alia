@@ -13,10 +13,12 @@ use uuid::Uuid;
 
 use crate::entity::{persona, user_active_persona, user_persona_override};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{Persona, PersonaProvider};
+use crate::providers::adapter::{
+    Persona, PersonaProvider, RenderedPersonaPrompt, sanitize_assistant_name,
+};
 
 /// Default system prompt template with Handlebars variables
-const DEFAULT_SYSTEM_PROMPT: &str = r#"You are Alia, a warm and capable personal assistant for everyday life, smart-home control, and voice-first interaction.
+const DEFAULT_SYSTEM_PROMPT: &str = r#"You are {{persona_name}}, a warm and capable personal assistant for everyday life, smart-home control, and voice-first interaction.
 
 ## Core Traits
 - Be calm, concise, and genuinely helpful.
@@ -95,7 +97,7 @@ impl TemplatePersona {
         user_override: Option<&user_persona_override::Model>,
     ) -> Persona {
         Persona {
-            name: base.display_name.clone(),
+            name: sanitize_assistant_name(&base.display_name),
             system_prompt_template: base.system_prompt_template.clone(),
             personality_traits: user_override
                 .and_then(|o| o.personality_traits.clone())
@@ -130,6 +132,35 @@ impl TemplatePersona {
             behavior_guidelines: None,
         }
     }
+}
+
+fn render_persona_prompt(
+    handlebars: &Handlebars<'_>,
+    mut persona: Persona,
+) -> anyhow::Result<RenderedPersonaPrompt> {
+    persona.name = sanitize_assistant_name(&persona.name);
+
+    let data = serde_json::json!({
+        "persona_name": persona.name,
+        "behavior_guidelines": persona.behavior_guidelines,
+        "personality_traits": persona.personality_traits,
+    });
+
+    let rendered = match handlebars.render_template(&persona.system_prompt_template, &data) {
+        Ok(rendered) => rendered,
+        Err(error) => {
+            tracing::warn!(
+                persona = %persona.name,
+                error = ?error,
+                "failed to render persona template from database, falling back to default"
+            );
+            handlebars.render("default", &data)?
+        }
+    };
+    Ok(RenderedPersonaPrompt {
+        persona,
+        system_prompt: rendered,
+    })
 }
 
 impl Default for TemplatePersona {
@@ -199,28 +230,60 @@ impl PersonaProvider for TemplatePersona {
         Ok(Self::merge_persona(&persona_model, user_override.as_ref()))
     }
 
-    async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String> {
+    async fn render_prompt(&self, user_id: Uuid) -> anyhow::Result<RenderedPersonaPrompt> {
         let persona = self.get_effective_persona(user_id).await?;
-
-        let data = serde_json::json!({
-            "persona_name": persona.name,
-            "behavior_guidelines": persona.behavior_guidelines,
-            "personality_traits": persona.personality_traits,
-        });
-
         let handlebars = self.handlebars.read().await;
+        render_persona_prompt(&handlebars, persona)
+    }
+}
 
-        let rendered = match handlebars.render_template(&persona.system_prompt_template, &data) {
-            Ok(rendered) => rendered,
-            Err(error) => {
-                tracing::warn!(
-                    persona = %persona.name,
-                    error = ?error,
-                    "failed to render persona template from database, falling back to default"
-                );
-                handlebars.render("default", &data)?
-            }
-        };
-        Ok(rendered)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_handlebars() -> Handlebars<'static> {
+        let mut handlebars = Handlebars::new();
+        handlebars
+            .register_template_string("default", DEFAULT_SYSTEM_PROMPT)
+            .unwrap();
+        handlebars
+    }
+
+    fn test_persona(name: &str) -> Persona {
+        Persona {
+            name: name.to_string(),
+            system_prompt_template: DEFAULT_SYSTEM_PROMPT.to_string(),
+            personality_traits: serde_json::json!({}),
+            voice_config: serde_json::json!({}),
+            greeting: None,
+            behavior_guidelines: None,
+        }
+    }
+
+    #[test]
+    fn default_template_uses_persona_name_variable() {
+        assert!(DEFAULT_SYSTEM_PROMPT.contains("{{persona_name}}"));
+        assert!(!DEFAULT_SYSTEM_PROMPT.contains(&format!("{} {}", "You are", "Alia")));
+    }
+
+    #[test]
+    fn renders_custom_persona_name() {
+        let rendered = render_persona_prompt(&test_handlebars(), test_persona("玲珑")).unwrap();
+
+        assert!(rendered.system_prompt.contains("You are 玲珑"));
+        assert!(
+            !rendered
+                .system_prompt
+                .contains(&format!("{} {}", "You are", "Alia"))
+        );
+        assert_eq!(rendered.persona.name, "玲珑");
+    }
+
+    #[test]
+    fn empty_persona_name_falls_back_to_neutral_name() {
+        let rendered = render_persona_prompt(&test_handlebars(), test_persona(" \n\t ")).unwrap();
+
+        assert!(rendered.system_prompt.contains("You are the assistant"));
+        assert_eq!(rendered.persona.name, "the assistant");
     }
 }

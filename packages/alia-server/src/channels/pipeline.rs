@@ -31,8 +31,9 @@ use crate::memory_policy::{detect_sensitive_memory, memory_prompt_line, normaliz
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
-    ConversationEventEntry, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryContextPack, RetrievalOpts,
-    RouteDecision, RouterInput, SemanticCacheCandidate, ToolDefinition, TtsRequest,
+    ConversationEventEntry, DEFAULT_ASSISTANT_NAME, DEFAULT_CACHE_SCOPE, LlmAdapter,
+    MemoryContextPack, RetrievalOpts, RouteDecision, RouterInput, SemanticCacheCandidate,
+    ToolDefinition, TtsRequest, sanitize_assistant_name,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{
@@ -188,6 +189,7 @@ impl AgentTrace {
 
 #[derive(Debug, Clone, Default)]
 pub struct RuntimePromptContext {
+    pub assistant_name: String,
     pub core_memories: Vec<String>,
     pub memory_context: Option<MemoryContextPack>,
     pub relationship_summary: Option<String>,
@@ -1442,6 +1444,7 @@ async fn process_text(
         text: text.to_string(),
         user_id: uid,
         conversation_context: history.clone(),
+        assistant_name: runtime_context.assistant_name.clone(),
     };
     let decision =
         match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
@@ -1565,9 +1568,15 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tools =
-                select_tools_for_skill(modules, &resolution.tools, text, tools_config, channel_id)
-                    .await?;
+            let tools = select_tools_for_skill(
+                modules,
+                &resolution.tools,
+                text,
+                tools_config,
+                channel_id,
+                &runtime_context.assistant_name,
+            )
+            .await?;
             let skill_cacheable = resolution.cacheable;
             let sentence_speech_context = build_sentence_speech_context(
                 modules,
@@ -1627,7 +1636,14 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+            let tools = select_all_tools(
+                modules,
+                text,
+                tools_config,
+                channel_id,
+                &runtime_context.assistant_name,
+            )
+            .await?;
             let allow_minor_streaming =
                 conversation_config.streaming_enabled && escalation_prompt.is_none();
             let sentence_speech_context = build_sentence_speech_context(
@@ -1698,7 +1714,14 @@ async fn process_text(
                         "The minor model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
                     ),
                 ));
-                let major_tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+                let major_tools = select_all_tools(
+                    modules,
+                    text,
+                    tools_config,
+                    channel_id,
+                    &runtime_context.assistant_name,
+                )
+                .await?;
                 let sentence_speech_context = build_sentence_speech_context(
                     modules,
                     channel,
@@ -1755,7 +1778,14 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tools = select_all_tools(modules, text, tools_config, channel_id).await?;
+            let tools = select_all_tools(
+                modules,
+                text,
+                tools_config,
+                channel_id,
+                &runtime_context.assistant_name,
+            )
+            .await?;
             let sentence_speech_context = build_sentence_speech_context(
                 modules,
                 channel,
@@ -3556,19 +3586,23 @@ async fn build_base_system_messages(
     user_text: &str,
 ) -> anyhow::Result<(Vec<ChatMessage>, RuntimePromptContext)> {
     let mut messages = Vec::new();
+    let mut assistant_name = DEFAULT_ASSISTANT_NAME.to_string();
 
-    match modules.persona.render_system_prompt(user_id).await {
-        Ok(prompt) if !prompt.trim().is_empty() => {
-            messages.push(system_message(prompt));
+    match modules.persona.render_prompt(user_id).await {
+        Ok(rendered) => {
+            assistant_name = sanitize_assistant_name(&rendered.persona.name);
+            if !rendered.system_prompt.trim().is_empty() {
+                messages.push(system_message(rendered.system_prompt));
+            }
         }
-        Ok(_) => {}
         Err(error) => {
             tracing::warn!(user_id = %user_id, error = ?error, "failed to render persona prompt");
         }
     }
 
-    let runtime_context =
+    let mut runtime_context =
         build_runtime_prompt_context(user_id, modules, memory_config, user_text).await;
+    runtime_context.assistant_name = assistant_name;
     if let Some(prompt) = render_runtime_context_system_prompt(&runtime_context) {
         messages.push(system_message(prompt));
     }
@@ -3600,6 +3634,7 @@ async fn build_runtime_prompt_context(
         runtime_relationship_context(user_id, modules);
 
     RuntimePromptContext {
+        assistant_name: DEFAULT_ASSISTANT_NAME.to_string(),
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
         core_memories,
         memory_context,
