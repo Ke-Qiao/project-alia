@@ -455,7 +455,10 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
             let chunk_result = if let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled)
             {
                 tokio::select! {
-                    _ = turn.token.cancelled() => break,
+                    _ = turn.token.cancelled() => {
+                        turn.mark_interrupted_stage("llm_stream");
+                        break;
+                    }
                     chunk_result = token_stream.next() => chunk_result,
                 }
             } else {
@@ -1423,7 +1426,10 @@ pub(super) async fn stream_llm_response(
     loop {
         let chunk_result = if let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled) {
             tokio::select! {
-                _ = turn.token.cancelled() => break,
+                _ = turn.token.cancelled() => {
+                    turn.mark_interrupted_stage("llm_stream");
+                    break;
+                }
                 chunk_result = token_stream.next() => chunk_result,
             }
         } else {

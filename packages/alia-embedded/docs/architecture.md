@@ -9,7 +9,7 @@ macOS and Windows practical where the selected backends are available.
 - keep wake word, endpointing, and immediate audio feedback local
 - capture microphone audio and play speaker output
 - run sherpa-onnx wake word, VAD, and optional edge STT
-- play direct response clips for wake word, cancel, fallback, and listening cues
+- play direct response clips for wake word, cancel, fallback, listening, and thinking cues
 - stream captured utterances to `alia-server`
 - receive server TTS audio streams and play them with interruption support
 - expose settings, binding, plugin, audio, expression, and sensor services over gRPC

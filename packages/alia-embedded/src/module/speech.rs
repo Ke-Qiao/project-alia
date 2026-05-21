@@ -11,15 +11,17 @@ use tracing::{debug, info, warn};
 pub mod capture;
 pub mod continuous;
 pub mod responses;
+mod thinking;
 pub mod transport;
 mod utterance;
 
 use capture::{PendingSpeechCapture, SpeechCapture, prepare_vad_for_capture};
 use continuous::ContinuousDialogueState;
 use responses::{
-    ACTION_LISTENING_CONTINUE, ACTION_LISTENING_START, ACTION_WAKEWORD,
+    ACTION_LISTENING_CONTINUE, ACTION_LISTENING_START, ACTION_WAKEWORD, play_direct_response,
     play_direct_response_action, play_direct_response_action_or_keyword,
 };
+use thinking::ServerTurnState;
 use transport::interrupt_server_active_turn;
 use utterance::{UtteranceOutcome, handle_utterance};
 
@@ -31,7 +33,9 @@ use super::traits::{
     VoiceActivityState, WakeWordEngine,
 };
 use crate::binding::BindingManager;
-use crate::config::{ContinuousDialogueConfig, EdgeSttConfig, IdentityConfig, InterruptConfig};
+use crate::config::{
+    ContinuousDialogueConfig, EdgeSttConfig, IdentityConfig, InterruptConfig, ThinkingConfig,
+};
 
 pub struct SpeechPipeline {
     audio_bus: AudioBus,
@@ -48,6 +52,7 @@ pub struct SpeechPipeline {
     post_wake_min_capture_ms: u32,
     post_wake_response_delay_ms: u32,
     interrupt_config: InterruptConfig,
+    thinking_config: ThinkingConfig,
     continuous_config: ContinuousDialogueConfig,
     device_id: String,
     keypair_path: PathBuf,
@@ -67,6 +72,7 @@ impl SpeechPipeline {
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
         interrupt_config: &InterruptConfig,
+        thinking_config: &ThinkingConfig,
         continuous_config: &ContinuousDialogueConfig,
         identity_config: &IdentityConfig,
         audio_debug: AudioDebugRecorder,
@@ -87,6 +93,7 @@ impl SpeechPipeline {
             post_wake_min_capture_ms: edge_stt_config.post_wake_min_capture_ms,
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
             interrupt_config: interrupt_config.clone(),
+            thinking_config: thinking_config.clone(),
             continuous_config: continuous_config.clone(),
             device_id: identity_config.device_id.clone(),
             keypair_path: identity_config.keypair_path.clone(),
@@ -126,6 +133,7 @@ impl ModuleLifecycle for SpeechPipeline {
         let post_wake_min_capture_ms = self.post_wake_min_capture_ms;
         let post_wake_response_delay_ms = self.post_wake_response_delay_ms;
         let interrupt_config = self.interrupt_config.clone();
+        let thinking_config = self.thinking_config.clone();
         let continuous_config = self.continuous_config.clone();
         let device_id = self.device_id.clone();
         let keypair_path = self.keypair_path.clone();
@@ -135,6 +143,7 @@ impl ModuleLifecycle for SpeechPipeline {
             let mut capture: Option<SpeechCapture> = None;
             let mut pending_capture: Option<PendingSpeechCapture> = None;
             let mut continuous = ContinuousDialogueState::new(continuous_config);
+            let mut server_turn = ServerTurnState::new(thinking_config);
             let mut playback_active = false;
             let mut last_interrupt_at_us = 0u64;
 
@@ -146,14 +155,34 @@ impl ModuleLifecycle for SpeechPipeline {
                             Ok(ModuleEvent::PlaybackStarted { source }) => {
                                 playback_active = true;
                                 if is_assistant_playback_source(&source) {
+                                    if server_turn.stop() {
+                                        debug!(
+                                            component = "thinking_cue",
+                                            event = "stop",
+                                            reason = "tts_started",
+                                            "thinking cue stopped because assistant TTS started"
+                                        );
+                                    }
                                     continuous.mark_assistant_speaking();
                                 }
                             }
                             Ok(ModuleEvent::PlaybackFinished { source }) => {
                                 playback_active = false;
                                 if is_assistant_playback_source(&source) {
+                                    server_turn.stop();
                                     continuous.schedule_followup();
                                 }
+                            }
+                            Ok(ModuleEvent::ContinuousDialogueEndRequested { reason }) => {
+                                capture = None;
+                                pending_capture = None;
+                                playback_active = false;
+                                server_turn.stop();
+                                continuous.end_session();
+                                info!(
+                                    reason = %reason,
+                                    "continuous dialogue session ended by control request"
+                                );
                             }
                             Ok(_) => {}
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
@@ -174,6 +203,16 @@ impl ModuleLifecycle for SpeechPipeline {
                         audio_debug.record_capture_frame(&frame).await;
 
                         if capture.is_none() && pending_capture.is_none() {
+                            maybe_spawn_thinking_cue(
+                                &mut server_turn,
+                                frame.timestamp_us,
+                                playback_active,
+                                &direct_response,
+                                &playback,
+                                &event_bus,
+                                &audio_debug,
+                            );
+
                             if continuous.start_followup_if_scheduled(frame.timestamp_us) {
                                 if prepare_vad_for_capture(vad.as_ref()) {
                                     info!("continuous dialogue follow-up listening started");
@@ -309,13 +348,22 @@ impl ModuleLifecycle for SpeechPipeline {
                                 match outcome {
                                     UtteranceOutcome::UploadedToServer => {
                                         continuous.mark_waiting_for_assistant();
+                                        server_turn.mark_waiting(frame.timestamp_us);
+                                        debug!(
+                                            component = "thinking_cue",
+                                            event = "start",
+                                            action = server_turn.action(),
+                                            "thinking cue wait started after upload"
+                                        );
                                     }
                                     UtteranceOutcome::LocalDirectResponse => {
+                                        server_turn.stop();
                                         continuous.schedule_followup();
                                     }
                                     UtteranceOutcome::Ignored
                                     | UtteranceOutcome::FallbackResponse
                                     | UtteranceOutcome::Cancelled => {
+                                        server_turn.stop();
                                         continuous.end_session();
                                     }
                                 }
@@ -336,13 +384,32 @@ impl ModuleLifecycle for SpeechPipeline {
                                 keyword: event.keyword.clone(),
                                 timestamp_us: event.timestamp_us,
                             });
-                            let interrupting_playback = interrupt_config.interrupt_on_wakeword_during_playback
+                            let interrupt_debounced = event.timestamp_us.saturating_sub(last_interrupt_at_us)
+                                < u64::from(interrupt_config.interrupt_debounce_ms) * 1_000;
+                            let interrupting_thinking = interrupt_config.interrupt_on_wakeword_during_playback
+                                && server_turn.is_waiting()
+                                && !interrupt_debounced;
+                            let interrupting_playback = !interrupting_thinking
+                                && interrupt_config.interrupt_on_wakeword_during_playback
                                 && playback_active
-                                && event.timestamp_us.saturating_sub(last_interrupt_at_us)
-                                    >= u64::from(interrupt_config.interrupt_debounce_ms) * 1_000;
+                                && !interrupt_debounced;
 
-                            if interrupting_playback {
+                            if interrupting_thinking || interrupting_playback {
                                 last_interrupt_at_us = event.timestamp_us;
+                                let reason = if interrupting_thinking {
+                                    "wakeword_during_thinking"
+                                } else {
+                                    "wakeword_during_playback"
+                                };
+                                if interrupting_thinking {
+                                    server_turn.stop();
+                                    debug!(
+                                        component = "thinking_cue",
+                                        event = "interrupt",
+                                        reason,
+                                        "thinking cue interrupted by wakeword"
+                                    );
+                                }
                                 playback_active = false;
                                 if let Err(error) = playback.stop_playback() {
                                     warn!(error = %error, "failed to stop local playback after wakeword interrupt");
@@ -361,7 +428,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                         binding,
                                         "embedded".to_string(),
                                         "embedded-user".to_string(),
-                                        "wakeword_during_playback".to_string(),
+                                        reason.to_string(),
                                         timestamp_us,
                                         device_id,
                                         keypair_path,
@@ -369,7 +436,8 @@ impl ModuleLifecycle for SpeechPipeline {
                                     .await;
                                 });
                             } else if interrupt_config.interrupt_on_wakeword_during_playback
-                                && playback_active
+                                && (playback_active || server_turn.is_waiting())
+                                && interrupt_debounced
                             {
                                 debug!(
                                     debounce_ms = interrupt_config.interrupt_debounce_ms,
@@ -377,7 +445,7 @@ impl ModuleLifecycle for SpeechPipeline {
                                 );
                             }
 
-                            if !(interrupting_playback
+                            if !((interrupting_thinking || interrupting_playback)
                                 && interrupt_config.interrupt_skip_direct_response)
                             {
                                 let wakeword_audio_played = play_direct_response_action_or_keyword(
@@ -437,6 +505,66 @@ impl ModuleLifecycle for SpeechPipeline {
             ModuleHealth::Degraded
         }
     }
+}
+
+fn maybe_spawn_thinking_cue(
+    server_turn: &mut ServerTurnState,
+    timestamp_us: u64,
+    playback_active: bool,
+    direct_response: &Arc<dyn DirectResponseEngine>,
+    playback: &Arc<dyn AudioPlaybackBackend>,
+    event_bus: &EventBus,
+    audio_debug: &AudioDebugRecorder,
+) {
+    if !server_turn.cue_due(timestamp_us, playback_active) {
+        return;
+    }
+
+    let action_name = server_turn.action().trim().to_string();
+    let Some(response) = direct_response.match_action(&action_name) else {
+        if server_turn.mark_cue_missing() {
+            warn!(
+                component = "thinking_cue",
+                event = "missing",
+                action = %action_name,
+                "thinking direct response is not configured"
+            );
+        }
+        return;
+    };
+
+    if response
+        .audio_path
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        if server_turn.mark_cue_missing() {
+            warn!(
+                component = "thinking_cue",
+                event = "missing",
+                action = %action_name,
+                "thinking direct response has no audio configured"
+            );
+        }
+        return;
+    }
+
+    server_turn.mark_cue_played(timestamp_us);
+    debug!(
+        component = "thinking_cue",
+        event = "play",
+        action = %action_name,
+        "playing thinking cue"
+    );
+
+    let playback = Arc::clone(playback);
+    let event_bus = event_bus.clone();
+    let audio_debug = audio_debug.clone();
+    tokio::spawn(async move {
+        play_direct_response(response, playback, event_bus, audio_debug).await;
+    });
 }
 
 pub fn is_assistant_playback_source(source: &str) -> bool {

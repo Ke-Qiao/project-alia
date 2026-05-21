@@ -58,6 +58,32 @@ fn supports_action_only_response() {
 }
 
 #[test]
+fn includes_builtin_cancel_aliases_without_config() {
+    let matcher = KeywordMatcher::new(&[]);
+
+    for text in ["再见", "别说了", "结束对话", "goodbye", "stop talking"] {
+        let action = matcher.match_keyword(text).unwrap();
+        assert_eq!(action.audio_path, None);
+        assert_eq!(action.action.as_deref(), Some("cancel"));
+    }
+}
+
+#[test]
+fn configured_rules_take_precedence_over_builtin_cancel_aliases() {
+    let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+        slug: "custom-bye".to_string(),
+        keywords: vec!["再见".to_string()],
+        audio: PathBuf::from("bye.wav"),
+        audio_variants: Vec::new(),
+        action: Some("custom_bye".to_string()),
+    }]);
+
+    let action = matcher.match_keyword("再见").unwrap();
+    assert_eq!(action.audio_path.as_deref(), Some("bye.wav"));
+    assert_eq!(action.action.as_deref(), Some("custom_bye"));
+}
+
+#[test]
 fn ignores_keyword_only_rule_without_audio_or_action() {
     let matcher = KeywordMatcher::new(&[DirectResponseConfig {
         slug: "empty".to_string(),

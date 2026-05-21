@@ -192,6 +192,7 @@ impl AudioStreamTrait for AudioStreamService {
     ) -> Result<Response<PlaybackControlResponse>, Status> {
         require_auth(&self.binding, &request).await?;
         let req = request.into_inner();
+        let reason = req.reason.clone();
         let pending = {
             let mut slot = self.pending_playback.lock().await;
             slot.take()
@@ -205,6 +206,17 @@ impl AudioStreamTrait for AudioStreamService {
             self.event_bus.publish(ModuleEvent::PlaybackFinished {
                 source: pending.source,
             });
+        }
+        if is_continuous_dialogue_end_reason(&reason) {
+            self.event_bus
+                .publish(ModuleEvent::ContinuousDialogueEndRequested {
+                    reason: reason
+                        .split_once(':')
+                        .map(|(_, detail)| detail.trim())
+                        .filter(|detail| !detail.is_empty())
+                        .unwrap_or("server requested continuous dialogue end")
+                        .to_string(),
+                });
         }
         tracing::debug!(
             request_id = %req.request_id,
@@ -259,6 +271,11 @@ impl AudioStreamTrait for AudioStreamService {
             rx,
         )))
     }
+}
+
+fn is_continuous_dialogue_end_reason(reason: &str) -> bool {
+    let reason = reason.trim();
+    reason == "end_continuous_dialogue" || reason.starts_with("end_continuous_dialogue:")
 }
 
 impl AudioStreamService {

@@ -87,6 +87,16 @@ fn has_interrupt_defaults() {
 }
 
 #[test]
+fn has_thinking_defaults() {
+    let settings = EmbeddedRuntimeSettings::default();
+
+    assert!(settings.thinking.enabled);
+    assert_eq!(settings.thinking.action, "thinking");
+    assert_eq!(settings.thinking.initial_delay_ms, 1_200);
+    assert_eq!(settings.thinking.repeat_interval_ms, 3_000);
+}
+
+#[test]
 fn has_continuous_dialogue_defaults() {
     let settings = EmbeddedRuntimeSettings::default();
 

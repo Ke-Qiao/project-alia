@@ -37,6 +37,12 @@ Direct responses are not assistant answers. They are local interaction feedback:
 - cancel or "stand down" response
 - fallback when server connection is unavailable
 - listening start and listening continue prompts
+- short thinking cue while embedded is waiting for server-side reasoning or TTS
+
+The cancel action has a compiled safety net for common goodbye/cancel phrases
+such as "再见", "别说了", and "结束对话", so manual continuous-dialogue
+shutdown does not depend on importing an audio bundle. User-configured direct
+response rules still take precedence over built-in aliases.
 
 If a response is missing, embedded should continue the flow. This keeps local
 asset mistakes from breaking wake word capture or server communication.
@@ -58,6 +64,16 @@ When wake word is detected during assistant playback:
 This behavior is channel-local. Other future channels may choose different
 interrupt semantics.
 
+When wake word is detected while embedded is waiting for server reasoning, the
+same interrupt RPC is used with reason `wakeword_during_thinking`. The server
+cancels the in-flight generation, preserves the interrupted user question as
+context, and does not persist any partial assistant response.
+
+The thinking cue is local audio feedback only. It starts after a short delay,
+repeats at a bounded interval, and stops as soon as assistant TTS begins or the
+turn is interrupted. `alia.audio.ServerAudioIngress` is unchanged; this uses the
+existing active-turn interruption path.
+
 ## Continuous Dialogue
 
 After one wake word, embedded can keep a follow-up listening window open after
@@ -66,6 +82,16 @@ the follow-up window times out or the configured follow-up turn limit is reached
 
 This is not the same as always-on recording. The state is explicitly entered by
 the wake word flow and bounded by VAD and timeout policy.
+
+There are two ways to end this state manually:
+
+- Embedded local direct response can recognize cancel/goodbye phrases and end
+  the session without contacting the server.
+- If a goodbye/cancel phrase reaches the server, the generic
+  `end_continuous_dialogue` tool asks the current channel to end follow-up
+  listening through a channel action. Embedded implements that action through
+  existing playback-control RPCs; `alia.audio.ServerAudioIngress` remains
+  unchanged.
 
 ## Streaming and Latency
 

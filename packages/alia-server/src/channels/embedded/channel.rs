@@ -721,6 +721,7 @@ impl ChannelAdapter for EmbeddedChannel {
             sensors: true,
             hardware_control: true,
             presence: true,
+            conversation_control: true,
         }
     }
 
@@ -1301,6 +1302,29 @@ impl ChannelAdapter for EmbeddedChannel {
                 Ok(serde_json::from_str::<serde_json::Value>(
                     &resp.result_json,
                 )?)
+            }
+            "end_continuous_dialogue" => {
+                let reason = action
+                    .params
+                    .get("reason")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|reason| !reason.is_empty())
+                    .unwrap_or("server requested continuous dialogue end");
+                let control_reason = format!("end_continuous_dialogue:{reason}");
+                self.stop_current_playback(
+                    &ChannelTarget {
+                        user_id: String::new(),
+                    },
+                    &control_reason,
+                )
+                .await?;
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "ended": true,
+                    "channel_id": self.config.id.clone(),
+                    "reason": reason,
+                }))
             }
             "list_direct_responses" => {
                 let mut client = self.settings_client().await?;

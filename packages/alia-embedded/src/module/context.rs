@@ -54,6 +54,7 @@ pub enum ModuleEvent {
     SpeechEnd,
     PlaybackStarted { source: String },
     PlaybackFinished { source: String },
+    ContinuousDialogueEndRequested { reason: String },
 }
 
 impl EventBus {

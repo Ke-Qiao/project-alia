@@ -30,6 +30,9 @@ pub struct ChannelCapabilities {
     pub sensors: bool,
     pub hardware_control: bool,
     pub presence: bool,
+    /// When `true`, the channel can accept generic conversation control
+    /// actions such as ending local continuous/follow-up listening.
+    pub conversation_control: bool,
 }
 
 /// Channel-local voice turn interruption behavior.

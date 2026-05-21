@@ -14,6 +14,8 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub interrupt: InterruptConfig,
     #[serde(default)]
+    pub thinking: ThinkingConfig,
+    #[serde(default)]
     pub continuous_dialogue: ContinuousDialogueConfig,
     pub audio: AudioConfig,
     #[serde(default)]
@@ -377,6 +379,41 @@ impl Default for InterruptConfig {
 
 fn default_interrupt_debounce_ms() -> u32 {
     300
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_thinking_action")]
+    pub action: String,
+    #[serde(default = "default_thinking_initial_delay_ms")]
+    pub initial_delay_ms: u32,
+    #[serde(default = "default_thinking_repeat_interval_ms")]
+    pub repeat_interval_ms: u32,
+}
+
+impl Default for ThinkingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            action: default_thinking_action(),
+            initial_delay_ms: default_thinking_initial_delay_ms(),
+            repeat_interval_ms: default_thinking_repeat_interval_ms(),
+        }
+    }
+}
+
+fn default_thinking_action() -> String {
+    "thinking".to_string()
+}
+
+fn default_thinking_initial_delay_ms() -> u32 {
+    1_200
+}
+
+fn default_thinking_repeat_interval_ms() -> u32 {
+    3_000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -981,6 +1018,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub interrupt: InterruptConfig,
     #[serde(default)]
+    pub thinking: ThinkingConfig,
+    #[serde(default)]
     pub continuous_dialogue: ContinuousDialogueConfig,
     #[serde(default)]
     pub discovery: DiscoveryConfig,
@@ -1005,6 +1044,7 @@ impl Default for EmbeddedConfig {
             edge_stt: EdgeSttConfig::default(),
             vad: VadConfig::default(),
             interrupt: InterruptConfig::default(),
+            thinking: ThinkingConfig::default(),
             continuous_dialogue: ContinuousDialogueConfig::default(),
             audio: AudioConfig::default(),
             audio_debug: AudioDebugConfig::default(),
@@ -1030,6 +1070,7 @@ impl EmbeddedConfig {
         self.edge_stt = runtime.edge_stt;
         self.vad = runtime.vad;
         self.interrupt = runtime.interrupt;
+        self.thinking = runtime.thinking;
         self.continuous_dialogue = runtime.continuous_dialogue;
         self.discovery = runtime.discovery;
         self.hmmd_mmwave = runtime.hmmd_mmwave;
@@ -1052,6 +1093,7 @@ impl EmbeddedConfig {
             edge_stt: self.edge_stt.clone(),
             vad: self.vad.clone(),
             interrupt: self.interrupt.clone(),
+            thinking: self.thinking.clone(),
             continuous_dialogue: self.continuous_dialogue.clone(),
             discovery: self.discovery.clone(),
             hmmd_mmwave: self.hmmd_mmwave.clone(),

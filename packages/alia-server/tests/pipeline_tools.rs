@@ -119,6 +119,26 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
 }
 
 #[test]
+fn routes_goodbye_to_continuous_dialogue_end_tool() {
+    let selected = rank_and_limit_tools(
+        vec![
+            tool("get_current_time", "Get the current date and time"),
+            tool(
+                "end_continuous_dialogue",
+                "End continuous dialogue or follow-up listening",
+            ),
+        ],
+        "再见，先这样吧",
+        1,
+        false,
+        "embedded",
+    );
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].name, "end_continuous_dialogue");
+}
+
+#[test]
 fn routes_search_language_to_fetch_candidate() {
     let selected = rank_and_limit_tools(
         vec![

@@ -105,6 +105,18 @@ pub struct PendingTextPersistence {
 }
 
 #[derive(Debug, Clone)]
+struct InterruptedUserContext {
+    session_id: Uuid,
+    turn_id: Uuid,
+    user_id: Uuid,
+    user_id_text: String,
+    query_text: String,
+    channel_id: String,
+    reason: String,
+    stage: &'static str,
+}
+
+#[derive(Debug, Clone)]
 pub struct CacheWrite {
     pub scope: String,
     pub metadata: serde_json::Value,
@@ -615,9 +627,22 @@ async fn process_event(
                     return Ok(());
                 }
             };
-            let interrupted = voice_turns.interrupt(&channel_id, &user_id).await;
+            let interrupted = voice_turns.interrupt(&channel_id, &user_id, &reason).await;
             if interrupted {
                 tracing::info!(channel_id, user_id, reason, "active voice turn interrupted");
+                if reason == "wakeword_during_thinking" {
+                    debug_component_json(
+                        debug_output,
+                        "thinking_cue",
+                        "interrupt",
+                        &serde_json::json!({
+                            "reason": reason.as_str(),
+                            "channel_id": channel_id.as_str(),
+                            "user_id": user_id.as_str(),
+                        }),
+                        Some((&channel_id, &user_id)),
+                    );
+                }
                 let config = channel.interrupt_config();
                 if config.enabled {
                     let target = ChannelTarget {
@@ -869,6 +894,10 @@ async fn process_event(
             }
 
             if turn_is_interrupted(Some(&turn)) {
+                turn.mark_interrupted_stage("post_speech_delivery");
+                if let Some(pending) = result.pending_persistence.as_ref() {
+                    persist_interrupted_user_context(modules, pending, &turn, debug_output).await;
+                }
                 voice_turns.finish(&turn).await;
                 return Ok(());
             }
@@ -1354,6 +1383,19 @@ async fn process_text(
         match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
             Some(decision) => decision,
             None => {
+                if let Some(turn) = turn {
+                    persist_interrupted_input_context(
+                        modules,
+                        session_id,
+                        uid,
+                        user_id,
+                        text,
+                        channel_id,
+                        turn,
+                        debug_output,
+                    )
+                    .await;
+                }
                 trace
                     .record(
                         modules,
@@ -1451,7 +1493,7 @@ async fn process_text(
                     ..ChatMessage::default()
                 });
             }
-            messages.extend(history);
+            append_history_with_interrupted_context(&mut messages, &history);
             messages.push(ChatMessage {
                 role: "user".into(),
                 content: text.to_string(),
@@ -1698,6 +1740,20 @@ async fn process_text(
     };
 
     if turn_is_interrupted(turn) {
+        if let Some(turn) = turn {
+            turn.mark_interrupted_stage("before_persistence");
+            persist_interrupted_input_context(
+                modules,
+                session_id,
+                uid,
+                user_id,
+                text,
+                channel_id,
+                turn,
+                debug_output,
+            )
+            .await;
+        }
         trace
             .record(
                 modules,
@@ -2550,7 +2606,7 @@ fn build_llm_messages(
             ..ChatMessage::default()
         });
     }
-    messages.extend_from_slice(history);
+    append_history_with_interrupted_context(&mut messages, history);
     messages.push(ChatMessage {
         role: "user".into(),
         content: text.to_string(),
@@ -2558,6 +2614,33 @@ fn build_llm_messages(
         ..ChatMessage::default()
     });
     messages
+}
+
+fn append_history_with_interrupted_context(
+    messages: &mut Vec<ChatMessage>,
+    history: &[ChatMessage],
+) {
+    if let Some(previous) = unanswered_user_history_tail(history) {
+        messages.push(ChatMessage::new(
+            "system",
+            interrupted_user_context_prompt(&previous.content),
+        ));
+    }
+    messages.extend_from_slice(history);
+}
+
+fn unanswered_user_history_tail(history: &[ChatMessage]) -> Option<&ChatMessage> {
+    history.last().filter(|message| message.role == "user")
+}
+
+fn interrupted_user_context_prompt(previous_user_message: &str) -> String {
+    format!(
+        "The prior voice turn was interrupted before the assistant could answer. \
+The last user message in conversation history is preserved only as context, not as a completed exchange. \
+Prior interrupted user message: \"{}\". \
+Use the newest user message as the primary instruction. Refer to the interrupted message only when it helps answer the newest request.",
+        preview_for_prompt(previous_user_message, 360)
+    )
 }
 
 fn allow_streaming_for_tools(
@@ -3211,6 +3294,109 @@ async fn persist_text_interaction(
     });
 }
 
+async fn persist_interrupted_user_context(
+    modules: &ModuleRegistry,
+    pending: &PendingTextPersistence,
+    turn: &VoiceTurn,
+    debug_output: bool,
+) {
+    let interruption = turn.interruption();
+    let context = InterruptedUserContext {
+        session_id: pending.session_id,
+        turn_id: turn.id,
+        user_id: pending.user_id,
+        user_id_text: pending.user_id_text.clone(),
+        query_text: pending.query_text.clone(),
+        channel_id: pending.channel_id.clone(),
+        reason: interruption.reason,
+        stage: interruption.stage,
+    };
+    persist_interrupted_user_context_entry(modules, context, debug_output).await;
+}
+
+async fn persist_interrupted_input_context(
+    modules: &ModuleRegistry,
+    session_id: Uuid,
+    user_id: Uuid,
+    user_id_text: &str,
+    query_text: &str,
+    channel_id: &str,
+    turn: &VoiceTurn,
+    debug_output: bool,
+) {
+    let interruption = turn.interruption();
+    let context = InterruptedUserContext {
+        session_id,
+        turn_id: turn.id,
+        user_id,
+        user_id_text: user_id_text.to_string(),
+        query_text: query_text.to_string(),
+        channel_id: channel_id.to_string(),
+        reason: interruption.reason,
+        stage: interruption.stage,
+    };
+    persist_interrupted_user_context_entry(modules, context, debug_output).await;
+}
+
+async fn persist_interrupted_user_context_entry(
+    modules: &ModuleRegistry,
+    context: InterruptedUserContext,
+    debug_output: bool,
+) {
+    let _ = modules
+        .conversation
+        .append_message(
+            context.session_id,
+            ChatMessage {
+                role: "user".into(),
+                content: context.query_text.clone(),
+                name: Some(context.user_id_text.clone()),
+                ..ChatMessage::default()
+            },
+        )
+        .await;
+
+    let event = ConversationEventEntry {
+        turn_id: context.turn_id,
+        sequence: 0,
+        event_type: "turn_interrupted".to_string(),
+        actor: "pipeline".to_string(),
+        summary: Some("Voice turn interrupted; preserved user context only".to_string()),
+        payload: serde_json::json!({
+            "channel_id": context.channel_id.as_str(),
+            "user_id": context.user_id_text.as_str(),
+            "user_uuid": context.user_id.to_string(),
+            "reason": context.reason.as_str(),
+            "stage": context.stage,
+            "preserved_user_context": true,
+            "assistant_response_persisted": false,
+            "cache_written": false,
+            "memory_capture": false,
+        }),
+    };
+    if let Err(error) = modules
+        .conversation
+        .append_event(context.session_id, event)
+        .await
+    {
+        tracing::debug!(error = ?error, "failed to append interrupted turn event");
+    }
+
+    debug_component_json(
+        debug_output,
+        "pipeline",
+        "turn_interrupted",
+        &serde_json::json!({
+            "channel_id": context.channel_id.as_str(),
+            "user_id": context.user_id_text.as_str(),
+            "reason": context.reason.as_str(),
+            "stage": context.stage,
+            "preserved_user_context": true,
+        }),
+        Some((&context.channel_id, &context.user_id_text)),
+    );
+}
+
 async fn record_memory_capture_trace(
     modules: &ModuleRegistry,
     pending: &PendingTextPersistence,
@@ -3674,5 +3860,41 @@ mod tests {
         assert!(prompt.contains("homophones"));
         assert!(prompt.contains("ask a brief clarification"));
         assert!(prompt.contains("Do not mention this transcription context"));
+    }
+
+    #[test]
+    fn llm_messages_explain_unanswered_user_history_tail() {
+        let base = vec![ChatMessage::new("system", "Base persona")];
+        let history = vec![ChatMessage {
+            role: "user".into(),
+            content: "介绍一下明日方舟终末地".into(),
+            name: Some("embedded-user".into()),
+            ..ChatMessage::default()
+        }];
+
+        let messages = build_llm_messages(&base, &history, None, "继续说重点", "embedded-user");
+
+        assert!(messages.iter().any(|message| {
+            message.role == "system"
+                && message.content.contains("prior voice turn was interrupted")
+                && message.content.contains("终末地")
+        }));
+        assert_eq!(messages.last().unwrap().content, "继续说重点");
+    }
+
+    #[test]
+    fn llm_messages_do_not_add_interruption_prompt_for_completed_pair() {
+        let history = vec![
+            ChatMessage::new("user", "上一问"),
+            ChatMessage::new("assistant", "上一答"),
+        ];
+
+        let messages = build_llm_messages(&[], &history, None, "下一问", "embedded-user");
+
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.content.contains("prior voice turn was interrupted"))
+        );
     }
 }

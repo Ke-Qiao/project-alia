@@ -422,6 +422,7 @@ impl EmbeddedBuilder {
             binding_manager.clone(),
             &config.edge_stt,
             &config.interrupt,
+            &config.thinking,
             &config.continuous_dialogue,
             &config.identity,
             audio_debug.clone(),

@@ -53,9 +53,15 @@ classes include:
 - fallback when server communication fails
 - listening start prompt
 - listening continue prompt
+- thinking cue while waiting for the server
 
 All response classes are optional. Missing files should log an error or warning
 and continue the voice flow.
+
+The cancel action also has built-in text aliases, including common goodbye and
+stop phrases such as "再见", "别说了", and "结束对话". These built-in aliases
+are action-only and need no audio file, so saying goodbye can end continuous
+dialogue even when the cancel bundle has not been imported.
 
 Direct response assets stay on disk. Metadata is imported into SQLite from
 `config.json` bundles under the direct response directory. After successful
@@ -72,11 +78,23 @@ When wake word is detected during playback, embedded should:
 
 This makes barge-in feel natural and avoids speaking over the user.
 
+When captured speech has been uploaded and the device is waiting for server
+reasoning, embedded enters a separate server-turn waiting state. If configured,
+it plays the `thinking` direct response after a short delay and then at a bounded
+interval until TTS starts. A wake word during this waiting state sends
+`wakeword_during_thinking` through the existing active-turn interrupt path and
+starts a new capture immediately.
+
 ## Continuous Dialogue
 
 After a successful wake word turn, embedded can keep a bounded follow-up
 listening state active. Users can continue speaking without repeating the wake
 word until the follow-up timeout or turn limit is reached.
+
+The state ends when the user says a local cancel direct response phrase, when it
+times out, when the turn limit is reached, or when the server sends the generic
+`end_continuous_dialogue` channel action. The server action is transported over
+the existing playback-control service and does not change `ServerAudioIngress`.
 
 ## Audio Debugging
 
@@ -88,4 +106,3 @@ grow quickly, but they are valuable for verifying:
 - post-wake capture
 - playback payloads
 - sample-rate or channel conversion issues
-

@@ -30,7 +30,7 @@ pub struct KeywordMatcher {
 
 impl KeywordMatcher {
     pub fn new(configs: &[DirectResponseConfig]) -> Self {
-        let rules = build_rules(configs);
+        let rules = with_builtin_rules(build_rules(configs));
 
         Self {
             config_rules: rules.clone(),
@@ -112,7 +112,7 @@ impl ModuleLifecycle for KeywordMatcher {
                 .rules
                 .write()
                 .map_err(|_| anyhow::anyhow!("direct response rules lock poisoned"))?;
-            *rules = build_rules(&stored_rules);
+            *rules = with_builtin_rules(build_rules(&stored_rules));
         } else if !self.config_rules.is_empty() {
             let mut rules = self
                 .rules
@@ -161,6 +161,42 @@ fn build_rules(configs: &[DirectResponseConfig]) -> Vec<KeywordRule> {
             (has_keywords && (has_action || has_audio)) || has_action || (has_slug && has_audio)
         })
         .collect()
+}
+
+fn with_builtin_rules(mut rules: Vec<KeywordRule>) -> Vec<KeywordRule> {
+    rules.extend(builtin_rules());
+    rules
+}
+
+fn builtin_rules() -> Vec<KeywordRule> {
+    vec![KeywordRule {
+        slug: "cancel".to_string(),
+        keywords: [
+            "退下",
+            "拜拜",
+            "再见",
+            "取消",
+            "不用了",
+            "别说了",
+            "先这样",
+            "结束对话",
+            "结束聊天",
+            "停止回答",
+            "停止说话",
+            "关闭连续对话",
+            "bye",
+            "goodbye",
+            "cancel",
+            "stop talking",
+            "stop listening",
+        ]
+        .into_iter()
+        .map(normalize)
+        .filter(|keyword| !keyword.is_empty())
+        .collect(),
+        audio_variants: Vec::new(),
+        action: Some("cancel".to_string()),
+    }]
 }
 
 fn build_audio_variants(config: &DirectResponseConfig) -> Vec<WeightedAudio> {

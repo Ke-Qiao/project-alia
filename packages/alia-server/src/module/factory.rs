@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::cli::CliChannel;
+use crate::channels::dialogue_control_tool::EndContinuousDialogueTool;
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
@@ -220,6 +221,7 @@ pub fn create_tools_with_sensors(
 ) -> Box<dyn ToolRegistry> {
     tracing::info!("creating core tool registry with sensors (BuiltinToolRegistry)");
     let registry = BuiltinToolRegistry::with_sensors(sensors);
+    registry.register_executor(Arc::new(EndContinuousDialogueTool::new(channels.clone())));
     #[cfg(feature = "channel-embedded")]
     registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
     #[cfg(not(feature = "channel-embedded"))]

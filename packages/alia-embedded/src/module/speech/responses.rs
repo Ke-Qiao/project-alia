@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::module::audio_debug::AudioDebugRecorder;
 use crate::module::context::{EventBus, ModuleEvent};
@@ -14,6 +14,7 @@ pub(super) const ACTION_FALLBACK: &str = "fallback";
 pub(super) const ACTION_CANCEL: &str = "cancel";
 pub(super) const ACTION_LISTENING_START: &str = "listening_start";
 pub(super) const ACTION_LISTENING_CONTINUE: &str = "listening_continue";
+pub(super) const ACTION_THINKING: &str = "thinking";
 
 pub(super) async fn play_direct_response(
     action: DirectResponseAction,
@@ -26,10 +27,14 @@ pub(super) async fn play_direct_response(
     }
 
     let Some(audio_path) = action.audio_path.as_deref() else {
-        error!(
-            action = action.action.as_deref().unwrap_or("<unspecified>"),
-            "direct response audio is not configured; continuing without playback"
-        );
+        if action.action.as_deref().is_some() {
+            debug!(
+                action = action.action.as_deref().unwrap_or("<unspecified>"),
+                "direct response action has no local audio; continuing without playback"
+            );
+        } else {
+            error!("direct response audio is not configured; continuing without playback");
+        }
         return false;
     };
 

@@ -11,7 +11,9 @@
 # - [edge_stt]
 # - [vad]
 # - [interrupt]
+# - [thinking]
 # - [continuous_dialogue]
+# - [direct_response_defaults]
 # - [hmmd_mmwave]
 # - [motion]
 # - [vision]
@@ -115,6 +117,12 @@ debug = false
 interrupt_on_wakeword_during_playback = true
 interrupt_skip_direct_response = true
 interrupt_debounce_ms = 300
+
+[thinking]
+enabled = true
+action = "thinking"
+initial_delay_ms = 1200
+repeat_interval_ms = 3000
 
 [continuous_dialogue]
 # After one wake word, keep listening after each assistant reply so the user can

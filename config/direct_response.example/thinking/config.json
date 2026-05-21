@@ -1,0 +1,12 @@
+{
+  "slug": "thinking",
+  "keywords": [],
+  "action": "thinking",
+  "enabled": true,
+  "audio_variants": [
+    {
+      "audio": "thinking.wav",
+      "weight": 1.0
+    }
+  ]
+}
