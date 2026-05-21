@@ -144,7 +144,7 @@ export default function MemoriesScreen() {
                 <Input
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="What should Alia remember about me?"
+                  placeholder="What should your assistant remember about me?"
                   className="flex-1"
                 />
                 <Button

@@ -135,7 +135,7 @@ function IntentMatchCard({
             <CardTitle>Intent match</CardTitle>
             <CardDescription>
               {matched
-                ? 'Alia found the closest skill for this request.'
+                ? 'The assistant found the closest skill for this request.'
                 : 'No confident skill match yet.'}
             </CardDescription>
           </View>

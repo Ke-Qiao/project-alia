@@ -92,7 +92,7 @@ export default function ExpressionScreen() {
         <CardHeader>
           <CardTitle>Signals</CardTitle>
           <CardDescription>
-            How much relationship evidence Alia has seen by category.
+            How much relationship evidence the assistant has seen by category.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-3">

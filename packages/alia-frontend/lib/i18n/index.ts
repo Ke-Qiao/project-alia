@@ -67,7 +67,7 @@ const en: Dictionary = {
   'channels.restart': 'Restart',
   'settings.title': 'Settings',
   'settings.description':
-    'Personalize Alia and manage server configuration in clear categories that match server.toml.',
+    'Personalize your assistant and manage server configuration in clear categories that match server.toml.',
   'settings.prefix': 'Namespace prefix',
   'settings.apply': 'Apply changes',
   'skills.title': 'Skills',

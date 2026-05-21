@@ -128,7 +128,7 @@ function WorkspaceOverview({
             <CardTitle>Connection workspace</CardTitle>
             <CardDescription>
               A live view of the chat platforms, clients, and nearby device bridges connected to
-              Alia.
+              the assistant workspace.
             </CardDescription>
           </View>
         </View>
@@ -177,10 +177,10 @@ function channelHealthText(status: string) {
     normalized.includes('failed') ||
     normalized.includes('unhealthy')
   ) {
-    return 'This connection needs attention before Alia can use it reliably.';
+    return 'This connection needs attention before the assistant can use it reliably.';
   }
   if (normalized.includes('starting') || normalized.includes('checking')) {
-    return 'Alia is checking this connection.';
+    return 'The assistant is checking this connection.';
   }
   return 'Connection status reported by the server.';
 }

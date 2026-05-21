@@ -153,7 +153,7 @@ function LocalSettingsSection({ section }: { section: SettingsSection }) {
               <View className="min-w-0 flex-1 gap-1">
                 <Text className="text-sm font-medium">Assistant style</Text>
                 <Text className="text-muted-foreground text-sm leading-5" numberOfLines={3}>
-                  {relationship.data?.summary || 'Alia is still learning your preferences.'}
+                  {relationship.data?.summary || 'Your assistant is still learning your preferences.'}
                 </Text>
               </View>
               <StatusBadge status={relationship.data ? 'active' : 'learning'} />

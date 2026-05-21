@@ -69,7 +69,7 @@ export default function RuntimeScreen() {
               href="/memories"
               icon={Database}
               title="Remember something"
-              description="Add context Alia should know"
+              description="Add context your assistant should know"
             />
             <QuickAction
               href="/connectors"
@@ -80,7 +80,7 @@ export default function RuntimeScreen() {
             <QuickAction
               href="/settings"
               icon={Settings}
-              title="Tune Alia"
+              title="Tune assistant"
               description="Theme, server, memory, and advanced tools"
             />
           </View>
@@ -125,7 +125,7 @@ export default function RuntimeScreen() {
       <View className="gap-4 lg:flex-row">
         <Card className="flex-1">
           <CardHeader>
-            <CardTitle>Things Alia can remember</CardTitle>
+            <CardTitle>Things your assistant can remember</CardTitle>
             <CardDescription>Keep personal context useful and under your control.</CardDescription>
           </CardHeader>
           <CardContent className="gap-4">
@@ -134,7 +134,7 @@ export default function RuntimeScreen() {
                 <Text className="text-sm font-medium">Memory capture</Text>
                 <Text className="text-muted-foreground text-sm" numberOfLines={2}>
                   {memoryReady
-                    ? 'Alia can use saved context when helping you.'
+                    ? 'Your assistant can use saved context when helping you.'
                     : 'Memory is currently paused or unavailable.'}
                 </Text>
               </View>
@@ -191,7 +191,7 @@ export default function RuntimeScreen() {
           <CardHeader>
             <CardTitle>Assistant style</CardTitle>
             <CardDescription>
-              Alia gradually learns how to communicate and what matters to you.
+              Your assistant gradually learns how to communicate and what matters to you.
             </CardDescription>
           </CardHeader>
           <CardContent className="gap-4">
@@ -216,7 +216,7 @@ export default function RuntimeScreen() {
             <Text className="text-muted-foreground text-sm leading-5">
               {relationship.data?.summary ||
                 relationship.data?.preference_summary ||
-                'Alia is still building a useful understanding of your preferences.'}
+                'Your assistant is still building a useful understanding of your preferences.'}
             </Text>
           </CardContent>
         </Card>
