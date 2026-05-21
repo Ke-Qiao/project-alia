@@ -9,7 +9,7 @@ import { useAuthLogin, useAuthRegister } from '@/lib/api/hooks';
 import { useSession } from '@/lib/session/provider';
 import { useTranslation } from '@/lib/session/use-translation';
 import { Redirect, router, type Href } from 'expo-router';
-import { Sparkles } from 'lucide-react-native';
+import { ChevronLeft, Sparkles } from 'lucide-react-native';
 import * as React from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -53,6 +53,16 @@ export default function LoginScreen() {
           <ThemeToggle />
         </View>
       ) : null}
+      <View className="absolute top-4 left-4 z-10">
+        <Button
+          accessibilityLabel="Back to connection"
+          variant="ghost"
+          size="icon"
+          onPress={() => router.replace('/connect' as Href)}
+          className="rounded-full">
+          <Icon as={ChevronLeft} className="size-5" />
+        </Button>
+      </View>
       <View className="w-full max-w-md gap-4">
         <View className="items-center gap-3">
           <View className="bg-primary/10 size-12 items-center justify-center rounded-xl">

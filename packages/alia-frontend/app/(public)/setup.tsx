@@ -2,12 +2,14 @@ import { ThemeToggle } from '@/components/app/theme-toggle';
 import { Field } from '@/components/forms/field';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useSaveSetupConfig, useSetupTemplate } from '@/lib/api/hooks';
 import { useTranslation } from '@/lib/session/use-translation';
 import { router, type Href } from 'expo-router';
+import { ChevronLeft } from 'lucide-react-native';
 import * as React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +47,16 @@ export default function SetupScreen() {
           <ThemeToggle />
         </View>
       ) : null}
+      <View className="absolute top-4 left-4 z-10">
+        <Button
+          accessibilityLabel="Back to connection"
+          variant="ghost"
+          size="icon"
+          onPress={() => router.replace('/connect' as Href)}
+          className="rounded-full">
+          <Icon as={ChevronLeft} className="size-5" />
+        </Button>
+      </View>
       <View className="mx-auto w-full max-w-4xl flex-1 justify-center">
         <Card>
           <CardHeader>

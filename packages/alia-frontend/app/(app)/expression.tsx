@@ -1,5 +1,5 @@
 import { Page } from '@/components/app/page';
-import { JsonPreview } from '@/components/data/json-preview';
+import { StatBadges, humanizeKey } from '@/components/data/friendly-data';
 import { StatusBadge } from '@/components/data/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,14 +39,18 @@ export default function ExpressionScreen() {
             <View className="gap-2">
               <View className="flex-row justify-between">
                 <Text className="font-medium">Trust</Text>
-                <Text className="text-muted-foreground">{Math.round((profile?.trust ?? 0) * 100)}%</Text>
+                <Text className="text-muted-foreground">
+                  {Math.round((profile?.trust ?? 0) * 100)}%
+                </Text>
               </View>
               <Progress value={(profile?.trust ?? 0) * 100} />
             </View>
             <View className="gap-2">
               <View className="flex-row justify-between">
                 <Text className="font-medium">Familiarity</Text>
-                <Text className="text-muted-foreground">{Math.round((profile?.familiarity ?? 0) * 100)}%</Text>
+                <Text className="text-muted-foreground">
+                  {Math.round((profile?.familiarity ?? 0) * 100)}%
+                </Text>
               </View>
               <Progress value={(profile?.familiarity ?? 0) * 100} />
             </View>
@@ -64,7 +68,9 @@ export default function ExpressionScreen() {
         <Card className="flex-1">
           <CardHeader>
             <CardTitle>Preferences</CardTitle>
-            <CardDescription>{profile?.preference_summary || 'No preference summary yet'}</CardDescription>
+            <CardDescription>
+              {profile?.preference_summary || 'No preference summary yet'}
+            </CardDescription>
           </CardHeader>
           <CardContent className="gap-3">
             {Object.entries(profile?.preferences ?? {}).map(([key, value]) => (
@@ -74,7 +80,9 @@ export default function ExpressionScreen() {
               </View>
             ))}
             {!Object.keys(profile?.preferences ?? {}).length ? (
-              <Text className="text-muted-foreground text-sm">No stored preferences are visible.</Text>
+              <Text className="text-muted-foreground text-sm">
+                No stored preferences are visible.
+              </Text>
             ) : null}
           </CardContent>
         </Card>
@@ -83,13 +91,28 @@ export default function ExpressionScreen() {
       <Card>
         <CardHeader>
           <CardTitle>Signals</CardTitle>
+          <CardDescription>
+            How much relationship evidence Alia has seen by category.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <JsonPreview value={profile?.signal_counts ?? {}} />
+        <CardContent className="gap-3">
+          <StatBadges
+            items={Object.entries(profile?.signal_counts ?? {}).map(([label, value]) => ({
+              label: humanizeKey(label),
+              value,
+            }))}
+          />
+          {!Object.keys(profile?.signal_counts ?? {}).length ? (
+            <Text className="text-muted-foreground text-sm">
+              No signal evidence has been recorded yet.
+            </Text>
+          ) : null}
         </CardContent>
       </Card>
       {relationship.error || action.error ? (
-        <Text className="text-destructive text-sm">{(relationship.error ?? action.error)?.message}</Text>
+        <Text className="text-destructive text-sm">
+          {(relationship.error ?? action.error)?.message}
+        </Text>
       ) : null}
     </Page>
   );

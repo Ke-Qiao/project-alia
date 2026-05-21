@@ -12,7 +12,6 @@ import { useSession } from '@/lib/session/provider';
 import { useTranslation } from '@/lib/session/use-translation';
 import { Link, type Href } from 'expo-router';
 import {
-  Brain,
   Cable,
   ChevronRight,
   Database,
@@ -74,9 +73,9 @@ export default function RuntimeScreen() {
             />
             <QuickAction
               href="/connectors"
-              icon={Cable}
-              title="Connect a place"
-              description="Review chat platforms and clients"
+              icon={Sparkles}
+              title="Open workspace"
+              description="Live chat clients and device bridges"
             />
             <QuickAction
               href="/settings"
@@ -250,10 +249,10 @@ export default function RuntimeScreen() {
                 No module health has been reported yet.
               </Text>
             ) : null}
-            <Link href={'/skills' as Href} asChild>
+            <Link href={'/settings' as Href} asChild>
               <Button variant="ghost" className="justify-start px-0">
-                <Icon as={Brain} className="size-4" />
-                <Text>Advanced assistant tools</Text>
+                <Icon as={Settings} className="size-4" />
+                <Text>Advanced assistant settings</Text>
               </Button>
             </Link>
           </CardContent>

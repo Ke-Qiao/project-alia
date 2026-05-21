@@ -1,6 +1,6 @@
 import { ListPage } from '@/components/app/page';
 import { EmptyState } from '@/components/data/empty-state';
-import { JsonPreview } from '@/components/data/json-preview';
+import { InfoRows } from '@/components/data/friendly-data';
 import { StatusBadge } from '@/components/data/status-badge';
 import { Field } from '@/components/forms/field';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,12 @@ export default function SkillsScreen() {
       description="Skills are intent-scoped capabilities the assistant can route into. They remain server-owned artifacts."
       actions={
         <>
-          <Input value={intent} onChangeText={setIntent} placeholder="Summarize my recent notes" className="w-72" />
+          <Input
+            value={intent}
+            onChangeText={setIntent}
+            placeholder="Summarize my recent notes"
+            className="w-72"
+          />
           <Button variant="outline" onPress={matchIntent} disabled={!intent || match.isMutating}>
             <Icon as={Search} className="size-4" />
             <Text>{tr('skills.match')}</Text>
@@ -52,21 +57,26 @@ export default function SkillsScreen() {
       data={skills.data ?? []}
       keyExtractor={(skill) => skill.id}
       empty={
-        <EmptyState title="No skills found" description="Builtin or API-defined skills will appear here after the server loads them." icon={Brain} />
+        <EmptyState
+          title="No skills found"
+          description="Builtin or API-defined skills will appear here after the server loads them."
+          icon={Brain}
+        />
       }
-      header={match.data ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Intent Match</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <JsonPreview value={match.data} />
-          </CardContent>
-        </Card>
-      ) : null}
+      header={
+        match.data ? (
+          <IntentMatchCard
+            matched={match.data.matched}
+            skill={match.data.skill}
+            confidence={match.data.confidence}
+          />
+        ) : null
+      }
       footer={
         skills.error || action.error || match.error ? (
-          <Text className="text-destructive text-sm">{(skills.error ?? action.error ?? match.error)?.message}</Text>
+          <Text className="text-destructive text-sm">
+            {(skills.error ?? action.error ?? match.error)?.message}
+          </Text>
         ) : null
       }
       renderItem={({ item: skill }) => (
@@ -83,7 +93,9 @@ export default function SkillsScreen() {
             </View>
           </CardHeader>
           <CardContent className="gap-3">
-            {skill.description ? <Text className="text-muted-foreground text-sm leading-5">{skill.description}</Text> : null}
+            {skill.description ? (
+              <Text className="text-muted-foreground text-sm leading-5">{skill.description}</Text>
+            ) : null}
             <View className="flex-row flex-wrap gap-2">
               {skill.tools.map((tool) => (
                 <StatusBadge key={tool} status={tool} />
@@ -94,11 +106,54 @@ export default function SkillsScreen() {
                 <Text className="text-sm font-medium">Enabled</Text>
                 <Text className="text-muted-foreground text-xs">Priority {skill.priority}</Text>
               </View>
-              <Switch checked={skill.enabled} onCheckedChange={(checked) => toggleSkill(skill.name, checked)} />
+              <Switch
+                checked={skill.enabled}
+                onCheckedChange={(checked) => toggleSkill(skill.name, checked)}
+              />
             </View>
           </CardContent>
         </Card>
       )}
     />
+  );
+}
+
+function IntentMatchCard({
+  confidence,
+  matched,
+  skill,
+}: {
+  matched: boolean;
+  skill?: string;
+  confidence?: number;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <View className="gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <View className="gap-1">
+            <CardTitle>Intent match</CardTitle>
+            <CardDescription>
+              {matched
+                ? 'Alia found the closest skill for this request.'
+                : 'No confident skill match yet.'}
+            </CardDescription>
+          </View>
+          <StatusBadge status={matched ? 'matched' : 'no match'} />
+        </View>
+      </CardHeader>
+      <CardContent>
+        <InfoRows
+          rows={[
+            { label: 'Skill', value: skill, hidden: !matched },
+            {
+              label: 'Confidence',
+              value:
+                typeof confidence === 'number' ? `${Math.round(confidence * 100)}%` : undefined,
+            },
+          ]}
+        />
+      </CardContent>
+    </Card>
   );
 }

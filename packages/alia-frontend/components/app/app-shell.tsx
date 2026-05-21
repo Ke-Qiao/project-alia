@@ -8,10 +8,11 @@ import { useHealth } from '@/lib/api/hooks';
 import { useSession } from '@/lib/session/provider';
 import { useTranslation } from '@/lib/session/use-translation';
 import { cn } from '@/lib/utils';
-import { Link, Redirect, usePathname, type Href } from 'expo-router';
+import { Link, Redirect, router, usePathname, type Href } from 'expo-router';
 import {
   Brain,
   Cable,
+  ChevronLeft,
   Database,
   HeartPulse,
   Home,
@@ -24,40 +25,50 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const mainNavItems = [
   { href: '/runtime', label: 'nav.runtime', icon: Home },
   { href: '/memories', label: 'nav.memories', icon: Database },
-  { href: '/connectors', label: 'nav.connectors', icon: Cable },
+  { href: '/connectors', label: 'nav.workspace', icon: Sparkles },
   { href: '/settings', label: 'nav.settings', icon: Settings },
 ] as const;
+
+const routeMeta = {
+  '/runtime': { label: 'nav.runtime' },
+  '/memories': { label: 'nav.memories' },
+  '/connectors': { label: 'nav.workspace' },
+  '/settings': { label: 'nav.settings' },
+  '/skills': { label: 'nav.skills', parent: '/settings' },
+  '/tools': { label: 'nav.tools', parent: '/settings' },
+  '/expression': { label: 'nav.expression', parent: '/settings' },
+  '/signals': { label: 'nav.sensors', parent: '/settings' },
+} as const;
+
+type AppHref = keyof typeof routeMeta;
+type RouteMeta = { label: string; parent?: Href };
 
 const sidebarSections = [
   {
     label: 'navGroup.overview',
-    items: [
-      { href: '/runtime', label: 'nav.runtime', icon: Home },
-      { href: '/settings', label: 'nav.settings', icon: Settings },
-    ],
+    items: [{ href: '/runtime', label: 'nav.runtime', icon: Home }],
   },
   {
     label: 'navGroup.personal',
-    items: [
-      { href: '/memories', label: 'nav.memories', icon: Database },
-      { href: '/expression', label: 'nav.expression', icon: HeartPulse },
-    ],
+    items: [{ href: '/memories', label: 'nav.memories', icon: Database }],
   },
   {
-    label: 'navGroup.connections',
-    items: [{ href: '/connectors', label: 'nav.connectors', icon: Cable }],
+    label: 'navGroup.workspace',
+    items: [{ href: '/connectors', label: 'nav.workspace', icon: Sparkles }],
   },
   {
-    label: 'navGroup.advanced',
+    label: 'navGroup.settings',
     items: [
+      { href: '/settings', label: 'nav.settings', icon: Settings },
       { href: '/skills', label: 'nav.skills', icon: Brain },
       { href: '/tools', label: 'nav.tools', icon: Wrench },
+      { href: '/expression', label: 'nav.expression', icon: HeartPulse },
       { href: '/signals', label: 'nav.sensors', icon: Radar },
     ],
   },
@@ -69,6 +80,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const desktop = width >= 900;
   const health = useHealth();
   const tr = useTranslation();
+  const pathname = usePathname();
+  const currentRoute = getRouteMeta(pathname);
+  const parentHref = currentRoute?.parent ?? null;
+  const showBack = Boolean(parentHref);
   const online =
     health.data?.status &&
     !['offline', 'error', 'unhealthy'].includes(health.data.status.toLowerCase());
@@ -82,18 +97,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {desktop ? <Sidebar /> : null}
       <View className="flex-1">
         <View className="border-border bg-background/95 h-16 flex-row items-center justify-between border-b px-4 md:px-6">
-          <View className="min-w-0 flex-1 gap-0.5">
-            <View className="flex-row items-center gap-2">
-              {!desktop ? <Icon as={Sparkles} className="text-primary size-4" /> : null}
-              <Text className="font-semibold">{tr('app.name')}</Text>
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <BackSlot visible={showBack} fallback={(parentHref ?? '/settings') as Href} />
+            <View className="min-w-0 flex-1 gap-0.5">
+              <View className="flex-row items-center gap-2">
+                {!desktop && !showBack ? (
+                  <Icon as={Sparkles} className="text-primary size-4" />
+                ) : null}
+                <Text className="font-semibold">
+                  {showBack && currentRoute ? tr(currentRoute.label) : tr('app.name')}
+                </Text>
+              </View>
+              <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+                {showBack
+                  ? tr('nav.backToSettings')
+                  : online
+                    ? tr('app.status.ready')
+                    : health.isLoading
+                      ? tr('app.status.checking')
+                      : tr('app.status.attention')}
+              </Text>
             </View>
-            <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-              {online
-                ? 'Ready to help'
-                : health.isLoading
-                  ? 'Checking your server'
-                  : 'Connection needs attention'}
-            </Text>
           </View>
           <View className="flex-row items-center gap-2">
             {desktop ? (
@@ -163,10 +187,10 @@ function Sidebar() {
 
 function NavLink({ href, label, icon }: { href: string; label: string; icon: LucideIcon }) {
   const pathname = usePathname();
-  const active = pathname === href;
+  const active = pathname === href || (href === '/settings' && pathname.startsWith('/settings/'));
 
   return (
-    <Link href={href as Href} asChild>
+    <Link href={href as Href} replace asChild>
       <Pressable
         className={cn(
           'h-10 flex-row items-center gap-3 rounded-md px-3',
@@ -213,9 +237,11 @@ const styles = StyleSheet.create({
 
 function BottomNavLink({ href, label, icon }: { href: string; label: string; icon: LucideIcon }) {
   const pathname = usePathname();
-  const active = pathname === href;
+  const currentRoute = getRouteMeta(pathname);
+  const parentHref = currentRoute?.parent ?? null;
+  const active = pathname === href || parentHref === href;
   return (
-    <Link href={href as Href} asChild>
+    <Link href={href as Href} replace asChild>
       <Pressable className="min-w-16 flex-1 items-center gap-1 rounded-md px-2 py-2">
         <Icon
           as={icon}
@@ -228,5 +254,58 @@ function BottomNavLink({ href, label, icon }: { href: string; label: string; ico
         </Text>
       </Pressable>
     </Link>
+  );
+}
+
+function getRouteMeta(pathname: string): RouteMeta | undefined {
+  if (pathname.startsWith('/settings/')) {
+    return { label: 'nav.settings', parent: '/settings' as Href };
+  }
+  return routeMeta[pathname as AppHref];
+}
+
+function BackSlot({ fallback, visible }: { fallback: Href; visible: boolean }) {
+  const progress = React.useRef(new Animated.Value(visible ? 1 : 0)).current;
+
+  React.useEffect(() => {
+    Animated.timing(progress, {
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      toValue: visible ? 1 : 0,
+      useNativeDriver: false,
+    }).start();
+  }, [progress, visible]);
+
+  const width = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 40] });
+  const opacity = progress;
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] });
+
+  return (
+    <Animated.View
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={{ opacity, transform: [{ translateX }], width }}>
+      <BackButton fallback={fallback} />
+    </Animated.View>
+  );
+}
+
+function BackButton({ fallback }: { fallback: Href }) {
+  function goBack() {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace(fallback);
+  }
+
+  return (
+    <Button
+      accessibilityLabel="Back"
+      variant="ghost"
+      size="icon"
+      onPress={goBack}
+      className="-ml-2 rounded-full">
+      <Icon as={ChevronLeft} className="size-5" />
+    </Button>
   );
 }
