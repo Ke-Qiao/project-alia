@@ -8,7 +8,7 @@ binding, plugin management, expression motion, and sensors. Shared protobuf defi
 
 | Service | Purpose |
 | --- | --- |
-| `alia.audio.AudioStream` | Server-to-device playback, playback stop, audio upload helpers, and audio control hooks. |
+| `alia.audio.AudioStream` | Server-to-device playback, playback stop, direct-response action cues, audio upload helpers, and audio control hooks. |
 | `alia.settings.EmbeddedSettings` | Settings snapshot, volume, and direct response management. |
 | `alia.binding.DeviceBinding` | Device binding and auth handshake support. |
 | `alia.plugin.PluginManager` | Embedded plugin/package lifecycle control. |

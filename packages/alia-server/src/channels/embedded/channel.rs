@@ -20,7 +20,8 @@ use tonic::transport::Channel;
 
 use alia_proto::audio::audio_stream_client::AudioStreamClient;
 use alia_proto::audio::{
-    AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest, StopPlaybackRequest,
+    AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest, PlayDirectResponseRequest,
+    StopPlaybackRequest,
 };
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::expression::embedded_expression_client::EmbeddedExpressionClient;
@@ -873,6 +874,34 @@ impl ChannelAdapter for EmbeddedChannel {
                 let token = required_action_str(&action.params, "token")?;
                 self.verify_audio_ingress_auth(token).await?;
                 Ok(serde_json::json!({ "ok": true }))
+            }
+            "play_direct_response" => {
+                let direct_action = required_action_str(&action.params, "action")?;
+                let interrupt_current = action
+                    .params
+                    .get("interrupt_current")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true);
+                let reason = action
+                    .params
+                    .get("reason")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("server_requested_direct_response");
+                let mut client = self.audio_client().await?;
+                let resp = client
+                    .play_direct_response(self.auth_request(PlayDirectResponseRequest {
+                        request_id: uuid::Uuid::new_v4().to_string(),
+                        action: direct_action.to_string(),
+                        interrupt_current,
+                        reason: reason.to_string(),
+                    })?)
+                    .await?
+                    .into_inner();
+                Ok(serde_json::json!({
+                    "accepted": resp.accepted,
+                    "played": resp.played,
+                    "message": resp.message,
+                }))
             }
             "list_plugins" => {
                 let mut client = self.plugin_client().await?;

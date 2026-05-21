@@ -41,6 +41,7 @@ use crate::settings::values::{
 
 mod debug;
 mod dialogue_policy;
+mod error_notice;
 pub mod memory_capture;
 pub mod streaming;
 pub mod tools;
@@ -56,6 +57,7 @@ use crate::expression::{
 };
 use debug::*;
 use dialogue_policy::DialoguePolicyInput;
+use error_notice::{PipelineErrorStage, notify_pipeline_error};
 use memory_capture::{MemoryCaptureTrace, capture_turn_memory};
 use streaming::*;
 use tools::*;
@@ -559,7 +561,7 @@ async fn process_event(
                 user_id: user_id.clone(),
             };
 
-            let result = process_text(
+            let result = match process_text(
                 &text,
                 &user_id,
                 modules,
@@ -579,7 +581,26 @@ async fn process_event(
                 false,
                 None,
             )
-            .await?;
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    notify_pipeline_error(
+                        modules,
+                        channel.as_ref(),
+                        &target,
+                        &channel_id,
+                        &user_id,
+                        PipelineErrorStage::Llm,
+                        Some(&text),
+                        Some(&error),
+                        debug_output,
+                        false,
+                    )
+                    .await;
+                    return Ok(());
+                }
+            };
 
             // Only call send_message when the text was NOT already streamed.
             if !result.streamed {
@@ -717,8 +738,21 @@ async fn process_event(
                     return Ok(());
                 }
                 Err(error) => {
+                    notify_pipeline_error(
+                        modules,
+                        channel.as_ref(),
+                        &target,
+                        &channel_id,
+                        &user_id,
+                        PipelineErrorStage::Stt,
+                        None,
+                        Some(&error),
+                        debug_output,
+                        true,
+                    )
+                    .await;
                     voice_turns.finish(&turn).await;
-                    return Err(error);
+                    return Ok(());
                 }
             };
             let stt_capabilities = modules.stt.stt_capabilities().await;
@@ -820,8 +854,21 @@ async fn process_event(
             {
                 Ok(result) => result,
                 Err(error) => {
+                    notify_pipeline_error(
+                        modules,
+                        channel.as_ref(),
+                        &target,
+                        &channel_id,
+                        &user_id,
+                        PipelineErrorStage::Llm,
+                        Some(&corrected_text),
+                        Some(&error),
+                        debug_output,
+                        true,
+                    )
+                    .await;
                     voice_turns.finish(&turn).await;
-                    return Err(error);
+                    return Ok(());
                 }
             };
 
@@ -860,7 +907,7 @@ async fn process_event(
             }
 
             if channel.capabilities().voice_output && !result.audio_streamed {
-                deliver_tts_audio(
+                let tts_delivery = deliver_tts_audio(
                     modules,
                     channel.as_ref(),
                     &target,
@@ -878,6 +925,23 @@ async fn process_event(
                     Some(&turn),
                 )
                 .await;
+                if let TtsDeliveryOutcome::Failed(stage) = tts_delivery
+                    && !turn_is_interrupted(Some(&turn))
+                {
+                    notify_pipeline_error(
+                        modules,
+                        channel.as_ref(),
+                        &target,
+                        &channel_id,
+                        &user_id,
+                        stage,
+                        Some(&corrected_text),
+                        None,
+                        debug_output,
+                        true,
+                    )
+                    .await;
+                }
             }
 
             if let Some(plan) = &result.expression_plan {

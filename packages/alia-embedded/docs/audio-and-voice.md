@@ -54,6 +54,7 @@ classes include:
 - listening start prompt
 - listening continue prompt
 - thinking cue while waiting for the server
+- error cue when server-side TTS or audio delivery cannot speak a full error
 
 All response classes are optional. Missing files should log an error or warning
 and continue the voice flow.
@@ -66,6 +67,11 @@ dialogue even when the cancel bundle has not been imported.
 Direct response assets stay on disk. Metadata is imported into SQLite from
 `config.json` bundles under the direct response directory. After successful
 import, the bundle config is removed so repeated boots do not re-import it.
+
+The server can request a direct response by generic action name through
+`alia.audio.AudioStream.PlayDirectResponse`. This keeps server logic independent
+from embedded direct-response storage and lets non-embedded channels ignore or
+map the same action differently.
 
 ## Interruption
 

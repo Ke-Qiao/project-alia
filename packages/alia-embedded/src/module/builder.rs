@@ -62,6 +62,7 @@ impl EmbeddedNode {
 
         let audio_svc = AudioStreamServer::new(AudioStreamService::new(
             self.registry.audio_playback.clone(),
+            self.registry.direct_response.clone(),
             self.binding_manager.clone(),
             self.event_bus.clone(),
             self.audio_debug.clone(),

@@ -3,6 +3,7 @@ pub mod builder;
 pub mod context;
 pub mod cpal_audio;
 pub mod direct_response;
+pub mod direct_response_playback;
 pub mod discovery;
 pub mod factory;
 pub mod hmmd_mmwave;

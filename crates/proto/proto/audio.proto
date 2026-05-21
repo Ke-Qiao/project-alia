@@ -12,6 +12,9 @@ service AudioStream {
   // Control: stop whatever is currently being played on the Pi.
   rpc StopPlayback(StopPlaybackRequest) returns (PlaybackControlResponse);
 
+  // Control: play a channel-local direct response cue by generic action name.
+  rpc PlayDirectResponse(PlayDirectResponseRequest) returns (PlayDirectResponseResponse);
+
   // Full-duplex: real-time conversation after wake word
   rpc BiDirectionalAudio(stream AudioFrame) returns (stream AudioFrame);
 }
@@ -81,6 +84,19 @@ message StopPlaybackRequest {
 
 message PlaybackControlResponse {
   bool accepted = 1;
+}
+
+message PlayDirectResponseRequest {
+  string request_id = 1;
+  string action = 2;
+  bool interrupt_current = 3;
+  string reason = 4;
+}
+
+message PlayDirectResponseResponse {
+  bool accepted = 1;
+  bool played = 2;
+  string message = 3;
 }
 
 message InterruptActiveTurnRequest {

@@ -38,6 +38,7 @@ Direct responses are not assistant answers. They are local interaction feedback:
 - fallback when server connection is unavailable
 - listening start and listening continue prompts
 - short thinking cue while embedded is waiting for server-side reasoning or TTS
+- short error cue when the server cannot synthesize or deliver a spoken error
 
 The cancel action has a compiled safety net for common goodbye/cancel phrases
 such as "再见", "别说了", and "结束对话", so manual continuous-dialogue
@@ -46,6 +47,26 @@ response rules still take precedence over built-in aliases.
 
 If a response is missing, embedded should continue the flow. This keeps local
 asset mistakes from breaking wake word capture or server communication.
+
+## Error Notification
+
+Pipeline errors are converted to safe user-facing summaries. Raw provider,
+network, stack, and filesystem errors stay in logs and debug events only.
+
+- Text channels receive a text error message.
+- Voice channels synthesize a short spoken error summary when TTS is healthy.
+- If TTS or audio delivery is the failing component, the server asks the
+  channel to play the generic `error` direct response action.
+
+This fallback is intentionally expressed as a channel action
+(`play_direct_response`) on the generic channel adapter. The server does not
+know embedded direct-response storage, paths, or playback internals, and
+`alia.audio.ServerAudioIngress` remains unchanged. Embedded exposes the action
+through `alia.audio.AudioStream.PlayDirectResponse`.
+
+Error notifications are recorded as conversation events, not assistant
+messages. This avoids saving synthetic failure text as if it were a completed
+assistant answer.
 
 ## Interruption and Barge-In
 

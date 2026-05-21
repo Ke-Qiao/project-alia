@@ -47,7 +47,7 @@ Important services:
 
 | Service | Hosted by | Purpose |
 | --- | --- | --- |
-| `alia.audio.AudioStream` | Embedded | Server-to-device audio playback, playback stop, and bidirectional audio hooks. |
+| `alia.audio.AudioStream` | Embedded | Server-to-device audio playback, playback stop, direct-response action cues, and bidirectional audio hooks. |
 | `alia.audio.ServerAudioIngress` | Server | Embedded-to-server captured audio upload and active turn interruption. |
 | `alia.settings.EmbeddedSettings` | Embedded | Settings snapshot, volume, and direct response management. |
 | `alia.sensor.EmbeddedSensor` | Embedded | Sensor discovery, reads, and optional sensor commands. |
@@ -61,6 +61,8 @@ Audio and control are intentionally separate:
 - TTS playback is sent from server to embedded playback.
 - Interrupting an active turn uses a dedicated interrupt RPC.
 - Stopping local playback uses a dedicated playback-control RPC.
+- Server-requested local cues use a generic direct-response action RPC on
+  `AudioStream`; `ServerAudioIngress` is not used for embedded playback.
 
 This avoids overloading normal audio chunks with control semantics.
 

@@ -7,7 +7,8 @@ use tonic::{Request, Response, Status};
 use alia_proto::audio::audio_stream_server::AudioStream as AudioStreamTrait;
 use alia_proto::audio::{
     AudioChunk, AudioEncoding, AudioFrame, AudioUploadResponse, PlayAudioRequest,
-    PlaybackControlResponse, StopPlaybackRequest,
+    PlayDirectResponseRequest, PlayDirectResponseResponse, PlaybackControlResponse,
+    StopPlaybackRequest,
 };
 
 use super::auth::{extract_bearer_token, require_auth, require_auth_token};
@@ -15,7 +16,8 @@ use crate::binding::BindingManager;
 use crate::module::audio_debug::AudioDebugRecorder;
 use crate::module::context::EventBus;
 use crate::module::context::ModuleEvent;
-use crate::module::traits::AudioPlaybackBackend;
+use crate::module::direct_response_playback::play_direct_response;
+use crate::module::traits::{AudioPlaybackBackend, DirectResponseEngine};
 
 #[derive(Debug, Clone)]
 struct PendingPlayback {
@@ -27,6 +29,7 @@ struct PendingPlayback {
 
 pub struct AudioStreamService {
     playback: Arc<dyn AudioPlaybackBackend>,
+    direct_response: Arc<dyn DirectResponseEngine>,
     binding: Arc<BindingManager>,
     event_bus: EventBus,
     audio_debug: AudioDebugRecorder,
@@ -36,12 +39,14 @@ pub struct AudioStreamService {
 impl AudioStreamService {
     pub fn new(
         playback: Arc<dyn AudioPlaybackBackend>,
+        direct_response: Arc<dyn DirectResponseEngine>,
         binding: Arc<BindingManager>,
         event_bus: EventBus,
         audio_debug: AudioDebugRecorder,
     ) -> Self {
         Self {
             playback,
+            direct_response,
             binding,
             event_bus,
             audio_debug,
@@ -225,6 +230,66 @@ impl AudioStreamTrait for AudioStreamService {
         );
 
         Ok(Response::new(PlaybackControlResponse { accepted: true }))
+    }
+
+    async fn play_direct_response(
+        &self,
+        request: Request<PlayDirectResponseRequest>,
+    ) -> Result<Response<PlayDirectResponseResponse>, Status> {
+        require_auth(&self.binding, &request).await?;
+        let req = request.into_inner();
+        let action = req.action.trim();
+        if action.is_empty() {
+            return Err(Status::invalid_argument(
+                "direct response action must not be empty",
+            ));
+        }
+
+        if req.interrupt_current {
+            let pending = {
+                let mut slot = self.pending_playback.lock().await;
+                slot.take()
+            };
+            self.playback
+                .stop_playback()
+                .map_err(|error| Status::internal(error.to_string()))?;
+            if let Some(pending) = pending {
+                self.event_bus.publish(ModuleEvent::PlaybackFinished {
+                    source: pending.source,
+                });
+            }
+        }
+
+        let Some(response) = self.direct_response.match_action(action) else {
+            tracing::warn!(
+                request_id = %req.request_id,
+                action,
+                reason = %req.reason,
+                "direct response action is not configured"
+            );
+            return Ok(Response::new(PlayDirectResponseResponse {
+                accepted: true,
+                played: false,
+                message: format!("direct response action '{action}' is not configured"),
+            }));
+        };
+
+        let played = play_direct_response(
+            response,
+            self.playback.clone(),
+            self.event_bus.clone(),
+            self.audio_debug.clone(),
+        )
+        .await;
+        Ok(Response::new(PlayDirectResponseResponse {
+            accepted: true,
+            played,
+            message: if played {
+                "direct response played".to_string()
+            } else {
+                format!("direct response action '{action}' has no playable audio")
+            },
+        }))
     }
 
     type BiDirectionalAudioStream =

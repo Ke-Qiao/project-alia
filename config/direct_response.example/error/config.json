@@ -1,0 +1,12 @@
+{
+  "slug": "error",
+  "keywords": [],
+  "action": "error",
+  "enabled": true,
+  "audio_variants": [
+    {
+      "audio": "error.wav",
+      "weight": 1.0
+    }
+  ]
+}
