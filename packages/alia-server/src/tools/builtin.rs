@@ -101,10 +101,27 @@ fn set_tool_catalog(
 }
 
 fn preserve_existing_tool_catalog(row: &tool::Model, definition: &ToolDefinition) -> bool {
-    !row.routing_text.trim().is_empty()
-        && row.description == definition.description
-        && row.parameters == definition.parameters
-        && row.source == definition.source
+    if row.routing_text.trim().is_empty()
+        || row.description != definition.description
+        || row.parameters != definition.parameters
+        || row.source != definition.source
+    {
+        return false;
+    }
+
+    if looks_like_generated_tool_catalog(&row.routing_text, definition) {
+        let current = tool_catalog_fields(definition);
+        return row.routing_text == current.routing_text;
+    }
+
+    true
+}
+
+fn looks_like_generated_tool_catalog(routing_text: &str, definition: &ToolDefinition) -> bool {
+    routing_text.starts_with(&format!(
+        "{}\n{}\nsource: {}\nparameters: ",
+        definition.name, definition.description, definition.source
+    )) && routing_text.contains("\nhints: ")
 }
 
 fn tokenize_catalog_text(text: &str) -> Vec<String> {
@@ -1825,6 +1842,26 @@ mod catalog_tests {
             active.routing_text,
             Set("custom operator maintained routing text".to_string())
         );
+    }
+
+    #[test]
+    fn generated_catalog_rebuilds_when_routing_hints_change() {
+        let mut old_definition = definition();
+        old_definition.routing_hints = vec!["favorite".to_string()];
+        let mut existing = existing_tool(&old_definition);
+        existing.routing_text = tool_catalog_fields(&old_definition).routing_text;
+        existing.routing_keywords = tool_catalog_fields(&old_definition).routing_keywords;
+        existing.routing_embedding = Some(serde_json::json!({"model": "test", "vector": [1.0]}));
+
+        let mut new_definition = old_definition.clone();
+        new_definition.routing_hints.push("preference".to_string());
+        let mut active: tool::ActiveModel = existing.clone().into();
+
+        assert!(!preserve_existing_tool_catalog(&existing, &new_definition));
+        set_tool_catalog(&mut active, &new_definition, false);
+
+        assert_eq!(active.routing_embedding, Set(None));
+        assert_ne!(active.routing_text, Set(existing.routing_text));
     }
 }
 

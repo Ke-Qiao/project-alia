@@ -95,6 +95,7 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
 | device_status | Available sensors, device status, local temperature/readings |
+| embedded_volume_control | Read or set alia-embedded microphone capture or speaker playback volume |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 
@@ -146,6 +147,7 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
 | device_status | Available sensors, device status, local temperature/readings |
+| embedded_volume_control | Read or set alia-embedded microphone capture or speaker playback volume |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 

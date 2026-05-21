@@ -9,7 +9,7 @@ use alia_server::providers::skills::markdown::parse_skill_file;
 #[test]
 fn test_seed_data() {
     let seeds = builtin_skill_seeds();
-    assert_eq!(seeds.len(), 5);
+    assert_eq!(seeds.len(), 6);
 
     let names: Vec<String> = seeds.iter().map(|s| s.name.clone().unwrap()).collect();
     assert!(!names.contains(&"smart_light_control".to_string()));
@@ -18,6 +18,7 @@ fn test_seed_data() {
     assert!(names.contains(&"timer_alarm".to_string()));
     assert!(names.contains(&"weather_query".to_string()));
     assert!(names.contains(&"device_status".to_string()));
+    assert!(names.contains(&"embedded_volume_control".to_string()));
     assert!(names.contains(&"memory_query".to_string()));
     assert!(names.contains(&"rule_management".to_string()));
 }
@@ -25,14 +26,59 @@ fn test_seed_data() {
 #[test]
 fn test_seed_data_uses_skill_tool_bindings() {
     let bindings = builtin_skill_tool_bindings();
-    assert_eq!(bindings.len(), 5);
+    assert_eq!(bindings.len(), 6);
     assert!(bindings.iter().any(|(skill, tools)| {
         *skill == "device_status" && tools == &["sensor_read", "sensor_list"]
+    }));
+    assert!(bindings.iter().any(|(skill, tools)| {
+        *skill == "embedded_volume_control" && tools == &["embedded_volume_control"]
     }));
     assert!(
         !bindings
             .iter()
             .any(|(_, tools)| tools.contains(&"device_control"))
+    );
+}
+
+#[test]
+fn embedded_volume_skill_matches_simplified_and_traditional_mic_volume() {
+    let seed = builtin_skill_seeds()
+        .into_iter()
+        .find(|seed| seed.name.clone().unwrap() == "embedded_volume_control")
+        .expect("embedded volume skill seed");
+    let keywords = seed
+        .intent_patterns
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let skill = LoadedSkill {
+        info: SkillInfo {
+            name: "embedded_volume_control".into(),
+            display_name: "Embedded Volume".into(),
+            description: "Adjust embedded audio volume".into(),
+            category: "device".into(),
+        },
+        keywords,
+        tools: vec!["embedded_volume_control".to_string()],
+        prompt_template: None,
+        cacheable: false,
+        priority: 9,
+    };
+
+    assert!(
+        BuiltinSkills::calculate_match_score("把麦克风的声音调整到5", &skill) > 0.0,
+        "should match simplified Chinese mic volume intent"
+    );
+    assert!(
+        BuiltinSkills::calculate_match_score("把麥克風的聲音調整到5", &skill) > 0.0,
+        "should match traditional Chinese mic volume intent"
+    );
+    assert!(
+        BuiltinSkills::calculate_match_score("把麦克風的聲音調整到5", &skill) > 0.0,
+        "should match mixed simplified/traditional mic volume intent"
     );
 }
 

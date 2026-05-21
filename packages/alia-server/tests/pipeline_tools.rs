@@ -110,30 +110,57 @@ fn routes_preference_statements_to_memory_store() {
 
 #[test]
 fn routes_embedded_mic_volume_to_embedded_volume_tool() {
-    let mut volume_tool = tool(
-        "embedded_volume_control",
-        "Get or set microphone and speaker volume for an alia-embedded channel",
-    );
-    volume_tool.routing_hints = vec![
-        "microphone".to_string(),
-        "speaker".to_string(),
-        "volume".to_string(),
-    ];
-    let selected = rank_and_limit_tools_with_index(
-        vec![tool("sensor_read", "Read a sensor value"), volume_tool],
-        vec![routing_entry(
-            "embedded_volume_control",
-            &["microphone", "speaker", "volume", "麦克风", "扬声器"],
-            "Control embedded microphone capture volume and speaker playback volume.",
-        )],
+    for query in [
         "set microphone volume to 2",
-        1,
-        false,
-        "pi-living-room",
-    );
+        "把麦克风的声音调整到5",
+        "把麥克風的聲音調整到5",
+        "把麦克風的聲音調整到5",
+    ] {
+        let mut volume_tool = tool(
+            "embedded_volume_control",
+            "Get or set microphone and speaker volume for an alia-embedded channel",
+        );
+        volume_tool.routing_hints = vec![
+            "microphone".to_string(),
+            "speaker".to_string(),
+            "volume".to_string(),
+            "麦克风".to_string(),
+            "麦克風".to_string(),
+            "麥克風".to_string(),
+            "声音".to_string(),
+            "聲音".to_string(),
+        ];
+        let selected = rank_and_limit_tools_with_index(
+            vec![tool("sensor_read", "Read a sensor value"), volume_tool],
+            vec![routing_entry(
+                "embedded_volume_control",
+                &[
+                    "microphone",
+                    "speaker",
+                    "volume",
+                    "麦克风",
+                    "麦克風",
+                    "麥克風",
+                    "声音",
+                    "聲音",
+                    "扬声器",
+                    "揚聲器",
+                ],
+                "Control embedded microphone capture volume and speaker playback volume. 调整 麦克风 麥克風 声音 聲音 音量.",
+            )],
+            query,
+            1,
+            false,
+            "pi-living-room",
+        );
 
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].name, "embedded_volume_control");
+        assert_eq!(
+            selected.len(),
+            1,
+            "query should select volume tool: {query}"
+        );
+        assert_eq!(selected[0].name, "embedded_volume_control");
+    }
 }
 
 #[test]
