@@ -61,10 +61,12 @@ This dependency tree should be shared across built-in code and plugins.
 The tool list can grow too large for the context window. The current direction
 is layered filtering:
 
-- database metadata and keywords provide a broad candidate pool
-- embeddings/semantic search can narrow candidates quickly
+- database `routing_keywords` and `routing_text` provide the lexical candidate
+  pool
+- embeddings persisted in `routing_embedding` can narrow candidates quickly
 - a lightweight minor LLM can filter the candidate pool before major LLM use
-- insights can improve keywords and descriptions during idle time
+- insights can improve catalog keywords, examples, and routing text during idle
+  time
 
 The final LLM prompt should see only the tools that are likely relevant to the
 current turn.

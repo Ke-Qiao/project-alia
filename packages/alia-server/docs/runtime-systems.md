@@ -14,9 +14,11 @@ in the database catalog. The runtime dependency tree tracks ownership so removal
 can be safe.
 
 Tool candidate selection uses the persisted tool catalog as a routing index.
-When an embedding provider is available, the pipeline lazily stores routing
-embeddings for tool metadata and uses semantic similarity plus lexical hints to
-narrow candidates before optional minor LLM filtering.
+The `tools.routing_keywords` and `tools.routing_text` fields are the primary
+lexical source of truth; Rust only keeps generic structural boosts such as URL
+inputs for `fetch` and arithmetic expressions for `calculate`. When an embedding
+provider is available, the pipeline lazily stores routing embeddings for that
+metadata and adds semantic similarity before optional minor LLM filtering.
 
 ## Tool Calling
 

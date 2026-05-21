@@ -12,7 +12,7 @@ use crate::config::ToolsSection;
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolCall, ToolCandidateInfo, ToolContext,
-    ToolDefinition, ToolResult, ToolSelectionInput,
+    ToolDefinition, ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry, ToolSelectionInput,
 };
 use crate::registry::is_plugin_source;
 
@@ -423,6 +423,7 @@ async fn select_ranked_or_llm_filtered_tools(
         .candidate_pool_size
         .max(max_tools_per_turn)
         .max(1);
+    let index_by_name = load_tool_routing_index(modules, &tools).await;
     let ranked = indexed_rank_tool_candidates(
         modules,
         &tools,
@@ -430,9 +431,18 @@ async fn select_ranked_or_llm_filtered_tools(
         candidate_pool_size,
         skill_scoped,
         tools_config,
+        &index_by_name,
     )
     .await
-    .unwrap_or_else(|| rank_tool_candidates(tools, user_text, candidate_pool_size, skill_scoped));
+    .unwrap_or_else(|| {
+        rank_tool_candidates(
+            tools,
+            user_text,
+            candidate_pool_size,
+            skill_scoped,
+            &index_by_name,
+        )
+    });
 
     if ranked.is_empty() {
         return Vec::new();
@@ -446,10 +456,7 @@ async fn select_ranked_or_llm_filtered_tools(
                 .max(max_tools_per_turn + 1);
 
     if should_use_llm_filter {
-        let candidate_infos = ranked
-            .iter()
-            .map(|candidate| tool_candidate_info(&candidate.tool))
-            .collect::<Vec<_>>();
+        let candidate_infos = ranked.iter().map(tool_candidate_info).collect::<Vec<_>>();
         let input = ToolSelectionInput {
             text: user_text.to_string(),
             channel_id: channel_id.to_string(),
@@ -505,10 +512,48 @@ pub fn rank_and_limit_tools(
         return tools;
     }
 
-    rank_tool_candidates(tools, user_text, max_tools_per_turn, skill_scoped)
+    rank_tool_candidates(
+        tools,
+        user_text,
+        max_tools_per_turn,
+        skill_scoped,
+        &HashMap::new(),
+    )
+    .into_iter()
+    .map(|candidate| candidate.tool)
+    .collect()
+}
+
+pub fn rank_and_limit_tools_with_index(
+    tools: Vec<ToolDefinition>,
+    index_entries: Vec<ToolRoutingIndexEntry>,
+    user_text: &str,
+    max_tools_per_turn: usize,
+    skill_scoped: bool,
+    _channel_id: &str,
+) -> Vec<ToolDefinition> {
+    if tools.is_empty() || max_tools_per_turn == 0 {
+        return Vec::new();
+    }
+
+    if skill_scoped && tools.len() <= max_tools_per_turn {
+        return tools;
+    }
+
+    let index_by_name = index_entries
         .into_iter()
-        .map(|candidate| candidate.tool)
-        .collect()
+        .map(|entry| (entry.name.clone(), entry))
+        .collect::<HashMap<_, _>>();
+    rank_tool_candidates(
+        tools,
+        user_text,
+        max_tools_per_turn,
+        skill_scoped,
+        &index_by_name,
+    )
+    .into_iter()
+    .map(|candidate| candidate.tool)
+    .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -516,7 +561,54 @@ struct RankedToolCandidate {
     score: i32,
     index: usize,
     semantic_similarity: Option<f32>,
+    routing: ToolRoutingMetadata,
     tool: ToolDefinition,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ToolRoutingMetadata {
+    routing_text: String,
+    routing_keywords: Vec<String>,
+    routing_embedding: Option<ToolRoutingEmbedding>,
+}
+
+async fn load_tool_routing_index(
+    modules: &ModuleRegistry,
+    tools: &[ToolDefinition],
+) -> HashMap<String, ToolRoutingIndexEntry> {
+    if tools.is_empty() {
+        return HashMap::new();
+    }
+
+    let tool_names = tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+    let index_entries = match modules.tools.routing_index(&tool_names).await {
+        Ok(entries) => entries,
+        Err(error) => {
+            tracing::debug!(error = ?error, "tool routing index lookup failed");
+            Vec::new()
+        }
+    };
+    let index_by_name = index_entries
+        .into_iter()
+        .map(|entry| (entry.name.clone(), entry))
+        .collect::<HashMap<_, _>>();
+
+    let missing = tools
+        .iter()
+        .filter(|tool| !index_by_name.contains_key(&tool.name))
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        tracing::debug!(
+            tools = ?missing,
+            "tool routing index missing entries; using ToolDefinition fallback metadata"
+        );
+    }
+
+    index_by_name
 }
 
 async fn indexed_rank_tool_candidates(
@@ -526,6 +618,7 @@ async fn indexed_rank_tool_candidates(
     limit: usize,
     skill_scoped: bool,
     tools_config: &ToolsSection,
+    index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
 ) -> Option<Vec<RankedToolCandidate>> {
     if !tools_config.indexed_search_enabled
         || tools.is_empty()
@@ -544,27 +637,11 @@ async fn indexed_rank_tool_candidates(
         }
     };
     let embedding_model = modules.embedding.name().to_string();
-    let tool_names = tools
-        .iter()
-        .map(|tool| tool.name.clone())
-        .collect::<Vec<_>>();
-    let index_entries = match modules.tools.routing_index(&tool_names).await {
-        Ok(entries) => entries,
-        Err(error) => {
-            tracing::debug!(error = ?error, "tool routing index lookup failed");
-            Vec::new()
-        }
-    };
-    let index_by_name = index_entries
-        .into_iter()
-        .map(|entry| (entry.name.clone(), entry))
-        .collect::<HashMap<_, _>>();
-
     let mut embeddings_by_name = HashMap::<String, Vec<f32>>::new();
     let mut missing = Vec::<(String, String)>::new();
     for tool in tools {
-        if let Some(entry) = index_by_name.get(&tool.name)
-            && let Some(stored) = &entry.routing_embedding
+        let routing = tool_routing_metadata(tool, index_by_name);
+        if let Some(stored) = &routing.routing_embedding
             && stored.model.as_deref() == Some(embedding_model.as_str())
             && stored.vector.len() == query_embedding.len()
         {
@@ -573,12 +650,7 @@ async fn indexed_rank_tool_candidates(
         }
 
         if tools_config.indexed_search_refresh_missing_embeddings {
-            let routing_text = index_by_name
-                .get(&tool.name)
-                .map(|entry| entry.routing_text.clone())
-                .filter(|text| !text.trim().is_empty())
-                .unwrap_or_else(|| tool_routing_text(tool));
-            missing.push((tool.name.clone(), routing_text));
+            missing.push((tool.name.clone(), routing.routing_text));
         }
     }
 
@@ -625,7 +697,9 @@ async fn indexed_rank_tool_candidates(
         .cloned()
         .enumerate()
         .filter_map(|(index, tool)| {
-            let lexical_score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped);
+            let routing = tool_routing_metadata(&tool, index_by_name);
+            let lexical_score =
+                score_tool_candidate(&tool, &routing, &query, &query_terms, skill_scoped);
             let semantic_similarity = embeddings_by_name
                 .get(&tool.name)
                 .and_then(|embedding| cosine_similarity(&query_embedding, embedding));
@@ -641,6 +715,7 @@ async fn indexed_rank_tool_candidates(
                 score: lexical_score + semantic_boost,
                 index,
                 semantic_similarity,
+                routing,
                 tool,
             })
         })
@@ -678,6 +753,7 @@ fn rank_tool_candidates(
     user_text: &str,
     limit: usize,
     skill_scoped: bool,
+    index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
 ) -> Vec<RankedToolCandidate> {
     if tools.is_empty() || limit == 0 {
         return Vec::new();
@@ -689,11 +765,13 @@ fn rank_tool_candidates(
         .into_iter()
         .enumerate()
         .map(|(index, tool)| {
-            let score = score_tool_candidate(&tool, &query, &query_terms, skill_scoped);
+            let routing = tool_routing_metadata(&tool, index_by_name);
+            let score = score_tool_candidate(&tool, &routing, &query, &query_terms, skill_scoped);
             RankedToolCandidate {
                 score,
                 index,
                 semantic_similarity: None,
+                routing,
                 tool,
             }
         })
@@ -739,51 +817,78 @@ fn select_tools_by_name_order(
     selected
 }
 
-fn tool_candidate_info(tool: &ToolDefinition) -> ToolCandidateInfo {
+fn tool_candidate_info(candidate: &RankedToolCandidate) -> ToolCandidateInfo {
     ToolCandidateInfo {
-        name: tool.name.clone(),
-        description: tool.description.clone(),
-        source: tool.source.clone(),
-        require_confirmation: tool.require_confirmation,
-        keywords: tool_candidate_keywords(tool),
+        name: candidate.tool.name.clone(),
+        description: candidate.tool.description.clone(),
+        source: candidate.tool.source.clone(),
+        require_confirmation: candidate.tool.require_confirmation,
+        keywords: candidate.routing.routing_keywords.clone(),
     }
 }
 
-fn tool_candidate_keywords(tool: &ToolDefinition) -> Vec<String> {
-    let mut keywords = tokenize_for_tool_routing(&format!(
-        "{} {} {} {}",
-        tool.name,
-        tool.description,
-        tool.source,
-        schema_property_names(&tool.parameters).join(" ")
-    ))
-    .into_iter()
-    .collect::<Vec<_>>();
-    keywords.extend(
-        tool_routing_hints(&tool.name.to_lowercase())
-            .iter()
-            .map(|hint| hint.to_string()),
-    );
-    keywords.extend(tool.routing_hints.iter().map(|hint| hint.to_lowercase()));
+fn tool_routing_metadata(
+    tool: &ToolDefinition,
+    index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
+) -> ToolRoutingMetadata {
+    if let Some(entry) = index_by_name.get(&tool.name) {
+        let routing_text = entry
+            .routing_text
+            .trim()
+            .is_empty()
+            .then(|| fallback_tool_routing_text(tool))
+            .unwrap_or_else(|| entry.routing_text.clone());
+        let routing_keywords = if entry.routing_keywords.is_empty() {
+            fallback_tool_routing_keywords(&routing_text)
+        } else {
+            normalized_keywords(entry.routing_keywords.clone())
+        };
+        return ToolRoutingMetadata {
+            routing_text,
+            routing_keywords,
+            routing_embedding: entry.routing_embedding.clone(),
+        };
+    }
+
+    let routing_text = fallback_tool_routing_text(tool);
+    let routing_keywords = fallback_tool_routing_keywords(&routing_text);
+    ToolRoutingMetadata {
+        routing_text,
+        routing_keywords,
+        routing_embedding: None,
+    }
+}
+
+fn fallback_tool_routing_keywords(routing_text: &str) -> Vec<String> {
+    let mut keywords = tokenize_for_tool_routing(routing_text)
+        .into_iter()
+        .collect::<Vec<_>>();
     keywords.sort();
     keywords.dedup();
     keywords.truncate(24);
     keywords
 }
 
-fn tool_routing_text(tool: &ToolDefinition) -> String {
-    let mut hints = tool_routing_hints(&tool.name.to_lowercase())
-        .iter()
-        .map(|hint| (*hint).to_string())
+fn normalized_keywords(keywords: Vec<String>) -> Vec<String> {
+    let mut keywords = keywords
+        .into_iter()
+        .map(|keyword| keyword.trim().to_lowercase())
+        .filter(|keyword| !keyword.is_empty())
         .collect::<Vec<_>>();
-    hints.extend(tool.routing_hints.iter().cloned());
+    keywords.sort();
+    keywords.dedup();
+    keywords.truncate(24);
+    keywords
+}
+
+fn fallback_tool_routing_text(tool: &ToolDefinition) -> String {
     format!(
         "{}\n{}\nsource: {}\nparameters: {}\nhints: {}",
         tool.name,
         tool.description,
         tool.source,
         schema_property_names(&tool.parameters).join(" "),
-        hints.join(" ")
+        tool.routing_hints.join(" ")
     )
 }
 
@@ -812,22 +917,19 @@ fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
 
 fn score_tool_candidate(
     tool: &ToolDefinition,
+    routing: &ToolRoutingMetadata,
     query: &str,
     query_terms: &HashSet<String>,
     skill_scoped: bool,
 ) -> i32 {
     let mut score = if skill_scoped { 1 } else { 0 };
     let name = tool.name.to_lowercase();
-    let searchable_text = format!(
-        "{} {} {} {}",
-        name.replace(['_', '-', '.'], " "),
-        tool.description.to_lowercase(),
-        tool.source.to_lowercase(),
-        schema_property_names(&tool.parameters)
-            .join(" ")
-            .to_lowercase()
-    );
-    let searchable_terms = tokenize_for_tool_routing(&searchable_text);
+    let searchable_terms = tokenize_for_tool_routing(&routing.routing_text);
+    let routing_keywords = routing
+        .routing_keywords
+        .iter()
+        .map(|keyword| keyword.to_lowercase())
+        .collect::<Vec<_>>();
 
     for term in query_terms {
         let term = term.as_str();
@@ -838,6 +940,9 @@ fn score_tool_candidate(
         }
         if searchable_terms.contains(term) {
             score += 3;
+        }
+        if routing_keywords.iter().any(|keyword| keyword == term) {
+            score += 10;
         }
     }
 
@@ -851,14 +956,8 @@ fn score_tool_candidate(
         }
     }
 
-    for hint in tool_routing_hints(&name) {
-        if query.contains(hint) {
-            score += 12;
-        }
-    }
-    for hint in &tool.routing_hints {
-        let hint = hint.trim().to_lowercase();
-        if !hint.is_empty() && query.contains(&hint) {
+    for keyword in &routing_keywords {
+        if !keyword.is_empty() && query.contains(keyword) {
             score += 12;
         }
     }
@@ -891,150 +990,6 @@ fn schema_property_names(parameters: &serde_json::Value) -> Vec<String> {
         .and_then(serde_json::Value::as_object)
         .map(|properties| properties.keys().cloned().collect())
         .unwrap_or_default()
-}
-
-fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
-    match tool_name {
-        "get_current_time" => &[
-            "time", "date", "today", "tomorrow", "now", "clock", "timezone", "when", "时间",
-            "几点", "今天", "明天", "现在", "日期",
-        ],
-        "fetch" => &[
-            "fetch",
-            "url",
-            "http",
-            "https",
-            "website",
-            "web",
-            "page",
-            "link",
-            "download",
-            "search",
-            "lookup",
-            "look up",
-            "research",
-            "latest",
-            "current",
-            "news",
-            "网页",
-            "链接",
-            "网址",
-            "访问",
-            "抓取",
-            "搜索",
-            "查一下",
-            "查询",
-            "检索",
-            "查找",
-            "最新",
-            "新闻",
-            "资料",
-            "当前",
-        ],
-        "calculate" => &[
-            "calculate",
-            "compute",
-            "math",
-            "sum",
-            "plus",
-            "minus",
-            "multiply",
-            "divide",
-            "算",
-            "计算",
-            "加",
-            "减",
-            "乘",
-            "除",
-        ],
-        "memory_search" => &[
-            "remember",
-            "memory",
-            "recall",
-            "preference",
-            "past",
-            "记得",
-            "记忆",
-            "偏好",
-            "喜欢",
-            "之前",
-        ],
-        "memory_store" => &[
-            "remember this",
-            "likes",
-            "favorite",
-            "preference",
-            "save",
-            "store",
-            "note",
-            "memorize",
-            "记住",
-            "保存",
-            "记录",
-            "喜欢",
-            "最喜欢",
-            "偏好",
-        ],
-        "memory_forget" => &[
-            "forget",
-            "delete memory",
-            "remove memory",
-            "forgot",
-            "忘记",
-            "删除记忆",
-            "移除记忆",
-        ],
-        "schedule_task" => &[
-            "schedule", "remind", "reminder", "timer", "alarm", "cron", "later", "提醒", "定时",
-            "闹钟", "日程",
-        ],
-        "sensor_read" => &[
-            "sensor",
-            "temperature",
-            "humidity",
-            "value",
-            "read",
-            "status",
-            "传感器",
-            "温度",
-            "湿度",
-            "读数",
-            "状态",
-        ],
-        "sensor_list" => &[
-            "sensor",
-            "sensors",
-            "list sensors",
-            "all sensors",
-            "online",
-            "offline",
-            "传感器",
-            "列表",
-        ],
-        "end_continuous_dialogue" => &[
-            "goodbye",
-            "bye",
-            "cancel",
-            "stop talking",
-            "stop listening",
-            "end conversation",
-            "continuous dialogue",
-            "follow-up listening",
-            "再见",
-            "拜拜",
-            "退下",
-            "取消",
-            "不用了",
-            "别说了",
-            "先这样",
-            "结束对话",
-            "结束聊天",
-            "停止回答",
-            "停止说话",
-            "关闭连续对话",
-        ],
-        _ => &[],
-    }
 }
 
 fn looks_like_arithmetic(query: &str) -> bool {
@@ -1175,7 +1130,9 @@ mod tests {
 
     #[test]
     fn tool_routing_text_contains_indexable_metadata() {
-        let text = tool_routing_text(&tool("fetch", "Fetch a public HTTP URL"));
+        let mut tool = tool("fetch", "Fetch a public HTTP URL");
+        tool.routing_hints = vec!["latest".to_string()];
+        let text = fallback_tool_routing_text(&tool);
 
         assert!(text.contains("fetch"));
         assert!(text.contains("Fetch a public HTTP URL"));

@@ -87,20 +87,24 @@ fn tool_catalog_fields(definition: &ToolDefinition) -> ToolCatalogFields {
 fn set_tool_catalog(
     active: &mut tool::ActiveModel,
     definition: &ToolDefinition,
-    existing_routing_text: Option<&str>,
-    existing_embedding: Option<serde_json::Value>,
+    preserve_existing_catalog: bool,
 ) {
+    if preserve_existing_catalog {
+        return;
+    }
+
     let catalog = tool_catalog_fields(definition);
-    let routing_embedding =
-        if existing_routing_text.is_some_and(|text| text == catalog.routing_text) {
-            existing_embedding
-        } else {
-            None
-        };
     active.routing_keywords = Set(catalog.routing_keywords);
     active.routing_examples = Set(catalog.routing_examples);
     active.routing_text = Set(catalog.routing_text);
-    active.routing_embedding = Set(routing_embedding);
+    active.routing_embedding = Set(None);
+}
+
+fn preserve_existing_tool_catalog(row: &tool::Model, definition: &ToolDefinition) -> bool {
+    !row.routing_text.trim().is_empty()
+        && row.description == definition.description
+        && row.parameters == definition.parameters
+        && row.source == definition.source
 }
 
 fn tokenize_catalog_text(text: &str) -> Vec<String> {
@@ -305,20 +309,14 @@ impl BuiltinToolRegistry {
 
             match existing {
                 Some(row) => {
-                    let existing_routing_text = row.routing_text.clone();
-                    let existing_embedding = row.routing_embedding.clone();
+                    let preserve_catalog = preserve_existing_tool_catalog(&row, &definition);
                     let mut active: tool::ActiveModel = row.into();
                     active.description = Set(definition.description.clone());
                     active.parameters = Set(definition.parameters.clone());
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
-                    set_tool_catalog(
-                        &mut active,
-                        &definition,
-                        Some(&existing_routing_text),
-                        existing_embedding,
-                    );
+                    set_tool_catalog(&mut active, &definition, preserve_catalog);
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
@@ -551,20 +549,14 @@ impl ToolRegistry for BuiltinToolRegistry {
 
             match existing {
                 Some(row) => {
-                    let existing_routing_text = row.routing_text.clone();
-                    let existing_embedding = row.routing_embedding.clone();
+                    let preserve_catalog = preserve_existing_tool_catalog(&row, &definition);
                     let mut active: tool::ActiveModel = row.into();
                     active.description = Set(definition.description.clone());
                     active.parameters = Set(definition.parameters.clone());
                     active.source = Set(definition.source.clone());
                     active.require_confirmation = Set(definition.require_confirmation);
                     active.required_role = Set(definition.required_role.clone());
-                    set_tool_catalog(
-                        &mut active,
-                        &definition,
-                        Some(&existing_routing_text),
-                        existing_embedding,
-                    );
+                    set_tool_catalog(&mut active, &definition, preserve_catalog);
                     active.enabled = Set(true);
                     active.updated_at = Set(now);
                     active.update(db).await?;
@@ -1731,6 +1723,109 @@ fn format_number(value: f64) -> String {
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_string()
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    fn definition() -> ToolDefinition {
+        ToolDefinition {
+            name: "memory_store".to_string(),
+            description: "Store information to memory".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"}
+                }
+            }),
+            routing_hints: vec!["favorite".to_string()],
+            source: "builtin".to_string(),
+            require_confirmation: false,
+            required_role: None,
+        }
+    }
+
+    fn existing_tool(definition: &ToolDefinition) -> tool::Model {
+        let now = Utc::now();
+        tool::Model {
+            id: Uuid::new_v4(),
+            name: definition.name.clone(),
+            description: definition.description.clone(),
+            parameters: definition.parameters.clone(),
+            source: definition.source.clone(),
+            require_confirmation: definition.require_confirmation,
+            required_role: definition.required_role.clone(),
+            routing_keywords: serde_json::json!(["custom"]),
+            routing_examples: serde_json::json!(["custom example"]),
+            routing_text: "custom operator maintained routing text".to_string(),
+            routing_embedding: Some(serde_json::json!({
+                "model": "test",
+                "vector": [1.0, 0.0],
+            })),
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn catalog_generation_includes_default_hints_and_schema_terms() {
+        let catalog = tool_catalog_fields(&definition());
+
+        assert!(catalog.routing_text.contains("memory_store"));
+        assert!(catalog.routing_text.contains("content"));
+        assert!(catalog.routing_text.contains("favorite"));
+        assert!(
+            catalog
+                .routing_keywords
+                .as_array()
+                .is_some_and(|keywords| keywords.iter().any(|value| value == "favorite"))
+        );
+    }
+
+    #[test]
+    fn unchanged_tool_preserves_operator_catalog_metadata() {
+        let definition = definition();
+        let existing = existing_tool(&definition);
+
+        assert!(preserve_existing_tool_catalog(&existing, &definition));
+    }
+
+    #[test]
+    fn changed_tool_definition_rebuilds_catalog_and_clears_embedding() {
+        let mut definition = definition();
+        let existing = existing_tool(&definition);
+        definition.description = "Store explicit memories".to_string();
+        let mut active: tool::ActiveModel = existing.into();
+
+        assert!(!preserve_existing_tool_catalog(
+            &tool::Model {
+                id: Uuid::new_v4(),
+                name: definition.name.clone(),
+                description: "Store information to memory".to_string(),
+                parameters: definition.parameters.clone(),
+                source: definition.source.clone(),
+                require_confirmation: false,
+                required_role: None,
+                routing_keywords: serde_json::json!(["custom"]),
+                routing_examples: serde_json::json!(["custom example"]),
+                routing_text: "custom operator maintained routing text".to_string(),
+                routing_embedding: Some(serde_json::json!({"model": "test", "vector": [1.0]})),
+                enabled: true,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+            &definition
+        ));
+        set_tool_catalog(&mut active, &definition, false);
+
+        assert_eq!(active.routing_embedding, Set(None));
+        assert_ne!(
+            active.routing_text,
+            Set("custom operator maintained routing text".to_string())
+        );
+    }
 }
 
 struct ArithmeticParser {

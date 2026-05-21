@@ -1,8 +1,10 @@
 use alia_server::channels::pipeline::tools::{
     ToolCallProtocol, non_empty_tool_fallback, normalize_tool_call, rank_and_limit_tools,
-    tool_call_request_message, tool_result_message,
+    rank_and_limit_tools_with_index, tool_call_request_message, tool_result_message,
 };
-use alia_server::providers::adapter::{LlmToolCall, ToolDefinition, ToolResult};
+use alia_server::providers::adapter::{
+    LlmToolCall, ToolDefinition, ToolResult, ToolRoutingIndexEntry,
+};
 
 fn tool(name: &str, description: &str) -> ToolDefinition {
     ToolDefinition {
@@ -19,6 +21,15 @@ fn tool(name: &str, description: &str) -> ToolDefinition {
         source: "builtin".to_string(),
         require_confirmation: false,
         required_role: None,
+    }
+}
+
+fn routing_entry(name: &str, keywords: &[&str], routing_text: &str) -> ToolRoutingIndexEntry {
+    ToolRoutingIndexEntry {
+        name: name.to_string(),
+        routing_text: routing_text.to_string(),
+        routing_keywords: keywords.iter().map(|keyword| keyword.to_string()).collect(),
+        routing_embedding: None,
     }
 }
 
@@ -77,12 +88,17 @@ fn skill_scoped_tools_are_capped_but_not_dropped_for_zero_score() {
 
 #[test]
 fn routes_preference_statements_to_memory_store() {
-    let selected = rank_and_limit_tools(
+    let selected = rank_and_limit_tools_with_index(
         vec![
             tool("memory_search", "Search the user's memory"),
             tool("memory_store", "Store a piece of information to memory"),
             tool("fetch", "Fetch a public HTTP URL"),
         ],
+        vec![routing_entry(
+            "memory_store",
+            &["likes", "favorite", "preference", "remember"],
+            "Save explicit user preferences and things the user asks the assistant to remember.",
+        )],
         "KeQiao really likes Japanese musician tsukuyomi",
         8,
         false,
@@ -103,8 +119,13 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
         "speaker".to_string(),
         "volume".to_string(),
     ];
-    let selected = rank_and_limit_tools(
+    let selected = rank_and_limit_tools_with_index(
         vec![tool("sensor_read", "Read a sensor value"), volume_tool],
+        vec![routing_entry(
+            "embedded_volume_control",
+            &["microphone", "speaker", "volume", "麦克风", "扬声器"],
+            "Control embedded microphone capture volume and speaker playback volume.",
+        )],
         "set microphone volume to 2",
         1,
         false,
@@ -117,7 +138,7 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
 
 #[test]
 fn routes_goodbye_to_continuous_dialogue_end_tool() {
-    let selected = rank_and_limit_tools(
+    let selected = rank_and_limit_tools_with_index(
         vec![
             tool("get_current_time", "Get the current date and time"),
             tool(
@@ -125,6 +146,11 @@ fn routes_goodbye_to_continuous_dialogue_end_tool() {
                 "End continuous dialogue or follow-up listening",
             ),
         ],
+        vec![routing_entry(
+            "end_continuous_dialogue",
+            &["goodbye", "再见", "先这样", "停止回答"],
+            "End continuous dialogue when the user says goodbye, stop, cancel, 再见, or 先这样.",
+        )],
         "再见，先这样吧",
         1,
         false,
@@ -137,11 +163,16 @@ fn routes_goodbye_to_continuous_dialogue_end_tool() {
 
 #[test]
 fn routes_search_language_to_fetch_candidate() {
-    let selected = rank_and_limit_tools(
+    let selected = rank_and_limit_tools_with_index(
         vec![
             tool("sensor_read", "Read a sensor value"),
             tool("fetch", "Fetch a public HTTP URL"),
         ],
+        vec![routing_entry(
+            "fetch",
+            &["search", "latest", "lookup", "web"],
+            "Fetch or search public web resources for current/latest information.",
+        )],
         "search for the latest sherpa onnx version",
         8,
         false,
@@ -149,6 +180,54 @@ fn routes_search_language_to_fetch_candidate() {
     );
 
     assert!(selected.iter().any(|tool| tool.name == "fetch"));
+}
+
+#[test]
+fn db_routing_keywords_can_match_without_definition_text_overlap() {
+    let mut plugin_tool = tool("music_lookup", "Catalog operation");
+    plugin_tool.source = "music-plugin".to_string();
+    let selected = rank_and_limit_tools_with_index(
+        vec![tool("alpha_tool", "Alpha implementation"), plugin_tool],
+        vec![routing_entry(
+            "music_lookup",
+            &["tsukuyomi", "musician", "song"],
+            "Find music-related facts from a plugin catalog.",
+        )],
+        "tell me about tsukuyomi",
+        4,
+        false,
+        "cli",
+    );
+
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].name, "music_lookup");
+}
+
+#[test]
+fn url_and_arithmetic_structural_rules_still_work_without_db_keywords() {
+    let url_selected = rank_and_limit_tools(
+        vec![
+            tool("fetch", "Public HTTP retrieval"),
+            tool("sensor_read", "Read a sensor value"),
+        ],
+        "open https://example.com",
+        2,
+        false,
+        "cli",
+    );
+    let math_selected = rank_and_limit_tools(
+        vec![
+            tool("calculate", "Evaluate expressions"),
+            tool("sensor_read", "Read a sensor value"),
+        ],
+        "what is (2 + 3) * 4?",
+        2,
+        false,
+        "cli",
+    );
+
+    assert_eq!(url_selected[0].name, "fetch");
+    assert_eq!(math_selected[0].name, "calculate");
 }
 
 #[test]
