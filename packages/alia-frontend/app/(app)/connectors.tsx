@@ -40,9 +40,17 @@ export default function ConnectorsScreen() {
       keyExtractor={(row) => `${row.kind}:${row.channel.id}`}
       header={<PendingEmbeddedCard />}
       empty={
-        <EmptyState title="No connectors registered" description="Add channels in server configuration to expose bot platforms or clients." icon={Cable} />
+        <EmptyState
+          title="No connections yet"
+          description="Add server-side channel adapters when you want Alia to appear in a chat app or client."
+          icon={Cable}
+        />
       }
-      footer={action.error ? <Text className="text-destructive text-sm">{action.error.message}</Text> : null}
+      footer={
+        action.error ? (
+          <Text className="text-destructive text-sm">{action.error.message}</Text>
+        ) : null
+      }
       renderItem={({ item: row }) => {
         if (row.kind === 'active') {
           const channel = row.channel;
@@ -59,7 +67,11 @@ export default function ConnectorsScreen() {
               </CardHeader>
               <CardContent className="gap-3">
                 <Text className="text-muted-foreground text-sm">{channel.health}</Text>
-                <Button variant="outline" size="sm" onPress={() => restart(channel.id)} disabled={action.isMutating}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={() => restart(channel.id)}
+                  disabled={action.isMutating}>
                   <Icon as={RotateCcw} className="size-4" />
                   <Text>{tr('channels.restart')}</Text>
                 </Button>

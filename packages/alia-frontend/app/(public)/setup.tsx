@@ -9,7 +9,7 @@ import { useSaveSetupConfig, useSetupTemplate } from '@/lib/api/hooks';
 import { useTranslation } from '@/lib/session/use-translation';
 import { router, type Href } from 'expo-router';
 import * as React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SetupScreen() {
@@ -36,10 +36,15 @@ export default function SetupScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} className="bg-background" style={styles.safeArea}>
-      <View className="absolute right-4 top-4 z-10">
-        <ThemeToggle />
-      </View>
+    <SafeAreaView
+      edges={['top', 'bottom', 'left', 'right']}
+      className="bg-background"
+      style={styles.safeArea}>
+      {Platform.OS === 'web' ? (
+        <View className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </View>
+      ) : null}
       <View className="mx-auto w-full max-w-4xl flex-1 justify-center">
         <Card>
           <CardHeader>
@@ -52,7 +57,9 @@ export default function SetupScreen() {
                 <Text>{tr('setup.generate')}</Text>
               </Button>
             </View>
-            <Field label="Target path" description="Leave blank to let the server choose config/server.toml or user config dir.">
+            <Field
+              label="Target path"
+              description="Leave blank to let the server choose config/server.toml or user config dir.">
               <Input value={path} onChangeText={setPath} placeholder="config/server.toml" />
             </Field>
             <Field label="server.toml">
@@ -60,7 +67,9 @@ export default function SetupScreen() {
             </Field>
             {message ? <Text className="text-muted-foreground text-sm">{message}</Text> : null}
             {template.error || save.error ? (
-              <Text className="text-destructive text-sm">{(template.error ?? save.error)?.message}</Text>
+              <Text className="text-destructive text-sm">
+                {(template.error ?? save.error)?.message}
+              </Text>
             ) : null}
             <Button onPress={submit} disabled={!config || save.isMutating}>
               <Text>{save.isMutating ? 'Saving...' : tr('setup.save')}</Text>

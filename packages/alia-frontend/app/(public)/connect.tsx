@@ -68,10 +68,15 @@ export default function ConnectScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} className="bg-background" style={styles.safeArea}>
-      <View className="absolute right-4 top-4 z-10">
-        <ThemeToggle />
-      </View>
+    <SafeAreaView
+      edges={['top', 'bottom', 'left', 'right']}
+      className="bg-background"
+      style={styles.safeArea}>
+      {Platform.OS === 'web' ? (
+        <View className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </View>
+      ) : null}
       <ScrollView
         className="flex-1"
         style={styles.scroller}
@@ -111,8 +116,8 @@ export default function ConnectScreen() {
             </>
           ) : null}
           <EmptyState
-            title="Decoupled by URL"
-            description="The mobile app only needs an HTTP Alia Server endpoint. Platform adapters stay behind the server boundary."
+            title="Flexible by design"
+            description="The app connects to your personal Alia server, while chat platforms and devices stay behind that server boundary."
             icon={Server}
           />
         </View>
@@ -167,21 +172,23 @@ function LanServersCard({
       <CardHeader>
         <View className="flex-row items-center gap-2">
           <Icon as={Router} className="size-4" />
-          <CardTitle>LAN Servers</CardTitle>
+          <CardTitle>Nearby servers</CardTitle>
         </View>
         <CardDescription>
-          Discover Alia Server on the local network via _alia-server._tcp.
+          Find Alia Server on the same Wi-Fi network and connect without typing the address.
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         <Button variant="outline" disabled={discovery.isMutating} onPress={scan}>
           <Icon as={RefreshCw} className="size-4" />
-          <Text>{discovery.isMutating ? 'Scanning...' : 'Scan LAN'}</Text>
+          <Text>{discovery.isMutating ? 'Looking nearby...' : 'Find nearby servers'}</Text>
         </Button>
         {discovery.isMutating ? <Progress value={55} /> : null}
         {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
         {!discovery.isMutating && discovery.data && servers.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">No Alia Server discovered.</Text>
+          <Text className="text-muted-foreground text-sm">
+            No Alia server found on this network.
+          </Text>
         ) : null}
         <View className="gap-3">
           {servers.map((server) => (
@@ -273,23 +280,19 @@ function NearbyEmbeddedCard() {
       <CardHeader>
         <View className="flex-row items-center gap-2">
           <Icon as={Bluetooth} className="size-4" />
-          <CardTitle>Nearby Embedded</CardTitle>
+          <CardTitle>Nearby devices</CardTitle>
         </View>
-        <CardDescription>
-          Discover BLE beacons and write Wi-Fi credentials to Alia Embedded.
-        </CardDescription>
+        <CardDescription>Set up Wi-Fi for Alia embedded devices over Bluetooth.</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         <Button variant="outline" disabled={discovery.isMutating} onPress={scan}>
           <Icon as={RefreshCw} className="size-4" />
-          <Text>{discovery.isMutating ? 'Scanning...' : 'Scan BLE'}</Text>
+          <Text>{discovery.isMutating ? 'Looking nearby...' : 'Find nearby devices'}</Text>
         </Button>
         {discovery.isMutating ? <Progress value={45} /> : null}
         {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
         {!discovery.isMutating && discovery.data && devices.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">
-            No nearby Alia Embedded device discovered.
-          </Text>
+          <Text className="text-muted-foreground text-sm">No nearby Alia device found.</Text>
         ) : null}
         <View className="gap-3">
           {devices.map((device) => (
@@ -307,7 +310,7 @@ function NearbyEmbeddedCard() {
             <View className="gap-3">
               <View className="flex-row items-center gap-2">
                 <Icon as={Wifi} className="size-4" />
-                <Text className="font-medium">Wi-Fi Provisioning</Text>
+                <Text className="font-medium">Wi-Fi setup</Text>
               </View>
               <Field label="SSID">
                 <Input
@@ -326,7 +329,9 @@ function NearbyEmbeddedCard() {
                   value={password}
                 />
               </Field>
-              <Field label="Interface">
+              <Field
+                label="Network interface"
+                description="Usually wlan0 on a Raspberry Pi or embedded Linux device.">
                 <Input
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -335,7 +340,7 @@ function NearbyEmbeddedCard() {
                 />
               </Field>
               <Button disabled={provision.isMutating || !ssid.trim()} onPress={submitProvision}>
-                <Text>{provision.isMutating ? 'Writing...' : 'Write Wi-Fi Config'}</Text>
+                <Text>{provision.isMutating ? 'Sending...' : 'Send Wi-Fi details'}</Text>
               </Button>
               <ProvisionStatus
                 status={status.data}
@@ -364,10 +369,9 @@ function EmbeddedRow({
       <View className="flex-row items-start justify-between gap-3">
         <View className="min-w-0 flex-1 gap-1">
           <Text className="font-medium">{device.name ?? 'Alia Embedded'}</Text>
-          <Text className="text-muted-foreground text-xs">{device.nativeId}</Text>
           <Text className="text-muted-foreground text-xs">
-            {typeof device.rssi === 'number' ? `${device.rssi} dBm` : 'RSSI unknown'}
-            {device.port ? ` - port ${device.port}` : ''}
+            {typeof device.rssi === 'number' ? `Signal ${device.rssi} dBm` : 'Signal unknown'}
+            {device.port ? ` - local port ${device.port}` : ''}
           </Text>
         </View>
         <Badge variant={status === 'unbound' ? 'secondary' : 'outline'}>
@@ -378,7 +382,7 @@ function EmbeddedRow({
         size="sm"
         variant={selected ? 'secondary' : 'outline'}
         onPress={() => onSelect(device)}>
-        <Text>{selected ? 'Selected' : 'Configure'}</Text>
+        <Text>{selected ? 'Selected' : 'Set up Wi-Fi'}</Text>
       </Button>
     </View>
   );
@@ -407,7 +411,7 @@ function ProvisionStatus({
   return (
     <View className="gap-2">
       <View className="flex-row items-center justify-between gap-3">
-        <Text className="text-sm font-medium">Provision status</Text>
+        <Text className="text-sm font-medium">Setup status</Text>
         <Badge
           variant={
             state === 'failed' ? 'destructive' : state === 'connected' ? 'secondary' : 'outline'
@@ -417,7 +421,7 @@ function ProvisionStatus({
       </View>
       <Progress value={progressValue} />
       <Text className="text-muted-foreground text-xs">
-        {status?.message ?? 'Reading embedded network status...'}
+        {status?.message ?? 'Checking device network status...'}
       </Text>
     </View>
   );
