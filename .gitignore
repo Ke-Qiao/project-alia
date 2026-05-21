@@ -7,6 +7,17 @@ target/
 # Node
 node_modules/
 
+# Expo / React Native build output
+.expo/
+.expo-shared/
+dist/
+web-build/
+packages/alia-frontend/android/
+packages/alia-frontend/ios/
+packages/alia-frontend/expo-env.d.ts
+packages/alia-frontend/modules/*/android/build/
+packages/alia-frontend/modules/*/ios/build/
+
 # macOS
 .DS_Store
 

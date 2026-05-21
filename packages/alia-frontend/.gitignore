@@ -5,8 +5,15 @@ node_modules/
 
 # Expo
 .expo/
+.expo-shared/
 dist/
 web-build/
+expo-env.d.ts
+
+# Expo prebuild output
+# Source of truth stays in app.json and modules/.
+/android/
+/ios/
 
 # Native
 *.orig.*

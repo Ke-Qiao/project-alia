@@ -109,3 +109,4 @@ dirs = "6"
 
 # Network
 network-interface.workspace = true
+mdns-sd.workspace = true

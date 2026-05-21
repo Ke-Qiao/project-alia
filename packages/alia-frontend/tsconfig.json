@@ -4,7 +4,7 @@
     "strict": true,
     "baseUrl": ".",
     // fix baseUrl deprecation error
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@/*": [
         "*"

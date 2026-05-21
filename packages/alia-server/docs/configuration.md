@@ -106,6 +106,25 @@ Restart is expected for:
 - non-LLM adapter selection in `[modules]` and LLM role binding in `[llm.roles]`
 - channel topology changes requiring adapter construction
 
+## LAN Discovery
+
+`alia-server` can advertise its control-plane endpoint on the local network with
+mDNS so mobile clients can discover it before login.
+
+Relevant `[server]` fields:
+
+| Field | Purpose |
+| --- | --- |
+| `discovery_enabled` | Enables or disables server mDNS advertisement. |
+| `discovery_service_name` | Defaults to `_alia-server._tcp`; keep it distinct from embedded nodes. |
+| `discovery_instance_name` | Optional human-readable instance name shown by clients. |
+| `public_endpoint` | Optional LAN-reachable URL to advertise when `host` is `0.0.0.0` or behind a proxy. |
+
+Server discovery advertises TXT metadata with `kind=alia-server`,
+`schema=alia.server.discovery.v1`, `mode=runtime` or `mode=oobe`, and an
+`endpoint` URL. Embedded nodes continue to advertise separately as
+`_alia-embedded._tcp`.
+
 ## Feature Flags
 
 Default features enable the common runtime. Optional feature groups include:

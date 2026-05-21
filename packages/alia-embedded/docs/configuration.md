@@ -72,3 +72,63 @@ expected for changes that rebuild core resources:
 Local development can skip full binding when explicitly configured. Use that
 only on trusted developer machines. Production devices should use the binding
 flow and authenticated gRPC requests.
+
+## Raspberry Pi BlueZ Checks
+
+`[modules].discovery = "mdns"` is the normal backend. In that mode mDNS is the
+primary advertisement, while `[discovery].ble_provision_enabled = true` starts a
+short-range auxiliary BLE provisioning beacon and GATT provisioning service.
+
+The BLE service UUID is `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f1`.
+
+| Characteristic | UUID | Direction | Purpose |
+| --- | --- | --- | --- |
+| Network status | `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f2` | read | JSON status: `idle`, `applying`, `connected`, or `failed`. |
+| Network config | `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f3` | write | JSON Wi-Fi credentials. |
+
+Network config writes accept:
+
+```json
+{
+  "ssid": "Home WiFi",
+  "password": "wpa2-passphrase",
+  "interface": "wlan0"
+}
+```
+
+The password is not stored in `embedded.toml`; the embedded process invokes
+NetworkManager through `nmcli`, letting the OS own the network profile. Hidden
+SSID provisioning is intentionally rejected in the fast path for now.
+
+On Raspberry Pi, BLE provisioning depends on Linux BlueZ and the system
+Bluetooth adapter. If the log reports a BlueZ startup or advertisement failure,
+check the board before changing application code:
+
+```bash
+sudo apt update
+sudo apt install -y bluez rfkill
+sudo systemctl enable --now bluetooth
+systemctl status bluetooth --no-pager
+rfkill list bluetooth
+sudo rfkill unblock bluetooth
+bluetoothctl show
+```
+
+Expected signs:
+
+- `bluetooth.service` is active.
+- `rfkill` does not show the controller as blocked.
+- `bluetoothctl show` prints a controller and `Powered: yes`.
+
+If session creation fails, `bluetoothd` or D-Bus is not available to the
+process. If no adapter is found, the kernel did not expose the Bluetooth
+controller or it is disabled by overlay/firmware settings. If advertisement
+registration fails, confirm the adapter supports LE advertising; older BlueZ
+builds may also need `bluetoothd` started with experimental features enabled.
+
+For hardware bring-up where BLE is not needed yet, keep mDNS enabled and set:
+
+```toml
+[discovery]
+ble_provision_enabled = false
+```

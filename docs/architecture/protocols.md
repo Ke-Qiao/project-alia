@@ -16,6 +16,28 @@ Current API areas include auth, users, devices, voice, conversations, plugins,
 rules, scheduler, settings, sensors, memories, personas, insights, skills,
 tools, and channels.
 
+## Local Discovery
+
+Discovery deliberately uses separate service identities for the control plane
+and embedded edge nodes:
+
+| Advertiser | Service | Purpose |
+| --- | --- | --- |
+| `alia-server` | `_alia-server._tcp` | LAN discovery of the HTTP control-plane endpoint. |
+| `alia-embedded` | `_alia-embedded._tcp` | Discovery and binding of edge devices over gRPC. |
+| `alia-embedded` | BLE service `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f1` | Auxiliary provisioning beacon and GATT Wi-Fi setup for nearby mobile clients. |
+
+The server mDNS record includes `schema=alia.server.discovery.v1`,
+`kind=alia-server`, `mode`, `endpoint`, and common API paths. Embedded discovery
+remains owned by the embedded channel and is surfaced to the frontend through
+device APIs such as `GET /api/v1/device`.
+
+Embedded BLE provisioning uses the same service UUID for GATT. The network
+status characteristic is `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f2`; the network
+config write characteristic is `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f3` and
+accepts JSON Wi-Fi credentials. The embedded node applies Wi-Fi through the OS
+network manager, not through Alia config files.
+
 ## Server to Embedded
 
 Server and embedded communicate over gRPC using protobufs in `crates/proto`.

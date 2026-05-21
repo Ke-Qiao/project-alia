@@ -16,6 +16,7 @@ edition = "2024"
 alia-proto = { path = "crates/proto" }
 alia-transport = { path = "crates/transport" }
 network-interface = "1.1"
+mdns-sd = "0.19"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -30,7 +31,7 @@ prost = "0.13"
 
 # HTTP
 axum = { version = "0.8", features = ["ws"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 # Database
 sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls"] }

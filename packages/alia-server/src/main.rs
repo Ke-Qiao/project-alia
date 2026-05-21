@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -11,6 +11,7 @@ use sea_orm::{
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::filter::ParseError;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use utoipa::OpenApi;
@@ -18,6 +19,7 @@ use utoipa_scalar::{Scalar, Servable};
 
 use alia_server::auth::ensure_server_keypair;
 use alia_server::config::ServerConfig;
+use alia_server::discovery::{ServerDiscoveryAdvertisement, ServerDiscoveryAnnouncement};
 use alia_server::event::EventBus;
 use alia_server::module::ServerBuilder;
 use alia_server::oobe;
@@ -87,6 +89,34 @@ fn default_env_filter(config_log_level: Option<&str>) -> Result<EnvFilter, Parse
         .add_directive("sqlx::postgres::notice=warn".parse()?))
 }
 
+fn frontend_dist_dir() -> Option<PathBuf> {
+    let candidates = std::env::var_os("ALIA_FRONTEND_DIST")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain([
+            PathBuf::from("packages/alia-frontend/dist"),
+            PathBuf::from("alia-frontend/dist"),
+            PathBuf::from("dist"),
+        ]);
+
+    candidates
+        .filter(|path| path.join("index.html").is_file())
+        .next()
+}
+
+fn attach_frontend<S>(app: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let Some(dist) = frontend_dist_dir() else {
+        return app;
+    };
+
+    tracing::info!(dist = %dist.display(), "serving alia frontend static assets");
+    let index = dist.join("index.html");
+    app.fallback_service(ServeDir::new(dist).not_found_service(ServeFile::new(index)))
+}
+
 /// OOBE flow: start a minimal setup server and CLI listener.
 async fn run_oobe() -> anyhow::Result<()> {
     use oobe::bootstrap::{SetupResult, print_banner, spawn_cli_listener};
@@ -113,6 +143,16 @@ async fn run_oobe() -> anyhow::Result<()> {
         .merge(routes())
         .layer(CorsLayer::permissive())
         .with_state(oobe_state);
+    let app = attach_frontend(app);
+
+    let discovery =
+        match ServerDiscoveryAdvertisement::start(ServerDiscoveryAnnouncement::oobe(OOBE_PORT)) {
+            Ok(discovery) => discovery,
+            Err(error) => {
+                tracing::warn!(error = %error, "failed to advertise OOBE server discovery");
+                None
+            }
+        };
 
     // Bind setup server
     let addr = format!("0.0.0.0:{OOBE_PORT}");
@@ -143,6 +183,10 @@ async fn run_oobe() -> anyhow::Result<()> {
             // Server exited without setup completing
             anyhow::bail!("OOBE server exited unexpectedly");
         }
+    }
+
+    if let Some(discovery) = discovery {
+        discovery.shutdown();
     }
 
     Ok(())
@@ -183,6 +227,17 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
         .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
+    let app = attach_frontend(app);
+
+    let discovery = match ServerDiscoveryAdvertisement::start(
+        ServerDiscoveryAnnouncement::from_config(&config),
+    ) {
+        Ok(discovery) => discovery,
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to advertise server discovery");
+            None
+        }
+    };
 
     #[cfg(feature = "channel-embedded")]
     {
@@ -240,9 +295,15 @@ async fn run_server(config: Arc<ServerConfig>) -> anyhow::Result<()> {
         cancel_token.cancel();
     };
 
-    axum::serve(listener, app)
+    let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal)
-        .await?;
+        .await;
+
+    if let Some(discovery) = discovery {
+        discovery.shutdown();
+    }
+
+    serve_result?;
 
     // Stop channels and modules in reverse order
     state.channels.shutdown().await;

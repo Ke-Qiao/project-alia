@@ -188,6 +188,10 @@ min_face_delta_px = 6.0
 mdns_enabled = true
 mdns_service_name = "_alia-embedded._tcp"
 mdns_instance_name = "客厅助手"
+# BLE provisioning is an auxiliary phone-nearby beacon. mDNS remains the primary
+# server discovery path. On Raspberry Pi this requires a running BlueZ daemon,
+# an unblocked Bluetooth controller, LE advertising support, and NetworkManager
+# `nmcli` when using BLE Wi-Fi setup.
 ble_provision_enabled = true
 ble_provision_timeout_sec = 300
 require_physical_confirm = true

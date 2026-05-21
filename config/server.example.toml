@@ -21,6 +21,11 @@ host = "0.0.0.0"
 port = 3000
 # Set this when binding LAN embedded devices. Do not use 0.0.0.0 here.
 # public_endpoint = "http://192.168.1.10:3000"
+discovery_enabled = true
+# Alia Server advertises the control-plane endpoint here. Keep this distinct
+# from embedded nodes, which advertise "_alia-embedded._tcp".
+discovery_service_name = "_alia-server._tcp"
+# discovery_instance_name = "Alia Main"
 log_level = "info"
 debug_output = false
 

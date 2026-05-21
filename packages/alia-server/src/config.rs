@@ -36,6 +36,12 @@ pub struct ServerSection {
     pub port: u16,
     #[serde(default)]
     pub public_endpoint: Option<String>,
+    #[serde(default = "default_true")]
+    pub discovery_enabled: bool,
+    #[serde(default = "default_server_discovery_service")]
+    pub discovery_service_name: String,
+    #[serde(default)]
+    pub discovery_instance_name: Option<String>,
     pub log_level: String,
     #[serde(default)]
     pub debug_output: bool,
@@ -43,6 +49,10 @@ pub struct ServerSection {
 
 fn default_server_id() -> String {
     "alia-server".to_string()
+}
+
+fn default_server_discovery_service() -> String {
+    "_alia-server._tcp".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]

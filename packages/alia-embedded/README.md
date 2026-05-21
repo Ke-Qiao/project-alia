@@ -65,6 +65,33 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 | `[vision]` | Camera and OpenCV YuNet face tracker settings |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
 
+### Raspberry Pi Bluetooth / BlueZ
+
+BLE provisioning is optional and separate from mDNS. Keep
+`modules.discovery = "mdns"` for normal operation; `ble_provision_enabled = true`
+adds the nearby phone beacon plus a GATT Wi-Fi provisioning service. The phone
+app writes JSON credentials to characteristic
+`3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f3` and reads status from
+`3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f2`. The embedded process applies Wi-Fi via
+NetworkManager `nmcli`, so credentials are not stored in `embedded.toml`.
+
+On a Pi that cannot start BlueZ or advertise BLE, verify the OS layer first:
+
+```sh
+sudo apt update
+sudo apt install -y bluez rfkill
+sudo systemctl enable --now bluetooth
+systemctl status bluetooth --no-pager
+rfkill list bluetooth
+sudo rfkill unblock bluetooth
+bluetoothctl show
+```
+
+`bluetoothctl show` should list a controller with `Powered: yes`. `nmcli` should
+also be present for Wi-Fi provisioning. If BLE is not needed during bring-up,
+set `[discovery].ble_provision_enabled = false`; mDNS discovery via
+`_alia-embedded._tcp` will continue to work.
+
 ## Development
 
 ### Build

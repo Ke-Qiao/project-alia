@@ -4,6 +4,7 @@ pub mod api;
 pub mod auth;
 pub mod channels;
 pub mod config;
+pub mod discovery;
 pub mod entity;
 pub mod error;
 pub mod event;
