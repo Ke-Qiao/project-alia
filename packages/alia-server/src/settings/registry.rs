@@ -1085,16 +1085,26 @@ impl SettingsRegistry {
         ];
 
         let mut profile_entries = Vec::new();
+        let mut provider_options = vec![
+            "openai".to_string(),
+            "anthropic".to_string(),
+            "gemini".to_string(),
+            "noop".to_string(),
+        ];
+        provider_options.extend(config.providers.llm.keys().cloned());
+        provider_options.sort();
+        provider_options.dedup();
+        let provider_option_refs = provider_options
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
         for (profile_id, profile) in &config.profiles.llm {
             let prefix = format!("core.profiles.llm.{profile_id}");
             profile_entries.push((
                 format!("{prefix}.provider"),
                 json!(profile.provider),
-                schema_select(
-                    "LLM Provider",
-                    &["openai", "anthropic", "gemini", "noop"],
-                    true,
-                ),
+                schema_select("LLM Provider", &provider_option_refs, true),
             ));
             profile_entries.push((
                 format!("{prefix}.kind"),
@@ -1131,6 +1141,86 @@ impl SettingsRegistry {
                     json!(profile.request.top_p),
                     schema("LLM Top P", "number", false),
                 ));
+            }
+        }
+        for (provider_id, provider) in &config.providers.llm {
+            let prefix = format!("core.providers.llm.{provider_id}");
+            match provider {
+                crate::config::LlmProviderProfileSection::OpenAi(provider) => {
+                    profile_entries.push((
+                        format!("{prefix}.type"),
+                        json!("openai"),
+                        schema_select("LLM Provider Type", &["openai"], true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_key"),
+                        json!(provider.api_key),
+                        schema_secret("OpenAI-Compatible API Key", false),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.base_url"),
+                        json!(provider.base_url),
+                        schema("OpenAI-Compatible Base URL", "string", false),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_family"),
+                        json!(match provider.api_family {
+                            crate::config::OpenAiApiFamily::ChatCompletions => "chat_completions",
+                            crate::config::OpenAiApiFamily::Responses => "responses",
+                        }),
+                        schema_select(
+                            "OpenAI-Compatible API Family",
+                            &["chat_completions", "responses"],
+                            false,
+                        ),
+                    ));
+                }
+                crate::config::LlmProviderProfileSection::Anthropic(provider) => {
+                    profile_entries.push((
+                        format!("{prefix}.type"),
+                        json!("anthropic"),
+                        schema_select("LLM Provider Type", &["anthropic"], true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_key"),
+                        json!(provider.api_key),
+                        schema_secret("Anthropic API Key", false),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.base_url"),
+                        json!(provider.base_url),
+                        schema("Anthropic Base URL", "string", false),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.version"),
+                        json!(provider.version),
+                        schema("Anthropic API Version", "string", false),
+                    ));
+                }
+                crate::config::LlmProviderProfileSection::Gemini(provider) => {
+                    profile_entries.push((
+                        format!("{prefix}.type"),
+                        json!("gemini"),
+                        schema_select("LLM Provider Type", &["gemini"], true),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.api_key"),
+                        json!(provider.api_key),
+                        schema_secret("Gemini API Key", false),
+                    ));
+                    profile_entries.push((
+                        format!("{prefix}.base_url"),
+                        json!(provider.base_url),
+                        schema("Gemini Base URL", "string", false),
+                    ));
+                }
+                crate::config::LlmProviderProfileSection::Noop => {
+                    profile_entries.push((
+                        format!("{prefix}.type"),
+                        json!("noop"),
+                        schema_select("LLM Provider Type", &["noop"], true),
+                    ));
+                }
             }
         }
 

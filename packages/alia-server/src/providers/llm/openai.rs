@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::{LlmProfileKind, LlmRequestOptionsSection, OpenAiApiFamily, ServerConfig};
+use crate::config::{
+    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, OpenAiApiFamily, ServerConfig,
+};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
@@ -237,6 +239,7 @@ pub struct OpenAiLlm {
 
 #[derive(Debug, Clone)]
 struct OpenAiConfig {
+    provider_id: String,
     api_key: String,
     base_url: String,
     model: String,
@@ -255,6 +258,7 @@ impl OpenAiLlm {
             client: Client::new(),
             profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(OpenAiConfig {
+                provider_id: "openai".to_string(),
                 api_key: String::new(),
                 base_url: "https://api.openai.com/v1".to_string(),
                 model: "gpt-4o".to_string(),
@@ -379,20 +383,30 @@ impl ModuleLifecycle for OpenAiLlm {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
         let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.provider != "openai" || profile.kind != LlmProfileKind::Chat {
+        if profile.kind != LlmProfileKind::Chat {
             anyhow::bail!(
                 "LLM profile '{}' is not an OpenAI chat profile",
                 self.profile_id
             );
         }
+        let LlmProviderProfileRef::OpenAi(provider) =
+            server_config.llm_provider_profile(&profile.provider)?
+        else {
+            anyhow::bail!(
+                "LLM profile '{}' provider '{}' is not OpenAI-compatible",
+                self.profile_id,
+                profile.provider
+            );
+        };
 
         let mut config = self.config.write().await;
-        config.api_key = server_config.providers.openai.api_key.clone();
-        config.base_url = server_config.providers.openai.base_url.clone();
+        config.provider_id = profile.provider.clone();
+        config.api_key = provider.api_key.clone();
+        config.base_url = provider.base_url.clone();
         config.model = profile.model.clone();
-        config.api_family = server_config.providers.openai.api_family;
+        config.api_family = provider.api_family;
         config.request = profile.request.clone();
-        config.health_probe_enabled = server_config.providers.openai.health_probe_enabled;
+        config.health_probe_enabled = provider.health_probe_enabled;
 
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured");
@@ -400,6 +414,7 @@ impl ModuleLifecycle for OpenAiLlm {
 
         tracing::info!(
             profile = %self.profile_id,
+            provider = %config.provider_id,
             model = %config.model,
             base_url = %config.base_url,
             "OpenAI LLM initialized"
@@ -442,13 +457,33 @@ impl ModuleLifecycle for OpenAiLlm {
         let mut applied = Vec::new();
         let mut config = self.config.write().await;
 
-        if let Some(value) = string_setting(updates, "core.providers.openai.api_key") {
+        let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
+        let legacy_api_key = "core.providers.openai.api_key";
+        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
+            (config.provider_id == "openai")
+                .then(|| string_setting(updates, legacy_api_key))
+                .flatten()
+        }) {
             config.api_key = value;
-            applied.push("core.providers.openai.api_key".to_string());
+            applied.push(if updates.contains_key(&provider_api_key) {
+                provider_api_key
+            } else {
+                legacy_api_key.to_string()
+            });
         }
-        if let Some(value) = string_setting(updates, "core.providers.openai.base_url") {
+        let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
+        let legacy_base_url = "core.providers.openai.base_url";
+        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
+            (config.provider_id == "openai")
+                .then(|| string_setting(updates, legacy_base_url))
+                .flatten()
+        }) {
             config.base_url = value;
-            applied.push("core.providers.openai.base_url".to_string());
+            applied.push(if updates.contains_key(&provider_base_url) {
+                provider_base_url
+            } else {
+                legacy_base_url.to_string()
+            });
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {
@@ -470,12 +505,22 @@ impl ModuleLifecycle for OpenAiLlm {
             config.request.top_p = Some(value);
             applied.push(top_p_key);
         }
-        if let Some(value) = string_setting(updates, "core.providers.openai.api_family") {
+        let provider_api_family = format!("core.providers.llm.{}.api_family", config.provider_id);
+        let legacy_api_family = "core.providers.openai.api_family";
+        if let Some(value) = string_setting(updates, &provider_api_family).or_else(|| {
+            (config.provider_id == "openai")
+                .then(|| string_setting(updates, legacy_api_family))
+                .flatten()
+        }) {
             config.api_family = match value.as_str() {
                 "responses" => OpenAiApiFamily::Responses,
                 _ => OpenAiApiFamily::ChatCompletions,
             };
-            applied.push("core.providers.openai.api_family".to_string());
+            applied.push(if updates.contains_key(&provider_api_family) {
+                provider_api_family
+            } else {
+                legacy_api_family.to_string()
+            });
         }
 
         if !applied.is_empty() {

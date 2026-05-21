@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::sync::RwLock;
 
-use crate::config::{LlmProfileKind, LlmRequestOptionsSection, ServerConfig};
+use crate::config::{
+    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, ServerConfig,
+};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
@@ -132,6 +134,7 @@ pub struct GeminiLlm {
 
 #[derive(Debug, Clone)]
 struct GeminiConfig {
+    provider_id: String,
     api_key: String,
     base_url: String,
     model: String,
@@ -149,6 +152,7 @@ impl GeminiLlm {
             client: Client::new(),
             profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(GeminiConfig {
+                provider_id: "gemini".to_string(),
                 api_key: String::new(),
                 base_url: "https://generativelanguage.googleapis.com/v1beta".to_string(),
                 model: "gemini-2.5-flash".to_string(),
@@ -257,23 +261,34 @@ impl ModuleLifecycle for GeminiLlm {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
         let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.provider != "gemini" || profile.kind != LlmProfileKind::Chat {
+        if profile.kind != LlmProfileKind::Chat {
             anyhow::bail!(
                 "LLM profile '{}' is not a Gemini chat profile",
                 self.profile_id
             );
         }
+        let LlmProviderProfileRef::Gemini(provider) =
+            server_config.llm_provider_profile(&profile.provider)?
+        else {
+            anyhow::bail!(
+                "LLM profile '{}' provider '{}' is not a Gemini provider",
+                self.profile_id,
+                profile.provider
+            );
+        };
         let mut config = self.config.write().await;
-        config.api_key = server_config.providers.gemini.api_key.clone();
-        config.base_url = server_config.providers.gemini.base_url.clone();
+        config.provider_id = profile.provider.clone();
+        config.api_key = provider.api_key.clone();
+        config.base_url = provider.base_url.clone();
         config.model = profile.model.clone();
         config.request = profile.request.clone();
-        config.health_probe_enabled = server_config.providers.gemini.health_probe_enabled;
+        config.health_probe_enabled = provider.health_probe_enabled;
         if config.api_key.is_empty() {
             tracing::warn!("Gemini API key not configured");
         }
         tracing::info!(
             profile = %self.profile_id,
+            provider = %config.provider_id,
             model = %config.model,
             base_url = %config.base_url,
             "Gemini LLM initialized"
@@ -316,13 +331,33 @@ impl ModuleLifecycle for GeminiLlm {
         let mut applied = Vec::new();
         let mut config = self.config.write().await;
 
-        if let Some(value) = string_setting(updates, "core.providers.gemini.api_key") {
+        let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
+        let legacy_api_key = "core.providers.gemini.api_key";
+        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
+            (config.provider_id == "gemini")
+                .then(|| string_setting(updates, legacy_api_key))
+                .flatten()
+        }) {
             config.api_key = value;
-            applied.push("core.providers.gemini.api_key".to_string());
+            applied.push(if updates.contains_key(&provider_api_key) {
+                provider_api_key
+            } else {
+                legacy_api_key.to_string()
+            });
         }
-        if let Some(value) = string_setting(updates, "core.providers.gemini.base_url") {
+        let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
+        let legacy_base_url = "core.providers.gemini.base_url";
+        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
+            (config.provider_id == "gemini")
+                .then(|| string_setting(updates, legacy_base_url))
+                .flatten()
+        }) {
             config.base_url = value;
-            applied.push("core.providers.gemini.base_url".to_string());
+            applied.push(if updates.contains_key(&provider_base_url) {
+                provider_base_url
+            } else {
+                legacy_base_url.to_string()
+            });
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {

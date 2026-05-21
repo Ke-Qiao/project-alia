@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use alia_server::config::{
-    LlmProfileKind, MemoryCaptureMode, ServerConfig, load_config_with_fragments,
+    LlmProfileKind, LlmProviderProfileRef, MemoryCaptureMode, ServerConfig,
+    load_config_with_fragments,
 };
 
 #[test]
@@ -81,9 +82,15 @@ fn parses_split_example_config() {
     assert_eq!(minor_llm.kind, LlmProfileKind::Chat);
     assert_eq!(minor_llm.request.temperature, 0.4);
     let major_llm = config.profiles.llm_profile("major").unwrap();
-    assert_eq!(major_llm.provider, "openai");
+    assert_eq!(major_llm.provider, "local_openai");
     assert_eq!(major_llm.model, "qwen2.5-7b-instruct");
     assert_eq!(major_llm.request.max_output_tokens, 4096);
+    let LlmProviderProfileRef::OpenAi(local_openai) =
+        config.llm_provider_profile("local_openai").unwrap()
+    else {
+        panic!("local_openai should be OpenAI-compatible");
+    };
+    assert_eq!(local_openai.base_url, "http://127.0.0.1:1234/v1");
     let embedding = config.profiles.llm_profile("embedding").unwrap();
     assert_eq!(embedding.provider, "openai");
     assert_eq!(embedding.kind, LlmProfileKind::Embedding);

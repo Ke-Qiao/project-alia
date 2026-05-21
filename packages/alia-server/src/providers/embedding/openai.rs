@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::{LlmProfileKind, ServerConfig};
+use crate::config::{LlmProfileKind, LlmProviderProfileRef, ServerConfig};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::EmbeddingAdapter;
 use crate::settings::values::{string_setting, usize_setting};
@@ -46,6 +46,7 @@ pub struct OpenAiEmbedding {
 
 #[derive(Debug, Clone)]
 struct OpenAiEmbedConfig {
+    provider_id: String,
     api_key: String,
     base_url: String,
     model: String,
@@ -62,6 +63,7 @@ impl OpenAiEmbedding {
             client: Client::new(),
             profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(OpenAiEmbedConfig {
+                provider_id: "openai".to_string(),
                 api_key: String::new(),
                 base_url: "https://api.openai.com/v1".to_string(),
                 model: "text-embedding-3-small".to_string(),
@@ -95,16 +97,26 @@ impl ModuleLifecycle for OpenAiEmbedding {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
         let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.provider != "openai" || profile.kind != LlmProfileKind::Embedding {
+        if profile.kind != LlmProfileKind::Embedding {
             anyhow::bail!(
                 "LLM profile '{}' is not an OpenAI embedding profile",
                 self.profile_id
             );
         }
+        let LlmProviderProfileRef::OpenAi(provider) =
+            server_config.llm_provider_profile(&profile.provider)?
+        else {
+            anyhow::bail!(
+                "LLM profile '{}' provider '{}' is not OpenAI-compatible",
+                self.profile_id,
+                profile.provider
+            );
+        };
 
         let mut config = self.config.write().await;
-        config.api_key = server_config.providers.openai.api_key.clone();
-        config.base_url = server_config.providers.openai.base_url.clone();
+        config.provider_id = profile.provider.clone();
+        config.api_key = provider.api_key.clone();
+        config.base_url = provider.base_url.clone();
         config.model = profile.model.clone();
         config.dimension = profile
             .dimensions
@@ -116,6 +128,7 @@ impl ModuleLifecycle for OpenAiEmbedding {
 
         tracing::info!(
             profile = %self.profile_id,
+            provider = %config.provider_id,
             model = %config.model,
             dimension = config.dimension,
             "OpenAI Embedding initialized"
@@ -139,13 +152,33 @@ impl ModuleLifecycle for OpenAiEmbedding {
         let mut applied = Vec::new();
         let mut config = self.config.write().await;
 
-        if let Some(value) = string_setting(updates, "core.providers.openai.api_key") {
+        let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
+        let legacy_api_key = "core.providers.openai.api_key";
+        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
+            (config.provider_id == "openai")
+                .then(|| string_setting(updates, legacy_api_key))
+                .flatten()
+        }) {
             config.api_key = value;
-            applied.push("core.providers.openai.api_key".to_string());
+            applied.push(if updates.contains_key(&provider_api_key) {
+                provider_api_key
+            } else {
+                legacy_api_key.to_string()
+            });
         }
-        if let Some(value) = string_setting(updates, "core.providers.openai.base_url") {
+        let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
+        let legacy_base_url = "core.providers.openai.base_url";
+        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
+            (config.provider_id == "openai")
+                .then(|| string_setting(updates, legacy_base_url))
+                .flatten()
+        }) {
             config.base_url = value;
-            applied.push("core.providers.openai.base_url".to_string());
+            applied.push(if updates.contains_key(&provider_base_url) {
+                provider_base_url
+            } else {
+                legacy_base_url.to_string()
+            });
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {

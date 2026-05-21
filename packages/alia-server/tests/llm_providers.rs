@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use alia_server::config::{
-    LlmProfileKind, LlmProfileSection, LlmRequestOptionsSection, ServerConfig,
+    LlmProfileKind, LlmProfileSection, LlmProviderProfileRef, LlmProviderProfileSection,
+    LlmRequestOptionsSection, OpenAiApiFamily, OpenAiProviderSection, ServerConfig,
 };
 use alia_server::module::factory::{create_embedding, create_llm};
 
@@ -60,6 +61,37 @@ fn missing_llm_profile_returns_error() {
     let config = test_config();
 
     assert!(create_llm(&config, "missing_profile").is_err());
+}
+
+#[test]
+fn llm_profiles_can_reference_named_provider_profiles() {
+    let mut config = test_config();
+    config.providers.llm.insert(
+        "openrouter".to_string(),
+        LlmProviderProfileSection::OpenAi(OpenAiProviderSection {
+            api_key: "test-openrouter-key".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            api_family: OpenAiApiFamily::ChatCompletions,
+            health_probe_enabled: false,
+        }),
+    );
+    insert_llm_profile(
+        &mut config,
+        "openrouter_major",
+        "openrouter",
+        LlmProfileKind::Chat,
+    );
+
+    assert_eq!(
+        create_llm(&config, "openrouter_major").unwrap().name(),
+        "openai"
+    );
+    let LlmProviderProfileRef::OpenAi(provider) =
+        config.llm_provider_profile("openrouter").unwrap()
+    else {
+        panic!("openrouter should resolve to an OpenAI-compatible provider profile");
+    };
+    assert_eq!(provider.base_url, "https://openrouter.ai/api/v1");
 }
 
 fn test_config() -> ServerConfig {

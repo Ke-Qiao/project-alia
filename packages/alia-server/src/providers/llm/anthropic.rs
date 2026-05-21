@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::{LlmProfileKind, LlmRequestOptionsSection, ServerConfig};
+use crate::config::{
+    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, ServerConfig,
+};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
@@ -95,6 +97,7 @@ pub struct AnthropicLlm {
 
 #[derive(Debug, Clone)]
 struct AnthropicConfig {
+    provider_id: String,
     api_key: String,
     base_url: String,
     model: String,
@@ -113,6 +116,7 @@ impl AnthropicLlm {
             client: Client::new(),
             profile_id: profile_id.into(),
             config: Arc::new(RwLock::new(AnthropicConfig {
+                provider_id: "anthropic".to_string(),
                 api_key: String::new(),
                 base_url: "https://api.anthropic.com/v1".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
@@ -238,24 +242,35 @@ impl ModuleLifecycle for AnthropicLlm {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         let server_config: &ServerConfig = &ctx.config;
         let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.provider != "anthropic" || profile.kind != LlmProfileKind::Chat {
+        if profile.kind != LlmProfileKind::Chat {
             anyhow::bail!(
                 "LLM profile '{}' is not an Anthropic chat profile",
                 self.profile_id
             );
         }
+        let LlmProviderProfileRef::Anthropic(provider) =
+            server_config.llm_provider_profile(&profile.provider)?
+        else {
+            anyhow::bail!(
+                "LLM profile '{}' provider '{}' is not an Anthropic provider",
+                self.profile_id,
+                profile.provider
+            );
+        };
         let mut config = self.config.write().await;
-        config.api_key = server_config.providers.anthropic.api_key.clone();
-        config.base_url = server_config.providers.anthropic.base_url.clone();
+        config.provider_id = profile.provider.clone();
+        config.api_key = provider.api_key.clone();
+        config.base_url = provider.base_url.clone();
         config.model = profile.model.clone();
-        config.version = server_config.providers.anthropic.version.clone();
+        config.version = provider.version.clone();
         config.request = profile.request.clone();
-        config.health_probe_enabled = server_config.providers.anthropic.health_probe_enabled;
+        config.health_probe_enabled = provider.health_probe_enabled;
         if config.api_key.is_empty() {
             tracing::warn!("Anthropic API key not configured");
         }
         tracing::info!(
             profile = %self.profile_id,
+            provider = %config.provider_id,
             model = %config.model,
             base_url = %config.base_url,
             "Anthropic LLM initialized"
@@ -283,22 +298,52 @@ impl ModuleLifecycle for AnthropicLlm {
         let mut applied = Vec::new();
         let mut config = self.config.write().await;
 
-        if let Some(value) = string_setting(updates, "core.providers.anthropic.api_key") {
+        let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
+        let legacy_api_key = "core.providers.anthropic.api_key";
+        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
+            (config.provider_id == "anthropic")
+                .then(|| string_setting(updates, legacy_api_key))
+                .flatten()
+        }) {
             config.api_key = value;
-            applied.push("core.providers.anthropic.api_key".to_string());
+            applied.push(if updates.contains_key(&provider_api_key) {
+                provider_api_key
+            } else {
+                legacy_api_key.to_string()
+            });
         }
-        if let Some(value) = string_setting(updates, "core.providers.anthropic.base_url") {
+        let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
+        let legacy_base_url = "core.providers.anthropic.base_url";
+        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
+            (config.provider_id == "anthropic")
+                .then(|| string_setting(updates, legacy_base_url))
+                .flatten()
+        }) {
             config.base_url = value;
-            applied.push("core.providers.anthropic.base_url".to_string());
+            applied.push(if updates.contains_key(&provider_base_url) {
+                provider_base_url
+            } else {
+                legacy_base_url.to_string()
+            });
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {
             config.model = value;
             applied.push(model_key);
         }
-        if let Some(value) = string_setting(updates, "core.providers.anthropic.version") {
+        let provider_version = format!("core.providers.llm.{}.version", config.provider_id);
+        let legacy_version = "core.providers.anthropic.version";
+        if let Some(value) = string_setting(updates, &provider_version).or_else(|| {
+            (config.provider_id == "anthropic")
+                .then(|| string_setting(updates, legacy_version))
+                .flatten()
+        }) {
             config.version = value;
-            applied.push("core.providers.anthropic.version".to_string());
+            applied.push(if updates.contains_key(&provider_version) {
+                provider_version
+            } else {
+                legacy_version.to_string()
+            });
         }
         let max_tokens_key = format!("core.profiles.llm.{}.max_output_tokens", self.profile_id);
         if let Some(value) = u64_setting(updates, &max_tokens_key) {

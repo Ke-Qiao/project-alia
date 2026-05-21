@@ -8,7 +8,7 @@ use crate::channels::dialogue_control_tool::EndContinuousDialogueTool;
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, LlmProfileKind, MemorySection, ServerConfig};
+use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderKind, MemorySection, ServerConfig};
 use crate::event::EventBus;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
@@ -52,32 +52,81 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
     if profile.kind != LlmProfileKind::Chat {
         anyhow::bail!("LLM profile '{profile_id}' is not a chat profile");
     }
-    match profile.provider.as_str() {
-        #[cfg(feature = "llm-openai")]
-        "openai" => {
-            tracing::info!(profile = profile_id, "creating LLM adapter (OpenAI)");
-            Ok(Box::new(OpenAiLlm::for_profile(profile_id)))
-        }
-        #[cfg(feature = "llm-anthropic")]
-        "anthropic" => {
-            tracing::info!(profile = profile_id, "creating LLM adapter (Anthropic)");
-            Ok(Box::new(AnthropicLlm::for_profile(profile_id)))
-        }
-        #[cfg(feature = "llm-gemini")]
-        "gemini" => {
-            tracing::info!(profile = profile_id, "creating LLM adapter (Gemini)");
-            Ok(Box::new(GeminiLlm::for_profile(profile_id)))
-        }
-        "noop" => {
-            tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
-            Ok(Box::new(NoopLlm))
-        }
-        _ => {
+    let provider = match config.llm_provider_profile(&profile.provider) {
+        Ok(provider) => provider,
+        Err(error) => {
             tracing::warn!(
                 profile = profile_id,
                 provider = %profile.provider,
-                "unknown LLM adapter, using noop"
+                error = %error,
+                "unknown LLM provider profile, using noop"
             );
+            return Ok(Box::new(NoopLlm));
+        }
+    };
+    match provider.kind() {
+        LlmProviderKind::OpenAi => {
+            #[cfg(feature = "llm-openai")]
+            {
+                tracing::info!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "creating LLM adapter (OpenAI)"
+                );
+                Ok(Box::new(OpenAiLlm::for_profile(profile_id)))
+            }
+            #[cfg(not(feature = "llm-openai"))]
+            {
+                tracing::warn!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "OpenAI LLM feature disabled, using noop"
+                );
+                Ok(Box::new(NoopLlm))
+            }
+        }
+        LlmProviderKind::Anthropic => {
+            #[cfg(feature = "llm-anthropic")]
+            {
+                tracing::info!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "creating LLM adapter (Anthropic)"
+                );
+                Ok(Box::new(AnthropicLlm::for_profile(profile_id)))
+            }
+            #[cfg(not(feature = "llm-anthropic"))]
+            {
+                tracing::warn!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "Anthropic LLM feature disabled, using noop"
+                );
+                Ok(Box::new(NoopLlm))
+            }
+        }
+        LlmProviderKind::Gemini => {
+            #[cfg(feature = "llm-gemini")]
+            {
+                tracing::info!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "creating LLM adapter (Gemini)"
+                );
+                Ok(Box::new(GeminiLlm::for_profile(profile_id)))
+            }
+            #[cfg(not(feature = "llm-gemini"))]
+            {
+                tracing::warn!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "Gemini LLM feature disabled, using noop"
+                );
+                Ok(Box::new(NoopLlm))
+            }
+        }
+        LlmProviderKind::Noop => {
+            tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
             Ok(Box::new(NoopLlm))
         }
     }
@@ -131,17 +180,44 @@ pub fn create_embedding(
     if profile.kind != LlmProfileKind::Embedding {
         anyhow::bail!("LLM profile '{profile_id}' is not an embedding profile");
     }
-    match profile.provider.as_str() {
-        #[cfg(feature = "embed-openai")]
-        "openai" => {
-            tracing::info!(profile = profile_id, "creating embedding adapter (OpenAI)");
-            Ok(Box::new(OpenAiEmbedding::for_profile(profile_id)))
+    let provider = match config.llm_provider_profile(&profile.provider) {
+        Ok(provider) => provider,
+        Err(error) => {
+            tracing::warn!(
+                profile = profile_id,
+                provider = %profile.provider,
+                error = %error,
+                "unknown embedding provider profile, using noop"
+            );
+            return Ok(Box::new(NoopEmbedding));
         }
-        "noop" => {
+    };
+    match provider.kind() {
+        LlmProviderKind::OpenAi => {
+            #[cfg(feature = "embed-openai")]
+            {
+                tracing::info!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "creating embedding adapter (OpenAI)"
+                );
+                Ok(Box::new(OpenAiEmbedding::for_profile(profile_id)))
+            }
+            #[cfg(not(feature = "embed-openai"))]
+            {
+                tracing::warn!(
+                    profile = profile_id,
+                    provider = %profile.provider,
+                    "OpenAI embedding feature disabled, using noop"
+                );
+                Ok(Box::new(NoopEmbedding))
+            }
+        }
+        LlmProviderKind::Noop => {
             tracing::info!(profile = profile_id, "creating embedding adapter (noop)");
             Ok(Box::new(NoopEmbedding))
         }
-        _ => {
+        LlmProviderKind::Anthropic | LlmProviderKind::Gemini => {
             tracing::warn!(
                 profile = profile_id,
                 provider = %profile.provider,

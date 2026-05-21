@@ -1,4 +1,16 @@
 [providers.openai]
+# Legacy/default OpenAI-compatible provider profile. LLM profiles can reference
+# this with `provider = "openai"`.
+api_key = ""
+base_url = "https://api.openai.com/v1"
+api_family = "chat_completions"
+health_probe_enabled = false
+
+[providers.llm.local_openai]
+# Named provider profile using the OpenAI-compatible API. This can point to a
+# local server, OpenRouter, vLLM, etc. LLM profiles reference it with
+# `provider = "local_openai"`.
+type = "openai"
 api_key = ""
 base_url = "http://127.0.0.1:1234/v1"
 api_family = "chat_completions"

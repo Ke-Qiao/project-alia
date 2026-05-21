@@ -10,7 +10,7 @@ tool_choice = "auto"
 json_mode = false
 
 [profiles.llm.major]
-provider = "openai"
+provider = "local_openai"
 kind = "chat"
 model = "qwen2.5-7b-instruct"
 max_output_tokens = 4096

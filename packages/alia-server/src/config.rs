@@ -215,6 +215,11 @@ fn default_embedding_profile() -> String {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProvidersSection {
+    /// Named LLM provider profiles. LLM profiles reference these IDs via
+    /// `profiles.llm.<id>.provider`, allowing multiple endpoints with the same
+    /// API family, e.g. OpenAI plus an OpenAI-compatible gateway.
+    #[serde(default)]
+    pub llm: BTreeMap<String, LlmProviderProfileSection>,
     #[serde(default)]
     pub openai: OpenAiProviderSection,
     #[serde(default)]
@@ -225,6 +230,65 @@ pub struct ProvidersSection {
     pub whisper_cpp: WhisperCppProviderSection,
     #[serde(default)]
     pub gpt_sovits: GptSovitsProviderSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LlmProviderProfileSection {
+    #[serde(rename = "openai")]
+    OpenAi(OpenAiProviderSection),
+    Anthropic(AnthropicProviderSection),
+    Gemini(GeminiProviderSection),
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmProviderKind {
+    OpenAi,
+    Anthropic,
+    Gemini,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LlmProviderProfileRef<'a> {
+    OpenAi(&'a OpenAiProviderSection),
+    Anthropic(&'a AnthropicProviderSection),
+    Gemini(&'a GeminiProviderSection),
+    Noop,
+}
+
+impl LlmProviderProfileSection {
+    pub fn kind(&self) -> LlmProviderKind {
+        match self {
+            LlmProviderProfileSection::OpenAi(_) => LlmProviderKind::OpenAi,
+            LlmProviderProfileSection::Anthropic(_) => LlmProviderKind::Anthropic,
+            LlmProviderProfileSection::Gemini(_) => LlmProviderKind::Gemini,
+            LlmProviderProfileSection::Noop => LlmProviderKind::Noop,
+        }
+    }
+
+    pub fn as_ref(&self) -> LlmProviderProfileRef<'_> {
+        match self {
+            LlmProviderProfileSection::OpenAi(provider) => LlmProviderProfileRef::OpenAi(provider),
+            LlmProviderProfileSection::Anthropic(provider) => {
+                LlmProviderProfileRef::Anthropic(provider)
+            }
+            LlmProviderProfileSection::Gemini(provider) => LlmProviderProfileRef::Gemini(provider),
+            LlmProviderProfileSection::Noop => LlmProviderProfileRef::Noop,
+        }
+    }
+}
+
+impl LlmProviderProfileRef<'_> {
+    pub fn kind(self) -> LlmProviderKind {
+        match self {
+            LlmProviderProfileRef::OpenAi(_) => LlmProviderKind::OpenAi,
+            LlmProviderProfileRef::Anthropic(_) => LlmProviderKind::Anthropic,
+            LlmProviderProfileRef::Gemini(_) => LlmProviderKind::Gemini,
+            LlmProviderProfileRef::Noop => LlmProviderKind::Noop,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1944,6 +2008,20 @@ fn default_tool_indexed_search_min_similarity() -> f32 {
 }
 
 impl ServerConfig {
+    pub fn llm_provider_profile(&self, id: &str) -> anyhow::Result<LlmProviderProfileRef<'_>> {
+        if let Some(provider) = self.providers.llm.get(id) {
+            return Ok(provider.as_ref());
+        }
+
+        match id {
+            "openai" => Ok(LlmProviderProfileRef::OpenAi(&self.providers.openai)),
+            "anthropic" => Ok(LlmProviderProfileRef::Anthropic(&self.providers.anthropic)),
+            "gemini" => Ok(LlmProviderProfileRef::Gemini(&self.providers.gemini)),
+            "noop" => Ok(LlmProviderProfileRef::Noop),
+            _ => anyhow::bail!("LLM provider profile '{id}' is not configured"),
+        }
+    }
+
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let config_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -1961,12 +2039,33 @@ impl ServerConfig {
         }
         if let Ok(key) = std::env::var("OPENAI_API_KEY") {
             config.providers.openai.api_key = key;
+            for provider in config.providers.llm.values_mut() {
+                if let LlmProviderProfileSection::OpenAi(provider) = provider
+                    && provider.api_key.trim().is_empty()
+                {
+                    provider.api_key = config.providers.openai.api_key.clone();
+                }
+            }
         }
         if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
             config.providers.anthropic.api_key = key;
+            for provider in config.providers.llm.values_mut() {
+                if let LlmProviderProfileSection::Anthropic(provider) = provider
+                    && provider.api_key.trim().is_empty()
+                {
+                    provider.api_key = config.providers.anthropic.api_key.clone();
+                }
+            }
         }
         if let Ok(key) = std::env::var("GEMINI_API_KEY") {
             config.providers.gemini.api_key = key;
+            for provider in config.providers.llm.values_mut() {
+                if let LlmProviderProfileSection::Gemini(provider) = provider
+                    && provider.api_key.trim().is_empty()
+                {
+                    provider.api_key = config.providers.gemini.api_key.clone();
+                }
+            }
         }
         if config.auth.server_keypair_path.is_relative() {
             config.auth.server_keypair_path =
