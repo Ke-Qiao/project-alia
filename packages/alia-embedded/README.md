@@ -74,6 +74,9 @@ app writes JSON credentials to characteristic
 `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f3` and reads status from
 `3d4d5f9a-d0b9-4a7f-9f47-9d6cc7b5b4f2`. The embedded process applies Wi-Fi via
 NetworkManager `nmcli`, so credentials are not stored in `embedded.toml`.
+The BLE advertisement intentionally stays small and only advertises the Alia
+service UUID; full device metadata remains in mDNS and GATT because many Pi
+controllers still reject legacy advertising payloads above 31 bytes.
 
 On a Pi that cannot start BlueZ or advertise BLE, verify the OS layer first:
 

@@ -117,7 +117,10 @@ impl MdnsDiscovery {
     async fn update_ble(&self) {
         if let Some(ble) = &self.ble {
             if let Err(error) = ble.reannounce().await {
-                tracing::warn!(error = %error, "failed to refresh auxiliary BLE beacon");
+                tracing::warn!(
+                    error = %format!("{error:#}"),
+                    "failed to refresh auxiliary BLE beacon"
+                );
             }
         }
     }
@@ -304,16 +307,10 @@ impl BleAdvertiser {
 
     #[cfg(target_os = "linux")]
     async fn build_advertisement(&self) -> Result<bluer::adv::Advertisement> {
-        let device_info = self.device_info.read().await.clone();
-        let metadata = self.metadata.read().await.clone();
         let service_uuid = uuid::Uuid::parse_str(BLE_SERVICE_UUID).context("parsing BLE UUID")?;
 
-        let payload = encode_ble_payload(&device_info, &metadata);
         let mut service_uuids = BTreeSet::new();
         service_uuids.insert(service_uuid);
-
-        let mut service_data = BTreeMap::new();
-        service_data.insert(service_uuid, payload);
 
         let timeout = (self.config.ble_provision_timeout_sec > 0)
             .then(|| Duration::from_secs(self.config.ble_provision_timeout_sec));
@@ -321,9 +318,7 @@ impl BleAdvertiser {
         Ok(bluer::adv::Advertisement {
             advertisement_type: bluer::adv::Type::Peripheral,
             service_uuids,
-            service_data,
             discoverable: Some(true),
-            local_name: Some(self.identity.device_name.clone()),
             timeout,
             ..Default::default()
         })
