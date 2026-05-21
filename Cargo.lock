@@ -36,6 +36,8 @@ dependencies = [
  "alia-transport",
  "alsa",
  "anyhow",
+ "async-stream",
+ "axum",
  "bluer",
  "chrono",
  "cpal",
