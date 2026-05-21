@@ -21,6 +21,8 @@ pub struct ServerConfig {
     pub profiles: ProfilesSection,
     #[serde(default)]
     pub resources: ResourcesSection,
+    #[serde(default)]
+    pub plugins: PluginsSection,
 
     /// Directory where the base config file lives — set automatically by `load()`.
     /// Used to resolve relative paths in config fragments (skills_dir, etc.).
@@ -223,6 +225,53 @@ pub struct ProvidersSection {
     pub whisper_cpp: WhisperCppProviderSection,
     #[serde(default)]
     pub gpt_sovits: GptSovitsProviderSection,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PluginsSection {
+    #[serde(default)]
+    pub home_assistant: HomeAssistantPluginSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HomeAssistantPluginSection {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub access_token: String,
+    #[serde(default = "default_home_assistant_token_env")]
+    pub token_env: String,
+    #[serde(default = "default_home_assistant_cache_ttl")]
+    pub cache_ttl_sec: u64,
+    #[serde(default = "default_home_assistant_timeout")]
+    pub request_timeout_sec: u64,
+}
+
+impl Default for HomeAssistantPluginSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            access_token: String::new(),
+            token_env: default_home_assistant_token_env(),
+            cache_ttl_sec: default_home_assistant_cache_ttl(),
+            request_timeout_sec: default_home_assistant_timeout(),
+        }
+    }
+}
+
+fn default_home_assistant_token_env() -> String {
+    "HOME_ASSISTANT_TOKEN".to_string()
+}
+
+fn default_home_assistant_cache_ttl() -> u64 {
+    300
+}
+
+fn default_home_assistant_timeout() -> u64 {
+    10
 }
 
 #[derive(Debug, Clone, Deserialize)]

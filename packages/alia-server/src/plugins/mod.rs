@@ -1,4 +1,6 @@
 pub mod context;
+#[cfg(feature = "plugin-home-assistant")]
+pub mod home_assistant;
 pub mod manifest;
 pub mod storage;
 

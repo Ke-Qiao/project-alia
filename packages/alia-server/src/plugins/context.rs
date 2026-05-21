@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use crate::providers::adapter::ToolRegistry;
 
 use super::storage::PluginStorage;
@@ -16,6 +18,7 @@ pub struct PluginToolContext {
     pub tools: Arc<dyn ToolRegistry>,
 }
 
+#[async_trait]
 pub trait CompiledToolPlugin: Send + Sync {
     fn name(&self) -> &'static str;
 
@@ -23,5 +26,5 @@ pub trait CompiledToolPlugin: Send + Sync {
         crate::plugins::PluginStorageManifest::default()
     }
 
-    fn register(&self, ctx: PluginToolContext) -> anyhow::Result<()>;
+    async fn register(&self, ctx: PluginToolContext) -> anyhow::Result<()>;
 }

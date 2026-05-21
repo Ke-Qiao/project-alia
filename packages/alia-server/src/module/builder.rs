@@ -16,6 +16,8 @@ use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
 use crate::plugins::PluginStorageService;
+#[cfg(feature = "plugin-home-assistant")]
+use crate::plugins::home_assistant::HomeAssistantPlugin;
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
     SchedulerBackend, SttAdapter, ToolRegistry, TtsAdapter,
@@ -413,7 +415,23 @@ impl ServerBuilder {
 
         // Initialize extensions
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
-        for mut ext in self.extensions {
+        #[cfg(feature = "plugin-home-assistant")]
+        let mut configured_extensions = self.extensions;
+        #[cfg(not(feature = "plugin-home-assistant"))]
+        let configured_extensions = self.extensions;
+
+        #[cfg(feature = "plugin-home-assistant")]
+        if self.config.plugins.home_assistant.enabled {
+            configured_extensions.push(Box::new(HomeAssistantPlugin::new()));
+        }
+        #[cfg(not(feature = "plugin-home-assistant"))]
+        if self.config.plugins.home_assistant.enabled {
+            tracing::warn!(
+                "home_assistant plugin is enabled in config but the plugin-home-assistant feature is disabled"
+            );
+        }
+
+        for mut ext in configured_extensions {
             let name = ext.name();
             if let Err(error) = ext.init(&ctx).await {
                 tracing::warn!(

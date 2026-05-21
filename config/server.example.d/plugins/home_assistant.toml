@@ -1,0 +1,11 @@
+[plugins.home_assistant]
+enabled = false
+endpoint = "http://homeassistant.local:8123"
+
+# Prefer HOME_ASSISTANT_TOKEN for the long-lived access token. `access_token`
+# exists for local demos only; plugin storage never persists the token value.
+access_token = ""
+token_env = "HOME_ASSISTANT_TOKEN"
+
+cache_ttl_sec = 300
+request_timeout_sec = 10

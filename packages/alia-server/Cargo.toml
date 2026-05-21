@@ -11,6 +11,7 @@ default = [
     "embed-openai",
     "tools-http",
     "insights",
+    "plugin-home-assistant",
 ]
 
 # Channel adapters
@@ -33,6 +34,9 @@ tools-http = ["dep:reqwest"]
 
 # Insights system
 insights = []
+
+# Demo LLM tool plugins
+plugin-home-assistant = ["dep:reqwest"]
 
 [dependencies]
 alia-proto = { workspace = true, optional = true }
