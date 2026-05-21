@@ -332,32 +332,14 @@ impl ModuleLifecycle for GeminiLlm {
         let mut config = self.config.write().await;
 
         let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
-        let legacy_api_key = "core.providers.gemini.api_key";
-        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
-            (config.provider_id == "gemini")
-                .then(|| string_setting(updates, legacy_api_key))
-                .flatten()
-        }) {
+        if let Some(value) = string_setting(updates, &provider_api_key) {
             config.api_key = value;
-            applied.push(if updates.contains_key(&provider_api_key) {
-                provider_api_key
-            } else {
-                legacy_api_key.to_string()
-            });
+            applied.push(provider_api_key);
         }
         let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
-        let legacy_base_url = "core.providers.gemini.base_url";
-        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
-            (config.provider_id == "gemini")
-                .then(|| string_setting(updates, legacy_base_url))
-                .flatten()
-        }) {
+        if let Some(value) = string_setting(updates, &provider_base_url) {
             config.base_url = value;
-            applied.push(if updates.contains_key(&provider_base_url) {
-                provider_base_url
-            } else {
-                legacy_base_url.to_string()
-            });
+            applied.push(provider_base_url);
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {

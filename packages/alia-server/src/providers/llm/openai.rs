@@ -458,32 +458,14 @@ impl ModuleLifecycle for OpenAiLlm {
         let mut config = self.config.write().await;
 
         let provider_api_key = format!("core.providers.llm.{}.api_key", config.provider_id);
-        let legacy_api_key = "core.providers.openai.api_key";
-        if let Some(value) = string_setting(updates, &provider_api_key).or_else(|| {
-            (config.provider_id == "openai")
-                .then(|| string_setting(updates, legacy_api_key))
-                .flatten()
-        }) {
+        if let Some(value) = string_setting(updates, &provider_api_key) {
             config.api_key = value;
-            applied.push(if updates.contains_key(&provider_api_key) {
-                provider_api_key
-            } else {
-                legacy_api_key.to_string()
-            });
+            applied.push(provider_api_key);
         }
         let provider_base_url = format!("core.providers.llm.{}.base_url", config.provider_id);
-        let legacy_base_url = "core.providers.openai.base_url";
-        if let Some(value) = string_setting(updates, &provider_base_url).or_else(|| {
-            (config.provider_id == "openai")
-                .then(|| string_setting(updates, legacy_base_url))
-                .flatten()
-        }) {
+        if let Some(value) = string_setting(updates, &provider_base_url) {
             config.base_url = value;
-            applied.push(if updates.contains_key(&provider_base_url) {
-                provider_base_url
-            } else {
-                legacy_base_url.to_string()
-            });
+            applied.push(provider_base_url);
         }
         let model_key = format!("core.profiles.llm.{}.model", self.profile_id);
         if let Some(value) = string_setting(updates, &model_key) {
@@ -506,21 +488,12 @@ impl ModuleLifecycle for OpenAiLlm {
             applied.push(top_p_key);
         }
         let provider_api_family = format!("core.providers.llm.{}.api_family", config.provider_id);
-        let legacy_api_family = "core.providers.openai.api_family";
-        if let Some(value) = string_setting(updates, &provider_api_family).or_else(|| {
-            (config.provider_id == "openai")
-                .then(|| string_setting(updates, legacy_api_family))
-                .flatten()
-        }) {
+        if let Some(value) = string_setting(updates, &provider_api_family) {
             config.api_family = match value.as_str() {
                 "responses" => OpenAiApiFamily::Responses,
                 _ => OpenAiApiFamily::ChatCompletions,
             };
-            applied.push(if updates.contains_key(&provider_api_family) {
-                provider_api_family
-            } else {
-                legacy_api_family.to_string()
-            });
+            applied.push(provider_api_family);
         }
 
         if !applied.is_empty() {

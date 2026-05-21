@@ -1,6 +1,5 @@
-[providers.openai]
-# Legacy/default OpenAI-compatible provider profile. LLM profiles can reference
-# this with `provider = "openai"`.
+[providers.llm.openai]
+type = "openai"
 api_key = ""
 base_url = "https://api.openai.com/v1"
 api_family = "chat_completions"

@@ -48,7 +48,7 @@ pub struct SettingSchema {
 ///
 /// Keys use dot-separated namespaces:
 /// - `core.server.port`           — server settings
-/// - `core.providers.openai.api_key` — provider settings
+/// - `core.providers.llm.openai.api_key` — provider settings
 /// - `plugin.zigbee.bridge_host`  — plugin settings
 #[derive(Clone)]
 pub struct SettingsRegistry {
@@ -329,53 +329,6 @@ impl SettingsRegistry {
                 schema("Max Connections", "number", true),
             ),
             // Providers
-            (
-                "core.providers.openai.api_key",
-                json!(config.providers.openai.api_key),
-                schema_secret("OpenAI API Key", false),
-            ),
-            (
-                "core.providers.openai.api_family",
-                json!(match config.providers.openai.api_family {
-                    crate::config::OpenAiApiFamily::ChatCompletions => "chat_completions",
-                    crate::config::OpenAiApiFamily::Responses => "responses",
-                }),
-                schema_select(
-                    "OpenAI API Family",
-                    &["chat_completions", "responses"],
-                    false,
-                ),
-            ),
-            (
-                "core.providers.openai.base_url",
-                json!(config.providers.openai.base_url),
-                schema("OpenAI Base URL", "string", false),
-            ),
-            (
-                "core.providers.anthropic.api_key",
-                json!(config.providers.anthropic.api_key),
-                schema_secret("Anthropic API Key", false),
-            ),
-            (
-                "core.providers.anthropic.base_url",
-                json!(config.providers.anthropic.base_url),
-                schema("Anthropic Base URL", "string", false),
-            ),
-            (
-                "core.providers.anthropic.version",
-                json!(config.providers.anthropic.version),
-                schema("Anthropic API Version", "string", false),
-            ),
-            (
-                "core.providers.gemini.api_key",
-                json!(config.providers.gemini.api_key),
-                schema_secret("Gemini API Key", false),
-            ),
-            (
-                "core.providers.gemini.base_url",
-                json!(config.providers.gemini.base_url),
-                schema("Gemini Base URL", "string", false),
-            ),
             (
                 "core.providers.whisper_cpp.endpoint",
                 json!(config.providers.whisper_cpp.endpoint),

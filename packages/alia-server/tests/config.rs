@@ -24,7 +24,8 @@ fn loads_config_fragments_recursively_in_sorted_order() {
         r#"
 value = "base"
 
-[providers.openai]
+[providers.llm.openai]
+type = "openai"
 base_url = "https://base.example/v1"
 "#,
     )
@@ -48,7 +49,7 @@ model = "gemini-2.5-flash"
     let loaded: toml::Value = loaded.parse().unwrap();
     assert_eq!(loaded["value"].as_str(), Some("plugin"));
     assert_eq!(
-        loaded["providers"]["openai"]["base_url"].as_str(),
+        loaded["providers"]["llm"]["openai"]["base_url"].as_str(),
         Some("https://base.example/v1")
     );
     assert_eq!(
@@ -58,6 +59,48 @@ model = "gemini-2.5-flash"
     assert!(loaded.get("ignored").is_none());
 
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_legacy_top_level_llm_provider_sections() {
+    let err = toml::from_str::<ServerConfig>(
+        r#"
+[server]
+host = "0.0.0.0"
+port = 3000
+log_level = "info"
+
+[database]
+url = "postgres://alia:alia_dev@localhost/alia?sslmode=disable"
+max_connections = 10
+min_connections = 2
+
+[auth]
+jwt_secret = "change-me-in-production"
+server_keypair_path = "server.key"
+jwt_expiry_hours = 24
+refresh_expiry_days = 30
+argon2_memory_kib = 19456
+argon2_iterations = 2
+argon2_parallelism = 1
+
+[modules]
+stt = "whisper_cpp"
+tts = "gpt_sovits"
+
+[providers.openai]
+api_key = ""
+base_url = "https://api.openai.com/v1"
+api_family = "chat_completions"
+health_probe_enabled = false
+"#,
+    )
+    .unwrap_err();
+
+    assert!(
+        err.to_string().contains("unknown field `openai`"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
