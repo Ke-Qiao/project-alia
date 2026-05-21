@@ -21,7 +21,7 @@
         "NSLocalNetworkUsageDescription": "Alia uses the local network to discover and connect to Alia Server.",
         "NSBonjourServices": ["_alia-server._tcp", "_alia-embedded._tcp"]
       },
-      "bundleIdentifier": "com.zerlight.alia"
+      "bundleIdentifier": "cc.zerlight.alia"
     },
     "android": {
       "permissions": [
@@ -39,7 +39,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.zerlight.alia"
+      "package": "cc.zerlight.alia"
     },
     "web": {
       "bundler": "metro",
