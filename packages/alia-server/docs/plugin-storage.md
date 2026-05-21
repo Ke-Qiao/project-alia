@@ -1,24 +1,28 @@
 # Plugin Storage Design
 
-Plugins need durable state, but they should not own the server database schema
-or receive raw database connections. The server stays the persistence authority
-and gives plugins a namespaced storage capability.
+Future LLM tool plugins need durable state, but they should not own the server
+database schema or receive raw database connections. The server stays the
+persistence authority and gives compiled-in tool plugins a namespaced storage
+capability.
+
+Built-in server components are not plugins. Core systems such as embedded
+channels, memory, expression, scheduler, sensors, and rules should keep using
+their own repositories, migrations, and domain tables.
 
 ## Goals
 
-- Keep server core independent from any one plugin.
+- Keep the server core independent from plugin-owned schema.
 - Prevent plugin SQL/schema drift from breaking server migrations.
 - Let plugins store user-scoped state, channel-scoped state, cache entries, and
   small structured documents.
-- Make plugin uninstall/export/retention behavior explicit.
-- Keep tools, skills, sensors, and storage ownership traceable through the same
-  plugin identity.
+- Prepare storage semantics for future plugin lifecycle without implementing
+  dynamic plugin install/start/stop yet.
 
 ## Domain Model
 
 | Concept | Identity | Notes |
 | --- | --- | --- |
-| Plugin | `plugin_name` | Stable manifest name; owns tools, skills, sensors, storage collections. |
+| Plugin | `plugin_name` | Stable compiled-in tool plugin name; owns storage collections. |
 | Collection | `(plugin_name, collection)` | Plugin-declared logical bucket, for example `settings`, `cache`, `devices`. |
 | Record | `(plugin_name, scope, owner_id, collection, key)` | A JSON document with version and timestamps. |
 | Blob | `(plugin_name, blob_id)` | Optional future large binary/object reference, not inline JSON. |
@@ -42,16 +46,21 @@ CREATE TABLE plugin_storage_records (
     collection VARCHAR(100) NOT NULL,
     key VARCHAR(200) NOT NULL,
     scope VARCHAR(30) NOT NULL,
-    owner_id VARCHAR(200),
+    owner_id VARCHAR(200) NOT NULL DEFAULT '',
     value JSONB NOT NULL,
     schema_version INTEGER NOT NULL DEFAULT 1,
     version BIGINT NOT NULL DEFAULT 1,
     ttl_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK ((scope = 'global' AND owner_id = '') OR (scope <> 'global' AND owner_id <> '')),
     UNIQUE (plugin_name, scope, owner_id, collection, key)
 );
 ```
+
+`owner_id` is stored as an empty string for `global` scope so PostgreSQL unique
+constraints cannot be bypassed by multiple `NULL` values. Runtime structs still
+present global records as having no owner.
 
 Recommended indexes:
 
@@ -100,27 +109,34 @@ pub trait PluginStorage: Send + Sync {
 The handle is constructed with `plugin_name`; plugins cannot choose or spoof
 another plugin namespace.
 
-## Manifest Contract
+`alia-server` exposes this through `PluginStorageService`. Compiled-in tool
+plugins receive a `PluginToolContext` containing only their scoped storage handle
+and the shared tool registry. `ModuleContext` carries the service so this stays
+independent from embedded channel support.
 
-Plugin manifests should declare storage use:
+## Static Declaration Contract
 
-```toml
-[[storage.collections]]
-name = "settings"
-scope = ["user", "channel"]
-schema_version = 1
-retention = "retain_on_uninstall"
+First-pass compiled-in plugins should declare storage use in Rust code. The
+shape intentionally mirrors a future manifest, but there is no dynamic plugin
+installer in this phase:
 
-[[storage.collections]]
-name = "cache"
-scope = ["global"]
-schema_version = 1
-retention = "delete_on_uninstall"
-ttl_sec = 86400
+```rust
+PluginStorageManifest {
+    collections: vec![
+        PluginStorageCollection {
+            name: "settings".into(),
+            scope: vec![PluginStorageScopeKind::User],
+            schema_version: 1,
+            retention: PluginStorageRetention::RetainOnUninstall,
+            ttl_sec: None,
+            max_record_bytes: None,
+        },
+    ],
+}
 ```
 
 The server validates collection names, allowed scopes, retention policy, and
-optional JSON schema metadata before the plugin starts.
+record limits before handing storage to the plugin.
 
 ## Security And Boundaries
 
@@ -132,10 +148,12 @@ optional JSON schema metadata before the plugin starts.
 - Enforce size limits per record and per plugin.
 - Record writes should be attributed in audit/debug output when they happen
   during tool execution.
+- Embedded-side plugin management is not part of this server plugin-storage
+  phase.
 
-## Uninstall Behavior
+## Future Uninstall Behavior
 
-Plugin uninstall should:
+When dynamic plugins exist, plugin uninstall should:
 
 1. Stop plugin execution.
 2. Unregister plugin tools, skills, sensors, and other artifacts.
@@ -147,9 +165,10 @@ Plugin uninstall should:
 
 ## Suggested Phases
 
-1. Add `plugin_storage_records` and a `PluginStorage` trait.
-2. Inject a scoped storage handle into plugin runtime contexts.
-3. Add manifest validation for declared collections and scopes.
-4. Add API/admin visibility for plugin storage usage and purge/export.
-5. Add optional blob storage and JSONB query indexes only after concrete plugin
+1. Add `plugin_storage_records` and a `PluginStorage` trait. Done.
+2. Inject a scoped storage handle into compiled-in tool plugin contexts. Done.
+3. Add static declaration validation for declared collections and scopes. Done.
+4. Add API/admin visibility for plugin storage usage and purge/export. Done.
+5. Add dynamic plugin lifecycle only when the project actually needs it.
+6. Add optional blob storage and JSONB query indexes only after concrete plugin
    requirements appear.

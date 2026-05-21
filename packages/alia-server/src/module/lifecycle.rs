@@ -9,6 +9,9 @@ use tokio_util::sync::CancellationToken;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
+use crate::plugins::{
+    PluginStorage, PluginStorageManifest, PluginStorageService, PluginToolContext,
+};
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
     SchedulerBackend, ToolRegistry,
@@ -16,6 +19,7 @@ use crate::providers::adapter::{
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
+use crate::settings::SettingsRegistry;
 
 /// Health status of a module
 #[derive(Debug, Clone)]
@@ -31,8 +35,12 @@ pub struct ModuleContext {
     pub config: Arc<ServerConfig>,
     pub event_bus: EventBus,
     pub cancel_token: CancellationToken,
+    pub settings: SettingsRegistry,
     /// Shared artifact graph for registering ownership/dependencies.
     pub artifacts: Arc<ArtifactRegistry>,
+    /// Server-owned plugin-private document storage. Plugin runtimes should
+    /// request scoped handles from this service instead of using `db`.
+    pub plugin_storage: Arc<PluginStorageService>,
     /// Shared sensor plane. Plugins/components should register and ingest
     /// sensors here so tools, rules, scheduler, and frontend APIs see the same
     /// readings. Plugins that need live tracking can also subscribe to
@@ -66,6 +74,27 @@ pub struct ModuleContext {
     /// Embodied expression runtime. Plugins/components can register appraisal
     /// engines, affect reducers, expression planners, and safety policies here.
     pub expression: Option<Arc<ExpressionRuntime>>,
+}
+
+impl ModuleContext {
+    pub fn plugin_tool_context(
+        &self,
+        plugin_name: &str,
+        storage_manifest: PluginStorageManifest,
+    ) -> anyhow::Result<PluginToolContext> {
+        let Some(tools) = self.tools.clone() else {
+            anyhow::bail!("tool registry is not available for plugin '{plugin_name}'");
+        };
+        let storage: Arc<dyn PluginStorage> = Arc::new(
+            self.plugin_storage
+                .scoped_with_manifest(plugin_name, storage_manifest)?,
+        );
+        Ok(PluginToolContext {
+            plugin_name: plugin_name.to_string(),
+            storage,
+            tools,
+        })
+    }
 }
 
 /// Base trait for all pluggable modules

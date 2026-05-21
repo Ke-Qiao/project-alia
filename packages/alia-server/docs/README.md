@@ -16,8 +16,8 @@ settings, automation, tools, skills, sensors, and user/session state.
   multimodal expression plans, and channel expression actions.
 - [Runtime systems](runtime-systems.md) explains skills/tools, automation,
   memory, cache, insights, users, auth, and traceable agent history.
-- [Plugin storage](plugin-storage.md) describes the proposed server-owned,
-  namespaced persistence layer for plugin-private data.
+- [Plugin storage](plugin-storage.md) describes the server-owned, namespaced
+  persistence layer for plugin-private data.
 
 ## Boundaries
 

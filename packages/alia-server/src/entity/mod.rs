@@ -9,6 +9,7 @@ pub mod expression_appraisal_event;
 pub mod insight_log;
 pub mod llm_cache;
 pub mod persona;
+pub mod plugin_storage_record;
 pub mod refresh_token;
 pub mod registry_artifact;
 pub mod registry_dependency;

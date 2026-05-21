@@ -15,6 +15,7 @@ use crate::expression::ExpressionRuntime;
 use crate::module::factory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::module::registry::ModuleRegistry;
+use crate::plugins::PluginStorageService;
 use crate::providers::adapter::{
     CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
     SchedulerBackend, SttAdapter, ToolRegistry, TtsAdapter,
@@ -142,6 +143,14 @@ impl ServerBuilder {
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
         let artifact_registry = Arc::new(ArtifactRegistry::new(self.db.clone()));
+        let plugin_storage = Arc::new(PluginStorageService::new(self.db.clone()));
+        let settings = SettingsRegistry::new();
+        settings.seed_from_config(&self.config).await;
+        let settings_path = self.config.resolve_path("settings.toml");
+        if let Err(e) = settings.load_persisted(&settings_path).await {
+            tracing::warn!(error = %e, "failed to load persisted settings (non-fatal)");
+        }
+        settings.set_persist_path(settings_path).await;
         sensor_registry.attach_db(self.db.clone()).await?;
         sensor_registry
             .attach_artifacts(artifact_registry.clone())
@@ -152,7 +161,9 @@ impl ServerBuilder {
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
+            settings: settings.clone(),
             artifacts: artifact_registry.clone(),
+            plugin_storage: plugin_storage.clone(),
             sensors: sensor_registry.clone(),
             scheduler: None,
             conditions: None,
@@ -291,7 +302,9 @@ impl ServerBuilder {
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
+            settings: settings.clone(),
             artifacts: artifact_registry.clone(),
+            plugin_storage: plugin_storage.clone(),
             sensors: sensor_registry.clone(),
             scheduler: Some(scheduler.clone()),
             conditions: Some(condition_registry.clone()),
@@ -531,15 +544,6 @@ impl ServerBuilder {
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);
 
-        // Build settings registry and seed from config
-        let settings = SettingsRegistry::new();
-        settings.seed_from_config(&self.config).await;
-        let settings_path = self.config.resolve_path("settings.toml");
-        if let Err(e) = settings.load_persisted(&settings_path).await {
-            tracing::warn!(error = %e, "failed to load persisted settings (non-fatal)");
-        }
-        settings.set_persist_path(settings_path).await;
-
         // Start sensor auto-cleanup
         sensor_registry.spawn_cleanup_loop(self.cancel_token.clone());
         let pipeline_policies = Arc::new(RwLock::new(PipelinePolicies::new(
@@ -556,6 +560,7 @@ impl ServerBuilder {
             channels: channel_registry,
             event_bus: self.event_bus,
             artifacts: artifact_registry,
+            plugin_storage,
             modules: Arc::new(registry),
             sensors: sensor_registry,
             conditions: condition_registry,

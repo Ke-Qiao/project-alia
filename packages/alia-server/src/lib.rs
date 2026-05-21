@@ -15,6 +15,7 @@ pub mod memory_policy;
 pub mod module;
 pub mod oobe;
 pub mod openapi;
+pub mod plugins;
 pub mod providers;
 pub mod registry;
 pub mod rules;

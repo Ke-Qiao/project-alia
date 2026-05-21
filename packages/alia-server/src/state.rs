@@ -8,6 +8,7 @@ use crate::channels::{ChannelRegistry, SharedPipelinePolicies};
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::module::ModuleRegistry;
+use crate::plugins::PluginStorageService;
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
@@ -20,6 +21,7 @@ pub struct AppState {
     pub channels: Arc<ChannelRegistry>,
     pub event_bus: EventBus,
     pub artifacts: Arc<ArtifactRegistry>,
+    pub plugin_storage: Arc<PluginStorageService>,
     pub modules: Arc<ModuleRegistry>,
     pub sensors: Arc<SensorRegistry>,
     pub conditions: Arc<ConditionRegistry>,
