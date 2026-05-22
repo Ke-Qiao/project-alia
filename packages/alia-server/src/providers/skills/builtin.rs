@@ -7,7 +7,7 @@
 //! Skills extend what the LLM **knows how to do well**. Each skill carries:
 //! - Intent patterns for matching user messages
 //! - A prompt template providing domain-specific LLM instructions
-//! - Explicit tool bindings through the `skill_tools` junction table
+//! - Preferred tool bindings through the `skill_preferred_tools` junction table
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::markdown;
-use crate::entity::{registry_artifact, registry_dependency, skill, skill_tool, tool};
+use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
@@ -36,15 +36,15 @@ const OBSOLETE_BUILTIN_SKILLS: &[&str] =
 /// A loaded skill with its metadata for in-memory matching.
 ///
 /// A skill is not callable. It is routing/context metadata plus a list of
-/// tool names resolved from `skill_tools`.
+/// preferred tool names resolved from `skill_preferred_tools`.
 #[derive(Clone)]
 pub struct LoadedSkill {
     pub info: SkillInfo,
     /// Keywords that trigger this skill (from intent_patterns)
     pub keywords: Vec<String>,
-    /// Tool names to make available to the LLM during this skill's execution.
-    /// Empty means this skill has no bound tools.
-    pub tools: Vec<String>,
+    /// Tool names to prefer during this skill's execution.
+    /// Empty means this skill only contributes prompt context.
+    pub preferred_tools: Vec<String>,
     /// Response template / system prompt for LLM context
     pub prompt_template: Option<String>,
     /// Whether the response is cacheable
@@ -119,7 +119,7 @@ impl BuiltinSkills {
                 })
                 .unwrap_or_default();
 
-            let tools = tool_names_for_skill(db, row.id).await?;
+            let preferred_tools = preferred_tool_names_for_skill(db, row.id).await?;
 
             skills.insert(
                 row.name.clone(),
@@ -131,7 +131,7 @@ impl BuiltinSkills {
                         category: row.category,
                     },
                     keywords,
-                    tools,
+                    preferred_tools,
                     prompt_template: row.prompt_template,
                     cacheable: row.cacheable,
                     priority: row.priority,
@@ -254,7 +254,7 @@ impl BuiltinSkills {
         for parsed in files {
             let fm = &parsed.frontmatter;
             let now = Utc::now();
-            let tool_ids = resolve_tool_ids(db, self.artifacts()?, &fm.tools).await?;
+            let tool_ids = resolve_tool_ids(db, self.artifacts()?, &fm.preferred_tools).await?;
 
             let intent_patterns = serde_json::Value::Array(
                 fm.intent_patterns
@@ -313,7 +313,8 @@ impl BuiltinSkills {
             self.artifacts()?
                 .upsert_artifact(&ArtifactRef::skill(fm.name.clone()), "file")
                 .await?;
-            replace_skill_tool_ids(db, self.artifacts()?, skill_id, &fm.name, &tool_ids).await?;
+            replace_skill_preferred_tool_ids(db, self.artifacts()?, skill_id, &fm.name, &tool_ids)
+                .await?;
         }
 
         Ok(())
@@ -400,8 +401,8 @@ impl ModuleLifecycle for BuiltinSkills {
             }
         }
 
-        if let Err(e) = ensure_builtin_skill_tool_bindings(self.db()?, self.artifacts()?).await {
-            tracing::warn!(error = %e, "failed to ensure builtin skill tool bindings");
+        if let Err(e) = ensure_builtin_skill_preferred_tools(self.db()?, self.artifacts()?).await {
+            tracing::warn!(error = %e, "failed to ensure builtin skill preferred tools");
         }
 
         self.load_skills().await?;
@@ -468,7 +469,7 @@ impl SkillProvider for BuiltinSkills {
         Ok(SkillResolution {
             skill_name: skill.name.clone(),
             system_prompt: loaded.prompt_template.clone(),
-            tools: loaded.tools.clone(),
+            preferred_tools: loaded.preferred_tools.clone(),
             cacheable: loaded.cacheable,
         })
     }
@@ -485,7 +486,7 @@ impl SkillProvider for BuiltinSkills {
     ) -> anyhow::Result<()> {
         let db = self.db()?;
         let now = Utc::now();
-        let tool_ids = resolve_tool_ids(db, self.artifacts()?, &def.tools).await?;
+        let tool_ids = resolve_tool_ids(db, self.artifacts()?, &def.preferred_tools).await?;
 
         let intent_patterns = serde_json::Value::Array(
             def.intent_patterns
@@ -542,7 +543,8 @@ impl SkillProvider for BuiltinSkills {
         self.artifacts()?
             .upsert_artifact(&ArtifactRef::skill(def.name.clone()), plugin_name)
             .await?;
-        replace_skill_tool_ids(db, self.artifacts()?, skill_id, &def.name, &tool_ids).await?;
+        replace_skill_preferred_tool_ids(db, self.artifacts()?, skill_id, &def.name, &tool_ids)
+            .await?;
 
         tracing::info!(plugin = %plugin_name, skill = %def.name, "registered plugin skill");
         self.load_skills().await?;
@@ -585,12 +587,12 @@ impl SkillProvider for BuiltinSkills {
     }
 }
 
-async fn tool_names_for_skill(
+async fn preferred_tool_names_for_skill(
     db: &DatabaseConnection,
     skill_id: Uuid,
 ) -> anyhow::Result<Vec<String>> {
-    let bindings = skill_tool::Entity::find()
-        .filter(skill_tool::Column::SkillId.eq(skill_id))
+    let bindings = skill_preferred_tool::Entity::find()
+        .filter(skill_preferred_tool::Column::SkillId.eq(skill_id))
         .all(db)
         .await?;
     let mut names = Vec::with_capacity(bindings.len());
@@ -606,15 +608,15 @@ async fn tool_names_for_skill(
     Ok(names)
 }
 
-async fn replace_skill_tools(
+async fn replace_skill_preferred_tools(
     db: &DatabaseConnection,
     artifacts: &ArtifactRegistry,
     skill_id: Uuid,
     skill_name: &str,
-    tool_names: &[String],
+    preferred_tool_names: &[String],
 ) -> anyhow::Result<()> {
-    let tool_ids = resolve_tool_ids(db, artifacts, tool_names).await?;
-    replace_skill_tool_ids(db, artifacts, skill_id, skill_name, &tool_ids).await
+    let tool_ids = resolve_tool_ids(db, artifacts, preferred_tool_names).await?;
+    replace_skill_preferred_tool_ids(db, artifacts, skill_id, skill_name, &tool_ids).await
 }
 
 async fn resolve_tool_ids(
@@ -627,7 +629,7 @@ async fn resolve_tool_ids(
 
     for name in tool_names {
         if !seen.insert(name.as_str()) {
-            tracing::warn!(tool = %name, "duplicate skill tool binding ignored");
+            tracing::warn!(tool = %name, "duplicate skill preferred tool ignored");
             continue;
         }
         let Some(tool) = tool::Entity::find()
@@ -646,21 +648,21 @@ async fn resolve_tool_ids(
     Ok(tool_ids)
 }
 
-async fn replace_skill_tool_ids(
+async fn replace_skill_preferred_tool_ids(
     db: &DatabaseConnection,
     artifacts: &ArtifactRegistry,
     skill_id: Uuid,
     skill_name: &str,
     tool_ids: &[Uuid],
 ) -> anyhow::Result<()> {
-    skill_tool::Entity::delete_many()
-        .filter(skill_tool::Column::SkillId.eq(skill_id))
+    skill_preferred_tool::Entity::delete_many()
+        .filter(skill_preferred_tool::Column::SkillId.eq(skill_id))
         .exec(db)
         .await?;
 
     let now = Utc::now();
     for tool_id in tool_ids {
-        skill_tool::ActiveModel {
+        skill_preferred_tool::ActiveModel {
             skill_id: Set(skill_id),
             tool_id: Set(*tool_id),
             created_at: Set(now),
@@ -682,11 +684,11 @@ async fn replace_skill_tool_ids(
     Ok(())
 }
 
-async fn ensure_builtin_skill_tool_bindings(
+async fn ensure_builtin_skill_preferred_tools(
     db: &DatabaseConnection,
     artifacts: &ArtifactRegistry,
 ) -> anyhow::Result<()> {
-    for (skill_name, tool_names) in builtin_skill_tool_bindings() {
+    for (skill_name, preferred_tool_names) in builtin_skill_preferred_tools() {
         let Some(skill) = skill::Entity::find()
             .filter(skill::Column::Name.eq(*skill_name))
             .one(db)
@@ -694,23 +696,42 @@ async fn ensure_builtin_skill_tool_bindings(
         else {
             continue;
         };
-        let tool_names = tool_names
+        let preferred_tool_names = preferred_tool_names
             .iter()
             .map(|name| name.to_string())
             .collect::<Vec<_>>();
         artifacts
             .upsert_artifact(&ArtifactRef::skill(*skill_name), "builtin")
             .await?;
-        replace_skill_tools(db, artifacts, skill.id, skill_name, &tool_names).await?;
+        if let Err(error) = replace_skill_preferred_tools(
+            db,
+            artifacts,
+            skill.id,
+            skill_name,
+            &preferred_tool_names,
+        )
+        .await
+        {
+            tracing::warn!(
+                skill = %skill_name,
+                preferred_tools = ?preferred_tool_names,
+                error = %error,
+                "failed to ensure builtin skill preferred tools"
+            );
+        }
     }
     Ok(())
 }
 
-pub fn builtin_skill_tool_bindings() -> &'static [(&'static str, &'static [&'static str])] {
+pub fn builtin_skill_preferred_tools() -> &'static [(&'static str, &'static [&'static str])] {
     &[
         ("timer_alarm", &["schedule_task"]),
         ("weather_query", &["sensor_read"]),
         ("device_status", &["sensor_read", "sensor_list"]),
+        (
+            "home_assistant_lights",
+            &["home_assistant_list_lights", "home_assistant_light_control"],
+        ),
         ("embedded_volume_control", &["embedded_volume_control"]),
         ("memory_query", &["memory_search"]),
         ("rule_management", &["schedule_task"]),
@@ -745,7 +766,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the timer/reminder skill context. Use the bound schedule_task tool for timers, alarms, countdowns, and reminders. Convert relative times into structured schedule arguments; ask only if the time is ambiguous.".into(),
+                "You are in the timer/reminder skill context. Prefer schedule_task for timers, alarms, countdowns, and reminders. Convert relative times into structured schedule arguments; ask only if the time is ambiguous.".into(),
             )),
             cacheable: Set(false),
             enabled: Set(true),
@@ -776,7 +797,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the weather/sensor information skill context. Use bound sensor tools when live or local readings are needed. If weather data is unavailable from sensors, say so instead of inventing it.".into(),
+                "You are in the weather/sensor information skill context. Prefer sensor tools when live or local readings are needed. If weather data is unavailable from sensors, say so instead of inventing it.".into(),
             )),
             cacheable: Set(true),
             enabled: Set(true),
@@ -805,11 +826,52 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the device-status skill context. Use bound sensor tools to inspect available devices and readings. Do not claim a state unless it came from a tool result or known context.".into(),
+                "You are in the device-status skill context. Prefer sensor tools to inspect available devices and readings. Do not claim a state unless it came from a tool result or known context.".into(),
             )),
             cacheable: Set(true),
             enabled: Set(true),
             priority: Set(6),
+            created_at: Set(now),
+            updated_at: Set(now),
+        },
+        // home_assistant_lights
+        skill::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            name: Set("home_assistant_lights".into()),
+            display_name: Set("Home Assistant 灯光控制".into()),
+            description: Set(Some("列出、查询或控制 Home Assistant 灯光实体".into())),
+            category: Set("device".into()),
+            intent_patterns: Set(serde_json::json!([
+                "home assistant",
+                "ha",
+                "灯",
+                "灯光",
+                "台灯",
+                "这盏灯",
+                "开灯",
+                "关灯",
+                "打开灯",
+                "关闭灯",
+                "打开",
+                "关闭",
+                "照明",
+                "有哪些灯",
+                "列出灯",
+                "能看到灯",
+                "light",
+                "lights",
+                "lamp",
+                "turn on light",
+                "turn off light",
+                "list lights"
+            ])),
+            source: Set("builtin".to_string()),
+            prompt_template: Set(Some(
+                "You are in the Home Assistant lights skill context. Use home_assistant_list_lights to inspect available Home Assistant light entities and home_assistant_light_control to turn lights on or off. If the user says this light, that light, 这盏灯, or 刚才那盏灯 and recent context names exactly one light entity, use that entity; otherwise list lights or ask a short clarification. Do not claim a light state changed unless it came from a tool result.".into(),
+            )),
+            cacheable: Set(false),
+            enabled: Set(true),
+            priority: Set(10),
             created_at: Set(now),
             updated_at: Set(now),
         },
@@ -857,7 +919,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the embedded volume control skill context. Use the bound embedded_volume_control tool for microphone/capture gain and speaker/playback volume. Map microphone, mic, 麦克风, 麥克風, 话筒, 話筒, 收音, 拾音, 输入音量, and 輸入音量 to capture_volume. Map speaker, 扬声器, 揚聲器, 喇叭, 播放音量, and output volume to playback_volume. For set requests, pass operation='set' and the numeric volume value.".into(),
+                "You are in the embedded volume control skill context. Prefer embedded_volume_control for microphone/capture gain and speaker/playback volume. Map microphone, mic, 麦克风, 麥克風, 话筒, 話筒, 收音, 拾音, 输入音量, and 輸入音量 to capture_volume. Map speaker, 扬声器, 揚聲器, 喇叭, 播放音量, and output volume to playback_volume. For set requests, pass operation='set' and the numeric volume value.".into(),
             )),
             cacheable: Set(false),
             enabled: Set(true),
@@ -888,7 +950,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the memory-query skill context. Use the bound memory_search tool to retrieve relevant memories before answering questions about prior preferences, conversations, or remembered facts.".into(),
+                "You are in the memory-query skill context. Prefer memory_search to retrieve relevant memories before answering questions about prior preferences, conversations, or remembered facts.".into(),
             )),
             cacheable: Set(false),
             enabled: Set(true),
@@ -919,7 +981,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
             ])),
             source: Set("builtin".to_string()),
             prompt_template: Set(Some(
-                "You are in the automation-rules skill context. Use bound scheduling/automation tools for creating or changing rules. For destructive changes, ask for confirmation before claiming completion.".into(),
+                "You are in the automation-rules skill context. Prefer scheduling/automation tools for creating or changing rules. For destructive changes, ask for confirmation before claiming completion.".into(),
             )),
             cacheable: Set(false),
             enabled: Set(true),

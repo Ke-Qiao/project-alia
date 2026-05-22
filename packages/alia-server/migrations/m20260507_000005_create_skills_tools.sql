@@ -47,13 +47,13 @@ CREATE TABLE tools (
 CREATE INDEX idx_tools_source ON tools(source);
 CREATE INDEX idx_tools_enabled ON tools(enabled) WHERE enabled = TRUE;
 
--- ── Skill/Tool Bindings ───────────────────────────────────────────────
+-- ── Skill Preferred Tool Bindings ─────────────────────────────────────
 
-CREATE TABLE skill_tools (
+CREATE TABLE skill_preferred_tools (
     skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
     tool_id UUID NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (skill_id, tool_id)
 );
 
-CREATE INDEX idx_skill_tools_tool_id ON skill_tools(tool_id);
+CREATE INDEX idx_skill_preferred_tools_tool_id ON skill_preferred_tools(tool_id);

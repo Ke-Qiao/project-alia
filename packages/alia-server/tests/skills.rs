@@ -1,6 +1,6 @@
 use alia_server::providers::SkillInfo;
 use alia_server::providers::skills::builtin::{
-    BuiltinSkills, LoadedSkill, builtin_skill_seeds, builtin_skill_tool_bindings,
+    BuiltinSkills, LoadedSkill, builtin_skill_preferred_tools, builtin_skill_seeds,
 };
 use alia_server::providers::skills::markdown::parse_skill_file;
 
@@ -9,7 +9,7 @@ use alia_server::providers::skills::markdown::parse_skill_file;
 #[test]
 fn test_seed_data() {
     let seeds = builtin_skill_seeds();
-    assert_eq!(seeds.len(), 6);
+    assert_eq!(seeds.len(), 7);
 
     let names: Vec<String> = seeds.iter().map(|s| s.name.clone().unwrap()).collect();
     assert!(!names.contains(&"smart_light_control".to_string()));
@@ -18,25 +18,75 @@ fn test_seed_data() {
     assert!(names.contains(&"timer_alarm".to_string()));
     assert!(names.contains(&"weather_query".to_string()));
     assert!(names.contains(&"device_status".to_string()));
+    assert!(names.contains(&"home_assistant_lights".to_string()));
     assert!(names.contains(&"embedded_volume_control".to_string()));
     assert!(names.contains(&"memory_query".to_string()));
     assert!(names.contains(&"rule_management".to_string()));
 }
 
 #[test]
-fn test_seed_data_uses_skill_tool_bindings() {
-    let bindings = builtin_skill_tool_bindings();
-    assert_eq!(bindings.len(), 6);
+fn test_seed_data_uses_skill_preferred_tools() {
+    let bindings = builtin_skill_preferred_tools();
+    assert_eq!(bindings.len(), 7);
     assert!(bindings.iter().any(|(skill, tools)| {
         *skill == "device_status" && tools == &["sensor_read", "sensor_list"]
     }));
     assert!(bindings.iter().any(|(skill, tools)| {
         *skill == "embedded_volume_control" && tools == &["embedded_volume_control"]
     }));
+    assert!(bindings.iter().any(|(skill, tools)| {
+        *skill == "home_assistant_lights"
+            && tools == &["home_assistant_list_lights", "home_assistant_light_control"]
+    }));
     assert!(
         !bindings
             .iter()
             .any(|(_, tools)| tools.contains(&"device_control"))
+    );
+}
+
+#[test]
+fn home_assistant_light_skill_matches_list_and_control_intents() {
+    let seed = builtin_skill_seeds()
+        .into_iter()
+        .find(|seed| seed.name.clone().unwrap() == "home_assistant_lights")
+        .expect("home assistant light skill seed");
+    let keywords = seed
+        .intent_patterns
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    let skill = LoadedSkill {
+        info: SkillInfo {
+            name: "home_assistant_lights".into(),
+            display_name: "Home Assistant Lights".into(),
+            description: "List or control Home Assistant lights".into(),
+            category: "device".into(),
+        },
+        keywords,
+        preferred_tools: vec![
+            "home_assistant_list_lights".to_string(),
+            "home_assistant_light_control".to_string(),
+        ],
+        prompt_template: None,
+        cacheable: false,
+        priority: 10,
+    };
+
+    assert!(
+        BuiltinSkills::calculate_match_score("能看到我home assistant里的灯吗？", &skill) > 0.3,
+        "should confidently match Home Assistant light lookup intent"
+    );
+    assert!(
+        BuiltinSkills::calculate_match_score("那帮我把这盏灯打开", &skill) > 0.3,
+        "should confidently match contextual light control intent"
+    );
+    assert!(
+        BuiltinSkills::calculate_match_score("开灯", &skill) > 0.0,
+        "short light commands should at least score as a light intent"
     );
 }
 
@@ -62,7 +112,7 @@ fn embedded_volume_skill_matches_simplified_and_traditional_mic_volume() {
             category: "device".into(),
         },
         keywords,
-        tools: vec!["embedded_volume_control".to_string()],
+        preferred_tools: vec!["embedded_volume_control".to_string()],
         prompt_template: None,
         cacheable: false,
         priority: 9,
@@ -92,7 +142,7 @@ fn test_match_scoring() {
             category: "test".into(),
         },
         keywords: vec!["timer".into(), "set timer".into(), "reminder".into()],
-        tools: vec!["schedule_task".to_string()],
+        preferred_tools: vec!["schedule_task".to_string()],
         prompt_template: None,
         cacheable: false,
         priority: 0,
@@ -127,7 +177,7 @@ This is the prompt template.
     assert_eq!(parsed.frontmatter.priority, 5);
     assert!(parsed.frontmatter.enabled);
     assert!(!parsed.frontmatter.cacheable);
-    assert!(parsed.frontmatter.tools.is_empty());
+    assert!(parsed.frontmatter.preferred_tools.is_empty());
     assert_eq!(
         parsed.prompt_template.as_deref(),
         Some("This is the prompt template.")
@@ -135,13 +185,13 @@ This is the prompt template.
 }
 
 #[test]
-fn test_parse_skill_file_with_tools() {
+fn test_parse_skill_file_with_preferred_tools() {
     let content = r#"+++
 name = "weather"
 display_name = "Weather Lookup"
 category = "information"
 intent_patterns = ["weather", "forecast"]
-tools = ["sensor_read", "sensor_list"]
+preferred_tools = ["sensor_read", "sensor_list"]
 cacheable = true
 +++
 
@@ -150,7 +200,31 @@ Check the weather for {location}.
     let parsed = parse_skill_file(content).unwrap();
     assert_eq!(parsed.frontmatter.name, "weather");
     assert!(parsed.frontmatter.cacheable);
-    assert_eq!(parsed.frontmatter.tools, vec!["sensor_read", "sensor_list"]);
+    assert_eq!(
+        parsed.frontmatter.preferred_tools,
+        vec!["sensor_read", "sensor_list"]
+    );
+}
+
+#[test]
+fn test_parse_skill_file_rejects_legacy_tools_field() {
+    let content = r#"+++
+name = "weather"
+display_name = "Weather Lookup"
+category = "information"
+intent_patterns = ["weather", "forecast"]
+tools = ["sensor_read", "sensor_list"]
++++
+
+Check the weather.
+"#;
+    let result = parse_skill_file(content);
+    assert!(result.is_err(), "legacy tools field should be rejected");
+    let err = result.err().unwrap().to_string();
+    assert!(
+        err.contains("unknown field `tools`"),
+        "legacy tools field should be rejected, got: {err}"
+    );
 }
 
 #[test]

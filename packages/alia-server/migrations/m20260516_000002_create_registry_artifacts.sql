@@ -103,7 +103,7 @@ SELECT
     s.name,
     'tool',
     t.name
-FROM skill_tools st
+FROM skill_preferred_tools st
 JOIN skills s ON s.id = st.skill_id
 JOIN tools t ON t.id = st.tool_id
 ON CONFLICT DO NOTHING;

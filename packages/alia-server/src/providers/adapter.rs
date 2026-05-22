@@ -1566,8 +1566,9 @@ pub trait CacheBackend: ModuleLifecycle {
 // ========== Skill Provider ==========
 //
 // Skills extend what the LLM **knows how to do well**.
-// They provide domain knowledge (prompt templates) and specify which tools
-// are relevant. Skill execution goes through the LLM with tool access.
+// They provide domain knowledge (prompt templates) and can mark tools as
+// preferred for ranking. Tool visibility is still governed by the global tool
+// router and policy layer, not by skill bindings.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMatch {
@@ -1579,16 +1580,16 @@ pub struct SkillMatch {
 ///
 /// When a skill is triggered, the pipeline sends this to the LLM:
 /// - `system_prompt` provides domain-specific instructions
-/// - `tools` lists which tools should be made available for function calling
+/// - `preferred_tools` lists tools to boost during global tool selection
 /// - The LLM decides which tools to call (if any)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillResolution {
     pub skill_name: String,
     /// Domain-specific system prompt (from the skill's prompt_template)
     pub system_prompt: Option<String>,
-    /// Tool names to make available to the LLM during this skill execution.
-    /// Empty means this skill has no bound tools.
-    pub tools: Vec<String>,
+    /// Tool names to prefer during this skill execution.
+    /// Empty means this skill contributes prompt context only.
+    pub preferred_tools: Vec<String>,
     /// Whether the LLM response can be cached
     pub cacheable: bool,
 }
@@ -1605,7 +1606,7 @@ pub struct SkillInfo {
 pub trait SkillProvider: ModuleLifecycle {
     /// Match user intent to a skill.
     async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>>;
-    /// Resolve a matched skill into LLM-facing context (prompt + available tools).
+    /// Resolve a matched skill into LLM-facing context and preferred tools.
     async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution>;
     /// List all available skills.
     async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>>;
@@ -1627,7 +1628,7 @@ pub struct PluginSkillDefinition {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: Vec<String>,
-    pub tools: Vec<String>,
+    pub preferred_tools: Vec<String>,
     pub prompt_template: Option<String>,
     #[serde(default)]
     pub cacheable: bool,

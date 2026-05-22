@@ -19,6 +19,7 @@ use crate::registry::is_plugin_source;
 const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
 const MAX_TEXT_TOOL_CALLS: usize = 8;
 const EMPTY_TOOL_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
+const PREFERRED_TOOL_SCORE_BOOST: i32 = 4;
 const TOOL_TEXT_PROTOCOL_RETRY_PROMPT: &str = r#"The previous provider tool-call response was empty.
 If a tool is needed, reply with exactly one JSON object using the `alia.tool_calls.v1` text tool-call protocol.
 If no tool is needed, answer the user concisely in natural language.
@@ -302,21 +303,24 @@ pub fn non_empty_tool_fallback(last_tool_display: Option<&str>) -> String {
         .to_string()
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct ToolSelection {
+    pub available_tools: Vec<ToolDefinition>,
+    pub selected_tools: Vec<ToolDefinition>,
+    pub preferred_tool_names: Vec<String>,
+}
+
 pub(super) async fn select_tools_for_skill(
     modules: &ModuleRegistry,
-    allowed_names: &[String],
+    preferred_names: &[String],
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
     assistant_name: &str,
-) -> anyhow::Result<Vec<ToolDefinition>> {
-    if allowed_names.is_empty() {
-        return Ok(Vec::new());
-    }
-
+) -> anyhow::Result<ToolSelection> {
     select_tools(
         modules,
-        Some(allowed_names),
+        Some(preferred_names),
         user_text,
         tools_config,
         channel_id,
@@ -331,7 +335,7 @@ pub(super) async fn select_all_tools(
     tools_config: &ToolsSection,
     channel_id: &str,
     assistant_name: &str,
-) -> anyhow::Result<Vec<ToolDefinition>> {
+) -> anyhow::Result<ToolSelection> {
     select_tools(
         modules,
         None,
@@ -345,64 +349,107 @@ pub(super) async fn select_all_tools(
 
 async fn select_tools(
     modules: &ModuleRegistry,
-    allowed_names: Option<&[String]>,
+    preferred_names: Option<&[String]>,
     user_text: &str,
     tools_config: &ToolsSection,
     channel_id: &str,
     assistant_name: &str,
-) -> anyhow::Result<Vec<ToolDefinition>> {
+) -> anyhow::Result<ToolSelection> {
     let all_tools = modules.tools.list_tools().await?;
-    let skill_scoped = allowed_names.is_some();
-    let allowed = allowed_names.map(|allowed_names| {
-        allowed_names
-            .iter()
-            .map(|name| name.as_str())
-            .collect::<HashSet<_>>()
-    });
+    let skill_context = preferred_names.is_some();
+    let preferred_names = preferred_names
+        .map(preferred_tool_names)
+        .unwrap_or_default();
+    let mut preferred_tool_names = preferred_names.iter().cloned().collect::<Vec<_>>();
+    preferred_tool_names.sort();
 
-    let tools = all_tools
+    let available_tools = all_tools
         .into_iter()
-        .filter(|tool| {
-            if !tools_config.allow_plugin_tools && is_plugin_source(&tool.source) {
-                return false;
-            }
-            allowed
-                .as_ref()
-                .is_none_or(|allowed| allowed.contains(tool.name.as_str()))
-        })
+        .filter(|tool| tools_config.allow_plugin_tools || !is_plugin_source(&tool.source))
         .collect::<Vec<_>>();
 
-    if let Some(allowed) = allowed {
-        let found = tools
+    if !preferred_names.is_empty() {
+        let found = available_tools
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<HashSet<_>>();
-        for name in allowed.difference(&found) {
-            tracing::warn!(tool = %name, "skill requested unavailable tool");
+        for name in preferred_names
+            .iter()
+            .filter(|name| !found.contains(name.as_str()))
+        {
+            tracing::warn!(tool = %name, "skill preferred unavailable tool");
         }
     }
 
-    let total = tools.len();
-    let selected = select_ranked_or_llm_filtered_tools(
+    let total = available_tools.len();
+    let selected_tools = select_ranked_or_llm_filtered_tools(
         modules,
-        tools,
+        available_tools.clone(),
         user_text,
         tools_config,
-        skill_scoped,
+        &preferred_names,
         channel_id,
         assistant_name,
     )
     .await;
-    if selected.len() < total {
+    if selected_tools.len() < total {
         tracing::debug!(
             total,
-            selected = selected.len(),
-            skill_scoped,
+            selected = selected_tools.len(),
+            skill_context,
             "tool router selected bounded tool set for turn"
         );
     }
 
-    Ok(selected)
+    Ok(ToolSelection {
+        available_tools,
+        selected_tools,
+        preferred_tool_names,
+    })
+}
+
+fn preferred_tool_names(names: &[String]) -> HashSet<String> {
+    names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn preferred_tool_names_from_str(names: &[&str]) -> HashSet<String> {
+    names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+pub trait ToolPreferenceArg {
+    fn to_preferred_tool_names(&self, tools: &[ToolDefinition]) -> HashSet<String>;
+}
+
+impl ToolPreferenceArg for bool {
+    fn to_preferred_tool_names(&self, tools: &[ToolDefinition]) -> HashSet<String> {
+        if *self {
+            tools.iter().map(|tool| tool.name.clone()).collect()
+        } else {
+            HashSet::new()
+        }
+    }
+}
+
+impl ToolPreferenceArg for &[&str] {
+    fn to_preferred_tool_names(&self, _tools: &[ToolDefinition]) -> HashSet<String> {
+        preferred_tool_names_from_str(self)
+    }
+}
+
+impl<const N: usize> ToolPreferenceArg for &[&str; N] {
+    fn to_preferred_tool_names(&self, _tools: &[ToolDefinition]) -> HashSet<String> {
+        preferred_tool_names_from_str(self.as_slice())
+    }
 }
 
 async fn select_ranked_or_llm_filtered_tools(
@@ -410,7 +457,7 @@ async fn select_ranked_or_llm_filtered_tools(
     tools: Vec<ToolDefinition>,
     user_text: &str,
     tools_config: &ToolsSection,
-    skill_scoped: bool,
+    preferred_names: &HashSet<String>,
     channel_id: &str,
     assistant_name: &str,
 ) -> Vec<ToolDefinition> {
@@ -429,7 +476,7 @@ async fn select_ranked_or_llm_filtered_tools(
         &tools,
         user_text,
         candidate_pool_size,
-        skill_scoped,
+        preferred_names,
         tools_config,
         &index_by_name,
     )
@@ -439,7 +486,7 @@ async fn select_ranked_or_llm_filtered_tools(
             tools,
             user_text,
             candidate_pool_size,
-            skill_scoped,
+            preferred_names,
             &index_by_name,
         )
     });
@@ -501,22 +548,19 @@ pub fn rank_and_limit_tools(
     tools: Vec<ToolDefinition>,
     user_text: &str,
     max_tools_per_turn: usize,
-    skill_scoped: bool,
+    preferred_names: impl ToolPreferenceArg,
     _channel_id: &str,
 ) -> Vec<ToolDefinition> {
     if tools.is_empty() || max_tools_per_turn == 0 {
         return Vec::new();
     }
 
-    if skill_scoped && tools.len() <= max_tools_per_turn {
-        return tools;
-    }
-
+    let preferred_names = preferred_names.to_preferred_tool_names(&tools);
     rank_tool_candidates(
         tools,
         user_text,
         max_tools_per_turn,
-        skill_scoped,
+        &preferred_names,
         &HashMap::new(),
     )
     .into_iter()
@@ -529,26 +573,23 @@ pub fn rank_and_limit_tools_with_index(
     index_entries: Vec<ToolRoutingIndexEntry>,
     user_text: &str,
     max_tools_per_turn: usize,
-    skill_scoped: bool,
+    preferred_names: impl ToolPreferenceArg,
     _channel_id: &str,
 ) -> Vec<ToolDefinition> {
     if tools.is_empty() || max_tools_per_turn == 0 {
         return Vec::new();
     }
 
-    if skill_scoped && tools.len() <= max_tools_per_turn {
-        return tools;
-    }
-
     let index_by_name = index_entries
         .into_iter()
         .map(|entry| (entry.name.clone(), entry))
         .collect::<HashMap<_, _>>();
+    let preferred_names = preferred_names.to_preferred_tool_names(&tools);
     rank_tool_candidates(
         tools,
         user_text,
         max_tools_per_turn,
-        skill_scoped,
+        &preferred_names,
         &index_by_name,
     )
     .into_iter()
@@ -616,7 +657,7 @@ async fn indexed_rank_tool_candidates(
     tools: &[ToolDefinition],
     user_text: &str,
     limit: usize,
-    skill_scoped: bool,
+    preferred_names: &HashSet<String>,
     tools_config: &ToolsSection,
     index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
 ) -> Option<Vec<RankedToolCandidate>> {
@@ -698,13 +739,18 @@ async fn indexed_rank_tool_candidates(
         .enumerate()
         .filter_map(|(index, tool)| {
             let routing = tool_routing_metadata(&tool, index_by_name);
-            let lexical_score =
-                score_tool_candidate(&tool, &routing, &query, &query_terms, skill_scoped);
+            let lexical_score = score_tool_candidate(
+                &tool,
+                &routing,
+                &query,
+                &query_terms,
+                preferred_names.contains(tool.name.as_str()),
+            );
             let semantic_similarity = embeddings_by_name
                 .get(&tool.name)
                 .and_then(|embedding| cosine_similarity(&query_embedding, embedding));
             let semantic_match = semantic_similarity.is_some_and(|score| score >= min_similarity);
-            if !skill_scoped && lexical_score <= 0 && !semantic_match {
+            if lexical_score <= 0 && !semantic_match {
                 return None;
             }
 
@@ -752,7 +798,7 @@ fn rank_tool_candidates(
     tools: Vec<ToolDefinition>,
     user_text: &str,
     limit: usize,
-    skill_scoped: bool,
+    preferred_names: &HashSet<String>,
     index_by_name: &HashMap<String, ToolRoutingIndexEntry>,
 ) -> Vec<RankedToolCandidate> {
     if tools.is_empty() || limit == 0 {
@@ -766,7 +812,13 @@ fn rank_tool_candidates(
         .enumerate()
         .map(|(index, tool)| {
             let routing = tool_routing_metadata(&tool, index_by_name);
-            let score = score_tool_candidate(&tool, &routing, &query, &query_terms, skill_scoped);
+            let score = score_tool_candidate(
+                &tool,
+                &routing,
+                &query,
+                &query_terms,
+                preferred_names.contains(tool.name.as_str()),
+            );
             RankedToolCandidate {
                 score,
                 index,
@@ -775,7 +827,7 @@ fn rank_tool_candidates(
                 tool,
             }
         })
-        .filter(|candidate| skill_scoped || candidate.score > 0)
+        .filter(|candidate| candidate.score > 0)
         .collect::<Vec<_>>();
 
     ranked.sort_by(|left, right| {
@@ -920,9 +972,13 @@ fn score_tool_candidate(
     routing: &ToolRoutingMetadata,
     query: &str,
     query_terms: &HashSet<String>,
-    skill_scoped: bool,
+    preferred: bool,
 ) -> i32 {
-    let mut score = if skill_scoped { 1 } else { 0 };
+    let mut score = if preferred {
+        PREFERRED_TOOL_SCORE_BOOST
+    } else {
+        0
+    };
     let name = tool.name.to_lowercase();
     let searchable_terms = tokenize_for_tool_routing(&routing.routing_text);
     let routing_keywords = routing

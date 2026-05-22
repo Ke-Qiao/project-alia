@@ -95,11 +95,13 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
 | device_status | Available sensors, device status, local temperature/readings |
+| home_assistant_lights | List, read, or control Home Assistant lights/lamps, 灯/灯光/台灯, turn on/off lights |
 | embedded_volume_control | Read or set alia-embedded microphone capture or speaker playback volume |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
+For lights, lamps, 灯, 灯光, 台灯, 开灯, 关灯, or Home Assistant light requests, choose home_assistant_lights rather than device_status.
 
 ### "minor_llm" - simple, short replies
 Use when a lightweight model can handle it in one turn:
@@ -147,11 +149,13 @@ Use when the user gives a clear, actionable command that maps to one of these sk
 | timer_alarm | Set timer, countdown, alarm, reminder |
 | weather_query | Current weather, forecast, rain/snow check |
 | device_status | Available sensors, device status, local temperature/readings |
+| home_assistant_lights | List, read, or control Home Assistant lights/lamps, 灯/灯光/台灯, turn on/off lights |
 | embedded_volume_control | Read or set alia-embedded microphone capture or speaker playback volume |
 | memory_query | "Do you remember...", "What did I say last time?" |
 | rule_management | Create/edit/delete automation rules |
 
 Do not extract action parameters here. Skills are cognitive context only; downstream tool calling will produce strict tool arguments.
+For lights, lamps, 灯, 灯光, 台灯, 开灯, 关灯, or Home Assistant light requests, choose home_assistant_lights rather than device_status.
 
 ### "minor_llm" - all other messages
 Route everything that is not a skill command to the minor LLM. This is the only general-purpose model available.
@@ -194,7 +198,7 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When a skill context is active, use the tools provided by that context. Do not call skills directly.
+- When a skill context is active, use the tools available in the turn. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 /// System prompt given to the major LLM when it is the only available tier.
@@ -206,7 +210,7 @@ Guidelines:
 - Answer in the same language the user uses.
 - You have access to the user's memory, preferences, and conversation history via the system context.
 - For creative tasks, be expressive. For analytical tasks, be structured and clear.
-- When a skill context is active, use the tools provided by that context. Do not call skills directly.
+- When a skill context is active, use the tools available in the turn. Do not call skills directly.
 - Never expose raw tool-call JSON, function names, or hidden arguments in the final answer."#;
 
 const TOOL_SELECTION_PROMPT_TEMPLATE: &str = r#"You are a fast tool candidate selector inside {assistant_name}.
@@ -619,8 +623,10 @@ mod tests {
         assert!(prompt.contains(r#""minor_llm""#));
         assert!(prompt.contains(r#""major_llm""#));
         assert!(prompt.contains("timer_alarm"));
+        assert!(prompt.contains("home_assistant_lights"));
         assert!(!prompt.contains("smart_light_control"));
         assert!(prompt.contains("Do not extract action parameters here"));
+        assert!(prompt.contains("choose home_assistant_lights rather than device_status"));
         assert!(prompt.contains("When in doubt between \"minor_llm\" and \"major_llm\""));
         assert!(prompt.contains("always choose \"major_llm\""));
     }
@@ -633,6 +639,7 @@ mod tests {
         assert!(!prompt.contains("Alia"));
         assert!(prompt.contains(r#""skill""#));
         assert!(prompt.contains(r#""minor_llm""#));
+        assert!(prompt.contains("home_assistant_lights"));
         assert!(!prompt.contains("### \"major_llm\""));
         assert!(prompt.contains("This is the only general-purpose model available"));
         assert!(prompt.contains("Everything else chooses \"minor_llm\""));

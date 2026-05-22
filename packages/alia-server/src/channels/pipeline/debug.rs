@@ -259,20 +259,34 @@ pub(super) fn debug_component_llm_call(
     }
 }
 
-pub(super) fn debug_component_tools(
+pub(super) fn debug_component_tool_selection(
     enabled: bool,
-    component: &'static str,
-    event: &'static str,
-    tools: &[ToolDefinition],
+    available_tools: &[ToolDefinition],
+    selected_tools: &[ToolDefinition],
+    preferred_tool_names: &[String],
     channel: Option<(&str, &str)>,
 ) {
+    let available_tools = available_tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let selected_tools = selected_tools
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let preferred_tools = preferred_tool_names.join(",");
+
     if !enabled {
         tracing::debug!(
             target: "alia_server::debug_output",
-            component,
-            event,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
+            component = "tools",
+            event = "selection",
+            available_tools,
+            selected_tools,
+            preferred_tools,
+            "component tool selection"
         );
         return;
     }
@@ -280,19 +294,23 @@ pub(super) fn debug_component_tools(
     match channel {
         Some((channel_id, user_id)) => tracing::info!(
             target: "alia_server::debug_output",
-            component,
-            event,
+            component = "tools",
+            event = "selection",
             channel_id,
             user_id,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
+            available_tools,
+            selected_tools,
+            preferred_tools,
+            "component tool selection"
         ),
         None => tracing::info!(
             target: "alia_server::debug_output",
-            component,
-            event,
-            tools = %tools.iter().map(|tool| tool.name.as_str()).collect::<Vec<_>>().join(","),
-            "component tools"
+            component = "tools",
+            event = "selection",
+            available_tools,
+            selected_tools,
+            preferred_tools,
+            "component tool selection"
         ),
     }
 }

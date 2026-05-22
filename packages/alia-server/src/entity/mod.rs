@@ -14,7 +14,7 @@ pub mod refresh_token;
 pub mod registry_artifact;
 pub mod registry_dependency;
 pub mod skill;
-pub mod skill_tool;
+pub mod skill_preferred_tool;
 pub mod tool;
 pub mod user;
 pub mod user_active_persona;

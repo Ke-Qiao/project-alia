@@ -43,7 +43,7 @@ fn routes_global_tools_by_query_relevance() {
         ],
         "what time is it now?",
         2,
-        false,
+        &[],
         "cli",
     );
 
@@ -60,7 +60,7 @@ fn avoids_global_tool_injection_when_no_tool_matches() {
         ],
         "tell me a bedtime story",
         8,
-        false,
+        &[],
         "cli",
     );
 
@@ -68,7 +68,7 @@ fn avoids_global_tool_injection_when_no_tool_matches() {
 }
 
 #[test]
-fn skill_scoped_tools_are_capped_but_not_dropped_for_zero_score() {
+fn preferred_tools_are_kept_for_skill_context_when_nothing_else_matches() {
     let selected = rank_and_limit_tools(
         vec![
             tool("skill_tool_a", "A domain tool"),
@@ -77,13 +77,53 @@ fn skill_scoped_tools_are_capped_but_not_dropped_for_zero_score() {
         ],
         "unrelated input",
         2,
-        true,
+        &["skill_tool_a", "skill_tool_b", "skill_tool_c"],
         "cli",
     );
 
     assert_eq!(selected.len(), 2);
     assert_eq!(selected[0].name, "skill_tool_a");
     assert_eq!(selected[1].name, "skill_tool_b");
+}
+
+#[test]
+fn preferred_skill_tools_do_not_hide_globally_matching_tools() {
+    let mut home_assistant_control = tool(
+        "home_assistant_light_control",
+        "Turn a Home Assistant light on or off by entity_id or friendly name",
+    );
+    home_assistant_control.routing_hints = vec![
+        "home assistant".to_string(),
+        "灯".to_string(),
+        "灯光".to_string(),
+        "开灯".to_string(),
+        "打开".to_string(),
+        "light".to_string(),
+    ];
+
+    let selected = rank_and_limit_tools_with_index(
+        vec![
+            tool("sensor_read", "Read a sensor value"),
+            tool("sensor_list", "List local sensors"),
+            home_assistant_control,
+        ],
+        vec![routing_entry(
+            "home_assistant_light_control",
+            &["home assistant", "灯", "灯光", "开灯", "打开", "light"],
+            "Control Home Assistant lights. 灯 灯光 开灯 打开 light.",
+        )],
+        "那帮我把这盏灯打开",
+        2,
+        &["sensor_read", "sensor_list"],
+        "cli",
+    );
+
+    assert!(
+        selected
+            .iter()
+            .any(|tool| tool.name == "home_assistant_light_control"),
+        "matching global tools should still be selected even when the active skill prefers sensor tools"
+    );
 }
 
 #[test]
@@ -101,7 +141,7 @@ fn routes_preference_statements_to_memory_store() {
         )],
         "KeQiao really likes Japanese musician tsukuyomi",
         8,
-        false,
+        &[],
         "cli",
     );
 
@@ -150,7 +190,7 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
             )],
             query,
             1,
-            false,
+            &[],
             "pi-living-room",
         );
 
@@ -180,7 +220,7 @@ fn routes_goodbye_to_continuous_dialogue_end_tool() {
         )],
         "再见，先这样吧",
         1,
-        false,
+        &[],
         "embedded",
     );
 
@@ -202,7 +242,7 @@ fn routes_search_language_to_fetch_candidate() {
         )],
         "search for the latest sherpa onnx version",
         8,
-        false,
+        &[],
         "cli",
     );
 
@@ -222,7 +262,7 @@ fn db_routing_keywords_can_match_without_definition_text_overlap() {
         )],
         "tell me about tsukuyomi",
         4,
-        false,
+        &[],
         "cli",
     );
 
@@ -239,7 +279,7 @@ fn url_and_arithmetic_structural_rules_still_work_without_db_keywords() {
         ],
         "open https://example.com",
         2,
-        false,
+        &[],
         "cli",
     );
     let math_selected = rank_and_limit_tools(
@@ -249,7 +289,7 @@ fn url_and_arithmetic_structural_rules_still_work_without_db_keywords() {
         ],
         "what is (2 + 3) * 4?",
         2,
-        false,
+        &[],
         "cli",
     );
 

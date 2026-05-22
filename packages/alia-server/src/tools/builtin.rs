@@ -29,7 +29,7 @@ use sea_orm::{
 use tokio::net::lookup_host;
 use uuid::Uuid;
 
-use crate::entity::{registry_artifact, registry_dependency, skill_tool, tool};
+use crate::entity::{registry_artifact, registry_dependency, skill_preferred_tool, tool};
 use crate::event::{EventBus, ServerEvent};
 use crate::memory_policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
@@ -302,9 +302,9 @@ impl BuiltinToolRegistry {
             .ok_or_else(|| anyhow::anyhow!("BuiltinToolRegistry not initialized"))
     }
 
-    /// Persist built-in tool definitions so skills can bind to them through
-    /// `skill_tools` with real foreign keys. The in-memory executor remains
-    /// authoritative for execution.
+    /// Persist built-in tool definitions so skills can prefer them through
+    /// `skill_preferred_tools` with real foreign keys. The in-memory executor
+    /// remains authoritative for execution.
     async fn upsert_executor_tools_to_db(&self) -> anyhow::Result<()> {
         let Some(db) = &self.db else { return Ok(()) };
         let now = Utc::now();
@@ -383,8 +383,8 @@ impl BuiltinToolRegistry {
             .collect::<Vec<_>>();
 
         if !obsolete_tool_ids.is_empty() {
-            skill_tool::Entity::delete_many()
-                .filter(skill_tool::Column::ToolId.is_in(obsolete_tool_ids))
+            skill_preferred_tool::Entity::delete_many()
+                .filter(skill_preferred_tool::Column::ToolId.is_in(obsolete_tool_ids))
                 .exec(&tx)
                 .await?;
         }

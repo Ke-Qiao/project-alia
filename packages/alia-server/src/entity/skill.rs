@@ -2,7 +2,7 @@
 //!
 //! Skills extend what the LLM **knows how to do well**. Each skill carries
 //! intent patterns for matching and a prompt template for domain context.
-//! Executable tool bindings live in the `skill_tools` junction table.
+//! Preferred tool bindings live in the `skill_preferred_tools` junction table.
 //!
 //! Skills can be registered by:
 //! - Built-in seeds (source = "builtin")

@@ -1543,9 +1543,9 @@ async fn process_text(
                     "skills",
                     Some(resolution.skill_name.clone()),
                     serde_json::json!({
-                        "skill": resolution.skill_name,
+                        "active_skills": [resolution.skill_name.clone()],
                         "cacheable": resolution.cacheable,
-                        "tools": resolution.tools,
+                        "preferred_tools": resolution.preferred_tools.clone(),
                     }),
                 )
                 .await;
@@ -1560,6 +1560,12 @@ async fn process_text(
                     ..ChatMessage::default()
                 });
             }
+            messages.push(ChatMessage {
+                role: "system".into(),
+                content: "The active skill provides domain context only. Preferred tools are ranking hints, not restrictions; use whichever available tool best matches the user's request.".to_string(),
+                name: None,
+                ..ChatMessage::default()
+            });
             append_history_with_interrupted_context(&mut messages, &history);
             messages.push(ChatMessage {
                 role: "user".into(),
@@ -1568,9 +1574,9 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tools = select_tools_for_skill(
+            let tool_selection = select_tools_for_skill(
                 modules,
-                &resolution.tools,
+                &resolution.preferred_tools,
                 text,
                 tools_config,
                 channel_id,
@@ -1593,7 +1599,7 @@ async fn process_text(
                 runtime_context.memory_context.clone(),
                 audio_response
                     && allow_streaming_for_tools(
-                        &tools,
+                        &tool_selection.selected_tools,
                         conversation_config.streaming_enabled,
                         channel,
                     ),
@@ -1603,7 +1609,7 @@ async fn process_text(
                 modules,
                 modules.llm.as_ref(),
                 messages,
-                tools,
+                tool_selection,
                 uid,
                 session_id,
                 channel,
@@ -1636,7 +1642,7 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tools = select_all_tools(
+            let tool_selection = select_all_tools(
                 modules,
                 text,
                 tools_config,
@@ -1659,14 +1665,19 @@ async fn process_text(
                 prior_message_count,
                 memory_context_used,
                 runtime_context.memory_context.clone(),
-                audio_response && allow_streaming_for_tools(&tools, allow_minor_streaming, channel),
+                audio_response
+                    && allow_streaming_for_tools(
+                        &tool_selection.selected_tools,
+                        allow_minor_streaming,
+                        channel,
+                    ),
             )
             .await;
             let minor_outcome = execute_llm_response(
                 modules,
                 modules.minor_llm.as_ref(),
                 messages,
-                tools,
+                tool_selection,
                 uid,
                 session_id,
                 channel,
@@ -1714,7 +1725,7 @@ async fn process_text(
                         "The minor model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
                     ),
                 ));
-                let major_tools = select_all_tools(
+                let major_tool_selection = select_all_tools(
                     modules,
                     text,
                     tools_config,
@@ -1737,7 +1748,7 @@ async fn process_text(
                     runtime_context.memory_context.clone(),
                     audio_response
                         && allow_streaming_for_tools(
-                            &major_tools,
+                            &major_tool_selection.selected_tools,
                             conversation_config.streaming_enabled,
                             channel,
                         ),
@@ -1747,7 +1758,7 @@ async fn process_text(
                     modules,
                     modules.major_llm.as_ref(),
                     major_messages,
-                    major_tools,
+                    major_tool_selection,
                     uid,
                     session_id,
                     channel,
@@ -1778,7 +1789,7 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tools = select_all_tools(
+            let tool_selection = select_all_tools(
                 modules,
                 text,
                 tools_config,
@@ -1801,7 +1812,7 @@ async fn process_text(
                 runtime_context.memory_context.clone(),
                 audio_response
                     && allow_streaming_for_tools(
-                        &tools,
+                        &tool_selection.selected_tools,
                         conversation_config.streaming_enabled,
                         channel,
                     ),
@@ -1811,7 +1822,7 @@ async fn process_text(
                 modules,
                 modules.major_llm.as_ref(),
                 messages,
-                tools,
+                tool_selection,
                 uid,
                 session_id,
                 channel,
@@ -2807,7 +2818,7 @@ async fn execute_llm_response(
     modules: &ModuleRegistry,
     llm: &dyn LlmAdapter,
     messages: Vec<ChatMessage>,
-    tools: Vec<ToolDefinition>,
+    tool_selection: ToolSelection,
     user_uuid: Uuid,
     session_id: Uuid,
     channel: &dyn ChannelAdapter,
@@ -2824,18 +2835,45 @@ async fn execute_llm_response(
     turn: Option<&VoiceTurn>,
     sentence_speech_context: Option<SentenceSpeechContext>,
 ) -> anyhow::Result<LlmExecutionOutcome> {
-    if !tools.is_empty() {
-        debug_component_tools(
+    let available_tool_names = tool_selection
+        .available_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+    let selected_tool_names = tool_selection
+        .selected_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
+
+    if !tool_selection.available_tools.is_empty()
+        || !tool_selection.selected_tools.is_empty()
+        || !tool_selection.preferred_tool_names.is_empty()
+    {
+        debug_component_tool_selection(
             debug_output,
-            "tools",
-            "available",
-            &tools,
+            &tool_selection.available_tools,
+            &tool_selection.selected_tools,
+            &tool_selection.preferred_tool_names,
             Some((channel_id, user_id)),
         );
-        let available_tools = tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<Vec<_>>();
+        trace
+            .record(
+                modules,
+                "tool_selection",
+                "tools",
+                Some(route.to_string()),
+                serde_json::json!({
+                    "route": route,
+                    "available_tools": available_tool_names.clone(),
+                    "selected_tools": selected_tool_names.clone(),
+                    "preferred_tools": tool_selection.preferred_tool_names.clone(),
+                }),
+            )
+            .await;
+    }
+
+    if !tool_selection.selected_tools.is_empty() {
         trace
             .record(
                 modules,
@@ -2845,7 +2883,7 @@ async fn execute_llm_response(
                 serde_json::json!({
                     "route": route,
                     "mode": "tool_loop",
-                    "available_tools": available_tools,
+                    "selected_tools": selected_tool_names.clone(),
                     "messages": messages.len(),
                 }),
             )
@@ -2854,7 +2892,7 @@ async fn execute_llm_response(
             modules,
             llm,
             messages,
-            tools,
+            tool_selection.selected_tools,
             user_uuid,
             Some(session_id),
             channel_id,

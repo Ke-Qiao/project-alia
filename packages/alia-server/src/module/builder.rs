@@ -407,13 +407,9 @@ impl ServerBuilder {
         action_registry
             .register(Arc::new(ToolCallActionExecutor::new(tools_arc.clone())))
             .await;
-        init_module(skills.as_mut(), &ctx).await;
-        init_module(persona.as_mut(), &ctx).await;
-        init_module(router.as_mut(), &ctx).await;
-        init_module(insights.as_mut(), &ctx).await;
-        init_module(rule_engine.as_mut(), &ctx).await;
 
-        // Initialize extensions
+        // Initialize extensions before skills so code-backed plugin tools are
+        // present when skill/tool bindings are resolved from the database.
         let mut extensions: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
         #[cfg(feature = "plugin-home-assistant")]
         let mut configured_extensions = self.extensions;
@@ -443,6 +439,12 @@ impl ServerBuilder {
             }
             extensions.push(Arc::from(ext));
         }
+
+        init_module(skills.as_mut(), &ctx).await;
+        init_module(persona.as_mut(), &ctx).await;
+        init_module(router.as_mut(), &ctx).await;
+        init_module(insights.as_mut(), &ctx).await;
+        init_module(rule_engine.as_mut(), &ctx).await;
 
         // Initialize channels from config + explicit with_channel() calls
         // Create channels from [[channels]] config

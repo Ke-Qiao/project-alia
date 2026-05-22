@@ -1,13 +1,13 @@
-//! SeaORM entity for skill/tool bindings.
+//! SeaORM entity for skill/preferred-tool bindings.
 //!
 //! Skills provide cognitive context; tools provide executable functions. This
-//! junction table is the explicit boundary between those responsibilities.
+//! junction table stores soft tool preferences, not tool visibility rules.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "skill_tools")]
+#[sea_orm(table_name = "skill_preferred_tools")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub skill_id: Uuid,

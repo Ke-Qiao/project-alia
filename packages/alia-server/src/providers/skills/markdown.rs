@@ -11,7 +11,7 @@
 //! display_name = "我的技能"
 //! category = "utility"
 //! intent_patterns = ["关键词1", "关键词2"]
-//! tools = ["sensor_read", "memory_search"]
+//! preferred_tools = ["sensor_read", "memory_search"]
 //! priority = 5
 //! +++
 //!
@@ -24,6 +24,7 @@ use serde::Deserialize;
 
 /// Parsed TOML frontmatter from a skill markdown file.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SkillFrontmatter {
     pub name: String,
     pub display_name: String,
@@ -31,9 +32,9 @@ pub struct SkillFrontmatter {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: Vec<String>,
-    /// Tool names to make available to the LLM during this skill's execution.
+    /// Tool names to prefer during this skill's execution.
     #[serde(default)]
-    pub tools: Vec<String>,
+    pub preferred_tools: Vec<String>,
     #[serde(default)]
     pub cacheable: bool,
     #[serde(default = "default_enabled")]

@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::entity::{skill, skill_tool, tool};
+use crate::entity::{skill, skill_preferred_tool, tool};
 use crate::error::Result;
 use crate::registry::{ArtifactRef, ArtifactRegistry};
 use crate::state::AppState;
@@ -27,8 +27,8 @@ pub struct SkillResponse {
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: serde_json::Value,
-    /// Tool names available to the LLM during this skill's execution
-    pub tools: Vec<String>,
+    /// Tool names preferred during this skill's execution.
+    pub preferred_tools: Vec<String>,
     pub prompt_template: Option<String>,
     pub cacheable: bool,
     pub enabled: bool,
@@ -43,7 +43,7 @@ async fn skill_response(
     db: &sea_orm::DatabaseConnection,
     m: skill::Model,
 ) -> Result<SkillResponse> {
-    let tools = tool_names_for_skill(db, m.id).await?;
+    let preferred_tools = preferred_tool_names_for_skill(db, m.id).await?;
     Ok(SkillResponse {
         id: m.id,
         name: m.name,
@@ -51,7 +51,7 @@ async fn skill_response(
         description: m.description,
         category: m.category,
         intent_patterns: m.intent_patterns,
-        tools,
+        preferred_tools,
         prompt_template: m.prompt_template,
         cacheable: m.cacheable,
         enabled: m.enabled,
@@ -65,15 +65,16 @@ async fn skill_response(
 // ========== Request types ==========
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSkillRequest {
     pub name: String,
     pub display_name: String,
     pub description: Option<String>,
     pub category: String,
     pub intent_patterns: serde_json::Value,
-    /// Tool names to make available to the LLM during this skill's execution
+    /// Tool names to prefer during this skill's execution.
     #[serde(default)]
-    pub tools: Vec<String>,
+    pub preferred_tools: Vec<String>,
     pub prompt_template: Option<String>,
     #[serde(default)]
     pub cacheable: bool,
@@ -87,9 +88,12 @@ fn default_enabled() -> bool {
     true
 }
 
-async fn tool_names_for_skill(db: &impl ConnectionTrait, skill_id: Uuid) -> Result<Vec<String>> {
-    let bindings = skill_tool::Entity::find()
-        .filter(skill_tool::Column::SkillId.eq(skill_id))
+async fn preferred_tool_names_for_skill(
+    db: &impl ConnectionTrait,
+    skill_id: Uuid,
+) -> Result<Vec<String>> {
+    let bindings = skill_preferred_tool::Entity::find()
+        .filter(skill_preferred_tool::Column::SkillId.eq(skill_id))
         .all(db)
         .await
         .map_err(crate::error::AppError::Database)?;
@@ -109,15 +113,15 @@ async fn tool_names_for_skill(db: &impl ConnectionTrait, skill_id: Uuid) -> Resu
     Ok(names)
 }
 
-async fn replace_skill_tools(
+async fn replace_skill_preferred_tools(
     artifacts: &ArtifactRegistry,
     db: &impl ConnectionTrait,
     skill_id: Uuid,
     skill_name: &str,
-    tool_names: &[String],
+    preferred_tool_names: &[String],
 ) -> Result<()> {
-    skill_tool::Entity::delete_many()
-        .filter(skill_tool::Column::SkillId.eq(skill_id))
+    skill_preferred_tool::Entity::delete_many()
+        .filter(skill_preferred_tool::Column::SkillId.eq(skill_id))
         .exec(db)
         .await
         .map_err(crate::error::AppError::Database)?;
@@ -125,7 +129,7 @@ async fn replace_skill_tools(
     let now = Utc::now();
     let mut seen = HashSet::new();
     let mut dependencies = Vec::new();
-    for name in tool_names {
+    for name in preferred_tool_names {
         if !seen.insert(name.as_str()) {
             continue;
         }
@@ -145,7 +149,7 @@ async fn replace_skill_tools(
             .map_err(crate::error::AppError::Internal)?;
         dependencies.push(ArtifactRef::tool(tool.name.clone()));
 
-        skill_tool::ActiveModel {
+        skill_preferred_tool::ActiveModel {
             skill_id: Set(skill_id),
             tool_id: Set(tool.id),
             created_at: Set(now),
@@ -168,12 +172,13 @@ async fn replace_skill_tools(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateSkillRequest {
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub category: Option<String>,
     pub intent_patterns: Option<serde_json::Value>,
-    pub tools: Option<Vec<String>>,
+    pub preferred_tools: Option<Vec<String>>,
     pub prompt_template: Option<Option<String>>,
     pub cacheable: Option<bool>,
     pub enabled: Option<bool>,
@@ -285,7 +290,14 @@ async fn create_skill(
         .upsert_artifact_in(&tx, &ArtifactRef::skill(skill_name.clone()), "api")
         .await
         .map_err(crate::error::AppError::Internal)?;
-    replace_skill_tools(&state.artifacts, &tx, skill_id, &skill_name, &body.tools).await?;
+    replace_skill_preferred_tools(
+        &state.artifacts,
+        &tx,
+        skill_id,
+        &skill_name,
+        &body.preferred_tools,
+    )
+    .await?;
     tx.commit()
         .await
         .map_err(crate::error::AppError::Database)?;
@@ -310,7 +322,7 @@ async fn update_skill(
 
     let skill_id = existing.id;
     let mut active: skill::ActiveModel = existing.into();
-    let tools_update = body.tools;
+    let preferred_tools_update = body.preferred_tools;
 
     if let Some(display_name) = body.display_name {
         active.display_name = Set(display_name);
@@ -358,8 +370,9 @@ async fn update_skill(
         .upsert_artifact_in(&tx, &ArtifactRef::skill(name.clone()), &result.source)
         .await
         .map_err(crate::error::AppError::Internal)?;
-    if let Some(tools) = tools_update {
-        replace_skill_tools(&state.artifacts, &tx, skill_id, &name, &tools).await?;
+    if let Some(preferred_tools) = preferred_tools_update {
+        replace_skill_preferred_tools(&state.artifacts, &tx, skill_id, &name, &preferred_tools)
+            .await?;
     }
     tx.commit()
         .await
@@ -445,4 +458,53 @@ pub fn routes() -> Router<AppState> {
             "/skills/{name}",
             get(get_skill).put(update_skill).delete(delete_skill),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_skill_request_accepts_preferred_tools() {
+        let request: CreateSkillRequest = serde_json::from_value(serde_json::json!({
+            "name": "weather",
+            "display_name": "Weather",
+            "description": null,
+            "category": "information",
+            "intent_patterns": ["weather"],
+            "preferred_tools": ["sensor_read"],
+            "prompt_template": null
+        }))
+        .expect("preferred_tools request should parse");
+
+        assert_eq!(request.preferred_tools, vec!["sensor_read"]);
+    }
+
+    #[test]
+    fn create_skill_request_rejects_legacy_tools_field() {
+        let result: std::result::Result<CreateSkillRequest, _> =
+            serde_json::from_value(serde_json::json!({
+                "name": "weather",
+                "display_name": "Weather",
+                "description": null,
+                "category": "information",
+                "intent_patterns": ["weather"],
+                "tools": ["sensor_read"],
+                "prompt_template": null
+            }));
+
+        let err = result.err().expect("legacy tools field should be rejected");
+        assert!(err.to_string().contains("unknown field `tools`"));
+    }
+
+    #[test]
+    fn update_skill_request_rejects_legacy_tools_field() {
+        let result: std::result::Result<UpdateSkillRequest, _> =
+            serde_json::from_value(serde_json::json!({
+                "tools": ["sensor_read"]
+            }));
+
+        let err = result.err().expect("legacy tools field should be rejected");
+        assert!(err.to_string().contains("unknown field `tools`"));
+    }
 }
