@@ -21,6 +21,7 @@ pub struct MotionRuntime {
     mapper: Option<Mutex<NeckMapper>>,
     servo: Arc<dyn ServoBackend>,
     state: Mutex<MotionState>,
+    servo_state: Mutex<ServoOutputState>,
 }
 
 #[derive(Default)]
@@ -28,6 +29,11 @@ struct MotionState {
     busy: bool,
     cancel: Option<CancellationToken>,
     smoothed_face_rot: [f32; 3],
+}
+
+#[derive(Default)]
+struct ServoOutputState {
+    last_angles: Option<Vec<f32>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +77,7 @@ impl MotionRuntime {
             mapper,
             servo,
             state: Mutex::new(MotionState::default()),
+            servo_state: Mutex::new(ServoOutputState::default()),
         })
     }
 
@@ -89,6 +96,7 @@ impl MotionRuntime {
             mapper: None,
             servo,
             state: Mutex::new(MotionState::default()),
+            servo_state: Mutex::new(ServoOutputState::default()),
         }
     }
 
@@ -138,6 +146,13 @@ impl MotionRuntime {
                 "thermal_limit": false,
                 "battery_saver": false,
                 "battery_level": null
+            },
+            "motion_safety": {
+                "soft_start_enabled": self.config.soft_start_enabled,
+                "soft_start_duration_ms": self.config.soft_start_duration_ms,
+                "reset_on_stop": self.config.reset_on_stop,
+                "reset_duration_ms": self.config.reset_duration_ms,
+                "max_servo_speed_deg_per_sec": self.config.max_servo_speed_deg_per_sec
             },
             "receipt_model": {
                 "statuses": ["accepted", "started", "completed", "failed", "timed_out"],
@@ -414,7 +429,9 @@ impl MotionRuntime {
             return Ok(());
         }
         if points.len() == 1 {
-            return self.set_rotation(points[0], apply_mapper_smoothing).await;
+            return self
+                .set_rotation_with_cancel(points[0], apply_mapper_smoothing, Some(cancel))
+                .await;
         }
         let fps = self.config.fps.max(1);
         let total_steps = ((duration_ms.max(1) as u64 * fps as u64) / 1000).max(1) as usize;
@@ -425,7 +442,8 @@ impl MotionRuntime {
             }
             let progress = step as f32 / total_steps as f32;
             let rot = sample_path(points, progress);
-            self.set_rotation(rot, apply_mapper_smoothing).await?;
+            self.set_rotation_with_cancel(rot, apply_mapper_smoothing, Some(cancel))
+                .await?;
             tokio::time::sleep(sleep).await;
         }
         Ok(())
@@ -449,7 +467,8 @@ impl MotionRuntime {
                 if frame_limit.is_some_and(|limit| played >= limit) {
                     return Ok(());
                 }
-                self.set_rotation(*frame, false).await?;
+                self.set_rotation_with_cancel(*frame, false, Some(cancel))
+                    .await?;
                 played += 1;
                 tokio::time::sleep(sleep).await;
             }
@@ -458,6 +477,16 @@ impl MotionRuntime {
     }
 
     async fn set_rotation(&self, rot: [f32; 3], apply_smoothing: bool) -> Result<()> {
+        self.set_rotation_with_cancel(rot, apply_smoothing, None)
+            .await
+    }
+
+    async fn set_rotation_with_cancel(
+        &self,
+        rot: [f32; 3],
+        apply_smoothing: bool,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<()> {
         let mapper = self
             .mapper
             .as_ref()
@@ -465,7 +494,59 @@ impl MotionRuntime {
         let mut mapper = mapper.lock().await;
         let angles = mapper.map(rot, apply_smoothing);
         drop(mapper);
-        self.servo.set_angles(&angles).await
+        self.drive_servo_angles_safely(&angles, None, cancel).await
+    }
+
+    async fn reset_to_center(&self, duration_ms: u32) -> Result<()> {
+        let angles = vec![self.config.center_angle; self.config.servo_count];
+        let duration = Duration::from_millis(duration_ms as u64);
+        self.drive_servo_angles_safely(&angles, Some(duration), None)
+            .await
+    }
+
+    async fn drive_servo_angles_safely(
+        &self,
+        target_angles: &[f32],
+        min_duration: Option<Duration>,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<()> {
+        if target_angles.is_empty() {
+            return Ok(());
+        }
+
+        let fps = self.config.fps.max(1);
+        let frame_interval = Duration::from_millis((1_000 / fps as u64).max(1));
+        let max_step_deg = max_servo_step_deg(self.config.max_servo_speed_deg_per_sec, fps);
+        let min_steps = min_duration
+            .map(|duration| {
+                let millis = duration.as_millis() as u64;
+                ((millis * fps as u64).div_ceil(1_000)).max(1) as usize
+            })
+            .unwrap_or(1);
+
+        let mut servo_state = self.servo_state.lock().await;
+        let previous = servo_state
+            .last_angles
+            .as_ref()
+            .filter(|angles| angles.len() == target_angles.len())
+            .cloned()
+            .unwrap_or_else(|| target_angles.to_vec());
+        let steps = servo_transition_steps(&previous, target_angles, max_step_deg, min_steps);
+
+        for step in 1..=steps {
+            if cancel.is_some_and(CancellationToken::is_cancelled) {
+                bail!("expression execution cancelled");
+            }
+            let t = step as f32 / steps as f32;
+            let frame = interpolate_servo_frame(&previous, target_angles, t);
+            self.servo.set_angles(&frame).await?;
+            servo_state.last_angles = Some(frame);
+            if step < steps {
+                tokio::time::sleep(frame_interval).await;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -493,14 +574,25 @@ impl ModuleLifecycle for MotionRuntime {
 
     async fn start(&self) -> Result<()> {
         if self.config.enabled && self.mapper.is_some() {
-            let angles = vec![self.config.center_angle; self.config.servo_count];
-            self.servo.set_angles(&angles).await?;
+            let duration_ms = if self.config.soft_start_enabled {
+                self.config.soft_start_duration_ms
+            } else {
+                0
+            };
+            self.reset_to_center(duration_ms).await?;
         }
         Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
         let _ = self.cancel_expression_json("motion runtime stopping").await;
+        if self.config.enabled
+            && self.mapper.is_some()
+            && self.config.reset_on_stop
+            && let Err(error) = self.reset_to_center(self.config.reset_duration_ms).await
+        {
+            warn!(error = %error, "motion reset on stop failed");
+        }
         Ok(())
     }
 
@@ -528,6 +620,41 @@ fn sample_path(points: &[[f32; 3]], progress: f32) -> [f32; 3] {
 
 fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
+}
+
+fn max_servo_step_deg(max_speed_deg_per_sec: f32, fps: u32) -> f32 {
+    if !max_speed_deg_per_sec.is_finite() || max_speed_deg_per_sec <= 0.0 {
+        return f32::INFINITY;
+    }
+    max_speed_deg_per_sec / fps.max(1) as f32
+}
+
+fn servo_transition_steps(
+    previous: &[f32],
+    target: &[f32],
+    max_step_deg: f32,
+    min_steps: usize,
+) -> usize {
+    let max_delta = previous
+        .iter()
+        .zip(target.iter())
+        .map(|(left, right)| (right - left).abs())
+        .fold(0.0_f32, f32::max);
+    let speed_steps = if max_step_deg.is_finite() && max_step_deg > 0.0 {
+        (max_delta / max_step_deg).ceil() as usize
+    } else {
+        1
+    };
+    speed_steps.max(min_steps).max(1)
+}
+
+fn interpolate_servo_frame(previous: &[f32], target: &[f32], t: f32) -> Vec<f32> {
+    let t = t.clamp(0.0, 1.0);
+    previous
+        .iter()
+        .zip(target.iter())
+        .map(|(left, right)| lerp(*left, *right, t))
+        .collect()
 }
 
 fn scaled_amplitude(intensity: f32, base: f32, per_intensity: f32, max: f32) -> f32 {
@@ -674,6 +801,10 @@ mod tests {
         assert_eq!(state["thermal_limit"], serde_json::json!(false));
         assert_eq!(state["battery_saver"], serde_json::json!(false));
         assert!(state["battery_level"].is_null());
+        assert_eq!(
+            capabilities["motion_safety"]["max_servo_speed_deg_per_sec"],
+            serde_json::json!(60.0)
+        );
     }
 
     #[test]
@@ -682,6 +813,25 @@ mod tests {
         assert_eq!(sample_path(&path, 0.0), [0.0, 0.0, 0.0]);
         assert_eq!(sample_path(&path, 0.5), [10.0, 0.0, 0.0]);
         assert_eq!(sample_path(&path, 1.0), [10.0, 10.0, 0.0]);
+    }
+
+    #[test]
+    fn servo_transition_steps_respect_speed_limit_and_min_duration() {
+        let max_step = max_servo_step_deg(60.0, 30);
+
+        assert_eq!(max_step, 2.0);
+        assert_eq!(
+            servo_transition_steps(&[90.0, 90.0], &[100.0, 94.0], max_step, 1),
+            5
+        );
+        assert_eq!(servo_transition_steps(&[90.0], &[92.0], max_step, 12), 12);
+    }
+
+    #[test]
+    fn interpolates_servo_frames_between_previous_and_target() {
+        let frame = interpolate_servo_frame(&[90.0, 100.0], &[100.0, 80.0], 0.25);
+
+        assert_eq!(frame, vec![92.5, 95.0]);
     }
 
     #[test]

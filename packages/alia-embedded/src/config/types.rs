@@ -752,6 +752,16 @@ pub struct MotionConfig {
     pub fps: u32,
     #[serde(default = "default_motion_center_angle")]
     pub center_angle: f32,
+    #[serde(default = "default_true")]
+    pub soft_start_enabled: bool,
+    #[serde(default = "default_motion_soft_start_duration_ms")]
+    pub soft_start_duration_ms: u32,
+    #[serde(default = "default_true")]
+    pub reset_on_stop: bool,
+    #[serde(default = "default_motion_reset_duration_ms")]
+    pub reset_duration_ms: u32,
+    #[serde(default = "default_motion_max_servo_speed_deg_per_sec")]
+    pub max_servo_speed_deg_per_sec: f32,
     #[serde(default = "default_motion_face_max_yaw")]
     pub face_max_yaw: f32,
     #[serde(default = "default_motion_face_max_pitch")]
@@ -783,6 +793,11 @@ impl Default for MotionConfig {
             hardware_enabled: false,
             fps: default_motion_fps(),
             center_angle: default_motion_center_angle(),
+            soft_start_enabled: true,
+            soft_start_duration_ms: default_motion_soft_start_duration_ms(),
+            reset_on_stop: true,
+            reset_duration_ms: default_motion_reset_duration_ms(),
+            max_servo_speed_deg_per_sec: default_motion_max_servo_speed_deg_per_sec(),
             face_max_yaw: default_motion_face_max_yaw(),
             face_max_pitch: default_motion_face_max_pitch(),
             face_deadzone: default_motion_face_deadzone(),
@@ -902,6 +917,15 @@ fn default_motion_fps() -> u32 {
 }
 fn default_motion_center_angle() -> f32 {
     90.0
+}
+fn default_motion_soft_start_duration_ms() -> u32 {
+    1_500
+}
+fn default_motion_reset_duration_ms() -> u32 {
+    1_200
+}
+fn default_motion_max_servo_speed_deg_per_sec() -> f32 {
+    60.0
 }
 fn default_motion_face_max_yaw() -> f32 {
     25.0

@@ -127,6 +127,17 @@ fn has_hmmd_debug_default() {
 }
 
 #[test]
+fn has_motion_protection_defaults() {
+    let settings = EmbeddedRuntimeSettings::default();
+
+    assert!(settings.motion.soft_start_enabled);
+    assert_eq!(settings.motion.soft_start_duration_ms, 1_500);
+    assert!(settings.motion.reset_on_stop);
+    assert_eq!(settings.motion.reset_duration_ms, 1_200);
+    assert_eq!(settings.motion.max_servo_speed_deg_per_sec, 60.0);
+}
+
+#[test]
 fn has_vision_debug_defaults() {
     let settings = EmbeddedRuntimeSettings::default();
 

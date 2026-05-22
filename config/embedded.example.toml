@@ -166,6 +166,12 @@ max_pulse_us = 2500
 hardware_enabled = false
 fps = 30
 center_angle = 90.0
+# Servo protection. All motion targets are rate-limited before reaching PCA9685.
+soft_start_enabled = true
+soft_start_duration_ms = 1500
+reset_on_stop = true
+reset_duration_ms = 1200
+max_servo_speed_deg_per_sec = 60.0
 face_max_yaw = 25.0
 face_max_pitch = 18.0
 face_deadzone = 0.04
