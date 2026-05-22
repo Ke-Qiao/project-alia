@@ -77,6 +77,7 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.hmmd_mmwave.serial_path);
     resolve_relative(parent, &mut config.motion.neck_config_file);
     resolve_relative(parent, &mut config.motion.animation_dir);
+    resolve_relative(parent, &mut config.motion.serial_path);
     resolve_relative(parent, &mut config.motion.i2c_device);
     resolve_relative(parent, &mut config.vision.yunet_model_path);
     resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
@@ -147,6 +148,7 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     relativize_path(base, &mut settings.hmmd_mmwave.serial_path);
     relativize_path(base, &mut settings.motion.neck_config_file);
     relativize_path(base, &mut settings.motion.animation_dir);
+    relativize_path(base, &mut settings.motion.serial_path);
     relativize_path(base, &mut settings.motion.i2c_device);
     relativize_path(base, &mut settings.vision.yunet_model_path);
     normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);

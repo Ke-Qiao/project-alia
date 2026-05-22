@@ -130,6 +130,10 @@ fn has_hmmd_debug_default() {
 fn has_motion_protection_defaults() {
     let settings = EmbeddedRuntimeSettings::default();
 
+    assert_eq!(settings.motion.servo_backend, "serial");
+    assert_eq!(settings.motion.serial_path, PathBuf::from("/dev/ttyACM0"));
+    assert_eq!(settings.motion.serial_baud_rate, 115_200);
+    assert_eq!(settings.motion.serial_startup_delay_ms, 2_000);
     assert!(settings.motion.soft_start_enabled);
     assert_eq!(settings.motion.soft_start_duration_ms, 1_500);
     assert!(settings.motion.reset_on_stop);

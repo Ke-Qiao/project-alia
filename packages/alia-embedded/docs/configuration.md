@@ -36,7 +36,7 @@ The example file is `config/embedded.example.toml`.
 | `[direct_response]` | Local response directory and matching behavior. |
 | `[continuous_dialogue]` | Follow-up listening windows and turn limits. |
 | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
-| `[motion]` | Native neck mapping, animation assets, expression actions, and PCA9685 output. |
+| `[motion]` | Native neck mapping, animation assets, expression actions, and serial/PCA9685 servo output. |
 | `[vision]` | OpenCV YuNet camera tracking parameters. |
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 

@@ -736,6 +736,14 @@ pub struct MotionConfig {
     pub animation_dir: PathBuf,
     #[serde(default = "default_motion_servo_count")]
     pub servo_count: usize,
+    #[serde(default = "default_motion_servo_backend")]
+    pub servo_backend: String,
+    #[serde(default = "default_motion_serial_path")]
+    pub serial_path: PathBuf,
+    #[serde(default = "default_motion_serial_baud_rate")]
+    pub serial_baud_rate: u32,
+    #[serde(default = "default_motion_serial_startup_delay_ms")]
+    pub serial_startup_delay_ms: u64,
     #[serde(default = "default_motion_i2c_device")]
     pub i2c_device: PathBuf,
     #[serde(default = "default_motion_pca9685_addresses")]
@@ -785,6 +793,10 @@ impl Default for MotionConfig {
             neck_config_file: default_motion_neck_config_file(),
             animation_dir: default_motion_animation_dir(),
             servo_count: default_motion_servo_count(),
+            servo_backend: default_motion_servo_backend(),
+            serial_path: default_motion_serial_path(),
+            serial_baud_rate: default_motion_serial_baud_rate(),
+            serial_startup_delay_ms: default_motion_serial_startup_delay_ms(),
             i2c_device: default_motion_i2c_device(),
             pca9685_addresses: default_motion_pca9685_addresses(),
             pca_frequency_hz: default_motion_pca_frequency_hz(),
@@ -896,6 +908,18 @@ fn default_motion_animation_dir() -> PathBuf {
 }
 fn default_motion_servo_count() -> usize {
     8
+}
+fn default_motion_servo_backend() -> String {
+    "serial".to_string()
+}
+fn default_motion_serial_path() -> PathBuf {
+    PathBuf::from("/dev/ttyACM0")
+}
+fn default_motion_serial_baud_rate() -> u32 {
+    115_200
+}
+fn default_motion_serial_startup_delay_ms() -> u64 {
+    2_000
 }
 fn default_motion_i2c_device() -> PathBuf {
     PathBuf::from("/dev/i2c-1")
