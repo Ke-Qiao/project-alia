@@ -145,6 +145,21 @@ fn test_to_openai_functions() {
 }
 
 #[test]
+fn memory_forget_schema_is_openai_compatible() {
+    let definition = MemoryForget::new(None).definition();
+
+    assert_eq!(definition.parameters["type"], "object");
+    for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        assert!(
+            definition.parameters.get(key).is_none(),
+            "memory_forget must not expose top-level {key} in OpenAI function parameters"
+        );
+    }
+    assert!(definition.parameters["properties"]["id"].is_object());
+    assert!(definition.parameters["properties"]["query"].is_object());
+}
+
+#[test]
 fn test_parse_openai_tool_call() {
     let call_json = serde_json::json!({
         "id": "call_123",

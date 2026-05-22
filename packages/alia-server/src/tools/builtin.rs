@@ -1283,7 +1283,7 @@ impl ToolExecutor for MemoryForget {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "memory_forget".to_string(),
-            description: "Forget/delete saved user memories only when the user explicitly asks to forget something.".to_string(),
+            description: "Forget/delete saved user memories only when the user explicitly asks to forget something. Provide either an exact memory id, or a text query describing the memory to forget.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1299,11 +1299,7 @@ impl ToolExecutor for MemoryForget {
                         "type": "integer",
                         "description": "Maximum matching memories to delete. Defaults to 1, maximum 10."
                     }
-                },
-                "anyOf": [
-                    {"required": ["id"]},
-                    {"required": ["query"]}
-                ]
+                }
             }),
             routing_hints: Vec::new(),
             source: "builtin".to_string(),
