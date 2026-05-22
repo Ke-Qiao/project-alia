@@ -12,9 +12,13 @@ use tracing::warn;
 use crate::config::MotionConfig;
 use crate::module::context::ModuleContext;
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::module::traits::DiscoveryMetadata;
 
 use super::neck_mapper::NeckMapper;
 use super::servo::{ServoBackend, create_servo_backend};
+
+const NATIVE_EXPRESSION_ACTIONS: &[&str] =
+    &["look_at_user", "small_nod", "small_bow", "play_animation"];
 
 pub struct MotionRuntime {
     config: MotionConfig,
@@ -102,7 +106,7 @@ impl MotionRuntime {
 
     pub async fn capabilities_json(&self) -> serde_json::Value {
         let state = self.state.lock().await;
-        let ready = self.config.enabled && self.mapper.is_some();
+        let ready = self.motion_ready();
         json!({
             "adapter": "embedded_native_motion_v1",
             "state_source": "embedded_native_motion",
@@ -159,6 +163,38 @@ impl MotionRuntime {
                 "state_quality": "unknown_when_no_sensor_provider"
             }
         })
+    }
+
+    pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
+        metadata.capabilities.extend(self.discovery_capabilities());
+        metadata.capabilities.sort();
+        metadata.capabilities.dedup();
+    }
+
+    fn discovery_capabilities(&self) -> Vec<String> {
+        if !self.motion_ready() {
+            return Vec::new();
+        }
+
+        let mut capabilities = vec![
+            "embedded.expression".to_string(),
+            "embedded.hardware_control".to_string(),
+            "expression.state.ready".to_string(),
+            "hardware_control".to_string(),
+            "motion.native".to_string(),
+        ];
+        capabilities.extend(
+            NATIVE_EXPRESSION_ACTIONS
+                .iter()
+                .map(|action| format!("expression.action.{action}")),
+        );
+        capabilities.sort();
+        capabilities.dedup();
+        capabilities
+    }
+
+    fn motion_ready(&self) -> bool {
+        self.config.enabled && self.mapper.is_some()
     }
 
     pub async fn execute_expression_json(&self, plan_json: &str) -> Result<serde_json::Value> {
@@ -832,6 +868,65 @@ mod tests {
         let frame = interpolate_servo_frame(&[90.0, 100.0], &[100.0, 80.0], 0.25);
 
         assert_eq!(frame, vec![92.5, 95.0]);
+    }
+
+    #[test]
+    fn disabled_motion_has_no_discovery_capabilities() {
+        let runtime = MotionRuntime::disabled(MotionConfig::default());
+
+        assert!(runtime.discovery_capabilities().is_empty());
+    }
+
+    #[test]
+    fn ready_motion_reports_hardware_control_discovery_capabilities() {
+        let config = MotionConfig {
+            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/neck/controller/neck_matrix_config.json"),
+            ..MotionConfig::default()
+        };
+        let runtime = MotionRuntime::new(config).unwrap();
+
+        let capabilities = runtime.discovery_capabilities();
+
+        assert!(capabilities.contains(&"hardware_control".to_string()));
+        assert!(capabilities.contains(&"embedded.hardware_control".to_string()));
+        assert!(capabilities.contains(&"embedded.expression".to_string()));
+        assert!(capabilities.contains(&"expression.state.ready".to_string()));
+        assert!(capabilities.contains(&"expression.action.small_nod".to_string()));
+    }
+
+    #[test]
+    fn discovery_metadata_includes_native_motion_capabilities() {
+        let config = MotionConfig {
+            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/neck/controller/neck_matrix_config.json"),
+            ..MotionConfig::default()
+        };
+        let runtime = MotionRuntime::new(config).unwrap();
+        let mut metadata = DiscoveryMetadata {
+            status: "bound".to_string(),
+            server_id: Some("server-main".to_string()),
+            capabilities: vec!["plugin.runtime".to_string()],
+            attributes: Default::default(),
+        };
+
+        runtime.enrich_discovery_metadata(&mut metadata);
+
+        assert!(
+            metadata
+                .capabilities
+                .contains(&"plugin.runtime".to_string())
+        );
+        assert!(
+            metadata
+                .capabilities
+                .contains(&"hardware_control".to_string())
+        );
+        assert!(
+            metadata
+                .capabilities
+                .contains(&"expression.action.look_at_user".to_string())
+        );
     }
 
     #[test]

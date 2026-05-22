@@ -13,6 +13,7 @@ use alia_proto::settings::{
 
 use super::auth::require_auth_if_bound;
 use crate::binding::BindingManager;
+use crate::module::motion::MotionRuntime;
 use crate::module::traits::DiscoveryBackend;
 use crate::module::volume::{
     AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState, MAX_AUDIO_VOLUME, MIN_AUDIO_VOLUME,
@@ -28,6 +29,7 @@ pub struct EmbeddedSettingsService {
     volume: AudioVolumeState,
     discovery: Arc<dyn DiscoveryBackend>,
     plugins: Arc<PluginRegistry>,
+    motion: Arc<MotionRuntime>,
 }
 
 impl EmbeddedSettingsService {
@@ -38,6 +40,7 @@ impl EmbeddedSettingsService {
         volume: AudioVolumeState,
         discovery: Arc<dyn DiscoveryBackend>,
         plugins: Arc<PluginRegistry>,
+        motion: Arc<MotionRuntime>,
     ) -> Self {
         Self {
             binding,
@@ -46,6 +49,7 @@ impl EmbeddedSettingsService {
             volume,
             discovery,
             plugins,
+            motion,
         }
     }
 
@@ -55,6 +59,7 @@ impl EmbeddedSettingsService {
             "provisioning_mode".to_string(),
             self.settings.provisioning_mode().await.to_string(),
         );
+        self.motion.enrich_discovery_metadata(&mut metadata);
         self.plugins.enrich_discovery_metadata(&mut metadata).await;
         if let Err(error) = self.discovery.update_metadata(&metadata).await {
             tracing::warn!(error = %error, "failed to refresh discovery metadata");

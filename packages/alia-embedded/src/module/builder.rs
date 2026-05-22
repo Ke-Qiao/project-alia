@@ -77,6 +77,7 @@ impl EmbeddedNode {
             self.registry.plugin_registry.clone(),
             self.binding_manager.clone(),
             self.registry.discovery.clone(),
+            self.registry.motion.clone(),
             self.settings_manager.clone(),
         ));
         let binding_svc = DeviceBindingServer::new(DeviceBindingService::new(
@@ -84,6 +85,7 @@ impl EmbeddedNode {
             self.config.identity.clone(),
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
+            self.registry.motion.clone(),
             self.settings_manager.clone(),
             device_public_key,
         ));
@@ -94,6 +96,7 @@ impl EmbeddedNode {
             self.volume_state.clone(),
             self.registry.discovery.clone(),
             self.registry.plugin_registry.clone(),
+            self.registry.motion.clone(),
         ));
         let sensor_svc = EmbeddedSensorServer::new(SensorService::new(
             self.registry.sensors.clone(),
@@ -472,6 +475,7 @@ impl EmbeddedBuilder {
             "provisioning_mode".to_string(),
             settings_manager.provisioning_mode().await.to_string(),
         );
+        motion.enrich_discovery_metadata(&mut initial_discovery_metadata);
         plugin_registry
             .enrich_discovery_metadata(&mut initial_discovery_metadata)
             .await;

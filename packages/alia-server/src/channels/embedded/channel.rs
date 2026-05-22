@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,7 +92,24 @@ struct DiscoveryCandidate {
     status: String,
     provisioning_mode: bool,
     bind_required: bool,
+    capabilities: Vec<String>,
     metadata: serde_json::Value,
+}
+
+fn parse_discovery_capabilities(properties: &HashMap<String, String>) -> Vec<String> {
+    let mut capabilities = properties
+        .get("caps")
+        .map(|caps| {
+            caps.split(',')
+                .map(str::trim)
+                .filter(|capability| !capability.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    capabilities.sort();
+    capabilities.dedup();
+    capabilities
 }
 
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
@@ -185,6 +202,7 @@ impl EmbeddedChannel {
                             Ok(Some(service)) => {
                                 let status_value = service.properties.get("status").cloned().unwrap_or_else(|| "unknown".to_string());
                                 let provisioning_mode = service.properties.get("provisioning_mode").map(|value| value == "true").unwrap_or(false);
+                                let capabilities = parse_discovery_capabilities(&service.properties);
                                 let candidate = DiscoveryCandidate {
                                     endpoint: service.endpoint,
                                     device_id: service.properties.get("id").cloned(),
@@ -192,6 +210,7 @@ impl EmbeddedChannel {
                                     status: status_value.clone(),
                                     provisioning_mode,
                                     bind_required: status_value == "unbound",
+                                    capabilities,
                                     metadata: serde_json::to_value(service.properties).unwrap_or_else(|_| serde_json::json!({})),
                                 };
                                 Some(candidate)
@@ -215,6 +234,7 @@ impl EmbeddedChannel {
                                         status = %candidate.status,
                                         provisioning_mode = candidate.provisioning_mode,
                                         bind_required = candidate.bind_required,
+                                        capabilities = %candidate.capabilities.join(","),
                                         "embedded accessory discovered"
                                     );
                                     event_bus.publish(ServerEvent::DeviceDiscovered {
@@ -225,6 +245,7 @@ impl EmbeddedChannel {
                                         status: candidate.status.clone(),
                                         provisioning_mode: candidate.provisioning_mode,
                                         bind_required: candidate.bind_required,
+                                        capabilities: candidate.capabilities.clone(),
                                     });
                                     if candidate.bind_required {
                                         *status.write().await = ConnectionStatus::Disconnected {

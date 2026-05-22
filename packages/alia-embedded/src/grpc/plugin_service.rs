@@ -11,6 +11,7 @@ use alia_proto::plugin::{
 };
 
 use super::auth::require_auth;
+use crate::module::motion::MotionRuntime;
 use crate::plugin::{PluginRegistry, PluginState};
 use crate::settings::EmbeddedSettingsManager;
 use crate::{binding::BindingManager, module::traits::DiscoveryBackend};
@@ -19,6 +20,7 @@ pub struct PluginManagerService {
     registry: Arc<PluginRegistry>,
     binding: Arc<BindingManager>,
     discovery: Arc<dyn DiscoveryBackend>,
+    motion: Arc<MotionRuntime>,
     settings: Arc<EmbeddedSettingsManager>,
 }
 
@@ -27,12 +29,14 @@ impl PluginManagerService {
         registry: Arc<PluginRegistry>,
         binding: Arc<BindingManager>,
         discovery: Arc<dyn DiscoveryBackend>,
+        motion: Arc<MotionRuntime>,
         settings: Arc<EmbeddedSettingsManager>,
     ) -> Self {
         Self {
             registry,
             binding,
             discovery,
+            motion,
             settings,
         }
     }
@@ -43,6 +47,7 @@ impl PluginManagerService {
             "provisioning_mode".to_string(),
             self.settings.provisioning_mode().await.to_string(),
         );
+        self.motion.enrich_discovery_metadata(&mut metadata);
         self.registry.enrich_discovery_metadata(&mut metadata).await;
         if let Err(error) = self.discovery.update_metadata(&metadata).await {
             tracing::warn!(

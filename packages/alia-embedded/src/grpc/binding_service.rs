@@ -11,6 +11,7 @@ use alia_proto::binding::{
 use super::auth::require_auth;
 use crate::binding::BindingManager;
 use crate::config::IdentityConfig;
+use crate::module::motion::MotionRuntime;
 use crate::module::traits::DiscoveryBackend;
 use crate::plugin::PluginRegistry;
 use crate::settings::EmbeddedSettingsManager;
@@ -20,6 +21,7 @@ pub struct DeviceBindingService {
     identity: IdentityConfig,
     discovery: Arc<dyn DiscoveryBackend>,
     plugins: Arc<PluginRegistry>,
+    motion: Arc<MotionRuntime>,
     settings: Arc<EmbeddedSettingsManager>,
     public_key: Vec<u8>,
 }
@@ -30,6 +32,7 @@ impl DeviceBindingService {
         identity: IdentityConfig,
         discovery: Arc<dyn DiscoveryBackend>,
         plugins: Arc<PluginRegistry>,
+        motion: Arc<MotionRuntime>,
         settings: Arc<EmbeddedSettingsManager>,
         public_key: Vec<u8>,
     ) -> Self {
@@ -38,6 +41,7 @@ impl DeviceBindingService {
             identity,
             discovery,
             plugins,
+            motion,
             settings,
             public_key,
         }
@@ -49,6 +53,7 @@ impl DeviceBindingService {
             "provisioning_mode".to_string(),
             self.settings.provisioning_mode().await.to_string(),
         );
+        self.motion.enrich_discovery_metadata(&mut metadata);
         self.plugins.enrich_discovery_metadata(&mut metadata).await;
         if let Err(error) = self.discovery.update_metadata(&metadata).await {
             tracing::warn!(error = %error, "failed to refresh discovery metadata");

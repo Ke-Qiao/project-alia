@@ -28,6 +28,7 @@ pub enum ServerEvent {
         status: String,
         provisioning_mode: bool,
         bind_required: bool,
+        capabilities: Vec<String>,
     },
 
     // Plugin events
