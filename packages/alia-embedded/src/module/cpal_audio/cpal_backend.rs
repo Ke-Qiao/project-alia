@@ -143,7 +143,10 @@ pub(super) fn start_cpal_capture_runtime(
 
 pub(super) fn start_cpal_playback_runtime(
     config: &AudioConfig,
-) -> Result<(Stream, Arc<Mutex<VecDeque<i16>>>, u32, usize)> {
+    generation: Arc<AtomicU64>,
+    volume: AudioVolumeState,
+    device_failed: impl Fn() + Send + 'static,
+) -> Result<CpalPlaybackSink> {
     let host = cpal::default_host();
     let device = select_output_device(&host, &config.playback_device)?;
     let selected = select_stream_config(
@@ -164,8 +167,11 @@ pub(super) fn start_cpal_playback_runtime(
     );
     let sample_rate = stream_config.sample_rate.0;
     let channels = stream_config.channels.max(1) as usize;
-    let buffer = Arc::new(Mutex::new(VecDeque::new()));
-    let err_fn = |error| warn!(%error, "cpal output stream error");
+    let buffer = Arc::new(Mutex::new(PlaybackBuffer::new(generation)));
+    let err_fn = move |error| {
+        device_failed();
+        warn!(%error, "cpal output stream error; closing playback runtime");
+    };
 
     let stream = match selected.sample_format() {
         SampleFormat::I8 => {
@@ -211,7 +217,58 @@ pub(super) fn start_cpal_playback_runtime(
         channels,
         "started cpal audio playback"
     );
-    Ok((stream, buffer, sample_rate, channels))
+    Ok(CpalPlaybackSink {
+        _stream: stream,
+        buffer,
+        sample_rate,
+        channels,
+        max_buffer_ms: playback_max_buffer_ms(config),
+        volume,
+    })
+}
+
+pub(super) struct CpalPlaybackSink {
+    _stream: Stream,
+    buffer: Arc<Mutex<PlaybackBuffer>>,
+    sample_rate: u32,
+    channels: usize,
+    max_buffer_ms: u64,
+    volume: AudioVolumeState,
+}
+
+impl PlaybackSink for CpalPlaybackSink {
+    fn buffered_ms(&self) -> u64 {
+        let buffer = self
+            .buffer
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        playback_buffered_ms(buffer.len(), self.sample_rate, self.channels)
+    }
+
+    fn enqueue(&mut self, block: AudioBlock) -> Result<()> {
+        let mut rendered = block.render(self.sample_rate, self.channels);
+        apply_gain_in_place(&mut rendered, self.volume.playback_volume());
+        let mut buffer = lock_mutex(&self.buffer, "playback buffer")?;
+        if buffer.append(block.generation, rendered) {
+            clamp_playback_buffer(
+                &mut buffer.samples,
+                self.sample_rate,
+                self.channels,
+                self.max_buffer_ms,
+            );
+        }
+        Ok(())
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        lock_mutex(&self.buffer, "playback buffer")?.clear();
+        Ok(())
+    }
+
+    fn pump(&mut self) -> Result<()> {
+        // The CPAL callback consumes samples independently.
+        Ok(())
+    }
 }
 
 fn build_input_stream<T>(
@@ -288,7 +345,7 @@ where
 fn build_output_stream<T>(
     device: &Device,
     config: &StreamConfig,
-    buffer: Arc<Mutex<VecDeque<i16>>>,
+    buffer: Arc<Mutex<PlaybackBuffer>>,
     err_fn: impl Fn(cpal::StreamError) + Send + 'static,
 ) -> Result<Stream>
 where
@@ -297,15 +354,14 @@ where
     device
         .build_output_stream(
             config,
-            move |data: &mut [T], _| match buffer.lock() {
+            move |data: &mut [T], _| match buffer.try_lock() {
                 Ok(mut buffer) => {
                     for output in data {
-                        let sample = buffer.pop_front().unwrap_or(0);
+                        let sample = buffer.next_sample();
                         *output = T::from_i16_sample(sample);
                     }
                 }
-                Err(error) => {
-                    warn!(%error, "playback buffer lock poisoned");
+                Err(_) => {
                     for output in data {
                         *output = T::from_i16_sample(0);
                     }
