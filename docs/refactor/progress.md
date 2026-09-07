@@ -12,6 +12,7 @@
 | `b40120a` | 端侧有界播放与独立停止控制、本地 generation 失效、统一 CPAL/ALSA 控制循环 | 播放控制 11 项、已有 audio 集成 9 项通过；Linux ARM64 构建通过 |
 | `29e9ab6` | 固定官方源码/权重的常驻 Easy-Turn 服务与可复现依赖 | 14 项服务契约测试；真实 CPU 严格加载及 16 个官方样本 HTTP 推理通过 |
 | `33a7c98` | 持续采集 v1 协议、端侧 server_turn 模式、Server 窗口与模型决策、可靠语音入口、可监督交互管线 | 实际 gRPC→Rust→CPU 模型；136 个 Server 常规单元测试及全部 Server 集成测试（带真实数据库）通过；Embedded 无默认特性 98 项通过 |
+| `1ecb2ce` | boot/session/generation 播放协议、原子入队失效、凭证续期与解绑关闭、端侧信号退出 | macOS 默认特性整个 workspace 409 项通过；真实 DB 套件通过；两项真实模型测试另跑通过；Server 无默认特性 all-targets 通过；Linux ARM64 端侧变更检查通过 |
 
 `33a7c98` 中嵌入渠道测试的 feature 属性位置随后修正；修正后默认特性测试及 `--no-default-features --all-targets` 检查均通过。记录验证时应以修正后的分支为准。
 
@@ -22,21 +23,25 @@
 - Server 配置使用 `config/server.example.d/providers/easy_turn.toml` 中的 `[providers.easy_turn] enabled = true`，endpoint 默认 `http://127.0.0.1:8091`。
 - Embedded 使用 `[speech] mode = "server_turn"`、16 kHz 单声道。唤醒后在播放期间持续上传；VAD 只提供活动证据。没有静默回退成端侧模型。
 - 模拟与领域测试验证协议、控制、取消及队列；它们不等同于声卡、AEC 或真机双讲验收。
+- 连续采集、认证续期、播放隔离和关闭的实际契约：[语音协议 v1](voice-protocol.md)。
 
 本次真实验证宿主为 Apple M5 Max / 64 GiB / macOS 26.6.2 / arm64。尚未得到用户确认其就是最终部署 Mac。Python 3.10.20、Torch 2.2.2 的 CPU 首次样本推理约 1,449 ms，其余 15 个样本约 286–537 ms；这是特征提取和模型执行耗时，不含 LLM/TTS、网络设备播放或模型加载。
 
-服务端完整测试使用独立的临时 PostgreSQL/pgvector，未使用现有开发数据库。Linux ARM64 Embedded 检查运行在隔离的官方 Rust 容器中，使用 `--no-default-features`；不能由此推导默认 Sherpa 原生依赖或 Pi 音频外设已通过。
+服务端完整测试使用独立的临时 PostgreSQL/pgvector，未使用现有开发数据库。针对固定 `ef07d43` 的 Linux ARM64 Server 默认特性构建及 136 项库测试、Embedded 默认 Sherpa 特性完整构建链接均已通过，详见 [隔离平台验证](platform-validation.md)。新播放变更另外通过 Linux ARM64 Embedded 无默认特性检查；不能把这些容器结果推导成 Pi 音频外设通过。
+
+`1ecb2ce` 的完整 workspace 测试启用了两端默认特性：409 passed、0 failed、4 ignored。四项跳过中，两项真实 Easy-Turn 测试随后显式运行并通过；另外两项真实 PTY 测试未重复运行（前一基础包已实际通过）。最新真实 gRPC 测试还核对了 Complete 2、Wait 3、Close 的原始会话身份；对应 CPU 模型执行约 508 / 328 / 426 ms，不代表端到端声学延迟。
 
 ## 尚未完成的主线
 
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
-1. 播放的网络身份栅栏：把原始 boot/session/generation 传到输出协议，拒绝迟到旧帧和旧停止请求；本地 generation 单独不足以保证这一点。正在实施下一包。
-2. 持续会话凭证续期：已有签名的时间新鲜度限制为 300 秒；当前固定凭证重验会结束较长会话。需要续期协议及绑定撤销测试，不能删除过期检查。
-3. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
-4. 独立 Execution / Delivery 事实、四类生命周期、事务 Outbox、幂等、unknown 结果与恢复。当前可监督工具任务与普通 trace 不等同于持久执行账本。
-5. Memory / Companion 状态归属、删除失效、主动表达策略、端侧动作安全与恢复的进一步重构和故障验证。
-6. 默认原生依赖构建、其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。
+1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
+2. 独立 Execution / Delivery 事实、四类生命周期、事务 Outbox、幂等、unknown 结果与恢复。当前可监督工具任务与普通 trace 不等同于持久执行账本；下一包依据 [Execution 设计](execution-design.md) 收敛。
+3. Memory / Companion 状态归属、删除失效、主动表达策略、端侧动作安全与恢复的进一步重构和故障验证。
+4. Embedded 装配的启动失败回滚和整体退出期限；当前已保证 serve 返回及前置错误后清理，但旧模式的客户端长期保持上传仍可能阻止优雅退出。
+5. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。
+
+播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
 
 模型观测成功、文本回复生成、音频被接收、音频提交给设备和设备实际呈现必须分别记录；目前未以估算时长证明声学播放完成。旧广播事件入口仍有可见的丢弃策略，尚未全部替换为可靠命令入口。
 
