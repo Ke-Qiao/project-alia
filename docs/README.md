@@ -43,6 +43,10 @@ below when trying to understand the active architecture.
 
 ## Tracking
 
+- [Refactor plan](refactor/plan.md) records the agreed scope and proposed stages
+  for the server / Raspberry Pi 5 rebuild. It is a plan, not implemented behavior.
+- [Deferred work](refactor/deferred.md) records postponed frontend and general
+  embedded support, with conditions for resuming them in later rounds.
 - [Server TODO](todo.md) tracks known server-side implementation gaps and
   follow-up work.
 
