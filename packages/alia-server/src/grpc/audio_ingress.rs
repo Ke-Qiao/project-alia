@@ -13,6 +13,7 @@ use crate::event::{EventBus, ServerEvent};
 
 const CHANNEL_ID_METADATA: &str = "x-alia-channel-id";
 
+#[derive(Clone)]
 pub struct ServerAudioIngressService {
     event_bus: EventBus,
     channels: Arc<ChannelRegistry>,
@@ -48,7 +49,7 @@ impl ServerAudioIngressService {
             .ok_or_else(|| Status::invalid_argument(format!("channel '{requested}' not found")))
     }
 
-    async fn authenticate_ingress<T>(
+    pub(crate) async fn authenticate_ingress<T>(
         &self,
         request: &Request<T>,
         requested_channel_id: Option<&str>,
@@ -114,13 +115,13 @@ impl ServerAudioIngress for ServerAudioIngressService {
             .authenticate_ingress_token(token, None, metadata_channel_id)
             .await?;
         let mut stream = request.into_inner();
-        let mut audio = Vec::new();
-        let mut user_id = None;
-        let mut sample_rate = 16_000;
-        let mut channels = 1;
-        let mut encoding = ProtoAudioEncoding::PcmS16le;
-
-        while let Some(frame) = stream.message().await? {
+        let mut audio = alia_core::voice::AudioWindowBuffer::default();
+        let mut user_id: Option<String> = None;
+        let upload_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(40);
+        while let Some(frame) = tokio::time::timeout_at(upload_deadline, stream.message())
+            .await
+            .map_err(|_| Status::deadline_exceeded("captured utterance upload deadline"))??
+        {
             if !frame.channel_id.is_empty() {
                 let frame_channel_id = self.resolve_channel_id(Some(frame.channel_id)).await?;
                 if frame_channel_id != authenticated_channel_id {
@@ -130,39 +131,43 @@ impl ServerAudioIngress for ServerAudioIngressService {
                 }
             }
             if !frame.user_id.is_empty() {
+                if user_id.as_ref().is_some_and(|user| user != &frame.user_id) {
+                    return Err(Status::invalid_argument(
+                        "captured utterance identity changed",
+                    ));
+                }
                 user_id = Some(frame.user_id);
             }
-            if frame.sample_rate > 0 {
-                sample_rate = frame.sample_rate;
+            if frame.sample_rate != 16_000 || frame.channels != 1 {
+                return Err(Status::invalid_argument(
+                    "captured speech requires mono 16000 Hz PCM16",
+                ));
             }
-            if frame.channels > 0 {
-                channels = frame.channels;
+            let chunk = frame
+                .chunk
+                .ok_or_else(|| Status::invalid_argument("missing captured audio chunk"))?;
+            if chunk.encoding != ProtoAudioEncoding::PcmS16le as i32 {
+                return Err(Status::invalid_argument(
+                    "captured speech requires pcm_s16le",
+                ));
             }
-            if let Some(chunk) = frame.chunk {
-                encoding = ProtoAudioEncoding::try_from(chunk.encoding)
-                    .unwrap_or(ProtoAudioEncoding::PcmS16le);
-                audio.extend_from_slice(&chunk.opus_data);
-            }
+            audio
+                .push(chunk.sequence, &chunk.opus_data)
+                .map_err(|error| Status::invalid_argument(error.to_string()))?;
         }
-
-        if audio.is_empty() {
-            return Err(Status::invalid_argument("captured audio stream was empty"));
-        }
-
-        let format = match encoding {
-            ProtoAudioEncoding::PcmS16le => AudioFormat::Pcm16,
-            ProtoAudioEncoding::Opus => AudioFormat::Opus,
-        };
+        let audio = audio
+            .into_window()
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
 
         self.event_bus
             .publish(ServerEvent::ChannelInput(ChannelEvent::AudioInput {
                 channel_id: authenticated_channel_id,
                 user_id: user_id.unwrap_or_else(|| self.default_user_id.clone()),
                 audio: AudioPayload {
-                    data: audio,
-                    sample_rate,
-                    channels: channels as u16,
-                    format,
+                    data: audio.as_bytes().to_vec(),
+                    sample_rate: 16_000,
+                    channels: 1,
+                    format: AudioFormat::Pcm16,
                 },
             }));
 

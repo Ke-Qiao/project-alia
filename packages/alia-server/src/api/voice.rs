@@ -85,21 +85,74 @@ pub struct VoiceCapabilitiesResponse {
 
 // ========== Handlers ==========
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct TurnDetectionRequest {
-    #[serde(flatten)]
-    pub id: DetectionId,
+    pub request_id: uuid::Uuid,
+    pub generation_epoch: u64,
     pub audio_base64: String,
     pub sample_rate_hz: u32,
     pub channels: u32,
 }
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TurnDetectionResponse {
+    pub request_id: uuid::Uuid,
+    pub generation_epoch: u64,
+    pub transcript: String,
+    pub state: TurnDetectionState,
+    pub model: TurnDetectionModel,
+    pub inference_ms: f64,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnDetectionState {
+    Complete,
+    Incomplete,
+    Backchannel,
+    Wait,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TurnDetectionModel {
+    pub source: String,
+    pub revision: String,
+    pub device: String,
+}
+
+impl From<TurnObservation> for TurnDetectionResponse {
+    fn from(value: TurnObservation) -> Self {
+        Self {
+            request_id: value.id.request_id,
+            generation_epoch: value.id.generation_epoch,
+            transcript: value.transcript,
+            state: match value.state {
+                alia_core::voice::TurnState::Complete => TurnDetectionState::Complete,
+                alia_core::voice::TurnState::Incomplete => TurnDetectionState::Incomplete,
+                alia_core::voice::TurnState::Backchannel => TurnDetectionState::Backchannel,
+                alia_core::voice::TurnState::Wait => TurnDetectionState::Wait,
+            },
+            model: TurnDetectionModel {
+                source: value.model.source,
+                revision: value.model.revision,
+                device: value.model.device,
+            },
+            inference_ms: value.inference_ms,
+        }
+    }
+}
+
 /// Diagnostic model endpoint. Observations alone never authorize tools or device output.
-async fn detect_turn(
+#[utoipa::path(post, path = "/api/v1/voice/turn-detection", tag = "voice", security(("bearer" = [])),
+    request_body = TurnDetectionRequest,
+    responses((status = 200, description = "Model evidence for the supplied audio window", body = TurnDetectionResponse),
+        (status = 400, description = "Invalid audio"), (status = 401, description = "Authentication required"),
+        (status = 429, description = "Model capacity reached"), (status = 503, description = "Model unavailable")))]
+pub async fn detect_turn(
     State(state): State<AppState>,
     _auth: AuthUser,
     Json(request): Json<TurnDetectionRequest>,
-) -> Result<Json<TurnObservation>> {
+) -> Result<Json<TurnDetectionResponse>> {
     let detector = state
         .turn_detector
         .as_ref()
@@ -115,14 +168,26 @@ async fn detect_turn(
         request.channels,
     )
     .map_err(|error| AppError::Validation(error.to_string()))?;
+    if audio.duration_ms() < 100 {
+        return Err(AppError::Validation(
+            "Easy-Turn requires at least 100 ms of audio".into(),
+        ));
+    }
     let observation = detector
-        .detect(request.id, &audio, &state.cancel_token)
+        .detect(
+            DetectionId {
+                request_id: request.request_id,
+                generation_epoch: request.generation_epoch,
+            },
+            &audio,
+            &state.cancel_token,
+        )
         .await
         .map_err(|error| match error {
             DetectionError::Busy => AppError::RateLimited,
             other => AppError::AiService(other.to_string()),
         })?;
-    Ok(Json(observation))
+    Ok(Json(observation.into()))
 }
 
 /// Full voice pipeline: [audio → STT] → Router → LLM → [TTS → audio]

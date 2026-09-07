@@ -91,6 +91,17 @@ record_wake_capture = true
 record_playback = true
 capture_segment_ms = 10000
 
+[speech]
+# Pair server_turn with the server's [providers.easy_turn] enabled = true.
+# This mode uploads continuously after wake word, including during playback;
+# VAD supplies activity evidence only. Re-wake after disconnect/overflow.
+# Default when omitted: "utterance" (the existing local endpointing pipeline).
+# Requires [audio] capture_sample_rate = 16000 and capture_channels = 1.
+# AEC and stale network playback rejection are not yet validated.
+mode = "server_turn"
+pre_roll_ms = 200
+upload_queue_frames = 32
+
 [edge_stt]
 language = "zh"
 max_duration_ms = 15000

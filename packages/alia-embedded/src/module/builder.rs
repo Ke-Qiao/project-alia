@@ -222,6 +222,7 @@ impl EmbeddedBuilder {
     /// Build the embedded node: instantiate modules, initialize them, start services.
     pub async fn build(self) -> Result<EmbeddedNode> {
         let config = self.config.clone();
+        config.speech.validate(&config.audio)?;
 
         // Create shared context resources
         let run_dir = PathBuf::from("run");
@@ -276,6 +277,9 @@ impl EmbeddedBuilder {
         };
         let mut edge_stt: Box<dyn EdgeSttEngine> = match self.edge_stt {
             Some(m) => m,
+            None if config.speech.mode == crate::config::SpeechMode::ServerTurn => {
+                Box::new(NoopEdgeStt)
+            }
             None => factory::create_edge_stt(&config).unwrap_or_else(|error| {
                 warn!(error = ?error, "edge STT module creation failed; using noop");
                 Box::new(NoopEdgeStt)
@@ -436,6 +440,7 @@ impl EmbeddedBuilder {
             audio_playback.clone(),
             binding_manager.clone(),
             &config.edge_stt,
+            &config.speech,
             &config.interrupt,
             &config.thinking,
             &config.continuous_dialogue,

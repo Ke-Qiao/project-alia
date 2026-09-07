@@ -577,7 +577,10 @@ impl ServerBuilder {
             self.config.policies.transcript_correction.clone(),
         )));
 
+        let (voice_input, voice_input_rx) = crate::modules::interaction::voice_input::channel();
         let state = AppState {
+            voice_input,
+            pipeline_task: Arc::default(),
             turn_detector,
             db: self.db,
             channels: channel_registry,
@@ -630,7 +633,7 @@ impl ServerBuilder {
         }
 
         // Spawn the Channel → AI Pipeline processing loop
-        spawn_pipeline(
+        let pipeline_task = spawn_pipeline(
             &state.event_bus,
             state.modules.clone(),
             state.channels.clone(),
@@ -638,7 +641,9 @@ impl ServerBuilder {
             state.cancel_token.clone(),
             state.config.server.debug_output,
             pipeline_policies,
+            voice_input_rx,
         );
+        *state.pipeline_task.lock().await = Some(pipeline_task);
 
         Ok(state)
     }

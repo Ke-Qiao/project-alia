@@ -12,6 +12,7 @@ use crate::api;
     paths(
         // Health
         api::health::health_check,
+        api::voice::detect_turn,
         // Auth
         api::auth::login,
         api::auth::register,

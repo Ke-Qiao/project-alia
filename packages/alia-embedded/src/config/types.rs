@@ -10,6 +10,8 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub edge_stt: EdgeSttConfig,
     #[serde(default)]
+    pub speech: SpeechConfig,
+    #[serde(default)]
     pub vad: VadConfig,
     #[serde(default)]
     pub interrupt: InterruptConfig,
@@ -285,6 +287,52 @@ fn default_post_wake_capture_ms() -> u32 {
 }
 fn default_post_wake_response_delay_ms() -> u32 {
     700
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechMode {
+    #[default]
+    Utterance,
+    ServerTurn,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpeechConfig {
+    pub mode: SpeechMode,
+    pub pre_roll_ms: u32,
+    pub upload_queue_frames: usize,
+}
+
+impl Default for SpeechConfig {
+    fn default() -> Self {
+        Self {
+            mode: SpeechMode::Utterance,
+            pre_roll_ms: 200,
+            upload_queue_frames: 32,
+        }
+    }
+}
+
+impl SpeechConfig {
+    pub fn validate(&self, audio: &AudioConfig) -> anyhow::Result<()> {
+        if self.mode == SpeechMode::ServerTurn {
+            anyhow::ensure!(
+                audio.capture_sample_rate == 16000 && audio.capture_channels == 1,
+                "server_turn requires 16 kHz mono capture"
+            );
+            anyhow::ensure!(
+                self.pre_roll_ms <= 1000,
+                "speech.pre_roll_ms must be <= 1000"
+            );
+            anyhow::ensure!(
+                (1..=256).contains(&self.upload_queue_frames),
+                "speech.upload_queue_frames must be between 1 and 256"
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1099,6 +1147,8 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub edge_stt: EdgeSttConfig,
     #[serde(default)]
+    pub speech: SpeechConfig,
+    #[serde(default)]
     pub vad: VadConfig,
     #[serde(default)]
     pub interrupt: InterruptConfig,
@@ -1129,6 +1179,7 @@ impl Default for EmbeddedConfig {
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
             edge_stt: EdgeSttConfig::default(),
+            speech: SpeechConfig::default(),
             vad: VadConfig::default(),
             interrupt: InterruptConfig::default(),
             thinking: ThinkingConfig::default(),
@@ -1156,6 +1207,7 @@ impl EmbeddedConfig {
         self.audio = runtime.audio;
         self.audio_debug = runtime.audio_debug;
         self.edge_stt = runtime.edge_stt;
+        self.speech = runtime.speech;
         self.vad = runtime.vad;
         self.interrupt = runtime.interrupt;
         self.thinking = runtime.thinking;
@@ -1180,6 +1232,7 @@ impl EmbeddedConfig {
             audio: self.audio.clone(),
             audio_debug: self.audio_debug.clone(),
             edge_stt: self.edge_stt.clone(),
+            speech: self.speech.clone(),
             vad: self.vad.clone(),
             interrupt: self.interrupt.clone(),
             thinking: self.thinking.clone(),

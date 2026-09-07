@@ -16,16 +16,24 @@ struct VoiceTurnKey {
 
 #[derive(Debug, Clone)]
 pub(super) struct VoiceTurn {
+    /// Response audit identity; live session ownership is in voice_scope.
     pub(super) id: Uuid,
     pub(super) token: CancellationToken,
     pub(super) interrupt_config: ChannelInterruptConfig,
+    pub(super) voice_scope: Option<VoiceSessionScope>,
     interrupt_state: Arc<StdMutex<VoiceTurnInterruptState>>,
     key: VoiceTurnKey,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub(super) struct VoiceSessionScope {
+    pub(super) session_id: Uuid,
+    pub(super) device_boot_id: Uuid,
+    pub(super) generation_epoch: u64,
+}
+
 #[derive(Debug)]
 struct ActiveVoiceTurn {
-    id: Uuid,
     token: CancellationToken,
     interrupt_state: Arc<StdMutex<VoiceTurnInterruptState>>,
 }
@@ -53,25 +61,42 @@ impl VoiceTurnRegistry {
         channel_id: String,
         user_id: String,
         interrupt_config: ChannelInterruptConfig,
+        token: CancellationToken,
+    ) -> VoiceTurn {
+        self.register(channel_id, user_id, Uuid::new_v4(), interrupt_config, token)
+            .await
+    }
+
+    /// Register a response audit identity with the owner's cancellation token.
+    pub(super) async fn register(
+        &self,
+        channel_id: String,
+        user_id: String,
+        id: Uuid,
+        interrupt_config: ChannelInterruptConfig,
+        token: CancellationToken,
     ) -> VoiceTurn {
         let key = VoiceTurnKey {
             channel_id,
             user_id,
         };
         let turn = VoiceTurn {
-            id: Uuid::new_v4(),
+            id,
             key: key.clone(),
-            token: CancellationToken::new(),
+            token,
             interrupt_config,
+            voice_scope: None,
             interrupt_state: Arc::new(StdMutex::new(VoiceTurnInterruptState::default())),
         };
 
         if turn.interrupt_config.enabled {
             let mut active = self.active.lock().await;
+            if turn.token.is_cancelled() {
+                return turn;
+            }
             if let Some(previous) = active.insert(
                 key,
                 ActiveVoiceTurn {
-                    id: turn.id,
                     token: turn.token.clone(),
                     interrupt_state: turn.interrupt_state.clone(),
                 },
@@ -113,7 +138,7 @@ impl VoiceTurnRegistry {
         let mut active = self.active.lock().await;
         if active
             .get(&turn.key)
-            .map(|active| active.id == turn.id)
+            .map(|active| Arc::ptr_eq(&active.interrupt_state, &turn.interrupt_state))
             .unwrap_or(false)
         {
             active.remove(&turn.key);
@@ -122,6 +147,20 @@ impl VoiceTurnRegistry {
 }
 
 impl VoiceTurn {
+    pub(super) fn request(token: CancellationToken) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            token,
+            interrupt_config: ChannelInterruptConfig::default(),
+            voice_scope: None,
+            interrupt_state: Arc::default(),
+            key: VoiceTurnKey {
+                channel_id: String::new(),
+                user_id: String::new(),
+            },
+        }
+    }
+
     pub(super) fn interruption(&self) -> VoiceTurnInterruption {
         let state = self
             .interrupt_state
@@ -148,7 +187,7 @@ impl VoiceTurn {
 }
 
 pub(super) fn turn_is_interrupted(turn: Option<&VoiceTurn>) -> bool {
-    turn.is_some_and(|turn| turn.interrupt_config.enabled && turn.token.is_cancelled())
+    turn.is_some_and(|turn| turn.token.is_cancelled())
 }
 
 pub(super) async fn cancellable_stage<T, F>(
@@ -159,11 +198,12 @@ pub(super) async fn cancellable_stage<T, F>(
 where
     F: Future<Output = anyhow::Result<T>>,
 {
-    let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled) else {
+    let Some(turn) = turn else {
         return fut.await.map(Some);
     };
 
     tokio::select! {
+        biased;
         _ = turn.token.cancelled() => {
             turn.mark_interrupted_stage(stage);
             tracing::info!(
@@ -207,6 +247,7 @@ mod tests {
                 "embedded".to_string(),
                 "embedded-user".to_string(),
                 interrupt_config(),
+                CancellationToken::new(),
             )
             .await;
 
@@ -234,6 +275,7 @@ mod tests {
                 "embedded".to_string(),
                 "embedded-user".to_string(),
                 interrupt_config(),
+                CancellationToken::new(),
             )
             .await;
         let _second = registry
@@ -241,10 +283,87 @@ mod tests {
                 "embedded".to_string(),
                 "embedded-user".to_string(),
                 interrupt_config(),
+                CancellationToken::new(),
             )
             .await;
 
         assert!(first.token.is_cancelled());
         assert_eq!(first.interruption().reason, "superseded_by_new_voice_turn");
+    }
+    #[tokio::test]
+    async fn cancelled_stage_never_polls_even_a_ready_future() {
+        let turn = VoiceTurn::request(CancellationToken::new());
+        turn.token.cancel();
+        let result = cancellable_stage(Some(&turn), "ready", async {
+            panic!("cancelled work was polled");
+            #[allow(unreachable_code)]
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .unwrap();
+        assert!(result.is_none());
+        assert!(turn_is_interrupted(Some(&turn))); // legacy interrupt policy may be disabled
+    }
+
+    #[tokio::test]
+    async fn finishing_old_generation_does_not_unregister_current_session() {
+        let registry = VoiceTurnRegistry::default();
+        let session_id = Uuid::new_v4();
+        let first_token = CancellationToken::new();
+        let first = registry
+            .register(
+                "embedded".into(),
+                "user".into(),
+                session_id,
+                interrupt_config(),
+                first_token.clone(),
+            )
+            .await;
+        let second_token = CancellationToken::new();
+        let second = registry
+            .register(
+                "embedded".into(),
+                "user".into(),
+                session_id,
+                interrupt_config(),
+                second_token.clone(),
+            )
+            .await;
+        assert_eq!(first.id, session_id);
+        assert_eq!(second.id, session_id);
+        assert!(first_token.is_cancelled());
+        registry.finish(&first).await;
+        assert!(registry.interrupt("embedded", "user", "barge_in").await);
+        assert!(second_token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn late_cancelled_input_does_not_supersede_live_generation() {
+        let registry = VoiceTurnRegistry::default();
+        let token = CancellationToken::new();
+        let live = registry
+            .register(
+                "embedded".into(),
+                "user".into(),
+                Uuid::new_v4(),
+                interrupt_config(),
+                token.clone(),
+            )
+            .await;
+        let stale = CancellationToken::new();
+        stale.cancel();
+        let old = registry
+            .register(
+                "embedded".into(),
+                "user".into(),
+                Uuid::new_v4(),
+                interrupt_config(),
+                stale,
+            )
+            .await;
+        registry.finish(&old).await;
+        assert!(!token.is_cancelled());
+        assert!(registry.interrupt("embedded", "user", "barge_in").await);
+        assert!(live.token.is_cancelled());
     }
 }

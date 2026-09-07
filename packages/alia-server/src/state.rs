@@ -17,6 +17,8 @@ use crate::settings::SettingsRegistry;
 /// Application global state, passed to Axum handlers via State extractor
 #[derive(Clone)]
 pub struct AppState {
+    pub voice_input: crate::modules::interaction::voice_input::VoiceInputHandle,
+    pub pipeline_task: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub turn_detector: Option<Arc<dyn crate::modules::interaction::turn_detector::TurnDetector>>,
     pub db: DatabaseConnection,
     pub channels: Arc<ChannelRegistry>,

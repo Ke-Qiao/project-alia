@@ -5,6 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 "proto/audio.proto",
+                "proto/voice_session.proto",
                 "proto/binding.proto",
                 "proto/expression.proto",
                 "proto/plugin.proto",

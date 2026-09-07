@@ -22,3 +22,4 @@ fn normalizes_stereo_pcm16_payload_to_mono() {
         vec![200, -300]
     );
 }
+#![cfg(feature = "channel-embedded")]

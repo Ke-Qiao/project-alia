@@ -149,10 +149,20 @@ async fn run_connected(
     #[cfg(feature = "channel-embedded")]
     {
         use crate::grpc::audio_ingress::ServerAudioIngressService;
+        use crate::grpc::voice_session::VoiceSessionService;
         use alia_proto::audio::server_audio_ingress_server::ServerAudioIngressServer;
+        use alia_proto::voice::voice_session_server::VoiceSessionServer;
 
         let grpc_cancel = cancel.clone();
         let channels = state.channels.clone();
+        let auth = ServerAudioIngressService::new(event_bus, channels.clone(), "embedded");
+        let voice = VoiceSessionService::new(
+            auth.clone(),
+            channels,
+            state.turn_detector.clone(),
+            state.voice_input.clone(),
+            grpc_cancel.clone(),
+        );
         tracing::info!(addr = ?grpc.local_addr(), "embedded audio ingress gRPC listening");
         services.spawn(async move {
             let incoming = async_stream::stream! {
@@ -161,9 +171,10 @@ async fn run_connected(
                 }
             };
             tonic::transport::Server::builder()
-                .add_service(ServerAudioIngressServer::new(
-                    ServerAudioIngressService::new(event_bus, channels, "embedded"),
-                ))
+                .add_service(
+                    ServerAudioIngressServer::new(auth).max_decoding_message_size(64 * 1024),
+                )
+                .add_service(VoiceSessionServer::new(voice).max_decoding_message_size(64 * 1024))
                 .serve_with_incoming_shutdown(incoming, grpc_cancel.cancelled_owned())
                 .await
                 .context("serving embedded audio ingress gRPC")
@@ -176,6 +187,14 @@ async fn run_connected(
         discovery.shutdown();
     }
     let drain_result = drain(&mut services).await;
+    // Keep the database and adapters alive until already-dispatched tool calls
+    // finish their bounded execution and record results. Aborting this task can
+    // erase execution evidence; a durable EffectRun journal is the next boundary.
+    let pipeline_result = if let Some(task) = state.pipeline_task.lock().await.take() {
+        task.await.context("joining interaction pipeline")
+    } else {
+        Ok(())
+    };
     let channels_result = tokio::time::timeout(SHUTDOWN_GRACE, state.channels.shutdown())
         .await
         .context("timed out stopping server channels");
@@ -183,14 +202,20 @@ async fn run_connected(
     let modules_result = tokio::time::timeout(SHUTDOWN_GRACE, state.modules.shutdown())
         .await
         .context("timed out stopping server modules");
-    for error in [&drain_result, &channels_result, &modules_result]
-        .into_iter()
-        .filter_map(|result| result.as_ref().err())
+    for error in [
+        &drain_result,
+        &pipeline_result,
+        &channels_result,
+        &modules_result,
+    ]
+    .into_iter()
+    .filter_map(|result| result.as_ref().err())
     {
         tracing::error!(error = %error, "server cleanup failed");
     }
     let result = result
         .and(drain_result)
+        .and(pipeline_result)
         .and(channels_result)
         .and(modules_result);
     if result.is_ok() {

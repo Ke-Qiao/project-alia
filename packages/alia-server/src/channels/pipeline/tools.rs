@@ -214,6 +214,14 @@ pub(super) async fn run_llm_tool_loop(
         ));
 
         for call in &tool_calls {
+            if turn_is_interrupted(turn) {
+                return Ok(ToolLoopOutcome {
+                    text: String::new(),
+                    used_tools: !called_tool_names.is_empty(),
+                });
+            }
+            // Do not drop this execution on response cancellation. Its result
+            // must be recorded even if the response no longer has a consumer.
             if !called_tool_names.contains(&call.tool_name) {
                 called_tool_names.push(call.tool_name.clone());
             }

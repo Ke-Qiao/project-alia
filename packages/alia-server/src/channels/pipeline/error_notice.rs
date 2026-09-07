@@ -2,11 +2,12 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::debug::{debug_component_json, log_channel_delivery_failure};
+use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::{
     AudioFormat, AudioPayload, ChannelAction, ChannelAdapter, ChannelTarget,
 };
 use crate::module::ModuleRegistry;
-use crate::providers::adapter::{ConversationEventEntry, TtsRequest};
+use crate::providers::adapter::{ConversationEventEntry, TtsAdapter, TtsRequest};
 
 const ERROR_DIRECT_RESPONSE_ACTION: &str = "error";
 
@@ -74,6 +75,7 @@ pub(super) enum PipelineErrorDelivery {
     Tts,
     DirectResponse,
     Failed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +95,7 @@ pub(super) async fn notify_pipeline_error(
     raw_error: Option<&anyhow::Error>,
     debug_output: bool,
     prefer_voice: bool,
+    turn: Option<&VoiceTurn>,
 ) -> PipelineErrorNotification {
     if let Some(error) = raw_error {
         tracing::error!(
@@ -127,19 +130,31 @@ pub(super) async fn notify_pipeline_error(
         Some((channel_id, user_id)),
     );
 
-    let delivery = if prefer_voice && channel.capabilities().voice_output {
+    let delivery = if turn_is_interrupted(turn) {
+        PipelineErrorDelivery::Cancelled
+    } else if prefer_voice && channel.capabilities().voice_output {
         deliver_voice_error_notice(
-            modules,
+            modules.tts.as_ref(),
             channel,
             target,
             channel_id,
             user_id,
             &notice,
             debug_output,
+            turn,
         )
         .await
     } else {
-        deliver_text_error_notice(channel, target, channel_id, user_id, &notice, debug_output).await
+        deliver_text_error_notice(
+            channel,
+            target,
+            channel_id,
+            user_id,
+            &notice,
+            debug_output,
+            turn,
+        )
+        .await
     };
 
     record_pipeline_error_event(modules, channel_id, user_id, &notice, delivery, user_input).await;
@@ -153,6 +168,7 @@ pub(super) async fn play_error_direct_response(
     user_id: &str,
     reason: &str,
     debug_output: bool,
+    turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
     debug_component_json(
         debug_output,
@@ -165,18 +181,22 @@ pub(super) async fn play_error_direct_response(
         Some((channel_id, user_id)),
     );
 
-    match channel
-        .execute_action(ChannelAction {
+    match cancellable_stage(
+        turn,
+        "error_direct_response",
+        channel.execute_action(ChannelAction {
             name: "play_direct_response".to_string(),
             params: serde_json::json!({
                 "action": ERROR_DIRECT_RESPONSE_ACTION,
                 "interrupt_current": true,
                 "reason": reason,
             }),
-        })
-        .await
+        }),
+    )
+    .await
     {
-        Ok(value) => {
+        Ok(None) => PipelineErrorDelivery::Cancelled,
+        Ok(Some(value)) => {
             let played = value
                 .get("played")
                 .and_then(serde_json::Value::as_bool)
@@ -287,6 +307,7 @@ async fn deliver_text_error_notice(
     user_id: &str,
     notice: &PipelineErrorNotice,
     debug_output: bool,
+    turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
     debug_component_json(
         debug_output,
@@ -298,8 +319,15 @@ async fn deliver_text_error_notice(
         }),
         Some((channel_id, user_id)),
     );
-    match channel.send_message(target, &notice.user_text).await {
-        Ok(()) => PipelineErrorDelivery::Text,
+    match cancellable_stage(
+        turn,
+        "error_text",
+        channel.send_message(target, &notice.user_text),
+    )
+    .await
+    {
+        Ok(None) => PipelineErrorDelivery::Cancelled,
+        Ok(Some(())) => PipelineErrorDelivery::Text,
         Err(error) => {
             log_channel_delivery_failure(channel, error).await;
             PipelineErrorDelivery::Failed
@@ -308,13 +336,14 @@ async fn deliver_text_error_notice(
 }
 
 async fn deliver_voice_error_notice(
-    modules: &ModuleRegistry,
+    tts: &dyn TtsAdapter,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     channel_id: &str,
     user_id: &str,
     notice: &PipelineErrorNotice,
     debug_output: bool,
+    turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
     if notice.stage == PipelineErrorStage::Tts {
         return play_error_direct_response(
@@ -323,6 +352,7 @@ async fn deliver_voice_error_notice(
             user_id,
             "pipeline_error_tts_failed",
             debug_output,
+            turn,
         )
         .await;
     }
@@ -337,12 +367,15 @@ async fn deliver_voice_error_notice(
         }),
         Some((channel_id, user_id)),
     );
-    let audio_bytes = match modules
-        .tts
-        .synthesize_request(&TtsRequest::plain(&notice.tts_text))
-        .await
+    let audio_bytes = match cancellable_stage(
+        turn,
+        "error_tts",
+        tts.synthesize_request(&TtsRequest::plain(&notice.tts_text)),
+    )
+    .await
     {
-        Ok(audio_bytes) => audio_bytes,
+        Ok(None) => return PipelineErrorDelivery::Cancelled,
+        Ok(Some(audio_bytes)) => audio_bytes,
         Err(error) => {
             tracing::warn!(
                 channel_type = channel.channel_type(),
@@ -357,6 +390,7 @@ async fn deliver_voice_error_notice(
                 user_id,
                 "pipeline_error_tts_notice_failed",
                 debug_output,
+                turn,
             )
             .await;
         }
@@ -368,8 +402,9 @@ async fn deliver_voice_error_notice(
         channels: 1,
         format: AudioFormat::Wav,
     };
-    match channel.send_audio(target, audio_out).await {
-        Ok(()) => PipelineErrorDelivery::Tts,
+    match cancellable_stage(turn, "error_audio", channel.send_audio(target, audio_out)).await {
+        Ok(None) => PipelineErrorDelivery::Cancelled,
+        Ok(Some(())) => PipelineErrorDelivery::Tts,
         Err(error) => {
             log_channel_delivery_failure(channel, error).await;
             play_error_direct_response(
@@ -378,6 +413,7 @@ async fn deliver_voice_error_notice(
                 user_id,
                 "pipeline_error_audio_delivery_failed",
                 debug_output,
+                turn,
             )
             .await
         }
@@ -425,5 +461,130 @@ mod tests {
 
         assert!(notice.user_text.starts_with("Sorry,"));
         assert!(notice.safe_summary.contains("speech recognition"));
+    }
+    #[derive(Default)]
+    struct RecordingChannel {
+        effects: std::sync::atomic::AtomicUsize,
+    }
+    impl crate::module::ModuleLifecycle for RecordingChannel {
+        fn name(&self) -> &'static str {
+            "recording_channel"
+        }
+    }
+    #[async_trait::async_trait]
+    impl ChannelAdapter for RecordingChannel {
+        fn channel_type(&self) -> &'static str {
+            "test"
+        }
+        fn channel_id(&self) -> &str {
+            "test"
+        }
+        fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
+            crate::channels::adapter::ChannelCapabilities {
+                voice_output: true,
+                ..Default::default()
+            }
+        }
+        async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+            self.effects
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn send_audio(&self, _: &ChannelTarget, _: AudioPayload) -> anyhow::Result<()> {
+            self.effects
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn execute_action(&self, _: ChannelAction) -> anyhow::Result<serde_json::Value> {
+            self.effects
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(serde_json::json!({"played": true}))
+        }
+    }
+    struct CancellingTts {
+        cancel: tokio_util::sync::CancellationToken,
+        fails: bool,
+    }
+    impl crate::module::ModuleLifecycle for CancellingTts {
+        fn name(&self) -> &'static str {
+            "cancelling_tts"
+        }
+    }
+    #[async_trait::async_trait]
+    impl TtsAdapter for CancellingTts {
+        async fn synthesize(&self, _: &str) -> anyhow::Result<Vec<u8>> {
+            self.cancel.cancel();
+            if self.fails {
+                anyhow::bail!("test synthesis error");
+            }
+            Ok(vec![1, 2])
+        }
+        async fn synthesize_stream(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<Vec<u8>>> + Send>>,
+        > {
+            unreachable!("error notice uses buffered synthesis")
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_at_tts_completion_prevents_audio_and_error_fallback() {
+        for fails in [false, true] {
+            let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
+            let channel = RecordingChannel::default();
+            let tts = CancellingTts {
+                cancel: turn.token.clone(),
+                fails,
+            };
+            let target = ChannelTarget {
+                user_id: "user".into(),
+            };
+            let notice = build_pipeline_error_notice(PipelineErrorStage::Llm, Some("hello"));
+            let delivery = deliver_voice_error_notice(
+                &tts,
+                &channel,
+                &target,
+                "test",
+                "user",
+                &notice,
+                false,
+                Some(&turn),
+            )
+            .await;
+            assert_eq!(delivery, PipelineErrorDelivery::Cancelled);
+            assert_eq!(channel.effects.load(std::sync::atomic::Ordering::SeqCst), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_error_does_not_dispatch_direct_response_or_text() {
+        let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
+        turn.token.cancel();
+        let channel = RecordingChannel::default();
+        let target = ChannelTarget {
+            user_id: "user".into(),
+        };
+        let notice = build_pipeline_error_notice(PipelineErrorStage::Tts, None);
+        assert_eq!(
+            play_error_direct_response(&channel, "test", "user", "failure", false, Some(&turn))
+                .await,
+            PipelineErrorDelivery::Cancelled
+        );
+        assert_eq!(
+            deliver_text_error_notice(
+                &channel,
+                &target,
+                "test",
+                "user",
+                &notice,
+                false,
+                Some(&turn)
+            )
+            .await,
+            PipelineErrorDelivery::Cancelled
+        );
+        assert_eq!(channel.effects.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }

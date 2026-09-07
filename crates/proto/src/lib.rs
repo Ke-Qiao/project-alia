@@ -2,6 +2,10 @@ pub mod audio {
     tonic::include_proto!("alia.audio");
 }
 
+pub mod voice {
+    tonic::include_proto!("alia.voice.v1");
+}
+
 pub mod binding {
     tonic::include_proto!("alia.binding");
 }

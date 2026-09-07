@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 pub mod capture;
 pub mod continuous;
+mod duplex;
 pub mod responses;
 mod thinking;
 pub mod transport;
@@ -34,7 +35,8 @@ use super::traits::{
 };
 use crate::binding::BindingManager;
 use crate::config::{
-    ContinuousDialogueConfig, EdgeSttConfig, IdentityConfig, InterruptConfig, ThinkingConfig,
+    ContinuousDialogueConfig, EdgeSttConfig, IdentityConfig, InterruptConfig, SpeechConfig,
+    SpeechMode, ThinkingConfig,
 };
 
 pub struct SpeechPipeline {
@@ -48,6 +50,8 @@ pub struct SpeechPipeline {
     binding: Arc<BindingManager>,
     audio_debug: AudioDebugRecorder,
     max_duration_ms: u32,
+    speech_config: SpeechConfig,
+    device_boot_id: String,
     post_wake_capture_ms: u32,
     post_wake_min_capture_ms: u32,
     post_wake_response_delay_ms: u32,
@@ -57,7 +61,12 @@ pub struct SpeechPipeline {
     device_id: String,
     keypair_path: PathBuf,
     cancel_token: CancellationToken,
-    task: Mutex<Option<JoinHandle<()>>>,
+    task: Mutex<Option<SpeechTask>>,
+}
+
+struct SpeechTask {
+    cancel: CancellationToken,
+    handle: JoinHandle<()>,
 }
 
 impl SpeechPipeline {
@@ -71,6 +80,7 @@ impl SpeechPipeline {
         playback: Arc<dyn AudioPlaybackBackend>,
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
+        speech_config: &SpeechConfig,
         interrupt_config: &InterruptConfig,
         thinking_config: &ThinkingConfig,
         continuous_config: &ContinuousDialogueConfig,
@@ -89,6 +99,8 @@ impl SpeechPipeline {
             binding,
             audio_debug,
             max_duration_ms: edge_stt_config.max_duration_ms,
+            speech_config: speech_config.clone(),
+            device_boot_id: uuid::Uuid::new_v4().to_string(),
             post_wake_capture_ms: edge_stt_config.post_wake_capture_ms,
             post_wake_min_capture_ms: edge_stt_config.post_wake_min_capture_ms,
             post_wake_response_delay_ms: edge_stt_config.post_wake_response_delay_ms,
@@ -111,10 +123,11 @@ impl ModuleLifecycle for SpeechPipeline {
 
     async fn start(&self) -> Result<()> {
         let mut task = self.task.lock().await;
-        if task.as_ref().is_some_and(|task| !task.is_finished()) {
+        if task.as_ref().is_some_and(|task| !task.handle.is_finished()) {
             return Ok(());
         }
-        if task.take().is_some() {
+        if let Some(previous) = task.take() {
+            let _ = previous.handle.await;
             warn!("speech pipeline task had stopped; restarting");
         }
 
@@ -139,7 +152,32 @@ impl ModuleLifecycle for SpeechPipeline {
         let keypair_path = self.keypair_path.clone();
         let cancel = self.cancel_token.child_token();
 
-        *task = Some(tokio::spawn(async move {
+        if self.speech_config.mode == SpeechMode::ServerTurn {
+            anyhow::ensure!(vad.is_available(), "server_turn requires an available VAD");
+            vad.reset()?;
+            let runtime = duplex::Runtime {
+                audio: rx,
+                events: event_rx,
+                event_bus,
+                wakeword,
+                vad,
+                playback,
+                binding,
+                device_id,
+                keypair_path,
+                boot_id: self.device_boot_id.clone(),
+                config: self.speech_config.clone(),
+                cancel: cancel.clone(),
+            };
+            *task = Some(SpeechTask {
+                cancel,
+                handle: tokio::spawn(runtime.run()),
+            });
+            return Ok(());
+        }
+
+        let worker_cancel = cancel.clone();
+        let handle = tokio::spawn(async move {
             let mut capture: Option<SpeechCapture> = None;
             let mut pending_capture: Option<PendingSpeechCapture> = None;
             let mut continuous = ContinuousDialogueState::new(continuous_config);
@@ -479,15 +517,22 @@ impl ModuleLifecycle for SpeechPipeline {
                     }
                 }
             }
-        }));
+        });
+        *task = Some(SpeechTask {
+            cancel: worker_cancel,
+            handle,
+        });
 
         Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
-        self.cancel_token.cancel();
         if let Some(task) = self.task.lock().await.take() {
-            task.abort();
+            task.cancel.cancel();
+            if self.speech_config.mode == SpeechMode::Utterance {
+                task.handle.abort();
+            }
+            let _ = task.handle.await;
         }
         Ok(())
     }
@@ -498,7 +543,7 @@ impl ModuleLifecycle for SpeechPipeline {
             .lock()
             .await
             .as_ref()
-            .is_some_and(|task| !task.is_finished())
+            .is_some_and(|task| !task.handle.is_finished())
         {
             ModuleHealth::Healthy
         } else {

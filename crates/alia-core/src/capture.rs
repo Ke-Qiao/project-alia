@@ -116,6 +116,12 @@ impl CaptureWindow {
         self.silence_samples = 0;
         self.evaluated_revision = None;
     }
+
+    /// Admission was rejected before model execution; a bounded scheduler may
+    /// retry the latest window without manufacturing another speech revision.
+    pub fn retry_after_busy(&mut self) {
+        self.evaluated_revision = None;
+    }
 }
 
 #[cfg(test)]

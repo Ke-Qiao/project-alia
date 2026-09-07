@@ -138,6 +138,43 @@ pub(super) async fn deliver_tts_audio(
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> TtsDeliveryOutcome {
+    cancellable_stage(turn, "tts_output", async {
+        Ok(deliver_tts_audio_inner(
+            modules,
+            channel,
+            target,
+            channel_id,
+            user_id,
+            text,
+            speech,
+            expression_plan,
+            expression_input,
+            trace_context,
+            debug_output,
+            turn,
+        )
+        .await)
+    })
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(TtsDeliveryOutcome::Skipped)
+}
+
+pub(super) async fn deliver_tts_audio_inner(
+    modules: &ModuleRegistry,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    channel_id: &str,
+    user_id: &str,
+    text: &str,
+    speech: Option<&SpeechExpression>,
+    expression_plan: Option<&ExpressionPlan>,
+    expression_input: Option<&ExpressionInput>,
+    trace_context: Option<TtsTraceContext>,
+    debug_output: bool,
+    turn: Option<&VoiceTurn>,
+) -> TtsDeliveryOutcome {
     if turn_is_interrupted(turn) {
         return TtsDeliveryOutcome::Skipped;
     }
@@ -206,12 +243,7 @@ pub(super) async fn deliver_tts_audio(
                         })
                 });
 
-                let cancel_token = turn
-                    .filter(|turn| {
-                        turn.interrupt_config.enabled
-                            && turn.interrupt_config.cancel_streaming_tts_on_interrupt
-                    })
-                    .map(|turn| turn.token.clone());
+                let cancel_token = turn.map(|turn| turn.token.clone());
                 execute_speech_start_expression(
                     channel,
                     target,
@@ -219,14 +251,16 @@ pub(super) async fn deliver_tts_audio(
                     debug_output,
                     channel_id,
                     user_id,
+                    turn,
                 )
                 .await;
                 let delivery = channel.send_audio_stream(target, Box::pin(audio_stream));
                 let delivery_result = if let Some(cancel_token) = cancel_token {
                     tokio::select! {
-                        _ = cancel_token.cancelled() => return TtsDeliveryOutcome::Skipped,
-                        result = delivery => result,
-                    }
+                    biased;
+                            _ = cancel_token.cancelled() => return TtsDeliveryOutcome::Skipped,
+                            result = delivery => result,
+                        }
                 } else {
                     delivery.await
                 };
@@ -310,6 +344,7 @@ pub(super) async fn deliver_tts_audio(
         debug_output,
         channel_id,
         user_id,
+        turn,
     )
     .await;
 
@@ -320,8 +355,9 @@ pub(super) async fn deliver_tts_audio(
         audio_out.data.len(),
         Some((channel_id, user_id)),
     );
-    let send_result = if let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled) {
+    let send_result = if let Some(turn) = turn {
         tokio::select! {
+                biased;
             _ = turn.token.cancelled() => return TtsDeliveryOutcome::Skipped,
             result = channel.send_audio(target, audio_out) => result,
         }
@@ -369,13 +405,23 @@ async fn execute_speech_start_expression(
     debug_output: bool,
     channel_id: &str,
     user_id: &str,
+    turn: Option<&VoiceTurn>,
 ) {
     let Some(plan) = plan else {
         return;
     };
-    let execution =
-        execute_expression_plan_phase(channel, target, plan, ExpressionExecutionPhase::SpeechStart)
-            .await;
+    let execution = cancellable_stage(turn, "speech_start_expression", async {
+        Ok(execute_expression_plan_phase(
+            channel,
+            target,
+            plan,
+            ExpressionExecutionPhase::SpeechStart,
+        )
+        .await)
+    })
+    .await
+    .ok()
+    .flatten();
     debug_component_json(
         debug_output,
         "expression",
@@ -406,12 +452,8 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     let (sentence_tx, sentence_rx) = mpsc::channel::<String>(4);
     let (audio_tx, audio_rx) = mpsc::channel::<anyhow::Result<AudioPayload>>(8);
     let audio_started = Arc::new(AtomicBool::new(false));
-    let tts_cancel_token = turn
-        .filter(|turn| {
-            turn.interrupt_config.enabled && turn.interrupt_config.cancel_streaming_tts_on_interrupt
-        })
-        .map(|turn| turn.token.clone());
-    let tts_worker = tokio::spawn(stream_tts_sentences(
+    let tts_cancel_token = turn.map(|turn| turn.token.clone());
+    let tts_worker = stream_tts_sentences(
         modules.tts.clone(),
         modules.expression.clone(),
         modules.sentence_expression_llm.clone(),
@@ -424,13 +466,14 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         channel_id.to_string(),
         user_id.to_string(),
         tts_cancel_token.clone(),
-    ));
+    );
 
     let audio_stream: AudioPayloadStream =
         Box::pin(tokio_stream::wrappers::ReceiverStream::new(audio_rx));
     let audio_delivery = async move {
         if let Some(cancel_token) = tts_cancel_token {
             tokio::select! {
+                biased;
                 _ = cancel_token.cancelled() => Ok(()),
                 result = channel.send_audio_stream(target, audio_stream) => result,
             }
@@ -452,7 +495,9 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
             "begin_stream",
             Some((channel_id, user_id)),
         );
-        if let Err(error) = channel.begin_stream(target).await {
+        if let Err(error) =
+            cancellable_stage(turn, "stream_begin_delivery", channel.begin_stream(target)).await
+        {
             tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
             tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
         }
@@ -463,9 +508,9 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         let mut stream_error: Option<anyhow::Error> = None;
 
         loop {
-            let chunk_result = if let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled)
-            {
+            let chunk_result = if let Some(turn) = turn {
                 tokio::select! {
+                biased;
                     _ = turn.token.cancelled() => {
                         turn.mark_interrupted_stage("llm_stream");
                         break;
@@ -485,7 +530,13 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
                     sentence_buffer.push_str(&chunk);
                     debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
 
-                    if let Err(e) = channel.send_stream_chunk(target, &chunk).await {
+                    if let Err(e) = cancellable_stage(
+                        turn,
+                        "stream_chunk_delivery",
+                        channel.send_stream_chunk(target, &chunk),
+                    )
+                    .await
+                    {
                         tracing::warn!(error = %e, "stream chunk delivery failed");
                         tracing::debug!(error = ?e, "stream chunk delivery failure details");
                     }
@@ -518,12 +569,23 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         if let Some(error) = stream_error {
             if full_text.trim().is_empty() {
                 drop(sentence_tx);
-                let _ = channel.end_stream(target, &full_text).await;
+                let _ = cancellable_stage(
+                    turn,
+                    "stream_end_delivery",
+                    channel.end_stream(target, &full_text),
+                )
+                .await;
                 return Err(error);
             }
             let notice = "抱歉，后面的内容生成中断了。";
             full_text.push_str(notice);
-            if let Err(e) = channel.send_stream_chunk(target, notice).await {
+            if let Err(e) = cancellable_stage(
+                turn,
+                "stream_error_notice",
+                channel.send_stream_chunk(target, notice),
+            )
+            .await
+            {
                 tracing::warn!(error = %e, "stream error notice delivery failed");
                 tracing::debug!(error = ?e, "stream error notice delivery failure details");
             }
@@ -543,7 +605,13 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         }
         drop(sentence_tx);
 
-        if let Err(error) = channel.end_stream(target, &full_text).await {
+        if let Err(error) = cancellable_stage(
+            turn,
+            "stream_end_delivery",
+            channel.end_stream(target, &full_text),
+        )
+        .await
+        {
             tracing::warn!(channel_id, error = %error, "stream end delivery failed");
             tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
         }
@@ -563,10 +631,8 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         Ok::<_, anyhow::Error>(full_text)
     };
 
-    let (llm_result, audio_result) = futures::join!(llm_delivery, audio_delivery);
-    let tts_result = tts_worker
-        .await
-        .map_err(|error| anyhow::anyhow!("sentence TTS worker join failed: {error}"));
+    let (llm_result, audio_result, tts_result) =
+        futures::join!(llm_delivery, audio_delivery, tts_worker);
     let audio_streamed = audio_started.load(Ordering::Relaxed);
 
     if let Err(error) = audio_result {
@@ -578,7 +644,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         );
         tracing::debug!(error = ?error, "sentence-level TTS audio delivery failure details");
     }
-    if let Err(error) = tts_result.and_then(|result| result) {
+    if let Err(error) = tts_result {
         tracing::warn!(error = %error, "sentence-level TTS worker failed");
         tracing::debug!(error = ?error, "sentence-level TTS worker failure details");
     }
@@ -1162,6 +1228,7 @@ async fn stream_tts_sentences(
     loop {
         let sentence = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
+                biased;
                 _ = cancel_token.cancelled() => return Ok(()),
                 sentence = sentence_rx.recv() => sentence,
             }
@@ -1235,6 +1302,7 @@ async fn stream_tts_sentences(
         let synth = tts.synthesize_request(&request);
         let audio_bytes = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
+                biased;
                 _ = cancel_token.cancelled() => return Ok(()),
                 result = synth => match result {
                     Ok(audio_bytes) => audio_bytes,
@@ -1445,7 +1513,9 @@ pub(super) async fn stream_llm_response(
         "begin_stream",
         Some((channel_id, user_id)),
     );
-    if let Err(error) = channel.begin_stream(target).await {
+    if let Err(error) =
+        cancellable_stage(turn, "stream_begin_delivery", channel.begin_stream(target)).await
+    {
         tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
         tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
     }
@@ -1454,8 +1524,9 @@ pub(super) async fn stream_llm_response(
     let mut stream_error: Option<anyhow::Error> = None;
 
     loop {
-        let chunk_result = if let Some(turn) = turn.filter(|turn| turn.interrupt_config.enabled) {
+        let chunk_result = if let Some(turn) = turn {
             tokio::select! {
+                biased;
                 _ = turn.token.cancelled() => {
                     turn.mark_interrupted_stage("llm_stream");
                     break;
@@ -1474,7 +1545,13 @@ pub(super) async fn stream_llm_response(
                 full_text.push_str(&chunk);
                 debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
 
-                if let Err(e) = channel.send_stream_chunk(target, &chunk).await {
+                if let Err(e) = cancellable_stage(
+                    turn,
+                    "stream_chunk_delivery",
+                    channel.send_stream_chunk(target, &chunk),
+                )
+                .await
+                {
                     tracing::warn!(error = %e, "stream chunk delivery failed");
                     tracing::debug!(error = ?e, "stream chunk delivery failure details");
                 }
@@ -1496,18 +1573,35 @@ pub(super) async fn stream_llm_response(
 
     if let Some(error) = stream_error {
         if full_text.trim().is_empty() {
-            let _ = channel.end_stream(target, &full_text).await;
+            let _ = cancellable_stage(
+                turn,
+                "stream_end_delivery",
+                channel.end_stream(target, &full_text),
+            )
+            .await;
             return Err(error);
         }
         let notice = "抱歉，后面的内容生成中断了。";
         full_text.push_str(notice);
-        if let Err(e) = channel.send_stream_chunk(target, notice).await {
+        if let Err(e) = cancellable_stage(
+            turn,
+            "stream_error_notice",
+            channel.send_stream_chunk(target, notice),
+        )
+        .await
+        {
             tracing::warn!(error = %e, "stream error notice delivery failed");
             tracing::debug!(error = ?e, "stream error notice delivery failure details");
         }
     }
 
-    if let Err(error) = channel.end_stream(target, &full_text).await {
+    if let Err(error) = cancellable_stage(
+        turn,
+        "stream_end_delivery",
+        channel.end_stream(target, &full_text),
+    )
+    .await
+    {
         tracing::warn!(channel_id, error = %error, "stream end delivery failed");
         tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
     }

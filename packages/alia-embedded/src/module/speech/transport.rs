@@ -17,6 +17,26 @@ use crate::identity;
 
 use super::capture::SpeechCapture;
 
+pub(super) async fn voice_connection(
+    binding: &BindingManager,
+    device_id: &str,
+    keypair_path: &Path,
+) -> Result<(String, IngressAuth)> {
+    let status = binding.status().await;
+    anyhow::ensure!(
+        status.state != crate::binding::BindingState::Unbound,
+        "device is not bound"
+    );
+    let endpoint = status
+        .server_endpoint
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cannot open voice session before device is bound"))?;
+    Ok((
+        derive_audio_ingress_endpoint(endpoint)?,
+        ingress_auth(device_id, keypair_path)?,
+    ))
+}
+
 pub(super) async fn upload_to_server(
     capture: &SpeechCapture,
     binding: &BindingManager,
@@ -188,8 +208,8 @@ async fn interrupt_active_turn(
 }
 
 #[derive(Debug, Clone)]
-struct IngressAuth {
-    token: String,
+pub(super) struct IngressAuth {
+    pub(super) token: String,
 }
 
 fn ingress_auth(device_id: &str, keypair_path: &Path) -> Result<IngressAuth> {
@@ -205,7 +225,7 @@ fn ingress_auth(device_id: &str, keypair_path: &Path) -> Result<IngressAuth> {
     Ok(IngressAuth { token })
 }
 
-fn attach_ingress_auth(
+pub(super) fn attach_ingress_auth(
     metadata: &mut tonic::metadata::MetadataMap,
     auth: &IngressAuth,
     channel_id: &str,
@@ -224,7 +244,7 @@ fn attach_ingress_auth(
     Ok(())
 }
 
-fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
+pub(super) fn pcm16_to_le_bytes(pcm: &[i16]) -> Vec<u8> {
     pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect()
 }
 

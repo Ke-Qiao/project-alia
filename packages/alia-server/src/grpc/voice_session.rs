@@ -1,0 +1,702 @@
+//! Authenticated continuous capture. One live session owns each device channel.
+
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+
+use alia_core::capture::{CaptureWindow, MAX_FRAME_SAMPLES};
+use alia_core::turn::{TurnController, TurnDecision};
+use alia_core::voice::{TurnObservation, TurnState};
+use alia_proto::voice::voice_session_server::VoiceSession;
+use alia_proto::voice::{self, DeviceFrame, SessionEvent, device_frame, session_event};
+use futures::{FutureExt, Stream, StreamExt};
+use tokio::sync::{Mutex, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
+use tonic::{Request, Response, Status};
+use uuid::Uuid;
+
+use super::audio_ingress::ServerAudioIngressService;
+use crate::channels::ChannelRegistry;
+use crate::channels::adapter::ChannelTarget;
+use crate::modules::interaction::turn_detector::{DetectionError, TurnDetector};
+use crate::modules::interaction::voice_input::{RecognizedVoiceInput, VoiceInputHandle};
+
+const STREAM_IDLE: Duration = Duration::from_secs(10);
+const MAX_SESSIONS: usize = 16;
+type Sessions = Arc<std::sync::Mutex<HashMap<String, Arc<SessionSlot>>>>;
+#[derive(Default)]
+struct SessionSlot {
+    owner: Mutex<Option<(Uuid, CancellationToken)>>,
+}
+type Detection = Pin<Box<dyn Future<Output = Result<TurnObservation, DetectionError>> + Send>>;
+
+pub struct VoiceSessionService {
+    auth: ServerAudioIngressService,
+    channels: Arc<ChannelRegistry>,
+    detector: Option<Arc<dyn TurnDetector>>,
+    input: VoiceInputHandle,
+    shutdown: CancellationToken,
+    sessions: Sessions,
+}
+
+impl VoiceSessionService {
+    pub fn new(
+        auth: ServerAudioIngressService,
+        channels: Arc<ChannelRegistry>,
+        detector: Option<Arc<dyn TurnDetector>>,
+        input: VoiceInputHandle,
+        shutdown: CancellationToken,
+    ) -> Self {
+        Self {
+            auth,
+            channels,
+            detector,
+            input,
+            shutdown,
+            sessions: Arc::default(),
+        }
+    }
+}
+
+struct SessionLease {
+    channel: String,
+    id: Uuid,
+    sessions: Sessions,
+    cancel: CancellationToken,
+    slot: Arc<SessionSlot>,
+}
+
+impl SessionLease {
+    async fn acquire(
+        sessions: Sessions,
+        channel: String,
+        shutdown: &CancellationToken,
+    ) -> Result<Self, Status> {
+        let slot = {
+            let mut active = sessions.lock().unwrap_or_else(|e| e.into_inner());
+            active.retain(|_, slot| Arc::strong_count(slot) > 1);
+            if !active.contains_key(&channel) && active.len() >= MAX_SESSIONS {
+                return Err(Status::resource_exhausted("voice session capacity reached"));
+            }
+            active.entry(channel.clone()).or_default().clone()
+        };
+        let mut owner = slot.owner.lock().await;
+        let id = Uuid::new_v4();
+        let cancel = shutdown.child_token();
+        if let Some((_, previous)) = owner.replace((id, cancel.clone())) {
+            previous.cancel();
+        }
+        drop(owner);
+        Ok(Self {
+            channel,
+            id,
+            sessions,
+            cancel,
+            slot,
+        })
+    }
+}
+
+impl Drop for SessionLease {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        let mut active = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if Arc::strong_count(&self.slot) == 2
+            && active
+                .get(&self.channel)
+                .is_some_and(|slot| Arc::ptr_eq(slot, &self.slot))
+        {
+            active.remove(&self.channel);
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl VoiceSession for VoiceSessionService {
+    type StreamStream = ReceiverStream<Result<SessionEvent, Status>>;
+
+    async fn stream(
+        &self,
+        request: Request<tonic::Streaming<DeviceFrame>>,
+    ) -> Result<Response<Self::StreamStream>, Status> {
+        let detector = self
+            .detector
+            .clone()
+            .ok_or_else(|| Status::failed_precondition("server turn detector is not configured"))?;
+        // Authenticate before waiting for client audio or allocating a model window.
+        let mut auth_request = Request::new(());
+        *auth_request.metadata_mut() = request.metadata().clone();
+        let channel_id = self.auth.authenticate_ingress(&auth_request, None).await?;
+        let mut stream = request.into_inner();
+        let first = tokio::time::timeout(Duration::from_secs(5), stream.message())
+            .await
+            .map_err(|_| Status::deadline_exceeded("voice handshake deadline"))??
+            .ok_or_else(|| Status::invalid_argument("voice stream requires a handshake"))?;
+        let Some(device_frame::Payload::Open(open)) = first.payload else {
+            return Err(Status::invalid_argument(
+                "first voice frame must open a session",
+            ));
+        };
+        if open.protocol_version != 1 {
+            return Err(Status::failed_precondition(
+                "unsupported voice protocol version",
+            ));
+        }
+        let claimed_channel = self
+            .auth
+            .authenticate_ingress(&auth_request, Some(&open.channel_id))
+            .await?;
+        if claimed_channel != channel_id {
+            return Err(Status::permission_denied(
+                "voice handshake binding mismatch",
+            ));
+        }
+        let boot = Uuid::parse_str(&open.device_boot_id)
+            .map_err(|_| Status::invalid_argument("invalid device boot UUID"))?;
+        if boot.is_nil() {
+            return Err(Status::invalid_argument("device boot UUID must not be nil"));
+        }
+        let lease =
+            SessionLease::acquire(self.sessions.clone(), channel_id, &self.shutdown).await?;
+        let (tx, rx) = mpsc::channel(8);
+        let auth = self.auth.clone();
+        let channels = self.channels.clone();
+        let input = self.input.clone();
+        tokio::spawn(async move {
+            let result = run_session(
+                stream,
+                &tx,
+                &lease,
+                boot,
+                detector,
+                input,
+                channels.clone(),
+                async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(30));
+                    loop {
+                        interval.tick().await;
+                        auth.authenticate_ingress(&auth_request, None).await?;
+                    }
+                    #[allow(unreachable_code)]
+                    Ok::<(), Status>(())
+                },
+            )
+            .await;
+            lease.cancel.cancel();
+            if let Err(error) = result {
+                let _ = tx.try_send(Err(error));
+            }
+            stop_owned(&lease, &channels, "voice_session_closed").await;
+        });
+        Ok(Response::new(ReceiverStream::new(rx)))
+    }
+}
+
+async fn stop_output(channels: &ChannelRegistry, channel_id: &str, reason: &str) {
+    if let Some(channel) = channels.get(channel_id).await {
+        let target = ChannelTarget {
+            user_id: "embedded-user".into(),
+        };
+        match tokio::time::timeout(
+            Duration::from_secs(1),
+            channel.stop_current_playback(&target, reason),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            _ => tracing::warn!(channel_id, reason, "voice playback stop was not confirmed"),
+        }
+    }
+}
+
+async fn stop_owned(lease: &SessionLease, channels: &ChannelRegistry, reason: &str) {
+    // Replacement and output control share this gate. Checking ownership and
+    // then releasing it before an async stop permits old-session/new-output races.
+    // Control RPCs have a one-second deadline; model work never holds this gate.
+    let owner = lease.slot.owner.lock().await;
+    if owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
+        stop_output(channels, &lease.channel, reason).await;
+    }
+}
+
+async fn send_event(
+    tx: &mpsc::Sender<Result<SessionEvent, Status>>,
+    lease: &SessionLease,
+    boot: Uuid,
+    epoch: u64,
+    payload: session_event::Payload,
+) -> Result<(), Status> {
+    let event = SessionEvent {
+        session_id: lease.id.to_string(),
+        device_boot_id: boot.to_string(),
+        generation_epoch: epoch,
+        payload: Some(payload),
+    };
+    tokio::select! {
+        biased;
+        _ = lease.cancel.cancelled() => Err(Status::cancelled("voice session cancelled")),
+        result = tokio::time::timeout(Duration::from_secs(1), tx.send(Ok(event))) => {
+            result.map_err(|_| Status::resource_exhausted("voice control receiver stalled"))?
+                .map_err(|_| Status::cancelled("voice receiver closed"))
+        }
+    }
+}
+
+fn accept_capture(frame: DeviceFrame, window: &mut CaptureWindow) -> Result<bool, Status> {
+    match frame.payload {
+        Some(device_frame::Payload::Audio(frame)) => {
+            window
+                .push(
+                    frame.sequence,
+                    frame.sample_offset,
+                    &frame.pcm_s16le,
+                    frame.speech_active,
+                )
+                .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            Ok(true)
+        }
+        Some(device_frame::Payload::Close(_)) => Ok(false),
+        _ => Err(Status::invalid_argument(
+            "unexpected voice frame after handshake",
+        )),
+    }
+}
+
+async fn run_session<S, A>(
+    mut stream: S,
+    tx: &mpsc::Sender<Result<SessionEvent, Status>>,
+    lease: &SessionLease,
+    boot: Uuid,
+    detector: Arc<dyn TurnDetector>,
+    input: VoiceInputHandle,
+    channels: Arc<ChannelRegistry>,
+    auth_expired: A,
+) -> Result<(), Status>
+where
+    S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
+    A: Future<Output = Result<(), Status>>,
+{
+    stop_owned(lease, &channels, "voice_session_started").await;
+    send_event(
+        tx,
+        lease,
+        boot,
+        1,
+        session_event::Payload::Ready(voice::SessionReady {
+            protocol_version: 1,
+            sample_rate_hz: 16_000,
+            channels: 1,
+            max_frame_samples: MAX_FRAME_SAMPLES as u32,
+        }),
+    )
+    .await?;
+    let mut window = CaptureWindow::default();
+    let mut controller = TurnController::default();
+    let mut detection: Option<Detection> = None;
+    let mut through_sequence = 0;
+    let mut response_cancel = lease.cancel.child_token();
+    let mut retry_at: Option<tokio::time::Instant> = None;
+    let mut busy_deadline: Option<tokio::time::Instant> = None;
+    tokio::pin!(auth_expired);
+    loop {
+        if lease.cancel.is_cancelled() || tx.is_closed() {
+            return Ok(());
+        }
+        if detection.is_none()
+            && retry_at.is_none()
+            && let Some(audio) = window.take_ready()
+        {
+            through_sequence = window.through_sequence();
+            let id = controller.begin_detection(window.revision());
+            let detector = detector.clone();
+            let cancel = lease.cancel.child_token();
+            detection = Some(Box::pin(async move {
+                detector.detect(id, &audio, &cancel).await
+            }));
+        }
+        tokio::select! {
+            _ = lease.cancel.cancelled() => return Ok(()),
+            _ = tx.closed() => return Ok(()),
+            result = &mut auth_expired => return result,
+            _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
+                retry_at = None;
+            }
+            frame = tokio::time::timeout(STREAM_IDLE, stream.next()) => {
+                let frame = frame.map_err(|_| Status::deadline_exceeded("voice capture stalled"))?;
+                let Some(frame) = frame else { return Ok(()); };
+                if !accept_capture(frame?, &mut window)? { return Ok(()); }
+            }
+            result = async { detection.as_mut().expect("select guard").await }, if detection.is_some() => {
+                detection = None;
+                if matches!(&result, Err(DetectionError::Busy)) {
+                    let now = tokio::time::Instant::now();
+                    let deadline = *busy_deadline.get_or_insert(now + Duration::from_secs(3));
+                    if now >= deadline {
+                        return Err(Status::resource_exhausted("turn model remained busy for 3 seconds"));
+                    }
+                    window.retry_after_busy();
+                    retry_at = Some(now + Duration::from_millis(100));
+                    continue;
+                }
+                busy_deadline = None;
+                let observation = result.map_err(|error| match error {
+                    DetectionError::Busy => Status::resource_exhausted("turn model busy"),
+                    DetectionError::Timeout => Status::deadline_exceeded("turn model deadline"),
+                    DetectionError::Cancelled => Status::cancelled("turn model cancelled"),
+                    _ => Status::unavailable("turn model failed"),
+                })?;
+                // Give already-arrived speech a chance to invalidate this
+                // snapshot before committing a response. The drain is bounded;
+                // a producer that never yields must not monopolize the runtime.
+                for drained in 0..64 {
+                    match stream.next().now_or_never() {
+                        None => break,
+                        Some(None) => return Ok(()),
+                        Some(Some(frame)) => {
+                            if !accept_capture(frame?, &mut window)? { return Ok(()); }
+                            if drained == 63 {
+                                return Err(Status::resource_exhausted("capture backlog exceeded semantic commit budget"));
+                            }
+                        }
+                    }
+                }
+                let decision = controller.observe(&observation, window.revision()).map_err(|_| Status::out_of_range("voice epoch exhausted"))?;
+                let response_enqueued = match decision {
+                    TurnDecision::Stale => continue,
+                    TurnDecision::Respond { generation_epoch, transcript } => {
+                        let owner = lease.slot.owner.lock().await;
+                        if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
+                            return Ok(());
+                        }
+                        response_cancel.cancel();
+                        stop_output(&channels, &lease.channel, "voice_turn_replaced").await;
+                        if lease.cancel.is_cancelled() { return Ok(()); }
+                        response_cancel = lease.cancel.child_token();
+                        input.try_submit(RecognizedVoiceInput {
+                            channel_id: lease.channel.clone(), user_id: "embedded-user".into(), transcript,
+                            session_id: lease.id, device_boot_id: boot, generation_epoch, cancel: response_cancel.clone(),
+                        }).map_err(|_| Status::resource_exhausted("voice processing capacity reached"))?;
+                        drop(owner);
+                        window.finish_utterance();
+                        true
+                    },
+                    TurnDecision::ContinueListening => false,
+                    TurnDecision::Backchannel => { window.finish_utterance(); false },
+                    TurnDecision::Wait => {
+                        // Explicit hold: stop current generation. Resuming from a
+                        // presented playback cursor needs the delivery contract.
+                        response_cancel.cancel();
+                        stop_owned(lease, &channels, "user_requested_wait").await;
+                        window.finish_utterance();
+                        false
+                    },
+                };
+                send_event(tx, lease, boot, controller.generation_epoch(), session_event::Payload::Evidence(voice::TurnEvidence {
+                    request_id: observation.id.request_id.to_string(), through_sequence,
+                    transcript: observation.transcript, state: match observation.state {
+                        TurnState::Complete => voice::TurnState::Complete,
+                        TurnState::Incomplete => voice::TurnState::Incomplete,
+                        TurnState::Backchannel => voice::TurnState::Backchannel,
+                        TurnState::Wait => voice::TurnState::Wait,
+                    } as i32,
+                    response_enqueued, inference_ms: observation.inference_ms,
+                })).await?;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::interaction::voice_input;
+    use alia_core::voice::{DetectionId, ModelIdentity, PcmWindow};
+    use tokio::sync::oneshot;
+
+    struct ModelCall(
+        DetectionId,
+        oneshot::Sender<Result<TurnObservation, DetectionError>>,
+    );
+    struct ControlledDetector(mpsc::Sender<ModelCall>);
+    #[async_trait::async_trait]
+    impl TurnDetector for ControlledDetector {
+        async fn detect(
+            &self,
+            id: DetectionId,
+            _audio: &PcmWindow,
+            cancel: &CancellationToken,
+        ) -> Result<TurnObservation, DetectionError> {
+            let (tx, rx) = oneshot::channel();
+            self.0
+                .send(ModelCall(id, tx))
+                .await
+                .map_err(|_| DetectionError::Cancelled)?;
+            tokio::select! {
+                _ = cancel.cancelled() => Err(DetectionError::Cancelled),
+                result = rx => result.map_err(|_| DetectionError::Cancelled)?,
+            }
+        }
+    }
+    impl ModelCall {
+        fn answer(self, state: TurnState) {
+            self.1
+                .send(Ok(TurnObservation {
+                    id: self.0,
+                    state,
+                    transcript: "sample".into(),
+                    inference_ms: 1.0,
+                    model: ModelIdentity {
+                        source: "injected-test".into(),
+                        revision: "1".into(),
+                        device: "test".into(),
+                    },
+                }))
+                .unwrap();
+        }
+    }
+
+    struct Harness {
+        audio: mpsc::Sender<Result<DeviceFrame, Status>>,
+        events: mpsc::Receiver<Result<SessionEvent, Status>>,
+        calls: mpsc::Receiver<ModelCall>,
+        input: mpsc::Receiver<RecognizedVoiceInput>,
+        cancel: CancellationToken,
+        task: tokio::task::JoinHandle<Result<(), Status>>,
+        sequence: u64,
+    }
+
+    impl Harness {
+        async fn new() -> Self {
+            let cancel = CancellationToken::new();
+            let lease = SessionLease::acquire(Arc::default(), "device".into(), &cancel)
+                .await
+                .unwrap();
+            let (audio, rx) = mpsc::channel(32);
+            let (tx, events) = mpsc::channel(8);
+            let (call_tx, calls) = mpsc::channel(2);
+            let detector = Arc::new(ControlledDetector(call_tx));
+            let (input_handle, input) = voice_input::channel();
+            let task = tokio::spawn(async move {
+                run_session(
+                    ReceiverStream::new(rx),
+                    &tx,
+                    &lease,
+                    Uuid::new_v4(),
+                    detector,
+                    input_handle,
+                    Arc::new(ChannelRegistry::new()),
+                    std::future::pending(),
+                )
+                .await
+            });
+            let mut harness = Self {
+                audio,
+                events,
+                calls,
+                input,
+                cancel,
+                task,
+                sequence: 0,
+            };
+            assert!(matches!(
+                harness.event().await.payload,
+                Some(session_event::Payload::Ready(_))
+            ));
+            harness
+        }
+        async fn speech(&mut self) {
+            for speech in [true, false, false, false, false, false, false, false] {
+                self.audio
+                    .send(Ok(DeviceFrame {
+                        payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                            sequence: self.sequence,
+                            sample_offset: self.sequence * 1600,
+                            pcm_s16le: vec![0; 3200],
+                            speech_active: speech,
+                        })),
+                    }))
+                    .await
+                    .unwrap();
+                self.sequence += 1;
+            }
+        }
+        async fn call(&mut self) -> ModelCall {
+            tokio::time::timeout(Duration::from_secs(2), self.calls.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        }
+        async fn event(&mut self) -> SessionEvent {
+            tokio::time::timeout(Duration::from_secs(2), self.events.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        }
+        async fn finish(self) {
+            self.cancel.cancel();
+            tokio::time::timeout(Duration::from_secs(2), self.task)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn recognized_speech_bypasses_stt_and_backchannel_preserves_generation() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        h.call().await.answer(TurnState::Complete);
+        assert_eq!(h.event().await.generation_epoch, 2);
+        let first = h.input.recv().await.unwrap();
+        assert_eq!(first.transcript, "sample");
+        h.speech().await;
+        h.call().await.answer(TurnState::Backchannel);
+        assert_eq!(h.event().await.generation_epoch, 2);
+        assert!(!first.cancel.is_cancelled());
+        assert!(h.input.try_recv().is_err());
+        h.speech().await;
+        h.call().await.answer(TurnState::Wait);
+        h.event().await;
+        assert!(first.cancel.is_cancelled());
+        h.finish().await;
+    }
+
+    #[tokio::test]
+    async fn speech_arriving_during_inference_rejects_old_snapshot_and_reevaluates() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        let old = h.call().await;
+        h.speech().await;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while h.audio.capacity() != h.audio.max_capacity() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        old.answer(TurnState::Complete);
+        let current = h.call().await;
+        assert!(h.input.try_recv().is_err());
+        current.answer(TurnState::Complete);
+        assert_eq!(h.event().await.generation_epoch, 2);
+        assert!(h.input.recv().await.is_some());
+        h.finish().await;
+    }
+
+    #[tokio::test]
+    async fn capture_gap_fails_and_invalidates_already_enqueued_response() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        h.call().await.answer(TurnState::Complete);
+        h.event().await;
+        let response = h.input.recv().await.unwrap();
+        h.audio
+            .send(Ok(DeviceFrame {
+                payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                    sequence: 999,
+                    sample_offset: 0,
+                    pcm_s16le: vec![0; 2],
+                    speech_active: true,
+                })),
+            }))
+            .await
+            .unwrap();
+        let error = tokio::time::timeout(Duration::from_secs(2), h.task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        assert!(response.cancel.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn busy_model_retries_bounded_window_without_requiring_another_utterance() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        let busy = h.call().await;
+        busy.1.send(Err(DetectionError::Busy)).unwrap();
+        h.call().await.answer(TurnState::Complete);
+        assert_eq!(h.event().await.generation_epoch, 2);
+        assert!(h.input.recv().await.is_some());
+        h.finish().await;
+    }
+
+    #[tokio::test]
+    async fn continuously_ready_capture_does_not_starve_model_or_control() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        let call = h.call().await;
+        let audio = h.audio.clone();
+        let mut sequence = h.sequence;
+        let feeder = tokio::spawn(async move {
+            loop {
+                let frame = DeviceFrame {
+                    payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                        sequence,
+                        sample_offset: sequence * 1600,
+                        pcm_s16le: vec![0; 3200],
+                        speech_active: false,
+                    })),
+                };
+                if audio.send(Ok(frame)).await.is_err() {
+                    return;
+                }
+                sequence += 1;
+            }
+        });
+        call.answer(TurnState::Backchannel);
+        assert!(matches!(
+            h.event().await.payload,
+            Some(session_event::Payload::Evidence(_))
+        ));
+        h.finish().await;
+        tokio::time::timeout(Duration::from_secs(2), feeder)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn replacing_a_session_cancels_the_old_owner_and_old_drop_preserves_new_owner() {
+        let sessions = Arc::default();
+        let cancel = CancellationToken::new();
+        let old = SessionLease::acquire(Arc::clone(&sessions), "device".into(), &cancel)
+            .await
+            .unwrap();
+        let new = SessionLease::acquire(Arc::clone(&sessions), "device".into(), &cancel)
+            .await
+            .unwrap();
+        assert!(old.cancel.is_cancelled());
+        drop(old);
+        assert_eq!(new.slot.owner.lock().await.as_ref().unwrap().0, new.id);
+        drop(new);
+        assert!(sessions.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn slow_control_blocks_same_channel_replacement_but_not_other_channels() {
+        let sessions = Arc::default();
+        let cancel = CancellationToken::new();
+        let old = SessionLease::acquire(Arc::clone(&sessions), "a".into(), &cancel)
+            .await
+            .unwrap();
+        let control = old.slot.owner.lock().await;
+        let replacement = SessionLease::acquire(Arc::clone(&sessions), "a".into(), &cancel);
+        tokio::pin!(replacement);
+        assert!(futures::poll!(&mut replacement).is_pending());
+        let other = SessionLease::acquire(Arc::clone(&sessions), "b".into(), &cancel)
+            .await
+            .unwrap();
+        assert!(!other.cancel.is_cancelled());
+        drop(control);
+        let new = replacement.await.unwrap();
+        assert!(old.cancel.is_cancelled());
+        assert!(!new.cancel.is_cancelled());
+    }
+}

@@ -43,11 +43,15 @@ use crate::settings::values::{
 mod debug;
 mod dialogue_policy;
 mod error_notice;
+#[cfg(test)]
+mod integration_tests;
 pub mod memory_capture;
 pub mod streaming;
+mod supervision;
 pub mod tools;
 mod transcript_correction;
 mod turn;
+mod voice;
 use crate::expression::orchestrator::{
     ExpressionExecutionPhase, cancel_expression_execution, execute_expression_plan,
     execute_expression_plan_phase, negotiate_expression_capabilities,
@@ -56,6 +60,7 @@ use crate::expression::{
     AffectAssistantResponse, AffectUserInput, ExpressionDeviceContext, ExpressionInput,
     ExpressionPlan, ExpressionSafetyContext, ExpressionUserState,
 };
+use crate::modules::interaction::voice_input::RecognizedVoiceInput;
 use debug::*;
 use dialogue_policy::DialoguePolicyInput;
 use error_notice::{PipelineErrorStage, notify_pipeline_error};
@@ -89,6 +94,21 @@ struct TextResult {
     expression_plan: Option<ExpressionPlan>,
     expression_input: Option<ExpressionInput>,
     tts_trace: Option<TtsTraceContext>,
+}
+
+impl TextResult {
+    fn interrupted() -> Self {
+        Self {
+            text: String::new(),
+            streamed: false,
+            audio_streamed: false,
+            interrupted: true,
+            pending_persistence: None,
+            expression_plan: None,
+            expression_input: None,
+            tts_trace: None,
+        }
+    }
 }
 
 struct PlannedExpression {
@@ -467,6 +487,8 @@ impl PipelinePolicies {
 /// The task runs until the cancel token is triggered. It subscribes to the
 /// EventBus, filters for `ChannelInput` events, processes them through the
 /// AI pipeline, and sends responses back via the channel registry.
+/// Starts the bounded request supervisor. The owner must await the returned
+/// task before shutting down modules/storage; dropping it does not join workers.
 pub fn spawn_pipeline(
     event_bus: &EventBus,
     modules: Arc<ModuleRegistry>,
@@ -475,58 +497,143 @@ pub fn spawn_pipeline(
     cancel_token: CancellationToken,
     debug_output: bool,
     policies: SharedPipelinePolicies,
-) {
+    mut voice_rx: tokio::sync::mpsc::Receiver<RecognizedVoiceInput>,
+) -> tokio::task::JoinHandle<()> {
     let mut rx = event_bus.subscribe();
     let bus = event_bus.clone();
     let voice_turns = Arc::new(VoiceTurnRegistry::default());
-
+    let shutdown = cancel_token.child_token();
     tokio::spawn(async move {
+        let mut tasks = supervision::PipelineTasks::default();
+        let mut pending = std::collections::VecDeque::new();
+        let mut voice_open = true;
         loop {
-            tokio::select! {
-                _ = cancel_token.cancelled() => {
-                    tracing::info!("pipeline loop shutting down");
-                    break;
-                }
-                result = rx.recv() => {
-                    match result {
-                        Ok(ServerEvent::ChannelInput(event)) => {
-                            let channel_id = channel_event_id(&event).map(ToOwned::to_owned);
-                            let modules = modules.clone();
-                            let channels = channels.clone();
-                            let sensors = sensors.clone();
-                            let bus = bus.clone();
-                            let policy_snapshot = policies.read().await.clone();
-                            let voice_turns = voice_turns.clone();
-                            // Process each event concurrently
-                            tokio::spawn(async move {
-                                if let Err(e) = process_event(event, &modules, &channels, &sensors, &bus, &voice_turns, debug_output, &policy_snapshot.conversation, &policy_snapshot.tools, &policy_snapshot.cache, &policy_snapshot.cache_policy, &policy_snapshot.memory, &policy_snapshot.transcript_correction).await {
-                                    tracing::error!(error = %e, "pipeline processing failed");
-                                    tracing::debug!(error = ?e, "pipeline processing failure details");
-                                    if let Some(channel_id) = channel_id {
-                                        tracing::warn!(
-                                            channel_id = %channel_id,
-                                            error = %e,
-                                            "channel pipeline run failed; keeping channel enabled"
-                                        );
-                                    }
-                                }
-                            });
-                        }
-                        Ok(_) => {
-                            // Ignore non-channel events
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!(missed = n, "pipeline lagged, some events dropped");
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("event bus closed, pipeline stopping");
-                            break;
-                        }
+            if shutdown.is_cancelled() {
+                break;
+            }
+            // The reliable voice receiver keeps its own bounded queue. Legacy
+            // broadcast events have a separate bounded, best-effort queue.
+            let next = tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = tasks.join_next(), if !tasks.is_empty() => continue,
+                input = voice_rx.recv(), if voice_open && tasks.has_capacity() => {
+                    match input {
+                        Some(input) if !input.cancel.is_cancelled() => Some(voice::PipelineInput::Recognized(input)),
+                        Some(_) => continue,
+                        None => { voice_open = false; continue; }
                     }
                 }
+                _ = std::future::ready(()), if tasks.has_capacity() && !pending.is_empty() => {
+                    pending.pop_front().map(voice::PipelineInput::Legacy)
+                }
+                event = rx.recv() => {
+                    match event {
+                        Ok(ServerEvent::ChannelInput(event @ ChannelEvent::InterruptActiveTurn { .. })) => {
+                            let snapshot = policies.read().await.clone();
+                            // Cancellation is delivered outside the request queue. Adapter
+                            // stop notifications are bounded so they cannot wedge intake.
+                            if tokio::time::timeout(std::time::Duration::from_secs(2), process_event(
+                                event, &modules, &channels, &sensors, &bus, &voice_turns,
+                                shutdown.child_token(), debug_output, &snapshot.conversation,
+                                &snapshot.tools, &snapshot.cache, &snapshot.cache_policy,
+                                &snapshot.memory, &snapshot.transcript_correction,
+                            )).await.is_err() {
+                                tracing::warn!("channel interrupt notification timed out");
+                            }
+                            continue;
+                        }
+                        Ok(ServerEvent::ChannelInput(event)) => {
+                            if pending.len() < supervision::LEGACY_QUEUE_CAPACITY {
+                                pending.push_back(event);
+                            } else {
+                                tracing::warn!(channel_id = channel_event_id(&event), "legacy pipeline input rejected: queue full");
+                            }
+                            continue;
+                        }
+                        Ok(_) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
+                            tracing::warn!(missed, "legacy pipeline event bus lagged");
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            };
+            let Some(input) = next else {
+                continue;
+            };
+            let token = match &input {
+                voice::PipelineInput::Recognized(input) => input.cancel.clone(),
+                voice::PipelineInput::Legacy(_) => shutdown.child_token(),
+            };
+            if shutdown.is_cancelled() {
+                token.cancel();
+                break;
             }
+            if token.is_cancelled() {
+                continue;
+            }
+            let modules = modules.clone();
+            let channels = channels.clone();
+            let sensors = sensors.clone();
+            let bus = bus.clone();
+            let voice_turns = voice_turns.clone();
+            let policies = policies.clone();
+            let worker_token = token.clone();
+            tasks.spawn(token, async move {
+                // Policy reads may yield; cancellation must be checked again by
+                // the worker before it touches STT, context, or an LLM.
+                let policy = policies.read().await.clone();
+                let result = match input {
+                    voice::PipelineInput::Legacy(event) => {
+                        process_event(
+                            event,
+                            &modules,
+                            &channels,
+                            &sensors,
+                            &bus,
+                            &voice_turns,
+                            worker_token,
+                            debug_output,
+                            &policy.conversation,
+                            &policy.tools,
+                            &policy.cache,
+                            &policy.cache_policy,
+                            &policy.memory,
+                            &policy.transcript_correction,
+                        )
+                        .await
+                    }
+                    voice::PipelineInput::Recognized(input) => {
+                        voice::process_recognized_voice(
+                            input,
+                            &modules,
+                            &channels,
+                            &bus,
+                            &voice_turns,
+                            debug_output,
+                            &policy,
+                        )
+                        .await
+                    }
+                };
+                if let Err(error) = result {
+                    tracing::error!(error = %error, "pipeline request failed");
+                    tracing::debug!(error = ?error, "pipeline request failure details");
+                }
+            });
         }
-    });
+        shutdown.cancel();
+        voice_rx.close();
+        while let Some(input) = voice_rx.recv().await {
+            input.cancel.cancel();
+        }
+        pending.clear();
+        // No abort_all: already-dispatched tools must complete and record their
+        // result before their cancelled response is discarded.
+        tasks.shutdown().await;
+        tracing::info!("pipeline requests drained");
+    })
 }
 
 /// Process a single ChannelEvent through the AI pipeline.
@@ -537,6 +644,7 @@ async fn process_event(
     sensors: &SensorRegistry,
     event_bus: &EventBus,
     voice_turns: &VoiceTurnRegistry,
+    request_cancel: CancellationToken,
     debug_output: bool,
     conversation_config: &ConversationSection,
     tools_config: &ToolsSection,
@@ -545,6 +653,9 @@ async fn process_event(
     memory_config: &MemorySection,
     transcript_correction_config: &crate::config::TranscriptCorrectionPolicySection,
 ) -> anyhow::Result<()> {
+    if request_cancel.is_cancelled() {
+        return Ok(());
+    }
     match event {
         ChannelEvent::TextMessage {
             channel_id,
@@ -563,6 +674,7 @@ async fn process_event(
                 user_id: user_id.clone(),
             };
 
+            let turn = VoiceTurn::request(request_cancel);
             let result = match process_text(
                 &text,
                 &user_id,
@@ -579,8 +691,8 @@ async fn process_event(
                 cache_config,
                 cache_policy,
                 memory_config,
-                None,
-                false,
+                Some(&turn),
+                true,
                 None,
             )
             .await
@@ -598,12 +710,16 @@ async fn process_event(
                         Some(&error),
                         debug_output,
                         false,
+                        Some(&turn),
                     )
                     .await;
                     return Ok(());
                 }
             };
 
+            if result.interrupted || turn_is_interrupted(Some(&turn)) {
+                return Ok(());
+            }
             // Only call send_message when the text was NOT already streamed.
             if !result.streamed {
                 debug_component_text(
@@ -613,7 +729,13 @@ async fn process_event(
                     &result.text,
                     Some((&channel_id, &user_id)),
                 );
-                if let Err(error) = channel.send_message(&target, &result.text).await {
+                if let Err(error) = cancellable_stage(
+                    Some(&turn),
+                    "text_delivery",
+                    channel.send_message(&target, &result.text),
+                )
+                .await
+                {
                     log_channel_delivery_failure(channel.as_ref(), error).await;
                 }
             }
@@ -626,10 +748,17 @@ async fn process_event(
                     debug_output,
                     &channel_id,
                     &user_id,
+                    Some(&turn),
                 )
                 .await;
             }
 
+            if !turn_is_interrupted(Some(&turn)) {
+                if let Some(pending) = result.pending_persistence {
+                    persist_text_interaction(modules, pending, memory_config, event_bus, None)
+                        .await;
+                }
+            }
             Ok(())
         }
         ChannelEvent::InterruptActiveTurn {
@@ -715,6 +844,7 @@ async fn process_event(
                     channel_id.clone(),
                     user_id.clone(),
                     channel.interrupt_config(),
+                    request_cancel,
                 )
                 .await;
 
@@ -751,6 +881,7 @@ async fn process_event(
                         Some(&error),
                         debug_output,
                         true,
+                        Some(&turn),
                     )
                     .await;
                     voice_turns.finish(&turn).await;
@@ -778,22 +909,37 @@ async fn process_event(
                 return Ok(());
             }
 
-            let correction_context = build_transcript_correction_context(
-                modules,
-                sensors,
-                &channel_id,
-                &user_id,
-                conversation_config,
-            )
+            let correction = cancellable_stage(Some(&turn), "transcript_correction", async {
+                let correction_context = build_transcript_correction_context(
+                    modules,
+                    sensors,
+                    &channel_id,
+                    &user_id,
+                    conversation_config,
+                )
+                .await;
+                let correction = correct_stt_transcript(
+                    &transcription,
+                    &stt_capabilities,
+                    &correction_context,
+                    transcript_correction_config,
+                    transcript_correction_llm(modules, transcript_correction_config),
+                )
+                .await;
+                Ok(correction)
+            })
             .await;
-            let correction = correct_stt_transcript(
-                &transcription,
-                &stt_capabilities,
-                &correction_context,
-                transcript_correction_config,
-                transcript_correction_llm(modules, transcript_correction_config),
-            )
-            .await;
+            let correction = match correction {
+                Ok(Some(correction)) => correction,
+                Ok(None) => {
+                    voice_turns.finish(&turn).await;
+                    return Ok(());
+                }
+                Err(error) => {
+                    voice_turns.finish(&turn).await;
+                    return Err(error);
+                }
+            };
             if correction.requires_user_confirmation(transcript_correction_config) {
                 let clarification = correction.clarification_prompt();
                 handle_transcript_correction_confirmation(
@@ -832,7 +978,7 @@ async fn process_event(
                 Some((&channel_id, &user_id)),
             );
 
-            let result = match process_text(
+            let result = voice::process_voice_response(
                 &corrected_text,
                 &user_id,
                 modules,
@@ -841,139 +987,17 @@ async fn process_event(
                 &channel_id,
                 event_bus,
                 debug_output,
-                channel.capabilities().voice_output && channel.capabilities().audio_streaming,
-                true,
                 conversation_config,
                 tools_config,
                 cache_config,
                 cache_policy,
                 memory_config,
-                Some(&turn),
-                turn.interrupt_config.discard_interrupted_turn_history,
+                &turn,
                 correction_trace,
             )
-            .await
-            {
-                Ok(result) => result,
-                Err(error) => {
-                    notify_pipeline_error(
-                        modules,
-                        channel.as_ref(),
-                        &target,
-                        &channel_id,
-                        &user_id,
-                        PipelineErrorStage::Llm,
-                        Some(&corrected_text),
-                        Some(&error),
-                        debug_output,
-                        true,
-                    )
-                    .await;
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-            };
-
-            if result.interrupted {
-                voice_turns.finish(&turn).await;
-                return Ok(());
-            }
-
-            // Text delivery: only if not already streamed
-            if !result.streamed {
-                debug_component_text(
-                    debug_output,
-                    "channel",
-                    "send_message",
-                    &result.text,
-                    Some((&channel_id, &user_id)),
-                );
-                if let Err(error) = channel.send_message(&target, &result.text).await {
-                    log_channel_delivery_failure(channel.as_ref(), error).await;
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-            }
-
-            if let Some(plan) = &result.expression_plan {
-                execute_expression_and_trace(
-                    channel.as_ref(),
-                    &target,
-                    plan,
-                    Some(ExpressionExecutionPhase::PreSpeech),
-                    debug_output,
-                    &channel_id,
-                    &user_id,
-                )
-                .await;
-            }
-
-            if channel.capabilities().voice_output && !result.audio_streamed {
-                let tts_delivery = deliver_tts_audio(
-                    modules,
-                    channel.as_ref(),
-                    &target,
-                    &channel_id,
-                    &user_id,
-                    &result.text,
-                    result
-                        .expression_plan
-                        .as_ref()
-                        .and_then(|plan| plan.speech.as_ref()),
-                    result.expression_plan.as_ref(),
-                    result.expression_input.as_ref(),
-                    result.tts_trace.clone(),
-                    debug_output,
-                    Some(&turn),
-                )
-                .await;
-                if let TtsDeliveryOutcome::Failed(stage) = tts_delivery
-                    && !turn_is_interrupted(Some(&turn))
-                {
-                    notify_pipeline_error(
-                        modules,
-                        channel.as_ref(),
-                        &target,
-                        &channel_id,
-                        &user_id,
-                        stage,
-                        Some(&corrected_text),
-                        None,
-                        debug_output,
-                        true,
-                    )
-                    .await;
-                }
-            }
-
-            if let Some(plan) = &result.expression_plan {
-                execute_expression_and_trace(
-                    channel.as_ref(),
-                    &target,
-                    plan,
-                    Some(ExpressionExecutionPhase::PostSpeech),
-                    debug_output,
-                    &channel_id,
-                    &user_id,
-                )
-                .await;
-            }
-
-            if turn_is_interrupted(Some(&turn)) {
-                turn.mark_interrupted_stage("post_speech_delivery");
-                if let Some(pending) = result.pending_persistence.as_ref() {
-                    persist_interrupted_user_context(modules, pending, &turn, debug_output).await;
-                }
-                voice_turns.finish(&turn).await;
-                return Ok(());
-            }
-
-            if let Some(pending) = result.pending_persistence {
-                persist_text_interaction(modules, pending, memory_config, event_bus, None).await;
-            }
-
+            .await;
             voice_turns.finish(&turn).await;
-            Ok(())
+            result
         }
         ChannelEvent::SensorData {
             channel_id,
@@ -1110,9 +1134,20 @@ async fn process_text(
     defer_persistence: bool,
     transcript_correction: Option<TranscriptCorrectionResult>,
 ) -> anyhow::Result<TextResult> {
+    if turn_is_interrupted(turn) {
+        return Ok(TextResult::interrupted());
+    }
     let uid = stable_user_uuid(user_id);
-    let (mut base_system_messages, runtime_context) =
-        build_base_system_messages(uid, modules, memory_config, text).await?;
+    let (mut base_system_messages, runtime_context) = match cancellable_stage(
+        turn,
+        "context",
+        build_base_system_messages(uid, modules, memory_config, text),
+    )
+    .await?
+    {
+        Some(context) => context,
+        None => return Ok(TextResult::interrupted()),
+    };
     if input_from_stt {
         base_system_messages.push(system_message(stt_transcript_context_prompt()));
     }
@@ -1122,19 +1157,36 @@ async fn process_text(
     let memory_context_used = runtime_context_has_user_memory(&runtime_context);
 
     // 1. Get active session and load history
-    let session_id = modules
-        .conversation
-        .get_or_create_active_session(channel_id, user_id)
-        .await?;
-    let history = modules
-        .conversation
-        .get_history(
+    let session_id = match cancellable_stage(
+        turn,
+        "conversation_session",
+        modules
+            .conversation
+            .get_or_create_active_session(channel_id, user_id),
+    )
+    .await?
+    {
+        Some(session_id) => session_id,
+        None => return Ok(TextResult::interrupted()),
+    };
+    let history = match cancellable_stage(
+        turn,
+        "conversation_history",
+        modules.conversation.get_history(
             session_id,
             conversation_config.max_context_messages.max(1) as u64,
-        )
-        .await?;
+        ),
+    )
+    .await?
+    {
+        Some(history) => history,
+        None => return Ok(TextResult::interrupted()),
+    };
     let prior_message_count = history.len();
     let mut trace = AgentTrace::new(session_id);
+    if let Some(turn) = turn {
+        trace.turn_id = turn.id;
+    }
     trace
         .record(
             modules,
@@ -1146,6 +1198,7 @@ async fn process_text(
                 "user_id": user_id,
                 "input_preview": preview_for_prompt(text, 240),
                 "history_messages": history.len(),
+                "voice_scope": turn.and_then(|turn| turn.voice_scope.as_ref()),
                 "memory_context_used": memory_context_used,
             }),
         )
@@ -1163,13 +1216,31 @@ async fn process_text(
             )
             .await;
     }
-    observe_user_affect_for_turn(modules, &mut trace, channel_id, user_id, text, debug_output)
-        .await;
+    match cancellable_stage(turn, "observe_user_affect_for_turn", async {
+        Ok(observe_user_affect_for_turn(
+            modules,
+            &mut trace,
+            channel_id,
+            user_id,
+            text,
+            debug_output,
+        )
+        .await)
+    })
+    .await?
+    {
+        Some(value) => value,
+        None => return Ok(TextResult::interrupted()),
+    };
 
     // 2. Check exact cache first (never streamed). Only entries with explicit
     // safe-direct metadata can bypass the LLM.
     if cache_config.enabled && cache_config.exact_match_enabled && !memory_context_used {
-        if let Some(cached) = modules.cache.get(Some(uid), text).await? {
+        if let Some(cached) =
+            cancellable_stage(turn, "cache_lookup", modules.cache.get(Some(uid), text))
+                .await?
+                .flatten()
+        {
             if cached_response_is_safe_direct(&cached) {
                 let cache_metadata = cached.metadata.clone();
                 let response_text = cached.response_text;
@@ -1212,18 +1283,25 @@ async fn process_text(
                     )
                     .await;
                 }
-                observe_assistant_affect_for_turn(
-                    modules,
-                    &mut trace,
-                    channel_id,
-                    user_id,
-                    &response_text,
-                    "cache",
-                    false,
-                    false,
-                    debug_output,
-                )
-                .await;
+                match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
+                    Ok(observe_assistant_affect_for_turn(
+                        modules,
+                        &mut trace,
+                        channel_id,
+                        user_id,
+                        &response_text,
+                        "cache",
+                        false,
+                        false,
+                        debug_output,
+                    )
+                    .await)
+                })
+                .await?
+                {
+                    Some(value) => value,
+                    None => return Ok(TextResult::interrupted()),
+                };
                 trace
                     .record(
                         modules,
@@ -1239,24 +1317,32 @@ async fn process_text(
                         }),
                     )
                     .await;
-                let planned_expression = plan_expression_for_response(
-                    modules,
-                    &mut trace,
-                    channel,
-                    channel_id,
-                    user_id,
-                    &response_text,
-                    "cache",
-                    false,
-                    false,
-                    true,
-                    text,
-                    prior_message_count,
-                    memory_context_used,
-                    memory_config,
-                    debug_output,
-                )
-                .await;
+                let planned_expression =
+                    match cancellable_stage(turn, "plan_expression_for_response", async {
+                        Ok(plan_expression_for_response(
+                            modules,
+                            &mut trace,
+                            channel,
+                            channel_id,
+                            user_id,
+                            &response_text,
+                            "cache",
+                            false,
+                            false,
+                            true,
+                            text,
+                            prior_message_count,
+                            memory_context_used,
+                            memory_config,
+                            debug_output,
+                        )
+                        .await)
+                    })
+                    .await?
+                    {
+                        Some(value) => value,
+                        None => return Ok(TextResult::interrupted()),
+                    };
                 let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
                 return Ok(TextResult {
                     text: response_text.clone(),
@@ -1306,7 +1392,15 @@ async fn process_text(
         .await;
 
     if cache_config.enabled && cache_config.semantic_match_enabled && !memory_context_used {
-        let semantic_candidates = semantic_cache_candidates(modules, uid, text, debug_output).await;
+        let semantic_candidates =
+            match cancellable_stage(turn, "semantic_cache_candidates", async {
+                Ok(semantic_cache_candidates(modules, uid, text, debug_output).await)
+            })
+            .await?
+            {
+                Some(value) => value,
+                None => return Ok(TextResult::interrupted()),
+            };
         if let Some(candidate) = semantic_candidates
             .iter()
             .find(|candidate| semantic_candidate_is_safe_direct(candidate))
@@ -1354,18 +1448,25 @@ async fn process_text(
                 )
                 .await;
             }
-            observe_assistant_affect_for_turn(
-                modules,
-                &mut trace,
-                channel_id,
-                user_id,
-                &response_text,
-                "cache",
-                false,
-                false,
-                debug_output,
-            )
-            .await;
+            match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
+                Ok(observe_assistant_affect_for_turn(
+                    modules,
+                    &mut trace,
+                    channel_id,
+                    user_id,
+                    &response_text,
+                    "cache",
+                    false,
+                    false,
+                    debug_output,
+                )
+                .await)
+            })
+            .await?
+            {
+                Some(value) => value,
+                None => return Ok(TextResult::interrupted()),
+            };
             trace
                 .record(
                     modules,
@@ -1383,24 +1484,32 @@ async fn process_text(
                     }),
                 )
                 .await;
-            let planned_expression = plan_expression_for_response(
-                modules,
-                &mut trace,
-                channel,
-                channel_id,
-                user_id,
-                &response_text,
-                "cache",
-                false,
-                false,
-                true,
-                text,
-                prior_message_count,
-                memory_context_used,
-                memory_config,
-                debug_output,
-            )
-            .await;
+            let planned_expression =
+                match cancellable_stage(turn, "plan_expression_for_response", async {
+                    Ok(plan_expression_for_response(
+                        modules,
+                        &mut trace,
+                        channel,
+                        channel_id,
+                        user_id,
+                        &response_text,
+                        "cache",
+                        false,
+                        false,
+                        true,
+                        text,
+                        prior_message_count,
+                        memory_context_used,
+                        memory_config,
+                        debug_output,
+                    )
+                    .await)
+                })
+                .await?
+                {
+                    Some(value) => value,
+                    None => return Ok(TextResult::interrupted()),
+                };
             let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
             return Ok(TextResult {
                 text: response_text.clone(),
@@ -1535,7 +1644,16 @@ async fn process_text(
                 name: skill_name,
                 confidence: 1.0,
             };
-            let resolution = modules.skills.resolve(&skill_match).await?;
+            let resolution = match cancellable_stage(
+                turn,
+                "skill_context",
+                modules.skills.resolve(&skill_match),
+            )
+            .await?
+            {
+                Some(resolution) => resolution,
+                None => return Ok(TextResult::interrupted()),
+            };
             trace
                 .record(
                     modules,
@@ -1574,37 +1692,53 @@ async fn process_text(
                 ..ChatMessage::default()
             });
 
-            let tool_selection = select_tools_for_skill(
-                modules,
-                &resolution.preferred_tools,
-                text,
-                tools_config,
-                channel_id,
-                &runtime_context.assistant_name,
+            let tool_selection = match cancellable_stage(
+                turn,
+                "select_tools_for_skill",
+                select_tools_for_skill(
+                    modules,
+                    &resolution.preferred_tools,
+                    text,
+                    tools_config,
+                    channel_id,
+                    &runtime_context.assistant_name,
+                ),
             )
-            .await?;
+            .await?
+            {
+                Some(value) => value,
+                None => return Ok(TextResult::interrupted()),
+            };
             let skill_cacheable = resolution.cacheable;
-            let sentence_speech_context = build_sentence_speech_context(
-                modules,
-                channel,
-                channel_id,
-                user_id,
-                "skill",
-                false,
-                false,
-                false,
-                text,
-                prior_message_count,
-                memory_context_used,
-                runtime_context.memory_context.clone(),
-                audio_response
-                    && allow_streaming_for_tools(
-                        &tool_selection.selected_tools,
-                        conversation_config.streaming_enabled,
+            let sentence_speech_context =
+                match cancellable_stage(turn, "build_sentence_speech_context", async {
+                    Ok(build_sentence_speech_context(
+                        modules,
                         channel,
-                    ),
-            )
-            .await;
+                        channel_id,
+                        user_id,
+                        "skill",
+                        false,
+                        false,
+                        false,
+                        text,
+                        prior_message_count,
+                        memory_context_used,
+                        runtime_context.memory_context.clone(),
+                        audio_response
+                            && allow_streaming_for_tools(
+                                &tool_selection.selected_tools,
+                                conversation_config.streaming_enabled,
+                                channel,
+                            ),
+                    )
+                    .await)
+                })
+                .await?
+                {
+                    Some(value) => value,
+                    None => return Ok(TextResult::interrupted()),
+                };
             let outcome = execute_llm_response(
                 modules,
                 modules.llm.as_ref(),
@@ -1642,37 +1776,53 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tool_selection = select_all_tools(
-                modules,
-                text,
-                tools_config,
-                channel_id,
-                &runtime_context.assistant_name,
+            let tool_selection = match cancellable_stage(
+                turn,
+                "tool_selection",
+                select_all_tools(
+                    modules,
+                    text,
+                    tools_config,
+                    channel_id,
+                    &runtime_context.assistant_name,
+                ),
             )
-            .await?;
+            .await?
+            {
+                Some(selection) => selection,
+                None => return Ok(TextResult::interrupted()),
+            };
             let allow_minor_streaming =
                 conversation_config.streaming_enabled && escalation_prompt.is_none();
-            let sentence_speech_context = build_sentence_speech_context(
-                modules,
-                channel,
-                channel_id,
-                user_id,
-                "minor_llm",
-                false,
-                false,
-                false,
-                text,
-                prior_message_count,
-                memory_context_used,
-                runtime_context.memory_context.clone(),
-                audio_response
-                    && allow_streaming_for_tools(
-                        &tool_selection.selected_tools,
-                        allow_minor_streaming,
+            let sentence_speech_context =
+                match cancellable_stage(turn, "build_sentence_speech_context", async {
+                    Ok(build_sentence_speech_context(
+                        modules,
                         channel,
-                    ),
-            )
-            .await;
+                        channel_id,
+                        user_id,
+                        "minor_llm",
+                        false,
+                        false,
+                        false,
+                        text,
+                        prior_message_count,
+                        memory_context_used,
+                        runtime_context.memory_context.clone(),
+                        audio_response
+                            && allow_streaming_for_tools(
+                                &tool_selection.selected_tools,
+                                allow_minor_streaming,
+                                channel,
+                            ),
+                    )
+                    .await)
+                })
+                .await?
+                {
+                    Some(value) => value,
+                    None => return Ok(TextResult::interrupted()),
+                };
             let minor_outcome = execute_llm_response(
                 modules,
                 modules.minor_llm.as_ref(),
@@ -1725,35 +1875,51 @@ async fn process_text(
                         "The minor model escalated this request instead of answering. Escalation reason: {reason}. Answer the original user request directly."
                     ),
                 ));
-                let major_tool_selection = select_all_tools(
-                    modules,
-                    text,
-                    tools_config,
-                    channel_id,
-                    &runtime_context.assistant_name,
+                let major_tool_selection = match cancellable_stage(
+                    turn,
+                    "tool_selection",
+                    select_all_tools(
+                        modules,
+                        text,
+                        tools_config,
+                        channel_id,
+                        &runtime_context.assistant_name,
+                    ),
                 )
-                .await?;
-                let sentence_speech_context = build_sentence_speech_context(
-                    modules,
-                    channel,
-                    channel_id,
-                    user_id,
-                    "major_llm_escalated",
-                    false,
-                    false,
-                    false,
-                    text,
-                    prior_message_count,
-                    memory_context_used,
-                    runtime_context.memory_context.clone(),
-                    audio_response
-                        && allow_streaming_for_tools(
-                            &major_tool_selection.selected_tools,
-                            conversation_config.streaming_enabled,
+                .await?
+                {
+                    Some(selection) => selection,
+                    None => return Ok(TextResult::interrupted()),
+                };
+                let sentence_speech_context =
+                    match cancellable_stage(turn, "build_sentence_speech_context", async {
+                        Ok(build_sentence_speech_context(
+                            modules,
                             channel,
-                        ),
-                )
-                .await;
+                            channel_id,
+                            user_id,
+                            "major_llm_escalated",
+                            false,
+                            false,
+                            false,
+                            text,
+                            prior_message_count,
+                            memory_context_used,
+                            runtime_context.memory_context.clone(),
+                            audio_response
+                                && allow_streaming_for_tools(
+                                    &major_tool_selection.selected_tools,
+                                    conversation_config.streaming_enabled,
+                                    channel,
+                                ),
+                        )
+                        .await)
+                    })
+                    .await?
+                    {
+                        Some(value) => value,
+                        None => return Ok(TextResult::interrupted()),
+                    };
                 let major_outcome = execute_llm_response(
                     modules,
                     modules.major_llm.as_ref(),
@@ -1789,35 +1955,51 @@ async fn process_text(
                 text,
                 user_id,
             );
-            let tool_selection = select_all_tools(
-                modules,
-                text,
-                tools_config,
-                channel_id,
-                &runtime_context.assistant_name,
+            let tool_selection = match cancellable_stage(
+                turn,
+                "tool_selection",
+                select_all_tools(
+                    modules,
+                    text,
+                    tools_config,
+                    channel_id,
+                    &runtime_context.assistant_name,
+                ),
             )
-            .await?;
-            let sentence_speech_context = build_sentence_speech_context(
-                modules,
-                channel,
-                channel_id,
-                user_id,
-                "major_llm",
-                false,
-                false,
-                false,
-                text,
-                prior_message_count,
-                memory_context_used,
-                runtime_context.memory_context.clone(),
-                audio_response
-                    && allow_streaming_for_tools(
-                        &tool_selection.selected_tools,
-                        conversation_config.streaming_enabled,
+            .await?
+            {
+                Some(selection) => selection,
+                None => return Ok(TextResult::interrupted()),
+            };
+            let sentence_speech_context =
+                match cancellable_stage(turn, "build_sentence_speech_context", async {
+                    Ok(build_sentence_speech_context(
+                        modules,
                         channel,
-                    ),
-            )
-            .await;
+                        channel_id,
+                        user_id,
+                        "major_llm",
+                        false,
+                        false,
+                        false,
+                        text,
+                        prior_message_count,
+                        memory_context_used,
+                        runtime_context.memory_context.clone(),
+                        audio_response
+                            && allow_streaming_for_tools(
+                                &tool_selection.selected_tools,
+                                conversation_config.streaming_enabled,
+                                channel,
+                            ),
+                    )
+                    .await)
+                })
+                .await?
+                {
+                    Some(value) => value,
+                    None => return Ok(TextResult::interrupted()),
+                };
             let outcome = execute_llm_response(
                 modules,
                 modules.major_llm.as_ref(),
@@ -1967,18 +2149,25 @@ async fn process_text(
         )
         .await;
     }
-    observe_assistant_affect_for_turn(
-        modules,
-        &mut trace,
-        channel_id,
-        user_id,
-        &response,
-        route_for_cache,
-        used_tools,
-        response_was_fallback,
-        debug_output,
-    )
-    .await;
+    match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
+        Ok(observe_assistant_affect_for_turn(
+            modules,
+            &mut trace,
+            channel_id,
+            user_id,
+            &response,
+            route_for_cache,
+            used_tools,
+            response_was_fallback,
+            debug_output,
+        )
+        .await)
+    })
+    .await?
+    {
+        Some(value) => value,
+        None => return Ok(TextResult::interrupted()),
+    };
     trace
         .record(
             modules,
@@ -1995,24 +2184,31 @@ async fn process_text(
             }),
         )
         .await;
-    let planned_expression = plan_expression_for_response(
-        modules,
-        &mut trace,
-        channel,
-        channel_id,
-        user_id,
-        &response,
-        route_for_cache,
-        used_tools,
-        response_was_fallback,
-        false,
-        text,
-        prior_message_count,
-        memory_context_used,
-        memory_config,
-        debug_output,
-    )
-    .await;
+    let planned_expression = match cancellable_stage(turn, "plan_expression_for_response", async {
+        Ok(plan_expression_for_response(
+            modules,
+            &mut trace,
+            channel,
+            channel_id,
+            user_id,
+            &response,
+            route_for_cache,
+            used_tools,
+            response_was_fallback,
+            false,
+            text,
+            prior_message_count,
+            memory_context_used,
+            memory_config,
+            debug_output,
+        )
+        .await)
+    })
+    .await?
+    {
+        Some(value) => value,
+        None => return Ok(TextResult::interrupted()),
+    };
     let tts_trace = TtsTraceContext::from_agent_trace(modules, &trace);
 
     Ok(TextResult {
@@ -2602,7 +2798,13 @@ async fn handle_transcript_correction_confirmation(
         clarification,
         Some((channel_id, user_id)),
     );
-    if let Err(error) = channel.send_message(target, clarification).await {
+    if let Err(error) = cancellable_stage(
+        turn,
+        "clarification_delivery",
+        channel.send_message(target, clarification),
+    )
+    .await
+    {
         log_channel_delivery_failure(channel, error).await;
         return;
     }
@@ -2675,11 +2877,17 @@ async fn execute_expression_and_trace(
     debug_output: bool,
     channel_id: &str,
     user_id: &str,
+    turn: Option<&VoiceTurn>,
 ) {
-    let execution = match phase {
-        Some(phase) => execute_expression_plan_phase(channel, target, plan, phase).await,
-        None => execute_expression_plan(channel, target, plan).await,
-    };
+    let execution = cancellable_stage(turn, "expression", async {
+        Ok(match phase {
+            Some(phase) => execute_expression_plan_phase(channel, target, plan, phase).await,
+            None => execute_expression_plan(channel, target, plan).await,
+        })
+    })
+    .await
+    .ok()
+    .flatten();
     debug_component_json(
         debug_output,
         "expression",
@@ -2956,25 +3164,9 @@ async fn execute_llm_response(
                 }),
             )
             .await;
-        let (full, audio_streamed) = if audio_response {
-            stream_llm_response_with_sentence_tts(
-                modules,
-                llm,
-                channel,
-                target,
-                channel_id,
-                user_id,
-                event_bus,
-                &messages,
-                sentence_speech_context,
-                Some(TtsTraceContext::from_agent_trace(modules, trace)),
-                debug_output,
-                turn,
-            )
-            .await?
-        } else {
-            (
-                stream_llm_response(
+        let (full, audio_streamed) = cancellable_stage(turn, "response_stream", async {
+            Ok(if audio_response {
+                stream_llm_response_with_sentence_tts(
                     modules,
                     llm,
                     channel,
@@ -2983,13 +3175,33 @@ async fn execute_llm_response(
                     user_id,
                     event_bus,
                     &messages,
+                    sentence_speech_context,
+                    Some(TtsTraceContext::from_agent_trace(modules, trace)),
                     debug_output,
                     turn,
                 )
-                .await?,
-                false,
-            )
-        };
+                .await?
+            } else {
+                (
+                    stream_llm_response(
+                        modules,
+                        llm,
+                        channel,
+                        target,
+                        channel_id,
+                        user_id,
+                        event_bus,
+                        &messages,
+                        debug_output,
+                        turn,
+                    )
+                    .await?,
+                    false,
+                )
+            })
+        })
+        .await?
+        .unwrap_or_default();
         debug_component_text(
             debug_output,
             "llm",
@@ -3490,7 +3702,9 @@ async fn persist_interrupted_user_context_entry(
 
     let event = ConversationEventEntry {
         turn_id: context.turn_id,
-        sequence: 0,
+        // Terminal interruption shares the response audit ID; reserve the last
+        // sequence so it cannot collide with normal events or TTS (10_000+).
+        sequence: i32::MAX,
         event_type: "turn_interrupted".to_string(),
         actor: "pipeline".to_string(),
         summary: Some("Voice turn interrupted; preserved user context only".to_string()),
