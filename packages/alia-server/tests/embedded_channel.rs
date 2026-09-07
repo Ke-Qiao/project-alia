@@ -1,3 +1,5 @@
+#![cfg(feature = "channel-embedded")]
+
 use alia_server::channels::adapter::{AudioFormat, AudioPayload};
 use alia_server::channels::embedded::{
     normalize_embedded_playback_payload, pcm16_to_le_bytes, pcm16le_bytes_to_samples,
@@ -22,4 +24,3 @@ fn normalizes_stereo_pcm16_payload_to_mono() {
         vec![200, -300]
     );
 }
-#![cfg(feature = "channel-embedded")]
