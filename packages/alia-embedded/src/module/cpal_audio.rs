@@ -164,6 +164,7 @@ pub struct CpalAudioPlayback {
     config: AudioConfig,
     volume: AudioVolumeState,
     runtime: Mutex<Option<PlaybackRuntime>>,
+    generation: Arc<AtomicU64>,
 }
 
 struct PlaybackRuntime {
@@ -177,6 +178,7 @@ impl CpalAudioPlayback {
             config,
             volume,
             runtime: Mutex::new(None),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -192,7 +194,10 @@ impl CpalAudioPlayback {
             let _ = previous.thread.join();
         }
 
-        let (sender, receiver) = playback::channel(playback_command_queue_capacity(&self.config));
+        let (sender, receiver) = playback::channel_with_generation(
+            playback_command_queue_capacity(&self.config),
+            self.generation.clone(),
+        );
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let config = self.config.clone();
         let volume = self.volume.clone();
@@ -258,6 +263,30 @@ impl ModuleLifecycle for CpalAudioPlayback {
 }
 
 impl AudioPlaybackBackend for CpalAudioPlayback {
+    fn begin_scoped_playback(&self) -> Result<u64> {
+        self.start_stream()?.begin()
+    }
+
+    fn play_if_current(&self, pcm: &[i16], sample_rate: u32, generation: u64) -> Result<bool> {
+        let sender = lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .map(|runtime| runtime.sender.clone());
+        match sender {
+            Some(sender) => sender.play_if_current(pcm, sample_rate, generation),
+            None => Ok(false),
+        }
+    }
+
+    fn stop_if_current(&self, generation: u64) -> Result<bool> {
+        Ok(lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .is_some_and(|runtime| runtime.sender.stop_if_current(generation)))
+    }
+
+    fn is_playback_current(&self, generation: u64) -> bool {
+        self.generation.load(Ordering::Acquire) == generation
+    }
+
     fn play(&self, pcm: &[i16], sample_rate: u32) -> Result<()> {
         if pcm.is_empty() {
             return Ok(());

@@ -618,6 +618,7 @@ mod tests {
     async fn phase_execution_filters_by_timeline_and_capability() {
         let channel = MockExpressionChannel::new();
         let target = ChannelTarget {
+            voice: None,
             user_id: "user".to_string(),
         };
         clear_active_expression(channel_key(&channel, &target));
@@ -650,6 +651,7 @@ mod tests {
     async fn orchestrator_blocks_lower_priority_while_expression_is_active() {
         let channel = MockExpressionChannel::new();
         let target = ChannelTarget {
+            voice: None,
             user_id: "busy_user".to_string(),
         };
         clear_active_expression(channel_key(&channel, &target));
@@ -689,6 +691,7 @@ mod tests {
     async fn orchestrator_preempts_interruptible_lower_priority_expression() {
         let channel = MockExpressionChannel::new();
         let target = ChannelTarget {
+            voice: None,
             user_id: "preempt_user".to_string(),
         };
         clear_active_expression(channel_key(&channel, &target));

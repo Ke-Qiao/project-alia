@@ -6,28 +6,31 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use alia_core::delivery::VoiceScope;
 use alia_proto::voice::{
-    CaptureFrame, DeviceFrame, OpenSession, SessionEvent, TurnState, device_frame, session_event,
-    voice_session_client::VoiceSessionClient,
+    CaptureFrame, DeviceFrame, OpenSession, RefreshAuth, SessionEvent, TurnState, device_frame,
+    session_event, voice_session_client::VoiceSessionClient,
 };
 use anyhow::{Context, Result, bail, ensure};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::super::context::{AudioFrame, EventBus, ModuleEvent};
-use super::super::traits::{
-    AudioPlaybackBackend, VoiceActivityEngine, VoiceActivityState, WakeWordEngine,
+use super::super::playback_session::PlaybackSession;
+use super::super::traits::{VoiceActivityEngine, VoiceActivityState, WakeWordEngine};
+use super::transport::{
+    IngressAuth, attach_ingress_auth, ingress_auth, pcm16_to_le_bytes, voice_connection,
 };
-use super::transport::{IngressAuth, attach_ingress_auth, pcm16_to_le_bytes, voice_connection};
 use crate::binding::BindingManager;
 use crate::config::SpeechConfig;
 
 const SAMPLE_RATE: u32 = 16000;
 const MAX_FRAME_SAMPLES: usize = 1600;
 const CHANNEL_ID: &str = "embedded";
+const AUTH_REFRESH: Duration = Duration::from_secs(120);
 
 pub(super) struct Runtime {
     pub audio: broadcast::Receiver<AudioFrame>,
@@ -35,7 +38,7 @@ pub(super) struct Runtime {
     pub event_bus: EventBus,
     pub wakeword: Arc<dyn WakeWordEngine>,
     pub vad: Arc<dyn VoiceActivityEngine>,
-    pub playback: Arc<dyn AudioPlaybackBackend>,
+    pub playback_session: Arc<PlaybackSession>,
     pub binding: Arc<BindingManager>,
     pub device_id: String,
     pub keypair_path: PathBuf,
@@ -50,7 +53,7 @@ impl Runtime {
         let mut session: Option<Session> = None;
         let mut pre_roll = PreRoll::new(self.config.pre_roll_ms as usize * 16);
         let mut clock = CaptureClock::default();
-        info!(boot_id = %self.boot_id, "server_turn capture enabled; AEC and network playback fencing remain unverified");
+        info!(boot_id = %self.boot_id, "server_turn capture enabled with scoped network playback; hardware AEC remains unverified");
         loop {
             let damage = tokio::select! {
                 biased;
@@ -68,9 +71,6 @@ impl Runtime {
                         Ok(Err(error)) => warn!(%error, "voice session failed; wake again to reconnect"),
                         Err(error) => {
                             warn!(%error, "voice network task failed");
-                            if let Err(error) = self.playback.stop_playback() {
-                                warn!(%error, "failed to stop playback after network task panic");
-                            }
                         },
                     }
                     self.event_bus.publish(ModuleEvent::SpeechEnd);
@@ -163,7 +163,7 @@ impl Runtime {
         let device_id = self.device_id.clone();
         let keypair_path = self.keypair_path.clone();
         let boot_id = self.boot_id.clone();
-        let playback = self.playback.clone();
+        let playback = self.playback_session.clone();
         let task_cancel = cancel.clone();
         let task = tokio::spawn(async move {
             let exchange = async {
@@ -177,10 +177,12 @@ impl Runtime {
                     loop {
                         interval.tick().await;
                         let current = binding.status().await;
-                        if !(current.state != crate::binding::BindingState::Unbound
+                        if !(current.state == crate::binding::BindingState::Bound
                             && current.server_id == original.server_id
                             && current.server_endpoint == original.server_endpoint
-                            && current.server_public_key == original.server_public_key)
+                            && current.server_public_key == original.server_public_key
+                            && current.bound_since == original.bound_since
+                            && current.dev_skip_auth == original.dev_skip_auth)
                         {
                             break Err(anyhow::anyhow!("binding changed during voice session"));
                         }
@@ -189,7 +191,7 @@ impl Runtime {
                 tokio::select! {
                     biased;
                     result = binding_changed => result,
-                    result = exchange(endpoint, auth, boot_id, rx, playback.as_ref()) => result,
+                    result = exchange(endpoint, auth, boot_id, rx, playback, device_id, keypair_path) => result,
                 }
             };
             let result = tokio::select! {
@@ -197,11 +199,7 @@ impl Runtime {
                 _ = task_cancel.cancelled() => Ok(()),
                 result = exchange => result,
             };
-            // This is local stop only; stale network playback needs its own identity fence.
-            let stopped = playback
-                .stop_playback()
-                .context("stopping playback after voice session closed");
-            result.and(stopped)
+            result
         });
         Session {
             tx,
@@ -338,26 +336,69 @@ impl CaptureClock {
     }
 }
 
+fn capture_stream(
+    boot_id: String,
+    mut audio: mpsc::Receiver<CaptureFrame>,
+    ready: oneshot::Receiver<()>,
+    sent: Arc<AtomicU64>,
+    mut renew: impl FnMut() -> Result<IngressAuth> + Send + 'static,
+    failed: oneshot::Sender<anyhow::Error>,
+) -> impl futures::Stream<Item = DeviceFrame> + Send {
+    async_stream::stream! {
+        yield DeviceFrame { payload: Some(device_frame::Payload::Open(OpenSession {
+            protocol_version: 1, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
+        })) };
+        // Local playback admission must be activated before audio can cause a
+        // response to race back over the separate playback RPC connection.
+        if ready.await.is_err() { return; }
+        let mut refresh = tokio::time::interval_at(tokio::time::Instant::now() + AUTH_REFRESH, AUTH_REFRESH);
+        refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                biased;
+                _ = refresh.tick() => {
+                    let auth = match renew() {
+                        Ok(auth) => auth,
+                        Err(error) => { let _ = failed.send(error); return; }
+                    };
+                    yield DeviceFrame { payload: Some(device_frame::Payload::RefreshAuth(RefreshAuth { bearer_token: auth.token })) };
+                }
+                frame = audio.recv() => match frame {
+                    Some(frame) => {
+                        sent.store(frame.sequence + 1, Ordering::Release);
+                        yield DeviceFrame { payload: Some(device_frame::Payload::Audio(frame)) };
+                    }
+                    None => {
+                        yield DeviceFrame { payload: Some(device_frame::Payload::Close(Default::default())) };
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn exchange(
     endpoint: String,
     auth: IngressAuth,
     boot_id: String,
-    mut audio: mpsc::Receiver<CaptureFrame>,
-    playback: &dyn AudioPlaybackBackend,
+    audio: mpsc::Receiver<CaptureFrame>,
+    playback: Arc<PlaybackSession>,
+    device_id: String,
+    keypair_path: PathBuf,
 ) -> Result<()> {
     let sent = Arc::new(AtomicU64::new(0));
-    let sent_count = sent.clone();
-    let open_boot = boot_id.clone();
-    let outgoing = async_stream::stream! {
-        yield DeviceFrame { payload: Some(device_frame::Payload::Open(OpenSession {
-            protocol_version: 1, device_boot_id: open_boot, channel_id: CHANNEL_ID.to_string(),
-        })) };
-        while let Some(frame) = audio.recv().await {
-            sent_count.store(frame.sequence + 1, Ordering::Release);
-            yield DeviceFrame { payload: Some(device_frame::Payload::Audio(frame)) };
-        }
-    };
-    let mut guard = SessionGuard::new(boot_id);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let (failed_tx, failed_rx) = oneshot::channel();
+    let outgoing = capture_stream(
+        boot_id.clone(),
+        audio,
+        ready_rx,
+        sent.clone(),
+        move || ingress_auth(&device_id, &keypair_path),
+        failed_tx,
+    );
+    let mut guard = SessionGuard::new(boot_id, playback);
     let mut incoming = tokio::time::timeout(Duration::from_secs(5), async {
         let mut client = VoiceSessionClient::connect(endpoint)
             .await?
@@ -370,18 +411,28 @@ async fn exchange(
             .message()
             .await?
             .context("voice stream ended before Ready")?;
-        guard.accept(first, sent.load(Ordering::Acquire), playback)?;
+        guard.accept(first, sent.load(Ordering::Acquire))?;
+        ready_tx
+            .send(())
+            .map_err(|_| anyhow::anyhow!("voice upload ended during Ready"))?;
         Ok::<_, anyhow::Error>(incoming)
     })
     .await
     .context("voice handshake timed out")??;
-    while let Some(event) = incoming.message().await? {
-        guard.accept(event, sent.load(Ordering::Acquire), playback)?;
+    let receive = async {
+        while let Some(event) = incoming.message().await? {
+            guard.accept(event, sent.load(Ordering::Acquire))?;
+        }
+        bail!("server closed continuous voice stream")
+    };
+    tokio::select! {
+        result = receive => result,
+        error = failed_rx => Err(error.unwrap_or_else(|_| anyhow::anyhow!("voice upload stream closed"))),
     }
-    bail!("server closed continuous voice stream")
 }
 
 struct SessionGuard {
+    playback: Arc<PlaybackSession>,
     boot_id: String,
     session_id: Option<String>,
     epoch: u64,
@@ -389,8 +440,9 @@ struct SessionGuard {
 }
 
 impl SessionGuard {
-    fn new(boot_id: String) -> Self {
+    fn new(boot_id: String, playback: Arc<PlaybackSession>) -> Self {
         Self {
+            playback,
             boot_id,
             session_id: None,
             epoch: 0,
@@ -398,12 +450,7 @@ impl SessionGuard {
         }
     }
 
-    fn accept(
-        &mut self,
-        event: SessionEvent,
-        sent: u64,
-        playback: &dyn AudioPlaybackBackend,
-    ) -> Result<()> {
+    fn accept(&mut self, event: SessionEvent, sent: u64) -> Result<()> {
         ensure!(
             event.device_boot_id == self.boot_id,
             "voice event boot identity mismatch"
@@ -445,6 +492,12 @@ impl SessionGuard {
             );
             match state {
                 TurnState::Complete => {
+                    if evidence.response_enqueued {
+                        ensure!(
+                            event.generation_epoch > self.epoch,
+                            "Complete response must advance output epoch"
+                        );
+                    }
                     info!(request_id = %evidence.request_id, response_enqueued = evidence.response_enqueued,
                     "turn complete evidence received; response_enqueued means bounded ingress acceptance only")
                 }
@@ -453,9 +506,10 @@ impl SessionGuard {
                     debug!("backchannel observed; keeping playback and capture running")
                 }
                 TurnState::Wait => {
-                    playback
-                        .stop_playback()
-                        .context("stopping local playback for Wait")?;
+                    ensure!(
+                        event.generation_epoch > self.epoch,
+                        "Wait must invalidate the prior output epoch"
+                    );
                     warn!(
                         resume_policy = "not_implemented",
                         "Wait stops playback; pause/resume is not implemented"
@@ -463,6 +517,16 @@ impl SessionGuard {
                 }
                 TurnState::Unspecified => bail!("server turn state is unspecified"),
             }
+            self.playback
+                .fence(
+                    &VoiceScope {
+                        device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
+                        session_id: Uuid::parse_str(&event.session_id)?,
+                        generation_epoch: event.generation_epoch,
+                    },
+                    false,
+                )
+                .context("advancing local voice playback fence")?;
             self.through_sequence = Some(evidence.through_sequence);
         } else {
             let Some(session_event::Payload::Ready(ready)) = event.payload else {
@@ -475,11 +539,39 @@ impl SessionGuard {
                     && ready.max_frame_samples == MAX_FRAME_SAMPLES as u32,
                 "voice Ready format is incompatible"
             );
+            self.playback
+                .activate(&VoiceScope {
+                    device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
+                    session_id: Uuid::parse_str(&event.session_id)?,
+                    generation_epoch: event.generation_epoch,
+                })
+                .context("activating local voice playback session")?;
             self.session_id = Some(event.session_id.clone());
             info!(session_id = %event.session_id, boot_id = %self.boot_id, "continuous voice session ready");
         }
         self.epoch = event.generation_epoch;
         Ok(())
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        let Some(session_id) = self.session_id.as_ref() else {
+            return;
+        };
+        // These UUIDs were validated before Ready was accepted. Only this exact
+        // local session is closed; a replacement's playback remains untouched.
+        if let (Ok(session_id), Ok(device_boot_id)) =
+            (Uuid::parse_str(session_id), Uuid::parse_str(&self.boot_id))
+        {
+            if let Err(error) = self.playback.close(&VoiceScope {
+                session_id,
+                device_boot_id,
+                generation_epoch: self.epoch,
+            }) {
+                warn!(%error, "closing local voice playback session failed");
+            }
+        }
     }
 }
 

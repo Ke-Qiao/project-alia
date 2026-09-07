@@ -80,7 +80,10 @@ impl TurnController {
             },
             TurnState::Incomplete => TurnDecision::ContinueListening,
             TurnState::Backchannel => TurnDecision::Backchannel,
-            TurnState::Wait => TurnDecision::Wait,
+            TurnState::Wait => {
+                self.invalidate()?;
+                TurnDecision::Wait
+            }
         })
     }
 }
@@ -105,12 +108,11 @@ mod tests {
     }
 
     #[test]
-    fn only_complete_speech_creates_a_response_generation() {
+    fn incomplete_and_backchannel_keep_epoch_while_complete_advances_it() {
         let mut controller = TurnController::default();
         for (state, expected) in [
             (TurnState::Incomplete, TurnDecision::ContinueListening),
             (TurnState::Backchannel, TurnDecision::Backchannel),
-            (TurnState::Wait, TurnDecision::Wait),
         ] {
             let id = controller.begin_detection(1);
             assert_eq!(
@@ -176,5 +178,45 @@ mod tests {
                 .unwrap(),
             TurnDecision::ContinueListening
         );
+    }
+    #[test]
+    fn wait_advances_epoch_and_invalidates_prior_or_duplicate_evidence() {
+        let mut controller = TurnController::default();
+        let old = controller.begin_detection(1);
+        let id = controller.begin_detection(2);
+        let wait = evidence(id, TurnState::Wait, "wait");
+        assert_eq!(controller.observe(&wait, 2).unwrap(), TurnDecision::Wait);
+        assert_eq!(controller.generation_epoch(), 2);
+        assert_eq!(controller.observe(&wait, 2).unwrap(), TurnDecision::Stale);
+        assert_eq!(
+            controller
+                .observe(&evidence(old, TurnState::Complete, "old"), 1)
+                .unwrap(),
+            TurnDecision::Stale
+        );
+        let resumed = controller.begin_detection(3);
+        assert!(matches!(
+            controller
+                .observe(&evidence(resumed, TurnState::Complete, "resume"), 3)
+                .unwrap(),
+            TurnDecision::Respond {
+                generation_epoch: 3,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn wait_epoch_exhaustion_fails_without_wrapping() {
+        let mut controller = TurnController {
+            epoch: u64::MAX,
+            pending: None,
+        };
+        let id = controller.begin_detection(1);
+        assert_eq!(
+            controller.observe(&evidence(id, TurnState::Wait, "wait"), 1),
+            Err(EpochExhausted)
+        );
+        assert_eq!(controller.generation_epoch(), u64::MAX);
     }
 }

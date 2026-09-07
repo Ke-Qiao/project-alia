@@ -25,12 +25,7 @@ pub(super) struct VoiceTurn {
     key: VoiceTurnKey,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub(super) struct VoiceSessionScope {
-    pub(super) session_id: Uuid,
-    pub(super) device_boot_id: Uuid,
-    pub(super) generation_epoch: u64,
-}
+pub(super) use alia_core::delivery::VoiceScope as VoiceSessionScope;
 
 #[derive(Debug)]
 struct ActiveVoiceTurn {

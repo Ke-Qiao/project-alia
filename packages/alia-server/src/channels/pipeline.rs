@@ -671,6 +671,7 @@ async fn process_event(
             );
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
+                voice: None,
                 user_id: user_id.clone(),
             };
 
@@ -798,6 +799,7 @@ async fn process_event(
                 let config = channel.interrupt_config();
                 if config.enabled {
                     let target = ChannelTarget {
+                        voice: None,
                         user_id: user_id.clone(),
                     };
                     if let Err(error) = channel.stop_current_playback(&target, &reason).await {
@@ -837,6 +839,7 @@ async fn process_event(
         } => {
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
+                voice: None,
                 user_id: user_id.clone(),
             };
             let turn = voice_turns

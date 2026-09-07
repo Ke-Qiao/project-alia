@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use alia_transport::{
@@ -28,6 +29,7 @@ use alia_proto::expression::embedded_expression_client::EmbeddedExpressionClient
 use alia_proto::expression::{
     CancelExpressionRequest, ExecuteExpressionRequest, ExpressionCapabilitiesRequest,
 };
+use alia_proto::playback::playback_client::PlaybackClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
@@ -119,6 +121,8 @@ pub struct EmbeddedChannel {
     event_bus: EventBus,
     status: Arc<RwLock<ConnectionStatus>>,
     audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
+    playback_client: Arc<RwLock<Option<PlaybackClient<Channel>>>>,
+    playback_sequence: Arc<AtomicU64>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
@@ -152,6 +156,8 @@ impl EmbeddedChannel {
             event_bus,
             status: Arc::new(RwLock::new(status)),
             audio_client: Arc::new(RwLock::new(None)),
+            playback_client: Arc::new(RwLock::new(None)),
+            playback_sequence: Arc::new(AtomicU64::new(0)),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
@@ -409,6 +415,11 @@ impl EmbeddedChannel {
                 .await
             {
                 Ok(channel) => {
+                    *self.playback_client.write().await = Some(
+                        PlaybackClient::new(channel.clone())
+                            .max_encoding_message_size(64 * 1024)
+                            .max_decoding_message_size(64 * 1024),
+                    );
                     *self.audio_client.write().await = Some(configure_audio_client(
                         AudioStreamClient::new(channel.clone()),
                     ));
@@ -509,6 +520,25 @@ impl EmbeddedChannel {
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
+    async fn playback_client(&self) -> anyhow::Result<PlaybackClient<Channel>> {
+        if self.playback_client.read().await.is_none() {
+            self.connect().await?;
+        }
+        self.playback_client
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    }
+
+    fn next_playback_sequence(&self) -> anyhow::Result<u64> {
+        self.playback_sequence
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |sequence| {
+                sequence.checked_add(1)
+            })
+            .map_err(|_| anyhow::anyhow!("playback sequence exhausted"))
     }
 
     /// Get an EmbeddedSettingsClient, connecting lazily if needed.
@@ -767,7 +797,19 @@ impl ChannelAdapter for EmbeddedChannel {
         Ok(())
     }
 
-    async fn send_audio(&self, _target: &ChannelTarget, audio: AudioPayload) -> anyhow::Result<()> {
+    async fn send_audio(&self, target: &ChannelTarget, audio: AudioPayload) -> anyhow::Result<()> {
+        if let Some(scope) = target.voice {
+            let sequence = self.next_playback_sequence()?;
+            return super::playback::push(
+                self.playback_client().await?,
+                scope,
+                sequence,
+                Box::pin(futures::stream::once(async move { Ok(audio) })),
+                self.auth_request(())?.metadata().clone(),
+                Duration::from_secs(self.config.grpc_timeout_sec.max(1)),
+            )
+            .await;
+        }
         let mut client = self.audio_client().await?;
 
         let encoding = match audio.format {
@@ -825,9 +867,21 @@ impl ChannelAdapter for EmbeddedChannel {
 
     async fn send_audio_stream(
         &self,
-        _target: &ChannelTarget,
+        target: &ChannelTarget,
         mut audio: AudioPayloadStream,
     ) -> anyhow::Result<()> {
+        if let Some(scope) = target.voice {
+            let sequence = self.next_playback_sequence()?;
+            return super::playback::push(
+                self.playback_client().await?,
+                scope,
+                sequence,
+                audio,
+                self.auth_request(())?.metadata().clone(),
+                Duration::from_secs(self.config.grpc_timeout_sec.max(1)),
+            )
+            .await;
+        }
         let Some(first) = audio.next().await else {
             return Ok(());
         };
@@ -875,9 +929,19 @@ impl ChannelAdapter for EmbeddedChannel {
 
     async fn stop_current_playback(
         &self,
-        _target: &ChannelTarget,
+        target: &ChannelTarget,
         reason: &str,
     ) -> anyhow::Result<()> {
+        if let Some(scope) = target.voice {
+            let minimum = alia_core::delivery::VoiceScope {
+                generation_epoch: scope
+                    .generation_epoch
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("voice epoch exhausted"))?,
+                ..scope
+            };
+            return self.fence_voice(minimum, false, reason).await;
+        }
         let mut client = self.audio_client().await?;
         client
             .stop_playback(self.auth_request(StopPlaybackRequest {
@@ -886,6 +950,24 @@ impl ChannelAdapter for EmbeddedChannel {
             })?)
             .await?;
         Ok(())
+    }
+
+    async fn fence_voice(
+        &self,
+        scope: alia_core::delivery::VoiceScope,
+        close_session: bool,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        let mut client = self.playback_client().await?;
+        let receipt = client
+            .fence(self.auth_request(alia_proto::playback::FenceRequest {
+                scope: Some(super::playback::encode_scope(scope)),
+                reason: reason.into(),
+                close_session,
+            })?)
+            .await?
+            .into_inner();
+        super::playback::validate_fence_receipt(scope, close_session, &receipt)
     }
 
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
@@ -1364,6 +1446,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 let control_reason = format!("end_continuous_dialogue:{reason}");
                 self.stop_current_playback(
                     &ChannelTarget {
+                        voice: None,
                         user_id: String::new(),
                     },
                     &control_reason,

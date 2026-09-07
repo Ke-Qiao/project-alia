@@ -29,6 +29,7 @@ use utterance::{UtteranceOutcome, handle_utterance};
 use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus, ModuleEvent};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
+use super::playback_session::PlaybackSession;
 use super::traits::{
     AudioPlaybackBackend, DirectResponseEngine, EdgeSttEngine, VoiceActivityEngine,
     VoiceActivityState, WakeWordEngine,
@@ -47,6 +48,7 @@ pub struct SpeechPipeline {
     vad: Arc<dyn VoiceActivityEngine>,
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<dyn AudioPlaybackBackend>,
+    playback_session: Arc<PlaybackSession>,
     binding: Arc<BindingManager>,
     audio_debug: AudioDebugRecorder,
     max_duration_ms: u32,
@@ -78,6 +80,7 @@ impl SpeechPipeline {
         vad: Arc<dyn VoiceActivityEngine>,
         direct_response: Arc<dyn DirectResponseEngine>,
         playback: Arc<dyn AudioPlaybackBackend>,
+        playback_session: Arc<PlaybackSession>,
         binding: Arc<BindingManager>,
         edge_stt_config: &EdgeSttConfig,
         speech_config: &SpeechConfig,
@@ -96,6 +99,7 @@ impl SpeechPipeline {
             vad,
             direct_response,
             playback,
+            playback_session,
             binding,
             audio_debug,
             max_duration_ms: edge_stt_config.max_duration_ms,
@@ -161,7 +165,7 @@ impl ModuleLifecycle for SpeechPipeline {
                 event_bus,
                 wakeword,
                 vad,
-                playback,
+                playback_session: self.playback_session.clone(),
                 binding,
                 device_id,
                 keypair_path,

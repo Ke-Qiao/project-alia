@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use alia_embedded::module::EmbeddedBuilder;
 use alia_embedded::{config, identity};
 use anyhow::{Context, Result};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -76,12 +77,48 @@ async fn main() -> Result<()> {
         "device keypair ready"
     );
 
-    // Build and run the embedded node using the module builder
-    let node = EmbeddedBuilder::from_config(config).await?.build().await?;
+    // The executable owns process signals; library hosts supply their own token.
+    // Keep polling startup and shutdown to completion so worker cleanup is not
+    // lost by dropping the node future when a signal arrives.
+    let shutdown = CancellationToken::new();
+    let node_shutdown = shutdown.clone();
+    let run = async move {
+        let node = EmbeddedBuilder::from_config(config)
+            .await?
+            .with_cancel_token(node_shutdown)
+            .build()
+            .await?;
+        node.run().await
+    };
+    tokio::pin!(run);
+    let result = tokio::select! {
+        result = &mut run => result,
+        signal = shutdown_signal() => {
+            info!("shutdown requested");
+            shutdown.cancel();
+            let result = run.await;
+            signal.and(result)
+        }
+    };
+    shutdown.cancel();
+    result
+}
 
-    node.run().await?;
-
-    Ok(())
+async fn shutdown_signal() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("installing SIGTERM listener")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result.context("Ctrl+C signal listener failed"),
+            _ = terminate.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c()
+        .await
+        .context("Ctrl+C signal listener failed")
 }
 
 fn default_env_filter() -> EnvFilter {

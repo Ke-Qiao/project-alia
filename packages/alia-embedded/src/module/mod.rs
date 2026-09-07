@@ -10,6 +10,7 @@ pub mod hmmd_mmwave;
 pub mod lifecycle;
 pub mod motion;
 pub mod noop;
+pub mod playback_session;
 pub mod registry;
 pub mod sensor;
 #[cfg(feature = "sherpa-onnx")]

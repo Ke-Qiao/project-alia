@@ -23,6 +23,7 @@ use super::noop::{
     NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
     NoopFaceTracker, NoopMixer, NoopVad, NoopWakeWord,
 };
+use super::playback_session::PlaybackSession;
 use super::registry::EmbeddedModuleRegistry;
 use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
@@ -48,9 +49,18 @@ pub struct EmbeddedNode {
 impl EmbeddedNode {
     /// Run the embedded node (starts gRPC server, blocks until cancellation).
     pub async fn run(self) -> Result<()> {
+        let result = self.run_services().await;
+        self.cancel_token.cancel();
+        info!("shutting down modules");
+        self.registry.shutdown().await;
+        result
+    }
+
+    async fn run_services(&self) -> Result<()> {
         use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::expression::embedded_expression_server::EmbeddedExpressionServer;
+        use alia_proto::playback::playback_server::PlaybackServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
         use alia_proto::settings::embedded_settings_server::EmbeddedSettingsServer;
@@ -67,9 +77,16 @@ impl EmbeddedNode {
             self.binding_manager.clone(),
             self.event_bus.clone(),
             self.audio_debug.clone(),
+            self.config.speech.mode == crate::config::SpeechMode::ServerTurn,
         ))
         .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
         .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES);
+        let playback_svc = PlaybackServer::new(crate::grpc::PlaybackService::new(
+            self.registry.playback_session.clone(),
+            self.binding_manager.clone(),
+        ))
+        .max_decoding_message_size(64 * 1024)
+        .max_encoding_message_size(64 * 1024);
         let device_public_key =
             identity::load_device_public_key(&self.config.identity.keypair_path)
                 .context("loading device public key")?;
@@ -117,15 +134,12 @@ impl EmbeddedNode {
             .add_service(binding_svc)
             .add_service(settings_svc)
             .add_service(sensor_svc)
+            .add_service(playback_svc)
             .add_service(expression_svc)
             .serve_with_shutdown(addr, async move {
                 cancel.cancelled().await;
             })
             .await?;
-
-        // Graceful shutdown
-        info!("shutting down modules");
-        self.registry.shutdown().await;
 
         Ok(())
     }
@@ -430,6 +444,7 @@ impl EmbeddedBuilder {
         let discovery: Arc<dyn DiscoveryBackend> = Arc::from(discovery);
         let sensor_modules: Vec<Arc<dyn ModuleLifecycle>> =
             sensor_modules.into_iter().map(Arc::from).collect();
+        let playback_session = Arc::new(PlaybackSession::new(audio_playback.clone()));
         let speech_pipeline = Arc::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),
             ctx.event_bus.clone(),
@@ -438,6 +453,7 @@ impl EmbeddedBuilder {
             vad.clone(),
             direct_response.clone(),
             audio_playback.clone(),
+            playback_session.clone(),
             binding_manager.clone(),
             &config.edge_stt,
             &config.speech,
@@ -499,6 +515,7 @@ impl EmbeddedBuilder {
             direct_response,
             audio_capture,
             audio_playback,
+            playback_session,
             mixer,
             speech_pipeline,
             face_tracker,

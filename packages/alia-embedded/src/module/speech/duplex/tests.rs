@@ -1,7 +1,7 @@
 use super::*;
 use crate::module::context::AudioBus;
 use crate::module::lifecycle::ModuleLifecycle;
-use crate::module::traits::WakeWordEvent;
+use crate::module::traits::{AudioPlaybackBackend, WakeWordEvent};
 use crate::storage::EmbeddedStore;
 use alia_proto::voice::{
     SessionReady, TurnEvidence,
@@ -17,6 +17,7 @@ use tonic::{Request, Response, Status};
 #[derive(Default)]
 struct LocalAudio {
     stops: AtomicU64,
+    generation: AtomicU64,
 }
 
 #[tonic::async_trait]
@@ -32,6 +33,32 @@ impl AudioPlaybackBackend for LocalAudio {
     fn stop_playback(&self) -> Result<()> {
         self.stops.fetch_add(1, Ordering::SeqCst);
         Ok(())
+    }
+    fn begin_scoped_playback(&self) -> Result<u64> {
+        Ok(self.generation.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+    fn play_if_current(&self, _: &[i16], _: u32, generation: u64) -> Result<bool> {
+        Ok(self.is_playback_current(generation))
+    }
+    fn stop_if_current(&self, generation: u64) -> Result<bool> {
+        if self
+            .generation
+            .compare_exchange(
+                generation,
+                generation + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            self.stops.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    fn is_playback_current(&self, generation: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) == generation
     }
     fn is_available(&self) -> bool {
         true
@@ -77,7 +104,11 @@ fn evidence(boot: &str, session: &str, sequence: u64, state: TurnState) -> Sessi
     SessionEvent {
         device_boot_id: boot.into(),
         session_id: session.into(),
-        generation_epoch: 1,
+        generation_epoch: match state {
+            TurnState::Complete => 2,
+            TurnState::Wait => 3,
+            _ => 1,
+        },
         payload: Some(session_event::Payload::Evidence(TurnEvidence {
             request_id: Uuid::new_v4().to_string(),
             through_sequence: sequence,
@@ -229,7 +260,7 @@ async fn harness(audio_capacity: usize) -> Harness {
         event_bus: events.clone(),
         wakeword: local.clone(),
         vad: local.clone(),
-        playback: local.clone(),
+        playback_session: Arc::new(PlaybackSession::new(local.clone())),
         binding,
         device_id: "test-device".into(),
         keypair_path,
@@ -281,6 +312,7 @@ async fn captures_during_playback_receives_all_turn_states_and_reconnects() {
         _directory,
     } = harness(16).await;
     let cancel = runtime.cancel.clone();
+    let playback = runtime.playback_session.clone();
     let mut lifecycle = events.subscribe();
     // A finite pre-roll followed by wake. Both frames are delivered before any utterance ends.
     publish(&audio, 0, 0);
@@ -316,6 +348,20 @@ async fn captures_during_playback_receives_all_turn_states_and_reconnects() {
         let Seen::Audio(frame) = received(&mut seen).await else {
             panic!("playback must not stop capture")
         };
+        if state == TurnState::Wait {
+            playback
+                .begin(
+                    &VoiceScope {
+                        device_boot_id: Uuid::parse_str(&boot).unwrap(),
+                        session_id: Uuid::parse_str(&session).unwrap(),
+                        generation_epoch: 2,
+                    },
+                    &Uuid::new_v4().to_string(),
+                    1,
+                    24000,
+                )
+                .unwrap();
+        }
         output
             .send(Ok(evidence(&boot, &session, frame.sequence, state)))
             .await
@@ -372,7 +418,15 @@ async fn captures_during_playback_receives_all_turn_states_and_reconnects() {
     tokio::time::timeout(Duration::from_secs(3), next_output.closed())
         .await
         .unwrap();
-    assert!(local.stops.load(Ordering::SeqCst) >= 3);
+    assert!(
+        !playback.is_active(),
+        "stopped runtime retained a voice playback session"
+    );
+    assert_eq!(
+        local.stops.load(Ordering::SeqCst),
+        1,
+        "closing empty sessions must not globally stop unrelated playback"
+    );
     shutdown.cancel();
     tokio::time::timeout(Duration::from_secs(3), server)
         .await
@@ -466,37 +520,79 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
 }
 
 #[tokio::test]
-async fn unbinding_stops_an_idle_network_session_and_its_playback() {
-    let Harness {
-        runtime,
-        audio,
-        events: _,
-        local,
-        mut seen,
-        shutdown,
-        server,
-        _directory,
-    } = harness(8).await;
-    let binding = runtime.binding.clone();
-    let cancel = runtime.cancel.clone();
-    let task = tokio::spawn(runtime.run());
-    publish(&audio, 99, 0);
-    let Seen::Opened { output, .. } = received(&mut seen).await else {
-        panic!("expected Open")
-    };
-    assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
-    binding.unbind("test").await.unwrap();
-    tokio::time::timeout(Duration::from_secs(3), output.closed())
-        .await
-        .unwrap();
-    assert_eq!(local.stops.load(Ordering::SeqCst), 1);
-    cancel.cancel();
-    task.await.unwrap();
-    shutdown.cancel();
-    tokio::time::timeout(Duration::from_secs(3), server)
-        .await
-        .unwrap()
-        .unwrap();
+async fn binding_changes_close_idle_session_and_completed_playback_tail() {
+    for transition in [
+        crate::binding::BindingState::Unbound,
+        crate::binding::BindingState::HandoffPending,
+        crate::binding::BindingState::Bound,
+    ] {
+        let Harness {
+            runtime,
+            audio,
+            events: _,
+            local,
+            mut seen,
+            shutdown,
+            server,
+            _directory,
+        } = harness(8).await;
+        let binding = runtime.binding.clone();
+        let cancel = runtime.cancel.clone();
+        let playback = runtime.playback_session.clone();
+        let task = tokio::spawn(runtime.run());
+        publish(&audio, 99, 0);
+        let Seen::Opened {
+            output,
+            boot,
+            session,
+        } = received(&mut seen).await
+        else {
+            panic!("expected Open")
+        };
+        assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+        let scope = VoiceScope {
+            device_boot_id: Uuid::parse_str(&boot).unwrap(),
+            session_id: Uuid::parse_str(&session).unwrap(),
+            generation_epoch: 2,
+        };
+        let lease = playback
+            .begin(&scope, &Uuid::new_v4().to_string(), 1, 24000)
+            .unwrap();
+        assert!(playback.enqueue(&lease, &[1, 2, 3]).unwrap());
+        assert!(playback.end(&lease).unwrap()); // Push End/EOF left a hardware tail, owned by the session.
+        match transition {
+            crate::binding::BindingState::Unbound => binding.unbind("test").await.unwrap(),
+            crate::binding::BindingState::HandoffPending => {
+                binding
+                    .update_for_test(transition, Some("test".into()))
+                    .await
+            }
+            crate::binding::BindingState::Bound => {
+                binding
+                    .update_for_test(transition, Some("replacement-server".into()))
+                    .await
+            }
+        }
+        tokio::time::timeout(Duration::from_secs(3), output.closed())
+            .await
+            .unwrap();
+        assert!(
+            !playback.is_active(),
+            "binding change left old session admitted"
+        );
+        assert_eq!(
+            local.stops.load(Ordering::SeqCst),
+            1,
+            "binding change did not clear playback tail"
+        );
+        cancel.cancel();
+        task.await.unwrap();
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
 
 #[test]
@@ -516,28 +612,29 @@ fn rejects_format_changes_clock_gaps_and_untrusted_server_identity() {
 
     let boot = Uuid::new_v4().to_string();
     let session = Uuid::new_v4().to_string();
-    let local = LocalAudio::default();
+    let local = Arc::new(LocalAudio::default());
+    let playback = Arc::new(PlaybackSession::new(local.clone()));
     for invalid in [
         ready(&Uuid::new_v4().to_string(), &session),
         ready(&boot, &Uuid::nil().to_string()),
         evidence(&boot, &session, 0, TurnState::Complete),
     ] {
         assert!(
-            SessionGuard::new(boot.clone())
-                .accept(invalid, 1, &local)
+            SessionGuard::new(boot.clone(), playback.clone())
+                .accept(invalid, 1)
                 .is_err()
         );
     }
-    let mut guard = SessionGuard::new(boot.clone());
-    guard.accept(ready(&boot, &session), 0, &local).unwrap();
+    let mut guard = SessionGuard::new(boot.clone(), playback.clone());
+    guard.accept(ready(&boot, &session), 0).unwrap();
     assert!(
         guard
-            .accept(evidence(&boot, &session, 1, TurnState::Complete), 1, &local)
+            .accept(evidence(&boot, &session, 1, TurnState::Complete), 1)
             .is_err()
     );
     let mut regressed = evidence(&boot, &session, 0, TurnState::Wait);
     regressed.generation_epoch = 0;
-    assert!(guard.accept(regressed, 1, &local).is_err());
+    assert!(guard.accept(regressed, 1).is_err());
     assert_eq!(local.stops.load(Ordering::SeqCst), 0);
 }
 
@@ -568,4 +665,100 @@ fn bounded_pre_roll_and_server_turn_config_survive_runtime_roundtrip() {
     assert_eq!(saved.speech.pre_roll_ms, 300);
     config.audio.capture_channels = 2;
     assert!(config.speech.validate(&config.audio).is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn outgoing_waits_for_ready_and_refreshes_without_consuming_capture_sequence() {
+    use futures::{FutureExt, StreamExt};
+    let (audio, rx) = mpsc::channel(2);
+    let (ready, ready_rx) = oneshot::channel();
+    let (failed, _failure) = oneshot::channel();
+    let sent = Arc::new(AtomicU64::new(0));
+    let minted = Arc::new(AtomicU64::new(0));
+    let counter = minted.clone();
+    let stream = capture_stream(
+        Uuid::new_v4().to_string(),
+        rx,
+        ready_rx,
+        sent.clone(),
+        move || {
+            Ok(IngressAuth {
+                token: format!("fresh-{}", counter.fetch_add(1, Ordering::SeqCst) + 1),
+            })
+        },
+        failed,
+    );
+    tokio::pin!(stream);
+    assert!(matches!(
+        stream.next().await.unwrap().payload,
+        Some(device_frame::Payload::Open(_))
+    ));
+    audio
+        .send(CaptureFrame {
+            sequence: 0,
+            sample_offset: 0,
+            pcm_s16le: vec![0; 2],
+            speech_active: false,
+        })
+        .await
+        .unwrap();
+    assert!(
+        stream.next().now_or_never().is_none(),
+        "audio escaped before Ready activated playback"
+    );
+    assert_eq!(sent.load(Ordering::SeqCst), 0);
+    ready.send(()).unwrap();
+    assert!(matches!(
+        stream.next().await.unwrap().payload,
+        Some(device_frame::Payload::Audio(_))
+    ));
+    for revision in 1..=3 {
+        tokio::time::advance(Duration::from_secs(120)).await;
+        let event = stream.next().await.unwrap();
+        let Some(device_frame::Payload::RefreshAuth(auth)) = event.payload else {
+            panic!("expected refresh")
+        };
+        assert_eq!(auth.bearer_token, format!("fresh-{revision}"));
+        assert_eq!(
+            sent.load(Ordering::SeqCst),
+            1,
+            "refresh consumed capture sequence"
+        );
+    }
+    assert_eq!(minted.load(Ordering::SeqCst), 3);
+    drop(audio);
+    assert!(matches!(
+        stream.next().await.unwrap().payload,
+        Some(device_frame::Payload::Close(_))
+    ));
+}
+
+#[test]
+fn late_old_guard_close_cannot_close_replacement_playback_session() {
+    let local = Arc::new(LocalAudio::default());
+    let playback = Arc::new(PlaybackSession::new(local.clone()));
+    let boot = Uuid::new_v4().to_string();
+    let mut old = SessionGuard::new(boot.clone(), playback.clone());
+    old.accept(ready(&boot, &Uuid::new_v4().to_string()), 0)
+        .unwrap();
+    let replacement_id = Uuid::new_v4();
+    let mut replacement = SessionGuard::new(boot.clone(), playback.clone());
+    replacement
+        .accept(ready(&boot, &replacement_id.to_string()), 0)
+        .unwrap();
+    let scope = VoiceScope {
+        device_boot_id: Uuid::parse_str(&boot).unwrap(),
+        session_id: replacement_id,
+        generation_epoch: 1,
+    };
+    let lease = playback
+        .begin(&scope, &Uuid::new_v4().to_string(), 1, 24000)
+        .unwrap();
+    drop(old);
+    assert!(playback.enqueue(&lease, &[1]).unwrap());
+    assert_eq!(local.stops.load(Ordering::SeqCst), 0);
+    drop(replacement);
+    assert!(!playback.enqueue(&lease, &[1]).unwrap());
+    assert!(!playback.is_active());
+    assert_eq!(local.stops.load(Ordering::SeqCst), 1);
 }

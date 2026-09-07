@@ -13,6 +13,7 @@ message DeviceFrame {
     OpenSession open = 1;
     CaptureFrame audio = 2;
     CloseSession close = 3;
+    RefreshAuth refresh_auth = 4;
   }
 }
 
@@ -30,6 +31,7 @@ message CaptureFrame {
 }
 
 message CloseSession {}
+message RefreshAuth { string bearer_token = 1; }
 
 message SessionEvent {
   string session_id = 1;     // Server-assigned UUID; epochs are scoped to it.

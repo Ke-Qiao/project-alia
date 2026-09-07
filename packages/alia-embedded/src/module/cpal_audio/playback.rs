@@ -71,17 +71,23 @@ impl Shared {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    fn stop(&self, close: bool) {
-        let retired = {
+    fn stop(&self, close: bool, expected: Option<u64>) -> Option<u64> {
+        let (retired, generation) = {
             let mut state = self.lock();
-            self.generation.fetch_add(1, Ordering::AcqRel);
+            if state.closed
+                || expected.is_some_and(|epoch| epoch != self.generation.load(Ordering::Acquire))
+            {
+                return None;
+            }
+            let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
             state.stop_pending = true;
             state.closed |= close;
-            std::mem::take(&mut state.media)
+            (std::mem::take(&mut state.media), generation)
         };
         self.changed.notify_all();
         // Deallocate retired audio outside the lock used by control and producers.
         drop(retired);
+        Some(generation)
     }
 }
 
@@ -89,7 +95,7 @@ struct Producer(Arc<Shared>);
 
 impl Drop for Producer {
     fn drop(&mut self) {
-        self.0.stop(true);
+        self.0.stop(true, None);
     }
 }
 
@@ -104,7 +110,15 @@ pub(super) enum PlaybackAction {
     Shutdown,
 }
 
+#[cfg(test)]
 pub(super) fn channel(capacity: usize) -> (PlaybackSender, PlaybackReceiver) {
+    channel_with_generation(capacity, Arc::new(AtomicU64::new(0)))
+}
+
+pub(super) fn channel_with_generation(
+    capacity: usize,
+    generation: Arc<AtomicU64>,
+) -> (PlaybackSender, PlaybackReceiver) {
     let shared = Arc::new(Shared {
         state: Mutex::new(State {
             media: VecDeque::new(),
@@ -112,7 +126,7 @@ pub(super) fn channel(capacity: usize) -> (PlaybackSender, PlaybackReceiver) {
             closed: false,
         }),
         changed: Condvar::new(),
-        generation: Arc::new(AtomicU64::new(0)),
+        generation,
         capacity: capacity.max(1),
     });
     (
@@ -123,11 +137,16 @@ pub(super) fn channel(capacity: usize) -> (PlaybackSender, PlaybackReceiver) {
 
 impl PlaybackSender {
     pub fn play(&self, pcm: &[i16], sample_rate: u32) -> Result<()> {
+        let generation = self.0.0.generation.load(Ordering::Acquire);
+        self.play_if_current(pcm, sample_rate, generation)
+            .map(|_| ())
+    }
+
+    pub fn play_if_current(&self, pcm: &[i16], sample_rate: u32, generation: u64) -> Result<bool> {
         if sample_rate == 0 {
             bail!("playback sample rate must be positive");
         }
         let shared = &self.0.0;
-        let generation = shared.generation.load(Ordering::Acquire);
         let block = AudioBlock {
             pcm: pcm.into(),
             range: 0..pcm.len(),
@@ -148,20 +167,31 @@ impl PlaybackSender {
             bail!("playback runtime is closed");
         }
         if shared.generation.load(Ordering::Acquire) != generation {
-            return Ok(());
+            return Ok(false);
         }
         state.media.push_back(block);
         drop(state);
         shared.changed.notify_all();
-        Ok(())
+        Ok(true)
     }
 
     pub fn stop(&self) {
-        self.0.0.stop(false);
+        self.0.0.stop(false, None);
+    }
+
+    pub fn begin(&self) -> Result<u64> {
+        self.0
+            .0
+            .stop(false, None)
+            .ok_or_else(|| anyhow::anyhow!("playback runtime is closed"))
+    }
+
+    pub fn stop_if_current(&self, generation: u64) -> bool {
+        self.0.0.stop(false, Some(generation)).is_some()
     }
 
     pub fn shutdown(&self) {
-        self.0.0.stop(true);
+        self.0.0.stop(true, None);
     }
 }
 
@@ -172,7 +202,9 @@ impl PlaybackReceiver {
 
     pub fn device_failed(&self) -> impl Fn() + Send + 'static {
         let shared = self.0.clone();
-        move || shared.stop(true)
+        move || {
+            shared.stop(true, None);
+        }
     }
 
     fn take(&self, accept_media: bool) -> Option<PlaybackAction> {
@@ -240,7 +272,7 @@ impl PlaybackReceiver {
 impl Drop for PlaybackReceiver {
     fn drop(&mut self) {
         // Release blocked producers on initialization, device, or worker failure.
-        self.0.stop(true);
+        self.0.stop(true, None);
     }
 }
 

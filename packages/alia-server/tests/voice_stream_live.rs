@@ -8,9 +8,10 @@
 #![cfg(all(feature = "channel-embedded", feature = "turn-easy"))]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use alia_core::delivery::VoiceScope;
 use alia_proto::voice::voice_session_client::VoiceSessionClient;
 use alia_proto::voice::voice_session_server::VoiceSessionServer;
 use alia_proto::voice::{
@@ -39,7 +40,9 @@ const CHANNEL: &str = "official-audio-test";
 const TEST_TOKEN: &str = "injected-test-credential";
 const MODEL_REVISION: &str = "7d1f8b06776b575ac22e2fd4aa7913da2f4b8b98";
 
-struct TestChannel;
+struct TestChannel {
+    fences: Arc<Mutex<Vec<(VoiceScope, bool)>>>,
+}
 
 #[async_trait]
 impl ModuleLifecycle for TestChannel {
@@ -67,7 +70,18 @@ impl ChannelAdapter for TestChannel {
     }
 
     async fn stop_current_playback(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(()) // Injected output; no playback acceptance is claimed.
+        panic!("live voice session must never use an unscoped stop")
+    }
+
+    async fn fence_voice(
+        &self,
+        scope: VoiceScope,
+        close_session: bool,
+        _: &str,
+    ) -> anyhow::Result<()> {
+        assert!(scope.is_valid());
+        self.fences.lock().unwrap().push((scope, close_session));
+        Ok(()) // Injected output; no device playback acceptance is claimed.
     }
 
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
@@ -161,7 +175,13 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
         .unwrap(),
     );
     let channels = Arc::new(ChannelRegistry::new());
-    channels.register(Arc::new(TestChannel)).await.unwrap();
+    let fences = Arc::new(Mutex::new(Vec::new()));
+    channels
+        .register(Arc::new(TestChannel {
+            fences: fences.clone(),
+        }))
+        .await
+        .unwrap();
     let auth = ServerAudioIngressService::new(EventBus::new(8), channels.clone(), CHANNEL);
     let (input, mut recognized) = voice_input::channel();
     let shutdown = CancellationToken::new();
@@ -246,7 +266,10 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
         let result = event(&mut responses).await;
         assert_eq!(result.session_id, session_id.to_string());
         assert_eq!(result.device_boot_id, boot.to_string());
-        assert_eq!(result.generation_epoch, 2);
+        assert_eq!(
+            result.generation_epoch,
+            if expected == TurnState::Wait { 3 } else { 2 }
+        );
         let Some(session_event::Payload::Evidence(evidence)) = result.payload else {
             panic!("expected turn evidence");
         };
@@ -287,6 +310,19 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
             .unwrap()
             .unwrap()
             .is_none()
+    );
+    assert_eq!(
+        *fences.lock().unwrap(),
+        [(2, false), (3, false), (1, true)].map(|(generation_epoch, closed)| {
+            (
+                VoiceScope {
+                    device_boot_id: boot,
+                    session_id,
+                    generation_epoch,
+                },
+                closed,
+            )
+        })
     );
     drop(responses);
     drop(tx);

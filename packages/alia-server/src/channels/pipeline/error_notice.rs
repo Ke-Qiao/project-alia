@@ -539,6 +539,7 @@ mod tests {
                 fails,
             };
             let target = ChannelTarget {
+                voice: None,
                 user_id: "user".into(),
             };
             let notice = build_pipeline_error_notice(PipelineErrorStage::Llm, Some("hello"));
@@ -564,6 +565,7 @@ mod tests {
         turn.token.cancel();
         let channel = RecordingChannel::default();
         let target = ChannelTarget {
+            voice: None,
             user_id: "user".into(),
         };
         let notice = build_pipeline_error_notice(PipelineErrorStage::Tts, None);

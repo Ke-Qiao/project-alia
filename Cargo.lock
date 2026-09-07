@@ -41,6 +41,7 @@ dependencies = [
 name = "alia-embedded"
 version = "0.1.0"
 dependencies = [
+ "alia-core",
  "alia-proto",
  "alia-transport",
  "alsa",

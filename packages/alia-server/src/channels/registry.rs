@@ -181,6 +181,7 @@ impl ChannelRegistry {
         let channels = self.channels.read().await;
         for channel in channels.values() {
             let target = ChannelTarget {
+                voice: None,
                 user_id: String::new(),
             };
             if let Err(e) = channel.send_message(&target, msg).await {

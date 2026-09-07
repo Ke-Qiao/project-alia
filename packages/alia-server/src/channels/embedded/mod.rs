@@ -2,6 +2,7 @@ mod audio;
 mod auth;
 mod channel;
 mod direct_response;
+mod playback;
 mod sensor;
 mod settings;
 

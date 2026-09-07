@@ -240,3 +240,50 @@ fn submillisecond_device_tail_is_not_idle() {
     assert_eq!(super::super::playback_buffered_ms(0, 48000, 2), 0);
     assert_eq!(super::super::playback_buffered_ms(2, 48000, 2), 1);
 }
+
+#[test]
+fn scoped_media_waiting_for_capacity_cannot_revive_after_stop() {
+    let (sender, receiver) = channel(1);
+    let generation = sender.begin().unwrap();
+    assert!(sender.play_if_current(&[1], 1000, generation).unwrap());
+    let producer = sender.clone();
+    let (result_tx, result_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        result_tx
+            .send(producer.play_if_current(&[2], 1000, generation))
+            .unwrap();
+    });
+    assert!(sender.stop_if_current(generation));
+    let fresh = sender.begin().unwrap();
+    assert!(!sender.stop_if_current(generation));
+    assert!(
+        !result_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap()
+    );
+    assert!(sender.play_if_current(&[3], 1000, fresh).unwrap());
+    assert!(matches!(receiver.take(true), Some(PlaybackAction::Stop)));
+    let Some(PlaybackAction::Play(block)) = receiver.take(true) else {
+        panic!("fresh media missing")
+    };
+    assert_eq!(block.samples(), &[3]);
+    handle.join().unwrap();
+}
+
+#[test]
+fn restarting_a_worker_never_reuses_a_token_or_invalidates_it_from_an_old_drop() {
+    let generation = Arc::new(AtomicU64::new(0));
+    let (old_sender, old_receiver) = channel_with_generation(1, generation.clone());
+    let old = old_sender.begin().unwrap();
+    old_sender.shutdown();
+    let (sender, receiver) = channel_with_generation(1, generation.clone());
+    let fresh = sender.begin().unwrap();
+    drop(old_sender);
+    drop(old_receiver);
+    assert!(fresh > old);
+    assert_eq!(generation.load(Ordering::Acquire), fresh);
+    assert!(!sender.play_if_current(&[1], 1000, old).unwrap());
+    assert!(sender.play_if_current(&[2], 1000, fresh).unwrap());
+    drop(receiver);
+}

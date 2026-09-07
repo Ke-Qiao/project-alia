@@ -470,6 +470,7 @@ mod tests {
         assert!(
             channel
                 .begin_stream(&ChannelTarget {
+                    voice: None,
                     user_id: USER_ID.to_owned()
                 })
                 .await

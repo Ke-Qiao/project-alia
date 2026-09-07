@@ -34,6 +34,7 @@ pub struct AudioStreamService {
     event_bus: EventBus,
     audio_debug: AudioDebugRecorder,
     pending_playback: Arc<Mutex<Option<PendingPlayback>>>,
+    server_turn: bool,
 }
 
 impl AudioStreamService {
@@ -43,6 +44,7 @@ impl AudioStreamService {
         binding: Arc<BindingManager>,
         event_bus: EventBus,
         audio_debug: AudioDebugRecorder,
+        server_turn: bool,
     ) -> Self {
         Self {
             playback,
@@ -51,7 +53,17 @@ impl AudioStreamService {
             event_bus,
             audio_debug,
             pending_playback: Arc::new(Mutex::new(None)),
+            server_turn,
         }
+    }
+
+    fn require_legacy_mode(&self) -> Result<(), Status> {
+        if self.server_turn {
+            return Err(Status::failed_precondition(
+                "server_turn requires scoped Playback.v1",
+            ));
+        }
+        Ok(())
     }
 
     fn playback_chunk(&self, chunk: &AudioChunk, sample_rate: u32) -> Result<(), Status> {
@@ -78,6 +90,7 @@ impl AudioStreamTrait for AudioStreamService {
     ) -> Result<Response<AudioUploadResponse>, Status> {
         let token = extract_bearer_token(request.metadata())?;
         require_auth_token(&self.binding, &token).await?;
+        self.require_legacy_mode()?;
         let mut stream = request.into_inner();
         let initial = self.pending_playback.lock().await.clone();
         let initial_request_id = initial.as_ref().map(|pending| pending.request_id.clone());
@@ -159,6 +172,7 @@ impl AudioStreamTrait for AudioStreamService {
         request: Request<PlayAudioRequest>,
     ) -> Result<Response<Self::PlayAudioStream>, Status> {
         require_auth(&self.binding, &request).await?;
+        self.require_legacy_mode()?;
         let req = request.into_inner();
 
         {
@@ -196,6 +210,7 @@ impl AudioStreamTrait for AudioStreamService {
         request: Request<StopPlaybackRequest>,
     ) -> Result<Response<PlaybackControlResponse>, Status> {
         require_auth(&self.binding, &request).await?;
+        self.require_legacy_mode()?;
         let req = request.into_inner();
         let reason = req.reason.clone();
         let pending = {
@@ -237,6 +252,7 @@ impl AudioStreamTrait for AudioStreamService {
         request: Request<PlayDirectResponseRequest>,
     ) -> Result<Response<PlayDirectResponseResponse>, Status> {
         require_auth(&self.binding, &request).await?;
+        self.require_legacy_mode()?;
         let req = request.into_inner();
         let action = req.action.trim();
         if action.is_empty() {

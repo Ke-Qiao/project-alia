@@ -61,6 +61,7 @@ impl Default for ChannelInterruptConfig {
 #[derive(Debug, Clone)]
 pub struct ChannelTarget {
     pub user_id: String,
+    pub voice: Option<alia_core::delivery::VoiceScope>,
 }
 
 /// A named action to execute on a channel (hardware control, etc.).
@@ -214,6 +215,20 @@ pub trait ChannelAdapter: ModuleLifecycle {
         _target: &ChannelTarget,
         _reason: &str,
     ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// A voice fence has a specific immutable origin and minimum epoch. It
+    /// must never be implemented as an unscoped "stop whatever plays now".
+    async fn fence_voice(
+        &self,
+        _scope: alia_core::delivery::VoiceScope,
+        _close_session: bool,
+        _reason: &str,
+    ) -> anyhow::Result<()> {
+        if self.capabilities().voice_output {
+            anyhow::bail!("channel does not support scoped voice playback control");
+        }
         Ok(())
     }
 

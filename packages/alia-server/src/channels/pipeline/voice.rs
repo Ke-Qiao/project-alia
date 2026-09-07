@@ -22,6 +22,11 @@ pub(super) async fn process_recognized_voice(
         return Ok(());
     }
     let target = ChannelTarget {
+        voice: Some(VoiceSessionScope {
+            session_id: input.session_id,
+            device_boot_id: input.device_boot_id,
+            generation_epoch: input.generation_epoch,
+        }),
         user_id: input.user_id.clone(),
     };
     let mut interrupt_config = channel.interrupt_config();

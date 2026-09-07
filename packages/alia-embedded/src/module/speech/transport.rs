@@ -24,8 +24,8 @@ pub(super) async fn voice_connection(
 ) -> Result<(String, IngressAuth)> {
     let status = binding.status().await;
     anyhow::ensure!(
-        status.state != crate::binding::BindingState::Unbound,
-        "device is not bound"
+        status.state == crate::binding::BindingState::Bound,
+        "device has no active binding"
     );
     let endpoint = status
         .server_endpoint
@@ -212,7 +212,7 @@ pub(super) struct IngressAuth {
     pub(super) token: String,
 }
 
-fn ingress_auth(device_id: &str, keypair_path: &Path) -> Result<IngressAuth> {
+pub(super) fn ingress_auth(device_id: &str, keypair_path: &Path) -> Result<IngressAuth> {
     let keypair = identity::load_device_keypair(keypair_path)?;
     let public_key = keypair.public_key_bytes();
     let subject = embedded_device_auth_subject(device_id, &public_key);

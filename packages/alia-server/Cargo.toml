@@ -117,3 +117,6 @@ dirs = "6"
 # Network
 network-interface.workspace = true
 mdns-sd.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -118,6 +118,26 @@ pub trait AudioPlaybackBackend: ModuleLifecycle {
     /// Stop current playback.
     fn stop_playback(&self) -> Result<()>;
 
+    /// Start a new scoped output and return its process-local cancellation token.
+    fn begin_scoped_playback(&self) -> Result<u64> {
+        anyhow::bail!("scoped playback is not supported by this backend")
+    }
+
+    /// Atomically enqueue only while the expected local generation is current.
+    /// False means cancelled; never relabel old media with a newer generation.
+    fn play_if_current(&self, _pcm: &[i16], _sample_rate: u32, _generation: u64) -> Result<bool> {
+        anyhow::bail!("scoped playback is not supported by this backend")
+    }
+
+    /// A delayed cancellation must not stop a newer output.
+    fn stop_if_current(&self, _generation: u64) -> Result<bool> {
+        anyhow::bail!("scoped playback is not supported by this backend")
+    }
+
+    fn is_playback_current(&self, _generation: u64) -> bool {
+        false
+    }
+
     /// Whether the playback device is currently available.
     fn is_available(&self) -> bool;
 }

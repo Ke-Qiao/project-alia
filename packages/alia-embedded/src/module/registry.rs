@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::motion::MotionRuntime;
+use super::playback_session::PlaybackSession;
 use super::sensor::SensorRegistry;
 use super::speech::SpeechPipeline;
 use super::traits::*;
@@ -21,6 +22,7 @@ pub struct EmbeddedModuleRegistry {
     pub direct_response: Arc<dyn DirectResponseEngine>,
     pub audio_capture: Arc<dyn AudioCaptureBackend>,
     pub audio_playback: Arc<dyn AudioPlaybackBackend>,
+    pub playback_session: Arc<PlaybackSession>,
     pub mixer: Arc<dyn AudioMixer>,
     pub speech_pipeline: Arc<SpeechPipeline>,
 
@@ -52,8 +54,8 @@ impl EmbeddedModuleRegistry {
         let _ = self.vision_debug.stop().await;
         let _ = self.face_tracker.stop().await;
         let _ = self.mixer.stop().await;
-        let _ = self.audio_playback.stop().await;
         let _ = self.speech_pipeline.stop().await;
+        let _ = self.audio_playback.stop().await;
         let _ = self.audio_capture.stop().await;
         let _ = self.direct_response.stop().await;
         let _ = self.vad.stop().await;
