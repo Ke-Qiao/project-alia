@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
+use crate::modules::interaction::turn_detector::DetectionError;
 use crate::providers::adapter::{
     AudioEncoding, SttCapabilities, TranscriptionAlternative, TranscriptionResult,
     TranscriptionSegment, TtsCapabilities,
 };
 use crate::state::AppState;
+use alia_core::voice::{DetectionId, MAX_WINDOW_BYTES, PcmWindow, TurnObservation};
 
 // ========== Request / Response types ==========
 
@@ -82,6 +84,46 @@ pub struct VoiceCapabilitiesResponse {
 }
 
 // ========== Handlers ==========
+
+#[derive(Deserialize)]
+pub struct TurnDetectionRequest {
+    #[serde(flatten)]
+    pub id: DetectionId,
+    pub audio_base64: String,
+    pub sample_rate_hz: u32,
+    pub channels: u32,
+}
+
+/// Diagnostic model endpoint. Observations alone never authorize tools or device output.
+async fn detect_turn(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Json(request): Json<TurnDetectionRequest>,
+) -> Result<Json<TurnObservation>> {
+    let detector = state
+        .turn_detector
+        .as_ref()
+        .ok_or_else(|| AppError::AiService("turn detection is not configured".into()))?;
+    if request.audio_base64.len() > MAX_WINDOW_BYTES.div_ceil(3) * 4 {
+        return Err(AppError::Validation(
+            "turn detection audio exceeds the 30 second limit".into(),
+        ));
+    }
+    let audio = PcmWindow::new(
+        base64_decode(&request.audio_base64)?,
+        request.sample_rate_hz,
+        request.channels,
+    )
+    .map_err(|error| AppError::Validation(error.to_string()))?;
+    let observation = detector
+        .detect(request.id, &audio, &state.cancel_token)
+        .await
+        .map_err(|error| match error {
+            DetectionError::Busy => AppError::RateLimited,
+            other => AppError::AiService(other.to_string()),
+        })?;
+    Ok(Json(observation))
+}
 
 /// Full voice pipeline: [audio → STT] → Router → LLM → [TTS → audio]
 ///
@@ -240,6 +282,7 @@ pub fn routes() -> Router<AppState> {
         .route("/voice/chat/{channel_id}", post(voice_chat_with_channel))
         .route("/voice/capabilities", get(capabilities))
         .route("/voice/transcribe", post(transcribe))
+        .route("/voice/turn-detection", post(detect_turn))
         .route("/voice/synthesize", post(synthesize))
 }
 

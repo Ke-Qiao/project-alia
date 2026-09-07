@@ -12,6 +12,7 @@ default = [
     "tools-http",
     "insights",
     "plugin-home-assistant",
+    "turn-easy",
 ]
 
 # Channel adapters
@@ -34,11 +35,13 @@ tools-http = ["dep:reqwest"]
 
 # Insights system
 insights = []
+turn-easy = ["dep:reqwest"]
 
 # Demo LLM tool plugins
 plugin-home-assistant = ["dep:reqwest"]
 
 [dependencies]
+alia-core.workspace = true
 alia-proto = { workspace = true, optional = true }
 alia-transport = { workspace = true, optional = true }
 
@@ -106,7 +109,7 @@ base64 = "0.22.1"
 rand.workspace = true
 
 # CLI REPL
-rustyline.workspace = true
+crossterm = "0.29"
 
 # Platform directories
 dirs = "6"

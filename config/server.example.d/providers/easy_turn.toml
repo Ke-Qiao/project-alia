@@ -1,0 +1,6 @@
+[providers.easy_turn]
+# Start the pinned Easy-Turn service on the server machine before enabling full-duplex input.
+enabled = false
+endpoint = "http://127.0.0.1:8091"
+timeout_ms = 5000
+max_concurrency = 1

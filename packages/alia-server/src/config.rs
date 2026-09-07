@@ -216,6 +216,8 @@ fn default_embedding_profile() -> String {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProvidersSection {
+    #[serde(default)]
+    pub easy_turn: EasyTurnSection,
     /// Named LLM provider profiles. LLM profiles reference these IDs via
     /// `profiles.llm.<id>.provider`, allowing multiple endpoints with the same
     /// API family, e.g. OpenAI plus an OpenAI-compatible gateway.
@@ -230,9 +232,30 @@ pub struct ProvidersSection {
 impl Default for ProvidersSection {
     fn default() -> Self {
         Self {
+            easy_turn: EasyTurnSection::default(),
             llm: default_llm_provider_profiles(),
             whisper_cpp: WhisperCppProviderSection::default(),
             gpt_sovits: GptSovitsProviderSection::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EasyTurnSection {
+    pub enabled: bool,
+    pub endpoint: String,
+    pub timeout_ms: u64,
+    pub max_concurrency: usize,
+}
+
+impl Default for EasyTurnSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://127.0.0.1:8091".into(),
+            timeout_ms: 5_000,
+            max_concurrency: 1,
         }
     }
 }

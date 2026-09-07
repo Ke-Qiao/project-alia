@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
+pub mod adapters;
 pub mod api;
 pub mod auth;
+pub mod bootstrap;
 pub mod channels;
 pub mod config;
 pub mod discovery;
@@ -13,6 +15,7 @@ pub mod expression;
 pub mod grpc;
 pub mod memory_policy;
 pub mod module;
+pub mod modules;
 pub mod oobe;
 pub mod openapi;
 pub mod plugins;

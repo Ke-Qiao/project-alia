@@ -17,6 +17,7 @@ use crate::settings::SettingsRegistry;
 /// Application global state, passed to Axum handlers via State extractor
 #[derive(Clone)]
 pub struct AppState {
+    pub turn_detector: Option<Arc<dyn crate::modules::interaction::turn_detector::TurnDetector>>,
     pub db: DatabaseConnection,
     pub channels: Arc<ChannelRegistry>,
     pub event_bus: EventBus,

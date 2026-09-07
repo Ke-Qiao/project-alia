@@ -141,6 +141,8 @@ impl ServerBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<AppState> {
+        // Validate compiled capabilities and endpoints before starting any background tasks.
+        let turn_detector = crate::modules::interaction::build_turn_detector(&self.config.providers.easy_turn)?;
         // Create sensor registry early so tools and modules can reference it
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
@@ -576,6 +578,7 @@ impl ServerBuilder {
         )));
 
         let state = AppState {
+            turn_detector,
             db: self.db,
             channels: channel_registry,
             event_bus: self.event_bus,

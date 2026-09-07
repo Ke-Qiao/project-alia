@@ -1,10 +1,8 @@
 //! OOBE bootstrap logic: detection, CLI key handler, config generation.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use network_interface::{Addr, NetworkInterface, NetworkInterfaceConfig};
-use tokio::sync::watch;
 
 /// Result of the OOBE setup flow.
 #[derive(Clone)]
@@ -44,6 +42,10 @@ pub fn needs_setup() -> bool {
 /// We embed it at compile time so the binary is self-contained.
 const EXAMPLE_CONFIG: &str = include_str!("../../../../config/server.example.toml");
 const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
+    (
+        "providers/easy_turn.toml",
+        include_str!("../../../../config/server.example.d/providers/easy_turn.toml"),
+    ),
     (
         "providers/openai.toml",
         include_str!("../../../../config/server.example.d/providers/openai.toml"),
@@ -144,7 +146,7 @@ const EXAMPLE_CONFIG_FRAGMENTS: &[(&str, &str)] = &[
 
 /// Determine the best path to write the config file.
 /// Respects ALIA_CONFIG_PATH if set, then tries ./config/, then XDG.
-fn default_config_target() -> PathBuf {
+pub(crate) fn default_config_target() -> PathBuf {
     if let Ok(p) = std::env::var("ALIA_CONFIG_PATH") {
         return PathBuf::from(p);
     }
@@ -280,51 +282,4 @@ pub fn print_banner(port: u16) {
     eprintln!();
     eprintln!("════════════════════════════════════════════════════════════");
     eprintln!();
-}
-
-/// Spawn a blocking thread that reads single-key CLI input.
-/// Sends `SetupResult` through the watch channel when complete.
-pub fn spawn_cli_listener(tx: watch::Sender<Option<SetupResult>>) {
-    std::thread::spawn(move || {
-        let stdin = std::io::stdin();
-        let mut buf = [0u8; 16];
-
-        loop {
-            match stdin.lock().read(&mut buf) {
-                Ok(0) => break, // EOF
-                Ok(n) => {
-                    let input = std::str::from_utf8(&buf[..n])
-                        .unwrap_or("")
-                        .trim()
-                        .to_lowercase();
-
-                    match input.as_str() {
-                        "c" => {
-                            let target = default_config_target();
-                            match release_example_config(&target) {
-                                Ok(path) => {
-                                    eprintln!();
-                                    eprintln!("✓ Config file written to: {}", path.display());
-                                    eprintln!("Edit the file, then restart the server.");
-                                    eprintln!();
-                                    let _ = tx.send(Some(SetupResult::ConfigReady(path)));
-                                    return;
-                                }
-                                Err(e) => {
-                                    eprintln!("✗ Failed to write config: {e}");
-                                    eprintln!("Try running with appropriate permissions.");
-                                }
-                            }
-                        }
-                        "q" => {
-                            let _ = tx.send(Some(SetupResult::Cancelled));
-                            return;
-                        }
-                        _ => {}
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
 }
