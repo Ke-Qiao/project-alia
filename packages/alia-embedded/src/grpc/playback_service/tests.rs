@@ -1,7 +1,10 @@
 use super::*;
 use crate::module::lifecycle::ModuleLifecycle;
+use crate::module::playback_session::AudioSubmission;
 use crate::module::traits::AudioPlaybackBackend;
 use crate::storage::EmbeddedStore;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -10,6 +13,11 @@ struct Device {
     state: Mutex<(u64, Vec<i16>)>,
     changed: Condvar,
     capacity: usize,
+    submissions: Mutex<HashMap<PlaybackIdentity, Arc<AudioSubmission>>>,
+    queued: Mutex<Vec<(PlaybackIdentity, Vec<i16>)>>,
+    blocked: AtomicUsize,
+    hold_end: AtomicBool,
+    end_entered: AtomicBool,
 }
 #[tonic::async_trait]
 impl ModuleLifecycle for Device {
@@ -18,6 +26,80 @@ impl ModuleLifecycle for Device {
     }
 }
 impl AudioPlaybackBackend for Device {
+    fn open_submission(
+        &self,
+        identity: PlaybackIdentity,
+        rate: u32,
+        generation: u64,
+    ) -> anyhow::Result<Arc<AudioSubmission>> {
+        let submission = AudioSubmission::test(identity, generation, rate);
+        self.submissions
+            .lock()
+            .unwrap()
+            .insert(identity, submission.clone());
+        Ok(submission)
+    }
+    fn submit_audio(
+        &self,
+        submission: &Arc<AudioSubmission>,
+        offset: u64,
+        pcm: &[i16],
+    ) -> anyhow::Result<bool> {
+        let mut state = self.state.lock().unwrap();
+        while state.0 == submission.generation
+            && submission.is_live()
+            && state.1.len() >= self.capacity
+        {
+            self.blocked.fetch_add(1, Ordering::SeqCst);
+            state = self.changed.wait(state).unwrap();
+            self.blocked.fetch_sub(1, Ordering::SeqCst);
+        }
+        if state.0 != submission.generation || !submission.is_live() {
+            return Ok(false);
+        }
+        submission.accept(offset, pcm.len() as u64)?;
+        self.queued
+            .lock()
+            .unwrap()
+            .push((submission.identity, pcm.to_vec()));
+        state.1.extend_from_slice(pcm);
+        Ok(true)
+    }
+    fn end_submission(
+        &self,
+        submission: &Arc<AudioSubmission>,
+        total: u64,
+    ) -> anyhow::Result<bool> {
+        let accepted = submission.accept_end(total)?;
+        self.end_entered.store(true, Ordering::Release);
+        let mut state = self.state.lock().unwrap();
+        while self.hold_end.load(Ordering::Acquire) {
+            state = self.changed.wait(state).unwrap();
+        }
+        Ok(accepted)
+    }
+    fn cancel_submission(
+        &self,
+        submission: &Arc<AudioSubmission>,
+        reason: &str,
+    ) -> anyhow::Result<bool> {
+        let mut state = self.state.lock().unwrap();
+        if state.0 != submission.generation {
+            return Ok(false);
+        }
+        self.hold_end.store(false, Ordering::Release);
+        submission.terminate(ObservationEnd::Cancelled {
+            reason: reason.into(),
+        });
+        let mut queued = self.queued.lock().unwrap();
+        queued.retain(|(identity, _)| *identity != submission.identity);
+        state.1 = queued
+            .iter()
+            .flat_map(|(_, pcm)| pcm.iter().copied())
+            .collect();
+        self.changed.notify_all();
+        Ok(true)
+    }
     fn play(&self, _: &[i16], _: u32) -> anyhow::Result<()> {
         unreachable!()
     }
@@ -31,6 +113,7 @@ impl AudioPlaybackBackend for Device {
         let mut state = self.state.lock().unwrap();
         state.0 += 1;
         state.1.clear();
+        self.queued.lock().unwrap().clear();
         self.changed.notify_all();
         Ok(state.0)
     }
@@ -52,11 +135,40 @@ impl AudioPlaybackBackend for Device {
         }
         state.0 += 1;
         state.1.clear();
+        self.queued.lock().unwrap().clear();
         self.changed.notify_all();
         Ok(true)
     }
     fn is_playback_current(&self, generation: u64) -> bool {
         self.state.lock().unwrap().0 == generation
+    }
+}
+
+impl Device {
+    /// Explicit simulated callback submission, never a sleep-based completion.
+    fn submit_frames(&self, id: &str, frames: usize) {
+        let mut state = self.state.lock().unwrap();
+        let mut queued = self.queued.lock().unwrap();
+        let mut remaining = frames;
+        for (identity, pcm) in queued.iter_mut() {
+            if identity.playback_id.to_string() == id {
+                let count = remaining.min(pcm.len());
+                pcm.drain(..count);
+                remaining -= count;
+            }
+        }
+        assert_eq!(remaining, 0);
+        state.1 = queued
+            .iter()
+            .flat_map(|(_, pcm)| pcm.iter().copied())
+            .collect();
+        let submissions = self.submissions.lock().unwrap();
+        let submission = submissions
+            .values()
+            .find(|s| s.identity.playback_id.to_string() == id)
+            .unwrap();
+        submission.submitted_output(frames as u64);
+        self.changed.notify_all();
     }
 }
 
@@ -86,6 +198,11 @@ impl Fixture {
             state: Mutex::new((0, Vec::new())),
             changed: Condvar::new(),
             capacity,
+            submissions: Mutex::new(HashMap::new()),
+            queued: Mutex::new(Vec::new()),
+            blocked: AtomicUsize::new(0),
+            hold_end: AtomicBool::new(false),
+            end_entered: AtomicBool::new(false),
         });
         let session = Arc::new(PlaybackSession::new(device.clone()));
         let scope = VoiceScope {
@@ -126,7 +243,7 @@ impl Fixture {
     }
 
     async fn finish(self) {
-        self.session.close(&self.scope).unwrap();
+        self.session.stop().await.unwrap();
         drop(self.client);
         self.shutdown.cancel();
         tokio::time::timeout(Duration::from_secs(3), self.server)
@@ -159,6 +276,7 @@ fn frame(
 }
 fn start() -> playback_frame::Payload {
     playback_frame::Payload::Start(proto::PlaybackStart {
+        contract_version: 2,
         sample_rate_hz: 16000,
         channels: 1,
         source: "tts".into(),
@@ -185,9 +303,22 @@ async fn receipt_from(
         .unwrap()
         .unwrap()
         .unwrap();
-    assert!(receipt.submitted_samples.is_none() && receipt.presented_samples.is_none());
+    assert!(receipt.submitted_samples.is_some() && receipt.presented_samples.is_none());
+    assert_eq!(receipt.contract_version, PLAYBACK_CONTRACT_VERSION);
     assert_ne!(receipt.state, proto::PlaybackState::Completed as i32);
     receipt
+}
+
+async fn until(
+    stream: &mut tonic::Streaming<proto::PlaybackReceipt>,
+    predicate: impl Fn(&proto::PlaybackReceipt) -> bool,
+) -> proto::PlaybackReceipt {
+    loop {
+        let receipt = receipt_from(stream).await;
+        if predicate(&receipt) {
+            return receipt;
+        }
+    }
 }
 
 #[tokio::test]
@@ -195,8 +326,8 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
     let mut f = Fixture::new(1).await;
     let id = Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel(4);
-    tx.send(frame(f.scope, &id, 0, start())).await.unwrap();
-    tx.send(frame(f.scope, &id, 0, audio(0, 1))).await.unwrap();
+    tx.send(frame(f.scope, &id, 1, start())).await.unwrap();
+    tx.send(frame(f.scope, &id, 1, audio(0, 1))).await.unwrap();
     let mut stream = f
         .client
         .push(authenticated(tokio_stream::wrappers::ReceiverStream::new(
@@ -207,7 +338,7 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
         .into_inner();
     assert_eq!(receipt_from(&mut stream).await.accepted_samples, 0);
     assert_eq!(receipt_from(&mut stream).await.accepted_samples, 1);
-    tx.send(frame(f.scope, &id, 0, audio(1, 2))).await.unwrap();
+    tx.send(frame(f.scope, &id, 1, audio(1, 2))).await.unwrap();
     let newer = VoiceScope {
         generation_epoch: 2,
         ..f.scope
@@ -218,6 +349,8 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
             scope: Some(encode_scope(newer)),
             reason: "interrupt".into(),
             close_session: false,
+            playback_id: None,
+            playback_sequence: None,
         }))
         .await
         .unwrap()
@@ -231,9 +364,9 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
     drop(tx);
     let next_id = Uuid::new_v4().to_string();
     let frames = [
-        frame(newer, &next_id, 1, start()),
-        frame(newer, &next_id, 1, audio(0, 3)),
-        frame(newer, &next_id, 1, end(1)),
+        frame(newer, &next_id, 2, start()),
+        frame(newer, &next_id, 2, audio(0, 3)),
+        frame(newer, &next_id, 2, end(1)),
     ];
     let mut next = f
         .client
@@ -244,19 +377,27 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
     receipt_from(&mut next).await;
     receipt_from(&mut next).await;
     assert!(receipt_from(&mut next).await.end_accepted);
-    assert!(next.message().await.unwrap().is_none());
     let stale = f
         .client
         .fence(authenticated(proto::FenceRequest {
             scope: Some(encode_scope(f.scope)),
             reason: "late old interrupt".into(),
             close_session: false,
+            playback_id: None,
+            playback_sequence: None,
         }))
         .await
         .unwrap()
         .into_inner();
     assert!(!stale.applied);
     assert_eq!(f.device.state.lock().unwrap().1, vec![3]);
+    f.device.submit_frames(&next_id, 1);
+    let done = until(&mut next, |r| r.observation_end != 0).await;
+    assert_eq!(
+        done.observation_end,
+        proto::ObservationEnd::SubmissionFinished as i32
+    );
+    assert!(next.message().await.unwrap().is_none());
     drop(next);
     f.finish().await;
 }
@@ -266,10 +407,10 @@ async fn grpc_rejects_media_after_end_and_revocation_retires_queued_audio() {
     let mut f = Fixture::new(10).await;
     let id = Uuid::new_v4().to_string();
     let frames = [
-        frame(f.scope, &id, 0, start()),
-        frame(f.scope, &id, 0, audio(0, 1)),
-        frame(f.scope, &id, 0, end(1)),
-        frame(f.scope, &id, 0, audio(1, 2)),
+        frame(f.scope, &id, 1, start()),
+        frame(f.scope, &id, 1, audio(0, 1)),
+        frame(f.scope, &id, 1, end(1)),
+        frame(f.scope, &id, 1, audio(1, 2)),
     ];
     let mut stream = f
         .client
@@ -286,8 +427,8 @@ async fn grpc_rejects_media_after_end_and_revocation_retires_queued_audio() {
     drop(stream);
     let id = Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel(4);
-    tx.send(frame(f.scope, &id, 1, start())).await.unwrap();
-    tx.send(frame(f.scope, &id, 1, audio(0, 3))).await.unwrap();
+    tx.send(frame(f.scope, &id, 2, start())).await.unwrap();
+    tx.send(frame(f.scope, &id, 2, audio(0, 3))).await.unwrap();
     let mut stream = f
         .client
         .push(authenticated(tokio_stream::wrappers::ReceiverStream::new(
@@ -298,6 +439,9 @@ async fn grpc_rejects_media_after_end_and_revocation_retires_queued_audio() {
         .into_inner();
     receipt_from(&mut stream).await;
     receipt_from(&mut stream).await;
+    tx.send(frame(f.scope, &id, 2, end(1))).await.unwrap();
+    drop(tx);
+    until(&mut stream, |r| r.end_accepted).await;
     f.binding.unbind("server").await.unwrap();
     assert_eq!(
         receipt_from(&mut stream).await.state,
@@ -305,7 +449,6 @@ async fn grpc_rejects_media_after_end_and_revocation_retires_queued_audio() {
     );
     assert!(f.device.state.lock().unwrap().1.is_empty());
     drop(stream);
-    drop(tx);
     f.finish().await;
 }
 
@@ -324,4 +467,397 @@ fn receipts_never_invent_device_presentation_evidence() {
         generation_epoch: 2,
     };
     assert_eq!(decode_scope(Some(&encode_scope(valid))).unwrap(), valid);
+}
+
+#[tokio::test]
+async fn end_preserves_tail_observation_and_exact_cancel_does_not_touch_fifo_successor() {
+    let mut f = Fixture::new(20).await;
+    let first_id = Uuid::new_v4().to_string();
+    let mut first = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &first_id, 1, start()),
+            frame(f.scope, &first_id, 1, audio(0, 11)),
+            frame(f.scope, &first_id, 1, audio(1, 12)),
+            frame(f.scope, &first_id, 1, end(2)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    let accepted = until(&mut first, |r| r.end_accepted).await;
+    assert_eq!(accepted.submitted_samples, Some(0));
+    assert_eq!(accepted.observation_end, 0);
+    f.device.submit_frames(&first_id, 1);
+    let partial = until(&mut first, |r| r.submitted_samples == Some(1)).await;
+    assert!(partial.receipt_sequence > accepted.receipt_sequence);
+    assert_eq!(partial.backend, accepted.backend);
+    let second_id = Uuid::new_v4().to_string();
+    let mut second = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &second_id, 2, start()),
+            frame(f.scope, &second_id, 2, audio(0, 21)),
+            frame(f.scope, &second_id, 2, end(1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    until(&mut second, |r| r.end_accepted).await;
+    let ack = f
+        .client
+        .fence(authenticated(proto::FenceRequest {
+            scope: Some(encode_scope(f.scope)),
+            playback_id: Some(first_id.clone()),
+            playback_sequence: Some(1),
+            close_session: false,
+            reason: "cancel only first delivery".into(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(ack.applied);
+    assert_eq!(ack.playback_id, Some(first_id.clone()));
+    assert_eq!(ack.playback_sequence, Some(1));
+    assert_eq!(f.session.active_scope().unwrap(), Some(f.scope));
+    assert_eq!(f.device.state.lock().unwrap().1, vec![21]);
+    let retired = until(&mut first, |r| r.observation_end != 0).await;
+    assert_eq!(
+        retired.observation_end,
+        proto::ObservationEnd::Cancelled as i32
+    );
+    assert_eq!(retired.submitted_samples, Some(1));
+    assert!(retired.receipt_sequence > partial.receipt_sequence);
+    assert!(first.message().await.unwrap().is_none());
+    f.device.submit_frames(&second_id, 1);
+    let submitted = until(&mut second, |r| r.observation_end != 0).await;
+    assert_eq!(submitted.submitted_samples, Some(1));
+    assert_eq!(
+        submitted.observation_end,
+        proto::ObservationEnd::SubmissionFinished as i32
+    );
+    assert!(second.message().await.unwrap().is_none());
+    drop(first);
+    drop(second);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn dropping_receipts_unblocks_and_joins_native_media_admission() {
+    let mut f = Fixture::new(1).await;
+    let id = Uuid::new_v4().to_string();
+    let (tx, rx) = mpsc::channel(4);
+    tx.send(frame(f.scope, &id, 1, start())).await.unwrap();
+    tx.send(frame(f.scope, &id, 1, audio(0, 1))).await.unwrap();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::wrappers::ReceiverStream::new(
+            rx,
+        )))
+        .await
+        .unwrap()
+        .into_inner();
+    until(&mut stream, |r| r.accepted_samples == 1).await;
+    tx.send(frame(f.scope, &id, 1, audio(1, 2))).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while f.device.blocked.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    drop(stream);
+    drop(tx);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while f.device.blocked.load(Ordering::SeqCst) != 0
+            || !f.device.state.lock().unwrap().1.is_empty()
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), f.session.stop())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        f.session.activate(&f.scope).is_err(),
+        "stopped runtime cannot reactivate"
+    );
+    assert!(
+        f.session
+            .begin(&f.scope, &Uuid::new_v4().to_string(), 2, 16000)
+            .is_err()
+    );
+    let tracker = f
+        .device
+        .submissions
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    assert!(matches!(
+        tracker.snapshot(100).observation_end,
+        Some(ObservationEnd::Unknown { .. })
+    ));
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn old_contract_is_rejected_before_any_media_admission() {
+    let mut f = Fixture::new(8).await;
+    let mut old = start();
+    let playback_frame::Payload::Start(ref mut value) = old else {
+        unreachable!()
+    };
+    value.contract_version = 1;
+    let id = Uuid::new_v4().to_string();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &id, 1, old),
+            frame(f.scope, &id, 1, audio(0, 1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(
+        stream.message().await.unwrap_err().code(),
+        tonic::Code::FailedPrecondition
+    );
+    assert!(f.device.submissions.lock().unwrap().is_empty());
+    drop(stream);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn heartbeats_cannot_extend_absolute_observation_deadline() {
+    let mut f = Fixture::new(8).await;
+    let id = Uuid::new_v4().to_string();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &id, 1, start()),
+            frame(f.scope, &id, 1, audio(0, 1)),
+            frame(f.scope, &id, 1, end(1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    let accepted = until(&mut stream, |r| r.end_accepted).await;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    // Resume real I/O before waiting on SQLite/network. No device-clock event is emitted.
+    tokio::time::resume();
+    let heartbeat = receipt_from(&mut stream).await;
+    assert_eq!(heartbeat.observation_end, 0);
+    assert!(heartbeat.receipt_sequence > accepted.receipt_sequence);
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(61)).await;
+    tokio::time::resume();
+    let retired = until(&mut stream, |r| r.observation_end != 0).await;
+    assert_eq!(
+        retired.observation_end,
+        proto::ObservationEnd::Cancelled as i32
+    );
+    assert_eq!(retired.submitted_samples, Some(0));
+    assert!(f.device.state.lock().unwrap().1.is_empty());
+    drop(stream);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn end_ack_waits_until_input_lease_is_released() {
+    let mut f = Fixture::new(20).await;
+    f.device.hold_end.store(true, Ordering::Release);
+    let id = Uuid::new_v4().to_string();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &id, 1, start()),
+            frame(f.scope, &id, 1, audio(0, 1)),
+            frame(f.scope, &id, 1, end(1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    until(&mut stream, |r| r.accepted_samples == 1).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !f.device.end_entered.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let pending_end_heartbeat = receipt_from(&mut stream).await;
+    assert!(
+        !pending_end_heartbeat.end_accepted,
+        "pending backend End is not an input lease release ACK"
+    );
+    assert_eq!(pending_end_heartbeat.observation_end, 0);
+    f.device.hold_end.store(false, Ordering::Release);
+    f.device.changed.notify_all();
+    until(&mut stream, |r| r.end_accepted).await;
+    let next_id = Uuid::new_v4().to_string();
+    let mut next = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &next_id, 2, start()),
+            frame(f.scope, &next_id, 2, end(0)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(receipt_from(&mut next).await.accepted_samples, 0);
+    drop(next);
+    drop(stream);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn revocation_while_waiting_for_start_cannot_advance_playback_epoch() {
+    let mut f = Fixture::new(8).await;
+    let (tx, rx) = mpsc::channel(2);
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::wrappers::ReceiverStream::new(
+            rx,
+        )))
+        .await
+        .unwrap()
+        .into_inner();
+    f.binding.unbind("server").await.unwrap();
+    let newer = VoiceScope {
+        generation_epoch: 2,
+        ..f.scope
+    };
+    tx.send(frame(newer, &Uuid::new_v4().to_string(), 1, start()))
+        .await
+        .unwrap();
+    drop(tx);
+    assert_eq!(
+        stream.message().await.unwrap_err().code(),
+        tonic::Code::FailedPrecondition
+    );
+    assert!(f.device.submissions.lock().unwrap().is_empty());
+    assert_eq!(f.device.state.lock().unwrap().0, 0);
+    assert_eq!(f.session.active_scope().unwrap(), Some(f.scope));
+    drop(stream);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn precise_fence_ack_waits_for_final_inflight_submission_snapshot() {
+    let mut f = Fixture::new(8).await;
+    let id = Uuid::new_v4().to_string();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &id, 1, start()),
+            frame(f.scope, &id, 1, audio(0, 1)),
+            frame(f.scope, &id, 1, end(1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    let accepted = until(&mut stream, |r| r.end_accepted).await;
+    let submission = f
+        .device
+        .submissions
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let write = submission.begin_output().unwrap();
+    let mut client = f.client.clone();
+    let fence_id = id.clone();
+    let scope = f.scope;
+    let fence = tokio::spawn(async move {
+        client
+            .fence(authenticated(proto::FenceRequest {
+                scope: Some(encode_scope(scope)),
+                playback_id: Some(fence_id),
+                playback_sequence: Some(1),
+                close_session: false,
+                reason: "settle entered output".into(),
+            }))
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while submission.is_live() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!fence.is_finished());
+    assert_eq!(submission.snapshot(100).observation_end, None);
+    write.finish(1);
+    let reply = fence.await.unwrap().unwrap().into_inner();
+    assert!(reply.applied);
+    let final_progress = reply.final_progress.unwrap();
+    assert_eq!(final_progress.submitted_samples, Some(1));
+    assert_eq!(
+        final_progress.observation_end,
+        proto::ObservationEnd::Cancelled as i32
+    );
+    assert!(final_progress.receipt_sequence > accepted.receipt_sequence);
+    assert_eq!(final_progress.playback_id, id);
+    assert_eq!(final_progress.presented_samples, None);
+    drop(stream);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn precise_fence_times_out_without_claiming_native_quiescence() {
+    let mut f = Fixture::new(8).await;
+    let id = Uuid::new_v4().to_string();
+    let mut stream = f
+        .client
+        .push(authenticated(tokio_stream::iter([
+            frame(f.scope, &id, 1, start()),
+            frame(f.scope, &id, 1, audio(0, 1)),
+            frame(f.scope, &id, 1, end(1)),
+        ])))
+        .await
+        .unwrap()
+        .into_inner();
+    until(&mut stream, |r| r.end_accepted).await;
+    let submission = f
+        .device
+        .submissions
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    let write = submission.begin_output().unwrap();
+    let reply = tokio::time::timeout(
+        Duration::from_secs(3),
+        f.client.fence(authenticated(proto::FenceRequest {
+            scope: Some(encode_scope(f.scope)),
+            playback_id: Some(id),
+            playback_sequence: Some(1),
+            close_session: false,
+            reason: "hung output".into(),
+        })),
+    )
+    .await
+    .unwrap();
+    assert!(
+        reply.is_err(),
+        "admission fence alone cannot acknowledge precise cancellation"
+    );
+    assert!(!submission.output_quiescent());
+    assert_eq!(submission.snapshot(100).observation_end, None);
+    write.finish(1);
+    let terminal = until(&mut stream, |r| r.observation_end != 0).await;
+    assert_eq!(terminal.submitted_samples, Some(1));
+    drop(stream);
+    f.finish().await;
 }

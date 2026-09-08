@@ -3,13 +3,9 @@ use uuid::Uuid;
 
 use super::debug::{debug_component_json, log_channel_delivery_failure};
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{
-    AudioFormat, AudioPayload, ChannelAction, ChannelAdapter, ChannelTarget,
-};
+use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
 use crate::module::ModuleRegistry;
-use crate::providers::adapter::{ConversationEventEntry, TtsAdapter, TtsRequest};
-
-const ERROR_DIRECT_RESPONSE_ACTION: &str = "error";
+use crate::providers::adapter::{ConversationEventEntry, TtsRequest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -117,6 +113,23 @@ pub(super) async fn notify_pipeline_error(
     }
 
     let notice = build_pipeline_error_notice(stage, user_input);
+    if !turn_is_interrupted(turn)
+        && super::delivery::prepare_response(
+            modules,
+            turn,
+            channel_id,
+            user_id,
+            None,
+            "error_notice",
+        )
+        .await
+        .is_err()
+    {
+        return PipelineErrorNotification {
+            notice,
+            delivery: PipelineErrorDelivery::Failed,
+        };
+    }
     debug_component_json(
         debug_output,
         "pipeline_error",
@@ -134,7 +147,7 @@ pub(super) async fn notify_pipeline_error(
         PipelineErrorDelivery::Cancelled
     } else if prefer_voice && channel.capabilities().voice_output {
         deliver_voice_error_notice(
-            modules.tts.as_ref(),
+            modules,
             channel,
             target,
             channel_id,
@@ -163,66 +176,23 @@ pub(super) async fn notify_pipeline_error(
 }
 
 pub(super) async fn play_error_direct_response(
-    channel: &dyn ChannelAdapter,
+    _channel: &dyn ChannelAdapter,
     channel_id: &str,
     user_id: &str,
     reason: &str,
-    debug_output: bool,
+    _debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
-    debug_component_json(
-        debug_output,
-        "pipeline_error",
-        "direct_response",
-        &serde_json::json!({
-            "action": ERROR_DIRECT_RESPONSE_ACTION,
-            "reason": reason,
-        }),
-        Some((channel_id, user_id)),
-    );
-
-    match cancellable_stage(
-        turn,
-        "error_direct_response",
-        channel.execute_action(ChannelAction {
-            name: "play_direct_response".to_string(),
-            params: serde_json::json!({
-                "action": ERROR_DIRECT_RESPONSE_ACTION,
-                "interrupt_current": true,
-                "reason": reason,
-            }),
-        }),
-    )
-    .await
-    {
-        Ok(None) => PipelineErrorDelivery::Cancelled,
-        Ok(Some(value)) => {
-            let played = value
-                .get("played")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false);
-            if played {
-                PipelineErrorDelivery::DirectResponse
-            } else {
-                tracing::warn!(
-                    channel_type = channel.channel_type(),
-                    channel_id = channel.channel_id(),
-                    response = %value,
-                    "channel accepted error direct response but did not play audio"
-                );
-                PipelineErrorDelivery::Failed
-            }
-        }
-        Err(error) => {
-            tracing::debug!(
-                channel_type = channel.channel_type(),
-                channel_id = channel.channel_id(),
-                error = ?error,
-                "channel error direct response is unavailable"
-            );
-            PipelineErrorDelivery::Failed
-        }
+    if turn_is_interrupted(turn) {
+        return PipelineErrorDelivery::Cancelled;
     }
+    tracing::warn!(
+        channel_id,
+        user_id,
+        reason,
+        "local error cue lacks an immutable playback identity; no unscoped output was dispatched"
+    );
+    PipelineErrorDelivery::Failed
 }
 
 pub(super) async fn record_pipeline_error_event(
@@ -336,7 +306,7 @@ async fn deliver_text_error_notice(
 }
 
 async fn deliver_voice_error_notice(
-    tts: &dyn TtsAdapter,
+    modules: &ModuleRegistry,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     channel_id: &str,
@@ -370,7 +340,9 @@ async fn deliver_voice_error_notice(
     let audio_bytes = match cancellable_stage(
         turn,
         "error_tts",
-        tts.synthesize_request(&TtsRequest::plain(&notice.tts_text)),
+        modules
+            .tts
+            .synthesize_request(&TtsRequest::plain(&notice.tts_text)),
     )
     .await
     {
@@ -402,9 +374,31 @@ async fn deliver_voice_error_notice(
         channels: 1,
         format: AudioFormat::Wav,
     };
-    match cancellable_stage(turn, "error_audio", channel.send_audio(target, audio_out)).await {
+    match cancellable_stage(
+        turn,
+        "error_audio",
+        super::delivery::audio(
+            modules,
+            target,
+            turn,
+            &format!("error:{}", notice.stage.code()),
+            &notice.tts_text,
+            Box::pin(futures::stream::iter([Ok(audio_out)])),
+        ),
+    )
+    .await
+    {
         Ok(None) => PipelineErrorDelivery::Cancelled,
-        Ok(Some(())) => PipelineErrorDelivery::Tts,
+        Ok(Some(record)) => match record.status {
+            crate::modules::delivery::types::DeliveryStatus::Completed
+            | crate::modules::delivery::types::DeliveryStatus::Submitted => {
+                PipelineErrorDelivery::Tts
+            }
+            crate::modules::delivery::types::DeliveryStatus::Cancelled => {
+                PipelineErrorDelivery::Cancelled
+            }
+            _ => PipelineErrorDelivery::Failed,
+        },
         Err(error) => {
             log_channel_delivery_failure(channel, error).await;
             play_error_direct_response(
@@ -444,6 +438,8 @@ fn preview(input: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::channels::adapter::ChannelAction;
+    use crate::providers::adapter::TtsAdapter;
 
     #[test]
     fn builds_chinese_notice_without_raw_error() {
@@ -543,8 +539,10 @@ mod tests {
                 user_id: "user".into(),
             };
             let notice = build_pipeline_error_notice(PipelineErrorStage::Llm, Some("hello"));
+            let mut fixture = super::super::integration_tests::Fixture::new(false).await;
+            std::sync::Arc::get_mut(&mut fixture.modules).unwrap().tts = std::sync::Arc::new(tts);
             let delivery = deliver_voice_error_notice(
-                &tts,
+                &fixture.modules,
                 &channel,
                 &target,
                 "test",

@@ -1,16 +1,21 @@
-//! Scoped playback transport. A successful Push proves queue acceptance only.
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
-
-use alia_core::delivery::VoiceScope;
+//! Identity-preserving delivery. Start/Audio are gated by durable observer writes;
+//! End keeps receipts open until an explicit observation end.
+use crate::channels::adapter::{
+    AudioDeliveryReport, AudioFormat, AudioPayload, AudioPayloadStream, PlaybackObserver,
+};
+use alia_core::delivery::{
+    ObservationEnd, PLAYBACK_CONTRACT_VERSION, PlaybackIdentity, PlaybackProgress,
+    SubmissionBackend, SubmissionBoundary, VoiceScope,
+};
 use alia_proto::playback::{self as proto, playback_client::PlaybackClient, playback_frame};
 use anyhow::{Context, Result, ensure};
 use futures::StreamExt;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
-
-use crate::channels::adapter::{AudioFormat, AudioPayload, AudioPayloadStream};
 
 pub(super) fn encode_scope(scope: VoiceScope) -> proto::VoiceScope {
     proto::VoiceScope {
@@ -19,147 +24,315 @@ pub(super) fn encode_scope(scope: VoiceScope) -> proto::VoiceScope {
         generation_epoch: scope.generation_epoch,
     }
 }
-
 pub(super) fn validate_fence_receipt(
     scope: VoiceScope,
     close_session: bool,
     receipt: &proto::FenceReceipt,
 ) -> Result<()> {
-    let same_session = receipt.active_scope.as_ref().is_some_and(|active| {
-        active.device_boot_id == scope.device_boot_id.to_string()
-            && active.session_id == scope.session_id.to_string()
+    ensure!(
+        receipt.playback_id.is_none()
+            && receipt.playback_sequence.is_none()
+            && receipt.final_progress.is_none(),
+        "scope fence returned an exact-playback receipt"
+    );
+    let same = receipt.active_scope.as_ref().is_some_and(|s| {
+        s.device_boot_id == scope.device_boot_id.to_string()
+            && s.session_id == scope.session_id.to_string()
     });
     if close_session {
-        ensure!(
-            !same_session,
-            "device did not retire the requested voice session"
-        );
+        ensure!(!same, "device did not retire the requested voice session");
     } else {
         ensure!(
             !receipt.session_closed
-                && same_session
+                && same
                 && receipt
                     .active_scope
                     .as_ref()
-                    .is_some_and(|active| active.generation_epoch >= scope.generation_epoch),
+                    .is_some_and(|s| s.generation_epoch >= scope.generation_epoch),
             "device did not establish the requested playback fence"
         );
     }
     Ok(())
 }
-
-struct Producer(tokio::task::JoinHandle<Result<u64>>);
-impl Drop for Producer {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
+pub(super) async fn cancel_exact(
+    mut client: PlaybackClient<Channel>,
+    identity: PlaybackIdentity,
+    auth: tonic::metadata::MetadataMap,
+    reason: &str,
+) -> Result<PlaybackProgress> {
+    let mut request = tonic::Request::new(proto::FenceRequest {
+        scope: Some(encode_scope(identity.scope)),
+        reason: reason.into(),
+        close_session: false,
+        playback_id: Some(identity.playback_id.to_string()),
+        playback_sequence: Some(identity.playback_sequence),
+    });
+    *request.metadata_mut() = auth;
+    let receipt = tokio::time::timeout(Duration::from_secs(2), client.fence(request))
+        .await
+        .context("precise cancellation deadline")??
+        .into_inner();
+    ensure!(
+        receipt.applied
+            && receipt.playback_id.as_deref() == Some(identity.playback_id.to_string().as_str())
+            && receipt.playback_sequence == Some(identity.playback_sequence),
+        "device did not confirm exact playback cancellation"
+    );
+    // The active voice session may have changed while an entered write settled.
+    // Exact final evidence is scoped by its immutable playback identity below.
+    let progress = decode_receipt(
+        identity,
+        receipt
+            .final_progress
+            .context("precise cancellation lacks settled evidence")?,
+    )?;
+    progress.validate(None, progress.accepted_source_frames)?;
+    ensure!(
+        progress.observation_end.is_some()
+            && progress.submitted_source_frames.is_some()
+            && progress.backend.is_some(),
+        "precise cancellation has no settled backend observation"
+    );
+    Ok(progress)
 }
 
 pub(super) async fn push(
     mut client: PlaybackClient<Channel>,
-    scope: VoiceScope,
-    playback_sequence: u64,
+    identity: PlaybackIdentity,
     audio: AudioPayloadStream,
     auth: tonic::metadata::MetadataMap,
-    receipt_idle_timeout: Duration,
-) -> Result<()> {
-    ensure!(scope.is_valid(), "invalid voice output scope");
-    let playback_id = uuid::Uuid::new_v4().to_string();
+    observer: Arc<dyn PlaybackObserver>,
+    cancel: CancellationToken,
+    idle: Duration,
+) -> Result<AudioDeliveryReport> {
+    ensure!(identity.is_valid(), "invalid voice playback identity");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    let cancel_client = client.clone();
+    let cancel_auth = auth.clone();
     let (tx, rx) = mpsc::channel(8);
+    let (ack_tx, ack_rx) = oneshot::channel();
     let offered = Arc::new(AtomicU64::new(0));
-    let offered_by_producer = offered.clone();
-    let producer_id = playback_id.clone();
-    let mut producer = Producer(tokio::spawn(async move {
-        produce(
-            audio,
-            tx,
-            scope,
-            producer_id,
-            playback_sequence,
-            offered_by_producer,
-        )
-        .await
-    }));
+    let end_offered = Arc::new(AtomicBool::new(false));
+    let mut last: Option<PlaybackProgress> = None;
+    let child = cancel.child_token();
+    let mut producer = Box::pin(produce(
+        audio,
+        tx,
+        identity,
+        offered.clone(),
+        observer.clone(),
+        ack_rx,
+        child.clone(),
+        end_offered.clone(),
+    ));
     let mut request = tonic::Request::new(tokio_stream::wrappers::ReceiverStream::new(rx));
     *request.metadata_mut() = auth;
-    let result = async {
-        let mut receipts = tokio::time::timeout(receipt_idle_timeout, client.push(request))
+    let receiving = async {
+        let mut receipts = tokio::time::timeout(idle, client.push(request))
             .await
-            .context("playback response handshake timed out")??
+            .context("playback response handshake timeout")??
             .into_inner();
-        let mut accepted = 0;
-        let mut ended = false;
-        while let Some(receipt) = tokio::time::timeout(receipt_idle_timeout, receipts.message())
-            .await
-            .context("playback receipt stream idle timeout")??
-        {
+        let mut handshake = Some(ack_tx);
+        loop {
+            let receipt = tokio::time::timeout(idle, receipts.message())
+                .await
+                .context("playback receipt idle timeout")??
+                .context("playback receipt stream ended without terminal evidence")?;
+            let progress = decode_receipt(identity, receipt)?;
             ensure!(
-                receipt.scope.as_ref() == Some(&encode_scope(scope))
-                    && receipt.playback_id == playback_id
-                    && receipt.playback_sequence == playback_sequence,
-                "playback receipt identity mismatch"
+                !progress.end_accepted || end_offered.load(Ordering::Acquire),
+                "device acknowledged End before it was sent"
             );
-            ensure!(!ended, "receipt arrived after End acceptance");
-            ensure!(
-                receipt.accepted_samples >= accepted
-                    && receipt.accepted_samples <= offered.load(Ordering::Acquire),
-                "playback receipt sample count is invalid"
-            );
-            ensure!(
-                proto::PlaybackState::try_from(receipt.state)? == proto::PlaybackState::Accepted,
-                "device cancelled or failed playback admission"
-            );
-            // This adapter never upgrades queue acceptance into presentation.
-            ensure!(
-                receipt.presented_samples.is_none() && receipt.submitted_samples.is_none(),
-                "unexpected device evidence in admission-only playback protocol"
-            );
-            accepted = receipt.accepted_samples;
-            ended = receipt.end_accepted;
+            progress.validate(last.as_ref(), offered.load(Ordering::Acquire))?;
+            if handshake.is_some() {
+                ensure!(
+                    progress.receipt_sequence == 1
+                        && progress.accepted_source_frames == 0
+                        && !progress.end_accepted
+                        && progress.observation_end.is_none(),
+                    "invalid playback v2 handshake acknowledgement"
+                );
+            }
+            observer.progress(progress.clone()).await?;
+            let terminal = progress.observation_end.clone();
+            last = Some(progress);
+            if let Some(ack) = handshake.take() {
+                let _ = ack.send(());
+            }
+            if let Some(end) = terminal {
+                return Ok::<_, anyhow::Error>(end);
+            }
         }
-        ensure!(ended, "playback stream ended without End acceptance");
-        Ok::<u64, anyhow::Error>(accepted)
+    };
+    let transfer = async {
+        tokio::pin!(receiving);
+        let mut produced = false;
+        loop {
+            tokio::select! {
+                result = &mut producer, if !produced => { result?; produced = true; },
+                result = &mut receiving => return result,
+            }
+        }
+    };
+    let result = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(anyhow::anyhow!("delivery cancelled")),
+        _ = tokio::time::sleep_until(deadline) => Err(anyhow::anyhow!("absolute delivery observation deadline")),
+        result = transfer => result,
+    };
+    // Both upload and receipt futures are local to this owned Delivery future.
+    // Cancelling drops them directly; there are no detached producer tasks.
+    child.cancel();
+    drop(producer);
+    match result {
+        Ok(observation_end) => Ok(AudioDeliveryReport {
+            progress: last,
+            observation_end,
+        }),
+        Err(error) => {
+            let reason = error.to_string();
+            let confirmed = cancel_exact(cancel_client, identity, cancel_auth, &reason).await;
+            let end;
+            match confirmed {
+                Ok(progress) => {
+                    progress.validate(last.as_ref(), offered.load(Ordering::Acquire))?;
+                    end = progress
+                        .observation_end
+                        .clone()
+                        .context("missing final cancellation evidence")?;
+                    observer.progress(progress.clone()).await?;
+                    last = Some(progress);
+                }
+                Err(_) => {
+                    // Observation loss is a local report, not a device receipt.
+                    // Preserve its last evidence and sequence for a later exact
+                    // cancellation checkpoint owned by the Delivery supervisor.
+                    end = ObservationEnd::Unknown { reason };
+                }
+            }
+            Ok(AudioDeliveryReport {
+                progress: last,
+                observation_end: end,
+            })
+        }
     }
-    .await;
-    if result.is_err() {
-        producer.0.abort();
-    }
-    let produced = (&mut producer.0).await;
-    let accepted = result?;
-    let produced = produced.context("playback producer task failed")??;
+}
+
+fn decode_receipt(
+    identity: PlaybackIdentity,
+    receipt: proto::PlaybackReceipt,
+) -> Result<PlaybackProgress> {
     ensure!(
-        accepted == produced,
-        "device did not accept all playback samples"
+        receipt.contract_version == PLAYBACK_CONTRACT_VERSION,
+        "unsupported playback evidence contract"
     );
-    Ok(())
+    ensure!(
+        receipt.scope.as_ref() == Some(&encode_scope(identity.scope))
+            && receipt.playback_id == identity.playback_id.to_string()
+            && receipt.playback_sequence == identity.playback_sequence,
+        "playback receipt identity mismatch"
+    );
+    ensure!(
+        receipt.presented_samples.is_none(),
+        "device presentation clocks are not implemented"
+    );
+    let observation_end = match proto::ObservationEnd::try_from(receipt.observation_end)? {
+        proto::ObservationEnd::Unspecified => None,
+        proto::ObservationEnd::SubmissionFinished => Some(ObservationEnd::SubmissionFinished),
+        proto::ObservationEnd::Cancelled => Some(ObservationEnd::Cancelled {
+            reason: receipt.reason,
+        }),
+        proto::ObservationEnd::Failed => Some(ObservationEnd::Failed {
+            reason: receipt.reason,
+        }),
+        proto::ObservationEnd::Unknown => Some(ObservationEnd::Unknown {
+            reason: receipt.reason,
+        }),
+        proto::ObservationEnd::Rejected => Some(ObservationEnd::Rejected {
+            reason: receipt.reason,
+        }),
+        proto::ObservationEnd::PresentedFinished => {
+            anyhow::bail!("unsupported presentation evidence")
+        }
+    };
+    let state = proto::PlaybackState::try_from(receipt.state)?;
+    ensure!(
+        match &observation_end {
+            None => matches!(
+                state,
+                proto::PlaybackState::Accepted | proto::PlaybackState::Submitted
+            ),
+            Some(ObservationEnd::SubmissionFinished) => state == proto::PlaybackState::Submitted,
+            Some(ObservationEnd::Cancelled { .. }) => state == proto::PlaybackState::Cancelled,
+            Some(ObservationEnd::Failed { .. }) => state == proto::PlaybackState::Failed,
+            Some(ObservationEnd::Unknown { .. }) => state == proto::PlaybackState::Unknown,
+            Some(ObservationEnd::Rejected { .. }) => state == proto::PlaybackState::Rejected,
+            _ => false,
+        },
+        "playback state contradicts observation end"
+    );
+    let backend = receipt
+        .backend
+        .map(|b| {
+            Ok::<_, anyhow::Error>(SubmissionBackend {
+                instance_id: b.instance_id.parse()?,
+                boundary: match proto::SubmissionBoundary::try_from(b.boundary)? {
+                    proto::SubmissionBoundary::CpalCallbackBuffer => {
+                        SubmissionBoundary::CpalCallbackBuffer
+                    }
+                    proto::SubmissionBoundary::AlsaWriteAccepted => {
+                        SubmissionBoundary::AlsaWriteAccepted
+                    }
+                    _ => anyhow::bail!("missing submission boundary"),
+                },
+                output_sample_rate_hz: b.output_sample_rate_hz,
+                output_channels: b.output_channels,
+            })
+        })
+        .transpose()?;
+    Ok(PlaybackProgress {
+        identity,
+        receipt_sequence: receipt.receipt_sequence,
+        accepted_source_frames: receipt.accepted_samples,
+        submitted_source_frames: receipt.submitted_samples,
+        presented_source_frames: None,
+        end_accepted: receipt.end_accepted,
+        backend,
+        observation_end,
+    })
 }
 
 async fn produce(
     mut audio: AudioPayloadStream,
     tx: mpsc::Sender<proto::PlaybackFrame>,
-    scope: VoiceScope,
-    playback_id: String,
-    playback_sequence: u64,
+    identity: PlaybackIdentity,
     offered: Arc<AtomicU64>,
+    observer: Arc<dyn PlaybackObserver>,
+    handshake: oneshot::Receiver<()>,
+    cancel: CancellationToken,
+    end_offered: Arc<AtomicBool>,
 ) -> Result<u64> {
     let mut decoder = PcmDecoder::default();
-    let mut started = false;
+    let mut handshake = Some(handshake);
     let mut sequence = 0_u64;
     let mut samples = 0_u64;
     let frame = |payload| proto::PlaybackFrame {
-        scope: Some(encode_scope(scope)),
-        playback_id: playback_id.clone(),
-        playback_sequence,
+        scope: Some(encode_scope(identity.scope)),
+        playback_id: identity.playback_id.to_string(),
+        playback_sequence: identity.playback_sequence,
         payload: Some(payload),
     };
-    while let Some(payload) = audio.next().await {
+    while let Some(payload) = tokio::select! { _ = cancel.cancelled() => return Err(anyhow::anyhow!("audio producer cancelled")), payload = audio.next() => payload }
+    {
         let pcm = decoder.push(payload?)?;
         let Some((sample_rate, _)) = decoder.spec else {
             continue;
         };
-        if !started {
+        if let Some(ack) = handshake.take() {
+            observer.start(sample_rate, 1).await?;
             tx.send(frame(playback_frame::Payload::Start(
                 proto::PlaybackStart {
+                    contract_version: PLAYBACK_CONTRACT_VERSION,
                     sample_rate_hz: sample_rate,
                     channels: 1,
                     source: "tts".into(),
@@ -167,12 +340,18 @@ async fn produce(
             )))
             .await
             .context("playback Start stream closed")?;
-            started = true;
+            ack.await
+                .context("playback handshake was not acknowledged")?;
         }
         for bytes in pcm.chunks(sample_rate as usize / 10 * 2) {
             let next = samples
                 .checked_add(bytes.len() as u64 / 2)
-                .context("playback sample clock overflow")?;
+                .context("playback source clock overflow")?;
+            ensure!(
+                next <= u64::from(sample_rate) * 120,
+                "playback source exceeds 120 seconds"
+            );
+            observer.offered(next).await?;
             offered.store(next, Ordering::Release);
             tx.send(frame(playback_frame::Payload::Audio(
                 proto::PlaybackAudio {
@@ -184,13 +363,12 @@ async fn produce(
             .await
             .context("playback Audio stream closed")?;
             samples = next;
-            sequence = sequence
-                .checked_add(1)
-                .context("playback sequence overflow")?;
+            sequence += 1;
         }
     }
     decoder.finish()?;
-    ensure!(started, "TTS returned no audio format");
+    ensure!(handshake.is_none(), "TTS returned no audio format");
+    end_offered.store(true, Ordering::Release);
     tx.send(frame(playback_frame::Payload::End(proto::PlaybackEnd {
         total_samples: samples,
     })))

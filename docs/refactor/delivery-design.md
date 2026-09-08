@@ -1,87 +1,67 @@
-# Delivery 与设备呈现证据设计
+# Delivery 与设备证据
 
-状态：待实施设计，2026-09-08。当前 scoped playback 已实现接收身份、顺序和取消栅栏；真实设备呈现回执、播后表达及用户实际听到的内容均未验收。本文只定义下一批完整实施边界，不扩大到 frontend、Pi 性能研究或 AEC 算法研发。
+状态：2026-09-08，D1 / D2 实现已冻结并通过最终整包回归。本文描述当前实现与剩余边界；测试和提交见[构建记录](progress.md)。D3 身体命令见[设计](body-command-design.md)。真实声卡、机构到位、AEC 与自然全双工声学效果仍未验收。
 
-Delivery 表示内容交付到输出端及其已知进度。Execution 表示外部操作的批准、领取和事实结果，两者保持不同身份与状态：响应被替换不能撤销已经发生的 effect；一个工具成功也不证明用户听到了其语音说明。
+Delivery 保存内容向输出端交付的意图与已知事实。Execution 保存外部操作的批准、领取和结果。响应被替换不能撤销已发生的 effect，工具成功也不证明用户听到了语音说明。
 
-## 当前已有的保证
+## 规范响应与唯一发送
 
-- `VoiceScope { device_boot_id, session_id, generation_epoch }` 来自输入原始会话；异步工作不得改用渠道“当前会话”重新盖章。
-- 端侧 active session 只能由当前 VoiceSession Ready 本地激活；旧服务端 Start 无权切换会话。Start/Audio/End 携带 scope、playback_id、playback_sequence，Audio 校验 sequence/sample_offset。
-- 同一 epoch 可按单调 playback_sequence 追加多个已结束输入的 Push，保持 FIFO；未 End 的 Push 会使新 Start 得到 busy。新 epoch 和 Fence 清除旧媒体，晚到的旧 scope/epoch 不能覆盖当前播放。
-- backend 入队带 expected local generation 原子校验，控制不等待媒体容量。close_session 按精确 boot/session 退休整个会话，不要求调用方猜最终 epoch；旧 UUID 的迟到 close 不能关闭新会话。
-- 当前网络回执只发 `accepted/cancelled/failed`、`accepted_samples/end_accepted`；`submitted_samples/presented_samples` 均为空。服务端只接受这一已实现的协议子集，不能假定 Proto 中存在 `COMPLETED` 枚举就已有实现。
+Response 在首次输出前固定用户、请求、渠道、可信来源消息、source privacy epoch 和生成意图。逐句音频 Delivery 各自保存不可变内容，共属一个 Response。最终正文与唯一助手会话消息在同一 PostgreSQL 事务提交；重试返回原 UUID，改意图或最终正文拒绝。
 
-证据：[VoiceScope](/Users/ke-qiao/Developer/project-alia/crates/alia-core/src/delivery.rs:1)、[Playback v1](/Users/ke-qiao/Developer/project-alia/crates/proto/proto/playback.proto:1)、[端侧 receipt](/Users/ke-qiao/Developer/project-alia/packages/alia-embedded/src/grpc/playback_service.rs:169)、[服务端 Push 校验](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/embedded/playback.rs:58)。真实声卡、机构到位和自然全双工声学效果不在这些软件保证内。
+Delivery 在网络 I/O 前保存播放 UUID、原始 VoiceScope、单调 playback sequence、内容与所有者。数据库 CAS 只将 dispatch permit 交给一个监督者；重试读取原记录，不能从已有记录重建发送许可。过期或失联转成 Unknown，不作为重放队列。用户查询、取消及错误语义见 [Delivery API](delivery-api.md)。
 
-## 已确认的差距
+新响应、媒体准入与心跳、最终历史提交复核原来源版本；撤权或遗忘后不能给旧任务换版本。已发生的交付事实仍须保存。缓存、ContextPack 与 Companion 的完整来源失效继续属于未完成主线。
 
-| 差距 | 代码证据 | 需要改正的语义 |
-|---|---|---|
-| Delivery 返回 `Result<()>`，丢失已确认的身份、计数和证据等级 | [ChannelAdapter 音频接口](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/adapter.rs:188)、[Push 返回:120](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/embedded/playback.rs:120) | `Ok` 目前只证明全部 PCM 输入被接受，不代表播放结束。上层需要 typed admission/progress，不能使用一个 Delivered 布尔状态覆盖所有阶段。 |
-| 播后动作与对话完成事件早于播放完成证据 | [TtsDeliveryOutcome::Delivered:279](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/pipeline/streaming.rs:279)、[PostSpeech:213](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/pipeline/voice.rs:213)、[ConversationTurnCompleted](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/pipeline.rs:3683) | scoped Push 在 EndAccepted 后即返回；此后可能仍有设备缓冲尾音。PostSpeech 不能绑定此返回。对话处理/历史持久化完成可以单独记录，但不能作为“播完/听完”的证据。 |
-| backend 尚未提供按 playback 身份关联的进度 | [CPAL callback:357](/Users/ke-qiao/Developer/project-alia/packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs:357)、[ALSA writei:463](/Users/ke-qiao/Developer/project-alia/packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs:463) | CPAL 当前忽略 callback 时间信息，填充输出 buffer 只能支持未来 submitted 计数；ALSA `writei` 只证明交给驱动，不能当作 DAC 呈现。需要设备时钟及源采样位置映射，不能按音频长度 sleep 后宣告完成。 |
-| 旧表达回执把无法验证的结果升级为 completed | [cancel fallback:115](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/expression/orchestrator.rs:115)、[merge_channel_result:411](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/expression/orchestrator.rs:411)、[legacy receipts:457](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/expression/orchestrator.rs:457) | 无法解析为 ExpressionExecutionResult 的 JSON 被回退成 completed，且 completion_acknowledged=true；legacy executed_actions 也被自动映射 Completed。数据缺失/格式错误应保持未知或失败，不能制造设备确认。 |
-| 表达取消没有会话/命令身份，活跃表达状态是进程全局表 | [expression Proto](/Users/ke-qiao/Developer/project-alia/crates/proto/proto/expression.proto:1)、[Embedded cancel adapter:1434](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/embedded/channel.rs:1434)、[ORCHESTRATION_STATE:19](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/expression/orchestrator.rs:19) | Cancel 只有 reason，迟到操作不能精确定位旧表达；全局表只按 channel/user 分键，会让同进程独立 Server 实例共享状态。表达的排他和优先级状态必须归实例/设备命令所有者。 |
+## 播放 v2 与取消
 
-## 证据契约
+`alia.playback.v2.Playback/Push` 使用 `Start → Audio* → End → EOF` 输入，保留独立回执。Start 携带 contract version 2，Server 先收到序号 1、接收量为零的对应确认才发送 Audio。RPC 路径直接升级，避免旧设备忽略精准取消字段后执行旧整轮停播。
 
-以下为目标契约，不是当前已发出的所有回执。音频计数统一使用 **该 playback 的源 PCM 样本数**；设备采样率、重采样、通道展开及硬件时钟另带映射信息。不能把设备输出帧数直接填写为源样本数。
+每帧与回执携带 `PlaybackIdentity { VoiceScope, playback_id, playback_sequence }`。VoiceScope 是原始 boot/session/generation，不能在输出时借用当前会话。只有本地 Ready 可激活会话；Start/Fence 无权创建或替换。Audio 序号、源偏移连续，End 总数一致。同 epoch 后续 Push 在上一输入 End 确认后 FIFO 追加，不清上一片段尾部；新 generation 淘汰旧媒体。
 
-| 事实 | 必需证据 | 允许对外表述 |
-|---|---|---|
-| `accepted` | scope/identity 校验通过，连续源样本已进入有界接收队列 | 设备已接受 N 个样本。EndAccepted 只表示输入结束且总数一致。 |
-| `submitted` | 对应样本实际交给 backend/驱动的计数，带 backend 实例/时钟标识 | 已提交给音频后端。仍可能在系统缓冲或被取消。 |
-| `presented` | 可验证的设备播放游标/时钟已通过对应样本位置 | 设备时钟证明该前缀已经呈现；不证明用户听到、音箱接通或声学质量合格。 |
-| `completed` | EndAccepted，且设备呈现证据覆盖全部源样本，无尚待呈现尾部和已知失败 | 这一 playback 的设备呈现完成。只有此证据可驱动真正的 PostSpeech。 |
-| `cancelled` | 精确 scope/playback 控制已生效，旧软件队列失效；保留最后已知前缀 | 未呈现部分不再继续交付。不能把已提交/已呈现前缀改成零，也不能保证没有硬件缓冲尾音。 |
-| `failed` / `unknown` | 明确故障，或超时/断线导致最终呈现无法核验 | 交付失败或结果未知；保留已知前缀，不能默认重播整段。 |
+媒体接纳与 generation 失效使用同一边界，排队期间失效的旧媒体不能迟到进入。等待 Start 时撤权也须在实际接纳前复核，不能先推进 epoch 再检查权限。输入 EOF 不解除尾部的绑定监督，见[语音协议](voice-protocol.md)。
 
-计数在同一 identity 下只能单调增加，并满足 `presented ≤ submitted ≤ accepted ≤ offered`；未提供的证据字段是 unknown，不是零。若后端只能证明 submitted，则 presented 保持空，不能发 completed。未来收到 presented 而缺少 submitted 的协议组合应拒绝或在明确版本契约中规范化，不能猜测。
+精准取消携带原 playback UUID/sequence，立即关闭该身份准入，再等待已进入的输出边界收尾，ACK 携带最终快照。Push 和取消使用同一身份的单调回执序号；取消快照可能是 ACK 丢失后首次可见检查点，Server 不能重盖序号。没有最终证据则 Unknown。whole-scope Fence 只证明匹配 boot/session 的 generation 栅栏；close_session 退休匹配会话。迟到低 generation 或不同 UUID 不能停止新会话。
 
-## 所有权和合法迁移
+## 证据与单位
 
-Server 的实例级 Delivery 所有者持有 playback 身份、原始 VoiceScope、生产者任务、已接受计数、progress receiver 和终止结果。接口应返回可查询的 admission/handle，让 pipeline 交出播放进度监督责任；interaction token 取消只能要求对应 scoped fence，不能直接 drop 唯一进度任务后声称取消成功。该所有者接入 [Server runtime 设计](/Users/ke-qiao/Developer/project-alia/docs/refactor/server-runtime-design.md) 的关闭监督。
+所有计数使用**均值下混后的源 PCM 帧**。源立体声一帧仍算一帧；重采样、设备声道展开不改变单位。字段缺失表示无证据，不能自动填零。
 
-合法主路径为 `Created → Streaming → EndAccepted → Completed`。accepted/submitted/presented 是该路径上的独立单调事实，允许输入尚在 Streaming 时设备已经呈现部分前缀。任意未终结状态可进入 Cancelled、Failed 或 Unknown；终态不可被迟到旧回执复活。EndAccepted 之后拒绝新 Audio，但 **不能结束呈现证据通道**。当前 adapter 在 EndAccepted 后拒绝后续 receipt，需要与端侧同时升级并声明能力，不能单端启用新增字段。
+| 事实 | 证据和边界 |
+| --- | --- |
+| accepted | 身份校验、连续源帧进入有界队列。EndAccepted 只关闭输入。 |
+| submitted | 实际 CPAL callback 完整帧写入或 ALSA writei 成功返回，关联后端实例、格式、源位置映射。物理呈现仍未知。 |
+| presented | 设备播放游标经过对应源位置，不证明用户听到或声学质量。当前后端不提供。 |
+| completed | EndAccepted 且呈现证据覆盖全部源帧，才可触发真正 PostSpeech。 |
+| cancelled | 未 dispatch 已撤销，或精确控制与已进入写入边界已核验。保留真实前缀，不能承诺硬件缓冲尾音为零。 |
+| failed / unknown | 故障，或断线、超时、证据缺失。保留已知前缀，禁止默认重播。 |
 
-服务端设备会话持续监督与每次 Push 的输入生命周期不同。输入半关闭后，设备仍需报告已排队音频的进度；撤权、会话退休或 runtime 停止仍要清掉剩余尾部。每次新 Push 分配单调 playback_sequence，不能因不同 playback_id 自动 stop 同 epoch 的前一条。
+同一身份满足 `presented ≤ submitted ≤ accepted ≤ offered`。序号严格递增，计数、End、已知后端不可回退。终态不可复活；未知终态后取得的真实证据独立审计，不据此触发重播。`SubmissionFinished` 对应 Submitted，不能升级 PresentedFinished 或触发 PostSpeech。ConversationTurnCompleted 只表示处理/历史完成。
 
-端侧 PlaybackSession 继续唯一拥有 scope/floor 与本地 generation。backend 的每个 render segment 必须保留 playback 身份及源样本范围，不能在混合缓冲后只剩一个全局计数。CPAL callback/ALSA 写入路径只做有界计数和轻量通知，不进行网络、数据库或阻塞分配；进度聚合与 gRPC 回执放在受监督的工作任务。静音补零不增加源音频 presented；underrun、设备重建、seek/reset、采样率变更必须显式处理时钟连续性。
+## 后端与重采样
 
-取消及关闭保留现有原子 expected-generation 栅栏。迟到 Cancel/receipt、旧 boot、旧 session、旧 playback_sequence 都不能改变新的状态。正常关闭顺序是停止新 Delivery admission → 精确取消/退休当前 scope → 等待控制与进度任务退出 → 保存最后已知证据 → 停 backend。设备失联时可返回 Unknown，不能等待无限或重放可能已呈现的整段。
+输出格式在启动时固定；ALSA 共用采集时钟时可配置 capture sample rate，播放期间不改硬件时钟。已删除无实际作用的 `alsa_playback_follow_source_rate`。每个 playback 使用跨分片连续的 Rubato sinc 状态，补偿一次滤波延迟。End 零填充排空到 `ceil(source_frames × output_rate / source_rate)`，不截掉已接受尾部。
 
-## 表达与对话语义
+提交前缀使用补偿后的名义源时间映射 `floor(actual_output_frames × source_rate / output_rate)` 并封顶源长度；该软件映射不是设备时钟。静音补零不增加前缀。队列有界背压，控制独立于满媒体队列。
 
-表达的 `accepted` 只表示命令通过校验/排队；`started` 表示执行器开始；`completed` 必须有对应命令完成证据。开环舵机控制通常只能证明控制序列已发送，不能在没有位置反馈时声称机构到位。能力声明要明确支持的证据等级。
+取消停止新输出租约，已进入的完整 callback 帧或 writei 先回报实际提交量再发布终态；不能丢掉立体声半帧后把下一片段写到错误声道。声卡故障后 scoped Push 不隐式重启 native 设备，恢复归生命周期所有者。DSP 测试覆盖分片相位、末端脉冲、源位置映射和包括 192 kHz → 8 kHz 的频谱检查，不代替 Pi 真机性能或声学验收。
 
-ExecuteExpression/CancelExpression 必须带不可变 command_id 和归属 scope；迟到旧 cancel 只影响其旧命令或旧 epoch。普通设备动作若没有语音 scope，需要独立设备运行实例与命令身份，不能凭空绑定当前语音会话。优先级、合并和抢占只能在此明确所有者范围内进行。
+## 任务所有权
 
-无法解析的表达 JSON、缺失 action receipts、空 command_id 或 completion_acknowledged 自相矛盾，均不能回退为 completed。删除 legacy 自动升级逻辑，并同步修改测试预期。输入 EndAccepted 后没有 presented 能力时，PostSpeech 应记录 `unsupported_evidence` 而跳过；不要用保守时长 sleep 伪装完成。
+Server DeliveryService 拥有有界 admission、媒体 future、精确控制与进度持久化；调用方丢弃等待不丢失媒体 owner。心跳和媒体数据库观察可并行轮询，避免暂停持锁媒体 future 后再等同一锁。
 
-将“对话生成/历史持久化完成”“Delivery 已接受”“设备呈现完成”分成不同事实。旧 ConversationTurnCompleted 若保留用于后台调度，应明确仅表示对话处理完成，并禁止其消费者据此推断用户听完；需要实际呈现的行为订阅专门 Delivery 事件。Memory 的来源时间/源消息验证保持 P2 契约，不因 Delivery 的处理延迟刷新。
+关闭顺序是停止新投递 → 取消原身份 → 收拢真实工作 → 关闭 channels → 释放资源与数据库。数据库、精准控制、整体观察都有期限，心跳不刷新绝对期限。超时只结束本次等待，仍运行的 native/adapter future 保留到实际退出；不可恢复 panic 保留 owner 与依赖并报告 incomplete，不再 poll 已 panic 的 future。
 
-## 分包实施与独占范围
+Embedded PlaybackSession 拥有 Push actor、输入 lease 和观察者。End native enqueue handle 完成并释放输入 lease 后才确认输入结束，后端观察继续。response drop、撤权或会话关闭取消原身份并等待真实工作。PlaybackSession 在 Audio 之前清理，不能先释放声卡依赖。
 
-以下全部待实施；自然全双工硬件验收在最后单独记录。
+## 表达与下一主线
 
-| 包 | 完整结果 | 建议独占文件 |
-|---|---|---|
-| D1：诚实结果与实例所有权 | typed Delivery admission/progress、取消/未知终态、纠正 PostSpeech 和旧表达 completed 回退、实例级表达状态 | `crates/alia-core/src/delivery.rs`、Server `channels/{adapter,embedded/playback}.rs`、`channels/pipeline/{streaming,voice}.rs`、必要 `pipeline.rs/event.rs/state.rs`、`expression/{orchestrator,types}.rs` 及测试；共享装配由 root 统一修改。 |
-| D2：真实 backend submitted 与进度传输 | backend 分段身份和源样本映射、提交计数，输入 EOF 后保留证据流、并发取消与停机 join | Embedded `module/{cpal_audio*,traits,playback_session}.rs`、`grpc/playback_service.rs`、Server `channels/embedded/playback.rs`、必要 `playback.proto` 能力/版本扩展与测试。共享 Proto/Cargo 由 root 负责。 |
-| D3：设备呈现和表达命令确认 | 支持的后端提供设备时钟呈现，其他后端明确未知；表达带 scope/command identity，旧 cancel 不能影响新命令 | CPAL/ALSA 后端、PlaybackSession/receipt、`expression.proto`、Embedded expression service/motion runtime、安全校准相关接口、Server embedded/expression adapter。任何硬件实现文件先分配独占；不改变校准/限位默认值。 |
-| D4：设备证据验收 | 实际端到端呈现、取消尾部、断线未知与声学测试记录 | 真实硬件测试脚本及验证文档。没有硬件证据时，只交付软件与submitted层，不宣称 D4 完成。 |
+Server 表达归 ExpressionRuntime 实例，已删除全局活跃表与 legacy JSON 自动升级 completed。回执须匹配命令、scope 和 typed actions。当前 Embedded 未实现 `expression-command-v1`，身体动作明确 skipped。Affect 持久化改为实例有界队列并随 runtime 排空，见 [Expression D1](expression-evidence.md)。
 
-D1 可以在尚无硬件 presented 的情况下完整交付：结果保持 Accepted/Unknown，播后动作明确跳过。D2 不得为了给 presented 填值扩大证据。D3 需要按实际设备能力决定可支持的层级；Mac/ALSA/Pi 的表现分别记录，不能套用其他机器性能或时钟结论。
+以下仍是本轮未完成主线，不能归入用户延期项：
 
-## 真实测试出口
+1. D3 身体唯一 writer、有限反重放、绑定/voice 栅栏、精准取消及 Submitted/位置反馈分级。
+2. CLI/Text Delivery 的持久发送所有权与回执，独立文本输出不能用空 Audio 冒充交付。
+3. 缓存、在途 ContextPack、输出和 Companion 派生状态的完整来源失效。
+4. 实际播放时钟、AEC、可恢复暂停、带作用域本地提示音、真机双讲和动作安全验收。
 
-- 模拟 gRPC 设备先 EndAccepted、长期扣住完成证据：Server 不能发布呈现完成、不能执行 PostSpeech；生成/持久化事实可以独立结束。
-- 输入半关闭后继续报告单调 submitted/presented；倒退计数、超过 offered、身份混用、End 后 Audio、重复终态全部拒绝。能力版本不兼容有明确失败。
-- 以可控 fake backend 分开推进“接收、提交、呈现”三步；验证重采样和部分写入的源样本映射、补零不计入呈现、同 epoch 多 Push FIFO 和部分取消前缀保留。单元测试用手动推进时钟，不用等待音频估算时长制造结果。
-- 队列已满时 Fence 及时生效，旧 generation 入队原子失败；旧会话/旧命令 cancel 和迟到回执不影响新播放。断线或回执期限到达产生 Unknown，恢复连接不自动重播整段。
-- 表达返回 `{}`、错误字段类型、缺失 receipt、仅 accepted、控制序列发送但没有位置反馈时，一律不得制造 completed 或机构到位。两个同进程 Server 实例的表达优先级状态互不影响。
-- 实际 CPAL/ALSA 设备分别记录 submitted 与时钟呈现证据、underrun/reset、取消后剩余硬件尾音。外部声学观测可核对延迟，但设备 clock presented 不等于人实际听到。
-- 真实硬件自然全双工另测同时播放/采集、回声下误触发、打断和跨轮污染。AEC 和声学验收继续挂起，不以软件 stream 并发通过替代。
-
-执行后分别报告软件协议、backend submitted、设备 clock presented、机构反馈、声学五层结果及未测项；不把这些证据压成一个“播放成功”勾选。
+Web/iOS/Android、Embedded 通用适配、未来设备推理/合并部署按[台账](deferred.md)保留。

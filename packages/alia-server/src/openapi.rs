@@ -19,6 +19,11 @@ use crate::api;
         api::effects::get_effect,
         api::effects::confirm,
         api::effects::cancel,
+        api::deliveries::get_response,
+        api::deliveries::list_deliveries,
+        api::deliveries::response_events,
+        api::deliveries::get_delivery,
+        api::deliveries::cancel_response,
         // Auth
         api::auth::login,
         api::auth::register,
@@ -57,6 +62,15 @@ use crate::api;
         crate::modules::execution::types::EffectStatus,
         crate::modules::execution::types::Completion,
         crate::modules::execution::types::ApprovalKind,
+        api::deliveries::DeliveryErrorResponse,
+        api::deliveries::DeliveryErrorDetail,
+        api::deliveries::DeliveryErrorCode,
+        crate::modules::delivery::types::ResponseRecord,
+        crate::modules::delivery::types::ResponseKey,
+        crate::modules::delivery::types::ResponseStatus,
+        crate::modules::delivery::types::DeliveryRecord,
+        crate::modules::delivery::types::DeliveryEvent,
+        crate::modules::delivery::types::DeliveryStatus,
         // Auth
         api::auth::LoginRequest,
         api::auth::RegisterRequest,
@@ -94,6 +108,7 @@ use crate::api;
         (name = "scheduler", description = "Task scheduler"),
         (name = "tools", description = "Tool invocations — extend what the LLM can do"),
         (name = "execution", description = "Durable effect proposals, owner approval and observed outcomes"),
+        (name = "delivery", description = "Canonical responses and separate accepted, submitted and presented evidence; never an audio replay queue"),
     ),
     modifiers(&SecurityAddon)
 )]

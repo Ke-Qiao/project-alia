@@ -445,12 +445,17 @@ pub struct ExpressionExecutionResult {
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command_id: Option<String>,
-    #[serde(default = "default_true")]
+    #[serde(default)]
+    pub voice_scope: Option<alia_core::delivery::VoiceScope>,
+    #[serde(default)]
     pub completion_acknowledged: bool,
     #[serde(default)]
     pub action_receipts: Vec<ExpressionActionReceipt>,
+    #[serde(default)]
     pub executed_actions: Vec<String>,
+    #[serde(default)]
     pub skipped_actions: Vec<SkippedExpressionAction>,
+    #[serde(default)]
     pub safety_modifications: Vec<serde_json::Value>,
 }
 
@@ -460,10 +465,11 @@ impl ExpressionExecutionResult {
         Self {
             status: "skipped".to_string(),
             command_id: None,
-            completion_acknowledged: true,
+            voice_scope: None,
+            completion_acknowledged: false,
             action_receipts: vec![ExpressionActionReceipt {
                 action: "*".to_string(),
-                status: ExpressionActionStatus::Failed,
+                status: ExpressionActionStatus::Skipped,
                 reason: Some(reason.clone()),
             }],
             executed_actions: Vec::new(),
@@ -484,6 +490,9 @@ pub enum ExpressionActionStatus {
     Completed,
     Failed,
     TimedOut,
+    Unknown,
+    Rejected,
+    Skipped,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -503,6 +512,10 @@ pub struct SkippedExpressionAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpressionCapabilitySnapshot {
     pub adapter: String,
+    /// Opt-in contract for command-bound execution and exact cancellation.
+    /// Advertising actions alone is not proof of this protocol.
+    #[serde(default)]
+    pub command_protocol: Option<String>,
     #[serde(default)]
     pub capabilities: BTreeMap<String, ExpressionActionCapability>,
     #[serde(default)]
@@ -513,6 +526,7 @@ impl ExpressionCapabilitySnapshot {
     pub fn unsupported(adapter: impl Into<String>) -> Self {
         Self {
             adapter: adapter.into(),
+            command_protocol: None,
             capabilities: BTreeMap::new(),
             current_state: ExpressionAdapterState::default(),
         }

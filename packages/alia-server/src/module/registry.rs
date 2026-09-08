@@ -38,6 +38,7 @@ pub struct ModuleRegistry {
     pub scheduler: Arc<dyn SchedulerBackend>,
     pub tools: Arc<dyn ToolRegistry>,
     pub expression: Arc<ExpressionRuntime>,
+    pub delivery: Arc<crate::modules::delivery::DeliveryService>,
     // Custom extensions
     pub extensions: Vec<Arc<dyn ModuleLifecycle>>,
 }

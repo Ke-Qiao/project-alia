@@ -27,6 +27,47 @@ impl ModuleLifecycle for LocalAudio {
     }
 }
 impl AudioPlaybackBackend for LocalAudio {
+    fn open_submission(
+        &self,
+        identity: alia_core::delivery::PlaybackIdentity,
+        rate: u32,
+        generation: u64,
+    ) -> Result<Arc<crate::module::playback_session::AudioSubmission>> {
+        Ok(crate::module::playback_session::AudioSubmission::test(
+            identity, generation, rate,
+        ))
+    }
+    fn submit_audio(
+        &self,
+        submission: &Arc<crate::module::playback_session::AudioSubmission>,
+        offset: u64,
+        pcm: &[i16],
+    ) -> Result<bool> {
+        if !self.is_playback_current(submission.generation) {
+            return Ok(false);
+        }
+        submission.accept(offset, pcm.len() as u64)
+    }
+    fn end_submission(
+        &self,
+        submission: &Arc<crate::module::playback_session::AudioSubmission>,
+        total: u64,
+    ) -> Result<bool> {
+        submission.accept_end(total)
+    }
+    fn cancel_submission(
+        &self,
+        submission: &Arc<crate::module::playback_session::AudioSubmission>,
+        reason: &str,
+    ) -> Result<bool> {
+        if !self.is_playback_current(submission.generation) {
+            return Ok(false);
+        }
+        submission.terminate(alia_core::delivery::ObservationEnd::Cancelled {
+            reason: reason.into(),
+        });
+        Ok(true)
+    }
     fn play(&self, _: &[i16], _: u32) -> Result<()> {
         Ok(())
     }

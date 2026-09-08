@@ -15,8 +15,34 @@
 | `1ecb2ce` | boot/session/generation 播放协议、原子入队失效、凭证续期与解绑关闭、端侧信号退出 | macOS 默认特性整个 workspace 409 项通过；真实 DB 套件通过；两项真实模型测试另跑通过；Server 无默认特性 all-targets 通过；Linux ARM64 端侧变更检查通过 |
 | `c257f07` | Embedded 启动失败回滚、可等待的有界关闭、实际监听地址、长 HTTP/2 连接清理及原生任务所有权 | 无默认特性 122 项通过；macOS 默认 all-targets 和 Linux ARM64 无默认 all-targets 检查通过，见 [Embedded 生命周期](embedded-runtime.md) |
 | `5aecb38` | 持久 Execution 共用入口、Memory 规范来源与隐私栅栏、可信输入贯穿消息和工具 | 空数据库默认 workspace 500 项；真实 CPU 模型与 gRPC 两项另跑通过；固定提交 Linux ARM64 Server 检查及 152 项库测试、Embedded 默认完整链接通过 |
+| `2f8797c` | Server 运行时所有权与故障回滚、Memory 原子批次与批量遗忘、数据库排序的可信 source epoch | 默认 workspace 561 项通过；真实 PTY 与 CPU 模型 4 项另跑通过；固定提交 Linux ARM64 Server 库和真实 PG 共 280 项通过，Embedded 默认完整链接通过 |
 
-## Server runtime、原子 Memory 和来源版本整合包
+## Response / Delivery 与播放 v2 整合包
+
+本包将规范 Response、逐句音频 Delivery、投递监督和设备回执接入同一个 Server runtime。Response 与唯一助手历史原子提交；输出前持久化意图、原始身份与发送许可。重复调用查询已有事实，过期恢复不重播。CLI 文本也在外发前建立 Response，独立 TextDelivery 发送监督继续进入下一包。接口与状态见 [Delivery API](delivery-api.md)。
+
+播放 RPC 升级为 `alia.playback.v2`，Start 握手后才发送媒体。端侧输入 End 后仍保留观察；CPAL / ALSA 按实际后端提交计数，源帧通过连续 sinc 重采样映射。精准取消等待已进入的输出写入边界收尾并返回原序号最终快照；本地超时不伪造设备回执，迟到证据独立审计。Submitted 不冒充 Presented，PostSpeech 仍需真实呈现证据。
+
+交叉故障审查补齐了三处设备竞态：取消先于在途 writei/callback 返回、End ACK 早于输入 lease 释放，以及等待 Start 时撤权仍先推进 generation。Server 另修复心跳暂停持锁媒体 future 的死锁，保留原始 native/future 直到真实 join；panic 时尝试记录 Unknown，依赖继续隔离持有。Affect 数据库写入也从未托管 spawn 改为实例有界队列，关闭先排空后释放数据库。
+
+当前定向证据：Delivery repository 14 项、service 12 项；Pipeline lib 35 项、memory capture 6 项、pipeline integration 17 项；Embedded 无默认特性 142 项和 Server 播放 8 项；root 真实 PG/HTTP/native Delivery runtime 4 项、Affect writer/清除 runtime 7 项；Expression 库 41 项。各组存在被 workspace 收录的同名用例，不能将定向和整包结果重复累计。
+
+最终默认 workspace 在独立空数据库 `alia_refactor_delivery_final` 上 **636 个不同测试通过、0 失败、4 显式跳过**；日志中已有测试启动的 1 次子进程内部运行不重复累计。Server runtime 入口 32 项、Delivery repository 14 项、Delivery service 12 项全部通过。Server 无默认特性 all-targets 检查、60 个变更 Rust 文件格式检查及 `git diff --check` 通过。
+
+4 项跳过测试均在冻结源码后显式运行通过：真实 PTY 2 项，以及真实 CPU Easy-Turn 和 gRPC 持续语音 2 项。直接 Backchannel 为 307 ms；gRPC Complete / Backchannel / Wait 为 476 / 305 / 381 ms，仅为模型调用时间，不代表端到端声学延迟。Linux ARM64 将使用整包固定提交归档验证。硬件呈现、AEC、身体 D3、完整 ContextLease 撤销及 Companion 仍是未完成主线，见 [Delivery 边界](delivery-design.md)、[身体命令设计](body-command-design.md)与[上下文失效设计](context-revocation-design.md)。
+
+```sh
+ALIA_TEST_DATABASE_URL='postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final' \
+  cargo test --workspace --locked --no-fail-fast
+cargo check -p alia-server --no-default-features --all-targets --locked
+# 在真实 PTY 内执行：
+cargo test -p alia-server --lib --locked -- --ignored --nocapture --test-threads=1
+ALIA_EASY_TURN_PCM="$PWD/run/easy-turn-backchannel.pcm" \
+ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
+  cargo test -p alia-server --test easy_turn_live --test voice_stream_live --locked -- --ignored --nocapture
+```
+
+## Server runtime、原子 Memory 和来源版本整合包（2f8797c）
 
 本包建立可嵌入的 ServerRuntime：启动失败完整回滚、实例独立取消、连接和后台 actor 排空、统一关闭期限，以及超时后继续保留真实 worker 和依赖的 ShutdownHandle。工具目录写入或显式 Provider 配置出错会拒绝 ready。现有 WS 是管理员诊断流，依据数据库当前账户和角色授权、定期复核，并随宿主关闭实际连接。详见[运行时契约](server-runtime-design.md)。
 
@@ -37,7 +63,7 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
   cargo test -p alia-server --test easy_turn_live --test voice_stream_live --locked -- --ignored --nocapture
 ```
 
-本包尚未以 Linux ARM64 固定提交验证；下述平台证据明确对应先前提交。持久 Delivery、播放后端提交证据、完整遗忘传播及硬件联调继续属于未完成主线。
+本包随后已对固定 `2f8797c` 完成 Linux ARM64 验证：Server 默认 all-targets、161 项库测试、119 项真实 PG 集成和 Embedded 默认完整构建/链接均通过。排除的 2 项 PTY 在 macOS 已验证。见[固定提交平台记录](platform-validation.md)。持久 Delivery、播放后端提交证据、完整遗忘传播及硬件联调继续属于未完成主线。
 
 ## 先前 P2 整合包（5aecb38）
 
@@ -82,13 +108,13 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
-2. 规范 Response / Delivery 事实、投递取消和呈现证据、表达回执与身份栅栏，依据 [Delivery 设计](delivery-design.md) 实施。Execution 持久账本已完成本包整合，不代表投递或硬件完成。
+2. TextDelivery 持久发送监督、D3 身体命令及呈现证据，依据 [Delivery 设计](delivery-design.md) 实施。规范 Response、音频 Delivery 和播放 v2 已进入本包整合，仍不等于硬件已完成。
 3. 缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。LLM 原子整理和批量遗忘已在本轮接通并通过专项回归。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
 
-模型观测成功、文本回复生成、音频被接收、音频提交给设备和设备实际呈现必须分别记录。当前主播放协议只证明 accepted；旧 direct response/表达旁路仍有估算完成或错误升级回执的问题，已在 Delivery 设计中明确列出，不能称全链路已证明声学完成。旧广播事件入口仍有可见的丢弃策略，尚未全部替换为可靠命令入口。
+模型观测成功、文本回复生成、音频被接收、提交后端和实际呈现分别记录。播放 v2 已提供 accepted/submitted 的软件证据，presented 仍未知。旧全局中断错误提示旁路已停止外发，无法验证的表达 JSON 不再升级 completed；带作用域提示音与身体动作仍待接入，不能称全链路已证明声学完成。旧广播事件入口仍有可见丢弃策略，尚未全部替换为可靠命令入口。
 
 ## 待补充的实机信息
 

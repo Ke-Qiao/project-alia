@@ -19,6 +19,7 @@ use crate::settings::SettingsRegistry;
 pub struct AppState {
     pub runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     pub execution: Arc<crate::modules::execution::ExecutionService>,
+    pub delivery: Arc<crate::modules::delivery::DeliveryService>,
     pub voice_input: crate::modules::interaction::voice_input::VoiceInputHandle,
     pub pipeline_task: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub turn_detector: Option<Arc<dyn crate::modules::interaction::turn_detector::TurnDetector>>,

@@ -109,7 +109,6 @@ fn has_continuous_dialogue_defaults() {
 fn has_audio_debug_defaults() {
     let settings = EmbeddedRuntimeSettings::default();
 
-    assert!(settings.audio.alsa_playback_follow_source_rate);
     assert!(!settings.audio.alsa_playback_lock_to_capture_rate);
     assert!(!settings.audio_debug.enabled);
     assert_eq!(settings.audio_debug.dir, PathBuf::from("run/audio-debug"));

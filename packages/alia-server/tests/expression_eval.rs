@@ -246,6 +246,7 @@ async fn planner_uses_memory_boundaries_to_reduce_motion_intensity() {
             tts_capabilities: None,
             expression_capabilities: Some(ExpressionCapabilitySnapshot {
                 adapter: "test_adapter".to_string(),
+                command_protocol: None,
                 capabilities,
                 current_state: ExpressionAdapterState {
                     motion_adapter_registered: true,

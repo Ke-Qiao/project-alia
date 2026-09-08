@@ -222,7 +222,13 @@ pub(super) fn start_cpal_playback_runtime(
         buffer,
         sample_rate,
         channels,
-        max_buffer_ms: playback_max_buffer_ms(config),
+        backend: SubmissionBackend {
+            instance_id: uuid::Uuid::new_v4(),
+            boundary: SubmissionBoundary::CpalCallbackBuffer,
+            output_sample_rate_hz: sample_rate,
+            output_channels: channels as u32,
+        },
+        renderer: Renderer::default(),
         volume,
     })
 }
@@ -232,7 +238,8 @@ pub(super) struct CpalPlaybackSink {
     buffer: Arc<Mutex<PlaybackBuffer>>,
     sample_rate: u32,
     channels: usize,
-    max_buffer_ms: u64,
+    pub(super) backend: SubmissionBackend,
+    renderer: Renderer,
     volume: AudioVolumeState,
 }
 
@@ -246,21 +253,17 @@ impl PlaybackSink for CpalPlaybackSink {
     }
 
     fn enqueue(&mut self, block: AudioBlock) -> Result<()> {
-        let mut rendered = block.render(self.sample_rate, self.channels);
-        apply_gain_in_place(&mut rendered, self.volume.playback_volume());
+        let mut rendered = self
+            .renderer
+            .render(block, self.sample_rate, self.channels)?;
+        apply_gain_in_place(&mut rendered.samples, self.volume.playback_volume());
         let mut buffer = lock_mutex(&self.buffer, "playback buffer")?;
-        if buffer.append(block.generation, rendered) {
-            clamp_playback_buffer(
-                &mut buffer.samples,
-                self.sample_rate,
-                self.channels,
-                self.max_buffer_ms,
-            );
-        }
+        buffer.append_rendered(rendered)?;
         Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
+        self.renderer.clear();
         lock_mutex(&self.buffer, "playback buffer")?.clear();
         Ok(())
     }
@@ -357,8 +360,7 @@ where
             move |data: &mut [T], _| match buffer.try_lock() {
                 Ok(mut buffer) => {
                     for output in data {
-                        let sample = buffer.next_sample();
-                        *output = T::from_i16_sample(sample);
+                        buffer.write_next(|sample| *output = T::from_i16_sample(sample));
                     }
                 }
                 Err(_) => {

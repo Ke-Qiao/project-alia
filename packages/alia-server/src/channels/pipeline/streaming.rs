@@ -16,9 +16,7 @@ use super::debug::{
     debug_component_text, log_channel_delivery_failure,
 };
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{
-    AudioFormat, AudioPayload, AudioPayloadStream, ChannelAdapter, ChannelTarget,
-};
+use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
 use crate::config::SentenceExpressionLlmPolicySection;
 use crate::event::{EventBus, ServerEvent};
 use crate::expression::orchestrator::{ExpressionExecutionPhase, execute_expression_plan_phase};
@@ -56,12 +54,12 @@ impl TtsTraceContext {
         Self {
             session_id: trace.session_id,
             turn_id: trace.turn_id,
-            sequence: Arc::new(AtomicI32::new(10_000)),
+            sequence: trace.tts_sequence.clone(),
             conversation: modules.conversation.clone(),
         }
     }
 
-    async fn record(
+    pub(super) async fn record(
         &self,
         event_type: impl Into<String>,
         actor: impl Into<String>,
@@ -245,6 +243,7 @@ pub(super) async fn deliver_tts_audio_inner(
 
                 let cancel_token = turn.map(|turn| turn.token.clone());
                 execute_speech_start_expression(
+                    modules.expression.orchestrator(),
                     channel,
                     target,
                     expression_plan,
@@ -254,7 +253,14 @@ pub(super) async fn deliver_tts_audio_inner(
                     turn,
                 )
                 .await;
-                let delivery = channel.send_audio_stream(target, Box::pin(audio_stream));
+                let delivery = super::delivery::audio(
+                    modules,
+                    target,
+                    turn,
+                    "speech:full",
+                    text,
+                    Box::pin(audio_stream),
+                );
                 let delivery_result = if let Some(cancel_token) = cancel_token {
                     tokio::select! {
                     biased;
@@ -265,19 +271,13 @@ pub(super) async fn deliver_tts_audio_inner(
                     delivery.await
                 };
 
-                if let Err(error) = delivery_result {
-                    log_channel_delivery_failure(channel, error).await;
-                    if audio_started.load(Ordering::Relaxed) {
-                        return TtsDeliveryOutcome::Failed(PipelineErrorStage::Delivery);
+                return match delivery_result {
+                    Ok(record) => TtsDeliveryOutcome::Observed(record.status),
+                    Err(error) => {
+                        log_channel_delivery_failure(channel, error).await;
+                        TtsDeliveryOutcome::Failed(PipelineErrorStage::Delivery)
                     }
-                    tracing::warn!(
-                        channel_type = channel.channel_type(),
-                        channel_id = channel.channel_id(),
-                        "streaming TTS failed before audio playback; falling back to buffered TTS"
-                    );
-                } else {
-                    return TtsDeliveryOutcome::Delivered;
-                }
+                };
             }
             Ok(None) => return TtsDeliveryOutcome::Skipped,
             Err(error) => {
@@ -338,6 +338,7 @@ pub(super) async fn deliver_tts_audio_inner(
     };
 
     execute_speech_start_expression(
+        modules.expression.orchestrator(),
         channel,
         target,
         expression_plan,
@@ -355,25 +356,19 @@ pub(super) async fn deliver_tts_audio_inner(
         audio_out.data.len(),
         Some((channel_id, user_id)),
     );
-    let send_result = if let Some(turn) = turn {
-        tokio::select! {
-                biased;
-            _ = turn.token.cancelled() => return TtsDeliveryOutcome::Skipped,
-            result = channel.send_audio(target, audio_out) => result,
+    let stream = Box::pin(futures::stream::iter([Ok(audio_out)]));
+    match super::delivery::audio(modules, target, turn, "speech:full", text, stream).await {
+        Ok(record) => TtsDeliveryOutcome::Observed(record.status),
+        Err(error) => {
+            log_channel_delivery_failure(channel, error).await;
+            TtsDeliveryOutcome::Failed(PipelineErrorStage::Delivery)
         }
-    } else {
-        channel.send_audio(target, audio_out).await
-    };
-    if let Err(error) = send_result {
-        log_channel_delivery_failure(channel, error).await;
-        return TtsDeliveryOutcome::Failed(PipelineErrorStage::Delivery);
     }
-    TtsDeliveryOutcome::Delivered
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TtsDeliveryOutcome {
-    Delivered,
+    Observed(crate::modules::delivery::types::DeliveryStatus),
     Skipped,
     Failed(PipelineErrorStage),
 }
@@ -399,6 +394,7 @@ async fn trace_tts_provider_adjustments(
 }
 
 async fn execute_speech_start_expression(
+    orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     plan: Option<&ExpressionPlan>,
@@ -412,6 +408,7 @@ async fn execute_speech_start_expression(
     };
     let execution = cancellable_stage(turn, "speech_start_expression", async {
         Ok(execute_expression_plan_phase(
+            orchestrator,
             channel,
             target,
             plan,
@@ -450,7 +447,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<(String, bool)> {
     let (sentence_tx, sentence_rx) = mpsc::channel::<String>(4);
-    let (audio_tx, audio_rx) = mpsc::channel::<anyhow::Result<AudioPayload>>(8);
+    let (audio_tx, mut audio_rx) = mpsc::channel::<SentenceAudio>(2);
     let audio_started = Arc::new(AtomicBool::new(false));
     let tts_cancel_token = turn.map(|turn| turn.token.clone());
     let tts_worker = stream_tts_sentences(
@@ -468,18 +465,38 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         tts_cancel_token.clone(),
     );
 
-    let audio_stream: AudioPayloadStream =
-        Box::pin(tokio_stream::wrappers::ReceiverStream::new(audio_rx));
     let audio_delivery = async move {
-        if let Some(cancel_token) = tts_cancel_token {
-            tokio::select! {
-                biased;
-                _ = cancel_token.cancelled() => Ok(()),
-                result = channel.send_audio_stream(target, audio_stream) => result,
+        let mut index = 0usize;
+        while let Some(fragment) = audio_rx.recv().await {
+            if turn_is_interrupted(turn) {
+                break;
             }
-        } else {
-            channel.send_audio_stream(target, audio_stream).await
+            let stream = Box::pin(futures::stream::iter([
+                Ok(fragment.payload),
+                Ok(fragment.silence),
+            ]));
+            let record = super::delivery::audio(
+                modules,
+                target,
+                turn,
+                &format!("speech_sentence:{index}"),
+                &fragment.sentence,
+                stream,
+            )
+            .await?;
+            index += 1;
+            if !matches!(
+                record.status,
+                crate::modules::delivery::types::DeliveryStatus::Submitted
+                    | crate::modules::delivery::types::DeliveryStatus::Completed
+            ) {
+                anyhow::bail!(
+                    "sentence delivery ended with {:?}; remaining fragments will not be replayed",
+                    record.status
+                );
+            }
         }
+        Ok::<_, anyhow::Error>(())
     };
 
     let llm_delivery = async move {
@@ -1211,12 +1228,18 @@ fn apply_sentence_prosody_delta(
     }
 }
 
+struct SentenceAudio {
+    sentence: String,
+    payload: AudioPayload,
+    silence: AudioPayload,
+}
+
 async fn stream_tts_sentences(
     tts: Arc<dyn TtsAdapter>,
     expression: Arc<crate::expression::ExpressionRuntime>,
     sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     mut sentence_rx: mpsc::Receiver<String>,
-    audio_tx: mpsc::Sender<anyhow::Result<AudioPayload>>,
+    audio_tx: mpsc::Sender<SentenceAudio>,
     audio_started: Arc<AtomicBool>,
     speech_context: Option<SentenceSpeechContext>,
     trace_context: Option<TtsTraceContext>,
@@ -1307,8 +1330,6 @@ async fn stream_tts_sentences(
                 result = synth => match result {
                     Ok(audio_bytes) => audio_bytes,
                     Err(error) => {
-                        let message = format!("TTS sentence synthesis failed: {error}");
-                        let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
                         return Err(error);
                     }
                 },
@@ -1317,8 +1338,6 @@ async fn stream_tts_sentences(
             match synth.await {
                 Ok(audio_bytes) => audio_bytes,
                 Err(error) => {
-                    let message = format!("TTS sentence synthesis failed: {error}");
-                    let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
                     return Err(error);
                 }
             }
@@ -1327,8 +1346,6 @@ async fn stream_tts_sentences(
         let payload = match tts_bytes_to_pcm_payload(audio_bytes) {
             Ok(payload) => payload,
             Err(error) => {
-                let message = format!("TTS sentence audio decode failed: {error}");
-                let _ = audio_tx.send(Err(anyhow::anyhow!(message))).await;
                 return Err(error);
             }
         };
@@ -1339,13 +1356,18 @@ async fn stream_tts_sentences(
 
         let silence =
             pcm16_silence_payload(payload.sample_rate, payload.channels, TTS_SENTENCE_GAP_MS);
-        if audio_tx.send(Ok(payload)).await.is_err() {
+        if audio_tx
+            .send(SentenceAudio {
+                sentence: sentence.into(),
+                payload,
+                silence,
+            })
+            .await
+            .is_err()
+        {
             return Ok(());
         }
         audio_started.store(true, Ordering::Relaxed);
-        if audio_tx.send(Ok(silence)).await.is_err() {
-            return Ok(());
-        }
     }
 
     Ok(())

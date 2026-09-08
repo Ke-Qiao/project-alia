@@ -79,6 +79,7 @@ fn pending_turn(user_id: Uuid) -> PendingTextPersistence {
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: 0,
         source_event_id: None,
+        response_id: uuid::Uuid::new_v4(),
         session_id: Uuid::new_v4(),
         user_id,
         user_id_text: "test-user".to_string(),

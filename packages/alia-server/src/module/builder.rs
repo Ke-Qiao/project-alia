@@ -439,6 +439,15 @@ impl ServerBuilder {
         let tools =
             factory::create_tools_with_sensors(sensor_registry.clone(), channel_registry.clone());
         let expression_runtime = Arc::new(ExpressionRuntime::from_config(&self.config));
+        let expression_owner = expression_runtime.clone();
+        cleanup.add(
+            "expression_persistence",
+            ShutdownPhase::Resources,
+            move || {
+                let expression_owner = expression_owner.clone();
+                async move { expression_owner.shutdown().await }
+            },
+        );
         expression_runtime
             .attach_db(db.clone())
             .await
@@ -597,6 +606,35 @@ impl ServerBuilder {
         let tools_arc: Arc<dyn ToolRegistry> = Arc::new(
             crate::modules::execution::ExecutionToolRegistry::new(execution.clone()),
         );
+        let delivery = crate::modules::delivery::DeliveryService::new(
+            crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
+            &self.cancel_token,
+        );
+        let delivery_owner = delivery.clone();
+        cleanup.add("delivery", ShutdownPhase::Delivery, move || {
+            let delivery_owner = delivery_owner.clone();
+            async move {
+                let mut failure = None;
+                loop {
+                    if let Err(error) = delivery_owner.shutdown().await {
+                        failure = Some(error);
+                    }
+                    if !delivery_owner.shutdown_pending() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                failure.map_or(Ok(()), Err)
+            }
+        });
+        let delivery_admission = delivery.clone();
+        cleanup.add("delivery_admission", ShutdownPhase::Ingress, move || {
+            let delivery_admission = delivery_admission.clone();
+            async move {
+                delivery_admission.close_admission();
+                Ok(())
+            }
+        });
         let ctx = ModuleContext {
             tools: Some(tools_arc.clone()),
             ..ctx
@@ -696,6 +734,7 @@ impl ServerBuilder {
             scheduler,
             tools: tools_arc,
             expression: expression_runtime,
+            delivery: delivery.clone(),
             extensions,
         };
 
@@ -721,6 +760,7 @@ impl ServerBuilder {
         let state = AppState {
             runtime_tasks: wiring.tasks.clone(),
             execution,
+            delivery,
             voice_input,
             pipeline_task: Arc::default(),
             turn_detector,
@@ -798,6 +838,12 @@ impl ServerBuilder {
         for ext in &state.modules.extensions {
             start_module(ext.as_ref(), &state.cancel_token).await?;
         }
+        startup_step(
+            &state.cancel_token,
+            "starting delivery supervision",
+            state.delivery.start(),
+        )
+        .await?;
 
         // Spawn the Channel → AI Pipeline processing loop
         let pipeline_owner = state.pipeline_task.clone();

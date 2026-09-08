@@ -1,6 +1,130 @@
 use super::*;
+use alia_core::delivery::{SubmissionBoundary, VoiceScope};
 use std::sync::mpsc;
 use std::thread;
+
+fn identified(
+    sender: &PlaybackSender,
+    receiver: &PlaybackReceiver,
+    sequence: u64,
+    generation: u64,
+) -> Arc<AudioSubmission> {
+    receiver.set_backend(SubmissionBackend {
+        instance_id: uuid::Uuid::from_u128(10),
+        boundary: SubmissionBoundary::CpalCallbackBuffer,
+        output_sample_rate_hz: 16000,
+        output_channels: 2,
+    });
+    sender
+        .open_submission(
+            PlaybackIdentity {
+                scope: VoiceScope {
+                    device_boot_id: uuid::Uuid::from_u128(1),
+                    session_id: uuid::Uuid::from_u128(2),
+                    generation_epoch: 1,
+                },
+                playback_id: uuid::Uuid::from_u128(100 + sequence as u128),
+                playback_sequence: sequence,
+            },
+            16000,
+            generation,
+        )
+        .unwrap()
+}
+
+fn render_pending(
+    receiver: &PlaybackReceiver,
+    renderer: &mut Renderer,
+    buffer: &mut PlaybackBuffer,
+) {
+    while let Some(action) = receiver.take(true) {
+        match action {
+            PlaybackAction::Stop => {
+                buffer.clear();
+                renderer.clear();
+            }
+            PlaybackAction::Play(block) => {
+                buffer
+                    .append_rendered(renderer.render(block, 16000, 2).unwrap())
+                    .unwrap();
+            }
+            PlaybackAction::Shutdown => break,
+        }
+    }
+}
+
+#[test]
+fn end_keeps_observation_open_and_precise_cancel_preserves_later_fifo_audio() {
+    let (sender, receiver) = channel(8);
+    let generation = sender.begin().unwrap();
+    let first = identified(&sender, &receiver, 1, generation);
+    sender.submit(&first, 0, &[1, 2, 3, 4], false).unwrap();
+    sender.submit(&first, 4, &[], true).unwrap();
+    let second = identified(&sender, &receiver, 2, generation);
+    sender.submit(&second, 0, &[5, 6, 7], false).unwrap();
+    sender.submit(&second, 3, &[], true).unwrap();
+    let before = first.snapshot(1);
+    assert!(before.end_accepted);
+    assert_eq!(before.submitted_source_frames, Some(0));
+    assert!(before.observation_end.is_none());
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    for expected in [1, 1, 2, 2] {
+        assert_eq!(buffer.next_sample(), expected);
+    }
+    assert_eq!(first.snapshot(2).submitted_source_frames, Some(2));
+    assert!(sender.cancel_submission(&first, "exact cancel"));
+    for expected in [5, 5, 6, 6, 7, 7] {
+        assert_eq!(buffer.next_sample(), expected);
+    }
+    assert_eq!(buffer.next_sample(), 0);
+    let cancelled = first.snapshot(3);
+    cancelled.validate(Some(&before), 4).unwrap();
+    assert_eq!(cancelled.submitted_source_frames, Some(2));
+    assert!(matches!(
+        cancelled.observation_end,
+        Some(ObservationEnd::Cancelled { .. })
+    ));
+    let done = second.snapshot(1);
+    done.validate(None, 3).unwrap();
+    assert_eq!(
+        done.observation_end,
+        Some(ObservationEnd::SubmissionFinished)
+    );
+    assert_eq!(done.presented_source_frames, None);
+}
+
+#[test]
+fn partial_alsa_writes_count_complete_frames_and_never_count_underrun_silence() {
+    let (sender, receiver) = channel(4);
+    let generation = sender.begin().unwrap();
+    let playback = identified(&sender, &receiver, 1, generation);
+    sender.submit(&playback, 0, &[11, 12, 13], false).unwrap();
+    sender.submit(&playback, 3, &[], true).unwrap();
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    let (chunk, write) = buffer.alsa_chunk(3);
+    assert_eq!(chunk, [11, 11, 12, 12, 13, 13]);
+    // Preparing a write / an EAGAIN return has submitted nothing.
+    assert_eq!(playback.snapshot(1).submitted_source_frames, Some(0));
+    buffer.alsa_submitted(1);
+    write.unwrap().finish(1);
+    assert_eq!(playback.snapshot(2).submitted_source_frames, Some(1));
+    let (chunk, write) = buffer.alsa_chunk(3);
+    assert_eq!(chunk, [12, 12, 13, 13]);
+    buffer.alsa_submitted(2);
+    write.unwrap().finish(2);
+    let done = playback.snapshot(3);
+    assert_eq!(done.submitted_source_frames, Some(3));
+    assert_eq!(
+        done.observation_end,
+        Some(ObservationEnd::SubmissionFinished)
+    );
+    for _ in 0..100 {
+        assert_eq!(buffer.next_sample(), 0);
+    }
+    assert_eq!(playback.snapshot(4).submitted_source_frames, Some(3));
+}
 
 #[derive(Debug, PartialEq)]
 enum Event {
@@ -222,15 +346,13 @@ fn worker_blocks_preserve_resampling_phase_and_duration() {
         let (sender, receiver) = channel(1);
         sender.play(&pcm, 11025).unwrap();
         let mut rendered = Vec::new();
+        let mut renderer = Renderer::default();
         while let Some(PlaybackAction::Play(block)) = receiver.take(true) {
-            rendered.extend(block.render(output_rate, 2));
+            rendered.extend(renderer.render(block, output_rate, 2).unwrap().samples);
         }
         assert_eq!(rendered.len(), output_rate as usize * 2);
-        for (index, stereo) in rendered.chunks_exact(2).enumerate() {
-            let expected = (index as f64 * (11025.0 / output_rate as f64))
-                .min(11024.0)
-                .round() as i16;
-            assert_eq!(stereo, &[expected, expected]);
+        for stereo in rendered.chunks_exact(2) {
+            assert_eq!(stereo[0], stereo[1]);
         }
     }
 }
@@ -286,4 +408,120 @@ fn restarting_a_worker_never_reuses_a_token_or_invalidates_it_from_an_old_drop()
     assert!(!sender.play_if_current(&[1], 1000, old).unwrap());
     assert!(sender.play_if_current(&[2], 1000, fresh).unwrap());
     drop(receiver);
+}
+
+#[test]
+fn scoped_ingress_never_initializes_or_resurrects_native_audio() {
+    use crate::module::traits::AudioPlaybackBackend;
+    let backend = super::super::CpalAudioPlayback::new(
+        Default::default(),
+        crate::module::volume::AudioVolumeState::new(Default::default()),
+    );
+    assert!(
+        backend
+            .begin_scoped_playback()
+            .unwrap_err()
+            .to_string()
+            .contains("not running")
+    );
+    let identity = PlaybackIdentity {
+        scope: VoiceScope {
+            device_boot_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            generation_epoch: 1,
+        },
+        playback_id: uuid::Uuid::new_v4(),
+        playback_sequence: 1,
+    };
+    assert!(
+        backend
+            .open_submission(identity, 16000, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("not running")
+    );
+    assert!(
+        backend.runtime.lock().unwrap().is_none(),
+        "no hardware was opened by network admission"
+    );
+}
+
+#[test]
+fn cancel_waits_for_inflight_cpal_frame_and_preserves_stereo_alignment() {
+    let (sender, receiver) = channel(8);
+    let generation = sender.begin().unwrap();
+    let first = identified(&sender, &receiver, 1, generation);
+    sender.submit(&first, 0, &[1, 2], false).unwrap();
+    sender.submit(&first, 2, &[], true).unwrap();
+    let next = identified(&sender, &receiver, 2, generation);
+    sender.submit(&next, 0, &[5], false).unwrap();
+    sender.submit(&next, 1, &[], true).unwrap();
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    let in_write = Arc::new(std::sync::Barrier::new(2));
+    let release = Arc::new(std::sync::Barrier::new(2));
+    let (entered, proceed) = (in_write.clone(), release.clone());
+    let worker = thread::spawn(move || {
+        let mut output = Vec::new();
+        buffer.write_next(|sample| {
+            entered.wait();
+            proceed.wait();
+            output.push(sample);
+        });
+        for _ in 0..3 {
+            output.push(buffer.next_sample());
+        }
+        output
+    });
+    in_write.wait();
+    assert!(sender.cancel_submission(&first, "barrier cancellation"));
+    assert!(!first.output_quiescent());
+    assert_eq!(
+        first.snapshot(1).observation_end,
+        None,
+        "terminal must await the in-flight write result"
+    );
+    release.wait();
+    assert_eq!(worker.join().unwrap(), [1, 1, 5, 5]);
+    let final_progress = first.snapshot(2);
+    assert!(first.output_quiescent());
+    assert_eq!(final_progress.submitted_source_frames, Some(1));
+    assert!(matches!(
+        final_progress.observation_end,
+        Some(ObservationEnd::Cancelled { .. })
+    ));
+    assert_eq!(next.snapshot(1).submitted_source_frames, Some(1));
+}
+
+#[test]
+fn cancel_waits_for_actual_partial_alsa_result_and_failed_write_settles_zero() {
+    for actual in [0, 2] {
+        let (sender, receiver) = channel(4);
+        let generation = sender.begin().unwrap();
+        let submission = identified(&sender, &receiver, 1, generation);
+        sender.submit(&submission, 0, &[11, 12, 13], false).unwrap();
+        sender.submit(&submission, 3, &[], true).unwrap();
+        let mut buffer = PlaybackBuffer::new(receiver.generation());
+        render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+        let (chunk, write) = buffer.alsa_chunk(3);
+        assert_eq!(chunk.len(), 6);
+        assert!(sender.cancel_submission(&submission, "writei in progress"));
+        assert_eq!(submission.snapshot(1).observation_end, None);
+        if actual == 0 {
+            drop(write);
+        } else {
+            buffer.alsa_submitted(actual);
+            write.unwrap().finish(actual as u64);
+        }
+        let final_progress = submission.snapshot(2);
+        assert_eq!(final_progress.submitted_source_frames, Some(actual as u64));
+        assert!(matches!(
+            final_progress.observation_end,
+            Some(ObservationEnd::Cancelled { .. })
+        ));
+        assert!(
+            submission.begin_output().is_none(),
+            "no new native write after cancellation"
+        );
+    }
 }

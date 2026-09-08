@@ -1,5 +1,5 @@
 syntax = "proto3";
-package alia.playback.v1;
+package alia.playback.v2;
 
 service Playback {
   rpc Push(stream PlaybackFrame) returns (stream PlaybackReceipt);
@@ -29,6 +29,7 @@ message PlaybackStart {
   uint32 sample_rate_hz = 1;
   uint32 channels = 2; // Currently mono only.
   string source = 3;
+  uint32 contract_version = 4; // Must equal 2; ACK before first Audio.
 }
 
 message PlaybackAudio {
@@ -50,6 +51,34 @@ message PlaybackReceipt {
   // from payload duration or treat HTTP/gRPC acceptance as physical completion.
   optional uint64 submitted_samples = 7;
   optional uint64 presented_samples = 8;
+  uint32 contract_version = 9;
+  uint64 receipt_sequence = 10; // Strictly increasing from 1, including heartbeat.
+  SubmissionBackend backend = 11;
+  ObservationEnd observation_end = 12;
+  string reason = 13;
+}
+
+message SubmissionBackend {
+  string instance_id = 1;
+  SubmissionBoundary boundary = 2;
+  uint32 output_sample_rate_hz = 3;
+  uint32 output_channels = 4;
+}
+
+enum SubmissionBoundary {
+  SUBMISSION_BOUNDARY_UNSPECIFIED = 0;
+  SUBMISSION_BOUNDARY_CPAL_CALLBACK_BUFFER = 1;
+  SUBMISSION_BOUNDARY_ALSA_WRITE_ACCEPTED = 2;
+}
+
+enum ObservationEnd {
+  OBSERVATION_END_UNSPECIFIED = 0; // Observation remains open after input End.
+  OBSERVATION_END_SUBMISSION_FINISHED = 1; // No physical presentation proof.
+  OBSERVATION_END_PRESENTED_FINISHED = 2; // Reserved for verified device clocks.
+  OBSERVATION_END_CANCELLED = 3;
+  OBSERVATION_END_FAILED = 4;
+  OBSERVATION_END_UNKNOWN = 5;
+  OBSERVATION_END_REJECTED = 6;
 }
 
 enum PlaybackState {
@@ -58,16 +87,29 @@ enum PlaybackState {
   PLAYBACK_STATE_CANCELLED = 2;
   PLAYBACK_STATE_FAILED = 3;
   PLAYBACK_STATE_COMPLETED = 4;
+  PLAYBACK_STATE_SUBMITTED = 5;
+  PLAYBACK_STATE_UNKNOWN = 6;
+  PLAYBACK_STATE_REJECTED = 7;
 }
 
 message FenceRequest {
   VoiceScope scope = 1; // generation_epoch is the minimum acceptable generation.
   string reason = 2;
   bool close_session = 3; // Close matching session, rejecting all later frames.
+  // When present, cancel only this playback. Both fields are required together;
+  // close_session must be false. Absence retains whole-scope fence semantics.
+  optional string playback_id = 4;
+  optional uint64 playback_sequence = 5;
 }
 
 message FenceReceipt {
   bool applied = 1;
   VoiceScope active_scope = 2;
   bool session_closed = 3;
+  optional string playback_id = 4;
+  optional uint64 playback_sequence = 5;
+  // Exact cancellation waits for entered backend writes to settle. Return the
+  // final immutable evidence even if the Push acknowledgement was lost. Scope
+  // fences leave this absent and prove only the generation admission barrier.
+  PlaybackReceipt final_progress = 6;
 }

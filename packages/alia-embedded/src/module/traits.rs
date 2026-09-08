@@ -112,6 +112,40 @@ pub trait AudioCaptureBackend: ModuleLifecycle {
 
 /// Audio playback backend (slot: `audio_playback`).
 pub trait AudioPlaybackBackend: ModuleLifecycle {
+    fn open_submission(
+        &self,
+        _identity: alia_core::delivery::PlaybackIdentity,
+        _sample_rate: u32,
+        _generation: u64,
+    ) -> Result<std::sync::Arc<super::playback_session::AudioSubmission>> {
+        anyhow::bail!("backend does not provide playback submission evidence")
+    }
+
+    fn submit_audio(
+        &self,
+        _submission: &std::sync::Arc<super::playback_session::AudioSubmission>,
+        _source_offset: u64,
+        _pcm: &[i16],
+    ) -> Result<bool> {
+        anyhow::bail!("backend does not provide playback submission evidence")
+    }
+
+    fn end_submission(
+        &self,
+        _submission: &std::sync::Arc<super::playback_session::AudioSubmission>,
+        _total_source_frames: u64,
+    ) -> Result<bool> {
+        anyhow::bail!("backend does not provide playback submission evidence")
+    }
+
+    fn cancel_submission(
+        &self,
+        _submission: &std::sync::Arc<super::playback_session::AudioSubmission>,
+        _reason: &str,
+    ) -> Result<bool> {
+        anyhow::bail!("backend does not provide precise playback cancellation")
+    }
+
     /// Play decoded PCM audio.
     fn play(&self, pcm: &[i16], sample_rate: u32) -> Result<()>;
 

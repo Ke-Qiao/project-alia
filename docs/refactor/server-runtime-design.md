@@ -47,7 +47,8 @@ RuntimeCleanup 按依赖阶段与阶段内逆注册顺序执行回滚。清理�
 2. 给 listener 一个短 drain 预算；之后关闭共享 `Connections` 中的真实 socket。继续 join listener、HTTP/2/WS 连接和 `RuntimeTasks` 中的 voice/WS/渠道管理 actor。内部框架任务不能仅凭顶层 listener 被丢弃就算结束。
 3. 停止并 join Pipeline、sensor cleanup、insights、rules、scheduler 等生产者。各后台组件使用保留句柄的所有者，stop waiter 被丢弃后仍能重新等待。
 4. 关闭 Execution admission，等待已 dispatch 的执行和回执。Execution 自己的等待预算耗尽但 `shutdown_pending()` 仍为 true 时，整体清理继续保留 outbound、插件、raw tools 与 DB，并向宿主返回 incomplete。不能先停这些依赖。
-5. Execution 确认结束后关闭 outbound channels，再按逆序停止插件、模型和存储等资源；最后关闭自有 PostgreSQL pool。
+5. Execution 确认结束后停止 Delivery 的媒体所有者，精准取消并等待仍在运行的 adapter/native worker。Delivery 尚未 join 时保留 channels 与 DB；等待者的期限不等于后台任务退出证明。
+6. Delivery 确认结束后关闭 outbound channels，再按逆序停止插件、模型和存储等资源；Expression 的 appraisal writer 排空已接纳的有界写队列并汇总失败，最后关闭自有 PostgreSQL pool。
 
 曾发生的 Execution 局部关闭超时仍保留为历史错误；后来全部 join 会使 pending 归零，但不会把最终报告改成“从未失败”。这与 deadline 当下的 incomplete、最终是否已 join 是两个分别可观察的事实。
 
@@ -80,10 +81,10 @@ HTTP 与 gRPC 都通过 `alia_transport::connections::Connections` 包装已接�
 - 真实持久 effect 跨过宿主短预算及 Execution 自身 10 秒等待预算时，outbound、插件和 DB 仍保持活跃；释放 executor 后回执为 `Succeeded`，之后才关闭依赖和自有 pool；最终报告仍保留先前局部超时错误。
 - 管理员 WS 可用、普通用户与禁用账户拒绝；真实连接上的降级/禁用复查断开；shutdown 排空升级 socket 和 actor。
 
-同一集成测试入口还包含 5 项真实 Insights 来源/错误传播测试和 4 项调度/规则来源版本测试。最终 workspace 中该入口为 **21 passed、0 failed、0 ignored**（40.95 秒）；其中 12 项为上述运行时/WS 验证，5 项为 Insights 验证，4 项为自动化来源验证。
+同一集成测试入口还包含 5 项真实 Insights 来源/错误传播测试和 4 项调度/规则来源版本测试。Response / Delivery 整合后新增 4 项投递所有权、native 退出和 owner HTTP API 验证，以及 7 项 Affect 排空、清除顺序与错误传播验证。最终 workspace 中该入口为 **32 passed、0 failed、0 ignored**（55.74 秒）。
 
 另有独立子进程 panic 故障测试：stop panic 后原 owner 和 DB 阶段仍被保留，deadline 返回 incomplete，依赖未被停止。子进程以显式 runtime 尾部预算结束，避免向正常测试进程遗留故意永不完成的 worker。`cargo test -p alia-server --lib module::lifecycle::tests --locked` 已通过该项。
 
 后台组件另有定向测试，覆盖 scheduler/rules/sensors/channel/insights 的停止、重复启动、回滚和等待句柄保留；它们与真实 Runtime 测试共同验证整体契约。当前尚不以这些替身测试声称 Pi5 真实音频硬件退出、任意外部推理原生线程停止，或 Delivery 播放完成。
 
-最终默认 workspace 为 561 项通过、0 失败、4 项显式跳过；日志另含上述 panic 测试的 1 次子进程内部运行，不重复计数。4 项跳过的真实 PTY 和真实 Easy-Turn/gRPC 测试已分别显式运行通过。Server 无默认特性 all-targets 检查通过。完整命令、独立数据库及限制见[构建记录](progress.md)。
+最终默认 workspace 为 636 个不同测试通过、0 失败、4 项显式跳过；日志另含上述 panic 测试的 1 次子进程内部运行，不重复计数。4 项跳过的真实 PTY 和真实 Easy-Turn/gRPC 测试已分别显式运行通过。Server 无默认特性 all-targets 检查通过。完整命令、独立数据库及限制见[构建记录](progress.md)。

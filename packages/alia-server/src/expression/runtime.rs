@@ -41,6 +41,7 @@ pub struct ExpressionRuntime {
     dialogue_policy: DialoguePolicyResourceSection,
     extensions: ExpressionExtensionRegistry,
     safety_state: ExpressionSafetyRuntimeState,
+    orchestrator: crate::expression::orchestrator::ExpressionOrchestrator,
 }
 
 #[derive(Debug, Default)]
@@ -58,6 +59,7 @@ impl ExpressionRuntime {
             dialogue_policy: config.resources.dialogue_policy.clone(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         if let Err(error) = runtime.register_appraisal_engine(Arc::new(
             TextClassifierAppraisalEngine::new(config.resources.appraisal_lexicons.clone()),
@@ -86,8 +88,16 @@ impl ExpressionRuntime {
         runtime
     }
 
+    pub fn orchestrator(&self) -> &crate::expression::orchestrator::ExpressionOrchestrator {
+        &self.orchestrator
+    }
+
     pub async fn attach_db(&self, db: DatabaseConnection) -> anyhow::Result<()> {
         self.affect.attach_db(db).await
+    }
+
+    pub async fn shutdown(&self) -> anyhow::Result<()> {
+        self.affect.shutdown_persistence().await
     }
 
     pub fn dialogue_policy(&self) -> &DialoguePolicyResourceSection {
@@ -165,6 +175,7 @@ impl ExpressionRuntime {
                 snapshot: self.affect_snapshot(channel_id, user_id).await,
                 appraisals: Vec::new(),
                 active_event_count: 0,
+                persistence_error: None,
             };
         }
 
@@ -1616,6 +1627,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         let mut input =
@@ -1646,6 +1658,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         for _ in 0..3 {
@@ -1708,6 +1721,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         for _ in 0..4 {
@@ -1788,6 +1802,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         runtime
             .register_affect_reducer(Arc::new(WarmReducer))
@@ -1861,6 +1876,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         runtime
             .register_appraisal_engine(Arc::new(ClassifierEngine))
@@ -1952,6 +1968,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         runtime
             .register_external_plugin(Arc::new(AbiPlugin {
@@ -2059,6 +2076,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         runtime
             .register_external_plugin(Arc::new(SlowPlugin {
@@ -2111,6 +2129,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         let without_capability = runtime
@@ -2181,6 +2200,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         let mut capabilities = capabilities_with_action("small_nod", 0.8);
@@ -2222,6 +2242,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         let mut risky_capabilities = capabilities_with_action("small_nod", 0.8);
@@ -2280,6 +2301,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
         let mut input = test_expression_input("Great, awesome!");
@@ -2354,6 +2376,7 @@ mod tests {
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
+            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
         runtime
             .register_expression_planner(Arc::new(MinimalPlanner))
@@ -2402,6 +2425,7 @@ mod tests {
         );
         ExpressionCapabilitySnapshot {
             adapter: "test_adapter".to_string(),
+            command_protocol: None,
             capabilities,
             current_state: ExpressionAdapterState {
                 motion_adapter_registered: true,

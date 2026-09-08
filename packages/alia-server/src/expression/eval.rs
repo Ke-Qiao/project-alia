@@ -257,6 +257,7 @@ fn capabilities_with_action(action: &str, max_intensity: f32) -> ExpressionCapab
     );
     ExpressionCapabilitySnapshot {
         adapter: "eval_adapter".to_string(),
+        command_protocol: None,
         capabilities,
         current_state: ExpressionAdapterState {
             motion_adapter_registered: true,

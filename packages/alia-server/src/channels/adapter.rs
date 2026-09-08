@@ -1,9 +1,12 @@
 use std::pin::Pin;
+use std::sync::Arc;
 
+use alia_core::delivery::{ObservationEnd, PlaybackIdentity, PlaybackProgress};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 
 use crate::module::ModuleLifecycle;
 
@@ -83,6 +86,33 @@ pub struct AudioPayload {
 
 pub type AudioPayloadStream =
     Pin<Box<dyn Stream<Item = anyhow::Result<AudioPayload>> + Send + 'static>>;
+
+/// The transport awaits these durable writes before sending Start/Audio or
+/// acknowledging progress. A database failure stops further media admission.
+#[async_trait]
+pub trait PlaybackObserver: Send + Sync {
+    async fn start(&self, sample_rate_hz: u32, channels: u16) -> anyhow::Result<()>;
+    async fn offered(&self, source_frames: u64) -> anyhow::Result<()>;
+    async fn progress(&self, progress: PlaybackProgress) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioDeliveryReport {
+    /// Legacy transports without evidence leave the entire progress absent.
+    pub progress: Option<PlaybackProgress>,
+    pub observation_end: ObservationEnd,
+}
+
+impl AudioDeliveryReport {
+    pub fn unobserved(reason: impl Into<String>) -> Self {
+        Self {
+            progress: None,
+            observation_end: ObservationEnd::Unknown {
+                reason: reason.into(),
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum AudioFormat {
@@ -235,6 +265,55 @@ pub trait ChannelAdapter: ModuleLifecycle {
         }
 
         self.send_audio(target, combined).await
+    }
+
+    /// Reserve only local sequence/identity. The service supplies the UUID and
+    /// persists the resulting immutable intent before any external I/O.
+    fn reserve_playback(
+        &self,
+        target: &ChannelTarget,
+        _playback_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<PlaybackIdentity>> {
+        anyhow::ensure!(
+            target.voice.is_none(),
+            "channel does not support scoped playback reservation"
+        );
+        Ok(None)
+    }
+
+    /// Owned by Delivery supervision. Dropping a pipeline waiter does not drop
+    /// this future. Legacy acceptance cannot produce submitted/presented counts.
+    async fn deliver_audio(
+        &self,
+        target: &ChannelTarget,
+        identity: Option<PlaybackIdentity>,
+        audio: AudioPayloadStream,
+        _observer: Arc<dyn PlaybackObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<AudioDeliveryReport> {
+        anyhow::ensure!(
+            identity.is_none() && target.voice.is_none(),
+            "scoped delivery requires a protocol adapter"
+        );
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Ok(AudioDeliveryReport::unobserved("legacy delivery cancelled without scoped device evidence")),
+            result = self.send_audio_stream(target, audio) => {
+                result?;
+                Ok(AudioDeliveryReport::unobserved("legacy transport returned without device progress evidence"))
+            }
+        }
+    }
+
+    /// A precise playback fence must not stop a later playback in the same
+    /// voice generation. Only final evidence after entered backend writes have
+    /// settled can acknowledge it. A generic stop hook is insufficient.
+    async fn cancel_playback(
+        &self,
+        _identity: PlaybackIdentity,
+        _reason: &str,
+    ) -> anyhow::Result<PlaybackProgress> {
+        anyhow::bail!("channel does not support exact playback cancellation")
     }
 
     /// Best-effort channel control hook used by channels that can stop active playback.

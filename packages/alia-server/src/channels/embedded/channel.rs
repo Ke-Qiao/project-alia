@@ -825,6 +825,73 @@ impl ModuleLifecycle for EmbeddedChannel {
 
 #[async_trait]
 impl ChannelAdapter for EmbeddedChannel {
+    fn reserve_playback(
+        &self,
+        target: &ChannelTarget,
+        playback_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<alia_core::delivery::PlaybackIdentity>> {
+        let Some(scope) = target.voice else {
+            return Ok(None);
+        };
+        let identity = alia_core::delivery::PlaybackIdentity {
+            scope,
+            playback_id,
+            playback_sequence: self.next_playback_sequence()?,
+        };
+        anyhow::ensure!(identity.is_valid(), "invalid playback reservation");
+        Ok(Some(identity))
+    }
+
+    async fn deliver_audio(
+        &self,
+        target: &ChannelTarget,
+        identity: Option<alia_core::delivery::PlaybackIdentity>,
+        audio: AudioPayloadStream,
+        observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<crate::channels::adapter::AudioDeliveryReport> {
+        if let Some(identity) = identity {
+            anyhow::ensure!(
+                target.voice == Some(identity.scope),
+                "delivery target differs from reserved playback scope"
+            );
+            return super::playback::push(
+                self.playback_client().await?,
+                identity,
+                audio,
+                self.auth_request(())?.metadata().clone(),
+                observer,
+                cancel,
+                Duration::from_secs(5),
+            )
+            .await;
+        }
+        anyhow::ensure!(
+            target.voice.is_none(),
+            "scoped playback requires durable identity reservation"
+        );
+        tokio::select! {
+            _ = cancel.cancelled() => Ok(crate::channels::adapter::AudioDeliveryReport::unobserved("legacy delivery cancelled without scoped evidence")),
+            result = self.send_audio_stream(target, audio) => {
+                result?;
+                Ok(crate::channels::adapter::AudioDeliveryReport::unobserved("legacy transport has no device submission evidence"))
+            }
+        }
+    }
+
+    async fn cancel_playback(
+        &self,
+        identity: alia_core::delivery::PlaybackIdentity,
+        reason: &str,
+    ) -> anyhow::Result<alia_core::delivery::PlaybackProgress> {
+        super::playback::cancel_exact(
+            self.playback_client().await?,
+            identity,
+            self.auth_request(())?.metadata().clone(),
+            reason,
+        )
+        .await
+    }
     async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
         let db = self
             .account_database
@@ -893,18 +960,10 @@ impl ChannelAdapter for EmbeddedChannel {
     }
 
     async fn send_audio(&self, target: &ChannelTarget, audio: AudioPayload) -> anyhow::Result<()> {
-        if let Some(scope) = target.voice {
-            let sequence = self.next_playback_sequence()?;
-            return super::playback::push(
-                self.playback_client().await?,
-                scope,
-                sequence,
-                Box::pin(futures::stream::once(async move { Ok(audio) })),
-                self.auth_request(())?.metadata().clone(),
-                Duration::from_secs(self.config.grpc_timeout_sec.max(1)),
-            )
-            .await;
-        }
+        anyhow::ensure!(
+            target.voice.is_none(),
+            "scoped audio must use durable Delivery admission"
+        );
         let mut client = self.audio_client().await?;
 
         let encoding = match audio.format {
@@ -965,18 +1024,10 @@ impl ChannelAdapter for EmbeddedChannel {
         target: &ChannelTarget,
         mut audio: AudioPayloadStream,
     ) -> anyhow::Result<()> {
-        if let Some(scope) = target.voice {
-            let sequence = self.next_playback_sequence()?;
-            return super::playback::push(
-                self.playback_client().await?,
-                scope,
-                sequence,
-                audio,
-                self.auth_request(())?.metadata().clone(),
-                Duration::from_secs(self.config.grpc_timeout_sec.max(1)),
-            )
-            .await;
-        }
+        anyhow::ensure!(
+            target.voice.is_none(),
+            "scoped audio must use durable Delivery admission"
+        );
         let Some(first) = audio.next().await else {
             return Ok(());
         };
@@ -1053,6 +1104,8 @@ impl ChannelAdapter for EmbeddedChannel {
         let mut client = self.playback_client().await?;
         let receipt = client
             .fence(self.auth_request(alia_proto::playback::FenceRequest {
+                playback_id: None,
+                playback_sequence: None,
                 scope: Some(super::playback::encode_scope(scope)),
                 reason: reason.into(),
                 close_session,

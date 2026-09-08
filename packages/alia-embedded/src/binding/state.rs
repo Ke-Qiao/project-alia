@@ -393,27 +393,98 @@ impl BindingManager {
     }
 
     pub async fn verify_grpc_auth(&self, token: &str, required_scope: &str) -> Result<()> {
+        self.with_verified_grpc_auth(token, required_scope, || Ok(()))
+            .await
+    }
+
+    /// The synchronous admission closure runs under the same binding read lock
+    /// as authentication. It must not perform I/O or initialize native devices.
+    pub async fn with_verified_grpc_auth<T>(
+        &self,
+        token: &str,
+        required_scope: &str,
+        admit: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
         let data = self.data.read().await;
+        anyhow::ensure!(
+            data.state == BindingState::Bound,
+            "device is not currently bound"
+        );
         if data.dev_skip_auth {
             warn!(required_scope, "skipping gRPC auth for local dev binding");
-            return Ok(());
+        } else {
+            let server_id = data
+                .server_id
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("device is not bound to a server"))?;
+            let server_public_key = data
+                .server_public_key
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("missing bound server public key"))?;
+            verify_auth_token(
+                token,
+                server_public_key,
+                server_id,
+                required_scope,
+                DEFAULT_AUTH_MAX_SKEW,
+            )?;
         }
-        let server_id = data
-            .server_id
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("device is not bound to a server"))?;
-        let server_public_key = data
-            .server_public_key
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("missing bound server public key"))?;
+        admit()
+    }
+}
 
-        verify_auth_token(
-            token,
-            server_public_key,
-            server_id,
-            required_scope,
-            DEFAULT_AUTH_MAX_SKEW,
-        )?;
-        Ok(())
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn verified_admission_and_binding_retirement_have_one_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = EmbeddedStore::open(directory.path().join("binding.sqlite"))
+            .await
+            .unwrap();
+        let binding = Arc::new(BindingManager::new(store, 3, 60));
+        binding
+            .seed_dev_binding("server", "server", "http://localhost:1234")
+            .await
+            .unwrap();
+        let (entered, inside) = tokio::sync::oneshot::channel();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let proceed = release.clone();
+        let manager = binding.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let admission = tokio::task::spawn_blocking(move || {
+            runtime.block_on(manager.with_verified_grpc_auth(
+                "dev",
+                alia_transport::EMBEDDED_CONTROL_SCOPE,
+                || {
+                    entered.send(()).unwrap();
+                    proceed.wait();
+                    Ok(17)
+                },
+            ))
+        });
+        inside.await.unwrap();
+        let manager = binding.clone();
+        let unbind = tokio::spawn(async move { manager.unbind("server").await });
+        tokio::task::yield_now().await;
+        assert!(
+            !unbind.is_finished(),
+            "binding cannot retire between authentication and synchronous admission"
+        );
+        release.wait();
+        assert_eq!(admission.await.unwrap().unwrap(), 17);
+        unbind.await.unwrap().unwrap();
+        assert!(
+            binding
+                .with_verified_grpc_auth::<()>(
+                    "dev",
+                    alia_transport::EMBEDDED_CONTROL_SCOPE,
+                    || { panic!("retired authority must never enter admission") }
+                )
+                .await
+                .is_err()
+        );
     }
 }

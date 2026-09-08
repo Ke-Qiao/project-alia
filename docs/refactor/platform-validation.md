@@ -1,6 +1,91 @@
 # 隔离平台验证
 
-更新：2026-09-08。最新验证覆盖已提交的 P2 `5aecb38cc9bceb51f1b424c99f6e76f944f0a544`；下方保留早期 `ef07d43` 结果。两次都使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+更新：2026-09-08。最新验证覆盖已提交的 Server runtime、原子 Memory 与来源 epoch 包 `2f8797c7b1ce73f62e8abb798820bb5bdbdf1cbe`；下方保留 `5aecb38`、`ef07d43` 历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+
+## Runtime 与来源 epoch：固定提交 2f8797c
+
+源码从 `2f8797c7b1ce73f62e8abb798820bb5bdbdf1cbe` 导出到 `/private/tmp/alia-platform-2f8797c.QL6Y8V/source`，容器只读挂载为 `/src`。以 APFS `cp -cR` 克隆前次 `/private/tmp/alia-platform-5aecb38.rTx8mP/cache` 到本轮独立缓存；没有覆盖旧缓存或挂载正在变化的工作区、宿主 Cargo 目录、Docker socket。结束时核验全部 **536 个归档源码文件 SHA256 均未变化**。
+
+| 输入或环境 | 本次实际值 |
+| --- | --- |
+| 镜像固定摘要 | `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1` |
+| ARM64 image ID | `sha256:7cf1e580ef5539f03b58560753e8ab84c8c360960d99dff714004aa98f203977` |
+| Cargo.lock SHA256 | `76f193b1b04e7d310c6bded15da0fb1281465fe4c7ff276db519928377415d67`，开始/结束相同 |
+| Rust / Cargo | `rustc 1.95.0 (59807616e 2026-04-14)` / `cargo 1.95.0 (f2d3ce0bd 2026-03-21)` |
+| Rust host / LLVM | `aarch64-unknown-linux-gnu` / `22.1.2` |
+| 系统 | Debian 12，Docker Engine 29.4.0，OrbStack kernel `7.0.14-orbstack-00380-ga7e0a2dc9535` |
+| 隔离限制 | 6 CPU、12 GiB、512 PIDs，`CARGO_BUILD_JOBS=4` |
+| 任务容器 | `alia-platform-2f8797c-ql6y8v`，`--rm` 退出后确认已移除 |
+| 真实数据库 | `host.docker.internal:32768/alia_refactor_runtime_v1`，专用账号 `alia_test`；PostgreSQL `17.10 (Debian 17.10-1.pgdg12+1)`，aarch64 |
+
+系统构建依赖及实际版本与下方 `5aecb38` / `ef07d43` 环境记录相同，包含 `libprotobuf-dev`、ALSA、DBus、OpenSSL、Clang、CMake 和 PostgreSQL 客户端。`SELECT current_database(), version()` 预检成功；各真实数据库测试创建、迁移并清理自身随机 schema。没有改动用户 `alia-postgres`（5433）或其他已有容器；专用测试 PostgreSQL 保持运行，未操作模型服务。
+
+### 实际结果
+
+| 检查 | 命令 | 结果 | 墙钟耗时 |
+| --- | --- | --- | --- |
+| Server 默认 features，所有 targets | `cargo check -p alia-server --all-targets --locked` | exit 0，无警告 | 17.47 s |
+| Server 默认 features，库测试 | `cargo test -p alia-server --lib --locked` | 161 passed / 0 failed / 2 ignored | 37.46 s，测试执行 0.38 s |
+| Memory、来源 epoch、Execution、runtime 集成 | 下方完整命令 | 119 passed / 0 failed / 0 ignored | 129.12 s，含编译 39.88 s |
+| Embedded 默认 Sherpa，完整构建 | `cargo build -p alia-embedded --locked` | 编译及最终链接通过，无警告 | 18.40 s |
+
+四阶段为 **2026-09-08 05:29:59–05:33:22 UTC**（北京时间 **13:29:59–13:33:22**）。使用复制缓存，不是冷缓存性能基准。全部 Cargo 命令使用默认 features 和 `--locked`，未用 `--no-default-features` 替代。库测试中子进程重跑的一项测试已包含在 161 中，不重复累计。
+
+集成命令与各目标的实际数量如下：
+
+```bash
+cargo test -p alia-server --test memory_privacy --test memory --test tools \
+  --test execution_repository --test execution_service --test server_runtime --locked
+```
+
+| 目标 | passed | 测试执行耗时 |
+| --- | ---: | ---: |
+| `execution_repository` | 19 | 2.28 s |
+| `execution_service` | 27 | 32.99 s |
+| `memory` | 13 | 0.13 s |
+| `memory_privacy` | 24 | 3.60 s |
+| `server_runtime` | 21 | 50.16 s |
+| `tools` | 15 | 0.01 s |
+
+因此，本次 Server 库及选定集成目标共 **280 项通过**。真实 SQL 覆盖原子批量写入/遗忘、SQL 故障回滚、跨 owner 隔离、源 revision 变化、删除与派生提交竞态、晚返回 embedding、来源接纳锁的 2 秒上限及当前账户验证。Conversation 库测试证明旧 epoch 输入晚落库仍保留原文，但不能写回 Memory；新 epoch 输入可继续记忆。Execution 在正常、超前 60 秒和落后 60 秒的来源时间戳下，旧来源清除后均不能写回，新来源均成功；偏移注入的是测试来源时间戳，没有调整宿主或数据库时钟。Insights、timer、subscription、rule 的真实调用链也通过，涵盖旧/NULL epoch 来源排除、快慢钟新来源、慢条件等待和取消/关闭。LLM 与工具外部行为由测试替身控制，数据库、锁、事务、runtime 和 loopback 网络实际执行。
+
+Embedded 默认 `wakeword-sherpa`、`stt-sherpa`、`direct-response` 均保留；本轮重新编译工作区 crate 并完成最终链接。产物 `/private/tmp/alia-platform-2f8797c.QL6Y8V/cache/target/debug/alia-embedded` 为 ARM aarch64 ELF 64-bit PIE，解释器 `/lib/ld-linux-aarch64.so.1`，BuildID `3fbffac7c31f50840e604f9a53cddfb6a1d4e4c3`，SHA256 `803c8d53fdc5f1221e1cdc10198d0e0458f56c4a3de20361c5b3004ac00805bc`。缓存中的官方 Sherpa `1.13.1` Linux aarch64 静态归档 SHA256 再次确认为 `86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749`；未设置 `DOCS_RS`、禁用 Sherpa 或下载模型。
+
+### 复现、证据和排除项
+
+下列命令使用已授权的专用测试库。数据库不可达时测试必须失败，不得换成用户数据库或把跳过计作通过。
+
+```bash
+validation_dir=$(mktemp -d /private/tmp/alia-platform-2f8797c.XXXXXX)
+mkdir -p "$validation_dir/source"
+git archive 2f8797c7b1ce73f62e8abb798820bb5bdbdf1cbe | tar -x -C "$validation_dir/source"
+cp -cR /private/tmp/alia-platform-5aecb38.rTx8mP/cache "$validation_dir/cache"
+docker run --rm --platform linux/arm64 --cpus 6 --memory 12g --pids-limit 512 \
+  --mount "type=bind,source=$validation_dir/source,target=/src,readonly" \
+  --mount "type=bind,source=$validation_dir/cache,target=/cache" \
+  --env CARGO_HOME=/cache/cargo --env CARGO_TARGET_DIR=/cache/target \
+  --env CARGO_BUILD_JOBS=4 --env DEBIAN_FRONTEND=noninteractive \
+  --env ALIA_TEST_DATABASE_URL=postgresql://alia_test:alia_test@host.docker.internal:32768/alia_refactor_runtime_v1 \
+  --workdir /src \
+  rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 \
+  bash -eu -c '
+    apt-get update
+    apt-get install --no-install-recommends -y ca-certificates pkg-config protobuf-compiler libprotobuf-dev libssl-dev libasound2-dev libdbus-1-dev cmake clang time postgresql-client
+    rustc -vV
+    cargo -V
+    sha256sum Cargo.lock
+    psql -X -v ON_ERROR_STOP=1 "$ALIA_TEST_DATABASE_URL" -c "SELECT current_database(), version();"
+    cargo check -p alia-server --all-targets --locked
+    cargo test -p alia-server --lib --locked
+    cargo test -p alia-server --test memory_privacy --test memory --test tools --test execution_repository --test execution_service --test server_runtime --locked
+    cargo build -p alia-embedded --locked
+    sha256sum Cargo.lock
+  '
+```
+
+实际脚本与原始证据保存在 `/private/tmp/alia-platform-2f8797c.QL6Y8V/evidence/`：`run.sh`、固定 SHA、镜像/环境/系统包信息、数据库预检、各阶段 `.command/.start/.end/.status/.log`、完整源码摘要、Cargo.lock 结束摘要、Embedded 文件类型/摘要、Sherpa 归档摘要及容器退出确认。每阶段独立限时 2400 秒，使用 `/usr/bin/time -v`，四个退出码均为 0。
+
+本次两项 ignored 是 `setup_terminal_worker_releases_input_after_cancellation` 与 `idle_terminal_worker_joins_and_restores_terminal_on_shutdown`，要求真实 PTY，未计入通过。没有运行其他 Server 集成目标、完整 workspace 测试、Embedded 单测或设备二进制；真实 Easy-Turn/LLM/TTS、Pi 5 音频/蓝牙/AEC/双讲没有在本容器验证。其他环境另跑的 PTY/模型结果不能算作本次 Linux 结果。此证据不证明 Linux x86_64、Windows、macOS Intel，也不覆盖 `2f8797c` 后的 Delivery 修改。
 
 ## P2：固定提交 5aecb38
 

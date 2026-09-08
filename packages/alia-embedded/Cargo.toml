@@ -25,6 +25,7 @@ futures.workspace = true
 libc.workspace = true
 prost.workspace = true
 rand.workspace = true
+rubato = { version = "=5.0.0", default-features = false }
 opencv = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

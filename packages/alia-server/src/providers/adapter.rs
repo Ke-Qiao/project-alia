@@ -1800,6 +1800,19 @@ pub trait ConversationBackend: ModuleLifecycle {
     /// Append a message to a session.
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
 
+    /// Commit the canonical response and its assistant history entry in one
+    /// transaction. A retry returns the same message UUID; this fact says
+    /// nothing about whether any delivery was presented by a device.
+    async fn commit_response(
+        &self,
+        _user_id: Uuid,
+        _session_id: Uuid,
+        _response_id: Uuid,
+        _message: ChatMessage,
+    ) -> anyhow::Result<Uuid> {
+        anyhow::bail!("conversation backend does not support atomic canonical responses")
+    }
+
     /// Persist trusted user input and return the actual source record identity.
     async fn append_sourced_message(
         &self,

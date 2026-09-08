@@ -41,6 +41,7 @@ use crate::settings::values::{
 };
 
 mod debug;
+mod delivery;
 mod dialogue_policy;
 mod error_notice;
 #[cfg(test)]
@@ -121,6 +122,7 @@ pub struct PendingTextPersistence {
     pub source_received_at: chrono::DateTime<chrono::Utc>,
     pub source_privacy_epoch: i64,
     pub source_event_id: Option<Uuid>,
+    pub response_id: Uuid,
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub user_id_text: String,
@@ -173,6 +175,7 @@ pub(super) struct AgentTrace {
     session_id: Uuid,
     turn_id: Uuid,
     next_sequence: i32,
+    tts_sequence: Arc<std::sync::atomic::AtomicI32>,
 }
 
 impl AgentTrace {
@@ -181,6 +184,7 @@ impl AgentTrace {
             session_id,
             turn_id: Uuid::new_v4(),
             next_sequence: 0,
+            tts_sequence: Arc::new(std::sync::atomic::AtomicI32::new(10_000)),
         }
     }
 
@@ -682,6 +686,7 @@ async fn process_event(
             };
 
             let mut turn = VoiceTurn::request(request_cancel);
+            turn.output_channel = Some(channel.clone());
             turn.received_at = source_received_at;
             turn.source_privacy_epoch = Some(source_privacy_epoch);
             let result = match process_text(
@@ -750,6 +755,7 @@ async fn process_event(
             }
             if let Some(plan) = &result.expression_plan {
                 execute_expression_and_trace(
+                    modules.expression.orchestrator(),
                     channel.as_ref(),
                     &target,
                     plan,
@@ -819,8 +825,13 @@ async fn process_event(
                         );
                         tracing::debug!(error = ?error, "stop playback failure details");
                     }
-                    let expression_cancel =
-                        cancel_expression_execution(channel.as_ref(), &target, &reason).await;
+                    let expression_cancel = cancel_expression_execution(
+                        modules.expression.orchestrator(),
+                        channel.as_ref(),
+                        &target,
+                        &reason,
+                    )
+                    .await;
                     debug_component_text(
                         debug_output,
                         "expression",
@@ -862,6 +873,7 @@ async fn process_event(
                 .await;
 
             // STT → Router → LLM → TTS
+            turn.output_channel = Some(channel.clone());
             turn.received_at = source_received_at;
             turn.source_privacy_epoch = Some(source_privacy_epoch);
             debug_component_audio(
@@ -1325,6 +1337,15 @@ async fn process_text(
                     source_received_at,
                     source_privacy_epoch,
                     source_event_id: Some(source_event_id),
+                    response_id: delivery::prepare_response(
+                        modules,
+                        turn,
+                        channel_id,
+                        user_id,
+                        Some(session_id),
+                        "assistant_response",
+                    )
+                    .await?,
                     session_id,
                     user_id: uid,
                     user_id_text: user_id.to_string(),
@@ -1493,6 +1514,15 @@ async fn process_text(
                 source_received_at,
                 source_privacy_epoch,
                 source_event_id: Some(source_event_id),
+                response_id: delivery::prepare_response(
+                    modules,
+                    turn,
+                    channel_id,
+                    user_id,
+                    Some(session_id),
+                    "assistant_response",
+                )
+                .await?,
                 session_id,
                 user_id: uid,
                 user_id_text: user_id.to_string(),
@@ -2196,6 +2226,15 @@ async fn process_text(
         source_received_at,
         source_privacy_epoch,
         source_event_id: Some(source_event_id),
+        response_id: delivery::prepare_response(
+            modules,
+            turn,
+            channel_id,
+            user_id,
+            Some(session_id),
+            "assistant_response",
+        )
+        .await?,
         session_id,
         user_id: uid,
         user_id_text: user_id.to_string(),
@@ -2827,33 +2866,55 @@ async fn handle_transcript_correction_confirmation(
                     }),
                 )
                 .await;
-            let _ = modules
-                .conversation
-                .append_message(
-                    session_id,
-                    ChatMessage {
-                        role: "user".into(),
-                        content: correction.raw_text.clone(),
-                        name: Some(user_id.to_string()),
-                        ..ChatMessage::default()
-                    },
+            let persisted = async {
+                let turn =
+                    turn.ok_or_else(|| anyhow::anyhow!("clarification has no admitted source"))?;
+                let owner = Uuid::parse_str(user_id)?;
+                let epoch = turn
+                    .source_privacy_epoch
+                    .ok_or_else(|| anyhow::anyhow!("clarification source is unstamped"))?;
+                let source = modules
+                    .conversation
+                    .append_sourced_message(
+                        owner,
+                        session_id,
+                        ChatMessage::new("user", &correction.raw_text),
+                        turn.received_at,
+                        epoch,
+                    )
+                    .await?;
+                turn.source_event_id
+                    .set(source)
+                    .map_err(|_| anyhow::anyhow!("clarification source already attached"))?;
+                let response_id = delivery::prepare_response(
+                    modules,
+                    Some(turn),
+                    channel_id,
+                    user_id,
+                    Some(session_id),
+                    "clarification",
                 )
-                .await;
-            let _ = modules
-                .conversation
-                .append_message(
-                    session_id,
-                    ChatMessage {
-                        role: "assistant".into(),
-                        content: clarification.to_string(),
-                        name: None,
-                        ..ChatMessage::default()
-                    },
-                )
-                .await;
+                .await?;
+                modules
+                    .conversation
+                    .commit_response(
+                        owner,
+                        session_id,
+                        response_id,
+                        ChatMessage::new("assistant", clarification),
+                    )
+                    .await?;
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            if let Err(error) = persisted {
+                tracing::warn!(%error,"clarification could not be durably admitted");
+                return;
+            }
         }
         Err(error) => {
             tracing::debug!(error = ?error, "failed to create session for STT correction confirmation");
+            return;
         }
     }
 
@@ -2936,6 +2997,7 @@ fn transcript_correction_debug_payload(
 }
 
 async fn execute_expression_and_trace(
+    orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     plan: &ExpressionPlan,
@@ -2947,8 +3009,10 @@ async fn execute_expression_and_trace(
 ) {
     let execution = cancellable_stage(turn, "expression", async {
         Ok(match phase {
-            Some(phase) => execute_expression_plan_phase(channel, target, plan, phase).await,
-            None => execute_expression_plan(channel, target, plan).await,
+            Some(phase) => {
+                execute_expression_plan_phase(orchestrator, channel, target, plan, phase).await
+            }
+            None => execute_expression_plan(orchestrator, channel, target, plan).await,
         })
     })
     .await
@@ -3208,6 +3272,15 @@ async fn execute_llm_response(
     }
 
     if allow_streaming && channel.capabilities().streaming {
+        delivery::prepare_response(
+            modules,
+            turn,
+            channel_id,
+            user_id,
+            Some(session_id),
+            "assistant_response",
+        )
+        .await?;
         debug_component_llm_call(
             debug_output,
             "llm",
@@ -3676,8 +3749,10 @@ async fn persist_text_interaction(
 
     if let Err(error) = modules
         .conversation
-        .append_message(
+        .commit_response(
+            pending.user_id,
             pending.session_id,
+            pending.response_id,
             ChatMessage {
                 role: "assistant".into(),
                 content: pending.response_text.clone(),
@@ -3728,6 +3803,7 @@ async fn persist_interrupted_user_context(
     turn: &VoiceTurn,
     debug_output: bool,
 ) {
+    delivery::interrupt_response(modules, turn, pending.user_id).await;
     let interruption = turn.interruption();
     let context = InterruptedUserContext {
         session_id: pending.session_id,
@@ -3753,6 +3829,7 @@ async fn persist_interrupted_input_context(
     turn: &VoiceTurn,
     debug_output: bool,
 ) {
+    delivery::interrupt_response(modules, turn, user_id).await;
     let interruption = turn.interruption();
     let context = InterruptedUserContext {
         session_id,

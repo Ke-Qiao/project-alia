@@ -1,4 +1,4 @@
-# 持续语音与播放协议 v1
+# 持续语音 v1 与播放 v2
 
 本文件描述本轮实际接入的控制边界。Easy-Turn 固定运行在 Server；设备侧保留采集、播放和绑定失效处理。物理播放时钟、AEC、可恢复暂停和真机双讲仍需后续主线验收。
 
@@ -27,7 +27,7 @@ VAD 只提供语音活动证据。Server 以有界窗口调用 TurnDetector，�
 
 ## 播放接收与栅栏
 
-`alia.playback.v1.Playback/Push` 接收 `Start → Audio* → End → EOF`，并返回接收回执。每一帧都携带同一个 `VoiceScope`、播放 UUID 和递增的 `playback_sequence`。Audio 另有从 0 开始的连续帧序号和采样偏移；End 声明这一段的总采样数。
+`alia.playback.v2.Playback/Push` 接收 `Start → Audio* → End → EOF`，并持续返回后端观察回执。Start 的 contract version 2 得到确认后才发送 Audio；旧 v1 RPC 路径不复用，避免旧设备忽略精准取消字段。每帧携带同一个 `VoiceScope`、播放 UUID 和递增 `playback_sequence`。Audio 另有从 0 开始的连续序号和采样偏移；End 声明总采样数，确认仅关闭输入，观察继续。
 
 只有本地 `Ready` 处理可以激活一个会话。服务端的 Start 和 Fence 不能创造或替换设备的会话身份。设备拒绝不同 boot/session、过旧 generation 和已使用的 playback sequence。
 
@@ -36,6 +36,7 @@ VAD 只提供语音活动证据。Server 以有界窗口调用 TurnDetector，�
 `Playback/Fence` 使用独立 RPC，不等待媒体队列容量：
 
 - 普通 Fence 只提高匹配 boot/session 的最低可接受 generation；迟到的低 generation 请求不能中断较新的回答。
+- 指定 playback_id / playback_sequence 的精准 Fence 只取消原播放，不清同 epoch 后继；ACK 核验已进入的输出边界并返回最终快照，超时保留未知和原始工作所有权。
 - `close_session = true` 按精确 boot/session 关闭整个会话，不受它曾经经过多少代回答影响。新会话的不同 UUID 保护它免受旧关闭请求影响。
 - `applied = false` 可能表示幂等或不匹配，调用方必须核对返回的活动身份和 generation，不能只依据 gRPC 成功判定栅栏已经建立。
 
@@ -43,6 +44,6 @@ VAD 只提供语音活动证据。Server 以有界窗口调用 TurnDetector，�
 
 ## 证据边界
 
-当前回执只证明音频已被队列接受，包含 `accepted_samples` 和 `end_accepted`。`submitted_samples` 与 `presented_samples` 没有设备证据时保持缺失。本轮不得依据 gRPC 返回、接收完所有 PCM 或计算出的音频时长填写实际播放完成。
+v2 回执包含接收计数、End、严格递增 receipt sequence，以及关联后端实例和格式的 submitted 源帧前缀。CPAL 完整 callback 帧写入与 ALSA 成功 writei 只证明提交；`presented_samples` 保持缺失，SubmissionFinished 不代表声学播放完成。终态等待已进入的后端提交完成计数再冻结；不能根据 gRPC 返回或音频时长填写实际呈现，完整边界见[Delivery 设计](delivery-design.md)。
 
 本地 generation 控制测试、真实 loopback 协议测试与真实 Easy-Turn 推理分别提供不同证据。它们不证明 Pi 的实际声学停止时间、回声消除效果、用户听见音频或机构动作到位。

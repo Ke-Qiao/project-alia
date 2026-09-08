@@ -1,5 +1,5 @@
-//! Tests the actual ingress/response chain with in-memory collaborators. No
-//! model endpoint or database is contacted; STT panics if called unexpectedly.
+//! Tests the ingress/response chain with controlled model and media collaborators.
+//! Successful delivery paths use real PostgreSQL; unexpected STT calls panic.
 use super::*;
 use crate::module::{ModuleLifecycle, factory};
 use crate::providers::adapter::{
@@ -18,6 +18,8 @@ struct Conversation {
     events: Mutex<Vec<ConversationEventEntry>>,
     source_times: Mutex<Vec<chrono::DateTime<chrono::Utc>>>,
     source_epochs: Mutex<Vec<i64>>,
+    db: Option<sea_orm::DatabaseConnection>,
+    fail_session: AtomicBool,
     fail_user: AtomicBool,
     fail_assistant: AtomicBool,
 }
@@ -28,7 +30,21 @@ impl ModuleLifecycle for Conversation {
 }
 #[async_trait]
 impl ConversationBackend for Conversation {
-    async fn get_or_create_active_session(&self, _: &str, _: &str) -> anyhow::Result<Uuid> {
+    async fn get_or_create_active_session(
+        &self,
+        channel: &str,
+        user: &str,
+    ) -> anyhow::Result<Uuid> {
+        anyhow::ensure!(
+            !self.fail_session.load(Ordering::SeqCst),
+            "injected session failure"
+        );
+        if let Some(db) = &self.db {
+            use sea_orm::ConnectionTrait;
+            let session = Uuid::from_u128(100);
+            db.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",vec![session.into(),channel.into(),user.into()])).await?;
+            return Ok(session);
+        }
         Ok(Uuid::nil())
     }
     async fn create_session(&self, _: &str, _: &str) -> anyhow::Result<Uuid> {
@@ -57,7 +73,7 @@ impl ConversationBackend for Conversation {
     }
     async fn append_sourced_message(
         &self,
-        _: Uuid,
+        owner: Uuid,
         session: Uuid,
         message: ChatMessage,
         received_at: chrono::DateTime<chrono::Utc>,
@@ -68,13 +84,50 @@ impl ConversationBackend for Conversation {
             "injected source persistence failure"
         );
         anyhow::ensure!(message.role == "user", "source must be user input");
+        let source = Uuid::new_v4();
+        if let Some(db) = &self.db {
+            use sea_orm::ConnectionTrait;
+            db.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user',$4,$5,$6)",vec![source.into(),session.into(),owner.to_string().into(),message.content.clone().into(),received_at.into(),source_privacy_epoch.into()])).await?;
+        }
         self.append_message(session, message).await?;
         self.source_times.lock().unwrap().push(received_at);
         self.source_epochs
             .lock()
             .unwrap()
             .push(source_privacy_epoch);
-        Ok(Uuid::new_v4())
+        Ok(source)
+    }
+    async fn commit_response(
+        &self,
+        owner: Uuid,
+        session: Uuid,
+        response: Uuid,
+        message: ChatMessage,
+    ) -> anyhow::Result<Uuid> {
+        anyhow::ensure!(
+            !self.fail_assistant.load(Ordering::SeqCst),
+            "injected assistant persistence failure"
+        );
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("test conversation has no durable delivery ledger"))?;
+        use sea_orm::{ConnectionTrait, TransactionTrait};
+        let tx = db.begin().await?;
+        let result = crate::modules::delivery::repository::DeliveryRepository::new(db.clone())
+            .mark_generated_in_transaction(
+                &tx,
+                owner,
+                response,
+                Uuid::new_v4(),
+                serde_json::json!({"text":message.content}),
+            )
+            .await?;
+        let id = result.assistant_message_id.unwrap();
+        tx.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant',$3) ON CONFLICT DO NOTHING",vec![id.into(),session.into(),message.content.clone().into()])).await?;
+        tx.commit().await?;
+        self.append_message(session, message).await?;
+        Ok(id)
     }
     async fn append_event(&self, _: Uuid, event: ConversationEventEntry) -> anyhow::Result<()> {
         let mut events = self.events.lock().unwrap();
@@ -160,6 +213,10 @@ impl RouterStrategy for DirectRouter {
 }
 #[derive(Default)]
 struct OutputChannel {
+    owner: Option<Uuid>,
+    streaming: bool,
+    sequence: std::sync::atomic::AtomicU64,
+    first_gate: Option<Arc<tokio::sync::Semaphore>>,
     texts: Mutex<Vec<String>>,
     audio: Mutex<Vec<AudioPayload>>,
 }
@@ -176,9 +233,71 @@ impl ChannelAdapter for OutputChannel {
     fn channel_id(&self) -> &str {
         "test"
     }
+    fn owner_user_id(&self) -> Option<Uuid> {
+        self.owner
+    }
+    fn reserve_playback(
+        &self,
+        target: &ChannelTarget,
+        playback_id: Uuid,
+    ) -> anyhow::Result<Option<alia_core::delivery::PlaybackIdentity>> {
+        Ok(target
+            .voice
+            .map(|scope| alia_core::delivery::PlaybackIdentity {
+                scope,
+                playback_id,
+                playback_sequence: self.sequence.fetch_add(1, Ordering::SeqCst) + 1,
+            }))
+    }
+    async fn deliver_audio(
+        &self,
+        target: &ChannelTarget,
+        identity: Option<alia_core::delivery::PlaybackIdentity>,
+        mut audio: crate::channels::adapter::AudioPayloadStream,
+        observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
+        _: CancellationToken,
+    ) -> anyhow::Result<crate::channels::adapter::AudioDeliveryReport> {
+        use futures::StreamExt;
+        observer.start(24000, 1).await?;
+        let mut frames = 0u64;
+        while let Some(payload) = audio.next().await {
+            let payload = payload?;
+            let pcm = tts_bytes_to_pcm_payload(payload.data.clone())?;
+            frames += pcm.data.len() as u64 / (u64::from(pcm.channels) * 2);
+            observer.offered(frames).await?;
+            self.send_audio(target, payload).await?;
+        }
+        if identity.unwrap().playback_sequence == 1 {
+            if let Some(gate) = &self.first_gate {
+                gate.acquire().await.unwrap().forget();
+            }
+        }
+        let progress = alia_core::delivery::PlaybackProgress {
+            identity: identity.unwrap(),
+            receipt_sequence: 1,
+            accepted_source_frames: frames,
+            submitted_source_frames: Some(frames),
+            presented_source_frames: None,
+            end_accepted: true,
+            backend: Some(alia_core::delivery::SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: alia_core::delivery::SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 24000,
+                output_channels: 1,
+            }),
+            observation_end: Some(alia_core::delivery::ObservationEnd::SubmissionFinished),
+        };
+        observer.progress(progress.clone()).await?;
+        Ok(crate::channels::adapter::AudioDeliveryReport {
+            progress: Some(progress),
+            observation_end: alia_core::delivery::ObservationEnd::SubmissionFinished,
+        })
+    }
     fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
         crate::channels::adapter::ChannelCapabilities {
             text: true,
+            streaming: self.streaming,
+            audio_streaming: self.streaming,
             voice_output: true,
             ..Default::default()
         }
@@ -192,8 +311,8 @@ impl ChannelAdapter for OutputChannel {
         Ok(())
     }
 }
-struct Fixture {
-    modules: Arc<ModuleRegistry>,
+pub(super) struct Fixture {
+    pub(super) modules: Arc<ModuleRegistry>,
     channels: Arc<ChannelRegistry>,
     sensors: Arc<SensorRegistry>,
     output: Arc<OutputChannel>,
@@ -202,7 +321,7 @@ struct Fixture {
     started: mpsc::UnboundedReceiver<String>,
 }
 impl Fixture {
-    async fn new(block: bool) -> Self {
+    pub(super) async fn new(block: bool) -> Self {
         let config: crate::config::ServerConfig =
             toml::from_str(include_str!("../../../../../config/server.example.toml")).unwrap();
         let (started_tx, started) = mpsc::unbounded_channel();
@@ -216,6 +335,12 @@ impl Fixture {
         let output = Arc::new(OutputChannel::default());
         channels.register(output.clone()).await.unwrap();
         let modules = Arc::new(ModuleRegistry {
+            delivery: crate::modules::delivery::DeliveryService::new(
+                crate::modules::delivery::repository::DeliveryRepository::new(
+                    sea_orm::DatabaseConnection::Disconnected,
+                ),
+                &CancellationToken::new(),
+            ),
             cleanup: crate::module::lifecycle::RuntimeCleanup::new(
                 tokio_util::sync::CancellationToken::new(),
                 std::time::Duration::from_secs(1),
@@ -278,6 +403,36 @@ fn input(text: &str) -> RecognizedVoiceInput {
 }
 
 #[tokio::test]
+async fn clarification_session_failure_sends_no_unrecorded_text_or_audio() {
+    let fixture = Fixture::new(false).await;
+    fixture
+        .conversation
+        .fail_session
+        .store(true, Ordering::SeqCst);
+    let correction: TranscriptCorrectionResult = serde_json::from_value(serde_json::json!({
+        "raw_text":"unclear target", "corrected_text":"unclear target", "confidence":0.5,
+        "changed":false,"requires_confirmation":true,"risk":"medium","status":"unchanged","provider":"test"
+    })).unwrap();
+    handle_transcript_correction_confirmation(
+        &fixture.modules,
+        fixture.output.as_ref(),
+        &ChannelTarget {
+            user_id: Uuid::new_v4().to_string(),
+            voice: None,
+        },
+        "test",
+        "unlinked",
+        "Which device?",
+        &correction,
+        false,
+        None,
+    )
+    .await;
+    assert!(fixture.output.texts.lock().unwrap().is_empty());
+    assert!(fixture.output.audio.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
     for fail_user in [true, false] {
         let fixture = Fixture::new(false).await;
@@ -296,6 +451,7 @@ async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
             source_received_at: chrono::Utc::now(),
             source_privacy_epoch: 0,
             source_event_id: None,
+            response_id: uuid::Uuid::new_v4(),
             session_id: Uuid::new_v4(),
             user_id: user,
             user_id_text: user.to_string(),
@@ -368,70 +524,73 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
 }
 #[tokio::test]
 async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
-    let mut fixture = Fixture::new(false).await;
-    let input = input("Keep this exact recognized transcript.");
-    let session_id = input.session_id;
-    let source_received_at = input.source_received_at;
-    voice::process_recognized_voice(
-        input,
-        &fixture.modules,
-        &fixture.channels,
-        &EventBus::new(8),
-        &VoiceTurnRegistry::default(),
-        false,
-        &fixture.policy,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        fixture.started.try_recv().unwrap(),
-        "Keep this exact recognized transcript."
-    );
-    assert_eq!(
-        fixture.output.texts.lock().unwrap().as_slice(),
-        &["recognized reply"]
-    );
-    assert_eq!(fixture.output.audio.lock().unwrap().len(), 1);
-    assert_eq!(
-        fixture.conversation.source_times.lock().unwrap().as_slice(),
-        &[source_received_at],
-        "processing a queued input must preserve the original audit time"
-    );
-    assert_eq!(
-        fixture
-            .conversation
-            .source_epochs
-            .lock()
-            .unwrap()
-            .as_slice(),
-        &[41],
-        "queued speech must keep its admitted source epoch"
-    );
-    let messages = fixture.conversation.messages.lock().unwrap();
-    assert_eq!(
-        messages
-            .iter()
-            .map(|m| (m.role.as_str(), m.content.as_str()))
-            .collect::<Vec<_>>(),
-        vec![
-            ("user", "Keep this exact recognized transcript."),
-            ("assistant", "recognized reply")
-        ]
-    );
-    let events = fixture.conversation.events.lock().unwrap();
-    let started = events
-        .iter()
-        .find(|event| event.event_type == "turn_started")
+    with_linked_fixture(|mut fixture| async move {
+        let mut input = input("Keep this exact recognized transcript.");
+        input.user_id = Uuid::from_u128(42).to_string();
+        let session_id = input.session_id;
+        let source_received_at = input.source_received_at;
+        voice::process_recognized_voice(
+            input,
+            &fixture.modules,
+            &fixture.channels,
+            &EventBus::new(8),
+            &VoiceTurnRegistry::default(),
+            false,
+            &fixture.policy,
+        )
+        .await
         .unwrap();
-    assert_eq!(
-        started.payload["voice_scope"]["session_id"],
-        session_id.to_string()
-    );
-    assert_eq!(started.payload["voice_scope"]["generation_epoch"], 7);
-    assert_ne!(
-        started.turn_id, session_id,
-        "response audit must not reuse a long-lived session identity"
-    );
+        assert_eq!(
+            fixture.started.try_recv().unwrap(),
+            "Keep this exact recognized transcript."
+        );
+        assert_eq!(
+            fixture.output.texts.lock().unwrap().as_slice(),
+            &["recognized reply"]
+        );
+        assert_eq!(fixture.output.audio.lock().unwrap().len(), 1);
+        assert_eq!(
+            fixture.conversation.source_times.lock().unwrap().as_slice(),
+            &[source_received_at],
+            "processing a queued input must preserve the original audit time"
+        );
+        assert_eq!(
+            fixture
+                .conversation
+                .source_epochs
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &[41],
+            "queued speech must keep its admitted source epoch"
+        );
+        let messages = fixture.conversation.messages.lock().unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .map(|m| (m.role.as_str(), m.content.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("user", "Keep this exact recognized transcript."),
+                ("assistant", "recognized reply")
+            ]
+        );
+        let events = fixture.conversation.events.lock().unwrap();
+        let started = events
+            .iter()
+            .find(|event| event.event_type == "turn_started")
+            .unwrap();
+        assert_eq!(
+            started.payload["voice_scope"]["session_id"],
+            session_id.to_string()
+        );
+        assert_eq!(started.payload["voice_scope"]["generation_epoch"], 7);
+        assert_ne!(
+            started.turn_id, session_id,
+            "response audit must not reuse a long-lived session identity"
+        );
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -494,4 +653,217 @@ async fn saturated_voice_queue_rejects_overflow_and_skips_cancelled_input() {
         ingress.try_submit(input("closed")),
         Err(mpsc::error::TrySendError::Closed(_))
     ));
+}
+
+async fn with_linked_fixture<F, Fut>(test: F)
+where
+    F: FnOnce(Fixture) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    use futures::FutureExt;
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let url = std::env::var("ALIA_TEST_DATABASE_URL")
+        .expect("pipeline Delivery test requires isolated PostgreSQL");
+    let admin = sea_orm::Database::connect(url.clone()).await.unwrap();
+    let schema = format!("pipeline_delivery_{}", Uuid::new_v4().simple());
+    admin
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let mut options = sea_orm::ConnectOptions::new(url);
+    options
+        .max_connections(4)
+        .set_schema_search_path(format!("{schema},public"))
+        .sqlx_logging(false);
+    let db = sea_orm::Database::connect(options).await.unwrap();
+    crate::modules::platform::migrations::run(&db)
+        .await
+        .unwrap();
+    let owner = Uuid::from_u128(42);
+    db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,'pipeline@delivery.test','Pipeline test','not-a-login','user','active')",[owner.into()])).await.unwrap();
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "INSERT INTO memory_privacy_state(user_id,privacy_epoch) VALUES($1,41)",
+        [owner.into()],
+    ))
+    .await
+    .unwrap();
+    let mut fixture = Fixture::new(false).await;
+    fixture.conversation = Arc::new(Conversation {
+        db: Some(db.clone()),
+        ..Default::default()
+    });
+    fixture.output = Arc::new(OutputChannel {
+        owner: Some(owner),
+        ..Default::default()
+    });
+    fixture.channels = Arc::new(ChannelRegistry::new());
+    fixture
+        .channels
+        .register(fixture.output.clone())
+        .await
+        .unwrap();
+    let delivery = crate::modules::delivery::DeliveryService::new(
+        crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
+        &CancellationToken::new(),
+    );
+    delivery.start().await.unwrap();
+    let modules = Arc::get_mut(&mut fixture.modules).unwrap();
+    modules.delivery = delivery.clone();
+    modules.conversation = fixture.conversation.clone();
+    let result = std::panic::AssertUnwindSafe(tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        test(fixture),
+    ))
+    .catch_unwind()
+    .await;
+    delivery.shutdown().await.unwrap();
+    db.close().await.unwrap();
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    admin.close().await.unwrap();
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => panic!("pipeline Delivery test exceeded15s"),
+        Err(error) => std::panic::resume_unwind(error),
+    }
+}
+
+#[tokio::test]
+async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response() {
+    struct Streaming;
+    impl ModuleLifecycle for Streaming {
+        fn name(&self) -> &'static str {
+            "streaming-test"
+        }
+    }
+    #[async_trait]
+    impl LlmAdapter for Streaming {
+        async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
+            panic!("this case must use streaming")
+        }
+        async fn chat_stream(
+            &self,
+            _: &[ChatMessage],
+        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
+            Ok(Box::pin(futures::stream::iter([
+                Ok("First sentence. ".into()),
+                Ok("Second sentence.".into()),
+            ])))
+        }
+    }
+    struct Speech {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl ModuleLifecycle for Speech {
+        fn name(&self) -> &'static str {
+            "speech-test"
+        }
+    }
+    #[async_trait]
+    impl crate::providers::adapter::TtsAdapter for Speech {
+        async fn synthesize(&self, _: &str) -> anyhow::Result<Vec<u8>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![0; 400])
+        }
+        async fn synthesize_stream(
+            &self,
+            _: &str,
+        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
+            panic!("sentence pipeline uses bounded pre-synthesis")
+        }
+    }
+    with_linked_fixture(|mut fixture| async move {
+        let speech = Arc::new(Speech {
+            calls: Default::default(),
+        });
+        let llm = Arc::new(Streaming);
+        let modules = Arc::get_mut(&mut fixture.modules).unwrap();
+        modules.llm = llm.clone();
+        modules.minor_llm = llm.clone();
+        modules.major_llm = llm;
+        modules.tts = speech.clone();
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let output = Arc::new(OutputChannel {
+            owner: Some(Uuid::from_u128(42)),
+            streaming: true,
+            first_gate: Some(gate.clone()),
+            ..Default::default()
+        });
+        let channels = Arc::new(ChannelRegistry::new());
+        channels.register(output.clone()).await.unwrap();
+        let mut recognized = input("Read two sentences.");
+        recognized.user_id = Uuid::from_u128(42).to_string();
+        let modules = fixture.modules.clone();
+        let policy = fixture.policy.clone();
+        let task = tokio::spawn(async move {
+            voice::process_recognized_voice(
+                recognized,
+                &modules,
+                &channels,
+                &EventBus::new(8),
+                &VoiceTurnRegistry::default(),
+                false,
+                &policy,
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while speech.calls.load(Ordering::SeqCst) < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("second sentence must synthesize while first playback remains gated");
+        assert!(!task.is_finished());
+        gate.add_permits(1);
+        task.await.unwrap().unwrap();
+        use sea_orm::ConnectionTrait;
+        let db = fixture.conversation.db.as_ref().unwrap();
+        let row = db
+            .query_one(sea_orm::Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT response_id FROM delivery_responses".to_string(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        let id: Uuid = row.try_get("", "response_id").unwrap();
+        let records = fixture
+            .modules
+            .delivery
+            .list_deliveries(Uuid::from_u128(42), id)
+            .await
+            .unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].output_key, "speech_sentence:0");
+        assert_eq!(records[1].output_key, "speech_sentence:1");
+        assert_ne!(
+            records[0].identity.unwrap().playback_id,
+            records[1].identity.unwrap().playback_id
+        );
+        assert!(
+            records.iter().all(|r| r.status
+                == crate::modules::delivery::types::DeliveryStatus::Submitted
+                && r.presented_frames.is_none()),
+            "{records:#?}"
+        );
+        let response = fixture
+            .modules
+            .delivery
+            .get_response(Uuid::from_u128(42), id)
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status,
+            crate::modules::delivery::types::ResponseStatus::Committed
+        );
+        assert_eq!(
+            response.final_content,
+            Some(serde_json::json!({"text":"First sentence. Second sentence."}))
+        );
+    })
+    .await;
 }

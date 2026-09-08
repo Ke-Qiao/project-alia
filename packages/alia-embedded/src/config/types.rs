@@ -571,8 +571,6 @@ pub struct AudioConfig {
     pub playback_max_buffer_ms: u32,
     #[serde(default = "default_playback_command_queue_capacity")]
     pub playback_command_queue_capacity: usize,
-    #[serde(default = "default_alsa_playback_follow_source_rate")]
-    pub alsa_playback_follow_source_rate: bool,
     #[serde(default)]
     pub alsa_playback_lock_to_capture_rate: bool,
     #[serde(default)]
@@ -608,7 +606,6 @@ impl Default for AudioConfig {
             playback_target_buffer_ms: default_playback_target_buffer_ms(),
             playback_max_buffer_ms: default_playback_max_buffer_ms(),
             playback_command_queue_capacity: default_playback_command_queue_capacity(),
-            alsa_playback_follow_source_rate: default_alsa_playback_follow_source_rate(),
             alsa_playback_lock_to_capture_rate: false,
             alsa_capture_s32_alignment: AlsaCaptureS32Alignment::default(),
             opus_bitrate: default_opus_bitrate(),
@@ -645,9 +642,6 @@ fn default_playback_max_buffer_ms() -> u32 {
 }
 fn default_playback_command_queue_capacity() -> usize {
     8
-}
-fn default_alsa_playback_follow_source_rate() -> bool {
-    true
 }
 fn default_opus_bitrate() -> u32 {
     24000

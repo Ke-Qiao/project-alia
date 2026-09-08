@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -16,30 +17,37 @@ use super::types::{
     RelationshipProfile, RelationshipPruneResult, ResourceState, SocialState,
 };
 
+mod persistence;
+
 const RELATIONSHIP_DELTA_SCALE: f32 = 0.2;
 const RELATIONSHIP_HOMEOSTASIS_SCALE: f32 = 0.15;
 
 #[derive(Debug)]
 pub struct AffectStore {
     policy: AffectPolicySection,
+    /// Serialize each RAM mutation with its corresponding persistence command.
+    mutation: Mutex<()>,
     states: RwLock<BTreeMap<AffectKey, AffectState>>,
     relationships: RwLock<BTreeMap<String, AffectState>>,
     relationship_profiles: RwLock<BTreeMap<String, RelationshipProfile>>,
     devices: RwLock<BTreeMap<String, AffectState>>,
     global: RwLock<AffectState>,
     db: RwLock<Option<DatabaseConnection>>,
+    persistence: persistence::Persistence,
 }
 
 impl AffectStore {
     pub fn new(policy: AffectPolicySection) -> Self {
         Self {
             policy,
+            mutation: Mutex::new(()),
             states: RwLock::new(BTreeMap::new()),
             relationships: RwLock::new(BTreeMap::new()),
             relationship_profiles: RwLock::new(BTreeMap::new()),
             devices: RwLock::new(BTreeMap::new()),
             global: RwLock::new(AffectState::default()),
             db: RwLock::new(None),
+            persistence: persistence::Persistence::default(),
         }
     }
 
@@ -55,12 +63,19 @@ impl AffectStore {
         }
         let restored = load_active_appraisals(&db, &self.policy).await?;
         self.restore_appraisals(restored);
+        self.persistence
+            .start(db.clone(), self.policy.clone())
+            .await?;
         let mut db_slot = self
             .db
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *db_slot = Some(db);
         Ok(())
+    }
+
+    pub async fn shutdown_persistence(&self) -> anyhow::Result<()> {
+        self.persistence.shutdown().await
     }
 
     pub fn snapshot(&self, channel_id: &str, user_id: &str) -> AffectSnapshot {
@@ -112,26 +127,47 @@ impl AffectStore {
         &self,
         user_id: &str,
     ) -> anyhow::Result<RelationshipClearResult> {
-        let relationship_events_removed = self
-            .relationships
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(user_id)
-            .map(|state| state.events.len())
-            .unwrap_or(0);
-        let profile_removed = self
-            .relationship_profiles
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(user_id)
-            .is_some();
-        let db = self
-            .db
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        let persisted_events_removed = if let Some(db) = db {
-            delete_persisted_relationship_appraisals(&db, user_id).await?
+        let (acknowledgement, relationship_events_removed, profile_removed) = {
+            let _mutation = self
+                .mutation
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let attached = self
+                .db
+                .read()
+                .unwrap_or_else(|error| error.into_inner())
+                .is_some();
+            // Reject a full/closed writer before changing RAM. Both this enqueue
+            // and the RAM deletion share the gate with apply_appraisals.
+            let acknowledgement = if attached {
+                Some(self.persistence.clear_relationship(user_id)?)
+            } else {
+                None
+            };
+            let relationship_events_removed = self
+                .relationships
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(user_id)
+                .map(|state| state.events.len())
+                .unwrap_or(0);
+            let profile_removed = self
+                .relationship_profiles
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(user_id)
+                .is_some();
+            (
+                acknowledgement,
+                relationship_events_removed,
+                profile_removed,
+            )
+        };
+        let persisted_events_removed = if let Some(acknowledged) = acknowledgement {
+            tokio::time::timeout(std::time::Duration::from_secs(2), acknowledged).await
+                .map_err(|_| anyhow::anyhow!("relationship clear acknowledgement timed out; admitted deletion remains owned and its outcome may be unknown"))?
+                .map_err(|_| anyhow::anyhow!("relationship clear writer stopped without acknowledgement; outcome is unknown"))?
+                .map_err(anyhow::Error::msg)?
         } else {
             0
         };
@@ -145,6 +181,10 @@ impl AffectStore {
     }
 
     pub fn prune_relationship_profiles(&self) -> RelationshipPruneResult {
+        let _mutation = self
+            .mutation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let now = Utc::now();
         let prune_after = self.policy.relationship_profile_prune_after_sec;
         if prune_after == 0 {
@@ -235,6 +275,19 @@ impl AffectStore {
         now: DateTime<Utc>,
         appraisals: Vec<AppraisalEvent>,
     ) -> AffectObservation {
+        let _mutation = self
+            .mutation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Err(error) = self.persist_appraisals(channel_id, user_id, route, &appraisals) {
+            tracing::error!(%error, "expression appraisal mutation rejected before RAM update");
+            return AffectObservation {
+                snapshot: self.snapshot(channel_id, user_id),
+                appraisals: Vec::new(),
+                active_event_count: 0,
+                persistence_error: Some(error.to_string()),
+            };
+        }
         let mut session_appraisals = Vec::new();
         let mut relationship_appraisals = Vec::new();
         let mut device_appraisals = Vec::new();
@@ -276,7 +329,6 @@ impl AffectStore {
         snapshot = merge_context_snapshot(snapshot, relationship, &self.policy);
         snapshot = self.merge_global_snapshot(snapshot, now);
         snapshot = self.merge_device_snapshot(snapshot, channel_id, now);
-        self.persist_appraisals(channel_id, user_id, route, &appraisals);
 
         AffectObservation {
             snapshot,
@@ -285,6 +337,7 @@ impl AffectStore {
                 + relationship_event_count
                 + device_event_count
                 + global_event_count,
+            persistence_error: None,
         }
     }
 
@@ -441,6 +494,10 @@ impl AffectStore {
     }
 
     fn restore_appraisals(&self, appraisals: Vec<PersistedAppraisal>) {
+        let _mutation = self
+            .mutation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if appraisals.is_empty() {
             return;
         }
@@ -503,9 +560,9 @@ impl AffectStore {
         user_id: &str,
         route: Option<&str>,
         appraisals: &[AppraisalEvent],
-    ) {
+    ) -> anyhow::Result<()> {
         if appraisals.is_empty() {
-            return;
+            return Ok(());
         }
 
         let db = self
@@ -514,35 +571,16 @@ impl AffectStore {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         let Some(db) = db else {
-            return;
+            return Ok(());
         };
 
-        let channel_id = channel_id.to_string();
-        let user_id = user_id.to_string();
-        let route = route.map(str::to_string);
-        let appraisals = appraisals.to_vec();
-        let policy = self.policy.clone();
-
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.spawn(async move {
-                    if let Err(error) =
-                        insert_appraisals(&db, channel_id, user_id, route, appraisals, policy).await
-                    {
-                        tracing::warn!(
-                            error = ?error,
-                            "failed to persist expression appraisal events"
-                        );
-                    }
-                });
-            }
-            Err(error) => {
-                tracing::warn!(
-                    error = ?error,
-                    "no tokio runtime available; skipped expression appraisal persistence"
-                );
-            }
-        }
+        drop(db);
+        self.persistence.enqueue(persistence::AppraisalWrite {
+            channel_id: channel_id.to_string(),
+            user_id: user_id.to_string(),
+            route: route.map(str::to_string),
+            appraisals: appraisals.to_vec(),
+        })
     }
 }
 
@@ -557,6 +595,10 @@ pub struct AffectObservation {
     pub snapshot: AffectSnapshot,
     pub appraisals: Vec<AppraisalEvent>,
     pub active_event_count: usize,
+    /// Admission failure means these appraisals were not applied to RAM.
+    /// None does not certify that the asynchronous database write has committed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistence_error: Option<String>,
 }
 
 impl AffectObservation {
@@ -565,6 +607,7 @@ impl AffectObservation {
             snapshot: baseline_snapshot(policy),
             appraisals: Vec::new(),
             active_event_count: 0,
+            persistence_error: None,
         }
     }
 }
@@ -1476,7 +1519,7 @@ async fn prune_persisted_appraisals(
 }
 
 async fn delete_persisted_relationship_appraisals(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     user_id: &str,
 ) -> anyhow::Result<u64> {
     let result = expression_appraisal_event::Entity::delete_many()
@@ -1491,7 +1534,7 @@ async fn delete_persisted_relationship_appraisals(
 }
 
 async fn insert_appraisals(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     channel_id: String,
     user_id: String,
     route: Option<String>,

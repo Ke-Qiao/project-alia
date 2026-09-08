@@ -47,6 +47,7 @@ pub(super) async fn process_recognized_voice(
         device_boot_id: input.device_boot_id,
         generation_epoch: input.generation_epoch,
     });
+    turn.output_channel = Some(channel.clone());
     turn.received_at = input.source_received_at;
     turn.source_privacy_epoch = Some(input.source_privacy_epoch);
     tracing::debug!(session_id = %input.session_id, device_boot_id = %input.device_boot_id,
@@ -160,6 +161,7 @@ pub(super) async fn process_voice_response(
 
     if let Some(plan) = &result.expression_plan {
         execute_expression_and_trace(
+            modules.expression.orchestrator(),
             channel,
             target,
             plan,
@@ -211,8 +213,41 @@ pub(super) async fn process_voice_response(
         }
     }
 
-    if let Some(plan) = &result.expression_plan {
+    let presented_finished = if let Some(response_id) = turn.response_id.get() {
+        match modules
+            .delivery
+            .list_deliveries(Uuid::parse_str(user_id)?, *response_id)
+            .await
+        {
+            Ok(deliveries) => {
+                !deliveries.is_empty()
+                    && deliveries.iter().all(|delivery| {
+                        delivery.status
+                            == crate::modules::delivery::types::DeliveryStatus::Completed
+                    })
+            }
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+    if !presented_finished && result.expression_plan.is_some() {
+        if let Some(trace) = &result.tts_trace {
+            trace
+                .record(
+                    "post_speech_skipped",
+                    "delivery",
+                    Some("Device presentation completion was not proven".into()),
+                    serde_json::json!({"reason":"unsupported_evidence"}),
+                )
+                .await;
+        }
+    }
+    if let Some(plan) = &result.expression_plan
+        && presented_finished
+    {
         execute_expression_and_trace(
+            modules.expression.orchestrator(),
             channel,
             target,
             plan,

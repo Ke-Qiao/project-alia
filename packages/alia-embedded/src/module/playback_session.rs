@@ -1,12 +1,13 @@
-//! Network playback admission. Only the local voice-stream handshake activates
-//! a session; playback RPCs may advance its epoch but cannot replace its identity.
-use std::sync::{Arc, Mutex, MutexGuard};
-
-use alia_core::delivery::VoiceScope;
-use anyhow::{Context, Result, ensure};
-use uuid::Uuid;
-
+//! Local Ready owns the voice session. Input End releases only the input lease;
+//! each bounded output observation survives until the backend reports its end.
 use super::traits::AudioPlaybackBackend;
+use alia_core::delivery::{ObservationEnd, PlaybackIdentity, PlaybackProgress, VoiceScope};
+use anyhow::{Context, Result, ensure};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+use uuid::Uuid;
+mod submission;
+pub use submission::{AudioSubmission, SubmissionWrite};
 
 #[derive(Clone, Debug)]
 pub struct PlaybackLease {
@@ -14,39 +15,106 @@ pub struct PlaybackLease {
     pub playback_id: String,
     pub playback_sequence: u64,
     pub sample_rate: u32,
+    pub submission: Arc<AudioSubmission>,
     generation: u64,
 }
-
+impl PlaybackLease {
+    pub fn identity(&self) -> PlaybackIdentity {
+        self.submission.identity
+    }
+}
 struct ActiveSession {
     scope: VoiceScope,
-    highest_sequence: Option<u64>,
+    highest_sequence: u64,
     generation: Option<u64>,
-    current: Option<PlaybackLease>,
-    input_ended: bool,
+    input: Option<PlaybackIdentity>,
+    observations: HashMap<PlaybackIdentity, PlaybackLease>,
 }
-
 pub struct PlaybackSession {
     backend: Arc<dyn AudioPlaybackBackend>,
     state: Mutex<Option<ActiveSession>>,
+    tasks: tokio_util::task::TaskTracker,
+    shutdown: tokio_util::sync::CancellationToken,
+    task_gate: Mutex<()>,
+    task_errors: Arc<Mutex<Vec<String>>>,
 }
-
 impl PlaybackSession {
     pub fn new(backend: Arc<dyn AudioPlaybackBackend>) -> Self {
         Self {
             backend,
             state: Mutex::new(None),
+            tasks: tokio_util::task::TaskTracker::new(),
+            shutdown: tokio_util::sync::CancellationToken::new(),
+            task_gate: Mutex::new(()),
+            task_errors: Arc::default(),
         }
     }
-
+    pub fn shutdown_token(&self) -> tokio_util::sync::CancellationToken {
+        self.shutdown.clone()
+    }
+    pub fn spawn_push(
+        &self,
+        future: impl std::future::Future<Output = Result<()>> + Send + 'static,
+    ) -> Result<()> {
+        use futures::FutureExt;
+        let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
+        ensure!(
+            !self.shutdown.is_cancelled() && self.tasks.len() < 32,
+            "playback runtime is stopped or full"
+        );
+        let errors = self.task_errors.clone();
+        self.tasks.spawn(async move {
+            let mut owned = Box::pin(future);
+            match std::panic::AssertUnwindSafe(owned.as_mut())
+                .catch_unwind()
+                .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => errors
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(error.to_string()),
+                Err(_) => {
+                    errors
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push("playback Push worker panicked; cleanup is unproven".into());
+                    std::future::pending::<()>().await;
+                }
+            }
+            drop(owned);
+        });
+        Ok(())
+    }
     fn lock(&self) -> Result<MutexGuard<'_, Option<ActiveSession>>> {
         self.state
             .lock()
             .map_err(|_| anyhow::anyhow!("playback session lock poisoned"))
     }
-
-    /// Local VoiceSession Ready hook. Never call this from playback RPCs.
+    fn retire(&self, active: &mut ActiveSession, reason: &str) -> Result<()> {
+        active.input = None;
+        let result = active
+            .generation
+            .take()
+            .map_or(Ok(false), |g| self.backend.stop_if_current(g));
+        for (_, lease) in active.observations.drain() {
+            lease.submission.terminate(if result.is_ok() {
+                ObservationEnd::Cancelled {
+                    reason: reason.into(),
+                }
+            } else {
+                ObservationEnd::Unknown {
+                    reason: "backend stop failed; output state is unknown".into(),
+                }
+            });
+        }
+        result.map(|_| ())
+    }
+    /// Only the local VoiceSession Ready hook may activate a session.
     pub fn activate(&self, scope: &VoiceScope) -> Result<()> {
-        validate_scope(scope)?;
+        let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
+        ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        ensure!(scope.is_valid(), "invalid playback voice scope");
         let mut state = self.lock()?;
         if let Some(active) = state.as_ref() {
             if same_session(&active.scope, scope) {
@@ -59,39 +127,23 @@ impl PlaybackSession {
                 return Ok(());
             }
         }
-        let old = state.take();
-        if let Some(generation) = old.and_then(|active| active.generation) {
-            self.backend.stop_if_current(generation)?;
+        if let Some(mut old) = state.take() {
+            self.retire(&mut old, "local voice session replaced")?;
         }
         *state = Some(ActiveSession {
-            scope: scope.clone(),
-            highest_sequence: None,
+            scope: *scope,
+            highest_sequence: 0,
             generation: None,
-            current: None,
-            input_ended: true,
+            input: None,
+            observations: HashMap::new(),
         });
         Ok(())
     }
-
-    /// Local stream-close hook. A late close from an old stream has no effect.
     pub fn close(&self, scope: &VoiceScope) -> Result<bool> {
-        let mut state = self.lock()?;
-        let Some(active) = state.as_ref() else {
-            return Ok(false);
-        };
-        if !same_session(&active.scope, scope) {
-            return Ok(false);
-        }
-        let generation = active.generation;
-        *state = None;
-        if let Some(generation) = generation {
-            self.backend.stop_if_current(generation)?;
-        }
-        Ok(true)
+        self.fence(scope, true)
     }
-
     pub fn fence(&self, minimum: &VoiceScope, close_session: bool) -> Result<bool> {
-        validate_scope(minimum)?;
+        ensure!(minimum.is_valid(), "invalid playback voice scope");
         let mut state = self.lock()?;
         let Some(active) = state.as_mut() else {
             return Ok(false);
@@ -100,27 +152,18 @@ impl PlaybackSession {
             return Ok(false);
         }
         if close_session {
-            let generation = active.generation;
-            *state = None;
-            if let Some(generation) = generation {
-                self.backend.stop_if_current(generation)?;
-            }
+            let mut retired = state.take().expect("checked above");
+            self.retire(&mut retired, "matching voice session closed")?;
             return Ok(true);
         }
         if minimum.generation_epoch <= active.scope.generation_epoch {
             return Ok(false);
         }
-        let generation = active.generation;
+        // State is invalidated even when hardware stop fails.
         active.scope.generation_epoch = minimum.generation_epoch;
-        active.generation = None;
-        active.current = None;
-        active.input_ended = true;
-        if let Some(generation) = generation {
-            self.backend.stop_if_current(generation)?;
-        }
+        self.retire(active, "voice generation fence applied")?;
         Ok(true)
     }
-
     pub fn begin(
         &self,
         scope: &VoiceScope,
@@ -128,11 +171,14 @@ impl PlaybackSession {
         playback_sequence: u64,
         sample_rate: u32,
     ) -> Result<PlaybackLease> {
-        validate_scope(scope)?;
-        ensure!(
-            !Uuid::parse_str(playback_id)?.is_nil(),
-            "playback id must be a non-nil UUID"
-        );
+        let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
+        ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        let identity = PlaybackIdentity {
+            scope: *scope,
+            playback_id: Uuid::parse_str(playback_id)?,
+            playback_sequence,
+        };
+        ensure!(identity.is_valid(), "invalid playback identity");
         ensure!(
             (8000..=192000).contains(&sample_rate),
             "playback sample rate outside 8–192 kHz"
@@ -150,123 +196,190 @@ impl PlaybackSession {
             "playback epoch is stale"
         );
         ensure!(
-            active
-                .highest_sequence
-                .is_none_or(|previous| playback_sequence > previous),
+            playback_sequence > active.highest_sequence,
             "playback sequence was already used or is stale"
         );
-        let newer_epoch = scope.generation_epoch > active.scope.generation_epoch;
+        let newer = scope.generation_epoch > active.scope.generation_epoch;
         ensure!(
-            newer_epoch || active.input_ended,
+            newer || active.input.is_none(),
             "previous playback Push is still receiving media"
         );
-        let previous_generation = active.generation;
-        active.scope = *scope;
-        active.highest_sequence = Some(playback_sequence);
-        active.current = None;
-        active.generation = None;
-        active.input_ended = true;
-        let generation = match previous_generation {
-            Some(generation) if !newer_epoch && self.backend.is_playback_current(generation) => {
-                generation
-            }
+        active.highest_sequence = playback_sequence;
+        if newer {
+            active.scope = *scope;
+            self.retire(active, "new playback generation fence applied")?;
+        }
+        active
+            .observations
+            .retain(|_, lease| lease.submission.is_live());
+        ensure!(
+            active.observations.len() < 32,
+            "active playback observation capacity reached"
+        );
+        let generation = match active.generation {
+            Some(g) if self.backend.is_playback_current(g) => g,
             _ => self.backend.begin_scoped_playback()?,
         };
+        active.generation = Some(generation);
+        let submission = self
+            .backend
+            .open_submission(identity, sample_rate, generation)?;
         let lease = PlaybackLease {
-            scope: scope.clone(),
+            scope: *scope,
             playback_id: playback_id.into(),
             playback_sequence,
             sample_rate,
             generation,
+            submission,
         };
-        active.scope = scope.clone();
-        active.highest_sequence = Some(playback_sequence);
-        active.generation = Some(generation);
-        active.current = Some(lease.clone());
-        active.input_ended = false;
+        active.input = Some(identity);
+        active.observations.insert(identity, lease.clone());
         Ok(lease)
     }
-
-    /// The state lock is released before waiting for media capacity. The backend
-    /// validates the captured generation atomically with its own queue insertion.
+    /// Never hold the session lock across media backpressure. Backend admission
+    /// checks the expected generation and exact input identity atomically.
     pub fn enqueue(&self, lease: &PlaybackLease, pcm: &[i16]) -> Result<bool> {
-        {
-            let state = self.lock()?;
-            let Some(active) = state.as_ref() else {
-                return Ok(false);
-            };
-            if !matches_lease(active, lease) || active.input_ended {
-                return Ok(false);
-            }
-        }
-        self.backend
-            .play_if_current(pcm, lease.sample_rate, lease.generation)
-    }
-
-    pub fn end(&self, lease: &PlaybackLease) -> Result<bool> {
-        let mut state = self.lock()?;
-        let Some(active) = state.as_mut() else {
-            return Ok(false);
-        };
-        if !matches_lease(active, lease)
-            || active.input_ended
-            || !self.backend.is_playback_current(lease.generation)
-        {
-            return Ok(false);
-        }
-        active.input_ended = true;
-        Ok(true)
-    }
-
-    pub fn is_current(&self, lease: &PlaybackLease) -> Result<bool> {
-        Ok(self
+        if !self
             .lock()?
             .as_ref()
-            .is_some_and(|active| matches_lease(active, lease))
-            && self.backend.is_playback_current(lease.generation))
+            .is_some_and(|active| active.input == Some(lease.identity()))
+        {
+            return Ok(false);
+        }
+        self.backend
+            .submit_audio(&lease.submission, lease.submission.accepted(), pcm)
+    }
+    pub fn end(&self, lease: &PlaybackLease) -> Result<bool> {
+        if !self
+            .lock()?
+            .as_ref()
+            .is_some_and(|active| active.input == Some(lease.identity()))
+        {
+            return Ok(false);
+        }
+        let ended = self
+            .backend
+            .end_submission(&lease.submission, lease.submission.accepted())?;
+        if ended {
+            if let Some(active) = self.lock()?.as_mut() {
+                if active.input == Some(lease.identity()) {
+                    active.input = None;
+                }
+            }
+        }
+        Ok(ended)
+    }
+    pub fn progress(&self, lease: &PlaybackLease, receipt_sequence: u64) -> PlaybackProgress {
+        lease.submission.snapshot(receipt_sequence)
+    }
+    pub fn is_current(&self, lease: &PlaybackLease) -> Result<bool> {
+        Ok(lease.submission.is_live()
+            && self.backend.is_playback_current(lease.generation)
+            && self
+                .lock()?
+                .as_ref()
+                .is_some_and(|active| active.observations.contains_key(&lease.identity())))
+    }
+    pub fn cancel_identity(&self, identity: &PlaybackIdentity, reason: &str) -> Result<bool> {
+        let lease = {
+            let mut state = self.lock()?;
+            let Some(active) = state.as_mut() else {
+                return Ok(false);
+            };
+            let Some(lease) = active.observations.get(identity).cloned() else {
+                return Ok(false);
+            };
+            lease
+        };
+        let result = self.backend.cancel_submission(&lease.submission, reason);
+        if let Some(active) = self.lock()?.as_mut() {
+            if active.input == Some(*identity) {
+                active.input = None;
+            }
+        }
+        match result {
+            Ok(true) => lease.submission.terminate(ObservationEnd::Cancelled {
+                reason: reason.into(),
+            }),
+            Ok(false) => {}
+            Err(_) => lease.submission.terminate(ObservationEnd::Unknown {
+                reason: "precise backend cancellation failed".into(),
+            }),
+        }
+        result
+    }
+    /// A precise cancellation success includes the final settled software
+    /// submission prefix. A native write still in flight is not a successful ACK.
+    pub async fn cancel_observed(
+        &self,
+        identity: &PlaybackIdentity,
+        reason: &str,
+    ) -> Result<PlaybackProgress> {
+        let lease = self
+            .lock()?
+            .as_ref()
+            .and_then(|active| active.observations.get(identity).cloned())
+            .context("playback identity is no longer observable")?;
+        ensure!(
+            self.cancel_identity(identity, reason)?,
+            "precise playback cancellation was not applied"
+        );
+        tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            while !lease.submission.output_quiescent() {
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            }
+            let progress = lease.submission.next_snapshot();
+            ensure!(
+                progress.observation_end.is_some(),
+                "cancelled playback has no terminal evidence"
+            );
+            Ok(progress)
+        })
+        .await
+        .context("native playback output did not settle before precise cancellation deadline")?
     }
 
     pub fn cancel(&self, lease: &PlaybackLease) -> Result<bool> {
-        let mut state = self.lock()?;
-        let Some(active) = state.as_mut() else {
-            return Ok(false);
-        };
-        if !matches_lease(active, lease) {
-            return Ok(false);
-        }
-        active.generation = None;
-        active.current = None;
-        active.input_ended = true;
-        let stopped = self.backend.stop_if_current(lease.generation)?;
-        Ok(stopped)
+        self.cancel_identity(&lease.identity(), "playback Push was retired")
     }
-
     pub fn is_active(&self) -> bool {
         self.state.lock().is_ok_and(|state| state.is_some())
     }
-
     pub fn active_scope(&self) -> Result<Option<VoiceScope>> {
         Ok(self.lock()?.as_ref().map(|active| active.scope))
     }
 }
-
-fn matches_lease(active: &ActiveSession, lease: &PlaybackLease) -> bool {
-    active.current.as_ref().is_some_and(|current| {
-        current.scope == lease.scope
-            && current.playback_id == lease.playback_id
-            && current.playback_sequence == lease.playback_sequence
-            && current.generation == lease.generation
-    })
+#[tonic::async_trait]
+impl super::lifecycle::ModuleLifecycle for PlaybackSession {
+    fn name(&self) -> &'static str {
+        "playback_sessions"
+    }
+    async fn stop(&self) -> Result<()> {
+        {
+            let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
+            self.shutdown.cancel();
+            self.tasks.close();
+        }
+        let retired = if let Some(scope) = self.active_scope()? {
+            self.close(&scope).map(|_| ())
+        } else {
+            Ok(())
+        };
+        // A pending native enqueue remains owned here until its control fence
+        // actually releases it. The outer cleanup deadline retains this owner.
+        self.tasks.wait().await;
+        retired?;
+        let errors = self.task_errors.lock().unwrap_or_else(|e| e.into_inner());
+        ensure!(
+            errors.is_empty(),
+            "playback workers failed: {}",
+            errors.join("; ")
+        );
+        Ok(())
+    }
 }
-
 fn same_session(left: &VoiceScope, right: &VoiceScope) -> bool {
     left.device_boot_id == right.device_boot_id && left.session_id == right.session_id
 }
-
-fn validate_scope(scope: &VoiceScope) -> Result<()> {
-    ensure!(scope.is_valid(), "invalid playback voice scope");
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests;

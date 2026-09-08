@@ -2,7 +2,11 @@ use super::*;
 use crate::module::lifecycle::ModuleLifecycle;
 
 #[derive(Default)]
-struct Device(Mutex<(u64, Vec<i16>)>, std::sync::atomic::AtomicBool);
+struct Device(
+    Mutex<(u64, Vec<i16>)>,
+    std::sync::atomic::AtomicBool,
+    Mutex<Vec<(PlaybackIdentity, Vec<i16>)>>,
+);
 #[tonic::async_trait]
 impl ModuleLifecycle for Device {
     fn name(&self) -> &'static str {
@@ -10,6 +14,51 @@ impl ModuleLifecycle for Device {
     }
 }
 impl AudioPlaybackBackend for Device {
+    fn open_submission(
+        &self,
+        identity: PlaybackIdentity,
+        rate: u32,
+        generation: u64,
+    ) -> Result<Arc<AudioSubmission>> {
+        Ok(AudioSubmission::test(identity, generation, rate))
+    }
+    fn submit_audio(
+        &self,
+        submission: &Arc<AudioSubmission>,
+        offset: u64,
+        pcm: &[i16],
+    ) -> Result<bool> {
+        let mut state = self.0.lock().unwrap();
+        if state.0 != submission.generation || !submission.is_live() {
+            return Ok(false);
+        }
+        submission.accept(offset, pcm.len() as u64)?;
+        self.2
+            .lock()
+            .unwrap()
+            .push((submission.identity, pcm.to_vec()));
+        state.1.extend_from_slice(pcm);
+        Ok(true)
+    }
+    fn end_submission(&self, submission: &Arc<AudioSubmission>, total: u64) -> Result<bool> {
+        submission.accept_end(total)
+    }
+    fn cancel_submission(&self, submission: &Arc<AudioSubmission>, reason: &str) -> Result<bool> {
+        let mut state = self.0.lock().unwrap();
+        if state.0 != submission.generation {
+            return Ok(false);
+        }
+        submission.terminate(ObservationEnd::Cancelled {
+            reason: reason.into(),
+        });
+        let mut segments = self.2.lock().unwrap();
+        segments.retain(|(id, _)| *id != submission.identity);
+        state.1 = segments
+            .iter()
+            .flat_map(|(_, pcm)| pcm.iter().copied())
+            .collect();
+        Ok(true)
+    }
     fn play(&self, _: &[i16], _: u32) -> Result<()> {
         unreachable!()
     }
@@ -23,6 +72,7 @@ impl AudioPlaybackBackend for Device {
         let mut state = self.0.lock().unwrap();
         state.0 += 1;
         state.1.clear();
+        self.2.lock().unwrap().clear();
         Ok(state.0)
     }
     fn play_if_current(&self, pcm: &[i16], _: u32, generation: u64) -> Result<bool> {
@@ -44,6 +94,7 @@ impl AudioPlaybackBackend for Device {
         }
         state.0 += 1;
         state.1.clear();
+        self.2.lock().unwrap().clear();
         Ok(true)
     }
     fn is_playback_current(&self, generation: u64) -> bool {
@@ -66,15 +117,15 @@ fn same_epoch_pushes_append_fifo_and_require_end_and_increasing_sequence() {
     let scope = scope(1);
     let id = Uuid::new_v4().to_string();
     assert!(
-        session.begin(&scope, &id, 0, 16000).is_err(),
+        session.begin(&scope, &id, 1, 16000).is_err(),
         "remote Start cannot activate a session"
     );
     session.activate(&scope).unwrap();
-    let first = session.begin(&scope, &id, 0, 16000).unwrap();
+    let first = session.begin(&scope, &id, 1, 16000).unwrap();
     assert!(session.enqueue(&first, &[1, 2]).unwrap());
     assert!(
         session
-            .begin(&scope, &Uuid::new_v4().to_string(), 1, 16000)
+            .begin(&scope, &Uuid::new_v4().to_string(), 2, 16000)
             .is_err(),
         "busy before End"
     );
@@ -84,18 +135,18 @@ fn same_epoch_pushes_append_fifo_and_require_end_and_increasing_sequence() {
         "no media after End"
     );
     assert!(
-        session.begin(&scope, &id, 0, 16000).is_err(),
+        session.begin(&scope, &id, 1, 16000).is_err(),
         "Start replay must fail"
     );
     let second = session
-        .begin(&scope, &Uuid::new_v4().to_string(), 1, 24000)
+        .begin(&scope, &Uuid::new_v4().to_string(), 2, 24000)
         .unwrap();
     assert!(session.enqueue(&second, &[3]).unwrap());
     assert!(
-        !session.cancel(&first).unwrap(),
-        "old Push cancellation cannot affect its successor"
+        session.cancel(&first).unwrap(),
+        "old Push cancellation applies to its identity and preserves its successor"
     );
-    assert_eq!(device.0.lock().unwrap().1, vec![1, 2, 3]);
+    assert_eq!(device.0.lock().unwrap().1, vec![3]);
 }
 
 #[test]
@@ -148,7 +199,7 @@ fn newer_epoch_fences_queued_audio_and_late_network_fences_are_harmless() {
     );
     assert!(
         session
-            .begin(&replacement, &Uuid::new_v4().to_string(), 0, 16000)
+            .begin(&replacement, &Uuid::new_v4().to_string(), 1, 16000)
             .is_ok()
     );
     assert!(session.close(&replacement).unwrap());
@@ -162,7 +213,7 @@ fn hardware_stop_failure_never_leaves_a_stale_scope_admissible() {
     let scope = scope(1);
     session.activate(&scope).unwrap();
     let lease = session
-        .begin(&scope, &Uuid::new_v4().to_string(), 0, 16000)
+        .begin(&scope, &Uuid::new_v4().to_string(), 1, 16000)
         .unwrap();
     device.1.store(true, std::sync::atomic::Ordering::Release);
     assert!(
@@ -186,7 +237,7 @@ fn hardware_stop_failure_never_leaves_a_stale_scope_admissible() {
                 ..scope
             },
             &Uuid::new_v4().to_string(),
-            1,
+            2,
             16000,
         )
         .unwrap();
@@ -194,4 +245,38 @@ fn hardware_stop_failure_never_leaves_a_stale_scope_admissible() {
     assert!(session.close(&scope).is_err());
     assert!(!session.is_active());
     assert!(!session.enqueue(&lease, &[2]).unwrap());
+}
+
+#[test]
+fn observation_capacity_counts_ended_inputs_until_submission_or_cancel() {
+    let device = Arc::new(Device::default());
+    let session = PlaybackSession::new(device);
+    let scope = scope(1);
+    session.activate(&scope).unwrap();
+    let mut leases = Vec::new();
+    for sequence in 1..=32 {
+        let lease = session
+            .begin(&scope, &Uuid::new_v4().to_string(), sequence, 16000)
+            .unwrap();
+        session.enqueue(&lease, &[1]).unwrap();
+        session.end(&lease).unwrap();
+        leases.push(lease);
+    }
+    assert!(
+        session
+            .begin(&scope, &Uuid::new_v4().to_string(), 33, 16000)
+            .is_err()
+    );
+    assert_eq!(session.progress(&leases[0], 1).observation_end, None);
+    session.cancel(&leases[0]).unwrap();
+    assert!(
+        session
+            .begin(&scope, &Uuid::new_v4().to_string(), 34, 16000)
+            .is_ok()
+    );
+    assert_eq!(
+        session.progress(&leases[1], 1).observation_end,
+        None,
+        "releasing one observer must not retire the others"
+    );
 }

@@ -14,10 +14,12 @@ struct VoiceTurnKey {
     user_id: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(super) struct VoiceTurn {
     /// Response audit identity; live session ownership is in voice_scope.
     pub(super) id: Uuid,
+    pub(super) response_id: Arc<std::sync::OnceLock<Uuid>>,
+    pub(super) output_channel: Option<Arc<dyn crate::channels::adapter::ChannelAdapter>>,
     pub(super) received_at: chrono::DateTime<chrono::Utc>,
     /// Required for production inbound sources; synthetic turns start unstamped.
     pub(super) source_privacy_epoch: Option<i64>,
@@ -28,6 +30,15 @@ pub(super) struct VoiceTurn {
     pub(super) voice_scope: Option<VoiceSessionScope>,
     interrupt_state: Arc<StdMutex<VoiceTurnInterruptState>>,
     key: VoiceTurnKey,
+}
+
+impl std::fmt::Debug for VoiceTurn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VoiceTurn")
+            .field("id", &self.id)
+            .field("voice_scope", &self.voice_scope)
+            .finish_non_exhaustive()
+    }
 }
 
 pub(super) use alia_core::delivery::VoiceScope as VoiceSessionScope;
@@ -82,6 +93,8 @@ impl VoiceTurnRegistry {
         };
         let turn = VoiceTurn {
             id,
+            response_id: Arc::default(),
+            output_channel: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_event_id: Arc::default(),
@@ -153,6 +166,8 @@ impl VoiceTurn {
     pub(super) fn request(token: CancellationToken) -> Self {
         Self {
             id: Uuid::new_v4(),
+            response_id: Arc::default(),
+            output_channel: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_event_id: Arc::default(),

@@ -1,9 +1,9 @@
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+use alia_core::delivery::{PlaybackIdentity, SubmissionBackend, SubmissionBoundary};
 #[cfg(target_os = "linux")]
 use alsa::pcm::{
     Access as AlsaAccess, Format as AlsaFormat, Frames as AlsaFrames, HwParams as AlsaHwParams,
@@ -33,7 +33,10 @@ mod alsa_backend;
 mod cpal_backend;
 mod playback;
 
-use playback::{AudioBlock, PlaybackBuffer, PlaybackReceiver, PlaybackSender, PlaybackSink};
+use super::playback_session::AudioSubmission;
+use playback::{
+    AudioBlock, PlaybackBuffer, PlaybackReceiver, PlaybackSender, PlaybackSink, Renderer,
+};
 
 pub struct CpalAudioCapture {
     config: AudioConfig,
@@ -182,6 +185,16 @@ impl CpalAudioPlayback {
         }
     }
 
+    /// Scoped ingress never initializes or resurrects native audio. The module
+    /// lifecycle owns device startup; an unhealthy backend rejects new delivery.
+    fn active_sender(&self) -> Result<PlaybackSender> {
+        lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .filter(|runtime| !runtime.thread.is_finished())
+            .map(|runtime| runtime.sender.clone())
+            .context("playback backend is not running")
+    }
+
     fn start_stream(&self) -> Result<PlaybackSender> {
         let mut runtime = lock_mutex(&self.runtime, "playback runtime")?;
         if let Some(current) = runtime.as_ref()
@@ -263,8 +276,48 @@ impl ModuleLifecycle for CpalAudioPlayback {
 }
 
 impl AudioPlaybackBackend for CpalAudioPlayback {
+    fn open_submission(
+        &self,
+        identity: PlaybackIdentity,
+        sample_rate: u32,
+        generation: u64,
+    ) -> Result<Arc<AudioSubmission>> {
+        self.active_sender()?
+            .open_submission(identity, sample_rate, generation)
+    }
+
+    fn submit_audio(
+        &self,
+        submission: &Arc<AudioSubmission>,
+        offset: u64,
+        pcm: &[i16],
+    ) -> Result<bool> {
+        let sender = lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .map(|r| r.sender.clone());
+        match sender {
+            Some(sender) => sender.submit(submission, offset, pcm, false),
+            None => Ok(false),
+        }
+    }
+
+    fn end_submission(&self, submission: &Arc<AudioSubmission>, total: u64) -> Result<bool> {
+        let sender = lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .map(|r| r.sender.clone());
+        match sender {
+            Some(sender) => sender.submit(submission, total, &[], true),
+            None => Ok(false),
+        }
+    }
+
+    fn cancel_submission(&self, submission: &Arc<AudioSubmission>, reason: &str) -> Result<bool> {
+        Ok(lock_mutex(&self.runtime, "playback runtime")?
+            .as_ref()
+            .is_some_and(|r| r.sender.cancel_submission(submission, reason)))
+    }
     fn begin_scoped_playback(&self) -> Result<u64> {
-        self.start_stream()?.begin()
+        self.active_sender()?.begin()
     }
 
     fn play_if_current(&self, pcm: &[i16], sample_rate: u32, generation: u64) -> Result<bool> {
@@ -358,10 +411,6 @@ fn playback_target_buffer_ms(config: &AudioConfig) -> u64 {
     )
 }
 
-fn playback_max_buffer_ms(config: &AudioConfig) -> u64 {
-    u64::from(config.playback_max_buffer_ms.max(1))
-}
-
 fn playback_command_queue_capacity(config: &AudioConfig) -> usize {
     config.playback_command_queue_capacity.max(1)
 }
@@ -374,11 +423,6 @@ fn alsa_playback_idle_sample_rate(config: &AudioConfig) -> u32 {
         config.playback_sample_rate
     }
     .max(1)
-}
-
-#[cfg(target_os = "linux")]
-fn alsa_playback_should_follow_source_rate(config: &AudioConfig) -> bool {
-    config.alsa_playback_follow_source_rate && !config.alsa_playback_lock_to_capture_rate
 }
 
 #[cfg(target_os = "linux")]
@@ -736,6 +780,7 @@ fn run_playback_thread(
             return Err(error);
         }
     };
+    receiver.set_backend(sink.backend.clone());
     if ready_tx.send(Ok(())).is_err() {
         return Ok(());
     }
@@ -1238,29 +1283,6 @@ pub fn buffer_frames_for_ms(sample_rate: u32, buffer_ms: u32) -> usize {
         .saturating_mul(buffer_ms.max(1))
         .saturating_div(1_000)
         .max(1) as usize
-}
-
-fn clamp_playback_buffer(
-    buffer: &mut VecDeque<i16>,
-    sample_rate: u32,
-    channels: usize,
-    max_buffer_ms: u64,
-) {
-    let max_samples = u64::from(sample_rate)
-        .saturating_mul(channels.max(1) as u64)
-        .saturating_mul(max_buffer_ms.max(1))
-        .saturating_div(1_000)
-        .max(1) as usize;
-    if buffer.len() <= max_samples {
-        return;
-    }
-
-    let dropped = buffer.len() - max_samples;
-    buffer.truncate(max_samples);
-    warn!(
-        dropped_samples = dropped,
-        max_buffer_ms, "playback buffer full; dropping queued tail"
-    );
 }
 
 pub fn playback_buffered_ms(buffered_samples: usize, sample_rate: u32, channels: usize) -> u64 {

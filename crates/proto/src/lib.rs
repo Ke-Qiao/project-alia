@@ -7,7 +7,7 @@ pub mod voice {
 }
 
 pub mod playback {
-    tonic::include_proto!("alia.playback.v1");
+    tonic::include_proto!("alia.playback.v2");
 }
 
 pub mod binding {

@@ -283,6 +283,7 @@ pub(crate) enum ShutdownPhase {
     Ingress,
     Producers,
     Execution,
+    Delivery,
     Channels,
     Resources,
     Database,

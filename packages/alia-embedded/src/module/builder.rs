@@ -488,6 +488,7 @@ impl EmbeddedBuilder {
             .await?;
         }
         let playback_session = Arc::new(PlaybackSession::new(audio_playback.clone()));
+        cleanup.add(playback_session.clone());
         let speech_pipeline = init!(Box::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),
             ctx.event_bus.clone(),

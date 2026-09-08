@@ -29,6 +29,12 @@ mod insights;
 #[path = "server_runtime/source_epoch.rs"]
 mod source_epoch;
 
+#[path = "server_runtime/delivery.rs"]
+mod delivery;
+
+#[path = "server_runtime/expression.rs"]
+mod expression;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,
