@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 
 use uuid::Uuid;
 
@@ -75,9 +74,16 @@ pub(super) async fn run_llm_tool_loop(
         .collect::<HashMap<_, _>>();
     let ctx = ToolContext {
         user_id,
+        source_received_at: turn
+            .map(|turn| turn.received_at)
+            .unwrap_or_else(chrono::Utc::now),
+        source_event_id: turn.and_then(|turn| turn.source_event_id.get()).copied(),
+        request_id: trace.turn_id,
+        invocation_key: String::new(),
         conversation_id: session_id,
         source: "ai".to_string(),
         channel_id: Some(channel_id.to_string()),
+        cancel: turn.map(|turn| turn.token.clone()),
     };
     let max_depth = tools_config.max_tool_call_depth.max(1);
     let mut last_tool_display: Option<String> = None;
@@ -213,7 +219,7 @@ pub(super) async fn run_llm_tool_loop(
             &tool_calls,
         ));
 
-        for call in &tool_calls {
+        for (index, call) in tool_calls.iter().enumerate() {
             if turn_is_interrupted(turn) {
                 return Ok(ToolLoopOutcome {
                     text: String::new(),
@@ -225,8 +231,9 @@ pub(super) async fn run_llm_tool_loop(
             if !called_tool_names.contains(&call.tool_name) {
                 called_tool_names.push(call.tool_name.clone());
             }
-            let result =
-                execute_pipeline_tool_call(modules, &call, &tool_map, tools_config, &ctx).await;
+            let mut call_context = ctx.clone();
+            call_context.invocation_key = format!("{depth}:{index}");
+            let result = execute_pipeline_tool_call(modules, &call, &tool_map, &call_context).await;
             trace
                 .record(
                     modules,
@@ -1098,10 +1105,9 @@ async fn execute_pipeline_tool_call(
     modules: &ModuleRegistry,
     call: &LlmToolCall,
     tool_map: &HashMap<String, ToolDefinition>,
-    tools_config: &ToolsSection,
     ctx: &ToolContext,
 ) -> ToolResult {
-    let Some(definition) = tool_map.get(&call.tool_name) else {
+    let Some(_) = tool_map.get(&call.tool_name) else {
         return ToolResult {
             call_id: call.id.clone(),
             success: false,
@@ -1113,55 +1119,25 @@ async fn execute_pipeline_tool_call(
         };
     };
 
-    if tool_requires_confirmation(definition, tools_config) {
-        return ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "requires_confirmation": true,
-                "tool": call.tool_name,
-                "arguments": call.arguments.clone(),
-                "message": "This tool requires user confirmation before execution.",
-            }),
-            display: Some(format!("Please confirm before I run '{}'.", call.tool_name)),
-        };
-    }
-
     let tool_call = ToolCall {
         tool_name: call.tool_name.clone(),
         arguments: call.arguments.clone(),
         call_id: call.id.clone(),
     };
-    let timeout = Duration::from_secs(tools_config.tool_call_timeout_sec.max(1));
-
-    match tokio::time::timeout(timeout, modules.tools.execute(tool_call, ctx)).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => ToolResult {
+    match modules.tools.execute(tool_call, ctx).await {
+        Ok(result) => result,
+        Err(error) => ToolResult {
             call_id: call.id.clone(),
             success: false,
             output: serde_json::json!({
                 "error": error.to_string(),
             }),
-            display: Some(format!("Tool '{}' failed: {}", call.tool_name, error)),
-        },
-        Err(_) => ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "error": "tool_timeout",
-                "timeout_sec": tools_config.tool_call_timeout_sec,
-            }),
-            display: Some(format!("Tool '{}' timed out", call.tool_name)),
+            display: Some(format!(
+                "Execution receipt unavailable for '{}'; inspect the ledger before retrying: {}",
+                call.tool_name, error
+            )),
         },
     }
-}
-
-fn tool_requires_confirmation(tool: &ToolDefinition, tools_config: &ToolsSection) -> bool {
-    tool.require_confirmation
-        || tools_config
-            .require_confirmation
-            .iter()
-            .any(|name| name == &tool.name)
 }
 
 #[cfg(test)]

@@ -23,6 +23,9 @@ impl EndContinuousDialogueTool {
 
 #[async_trait]
 impl ToolExecutor for EndContinuousDialogueTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.EndContinuousDialogueTool".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "end_continuous_dialogue".to_string(),
@@ -242,6 +245,11 @@ mod tests {
         registry.register(channel.clone()).await.unwrap();
         let tool = EndContinuousDialogueTool::new(registry);
         let ctx = ToolContext {
+            source_received_at: chrono::Utc::now(),
+            source_event_id: None,
+            request_id: uuid::Uuid::new_v4(),
+            invocation_key: "0".into(),
+            cancel: None,
             user_id: uuid::Uuid::new_v4(),
             conversation_id: None,
             source: "test".to_string(),
@@ -264,6 +272,11 @@ mod tests {
     async fn tool_noops_when_no_channel_supports_conversation_control() {
         let tool = EndContinuousDialogueTool::new(Arc::new(ChannelRegistry::new()));
         let ctx = ToolContext {
+            source_received_at: chrono::Utc::now(),
+            source_event_id: None,
+            request_id: uuid::Uuid::new_v4(),
+            invocation_key: "0".into(),
+            cancel: None,
             user_id: uuid::Uuid::new_v4(),
             conversation_id: None,
             source: "test".to_string(),

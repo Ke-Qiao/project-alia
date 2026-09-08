@@ -52,9 +52,38 @@ pub const MIGRATIONS: &[Migration<'static>] = &[
     migration!("m20260519_000001_create_expression_appraisal_events.sql"),
     migration!("m20260520_000001_create_memory_runtime.sql"),
     migration!("m20260522_000001_create_plugin_storage_records.sql"),
+    migration!("m20260908_000001_create_execution_ledger.sql"),
+    migration!("m20260908_000002_memory_privacy.sql"),
 ];
 
 pub async fn run(db: &DatabaseConnection) -> anyhow::Result<MigrationReport> {
+    ensure!(
+        db.get_database_backend() == DatabaseBackend::Postgres,
+        "server migrations require PostgreSQL"
+    );
+    // Extensions belong to the database, not the caller's application schema.
+    // An isolated schema must never acquire ownership of a globally shared
+    // vector type that its later removal could cascade into other schemas.
+    let tx = db.begin().await.context("preparing database extensions")?;
+    tx.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT pg_advisory_xact_lock($1)",
+        [MIGRATION_LOCK_KEY.into()],
+    ))
+    .await?;
+    tx.execute_unprepared("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
+        .await
+        .context("installing pgvector in the shared public schema")?;
+    let extension = tx.query_one(Statement::from_string(DatabaseBackend::Postgres,
+        "SELECT n.nspname AS schema_name FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='vector'"))
+        .await?.context("pgvector was not installed")?;
+    ensure!(
+        extension.try_get::<String>("", "schema_name")? == "public",
+        "pgvector must be installed in public; configure the database extension schema before starting Alia"
+    );
+    tx.commit()
+        .await
+        .context("committing database extension setup")?;
     apply(db, MIGRATIONS).await
 }
 

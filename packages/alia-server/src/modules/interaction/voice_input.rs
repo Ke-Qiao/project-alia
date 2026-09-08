@@ -1,6 +1,7 @@
 //! Bounded application entrance for recognized speech. This is intentionally
 //! separate from the lossy broadcast bus used for observations and UI updates.
 
+use chrono::{DateTime, Utc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -10,6 +11,8 @@ pub struct RecognizedVoiceInput {
     pub channel_id: String,
     pub user_id: String,
     pub transcript: String,
+    /// Server receive time of this utterance's first retained audio frame.
+    pub source_received_at: DateTime<Utc>,
     pub session_id: Uuid,
     pub device_boot_id: Uuid,
     pub generation_epoch: u64,

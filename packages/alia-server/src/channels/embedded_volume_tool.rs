@@ -18,6 +18,9 @@ impl EmbeddedVolumeTool {
 
 #[async_trait]
 impl ToolExecutor for EmbeddedVolumeTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.EmbeddedVolumeTool".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "embedded_volume_control".to_string(),

@@ -169,6 +169,7 @@ pub fn merge_memory_patch(existing: &MemoryNode, incoming: &MemoryNode) -> Memor
         }),
     );
     MemoryPatch {
+        expected_revision: Some(existing.revision),
         content: Some(incoming.content.clone()),
         metadata: Some(metadata),
         importance: Some(existing.importance.max(incoming.importance)),
@@ -247,23 +248,43 @@ fn contains_any(text: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| text.contains(needle))
 }
 
-fn normalize_for_match(text: &str) -> String {
-    let mut normalized = text
-        .to_ascii_lowercase()
-        .replace("the user ", "")
-        .replace("user ", "")
-        .replace(" no longer ", " ")
-        .replace(" does not ", " ")
-        .replace(" doesn't ", " ")
-        .replace(" do not ", " ")
-        .replace(" don't ", " ");
-    normalized.retain(|ch| ch.is_ascii_alphanumeric() || ch.is_ascii_whitespace());
+pub(crate) fn normalize_for_match(text: &str) -> String {
+    let lowered = text.to_lowercase();
+    let normalized = lowered
+        .strip_prefix("the user ")
+        .or_else(|| lowered.strip_prefix("user "))
+        .unwrap_or(&lowered);
+    // Punctuation and negation can change meaning (can't/cant, 1.5/15).
+    // Only whitespace is normalized; all Unicode content remains meaningful.
     normalized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matching_preserves_unicode_negation_and_meaningful_punctuation() {
+        assert!(!memory_content_equivalent("用户喜欢咖啡", "用户喜欢茶"));
+        assert!(!memory_content_equivalent("用户喜欢咖啡", "用户不喜欢咖啡"));
+        assert!(!memory_content_equivalent(
+            "The user likes coffee",
+            "The user does not like coffee"
+        ));
+        assert!(!memory_content_equivalent(
+            "The user can swim",
+            "The user can't swim"
+        ));
+        assert!(!memory_content_equivalent("take 1.5", "take 15"));
+        assert!(memory_content_equivalent(
+            "The user  likes coffee",
+            "user likes coffee"
+        ));
+        assert_ne!(
+            memory_merge_key("core", "fact", "用户喜欢咖啡"),
+            memory_merge_key("core", "fact", "用户喜欢茶")
+        );
+    }
 
     #[test]
     fn detects_sensitive_memory_categories() {

@@ -133,6 +133,7 @@ impl VoiceSession for VoiceSessionService {
         let mut auth_request = Request::new(());
         *auth_request.metadata_mut() = request.metadata().clone();
         let channel_id = self.auth.authenticate_ingress(&auth_request, None).await?;
+        self.auth.owner_user_id(&channel_id).await?;
         let mut stream = request.into_inner();
         let first = tokio::time::timeout(Duration::from_secs(5), stream.message())
             .await
@@ -294,6 +295,7 @@ async fn accept_capture(
                     frame.sample_offset,
                     &frame.pcm_s16le,
                     frame.speech_active,
+                    std::time::SystemTime::now(),
                 )
                 .map_err(|error| Status::invalid_argument(error.to_string()))?;
             Ok(true)
@@ -396,6 +398,7 @@ async fn run_session_inner<S>(
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
 {
+    let owner_user_id = credentials.auth.owner_user_id(&lease.channel).await?;
     send_event(
         tx,
         lease,
@@ -443,6 +446,9 @@ where
                 // periodic check of the old token. This drain is also bounded.
                 if !drain_pending(&mut stream, &mut window, &mut credentials).await? { return Ok(()); }
                 credentials.revalidate().await?;
+                if credentials.auth.owner_user_id(&lease.channel).await? != owner_user_id {
+                    return Err(Status::permission_denied("channel owner changed during voice session"));
+                }
             },
             _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
                 retry_at = None;
@@ -479,6 +485,10 @@ where
                 let response_enqueued = match decision {
                     TurnDecision::Stale => continue,
                     TurnDecision::Respond { generation_epoch, transcript } => {
+                        credentials.revalidate().await?;
+                        if credentials.auth.owner_user_id(&lease.channel).await? != owner_user_id {
+                            return Err(Status::permission_denied("channel owner changed during voice session"));
+                        }
                         let owner = lease.slot.owner.lock().await;
                         if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
                             return Ok(());
@@ -490,8 +500,10 @@ where
                         if lease.cancel.is_cancelled() { return Ok(()); }
                         response_cancel = lease.cancel.child_token();
                         input.try_submit(RecognizedVoiceInput {
-                            channel_id: lease.channel.clone(), user_id: "embedded-user".into(), transcript,
+                            channel_id: lease.channel.clone(), user_id: owner_user_id.to_string(), transcript,
                             session_id: lease.id, device_boot_id: boot, generation_epoch, cancel: response_cancel.clone(),
+                            source_received_at: window.source_received_at()
+                                .ok_or_else(|| Status::internal("complete utterance has no receiver timestamp"))?.into(),
                         }).map_err(|_| Status::resource_exhausted("voice processing capacity reached"))?;
                         drop(owner);
                         window.finish_utterance();
@@ -597,6 +609,14 @@ mod tests {
     }
     #[async_trait::async_trait]
     impl crate::channels::adapter::ChannelAdapter for AuthChannel {
+        async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
+            Ok(Uuid::from_u128(7))
+        }
+
+        fn owner_user_id(&self) -> Option<Uuid> {
+            Some(Uuid::from_u128(7))
+        }
+
         fn channel_type(&self) -> &'static str {
             "embedded"
         }
@@ -819,8 +839,10 @@ mod tests {
     #[tokio::test]
     async fn speech_arriving_during_inference_rejects_old_snapshot_and_reevaluates() {
         let mut h = Harness::new().await;
+        let received_after = chrono::Utc::now();
         h.speech().await;
         let old = h.call().await;
+        let received_before = chrono::Utc::now();
         h.speech().await;
         tokio::time::timeout(Duration::from_secs(2), async {
             while h.audio.capacity() != h.audio.max_capacity() {
@@ -834,7 +856,9 @@ mod tests {
         assert!(h.input.try_recv().is_err());
         current.answer(TurnState::Complete);
         assert_eq!(h.event().await.generation_epoch, 2);
-        assert!(h.input.recv().await.is_some());
+        let input = h.input.recv().await.unwrap();
+        assert!(input.source_received_at >= received_after);
+        assert!(input.source_received_at <= received_before);
         h.finish().await;
     }
 
@@ -868,12 +892,16 @@ mod tests {
     #[tokio::test]
     async fn busy_model_retries_bounded_window_without_requiring_another_utterance() {
         let mut h = Harness::new().await;
+        let received_after = chrono::Utc::now();
         h.speech().await;
         let busy = h.call().await;
+        let received_before = chrono::Utc::now();
         busy.1.send(Err(DetectionError::Busy)).unwrap();
         h.call().await.answer(TurnState::Complete);
         assert_eq!(h.event().await.generation_epoch, 2);
-        assert!(h.input.recv().await.is_some());
+        let input = h.input.recv().await.unwrap();
+        assert!(input.source_received_at >= received_after);
+        assert!(input.source_received_at <= received_before);
         h.finish().await;
     }
 

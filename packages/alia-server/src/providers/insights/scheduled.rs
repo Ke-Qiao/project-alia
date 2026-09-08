@@ -25,14 +25,14 @@ use uuid::Uuid;
 
 use crate::channels::adapter::ChannelEvent;
 use crate::config::InsightsSection;
-use crate::entity::{chat_message, chat_session, insight_log, llm_cache};
+use crate::entity::{chat_session, insight_log, llm_cache};
 use crate::event::{EventBus, ServerEvent};
 use crate::memory_policy::detect_sensitive_memory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     CACHE_METADATA_SCHEMA, ChatMessage, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
-    LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, ScheduleConfig,
-    ScheduledTask, SchedulerBackend,
+    LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, MemoryWriteContext,
+    ScheduleConfig, ScheduledTask, SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
@@ -875,7 +875,8 @@ impl ScheduledInsights {
             });
         };
 
-        let messages = Self::load_recent_messages(db, user, message_limit).await?;
+        let mut context = memory.write_snapshot(user.user_id).await?;
+        let messages = Self::load_recent_messages(db, user, message_limit, &mut context).await?;
         if messages.is_empty() {
             return Ok(MemoryInsightStats {
                 summary: "Extraction skipped: no recent conversation messages.".to_string(),
@@ -910,9 +911,14 @@ impl ScheduledInsights {
             ])
             .await?;
         let extracted = parse_memory_extraction_response(&response)?;
-        stats.created +=
-            Self::store_memory_candidates(memory.as_ref(), user, extracted.memories, "extraction")
-                .await?;
+        stats.created += Self::store_memory_candidates(
+            memory.as_ref(),
+            user,
+            &context,
+            extracted.memories,
+            "extraction",
+        )
+        .await?;
         stats.summary = format!(
             "Extraction stored {} selected memory candidates.",
             stats.created
@@ -942,6 +948,7 @@ impl ScheduledInsights {
             });
         };
 
+        let mut context = memory.write_snapshot(user.user_id).await?;
         let memories = memory
             .list(
                 user.user_id,
@@ -951,6 +958,7 @@ impl ScheduledInsights {
                 },
             )
             .await?;
+        context.source_memories = source_versions(&memories);
         if memories.is_empty() {
             return Ok(MemoryInsightStats {
                 summary: "Memory consolidation skipped: no memories found.".to_string(),
@@ -983,6 +991,12 @@ impl ScheduledInsights {
         };
 
         for update in decision.updates {
+            let Some(source) = memories
+                .iter()
+                .find(|m| m.id.as_deref() == Some(update.id.as_str()))
+            else {
+                continue;
+            };
             if update.id.trim().is_empty() {
                 continue;
             }
@@ -994,10 +1008,12 @@ impl ScheduledInsights {
                     "updated_at": Utc::now().to_rfc3339(),
                 })
             });
-            if memory
-                .update(
+            memory
+                .update_guarded(
+                    &context,
                     &update.id,
                     MemoryPatch {
+                        expected_revision: Some(source.revision),
                         content: update
                             .content
                             .as_deref()
@@ -1010,33 +1026,46 @@ impl ScheduledInsights {
                     },
                 )
                 .await
-                .is_ok()
-            {
-                stats.updated += 1;
-            }
+                .map_err(|error| anyhow::anyhow!(
+                    "consolidation stopped after {} updates and {} deletions; earlier writes remain committed: {error}",
+                    stats.updated, stats.deleted
+                ))?;
+            stats.updated += 1;
         }
 
         for delete in decision.deletes {
             if delete.id.trim().is_empty() {
                 continue;
             }
-            match memory.delete(&delete.id).await {
-                Ok(()) => stats.deleted += 1,
-                Err(error) => tracing::debug!(
-                    memory_id = %delete.id,
-                    reason = ?delete.reason,
-                    error = ?error,
-                    "failed to delete memory during consolidation"
-                ),
+            if !memories
+                .iter()
+                .any(|m| m.id.as_deref() == Some(delete.id.as_str()))
+            {
+                continue;
             }
+            memory.delete_guarded(&context, &delete.id).await.map_err(|error| anyhow::anyhow!(
+                "consolidation stopped after {} updates and {} deletions; earlier writes remain committed: {error}",
+                stats.updated, stats.deleted
+            ))?;
+            stats.deleted += 1;
         }
 
-        stats.created +=
-            Self::store_memory_candidates(memory.as_ref(), user, decision.creates, "consolidation")
-                .await?;
+        stats.created += Self::store_memory_candidates(
+            memory.as_ref(),
+            user,
+            &context,
+            decision.creates,
+            "consolidation",
+        )
+        .await?;
         stats.pending = stats
             .pending
             .saturating_sub(stats.updated.saturating_add(stats.deleted));
+        // A model's proposed summary is not evidence of committed mutations.
+        stats.summary = format!(
+            "Consolidation committed {} updates, {} deletions and {} creates.",
+            stats.updated, stats.deleted, stats.created
+        );
         Ok(stats)
     }
 
@@ -1063,6 +1092,7 @@ impl ScheduledInsights {
             });
         };
 
+        let mut context = memory.write_snapshot(user.user_id).await?;
         let memories = memory
             .list(
                 user.user_id,
@@ -1071,11 +1101,9 @@ impl ScheduledInsights {
                     layers: None,
                 },
             )
-            .await
-            .unwrap_or_default();
-        let messages = Self::load_recent_messages(db, user, 16)
-            .await
-            .unwrap_or_default();
+            .await?;
+        context.source_memories = source_versions(&memories);
+        let messages = Self::load_recent_messages(db, user, 16, &mut context).await?;
 
         if memories.is_empty() && messages.is_empty() {
             return Ok(MemoryInsightStats {
@@ -1104,9 +1132,14 @@ impl ScheduledInsights {
             model_used: join_model_labels(&[memory.name().to_string(), llm.name().to_string()]),
             ..MemoryInsightStats::default()
         };
-        stats.created +=
-            Self::store_memory_candidates(memory.as_ref(), user, extracted.memories, "reflection")
-                .await?;
+        stats.created += Self::store_memory_candidates(
+            memory.as_ref(),
+            user,
+            &context,
+            extracted.memories,
+            "reflection",
+        )
+        .await?;
         stats.summary = format!("Reflection stored {} durable insights.", stats.created);
         Ok(stats)
     }
@@ -1134,6 +1167,7 @@ impl ScheduledInsights {
             });
         };
 
+        let mut context = memory.write_snapshot(user.user_id).await?;
         let memories = memory
             .list(
                 user.user_id,
@@ -1142,11 +1176,9 @@ impl ScheduledInsights {
                     layers: None,
                 },
             )
-            .await
-            .unwrap_or_default();
-        let messages = Self::load_recent_messages(db, user, 32)
-            .await
-            .unwrap_or_default();
+            .await?;
+        context.source_memories = source_versions(&memories);
+        let messages = Self::load_recent_messages(db, user, 32, &mut context).await?;
 
         if memories.is_empty() && messages.is_empty() {
             return Ok(MemoryInsightStats {
@@ -1179,6 +1211,7 @@ impl ScheduledInsights {
         stats.created += Self::store_memory_candidates(
             memory.as_ref(),
             user,
+            &context,
             extracted.memories,
             "habit_detection",
         )
@@ -1190,6 +1223,7 @@ impl ScheduledInsights {
     async fn store_memory_candidates(
         memory: &dyn MemoryBackend,
         user: &InsightUserContext,
+        context: &MemoryWriteContext,
         candidates: Vec<MemoryCandidate>,
         phase: &str,
     ) -> anyhow::Result<u32> {
@@ -1229,8 +1263,8 @@ impl ScheduledInsights {
                 "created_at": Utc::now().to_rfc3339(),
             });
             match memory
-                .store(
-                    user.user_id,
+                .store_guarded(
+                    context,
                     MemoryNode::new(layer, node_type, content.to_string(), importance)
                         .with_metadata(metadata)
                         .with_runtime_fields("semantic", "user", 0.8, importance, "internal"),
@@ -1238,11 +1272,11 @@ impl ScheduledInsights {
                 .await
             {
                 Ok(_) => created += 1,
-                Err(error) => tracing::warn!(
-                    user_id = %user.user_id,
-                    error = ?error,
-                    "failed to store insight memory candidate"
-                ),
+                Err(error) => {
+                    return Err(anyhow::anyhow!(
+                        "{phase} stopped after {created} candidate writes; earlier writes remain committed: {error}"
+                    ));
+                }
             }
         }
         Ok(created)
@@ -1252,32 +1286,30 @@ impl ScheduledInsights {
         db: &DatabaseConnection,
         user: &InsightUserContext,
         limit: u64,
+        context: &mut MemoryWriteContext,
     ) -> anyhow::Result<Vec<ChatMessage>> {
         let session_id = match user.session_id {
-            Some(session_id) => Some(session_id),
+            Some(id) => Some(id),
             None => Self::find_latest_session_for_user(db, user).await?,
         };
         let Some(session_id) = session_id else {
             return Ok(Vec::new());
         };
-
-        let mut messages = chat_message::Entity::find()
-            .filter(chat_message::Column::SessionId.eq(session_id))
-            .order_by_desc(chat_message::Column::CreatedAt)
-            .limit(limit.max(1))
-            .all(db)
-            .await?;
-        messages.reverse();
-
-        Ok(messages
-            .into_iter()
-            .map(|message| ChatMessage {
-                role: message.role,
-                content: message.content,
-                name: message.user_id,
-                ..ChatMessage::default()
-            })
-            .collect())
+        let mut rows = db.query_all(Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
+            "SELECT m.id,m.content,m.user_id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE s.id=$1 AND s.creator_id=$2 AND m.user_id=$2 AND m.role='user' AND m.source_received_at>$3 AND m.source_received_at<=$4 ORDER BY m.created_at DESC,m.id DESC LIMIT $5",
+            vec![session_id.into(),user.user_id.to_string().into(),context.source_cutoff_at.into(),context.source_received_at.into(),(limit.clamp(1,100) as i64).into()])).await?;
+        rows.reverse();
+        let mut messages = Vec::with_capacity(rows.len());
+        for row in rows {
+            context.source_event_ids.push(row.try_get("", "id")?);
+            messages.push(ChatMessage {
+                role: "user".into(),
+                content: row.try_get("", "content")?,
+                name: row.try_get("", "user_id")?,
+                ..Default::default()
+            });
+        }
+        Ok(messages)
     }
 
     async fn find_latest_session_for_user(
@@ -2303,6 +2335,177 @@ impl InsightStrategy for ScheduledInsights {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::memory::AliaMemory;
+
+    struct FixedMemoryLlm {
+        response: String,
+        calls: AtomicU32,
+    }
+
+    #[async_trait]
+    impl ModuleLifecycle for FixedMemoryLlm {
+        fn name(&self) -> &'static str {
+            "fixed_insights_memory_llm"
+        }
+    }
+
+    #[async_trait]
+    impl LlmAdapter for FixedMemoryLlm {
+        async fn chat(&self, _messages: &[ChatMessage]) -> anyhow::Result<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.response.clone())
+        }
+
+        async fn chat_stream(
+            &self,
+            _messages: &[ChatMessage],
+        ) -> anyhow::Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<String>> + Send>>,
+        > {
+            anyhow::bail!("insights memory tests require the non-streaming call path")
+        }
+    }
+
+    fn insight_user() -> InsightUserContext {
+        let user_id = Uuid::new_v4();
+        InsightUserContext {
+            user_id,
+            user_id_text: user_id.to_string(),
+            channel_id: Some("insights-test".into()),
+            session_id: None,
+            last_seen_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn consolidation_reports_prior_commit_and_rejects_second_update_from_stale_snapshot() {
+        let memory = Arc::new(AliaMemory::new());
+        let user = insight_user();
+        let first = memory
+            .store(
+                user.user_id,
+                MemoryNode::new("core", "fact", "First original fact", 0.8),
+            )
+            .await
+            .unwrap();
+        let second = memory
+            .store(
+                user.user_id,
+                MemoryNode::new("core", "fact", "Second original fact", 0.8),
+            )
+            .await
+            .unwrap();
+        let original_epoch = memory
+            .write_snapshot(user.user_id)
+            .await
+            .unwrap()
+            .privacy_epoch;
+        let llm = Arc::new(FixedMemoryLlm {
+            response: serde_json::json!({
+                "summary": "Everything has been consolidated successfully",
+                "updates": [
+                    {"id": first, "content": "First revised fact"},
+                    {"id": second, "content": "Second revised fact"}
+                ],
+                "deletes": [],
+                "creates": [{"content": "Must not run after the failed update"}]
+            })
+            .to_string(),
+            calls: AtomicU32::new(0),
+        });
+
+        let error = ScheduledInsights::consolidate_memories(
+            Some(memory.clone()),
+            Some(llm.clone()),
+            &user,
+            50,
+            &InsightsSection::default(),
+        )
+        .await
+        .expect_err("a partially committed plan must not report successful consolidation");
+        let message = error.to_string();
+        assert!(message.contains("1 updates and 0 deletions"), "{message}");
+        assert!(
+            message.contains("earlier writes remain committed"),
+            "{message}"
+        );
+        assert!(message.contains("memory source changed"), "{message}");
+        assert_eq!(llm.calls.load(Ordering::SeqCst), 1);
+
+        let stored_first = memory.get(user.user_id, &first).await.unwrap().unwrap();
+        let stored_second = memory.get(user.user_id, &second).await.unwrap().unwrap();
+        assert_eq!(stored_first.content, "First revised fact");
+        assert_eq!(stored_first.revision, 2);
+        assert_eq!(stored_second.content, "Second original fact");
+        assert_eq!(stored_second.revision, 1);
+        assert_eq!(
+            memory
+                .list(user.user_id, MemoryListOpts::default())
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            memory
+                .write_snapshot(user.user_id)
+                .await
+                .unwrap()
+                .privacy_epoch,
+            original_epoch
+        );
+    }
+
+    #[tokio::test]
+    async fn candidate_write_after_clear_returns_error_instead_of_zero_created_success() {
+        let memory = AliaMemory::new();
+        let user = insight_user();
+        let context = memory.write_snapshot(user.user_id).await.unwrap();
+        memory.clear(user.user_id).await.unwrap();
+        let cleared_epoch = memory
+            .write_snapshot(user.user_id)
+            .await
+            .unwrap()
+            .privacy_epoch;
+        assert!(cleared_epoch > context.privacy_epoch);
+        let candidates = parse_memory_extraction_response(
+            r#"{"memories":[{"content":"Old source says the user prefers concise explanations","confidence":0.95}]}"#,
+        ).unwrap().memories;
+
+        let error = ScheduledInsights::store_memory_candidates(
+            &memory,
+            &user,
+            &context,
+            candidates,
+            "extraction",
+        )
+        .await
+        .expect_err("a rejected old candidate must not be swallowed as Ok(0)");
+        let message = error.to_string();
+        assert!(
+            message.contains("extraction stopped after 0 candidate writes"),
+            "{message}"
+        );
+        assert!(
+            message.contains("memory privacy epoch changed"),
+            "{message}"
+        );
+        assert!(
+            memory
+                .list(user.user_id, MemoryListOpts::default())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            memory
+                .write_snapshot(user.user_id)
+                .await
+                .unwrap()
+                .privacy_epoch,
+            cleared_epoch
+        );
+    }
 
     #[test]
     fn parses_fenced_cache_review_decision() {
@@ -2372,4 +2575,11 @@ mod tests {
             stable_user_uuid("sample-user")
         );
     }
+}
+
+fn source_versions(memories: &[MemoryNode]) -> Vec<(String, i64)> {
+    memories
+        .iter()
+        .filter_map(|memory| memory.id.clone().map(|id| (id, memory.revision)))
+        .collect()
 }

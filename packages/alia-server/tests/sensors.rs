@@ -109,6 +109,11 @@ async fn sensor_tools_read_from_shared_registry() {
         .unwrap();
 
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -157,6 +162,11 @@ async fn sensor_read_tool_refreshes_from_registered_provider() {
         .unwrap();
 
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),

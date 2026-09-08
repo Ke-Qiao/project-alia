@@ -2,7 +2,7 @@
 
 更新：2026-09-08。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
-用户已授权开始构建，当前 Easy-Turn 只运行在 Server。当前记录是 P1 与并行基础改造的结果，首轮整体交付尚未完成。前端和 Embedded 通用适配仍按 [台账](deferred.md) 搁置。
+用户已授权开始构建，当前 Easy-Turn 只运行在 Server。当前记录是 P1、P2 与运行时基础改造的结果，首轮整体交付尚未完成。前端和 Embedded 通用适配仍按 [台账](deferred.md) 搁置。
 
 ## 已提交构建包
 
@@ -13,6 +13,28 @@
 | `29e9ab6` | 固定官方源码/权重的常驻 Easy-Turn 服务与可复现依赖 | 14 项服务契约测试；真实 CPU 严格加载及 16 个官方样本 HTTP 推理通过 |
 | `33a7c98` | 持续采集 v1 协议、端侧 server_turn 模式、Server 窗口与模型决策、可靠语音入口、可监督交互管线 | 实际 gRPC→Rust→CPU 模型；136 个 Server 常规单元测试及全部 Server 集成测试（带真实数据库）通过；Embedded 无默认特性 98 项通过 |
 | `1ecb2ce` | boot/session/generation 播放协议、原子入队失效、凭证续期与解绑关闭、端侧信号退出 | macOS 默认特性整个 workspace 409 项通过；真实 DB 套件通过；两项真实模型测试另跑通过；Server 无默认特性 all-targets 通过；Linux ARM64 端侧变更检查通过 |
+| `c257f07` | Embedded 启动失败回滚、可等待的有界关闭、实际监听地址、长 HTTP/2 连接清理及原生任务所有权 | 无默认特性 122 项通过；macOS 默认 all-targets 和 Linux ARM64 无默认 all-targets 检查通过，见 [Embedded 生命周期](embedded-runtime.md) |
+
+## 本轮 P2 整合包
+
+Execution 已成为工具入口共用的持久执行边界，拥有意图、确认、Outbox、认领、结果、幂等与 unknown 恢复。提交/等待/关闭有整体期限；批准已提交但 ACK 丢失时仍保留会话取消所有权。操作入口与证据见 [Execution API](execution-api.md) 和 [数据库验证](execution-validation.md)。
+
+Memory 在真实事务内处理用户隔离、规范 revision、隐私 epoch、来源关系、递归删除和投影失效。可信 Server 输入时间在排队前固定；用户消息在模型/工具之前提交，Execution 保留真实来源 ID，AI MemoryStore 在执行时重新验证原来源而不能制造新时间。语义去重保留中文、否定和数值标点。详见 [Memory 记录](memory-findings.md) 和 [通道身份](channel-identity.md)。
+
+最终默认特性 workspace 结果为 **500 passed、0 failed、4 ignored**，包含两端实际默认特性编译/链接。Execution repository 19 项、service 25 项、Memory 原有 13 项、Memory 隐私 14 项、gRPC 身份 6 项和迁移 7 项全部通过。两项 ignored 的真实模型测试随后单独运行通过；另外两项 PTY 测试本轮未重复执行，先前基础包已实际通过。
+
+最新 Server 无默认特性 all-targets 检查也通过（18.05 秒）。本包尚未取得新的 Linux/Windows 原生运行结果，不能把早前固定提交的平台结果当成新源码已验证。
+
+```sh
+ALIA_TEST_DATABASE_URL='postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_p2_verify2' \
+  cargo test --workspace --locked
+
+ALIA_EASY_TURN_PCM="$PWD/run/easy-turn-backchannel.pcm" \
+ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
+  cargo test -p alia-server --test easy_turn_live --test voice_stream_live --locked -- --ignored --nocapture
+```
+
+数据库为本任务独有的临时实例。首次全空数据库运行发现 pgvector 被安装到临时 schema，已将数据库扩展准备固定到 public，并从另一个无扩展、无表的空库完成上述 500 项回归；未修改旧迁移内容。最新真实 CPU 模型直接 Backchannel 约 827 ms，gRPC Complete/Backchannel/Wait 约 497/326/396 ms，仍只是模型调用时间，不含 LLM/TTS 和声学呈现。
 
 `33a7c98` 中嵌入渠道测试的 feature 属性位置随后修正；修正后默认特性测试及 `--no-default-features --all-targets` 检查均通过。记录验证时应以修正后的分支为准。
 
@@ -36,14 +58,14 @@
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
-2. 独立 Execution / Delivery 事实、四类生命周期、事务 Outbox、幂等、unknown 结果与恢复。当前可监督工具任务与普通 trace 不等同于持久执行账本；下一包依据 [Execution 设计](execution-design.md) 收敛。
-3. Memory / Companion 状态归属、删除失效、主动表达策略、端侧动作安全与恢复的进一步重构和故障验证。
-4. Embedded 装配的启动失败回滚和整体退出期限；当前已保证 serve 返回及前置错误后清理，但旧模式的客户端长期保持上传仍可能阻止优雅退出。
+2. 规范 Response / Delivery 事实、投递取消和呈现证据、表达回执与身份栅栏，依据 [Delivery 设计](delivery-design.md) 实施。Execution 持久账本已完成本包整合，不代表投递或硬件完成。
+3. Memory 的 LLM 原子整理/批量遗忘、缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。
+4. Server 装配、后台生产者和长连接的完整生命周期，依据 [Server 生命周期设计](server-runtime-design.md) 实施。Embedded 的独立运行时包已经提交；Server 在 Execution 返回未完成时仍需保留整个依赖链继续清理。
 5. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
 
-模型观测成功、文本回复生成、音频被接收、音频提交给设备和设备实际呈现必须分别记录；目前未以估算时长证明声学播放完成。旧广播事件入口仍有可见的丢弃策略，尚未全部替换为可靠命令入口。
+模型观测成功、文本回复生成、音频被接收、音频提交给设备和设备实际呈现必须分别记录。当前主播放协议只证明 accepted；旧 direct response/表达旁路仍有估算完成或错误升级回执的问题，已在 Delivery 设计中明确列出，不能称全链路已证明声学完成。旧广播事件入口仍有可见的丢弃策略，尚未全部替换为可靠命令入口。
 
 ## 待补充的实机信息
 

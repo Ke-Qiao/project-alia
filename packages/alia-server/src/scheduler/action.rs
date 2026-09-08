@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 use crate::event::{EventBus, ServerEvent};
 use crate::providers::adapter::{
@@ -209,7 +208,7 @@ impl ActionExecutor for ToolCallActionExecutor {
             .get("call_id")
             .and_then(|v| v.as_str())
             .map(ToOwned::to_owned)
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| format!("{}:0", ctx.request_id));
 
         let result = self
             .tools
@@ -221,9 +220,14 @@ impl ActionExecutor for ToolCallActionExecutor {
                 },
                 &ToolContext {
                     user_id: ctx.user_id,
+                    request_id: ctx.request_id,
+                    source_received_at: ctx.source_received_at,
+                    source_event_id: None,
+                    invocation_key: "0".into(),
                     conversation_id: None,
                     source: ctx.source.clone(),
                     channel_id: None,
+                    cancel: None,
                 },
             )
             .await?;

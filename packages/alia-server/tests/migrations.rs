@@ -249,14 +249,15 @@ async fn sql_scripts_preserve_quoted_semicolons_and_function_bodies() {
 #[tokio::test]
 async fn bundled_schema_installs_with_pgvector_and_restarts_without_changes() {
     let database = TestDatabase::new().await;
-    // Keep the shared extension outside the disposable schema. A missing
-    // pgvector installation or permission is an explicit integration failure.
-    database
-        .admin
-        .execute_unprepared("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public")
-        .await
-        .expect("pgvector must be available in the integration database");
     let first = migrations::run(&database.db).await.unwrap();
+    let extension = database.admin.query_one(Statement::from_string(DatabaseBackend::Postgres,
+        "SELECT n.nspname AS schema_name FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='vector'"))
+        .await.unwrap().unwrap();
+    assert_eq!(
+        extension.try_get::<String>("", "schema_name").unwrap(),
+        "public",
+        "application schema cleanup must not own the shared pgvector extension"
+    );
     assert_eq!(first.applied, MIGRATIONS.len());
     assert!(database.table_exists("memory_items").await);
     assert!(database.table_exists("memory_embeddings_1536").await);

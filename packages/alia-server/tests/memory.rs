@@ -49,6 +49,7 @@ async fn test_update_and_delete() {
     // Update
     memory
         .update(
+            user_id,
             &id,
             MemoryPatch {
                 content: Some("updated content".to_string()),
@@ -68,7 +69,7 @@ async fn test_update_and_delete() {
     assert_eq!(results[0].importance, 0.9);
 
     // Delete
-    memory.delete(&id).await.unwrap();
+    memory.delete(user_id, &id).await.unwrap();
 
     let results = memory
         .retrieve(user_id, "updated", RetrievalOpts::default())
@@ -470,19 +471,14 @@ fn memory_runtime_migration_declares_pgvector_profile_and_graph_tables() {
 
 #[tokio::test]
 async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph() {
-    let Some(database_url) = std::env::var("ALIA_TEST_DATABASE_URL").ok() else {
-        eprintln!(
-            "skipping real PostgreSQL memory runtime test: ALIA_TEST_DATABASE_URL is not set"
-        );
-        return;
-    };
+    let database_url = std::env::var("ALIA_TEST_DATABASE_URL")
+        .expect("set ALIA_TEST_DATABASE_URL to the disposable PostgreSQL/pgvector database");
     let db = Database::connect(&database_url)
         .await
-        .expect("ALIA_TEST_DATABASE_URL should connect");
-    if !apply_memory_runtime_migration(&db).await {
-        eprintln!("skipping real PostgreSQL memory runtime test: pgvector is unavailable");
-        return;
-    }
+        .expect("test PostgreSQL must be reachable");
+    alia_server::modules::platform::migrations::run(&db)
+        .await
+        .expect("install packaged schema");
 
     let user_id = Uuid::new_v4();
     let memory = AliaMemory::new();
@@ -602,39 +598,6 @@ async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph
     ))
     .await
     .unwrap();
-}
-
-async fn apply_memory_runtime_migration(db: &sea_orm::DatabaseConnection) -> bool {
-    let sql = include_str!("../migrations/m20260520_000001_create_memory_runtime.sql");
-    for statement in split_sql_statements(sql) {
-        match db
-            .execute(Statement::from_string(DatabaseBackend::Postgres, statement))
-            .await
-        {
-            Ok(_) => {}
-            Err(error)
-                if error
-                    .to_string()
-                    .contains("extension \"vector\" is not available") =>
-            {
-                return false;
-            }
-            Err(error) => panic!("failed to apply memory runtime migration: {error}"),
-        }
-    }
-    true
-}
-
-fn split_sql_statements(sql: &str) -> Vec<String> {
-    sql.lines()
-        .filter(|line| !line.trim_start().starts_with("--"))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .split(';')
-        .map(str::trim)
-        .filter(|statement| !statement.is_empty())
-        .map(|statement| format!("{statement};"))
-        .collect()
 }
 
 struct DeterministicEmbedding1536;

@@ -9,12 +9,16 @@ use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 
 #[derive(Default)]
 struct Conversation {
     messages: Mutex<Vec<ChatMessage>>,
     events: Mutex<Vec<ConversationEventEntry>>,
+    source_times: Mutex<Vec<chrono::DateTime<chrono::Utc>>>,
+    fail_user: AtomicBool,
+    fail_assistant: AtomicBool,
 }
 impl ModuleLifecycle for Conversation {
     fn name(&self) -> &'static str {
@@ -43,8 +47,28 @@ impl ConversationBackend for Conversation {
         Ok(Vec::new())
     }
     async fn append_message(&self, _: Uuid, message: ChatMessage) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            message.role != "assistant" || !self.fail_assistant.load(Ordering::SeqCst),
+            "injected assistant persistence failure"
+        );
         self.messages.lock().unwrap().push(message);
         Ok(())
+    }
+    async fn append_sourced_message(
+        &self,
+        _: Uuid,
+        session: Uuid,
+        message: ChatMessage,
+        received_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Uuid> {
+        anyhow::ensure!(
+            !self.fail_user.load(Ordering::SeqCst),
+            "injected source persistence failure"
+        );
+        anyhow::ensure!(message.role == "user", "source must be user input");
+        self.append_message(session, message).await?;
+        self.source_times.lock().unwrap().push(received_at);
+        Ok(Uuid::new_v4())
     }
     async fn append_event(&self, _: Uuid, event: ConversationEventEntry) -> anyhow::Result<()> {
         let mut events = self.events.lock().unwrap();
@@ -231,6 +255,7 @@ impl Fixture {
 }
 fn input(text: &str) -> RecognizedVoiceInput {
     RecognizedVoiceInput {
+        source_received_at: chrono::Utc::now() - chrono::Duration::hours(1),
         channel_id: "test".into(),
         user_id: text.into(),
         transcript: text.into(),
@@ -240,11 +265,100 @@ fn input(text: &str) -> RecognizedVoiceInput {
         cancel: CancellationToken::new(),
     }
 }
+
+#[tokio::test]
+async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
+    for fail_user in [true, false] {
+        let fixture = Fixture::new(false).await;
+        fixture
+            .conversation
+            .fail_user
+            .store(fail_user, Ordering::SeqCst);
+        fixture
+            .conversation
+            .fail_assistant
+            .store(!fail_user, Ordering::SeqCst);
+        let user = Uuid::new_v4();
+        let bus = EventBus::new(8);
+        let mut events = bus.subscribe();
+        let pending = PendingTextPersistence {
+            source_received_at: chrono::Utc::now(),
+            source_event_id: None,
+            session_id: Uuid::new_v4(),
+            user_id: user,
+            user_id_text: user.to_string(),
+            query_text: "This input must have durable provenance".into(),
+            response_text: "A reply whose history write might fail".into(),
+            channel_id: "test".into(),
+            cache_write: None,
+        };
+        persist_text_interaction(
+            &fixture.modules,
+            pending,
+            &fixture.policy.memory,
+            &bus,
+            None,
+        )
+        .await;
+        assert!(
+            events.try_recv().is_err(),
+            "incomplete interaction published completion"
+        );
+        let messages = fixture.conversation.messages.lock().unwrap();
+        assert_eq!(messages.len(), usize::from(!fail_user));
+        assert!(messages.iter().all(|message| message.role == "user"));
+        assert!(
+            fixture.conversation.events.lock().unwrap().is_empty(),
+            "incomplete interaction reached memory capture audit"
+        );
+    }
+}
+
+#[tokio::test]
+async fn failed_user_source_prevents_model_and_tool_processing() {
+    let mut fixture = Fixture::new(false).await;
+    fixture.conversation.fail_user.store(true, Ordering::SeqCst);
+    let user = Uuid::new_v4().to_string();
+    let turn = VoiceTurn::request(CancellationToken::new());
+    let result = process_text(
+        "Remember this new preference",
+        &user,
+        &fixture.modules,
+        fixture.output.as_ref(),
+        &ChannelTarget {
+            user_id: user.clone(),
+            voice: None,
+        },
+        "test",
+        &EventBus::new(8),
+        false,
+        false,
+        false,
+        &fixture.policy.conversation,
+        &fixture.policy.tools,
+        &fixture.policy.cache,
+        &fixture.policy.cache_policy,
+        &fixture.policy.memory,
+        Some(&turn),
+        true,
+        None,
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(turn.source_event_id.get().is_none());
+    assert!(
+        fixture.started.try_recv().is_err(),
+        "model ran despite failed user source write"
+    );
+    assert!(fixture.conversation.messages.lock().unwrap().is_empty());
+    assert!(fixture.output.texts.lock().unwrap().is_empty());
+}
 #[tokio::test]
 async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
     let mut fixture = Fixture::new(false).await;
     let input = input("Keep this exact recognized transcript.");
     let session_id = input.session_id;
+    let source_received_at = input.source_received_at;
     voice::process_recognized_voice(
         input,
         &fixture.modules,
@@ -265,6 +379,11 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
         &["recognized reply"]
     );
     assert_eq!(fixture.output.audio.lock().unwrap().len(), 1);
+    assert_eq!(
+        fixture.conversation.source_times.lock().unwrap().as_slice(),
+        &[source_received_at],
+        "processing a queued input must preserve ingress time for the memory privacy boundary"
+    );
     let messages = fixture.conversation.messages.lock().unwrap();
     assert_eq!(
         messages

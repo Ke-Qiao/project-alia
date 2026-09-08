@@ -18,7 +18,6 @@ pub struct ServerAudioIngressService {
     event_bus: EventBus,
     channels: Arc<ChannelRegistry>,
     default_channel_id: String,
-    default_user_id: String,
 }
 
 impl ServerAudioIngressService {
@@ -31,8 +30,33 @@ impl ServerAudioIngressService {
             event_bus,
             channels,
             default_channel_id: default_channel_id.into(),
-            default_user_id: "embedded-user".to_string(),
         }
+    }
+
+    pub(crate) async fn owner_user_id(&self, channel_id: &str) -> Result<uuid::Uuid, Status> {
+        let channel = self
+            .channels
+            .get(channel_id)
+            .await
+            .ok_or_else(|| Status::failed_precondition("channel is no longer available"))?;
+        let configured = channel
+            .owner_user_id()
+            .filter(|id| !id.is_nil())
+            .ok_or_else(|| {
+                Status::failed_precondition(
+                    "identity_unlinked: configure this channel's owner_user_id before voice input",
+                )
+            })?;
+        let verified = channel.authenticated_owner().await.map_err(|error| {
+            tracing::warn!(%channel_id, %error, "channel owner verification failed");
+            Status::permission_denied("channel owner is inactive or cannot be verified")
+        })?;
+        if verified != configured {
+            return Err(Status::permission_denied(
+                "channel owner verification mismatch",
+            ));
+        }
+        Ok(verified)
     }
 
     async fn resolve_channel_id(&self, requested: Option<String>) -> Result<String, Status> {
@@ -105,6 +129,8 @@ impl ServerAudioIngress for ServerAudioIngressService {
         &self,
         request: Request<tonic::Streaming<CapturedAudioChunk>>,
     ) -> Result<Response<AudioUploadResponse>, Status> {
+        // Capture before identity/database waits and retain through the upload.
+        let source_received_at = chrono::Utc::now();
         let metadata_channel_id = request
             .metadata()
             .get(CHANNEL_ID_METADATA)
@@ -112,11 +138,11 @@ impl ServerAudioIngress for ServerAudioIngressService {
             .map(str::to_string);
         let token = bearer_token(&request)?;
         let authenticated_channel_id = self
-            .authenticate_ingress_token(token, None, metadata_channel_id)
+            .authenticate_ingress_token(token.clone(), None, metadata_channel_id)
             .await?;
+        let owner_user_id = self.owner_user_id(&authenticated_channel_id).await?;
         let mut stream = request.into_inner();
         let mut audio = alia_core::voice::AudioWindowBuffer::default();
-        let mut user_id: Option<String> = None;
         let upload_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(40);
         while let Some(frame) = tokio::time::timeout_at(upload_deadline, stream.message())
             .await
@@ -130,14 +156,8 @@ impl ServerAudioIngress for ServerAudioIngressService {
                     ));
                 }
             }
-            if !frame.user_id.is_empty() {
-                if user_id.as_ref().is_some_and(|user| user != &frame.user_id) {
-                    return Err(Status::invalid_argument(
-                        "captured utterance identity changed",
-                    ));
-                }
-                user_id = Some(frame.user_id);
-            }
+            // Legacy user_id is an untrusted hint. The authenticated channel
+            // selects the account; no frame may select another user's authority.
             if frame.sample_rate != 16_000 || frame.channels != 1 {
                 return Err(Status::invalid_argument(
                     "captured speech requires mono 16000 Hz PCM16",
@@ -159,10 +179,20 @@ impl ServerAudioIngress for ServerAudioIngressService {
             .into_window()
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
 
+        // Uploads may last 40 seconds. Recheck binding before publishing content.
+        self.authenticate_ingress_token(token, Some(authenticated_channel_id.clone()), None)
+            .await?;
+        if self.owner_user_id(&authenticated_channel_id).await? != owner_user_id {
+            return Err(Status::permission_denied(
+                "channel owner changed during upload",
+            ));
+        }
+
         self.event_bus
             .publish(ServerEvent::ChannelInput(ChannelEvent::AudioInput {
                 channel_id: authenticated_channel_id,
-                user_id: user_id.unwrap_or_else(|| self.default_user_id.clone()),
+                user_id: owner_user_id.to_string(),
+                source_received_at,
                 audio: AudioPayload {
                     data: audio.as_bytes().to_vec(),
                     sample_rate: 16_000,
@@ -181,12 +211,8 @@ impl ServerAudioIngress for ServerAudioIngressService {
         let channel_id = self
             .authenticate_ingress(&request, Some(&request.get_ref().channel_id))
             .await?;
+        let user_id = self.owner_user_id(&channel_id).await?.to_string();
         let req = request.into_inner();
-        let user_id = if req.user_id.trim().is_empty() {
-            self.default_user_id.clone()
-        } else {
-            req.user_id
-        };
         let reason = if req.reason.trim().is_empty() {
             "embedded_interrupt".to_string()
         } else {

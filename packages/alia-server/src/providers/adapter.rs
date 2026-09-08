@@ -731,6 +731,8 @@ pub trait EmbeddingAdapter: ModuleLifecycle {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryNode {
+    #[serde(default)]
+    pub revision: i64,
     pub id: Option<String>,
     pub memory_layer: String,
     pub node_type: String,
@@ -802,6 +804,7 @@ impl MemoryNode {
         let node_type = node_type.into();
         let kind = normalize_runtime_memory_kind(&memory_layer, &node_type);
         Self {
+            revision: 0,
             id: None,
             memory_layer,
             node_type,
@@ -906,7 +909,9 @@ fn normalize_memory_visibility_text(value: &str) -> String {
 
 fn normalize_memory_status_text(value: &str) -> String {
     match value.trim().to_ascii_lowercase().as_str() {
-        "active" | "superseded" | "rejected" | "expired" => value.trim().to_ascii_lowercase(),
+        "active" | "superseded" | "rejected" | "expired" | "deleted" => {
+            value.trim().to_ascii_lowercase()
+        }
         _ => "active".to_string(),
     }
 }
@@ -944,6 +949,8 @@ pub struct MemoryListOpts {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryPatch {
+    #[serde(default)]
+    pub expected_revision: Option<i64>,
     pub content: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub importance: Option<f32>,
@@ -1166,8 +1173,46 @@ pub struct MemorySuppressedExplanation {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MemoryWriteContext {
+    pub user_id: Uuid,
+    pub privacy_epoch: i64,
+    pub source_cutoff_at: chrono::DateTime<chrono::Utc>,
+    /// Trusted input timestamp, never an extractor-generated timestamp.
+    pub source_received_at: chrono::DateTime<chrono::Utc>,
+    pub source_event_ids: Vec<Uuid>,
+    pub source_memories: Vec<(String, i64)>,
+}
+
 #[async_trait]
 pub trait MemoryBackend: ModuleLifecycle {
+    /// Capture before reading source data or awaiting an extractor. A later
+    /// privacy change invalidates this token at the database commit boundary.
+    async fn write_snapshot(&self, _user_id: Uuid) -> anyhow::Result<MemoryWriteContext> {
+        anyhow::bail!("memory backend does not support guarded writes")
+    }
+    async fn store_guarded(
+        &self,
+        _context: &MemoryWriteContext,
+        _node: MemoryNode,
+    ) -> anyhow::Result<String> {
+        anyhow::bail!("memory backend does not support guarded writes")
+    }
+    async fn update_guarded(
+        &self,
+        _context: &MemoryWriteContext,
+        _node_id: &str,
+        _patch: MemoryPatch,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("memory backend does not support guarded writes")
+    }
+    async fn delete_guarded(
+        &self,
+        _context: &MemoryWriteContext,
+        _node_id: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("memory backend does not support guarded writes")
+    }
     async fn store(&self, user_id: Uuid, node: MemoryNode) -> anyhow::Result<String>;
     async fn list(&self, user_id: Uuid, opts: MemoryListOpts) -> anyhow::Result<Vec<MemoryNode>>;
     async fn get(&self, user_id: Uuid, node_id: &str) -> anyhow::Result<Option<MemoryNode>>;
@@ -1177,8 +1222,8 @@ pub trait MemoryBackend: ModuleLifecycle {
         query: &str,
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<MemoryNode>>;
-    async fn update(&self, node_id: &str, patch: MemoryPatch) -> anyhow::Result<()>;
-    async fn delete(&self, node_id: &str) -> anyhow::Result<()>;
+    async fn update(&self, user_id: Uuid, node_id: &str, patch: MemoryPatch) -> anyhow::Result<()>;
+    async fn delete(&self, user_id: Uuid, node_id: &str) -> anyhow::Result<()>;
     async fn clear(&self, user_id: Uuid) -> anyhow::Result<u64>;
     async fn memory_capabilities(&self) -> MemoryCapabilities {
         MemoryCapabilities::minimal(self.name())
@@ -1279,7 +1324,7 @@ pub trait MemoryBackend: ModuleLifecycle {
                 .any(|tag| tag.trim().eq_ignore_ascii_case(&topic))
                 || memory.content.to_ascii_lowercase().contains(&topic);
             if matches_topic && let Some(id) = memory.id {
-                self.delete(&id).await?;
+                self.delete(user_id, &id).await?;
                 deleted += 1;
             }
         }
@@ -1305,7 +1350,7 @@ pub trait MemoryBackend: ModuleLifecycle {
             if memory.kind == kind
                 && let Some(id) = memory.id
             {
-                self.delete(&id).await?;
+                self.delete(user_id, &id).await?;
                 deleted += 1;
             }
         }
@@ -1343,7 +1388,7 @@ pub trait MemoryBackend: ModuleLifecycle {
             let hidden = memory.visibility == "private_runtime"
                 || (memory.sensitive && memory.visibility != "user_visible");
             if hidden && let Some(id) = memory.id {
-                self.delete(&id).await?;
+                self.delete(user_id, &id).await?;
                 deleted += 1;
             }
         }
@@ -1715,6 +1760,17 @@ pub trait ConversationBackend: ModuleLifecycle {
     /// Append a message to a session.
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
 
+    /// Persist trusted user input and return the actual source record identity.
+    async fn append_sourced_message(
+        &self,
+        _user_id: Uuid,
+        _session_id: Uuid,
+        _message: ChatMessage,
+        _received_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Uuid> {
+        anyhow::bail!("conversation backend does not support durable input provenance")
+    }
+
     /// Append a traceable agent event to a session. Backends that do not persist
     /// conversation history can ignore this.
     async fn append_event(
@@ -1964,6 +2020,10 @@ pub trait ActionExecutor: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ActionContext {
     pub user_id: Uuid,
+    /// Identity of this triggering occurrence, retained across retries.
+    pub request_id: Uuid,
+    /// Trusted trigger observation time, retained while actions wait or retry.
+    pub source_received_at: chrono::DateTime<chrono::Utc>,
     pub source: String,
     pub trigger_id: Option<Uuid>,
     pub trigger_name: Option<String>,
@@ -2044,14 +2104,36 @@ pub struct ToolRoutingIndexEntry {
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub user_id: Uuid,
+    /// Assigned by the trusted ingress; never supplied by a model argument.
+    pub request_id: Uuid,
+    /// Original input observation time; queueing, approval and retries cannot refresh it.
+    pub source_received_at: chrono::DateTime<chrono::Utc>,
+    /// Persisted user message for AI-triggered writes; absent for manual/scheduled work.
+    pub source_event_id: Option<Uuid>,
+    /// Position within the request (for example LLM depth:index).
+    pub invocation_key: String,
     pub conversation_id: Option<Uuid>,
     pub source: String, // "ai" | "manual" | "scheduler"
     pub channel_id: Option<String>,
+    /// Cancels waiting and undispatched work; dispatched effects are independent.
+    pub cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {
     fn definition(&self) -> ToolDefinition;
+    /// Identifies the loaded implementation and any immutable configuration
+    /// that selects external targets. Missing revisions cannot execute durably.
+    /// Compiled implementations are additionally bound to the host binary hash.
+    fn implementation_revision(&self) -> Option<String> {
+        None
+    }
+    /// Opt in only when a returned failure proves rejection/non-execution.
+    /// Some legacy adapters encode transport errors as Ok(success=false), so
+    /// the durable execution service must treat that case as unknown by default.
+    fn failure_is_definitive(&self, _result: &ToolResult) -> bool {
+        false
+    }
     async fn execute(
         &self,
         arguments: serde_json::Value,
@@ -2059,8 +2141,19 @@ pub trait ToolExecutor: Send + Sync {
     ) -> anyhow::Result<ToolResult>;
 }
 
+#[derive(Clone)]
+pub struct PreparedTool {
+    pub executor: Arc<dyn ToolExecutor>,
+    pub registration_revision: String,
+}
+
 #[async_trait]
 pub trait ToolRegistry: ModuleLifecycle {
+    /// Pin the actual implementation before claiming a durable execution.
+    /// Product-facing registries deliberately keep this unavailable.
+    async fn resolve_executor(&self, _name: &str) -> anyhow::Result<Option<PreparedTool>> {
+        anyhow::bail!("raw tool executor access is unavailable")
+    }
     /// List all available tools
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>>;
     /// Get a specific tool definition

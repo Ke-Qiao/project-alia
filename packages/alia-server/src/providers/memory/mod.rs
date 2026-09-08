@@ -3,6 +3,7 @@
 //! Memory is part of Alia's core domain. External providers should not decide
 //! what the assistant remembers or how relationship state evolves.
 
+mod privacy;
 pub mod simple;
 
 pub use simple::AliaMemory;
@@ -27,7 +28,7 @@ impl ModuleLifecycle for NoopMemory {
 #[async_trait]
 impl MemoryBackend for NoopMemory {
     async fn store(&self, _user_id: Uuid, _node: MemoryNode) -> anyhow::Result<String> {
-        Ok(Uuid::new_v4().to_string())
+        anyhow::bail!("memory storage is disabled")
     }
 
     async fn list(&self, _user_id: Uuid, _opts: MemoryListOpts) -> anyhow::Result<Vec<MemoryNode>> {
@@ -47,12 +48,17 @@ impl MemoryBackend for NoopMemory {
         Ok(Vec::new())
     }
 
-    async fn update(&self, _node_id: &str, _patch: MemoryPatch) -> anyhow::Result<()> {
-        Ok(())
+    async fn update(
+        &self,
+        _user_id: Uuid,
+        _node_id: &str,
+        _patch: MemoryPatch,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("memory storage is disabled")
     }
 
-    async fn delete(&self, _node_id: &str) -> anyhow::Result<()> {
-        Ok(())
+    async fn delete(&self, _user_id: Uuid, _node_id: &str) -> anyhow::Result<()> {
+        anyhow::bail!("memory storage is disabled")
     }
 
     async fn clear(&self, _user_id: Uuid) -> anyhow::Result<u64> {

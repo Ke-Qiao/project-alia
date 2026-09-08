@@ -1,6 +1,7 @@
 use std::pin::Pin;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
 use serde::Serialize;
 
@@ -105,11 +106,15 @@ pub enum ChannelEvent {
         channel_id: String,
         user_id: String,
         text: String,
+        /// Server receive time, fixed before authentication/processing waits.
+        source_received_at: DateTime<Utc>,
     },
     AudioInput {
         channel_id: String,
         user_id: String,
         audio: AudioPayload,
+        /// Server receive time; never sourced from a device-provided clock.
+        source_received_at: DateTime<Utc>,
     },
     InterruptActiveTurn {
         channel_id: String,
@@ -148,6 +153,17 @@ pub trait ChannelAdapter: ModuleLifecycle {
 
     /// Instance ID (unique across all channels).
     fn channel_id(&self) -> &str;
+
+    /// Account selected by trusted server configuration, never by an audio frame.
+    fn owner_user_id(&self) -> Option<uuid::Uuid> {
+        None
+    }
+
+    /// Revalidate the account selected by this channel. Custom ingress adapters
+    /// must supply their trusted account lookup; static configuration alone is insufficient.
+    async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
+        anyhow::bail!("channel does not provide account verification")
+    }
 
     /// Declare what this channel supports.
     fn capabilities(&self) -> ChannelCapabilities;

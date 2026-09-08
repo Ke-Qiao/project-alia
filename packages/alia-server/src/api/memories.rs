@@ -240,6 +240,7 @@ async fn update_memory(
         .modules
         .memory
         .update(
+            auth.id,
             &id,
             MemoryPatch {
                 content: body.content.map(|content| content.trim().to_string()),
@@ -283,7 +284,7 @@ async fn delete_memory(
     state
         .modules
         .memory
-        .delete(&id)
+        .delete(auth.id, &id)
         .await
         .map_err(AppError::Internal)?;
 

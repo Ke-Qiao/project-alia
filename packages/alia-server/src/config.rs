@@ -83,6 +83,9 @@ pub enum ChannelConfig {
     #[serde(rename = "embedded")]
     Embedded {
         id: String,
+        /// Explicit account associated with this device; audio cannot assert an account.
+        #[serde(default)]
+        owner_user_id: Option<uuid::Uuid>,
         #[serde(default = "default_true")]
         enabled: bool,
         #[serde(default)]
@@ -107,12 +110,22 @@ pub enum ChannelConfig {
     #[serde(rename = "cli")]
     Cli {
         id: String,
+        #[serde(default)]
+        owner_user_id: Option<uuid::Uuid>,
         #[serde(default = "default_true")]
         enabled: bool,
     },
 }
 
 impl ChannelConfig {
+    pub fn owner_user_id(&self) -> Option<uuid::Uuid> {
+        match self {
+            Self::Embedded { owner_user_id, .. } | Self::Cli { owner_user_id, .. } => {
+                *owner_user_id
+            }
+        }
+    }
+
     pub fn id(&self) -> &str {
         match self {
             ChannelConfig::Embedded { id, .. } => id,

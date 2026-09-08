@@ -63,6 +63,7 @@ const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 #[derive(Debug, Clone)]
 pub struct EmbeddedChannelConfig {
     pub id: String,
+    pub owner_user_id: Option<uuid::Uuid>,
     pub endpoint: String,
     pub discovery_service_name: String,
     pub discovery_timeout_sec: u64,
@@ -118,6 +119,7 @@ fn parse_discovery_capabilities(properties: &HashMap<String, String>) -> Vec<Str
 #[derive(Clone)]
 pub struct EmbeddedChannel {
     config: EmbeddedChannelConfig,
+    account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
     status: Arc<RwLock<ConnectionStatus>>,
     audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
@@ -153,6 +155,7 @@ impl EmbeddedChannel {
 
         Self {
             config,
+            account_database: None,
             event_bus,
             status: Arc::new(RwLock::new(status)),
             audio_client: Arc::new(RwLock::new(None)),
@@ -679,6 +682,7 @@ impl ModuleLifecycle for EmbeddedChannel {
     }
 
     async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
+        self.account_database = Some(_ctx.db.clone());
         *self.sensor_registry.write().await = Some(_ctx.sensors.clone());
         let keypair = load_server_keypair(&_ctx.config.auth.server_keypair_path)?;
         self.server_public_key = keypair.public_key_bytes().to_vec();
@@ -753,6 +757,18 @@ impl ModuleLifecycle for EmbeddedChannel {
 
 #[async_trait]
 impl ChannelAdapter for EmbeddedChannel {
+    async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
+        crate::modules::platform::identity::require_active_owner(
+            self.account_database.as_ref(),
+            self.owner_user_id(),
+        )
+        .await
+    }
+
+    fn owner_user_id(&self) -> Option<uuid::Uuid> {
+        self.config.owner_user_id.filter(|id| !id.is_nil())
+    }
+
     fn channel_type(&self) -> &'static str {
         "embedded"
     }

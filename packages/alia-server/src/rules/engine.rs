@@ -164,6 +164,8 @@ impl EventRuleEngine {
 
             let action_ctx = ActionContext {
                 user_id: rule.user_id,
+                request_id: Uuid::new_v4(),
+                source_received_at: now,
                 source: "rule".to_string(),
                 trigger_id: Some(rule_id),
                 trigger_name: Some(rule.name.clone()),

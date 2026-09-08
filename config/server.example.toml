@@ -48,6 +48,9 @@ argon2_parallelism = 1
 type = "embedded"
 id = "pi-living-room"
 enabled = true
+# Set to an existing active account UUID before voice input is enabled.
+# The authenticated account API returns its user ID. Never use a device-supplied ID.
+# owner_user_id = "<existing-account-uuid>"
 endpoint = ""
 discovery_service_name = "_alia-embedded._tcp"
 discovery_timeout_sec = 3

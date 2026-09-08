@@ -5,6 +5,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::config::HomeAssistantPluginSection;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
@@ -203,6 +204,7 @@ async fn persist_config_snapshot(
 
 #[derive(Clone)]
 struct HomeAssistantClient {
+    execution_revision: String,
     endpoint: String,
     access_token: String,
     http: reqwest::Client,
@@ -214,16 +216,33 @@ impl HomeAssistantClient {
         storage: Arc<dyn PluginStorage>,
         runtime: HomeAssistantRuntimeConfig,
     ) -> anyhow::Result<Self> {
+        // Bind authorization to the actual immutable endpoint and credentials,
+        // including environment overrides. Only this digest enters the ledger.
+        let execution_revision = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&serde_json::json!({
+                "implementation": "alia.compiled.home_assistant",
+                "endpoint": runtime.endpoint,
+                "access_token": runtime.access_token,
+                "cache_ttl_sec": runtime.cache_ttl_sec,
+                "request_timeout_sec": runtime.request_timeout_sec,
+            }))?)
+        );
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(runtime.request_timeout_sec))
             .user_agent("alia-server home_assistant plugin/0.1")
             .build()?;
         Ok(Self {
+            execution_revision,
             endpoint: runtime.endpoint,
             access_token: runtime.access_token,
             http,
             storage,
         })
+    }
+
+    fn execution_revision(&self) -> String {
+        self.execution_revision.clone()
     }
 
     async fn lights(&self, refresh_cache: bool) -> anyhow::Result<CachedLights> {
@@ -401,6 +420,9 @@ impl HomeAssistantListLightsTool {
 
 #[async_trait]
 impl ToolExecutor for HomeAssistantListLightsTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some(self.client.execution_revision())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: LIST_LIGHTS_TOOL.to_string(),
@@ -475,6 +497,9 @@ impl HomeAssistantLightControlTool {
 
 #[async_trait]
 impl ToolExecutor for HomeAssistantLightControlTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some(self.client.execution_revision())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: CONTROL_LIGHT_TOOL.to_string(),

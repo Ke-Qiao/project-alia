@@ -11,7 +11,7 @@ use crate::memory_policy::{
 };
 use crate::module::ModuleRegistry;
 use crate::providers::adapter::{
-    ChatMessage, LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode,
+    ChatMessage, LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryWriteContext,
 };
 
 const MEMORY_CAPTURE_SYSTEM_PROMPT: &str = r#"You decide whether a personal AI assistant should remember anything from one completed conversation turn.
@@ -191,6 +191,25 @@ async fn llm_selected_turn_memory(
         return MemoryCaptureTrace::skipped(MemoryCaptureMode::LlmSelected, "llm_unavailable");
     }
 
+    let mut context = match memory.write_snapshot(pending.user_id).await {
+        Ok(context) => context,
+        Err(error) => {
+            return MemoryCaptureTrace::failed(
+                MemoryCaptureMode::LlmSelected,
+                Some(model),
+                format!("memory_snapshot_failed: {error}"),
+            );
+        }
+    };
+    context.source_received_at = pending.source_received_at;
+    context.source_event_ids = pending.source_event_id.into_iter().collect();
+    if context.source_received_at <= context.source_cutoff_at {
+        return MemoryCaptureTrace::skipped(
+            MemoryCaptureMode::LlmSelected,
+            "source_predates_privacy_boundary",
+        );
+    }
+
     let messages = vec![
         ChatMessage::new("system", MEMORY_CAPTURE_SYSTEM_PROMPT),
         ChatMessage::new(
@@ -240,7 +259,8 @@ async fn llm_selected_turn_memory(
     };
     let candidate_count = parsed.memories.len();
     let (stored, skipped, candidate_traces) =
-        store_memory_capture_candidates(memory, pending, memory_config, parsed.memories).await;
+        store_memory_capture_candidates(memory, pending, &context, memory_config, parsed.memories)
+            .await;
     tracing::debug!(
         user_id = %pending.user_id,
         session_id = %pending.session_id,
@@ -265,6 +285,7 @@ async fn llm_selected_turn_memory(
 async fn store_memory_capture_candidates(
     memory: &dyn MemoryBackend,
     pending: &PendingTextPersistence,
+    context: &MemoryWriteContext,
     memory_config: &MemorySection,
     candidates: Vec<MemoryCaptureCandidate>,
 ) -> (u32, u32, Vec<MemoryCandidateTrace>) {
@@ -385,7 +406,7 @@ async fn store_memory_capture_candidates(
             "source": "conversation_turn",
             "summary": reason.clone().unwrap_or_else(|| "LLM-selected durable memory candidate.".to_string()),
         });
-        match upsert_memory_candidate(memory, pending, &incoming).await {
+        match upsert_memory_candidate(memory, pending, context, &incoming).await {
             Ok(MemoryUpsertAction::Stored) => {
                 stored += 1;
                 traces.push(candidate_trace(
@@ -458,6 +479,7 @@ enum MemoryUpsertAction {
 async fn upsert_memory_candidate(
     memory: &dyn MemoryBackend,
     pending: &PendingTextPersistence,
+    context: &MemoryWriteContext,
     incoming: &MemoryNode,
 ) -> anyhow::Result<MemoryUpsertAction> {
     let merge_key = memory_merge_key(
@@ -486,13 +508,13 @@ async fn upsert_memory_candidate(
             && merge_key == memory_merge_key(&node.memory_layer, &node.node_type, &node.content)
         {
             memory
-                .update(existing_id, merge_memory_patch(&node, incoming))
+                .update_guarded(context, existing_id, merge_memory_patch(&node, incoming))
                 .await?;
             return Ok(MemoryUpsertAction::Updated);
         }
     }
 
-    memory.store(pending.user_id, incoming.clone()).await?;
+    memory.store_guarded(context, incoming.clone()).await?;
     Ok(MemoryUpsertAction::Stored)
 }
 

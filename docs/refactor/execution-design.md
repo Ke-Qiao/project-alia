@@ -1,12 +1,12 @@
 # Execution 实施边界
 
-状态：P2 下一实施包设计，尚未实现。用户已授权整体构建；本文件收敛独立执行事实和工具入口，不引入 Temporal，也不改变前端延期范围。
+状态：P2 的 repository、worker、工具入口和 REST 已实现，整合回归已通过，随本包提交。实际测试范围见 [故障验证](execution-validation.md)，操作契约见 [Execution API](execution-api.md)。本包不引入 Temporal，也不改变前端延期范围。
 
 ## 现有问题与替换边界
 
-`channels/pipeline/tools.rs` 的工具超时会丢弃 future，并生成普通失败结果。语音取消后继续等待并写 trace 的改造已经生效，但 trace 写入失败只记日志，不能证明副作用已被记录。REST 和 scheduler 直接调用 `ToolRegistry::execute`，没有与语音共用规范确认与执行账本。
+旧工具入口在调用超时后丢弃 future，并生成普通失败结果；普通 trace 也不能保证副作用结果已经持久保存。原来的 REST、语音与 scheduler 没有共同的确认与执行账本。
 
-保留可复用的工具定义、Provider、具体 executor、路由和参数解析。把执行授权、确认、持久状态、幂等、恢复和超时语义收归 `modules/execution`。目录重命名本身不计为完成。
+当前保留可复用的工具定义、Provider、具体 executor、路由和参数解析。执行授权、确认、持久状态、幂等、恢复和超时语义由 `modules/execution` 拥有。ModuleRegistry 暴露的工具注册表与 AppState 共用一个 ExecutionService，原始 executor 仅供该服务的 worker 调用。
 
 ## 不变量
 
@@ -27,6 +27,16 @@
 - 使用独立真实 PostgreSQL 验证：并发幂等、同键参数冲突、批准与 Outbox 原子性、批准后崩溃恢复、认领后崩溃进入 unknown、撤权、取消与分派竞争、结果落库失败和重复回执。
 - 生产路径完成接入后提交；仅有表结构或纯状态机不计为这一实施包完成。
 
+## 已实现的状态与资源约束
+
+`execution_effects` 保存规范意图、批准、认领与结果；`execution_outbox` 仅保存已经批准且尚未认领的任务；`execution_events` 与状态变更同事务提交。恢复扫描不会重新调用已经 dispatched 的工具。失去结果的分派记录在执行期限及宽限期后转为 unknown。
+
+幂等键是 `user_id + request_id + invocation_key`。模型提供的 call ID 仅供关联，不参与幂等或授权摘要。批准绑定意图摘要；分派再次核验当前用户、角色、工具目录、实现版本和批准期限。worker 持有认领时解析出的固定 executor，热注册不会把已经认领的任务换成另一份实现。
+
+待确认意图每用户最多 32 项，批准队列最多 256 项，4 个 worker 并发执行，参数上限 16 KiB，结果上限 64 KiB，批准有效期 15 分钟，执行期限最多 300 秒。结果持久化可以重试，外部副作用不会因此重试。通用错误或超时默认 unknown；只有 executor 明确承诺失败具有确定证据时才保存 failed。
+
+会话取消只关闭尚未认领的自动意图。已认领任务由独立 worker 继续收集结果；需要用户确认的 proposed 意图和明确的非会话后台请求有各自持久生命周期。提交 5 秒、结果等待 10 秒和每次关闭 10 秒的整体期限已经通过真实数据库锁/回执丢失测试；超时保留未确认取消及 worker 句柄，不以调用 future 已结束代替工作已经结束。
+
 ## 明确未由此包解决
 
-设备播放的实际呈现、动作到位反馈、所有 Delivery 生命周期、Memory 删除失效和 Companion 策略仍需各自实施与验收。数据库账本不能证明用户听到音频或机构已经到位。后台任务引擎选型继续遵守台账 C01；此包不建立通用消息中间件。
+设备播放的实际呈现、动作到位反馈、Delivery 生命周期和 Companion 策略仍需各自实施与验收。Memory 删除失效在同轮独立包中实现，具体证据见 [Memory 审查](memory-findings.md)。数据库账本不能证明用户听到音频或机构已经到位。后台任务引擎选型继续遵守台账 C01；此包不建立通用消息中间件。

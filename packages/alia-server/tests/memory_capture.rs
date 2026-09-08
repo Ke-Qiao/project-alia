@@ -17,12 +17,17 @@ use uuid::Uuid;
 
 struct StaticLlm {
     response: String,
+    gate: Option<(
+        std::sync::Arc<tokio::sync::Notify>,
+        std::sync::Arc<tokio::sync::Notify>,
+    )>,
 }
 
 impl StaticLlm {
     fn new(response: impl Into<String>) -> Self {
         Self {
             response: response.into(),
+            gate: None,
         }
     }
 }
@@ -37,6 +42,10 @@ impl ModuleLifecycle for StaticLlm {
 #[async_trait]
 impl LlmAdapter for StaticLlm {
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
+        if let Some((entered, release)) = &self.gate {
+            entered.notify_one();
+            release.notified().await;
+        }
         assert!(
             messages
                 .iter()
@@ -67,6 +76,8 @@ impl LlmAdapter for StaticLlm {
 
 fn pending_turn(user_id: Uuid) -> PendingTextPersistence {
     PendingTextPersistence {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
         session_id: Uuid::new_v4(),
         user_id,
         user_id_text: "test-user".to_string(),
@@ -100,6 +111,65 @@ fn memory_config() -> MemorySection {
         health_check_attempts: 1,
         health_check_interval_ms: 1,
     }
+}
+
+#[tokio::test]
+async fn pending_turn_received_before_clear_cannot_be_extracted_later() {
+    let user_id = Uuid::new_v4();
+    let mut pending = pending_turn(user_id);
+    pending.source_received_at -= chrono::Duration::seconds(1);
+    let memory = AliaMemory::new();
+    memory.clear(user_id).await.unwrap();
+    let llm = StaticLlm::new(
+        r#"{"memories":[{"content":"用户喜欢咖啡","importance":0.9,"confidence":0.9}]}"#,
+    );
+    let trace = capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+    assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
+    assert_eq!(
+        trace.reason.as_deref(),
+        Some("source_predates_privacy_boundary")
+    );
+    assert!(
+        memory
+            .list(user_id, MemoryListOpts::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn deletion_while_extractor_is_waiting_rejects_its_late_result() {
+    let user_id = Uuid::new_v4();
+    let pending = pending_turn(user_id);
+    let memory = AliaMemory::new();
+    let mut llm = StaticLlm::new(
+        r#"{"memories":[{"content":"用户喜欢咖啡","importance":0.9,"confidence":0.9}]}"#,
+    );
+    let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+    let release = std::sync::Arc::new(tokio::sync::Notify::new());
+    llm.gate = Some((entered.clone(), release.clone()));
+    let config = memory_config();
+    let capture = capture_turn_memory_with_backends(&llm, &memory, &pending, &config);
+    let forget = async {
+        entered.notified().await;
+        memory.clear(user_id).await.unwrap();
+        release.notify_one();
+    };
+    let (trace, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(capture, forget)
+    })
+    .await
+    .unwrap();
+    assert_eq!(trace.stored, 0);
+    assert_eq!(trace.skipped, 1);
+    assert!(
+        memory
+            .list(user_id, MemoryListOpts::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

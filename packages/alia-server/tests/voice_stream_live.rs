@@ -53,6 +53,14 @@ impl ModuleLifecycle for TestChannel {
 
 #[async_trait]
 impl ChannelAdapter for TestChannel {
+    async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
+        Ok(Uuid::from_u128(7))
+    }
+
+    fn owner_user_id(&self) -> Option<Uuid> {
+        Some(Uuid::from_u128(7))
+    }
+
     fn channel_type(&self) -> &'static str {
         "embedded"
     }
@@ -289,6 +297,7 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
             assert_eq!(input.device_boot_id, boot);
             assert_eq!(input.generation_epoch, 2);
             assert_eq!(input.channel_id, CHANNEL);
+            assert_eq!(input.user_id, Uuid::from_u128(7).to_string());
             assert_eq!(input.transcript, evidence.transcript.trim());
             active_response = Some(input.cancel);
         } else {

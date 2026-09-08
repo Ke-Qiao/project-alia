@@ -12,6 +12,9 @@ use crate::entity::{chat_message, chat_session, conversation_event};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{ChatMessage, ConversationBackend, ConversationEventEntry};
 
+#[cfg(test)]
+mod tests;
+
 pub struct DatabaseConversationBackend {
     db: Option<DatabaseConnection>,
     // In-memory tracker for the active session ID per channel_id + user_id.
@@ -197,7 +200,8 @@ impl ConversationBackend for DatabaseConversationBackend {
     }
 
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()> {
-        let db = self.db()?;
+        use sea_orm::TransactionTrait;
+        let tx = self.db()?.begin().await?;
 
         // Insert message
         let msg = chat_message::ActiveModel {
@@ -208,7 +212,7 @@ impl ConversationBackend for DatabaseConversationBackend {
             content: Set(message.content),
             created_at: Set(chrono::Utc::now().into()),
         };
-        msg.insert(db).await?;
+        msg.insert(&tx).await?;
 
         // We must load it first to update just updated_at safely, or we can use update_many
         chat_session::Entity::update_many()
@@ -219,10 +223,42 @@ impl ConversationBackend for DatabaseConversationBackend {
                 )))),
             )
             .filter(chat_session::Column::Id.eq(session_id))
-            .exec(db)
+            .exec(&tx)
             .await?;
 
+        tx.commit().await?;
         Ok(())
+    }
+
+    async fn append_sourced_message(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        message: ChatMessage,
+        received_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Uuid> {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+        anyhow::ensure!(
+            message.role == "user",
+            "only user input can be a memory source"
+        );
+        let tx = self.db()?.begin().await?;
+        let id = Uuid::new_v4();
+        let inserted = tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at) SELECT $1,$2,$3,'user',$4,clock_timestamp(),$5 FROM chat_sessions WHERE id=$2 AND creator_id=$3",
+            vec![id.into(),session_id.into(),user_id.to_string().into(),message.content.into(),received_at.into()])).await?;
+        anyhow::ensure!(
+            inserted.rows_affected() == 1,
+            "conversation session is not owned by this account"
+        );
+        tx.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE chat_sessions SET updated_at=clock_timestamp() WHERE id=$1",
+            [session_id.into()],
+        ))
+        .await?;
+        tx.commit().await?;
+        Ok(id)
     }
 
     async fn append_event(

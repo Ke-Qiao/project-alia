@@ -187,24 +187,24 @@ async fn run_connected(
         discovery.shutdown();
     }
     let drain_result = drain(&mut services).await;
-    // Keep the database and adapters alive until already-dispatched tool calls
-    // finish their bounded execution and record results. Aborting this task can
-    // erase execution evidence; a durable EffectRun journal is the next boundary.
+    // Stop interaction waits before draining the independently owned effects.
     let pipeline_result = if let Some(task) = state.pipeline_task.lock().await.take() {
         task.await.context("joining interaction pipeline")
     } else {
         Ok(())
     };
+    // Outbound channels and plugins remain usable until dispatched effects
+    // have persisted their receipts or reported a durable-recovery requirement.
+    let execution_result = state.execution.shutdown().await;
     let channels_result = tokio::time::timeout(SHUTDOWN_GRACE, state.channels.shutdown())
         .await
         .context("timed out stopping server channels");
     // Still attempt module cleanup if a channel does not honor shutdown.
-    let modules_result = tokio::time::timeout(SHUTDOWN_GRACE, state.modules.shutdown())
-        .await
-        .context("timed out stopping server modules");
+    let modules_result = state.modules.shutdown().await;
     for error in [
         &drain_result,
         &pipeline_result,
+        &execution_result,
         &channels_result,
         &modules_result,
     ]
@@ -216,6 +216,7 @@ async fn run_connected(
     let result = result
         .and(drain_result)
         .and(pipeline_result)
+        .and(execution_result)
         .and(channels_result)
         .and(modules_result);
     if result.is_ok() {

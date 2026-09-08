@@ -59,8 +59,17 @@ struct SubscriptionState {
 }
 
 enum ActionMessage {
-    Task(Uuid),
-    Subscription(Uuid, serde_json::Value),
+    Task {
+        task_id: Uuid,
+        request_id: Uuid,
+        source_received_at: DateTime<Utc>,
+    },
+    Subscription {
+        subscription_id: Uuid,
+        request_id: Uuid,
+        source_received_at: DateTime<Utc>,
+        event: serde_json::Value,
+    },
 }
 
 pub struct AutomationScheduler {
@@ -161,7 +170,16 @@ impl AutomationScheduler {
                     false
                 });
 
-            if matched && action_tx.send(ActionMessage::Task(task_id)).await.is_err() {
+            if matched
+                && action_tx
+                    .send(ActionMessage::Task {
+                        task_id,
+                        request_id: Uuid::new_v4(),
+                        source_received_at: now,
+                    })
+                    .await
+                    .is_err()
+            {
                 tracing::error!(%task_id, "failed to enqueue task action");
             }
 
@@ -252,7 +270,12 @@ impl AutomationScheduler {
                 });
             if matched
                 && action_tx
-                    .send(ActionMessage::Subscription(sub_id, event_data))
+                    .send(ActionMessage::Subscription {
+                        subscription_id: sub_id,
+                        request_id: Uuid::new_v4(),
+                        source_received_at: now,
+                        event: event_data,
+                    })
                     .await
                     .is_err()
             {
@@ -279,7 +302,7 @@ impl AutomationScheduler {
                 }
                 Some(msg) = action_rx.recv() => {
                     match msg {
-                        ActionMessage::Task(task_id) => {
+                        ActionMessage::Task { task_id, request_id, source_received_at } => {
                             Self::execute_task(
                                 &tasks,
                                 &event_bus,
@@ -287,16 +310,20 @@ impl AutomationScheduler {
                                 semaphore.clone(),
                                 task_timeout_sec,
                                 task_id,
+                                request_id,
+                                source_received_at,
                             ).await;
                         }
-                        ActionMessage::Subscription(sub_id, event_data) => {
+                        ActionMessage::Subscription { subscription_id, request_id, source_received_at, event } => {
                             Self::execute_subscription(
                                 &subscriptions,
                                 &actions,
                                 semaphore.clone(),
                                 task_timeout_sec,
-                                sub_id,
-                                event_data,
+                                subscription_id,
+                                request_id,
+                                source_received_at,
+                                event,
                             ).await;
                         }
                     }
@@ -312,6 +339,8 @@ impl AutomationScheduler {
         semaphore: Arc<Semaphore>,
         task_timeout_sec: u64,
         task_id: Uuid,
+        request_id: Uuid,
+        source_received_at: DateTime<Utc>,
     ) {
         let task = {
             let tasks = tasks.read().await;
@@ -337,6 +366,8 @@ impl AutomationScheduler {
                     &task.action,
                     &ActionContext {
                         user_id: task.user_id,
+                        request_id,
+                        source_received_at,
                         source: "scheduler".to_string(),
                         trigger_id: Some(task_id),
                         trigger_name: Some(task.name.clone()),
@@ -352,18 +383,36 @@ impl AutomationScheduler {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         match result {
-            Ok(_) => {
+            Ok(output) => {
                 let mut tasks = tasks.write().await;
                 if let Some(state) = tasks.get_mut(&task_id) {
                     state.last_triggered = Some(Utc::now());
                     state.retry_count = 0;
                 }
-                event_bus.publish(ServerEvent::TaskCompleted {
-                    task_id,
-                    task_name: task.name,
-                    success: true,
-                    duration_ms,
-                });
+                let execution_status = output
+                    .pointer("/output/execution_status")
+                    .and_then(serde_json::Value::as_str);
+                match execution_status {
+                    Some("proposed" | "approved" | "dispatched" | "unknown") => {
+                        // Acceptance is not external completion. Execution's
+                        // ledger owns pending/unknown outcomes and recovery.
+                        tracing::info!(%task_id, %request_id, ?execution_status, "scheduled effect remains queryable in execution ledger");
+                    }
+                    _ => event_bus.publish(ServerEvent::TaskCompleted {
+                        task_id,
+                        task_name: task.name,
+                        success: execution_status.map_or_else(
+                            || {
+                                output
+                                    .get("success")
+                                    .and_then(serde_json::Value::as_bool)
+                                    .unwrap_or(true)
+                            },
+                            |status| status == "succeeded",
+                        ),
+                        duration_ms,
+                    }),
+                }
             }
             Err(error) => {
                 let retry_count = {
@@ -391,6 +440,8 @@ impl AutomationScheduler {
         semaphore: Arc<Semaphore>,
         task_timeout_sec: u64,
         sub_id: Uuid,
+        request_id: Uuid,
+        source_received_at: DateTime<Utc>,
         event_data: serde_json::Value,
     ) {
         let sub = {
@@ -409,6 +460,8 @@ impl AutomationScheduler {
                     &sub.action,
                     &ActionContext {
                         user_id: sub.user_id,
+                        request_id,
+                        source_received_at,
                         source: "subscription".to_string(),
                         trigger_id: Some(sub_id),
                         trigger_name: Some(sub.name.clone()),

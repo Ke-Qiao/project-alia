@@ -26,6 +26,9 @@ impl SensorReadTool {
 
 #[async_trait]
 impl ToolExecutor for SensorReadTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.SensorReadTool".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "sensor_read".to_string(),
@@ -175,6 +178,9 @@ fn tool_freshness_policy(
 
 #[async_trait]
 impl ToolExecutor for SensorListTool {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.SensorListTool".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "sensor_list".to_string(),

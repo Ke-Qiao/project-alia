@@ -313,6 +313,7 @@ pub fn create_channel(
         #[cfg(feature = "channel-embedded")]
         ChannelConfig::Embedded {
             id,
+            owner_user_id,
             endpoint,
             discovery_service_name,
             discovery_timeout_sec,
@@ -328,6 +329,7 @@ pub fn create_channel(
             Ok(Box::new(EmbeddedChannel::new(
                 EmbeddedChannelConfig {
                     id: id.clone(),
+                    owner_user_id: *owner_user_id,
                     endpoint: endpoint.clone(),
                     discovery_service_name: discovery_service_name.clone(),
                     discovery_timeout_sec: *discovery_timeout_sec,
@@ -348,9 +350,13 @@ pub fn create_channel(
                 id
             )
         }
-        ChannelConfig::Cli { id, .. } => {
+        ChannelConfig::Cli {
+            id, owner_user_id, ..
+        } => {
             tracing::info!(channel_id = %id, "creating CliChannel");
-            Ok(Box::new(CliChannel::new(id.clone(), event_bus)))
+            Ok(Box::new(
+                CliChannel::new(id.clone(), event_bus).with_owner_user_id(*owner_user_id),
+            ))
         }
     }
 }
@@ -363,6 +369,7 @@ mod tests {
     fn embedded_channel_without_feature_returns_error() {
         let config = ChannelConfig::Embedded {
             id: "pi-living-room".to_string(),
+            owner_user_id: None,
             enabled: true,
             endpoint: String::new(),
             discovery_service_name: "_alia-embedded._tcp".to_string(),

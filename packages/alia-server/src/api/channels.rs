@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sea_orm::EntityTrait;
 use serde::Serialize;
 
 use crate::auth::AuthUser;
@@ -16,6 +17,7 @@ use crate::state::AppState;
 #[derive(Serialize)]
 struct ChannelInfo {
     id: String,
+    owner_user_id: Option<uuid::Uuid>,
     channel_type: String,
     active: bool,
     health: String,
@@ -42,6 +44,7 @@ async fn list_channels(
     for channel in state.channels.list().await {
         active.push(ChannelInfo {
             id: channel.channel_id().to_string(),
+            owner_user_id: channel.owner_user_id(),
             channel_type: channel.channel_type().to_string(),
             active: true,
             health: format!("{:?}", channel.health_check().await),
@@ -56,9 +59,12 @@ async fn list_channels(
 
 async fn restart_channel(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(channel_id): Path<String>,
 ) -> Result<Json<RestartChannelResponse>> {
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
     let config = state
         .config
         .channels
@@ -71,6 +77,17 @@ async fn restart_channel(
         return Err(AppError::Validation(format!(
             "channel '{channel_id}' is disabled in config"
         )));
+    }
+
+    if let Some(owner) = config.owner_user_id() {
+        let user = crate::entity::user::Entity::find_by_id(owner)
+            .one(&state.db)
+            .await?;
+        if !user.is_some_and(|user| user.status == "active") {
+            return Err(AppError::Validation(
+                "identity_unlinked: channel owner must reference an active account".into(),
+            ));
+        }
     }
 
     if state.channels.get(&channel_id).await.is_some() {

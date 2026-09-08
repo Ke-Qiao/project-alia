@@ -27,7 +27,6 @@ use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::adapter::ConversationBackend;
 
 pub(crate) const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const USER_ID: &str = "cli-user";
 const MAX_LINE_CHARS: usize = 4096;
 const MAX_HISTORY: usize = 1000;
 static TERMINAL_IN_USE: AtomicBool = AtomicBool::new(false);
@@ -92,6 +91,8 @@ struct ConsoleWorker {
 
 pub struct CliChannel {
     id: String,
+    owner_user_id: Option<uuid::Uuid>,
+    account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
     cancel_token: Option<CancellationToken>,
     conversation: Option<Arc<dyn ConversationBackend>>,
@@ -103,12 +104,19 @@ impl CliChannel {
     pub fn new(id: impl Into<String>, event_bus: EventBus) -> Self {
         Self {
             id: id.into(),
+            owner_user_id: None,
+            account_database: None,
             event_bus,
             cancel_token: None,
             conversation: None,
             worker: Mutex::new(None),
             output: RwLock::new(None),
         }
+    }
+
+    pub fn with_owner_user_id(mut self, owner_user_id: Option<uuid::Uuid>) -> Self {
+        self.owner_user_id = owner_user_id.filter(|id| !id.is_nil());
+        self
     }
 
     async fn output(&self, output: ConsoleOutput) -> anyhow::Result<()> {
@@ -132,6 +140,7 @@ impl ModuleLifecycle for CliChannel {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+        self.account_database = Some(ctx.db.clone());
         self.cancel_token = Some(ctx.cancel_token.clone());
         self.conversation = ctx.conversation.clone();
         Ok(())
@@ -148,6 +157,8 @@ impl ModuleLifecycle for CliChannel {
         let (ready_tx, ready_rx) = oneshot::channel();
         let bus = self.event_bus.clone();
         let channel_id = self.id.clone();
+        let owner_user_id = self.owner_user_id.map(|id| id.to_string());
+        let account_database = self.account_database.clone();
         let conversation = self.conversation.clone();
         let worker_cancel = cancel.clone();
         let runtime = tokio::runtime::Handle::current();
@@ -165,6 +176,8 @@ impl ModuleLifecycle for CliChannel {
                 output_rx,
                 &bus,
                 &channel_id,
+                owner_user_id.as_deref(),
+                account_database.as_ref(),
                 conversation.as_deref(),
                 &runtime,
                 &worker_cancel,
@@ -213,6 +226,18 @@ impl ModuleLifecycle for CliChannel {
 
 #[async_trait]
 impl ChannelAdapter for CliChannel {
+    async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
+        crate::modules::platform::identity::require_active_owner(
+            self.account_database.as_ref(),
+            self.owner_user_id,
+        )
+        .await
+    }
+
+    fn owner_user_id(&self) -> Option<uuid::Uuid> {
+        self.owner_user_id
+    }
+
     fn channel_type(&self) -> &'static str {
         "cli"
     }
@@ -280,6 +305,8 @@ fn run_console(
     mut output: mpsc::Receiver<ConsoleOutput>,
     bus: &EventBus,
     channel_id: &str,
+    owner_user_id: Option<&str>,
+    account_database: Option<&sea_orm::DatabaseConnection>,
     conversation: Option<&dyn ConversationBackend>,
     runtime: &tokio::runtime::Handle,
     cancel: &CancellationToken,
@@ -364,6 +391,7 @@ fn run_console(
                 line = history.get(history_index).cloned().unwrap_or_default();
             }
             KeyCode::Enter => {
+                let source_received_at = chrono::Utc::now();
                 print_text(&mut out, "\n")?;
                 let text = std::mem::take(&mut line).trim().to_string();
                 if !text.is_empty() {
@@ -385,11 +413,20 @@ fn run_console(
                             &mut out,
                             "/help  /quit  /clear  /session new|list|switch <uuid>\nBackspace edits; Up/Down recall this session's input; Ctrl+C clears; Ctrl+D exits.\n",
                         )?;
+                    } else if owner_user_id.is_none() {
+                        print_text(&mut out, "Error: identity_unlinked; configure this channel's owner_user_id before conversation input.\n")?;
+                    } else if runtime.block_on(async {
+                        tokio::select! {
+                            _ = cancel.cancelled() => Err(anyhow::anyhow!("CLI stopped")),
+                            result = crate::modules::platform::identity::require_active_owner(account_database, owner_user_id.and_then(|id| id.parse().ok())) => result,
+                        }
+                    }).is_err() {
+                        print_text(&mut out, "Error: channel owner is inactive or cannot be verified.\n")?;
                     } else if text.split_whitespace().next() == Some("/session") {
                         let reply = runtime.block_on(async {
                             tokio::select! {
                                 _ = cancel.cancelled() => Ok(String::new()),
-                                reply = session_command(conversation, channel_id, &text) => reply,
+                                reply = session_command(conversation, channel_id, owner_user_id.expect("checked above"), &text) => reply,
                             }
                         });
                         print_text(
@@ -403,8 +440,9 @@ fn run_console(
                         busy = true;
                         bus.publish(ServerEvent::ChannelInput(ChannelEvent::TextMessage {
                             channel_id: channel_id.to_owned(),
-                            user_id: USER_ID.to_owned(),
+                            user_id: owner_user_id.expect("checked above").to_owned(),
                             text,
+                            source_received_at,
                         }));
                         print_text(&mut out, "thinking…")?;
                     }
@@ -423,20 +461,21 @@ fn run_console(
 async fn session_command(
     conversation: Option<&dyn ConversationBackend>,
     channel_id: &str,
+    user_id: &str,
     input: &str,
 ) -> anyhow::Result<String> {
     let conversation = conversation.context("conversation backend unavailable")?;
     let command = input.split_whitespace().collect::<Vec<_>>();
     match command.as_slice() {
         ["/session", "new"] => {
-            let id = conversation.create_session(channel_id, USER_ID).await?;
+            let id = conversation.create_session(channel_id, user_id).await?;
             conversation
-                .set_active_session(channel_id, USER_ID, id)
+                .set_active_session(channel_id, user_id, id)
                 .await?;
             Ok(format!("Started new session: {id}"))
         }
         ["/session", "list"] => {
-            let sessions = conversation.list_sessions(channel_id, USER_ID).await?;
+            let sessions = conversation.list_sessions(channel_id, user_id).await?;
             Ok(sessions
                 .iter()
                 .take(10)
@@ -452,7 +491,7 @@ async fn session_command(
         ["/session", "switch", id] => {
             let id = id.parse().context("invalid session UUID")?;
             conversation
-                .set_active_session(channel_id, USER_ID, id)
+                .set_active_session(channel_id, user_id, id)
                 .await?;
             Ok(format!("Switched to session: {id}"))
         }
@@ -471,7 +510,7 @@ mod tests {
             channel
                 .begin_stream(&ChannelTarget {
                     voice: None,
-                    user_id: USER_ID.to_owned()
+                    user_id: "unlinked-test-channel".to_owned()
                 })
                 .await
                 .is_err()

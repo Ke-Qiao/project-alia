@@ -118,6 +118,8 @@ struct PlannedExpression {
 
 #[derive(Debug, Clone)]
 pub struct PendingTextPersistence {
+    pub source_received_at: chrono::DateTime<chrono::Utc>,
+    pub source_event_id: Option<Uuid>,
     pub session_id: Uuid,
     pub user_id: Uuid,
     pub user_id_text: String,
@@ -130,6 +132,7 @@ pub struct PendingTextPersistence {
 #[derive(Debug, Clone)]
 struct InterruptedUserContext {
     session_id: Uuid,
+    source_event_id: Option<Uuid>,
     turn_id: Uuid,
     user_id: Uuid,
     user_id_text: String,
@@ -661,6 +664,7 @@ async fn process_event(
             channel_id,
             user_id,
             text,
+            source_received_at,
         } => {
             debug_component_text(
                 debug_output,
@@ -675,7 +679,8 @@ async fn process_event(
                 user_id: user_id.clone(),
             };
 
-            let turn = VoiceTurn::request(request_cancel);
+            let mut turn = VoiceTurn::request(request_cancel);
+            turn.received_at = source_received_at;
             let result = match process_text(
                 &text,
                 &user_id,
@@ -836,13 +841,14 @@ async fn process_event(
             channel_id,
             user_id,
             audio,
+            source_received_at,
         } => {
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
                 voice: None,
                 user_id: user_id.clone(),
             };
-            let turn = voice_turns
+            let mut turn = voice_turns
                 .begin(
                     channel_id.clone(),
                     user_id.clone(),
@@ -852,6 +858,7 @@ async fn process_event(
                 .await;
 
             // STT → Router → LLM → TTS
+            turn.received_at = source_received_at;
             debug_component_audio(
                 debug_output,
                 "stt",
@@ -1137,6 +1144,9 @@ async fn process_text(
     defer_persistence: bool,
     transcript_correction: Option<TranscriptCorrectionResult>,
 ) -> anyhow::Result<TextResult> {
+    let source_received_at = turn
+        .map(|turn| turn.received_at)
+        .unwrap_or_else(chrono::Utc::now);
     if turn_is_interrupted(turn) {
         return Ok(TextResult::interrupted());
     }
@@ -1186,6 +1196,33 @@ async fn process_text(
         None => return Ok(TextResult::interrupted()),
     };
     let prior_message_count = history.len();
+    // Persist the user's source before any model/tool can mutate memory. Keep
+    // the already-loaded history unchanged so this input appears in the prompt once.
+    let source_event_id = match turn.and_then(|turn| turn.source_event_id.get()).copied() {
+        Some(id) => id,
+        None => match cancellable_stage(
+            turn,
+            "persist_user_source",
+            modules.conversation.append_sourced_message(
+                uid,
+                session_id,
+                ChatMessage::new("user", text),
+                source_received_at,
+            ),
+        )
+        .await?
+        {
+            Some(id) => {
+                if let Some(turn) = turn {
+                    turn.source_event_id.set(id).map_err(|_| {
+                        anyhow::anyhow!("user source was already attached to this turn")
+                    })?;
+                }
+                id
+            }
+            None => return Ok(TextResult::interrupted()),
+        },
+    };
     let mut trace = AgentTrace::new(session_id);
     if let Some(turn) = turn {
         trace.turn_id = turn.id;
@@ -1268,6 +1305,8 @@ async fn process_text(
                     )
                     .await;
                 let pending = PendingTextPersistence {
+                    source_received_at,
+                    source_event_id: Some(source_event_id),
                     session_id,
                     user_id: uid,
                     user_id_text: user_id.to_string(),
@@ -1433,6 +1472,8 @@ async fn process_text(
                 )
                 .await;
             let pending = PendingTextPersistence {
+                source_received_at,
+                source_event_id: Some(source_event_id),
                 session_id,
                 user_id: uid,
                 user_id_text: user_id.to_string(),
@@ -2133,6 +2174,8 @@ async fn process_text(
     }
 
     let pending_persistence = PendingTextPersistence {
+        source_received_at,
+        source_event_id: Some(source_event_id),
         session_id,
         user_id: uid,
         user_id_text: user_id.to_string(),
@@ -3575,7 +3618,7 @@ fn guess_text_language(text: &str) -> &'static str {
 
 async fn persist_text_interaction(
     modules: &ModuleRegistry,
-    pending: PendingTextPersistence,
+    mut pending: PendingTextPersistence,
     memory_config: &MemorySection,
     event_bus: &EventBus,
     trace: Option<&mut AgentTrace>,
@@ -3585,20 +3628,32 @@ async fn persist_text_interaction(
     let completed_user_uuid = pending.user_id;
     let completed_session_id = pending.session_id;
 
-    let _ = modules
-        .conversation
-        .append_message(
-            pending.session_id,
-            ChatMessage {
-                role: "user".into(),
-                content: pending.query_text.clone(),
-                name: Some(pending.user_id_text.clone()),
-                ..ChatMessage::default()
-            },
-        )
-        .await;
+    if pending.source_event_id.is_none() {
+        let source = modules
+            .conversation
+            .append_sourced_message(
+                pending.user_id,
+                pending.session_id,
+                ChatMessage {
+                    role: "user".into(),
+                    content: pending.query_text.clone(),
+                    name: Some(pending.user_id_text.clone()),
+                    ..ChatMessage::default()
+                },
+                pending.source_received_at,
+            )
+            .await;
 
-    let _ = modules
+        match source {
+            Ok(id) => pending.source_event_id = Some(id),
+            Err(error) => {
+                tracing::error!(error = %error, session_id = %pending.session_id, "user input provenance could not be persisted; memory capture suppressed");
+                return;
+            }
+        }
+    }
+
+    if let Err(error) = modules
         .conversation
         .append_message(
             pending.session_id,
@@ -3609,7 +3664,12 @@ async fn persist_text_interaction(
                 ..ChatMessage::default()
             },
         )
-        .await;
+        .await
+    {
+        tracing::error!(error = %error, session_id = %pending.session_id,
+            "assistant response could not be persisted; interaction remains incomplete and memory capture is suppressed");
+        return;
+    }
 
     if let Some(entry) = cache_entry_for_pending(&pending) {
         let should_store_embedding = pending
@@ -3650,6 +3710,7 @@ async fn persist_interrupted_user_context(
     let interruption = turn.interruption();
     let context = InterruptedUserContext {
         session_id: pending.session_id,
+        source_event_id: pending.source_event_id,
         turn_id: turn.id,
         user_id: pending.user_id,
         user_id_text: pending.user_id_text.clone(),
@@ -3674,6 +3735,7 @@ async fn persist_interrupted_input_context(
     let interruption = turn.interruption();
     let context = InterruptedUserContext {
         session_id,
+        source_event_id: turn.source_event_id.get().copied(),
         turn_id: turn.id,
         user_id,
         user_id_text: user_id_text.to_string(),
@@ -3690,18 +3752,23 @@ async fn persist_interrupted_user_context_entry(
     context: InterruptedUserContext,
     debug_output: bool,
 ) {
-    let _ = modules
-        .conversation
-        .append_message(
-            context.session_id,
-            ChatMessage {
-                role: "user".into(),
-                content: context.query_text.clone(),
-                name: Some(context.user_id_text.clone()),
-                ..ChatMessage::default()
-            },
-        )
-        .await;
+    let preserved = if context.source_event_id.is_some() {
+        true
+    } else {
+        modules
+            .conversation
+            .append_message(
+                context.session_id,
+                ChatMessage {
+                    role: "user".into(),
+                    content: context.query_text.clone(),
+                    name: Some(context.user_id_text.clone()),
+                    ..ChatMessage::default()
+                },
+            )
+            .await
+            .is_ok()
+    };
 
     let event = ConversationEventEntry {
         turn_id: context.turn_id,
@@ -3717,7 +3784,7 @@ async fn persist_interrupted_user_context_entry(
             "user_uuid": context.user_id.to_string(),
             "reason": context.reason.as_str(),
             "stage": context.stage,
-            "preserved_user_context": true,
+            "preserved_user_context": preserved,
             "assistant_response_persisted": false,
             "cache_written": false,
             "memory_capture": false,
@@ -3740,7 +3807,7 @@ async fn persist_interrupted_user_context_entry(
             "user_id": context.user_id_text.as_str(),
             "reason": context.reason.as_str(),
             "stage": context.stage,
-            "preserved_user_context": true,
+            "preserved_user_context": preserved,
         }),
         Some((&context.channel_id, &context.user_id_text)),
     );

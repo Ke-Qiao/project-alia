@@ -18,6 +18,9 @@ struct VoiceTurnKey {
 pub(super) struct VoiceTurn {
     /// Response audit identity; live session ownership is in voice_scope.
     pub(super) id: Uuid,
+    pub(super) received_at: chrono::DateTime<chrono::Utc>,
+    /// Committed user source shared by every tool and output task of this turn.
+    pub(super) source_event_id: Arc<std::sync::OnceLock<Uuid>>,
     pub(super) token: CancellationToken,
     pub(super) interrupt_config: ChannelInterruptConfig,
     pub(super) voice_scope: Option<VoiceSessionScope>,
@@ -77,6 +80,8 @@ impl VoiceTurnRegistry {
         };
         let turn = VoiceTurn {
             id,
+            received_at: chrono::Utc::now(),
+            source_event_id: Arc::default(),
             key: key.clone(),
             token,
             interrupt_config,
@@ -145,6 +150,8 @@ impl VoiceTurn {
     pub(super) fn request(token: CancellationToken) -> Self {
         Self {
             id: Uuid::new_v4(),
+            received_at: chrono::Utc::now(),
+            source_event_id: Arc::default(),
             token,
             interrupt_config: ChannelInterruptConfig::default(),
             voice_scope: None,

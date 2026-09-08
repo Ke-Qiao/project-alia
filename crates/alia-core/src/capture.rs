@@ -1,5 +1,8 @@
 //! Bounded model windows assembled from a continuous device sample clock.
 
+use std::collections::VecDeque;
+use std::time::SystemTime;
+
 use crate::voice::{MAX_WINDOW_BYTES, PcmWindow, SAMPLE_RATE_HZ};
 
 const PRE_ROLL_BYTES: usize = 9_600; // 300 ms.
@@ -27,16 +30,21 @@ pub struct CaptureWindow {
     active: bool,
     audio: Vec<u8>,
     pre_roll: Vec<u8>,
+    pre_roll_received: VecDeque<(usize, SystemTime)>,
+    source_received_at: Option<SystemTime>,
     evaluated_revision: Option<u64>,
 }
 
 impl CaptureWindow {
+    /// `received_at` is supplied by the receiving host when it accepts the
+    /// frame; a device-provided capture timestamp is not a trusted source time.
     pub fn push(
         &mut self,
         sequence: u64,
         sample_offset: u64,
         pcm: &[u8],
         speech: bool,
+        received_at: SystemTime,
     ) -> Result<(), CaptureError> {
         if sequence != self.next_sequence || sample_offset != self.next_sample {
             return Err(CaptureError::Discontinuity);
@@ -71,14 +79,34 @@ impl CaptureWindow {
         self.revision = revision;
         if speech && !self.active {
             self.active = true;
+            self.source_received_at = Some(
+                self.pre_roll_received
+                    .front()
+                    .map_or(received_at, |(_, received_at)| *received_at),
+            );
             self.audio = std::mem::take(&mut self.pre_roll);
+            self.pre_roll_received.clear();
             self.audio.extend_from_slice(pcm);
         } else if append {
             self.audio.extend_from_slice(pcm);
         } else if !self.active {
             self.pre_roll.extend_from_slice(pcm);
+            self.pre_roll_received.push_back((pcm.len(), received_at));
             let excess = self.pre_roll.len().saturating_sub(PRE_ROLL_BYTES);
             self.pre_roll.drain(..excess);
+            let mut remaining = excess;
+            while remaining > 0 {
+                let (bytes, _) = self
+                    .pre_roll_received
+                    .front_mut()
+                    .expect("retained PCM frame");
+                let removed = remaining.min(*bytes);
+                *bytes -= removed;
+                remaining -= removed;
+                if *bytes == 0 {
+                    self.pre_roll_received.pop_front();
+                }
+            }
         }
         self.silence_samples = if speech {
             0
@@ -93,6 +121,13 @@ impl CaptureWindow {
     }
     pub fn through_sequence(&self) -> u64 {
         self.next_sequence.saturating_sub(1)
+    }
+
+    /// Trusted receiver time of the first frame retained in this utterance.
+    /// Partial pre-roll trimming retains that frame's original receiver time;
+    /// model snapshots, retries and continued speech never refresh it.
+    pub fn source_received_at(&self) -> Option<SystemTime> {
+        self.source_received_at
     }
 
     /// At most one snapshot per speech revision. Incoming silence is still
@@ -113,6 +148,8 @@ impl CaptureWindow {
         self.active = false;
         self.audio.clear();
         self.pre_roll.clear();
+        self.pre_roll_received.clear();
+        self.source_received_at = None;
         self.silence_samples = 0;
         self.evaluated_revision = None;
     }
@@ -130,7 +167,14 @@ mod tests {
 
     fn frame(window: &mut CaptureWindow, speech: bool) {
         window
-            .push(window.next_sequence, window.next_sample, &[0; 3200], speech)
+            .push(
+                window.next_sequence,
+                window.next_sample,
+                &[0; 3200],
+                speech,
+                SystemTime::UNIX_EPOCH
+                    + std::time::Duration::from_millis(window.next_sequence * 100),
+            )
             .unwrap();
     }
 
@@ -178,24 +222,100 @@ mod tests {
     fn gaps_overlong_input_and_bad_frame_sizes_are_rejected() {
         let mut window = CaptureWindow::default();
         assert_eq!(
-            window.push(1, 0, &[0; 2], true),
+            window.push(1, 0, &[0; 2], true, SystemTime::UNIX_EPOCH),
             Err(CaptureError::Discontinuity)
         );
         assert_eq!(
-            window.push(0, 0, &[0; 3], true),
+            window.push(0, 0, &[0; 3], true, SystemTime::UNIX_EPOCH),
             Err(CaptureError::InvalidFrame)
         );
         assert_eq!(
-            window.push(0, 1, &[0; 2], true),
+            window.push(0, 1, &[0; 2], true, SystemTime::UNIX_EPOCH),
             Err(CaptureError::Discontinuity)
         );
         for _ in 0..300 {
             frame(&mut window, true);
         }
         assert_eq!(
-            window.push(300, 480_000, &[0; 2], true),
+            window.push(300, 480_000, &[0; 2], true, SystemTime::UNIX_EPOCH),
             Err(CaptureError::WindowTooLong)
         );
         assert_eq!(window.audio.len(), MAX_WINDOW_BYTES);
+    }
+    #[test]
+    fn retained_frame_time_survives_partial_trim_snapshots_and_busy_retries() {
+        let mut window = CaptureWindow::default();
+        let at = |seconds| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds);
+        for (sequence, bytes) in [(0, 3200), (1, 3200), (2, 3200), (3, 1600)] {
+            window
+                .push(
+                    sequence,
+                    window.next_sample,
+                    &vec![0; bytes],
+                    false,
+                    at(sequence),
+                )
+                .unwrap();
+        }
+        // Half the first frame remains in pre-roll. Its original acceptance
+        // time must survive rather than being replaced by the speech frame time.
+        window
+            .push(4, window.next_sample, &[0; 3200], true, at(4))
+            .unwrap();
+        assert_eq!(window.source_received_at(), Some(at(0)));
+        for _ in 0..7 {
+            frame(&mut window, false);
+        }
+        assert!(window.take_ready().is_some());
+        window.retry_after_busy();
+        assert!(window.take_ready().is_some());
+        frame(&mut window, true);
+        for _ in 0..7 {
+            frame(&mut window, false);
+        }
+        assert!(window.take_ready().is_some());
+        assert_eq!(window.source_received_at(), Some(at(0)));
+        window.finish_utterance();
+        assert_eq!(window.source_received_at(), None);
+        window
+            .push(
+                window.next_sequence,
+                window.next_sample,
+                &[0; 3200],
+                true,
+                at(100),
+            )
+            .unwrap();
+        assert_eq!(window.source_received_at(), Some(at(100)));
+    }
+
+    #[test]
+    fn discarded_pre_roll_times_are_bounded_and_do_not_date_a_later_utterance() {
+        let mut window = CaptureWindow::default();
+        for _ in 0..10_000 {
+            frame(&mut window, false);
+        }
+        assert_eq!(window.pre_roll_received.len(), 3);
+        assert_eq!(window.source_received_at(), None);
+        frame(&mut window, true);
+        assert_eq!(
+            window.source_received_at(),
+            Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(999_700))
+        );
+        assert!(window.pre_roll_received.is_empty());
+        assert_eq!(
+            window.push(
+                window.next_sequence + 1,
+                window.next_sample,
+                &[0; 2],
+                true,
+                SystemTime::UNIX_EPOCH
+            ),
+            Err(CaptureError::Discontinuity)
+        );
+        assert_eq!(
+            window.source_received_at(),
+            Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(999_700))
+        );
     }
 }

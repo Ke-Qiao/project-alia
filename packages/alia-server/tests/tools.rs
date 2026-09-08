@@ -14,6 +14,11 @@ use uuid::Uuid;
 async fn test_get_current_time() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -36,6 +41,11 @@ async fn test_get_current_time() {
 async fn test_get_current_time_uses_iana_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -65,6 +75,11 @@ async fn test_get_current_time_uses_iana_timezone() {
 async fn test_get_current_time_rejects_invalid_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -86,6 +101,11 @@ async fn test_get_current_time_rejects_invalid_timezone() {
 async fn test_calculate_expression() {
     let tool = Calculate;
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -105,6 +125,11 @@ async fn test_calculate_expression() {
 async fn test_calculate_rejects_division_by_zero() {
     let tool = Calculate;
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -177,6 +202,11 @@ fn test_parse_openai_tool_call() {
 async fn memory_store_and_search_use_memory_system() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -223,6 +253,11 @@ async fn memory_store_and_search_use_memory_system() {
 async fn memory_store_blocks_sensitive_chat_memory() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),
@@ -254,9 +289,91 @@ async fn memory_store_blocks_sensitive_chat_memory() {
 }
 
 #[tokio::test]
+async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
+    let memory = Arc::new(AliaMemory::new());
+    let store = MemoryStore::new(Some(memory.clone()));
+    let old = ToolContext {
+        user_id: Uuid::new_v4(),
+        request_id: Uuid::new_v4(),
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        invocation_key: "0".into(),
+        conversation_id: None,
+        source: "manual".into(),
+        channel_id: None,
+        cancel: None,
+    };
+    let original =
+        serde_json::json!({"content": "The user prefers concise replies.", "layer": "preference"});
+    store.execute(original.clone(), &old).await.unwrap();
+    memory.clear(old.user_id).await.unwrap();
+    assert!(store.execute(original.clone(), &old).await.is_err());
+    assert!(
+        memory
+            .list(old.user_id, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let fresh = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        request_id: Uuid::new_v4(),
+        ..old.clone()
+    };
+    store.execute(original, &fresh).await.unwrap();
+    assert!(store.execute(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"}), &old).await.is_err());
+    let saved = memory.list(old.user_id, Default::default()).await.unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].content, "The user prefers concise replies.");
+    let update = store.execute(serde_json::json!({"content": "The user prefers detailed replies.", "layer": "preference"}), &fresh).await.unwrap();
+    assert_eq!(update.output["action"], "updated");
+    let saved = memory.list(old.user_id, Default::default()).await.unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].content, "The user prefers detailed replies.");
+}
+
+#[tokio::test]
+async fn ai_memory_tool_requires_a_persisted_source_message() {
+    let memory = Arc::new(AliaMemory::new());
+    let store = MemoryStore::new(Some(memory.clone()));
+    let context = ToolContext {
+        user_id: Uuid::new_v4(),
+        request_id: Uuid::new_v4(),
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        invocation_key: "0".into(),
+        conversation_id: None,
+        source: "ai".into(),
+        channel_id: None,
+        cancel: None,
+    };
+    let error = store
+        .execute(
+            serde_json::json!({"content":"The user likes green tea."}),
+            &context,
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("persisted source user message"));
+    assert!(
+        memory
+            .list(context.user_id, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn memory_forget_deletes_matching_memory() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
     let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_event_id: None,
+        request_id: uuid::Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
         user_id: Uuid::new_v4(),
         conversation_id: None,
         source: "test".to_string(),

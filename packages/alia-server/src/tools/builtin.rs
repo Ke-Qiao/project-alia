@@ -37,9 +37,9 @@ use crate::memory_policy::{
 };
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    MemoryBackend, MemoryListOpts, MemoryNode, RetrievalOpts, ScheduleConfig, ScheduledTask,
-    SchedulerBackend, ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry,
-    ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
+    MemoryBackend, MemoryListOpts, MemoryNode, PreparedTool, RetrievalOpts, ScheduleConfig,
+    ScheduledTask, SchedulerBackend, ToolCall, ToolContext, ToolDefinition, ToolExecutor,
+    ToolRegistry, ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
@@ -202,10 +202,45 @@ fn tool_routing_hints(tool_name: &str) -> &'static [&'static str] {
 }
 
 /// BuiltinToolRegistry: Full implementation of ToolRegistry
+#[derive(Default)]
+struct ExecutorCatalog {
+    entries: HashMap<String, Arc<dyn ToolExecutor>>,
+    revisions: HashMap<String, String>,
+}
+
+impl std::ops::Deref for ExecutorCatalog {
+    type Target = HashMap<String, Arc<dyn ToolExecutor>>;
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl ExecutorCatalog {
+    fn insert(
+        &mut self,
+        name: String,
+        executor: Arc<dyn ToolExecutor>,
+    ) -> Option<Arc<dyn ToolExecutor>> {
+        let revision = if self.revisions.contains_key(&name) {
+            Uuid::new_v4().to_string()
+        } else {
+            "initial".into()
+        };
+        self.revisions.insert(name.clone(), revision);
+        self.entries.insert(name, executor)
+    }
+
+    fn remove(&mut self, name: &str) -> Option<Arc<dyn ToolExecutor>> {
+        // Retain the revision tombstone so remove + re-register cannot restore
+        // the identity of an earlier approval in this process.
+        self.entries.remove(name)
+    }
+}
+
 pub struct BuiltinToolRegistry {
     /// Code-backed tools. Built-ins, Rust components, and in-process Rust
     /// plugins all live here; DB rows are only the discoverable catalog.
-    executors: Arc<RwLock<HashMap<String, Arc<dyn ToolExecutor>>>>,
+    executors: Arc<RwLock<ExecutorCatalog>>,
     /// Event bus for publishing tool events
     event_bus: tokio::sync::Mutex<Option<EventBus>>,
     /// DB connection for persisting plugin tools
@@ -221,7 +256,7 @@ pub struct BuiltinToolRegistry {
 impl BuiltinToolRegistry {
     pub fn new() -> Self {
         Self {
-            executors: Arc::new(RwLock::new(HashMap::new())),
+            executors: Arc::default(),
             event_bus: tokio::sync::Mutex::new(None),
             db: None,
             artifacts: None,
@@ -465,6 +500,13 @@ impl ModuleLifecycle for BuiltinToolRegistry {
 
 #[async_trait]
 impl ToolRegistry for BuiltinToolRegistry {
+    async fn resolve_executor(&self, name: &str) -> anyhow::Result<Option<PreparedTool>> {
+        let catalog = self.executors.read().unwrap();
+        Ok(catalog.entries.get(name).map(|executor| PreparedTool {
+            executor: executor.clone(),
+            registration_revision: catalog.revisions[name].clone(),
+        }))
+    }
     async fn list_tools(&self) -> anyhow::Result<Vec<ToolDefinition>> {
         let tools: Vec<ToolDefinition> = self
             .executors
@@ -754,6 +796,9 @@ pub struct GetCurrentTime;
 
 #[async_trait]
 impl ToolExecutor for GetCurrentTime {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.GetCurrentTime".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "get_current_time".to_string(),
@@ -847,6 +892,9 @@ pub struct FetchUrl;
 #[cfg(feature = "tools-http")]
 #[async_trait]
 impl ToolExecutor for FetchUrl {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.FetchUrl".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "fetch".to_string(),
@@ -981,6 +1029,9 @@ pub struct Calculate;
 
 #[async_trait]
 impl ToolExecutor for Calculate {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.Calculate".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "calculate".to_string(),
@@ -1039,6 +1090,9 @@ impl MemorySearch {
 
 #[async_trait]
 impl ToolExecutor for MemorySearch {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.MemorySearch".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "memory_search".to_string(),
@@ -1148,6 +1202,9 @@ impl MemoryStore {
 
 #[async_trait]
 impl ToolExecutor for MemoryStore {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.MemoryStore".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "memory_store".to_string(),
@@ -1245,7 +1302,7 @@ impl ToolExecutor for MemoryStore {
             "source": "direct_memory_tool",
             "summary": "The user explicitly asked the assistant to remember this.",
         });
-        let action = upsert_tool_memory(memory.as_ref(), ctx.user_id, &incoming).await?;
+        let action = upsert_tool_memory(memory.as_ref(), ctx, &incoming).await?;
 
         Ok(ToolResult {
             call_id: String::new(),
@@ -1280,6 +1337,9 @@ impl MemoryForget {
 
 #[async_trait]
 impl ToolExecutor for MemoryForget {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.MemoryForget".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "memory_forget".to_string(),
@@ -1336,7 +1396,7 @@ impl ToolExecutor for MemoryForget {
                     display: Some("Memory not found".to_string()),
                 });
             }
-            memory.delete(id).await?;
+            memory.delete(ctx.user_id, id).await?;
             return Ok(ToolResult {
                 call_id: String::new(),
                 success: true,
@@ -1363,7 +1423,7 @@ impl ToolExecutor for MemoryForget {
         let mut deleted = Vec::new();
         for node in matches.into_iter().take(max_results as usize) {
             if let Some(id) = node.id {
-                memory.delete(&id).await?;
+                memory.delete(ctx.user_id, &id).await?;
                 deleted.push(id);
             }
         }
@@ -1388,9 +1448,20 @@ impl ToolExecutor for MemoryForget {
 
 async fn upsert_tool_memory(
     memory: &dyn MemoryBackend,
-    user_id: Uuid,
+    ctx: &ToolContext,
     incoming: &MemoryNode,
 ) -> anyhow::Result<&'static str> {
+    anyhow::ensure!(
+        ctx.source != "ai" || ctx.source_event_id.is_some(),
+        "AI memory writes require a persisted source user message"
+    );
+    let mut context = memory.write_snapshot(ctx.user_id).await?;
+    context.source_received_at = ctx.source_received_at;
+    context.source_event_ids = ctx.source_event_id.into_iter().collect();
+    anyhow::ensure!(
+        context.source_received_at > context.source_cutoff_at,
+        "memory source predates the user's deletion cutoff"
+    );
     let merge_key = memory_merge_key(
         &incoming.memory_layer,
         &incoming.node_type,
@@ -1398,7 +1469,7 @@ async fn upsert_tool_memory(
     );
     let existing = memory
         .list(
-            user_id,
+            ctx.user_id,
             MemoryListOpts {
                 max_results: Some(200),
                 layers: Some(vec![incoming.memory_layer.clone()]),
@@ -1416,12 +1487,12 @@ async fn upsert_tool_memory(
             && merge_key == memory_merge_key(&node.memory_layer, &node.node_type, &node.content)
         {
             memory
-                .update(existing_id, merge_memory_patch(&node, incoming))
+                .update_guarded(&context, existing_id, merge_memory_patch(&node, incoming))
                 .await?;
             return Ok("updated");
         }
     }
-    memory.store(user_id, incoming.clone()).await?;
+    memory.store_guarded(&context, incoming.clone()).await?;
     Ok("stored")
 }
 
@@ -1438,6 +1509,9 @@ impl ScheduleTask {
 
 #[async_trait]
 impl ToolExecutor for ScheduleTask {
+    fn implementation_revision(&self) -> Option<String> {
+        Some("alia.builtin.ScheduleTask".into())
+    }
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "schedule_task".to_string(),

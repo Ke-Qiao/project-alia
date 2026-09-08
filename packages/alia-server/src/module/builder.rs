@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, EntityTrait};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -141,8 +141,31 @@ impl ServerBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<AppState> {
+        // Owners are explicit configuration, never synthesized from channel IDs.
+        // Validate before starting any module or creating background work.
+        let owners = self
+            .config
+            .channels
+            .iter()
+            .filter_map(|channel| channel.owner_user_id())
+            .chain(
+                self.channels
+                    .iter()
+                    .filter_map(|channel| channel.owner_user_id()),
+            )
+            .collect::<std::collections::HashSet<_>>();
+        for owner in owners {
+            let user = crate::entity::user::Entity::find_by_id(owner)
+                .one(&self.db)
+                .await?;
+            anyhow::ensure!(
+                user.is_some_and(|user| user.status == "active"),
+                "channel owner_user_id {owner} must reference an existing active account (identity_unlinked)"
+            );
+        }
         // Validate compiled capabilities and endpoints before starting any background tasks.
-        let turn_detector = crate::modules::interaction::build_turn_detector(&self.config.providers.easy_turn)?;
+        let turn_detector =
+            crate::modules::interaction::build_turn_detector(&self.config.providers.easy_turn)?;
         // Create sensor registry early so tools and modules can reference it
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
@@ -400,8 +423,18 @@ impl ServerBuilder {
             cache: Some(cache_arc.clone()),
             ..ctx
         };
-        init_module(tools.as_mut(), &ctx).await;
-        let tools_arc: Arc<dyn ToolRegistry> = Arc::from(tools);
+        tools.init(&ctx).await?;
+        let raw_tools: Arc<dyn ToolRegistry> = Arc::from(tools);
+        let execution = crate::modules::execution::ExecutionService::new(
+            crate::modules::execution::repository::ExecutionRepository::new(self.db.clone()),
+            raw_tools,
+            &self.config.policies.tools,
+            &self.cancel_token,
+        )
+        .await?;
+        let tools_arc: Arc<dyn ToolRegistry> = Arc::new(
+            crate::modules::execution::ExecutionToolRegistry::new(execution.clone()),
+        );
         let ctx = ModuleContext {
             tools: Some(tools_arc.clone()),
             ..ctx
@@ -505,9 +538,8 @@ impl ServerBuilder {
             extensions,
         };
 
-        // Start modules (scheduler first since it was init'd first)
+        // Start downstream adapters before any durable execution can dispatch.
         tracing::info!("starting modules...");
-        start_module(registry.scheduler.as_ref()).await;
         start_module(registry.minor_llm.as_ref()).await;
         start_module(registry.major_llm.as_ref()).await;
         if let Some(llm) = &registry.transcript_correction_llm {
@@ -529,11 +561,19 @@ impl ServerBuilder {
         start_module(registry.persona.as_ref()).await;
         start_module(registry.router.as_ref()).await;
         start_module(registry.insights.as_ref()).await;
-        start_module(registry.rule_engine.as_ref()).await;
-        start_module(registry.tools.as_ref()).await;
         for ext in &registry.extensions {
             start_module(ext.as_ref()).await;
         }
+        // No scheduler or product ingress may run without a healthy ledger.
+        if let Err(error) = registry.tools.start().await {
+            self.cancel_token.cancel();
+            if let Err(cleanup) = registry.shutdown().await {
+                tracing::error!(error = %cleanup, "cleanup after execution startup failure");
+            }
+            return Err(error);
+        }
+        start_module(registry.scheduler.as_ref()).await;
+        start_module(registry.rule_engine.as_ref()).await;
 
         // Start channels
         for channel in channel_registry.list().await {
@@ -579,6 +619,7 @@ impl ServerBuilder {
 
         let (voice_input, voice_input_rx) = crate::modules::interaction::voice_input::channel();
         let state = AppState {
+            execution,
             voice_input,
             pipeline_task: Arc::default(),
             turn_detector,
