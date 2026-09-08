@@ -1,8 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+#[cfg(feature = "vision-opencv")]
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -93,7 +94,7 @@ impl ModuleLifecycle for YuNetFaceTracker {
             cancel.cancel();
         }
         if let Some(task) = self.task.lock().await.take() {
-            let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+            task.await.context("joining vision worker")?;
         }
         self.running.store(false, Ordering::SeqCst);
         Ok(())

@@ -252,7 +252,7 @@ impl ModuleLifecycle for VisionDebugServer {
             cancel.cancel();
         }
         if let Some(task) = self.task.lock().await.take() {
-            let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+            task.await.context("joining vision worker")?;
         }
         self.running.store(false, Ordering::SeqCst);
         Ok(())

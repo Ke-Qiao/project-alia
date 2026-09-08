@@ -22,6 +22,8 @@ pub fn normalize_config_path(path: PathBuf) -> PathBuf {
 }
 
 pub fn load_config(path: &Path) -> Result<EmbeddedConfig> {
+    let path = std::path::absolute(path).context("resolving config path")?;
+    let path = path.as_path();
     let mut config = EmbeddedConfig::default();
     config.config_path = path.to_path_buf();
 
@@ -33,6 +35,7 @@ pub fn load_config(path: &Path) -> Result<EmbeddedConfig> {
         config.apply_runtime_settings(runtime);
     }
 
+    config.device_runtime.validate()?;
     resolve_paths(&mut config, path);
     Ok(config)
 }
@@ -59,11 +62,26 @@ pub fn runtime_settings_for_path(config: &EmbeddedConfig) -> EmbeddedRuntimeSett
     settings
 }
 
+/// Normalize a library-supplied configuration using the same rules as file loading.
+pub fn resolve_config_paths(config: &mut EmbeddedConfig) -> Result<()> {
+    config.device_runtime.validate()?;
+    let path = if config.config_path.as_os_str().is_empty() {
+        std::env::current_dir()?.join("embedded.toml")
+    } else {
+        std::path::absolute(&config.config_path)?
+    };
+    resolve_paths(config, &path);
+    config.config_path = path;
+    Ok(())
+}
+
 fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     let Some(parent) = path.parent() else {
         return;
     };
 
+    resolve_relative(parent, &mut config.device_runtime.state_path);
+    resolve_relative(parent, &mut config.device_runtime.plugins_dir);
     resolve_relative(parent, &mut config.identity.keypair_path);
     resolve_relative(parent, &mut config.wakeword.model_path);
     resolve_relative(parent, &mut config.wakeword.encoder_path);
@@ -80,8 +98,8 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.motion.serial_path);
     resolve_relative(parent, &mut config.motion.i2c_device);
     resolve_relative(parent, &mut config.vision.yunet_model_path);
-    resolve_runtime_relative(&mut config.direct_response_defaults.audio_dir);
-    resolve_runtime_relative(&mut config.audio_debug.dir);
+    resolve_relative(parent, &mut config.direct_response_defaults.audio_dir);
+    resolve_relative(parent, &mut config.audio_debug.dir);
 
     for response in &mut config.direct_response {
         resolve_relative(parent, &mut response.audio);
@@ -95,26 +113,6 @@ fn resolve_relative(base: &Path, path: &mut std::path::PathBuf) {
     if path.is_relative() {
         *path = base.join(&path);
     }
-}
-
-fn resolve_runtime_relative(path: &mut PathBuf) {
-    if path.is_relative() {
-        *path = normalize_relative_components(path);
-    }
-}
-
-fn normalize_relative_components(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
 }
 
 pub fn normalize_config_path_for_cwd(path: PathBuf, cwd: &Path) -> PathBuf {
@@ -135,6 +133,8 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     let Some(base) = config_path.parent() else {
         return;
     };
+    relativize_path(base, &mut settings.device_runtime.state_path);
+    relativize_path(base, &mut settings.device_runtime.plugins_dir);
     relativize_path(base, &mut settings.identity.keypair_path);
     relativize_path(base, &mut settings.wakeword.model_path);
     relativize_path(base, &mut settings.wakeword.encoder_path);
@@ -151,15 +151,8 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     relativize_path(base, &mut settings.motion.serial_path);
     relativize_path(base, &mut settings.motion.i2c_device);
     relativize_path(base, &mut settings.vision.yunet_model_path);
-    normalize_runtime_path_for_settings(&mut settings.direct_response_defaults.audio_dir);
-    normalize_runtime_path_for_settings(&mut settings.audio_debug.dir);
-}
-
-fn normalize_runtime_path_for_settings(path: &mut PathBuf) {
-    if path.is_absolute() {
-        return;
-    }
-    *path = normalize_relative_components(path);
+    relativize_path(base, &mut settings.direct_response_defaults.audio_dir);
+    relativize_path(base, &mut settings.audio_debug.dir);
 }
 
 fn relativize_path(base: &Path, path: &mut PathBuf) {

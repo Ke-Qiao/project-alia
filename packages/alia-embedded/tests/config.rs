@@ -151,3 +151,46 @@ fn has_vision_debug_defaults() {
     assert_eq!(settings.vision_debug.jpeg_quality, 75);
     assert!(settings.vision_debug.draw_overlay);
 }
+
+#[test]
+fn runtime_paths_roundtrip_relative_to_config_directory_and_module_selection_persists() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("embedded.toml");
+    std::fs::write(
+        &path,
+        r#"
+[device_runtime]
+listen_addr = "127.0.0.1:0"
+state_path = "isolated/state.sqlite"
+plugins_dir = "isolated/plugins"
+[modules]
+wakeword = "noop"
+"#,
+    )
+    .unwrap();
+    let config = load_config(&path).unwrap();
+    assert_eq!(config.modules.wakeword, "noop");
+    assert_eq!(
+        config.device_runtime.state_path,
+        dir.path().join("isolated/state.sqlite")
+    );
+    assert_eq!(
+        config.device_runtime.plugins_dir,
+        dir.path().join("isolated/plugins")
+    );
+    assert_eq!(config.audio_debug.dir, dir.path().join("run/audio-debug"));
+    assert_eq!(
+        config.direct_response_defaults.audio_dir,
+        dir.path().join("run/direct-responses")
+    );
+    save_runtime_config(&config).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("state_path = \"isolated/state.sqlite\""));
+    let reloaded = load_config(&path).unwrap();
+    assert_eq!(
+        reloaded.device_runtime.state_path,
+        config.device_runtime.state_path
+    );
+    assert_eq!(reloaded.modules.wakeword, "noop");
+}

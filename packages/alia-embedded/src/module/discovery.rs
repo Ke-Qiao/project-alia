@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[cfg(target_os = "linux")]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
 #[cfg(target_os = "linux")]
@@ -133,7 +133,15 @@ impl ModuleLifecycle for MdnsDiscovery {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> Result<()> {
-        *self.device_info.write().await = default_device_info(&ctx.config.identity);
+        let mut info = default_device_info(&ctx.config.identity);
+        info.port = ctx.config.device_runtime.listen_addr.port();
+        for endpoint in &mut info.endpoints {
+            endpoint.port = info.port;
+        }
+        *self.device_info.write().await = info;
+        if let Some(ble) = &mut self.ble {
+            ble.init(ctx).await?;
+        }
         Ok(())
     }
 
@@ -179,7 +187,16 @@ impl DiscoveryBackend for MdnsDiscovery {
         }
 
         if let Some(daemon) = daemon {
-            daemon.shutdown().context("shutting down mDNS daemon")?;
+            let status = daemon
+                .shutdown()
+                .context("shutting down mDNS daemon")?
+                .recv_async()
+                .await
+                .context("waiting for mDNS shutdown acknowledgement")?;
+            anyhow::ensure!(
+                status == mdns_sd::DaemonStatus::Shutdown,
+                "mDNS daemon did not acknowledge shutdown"
+            );
         }
 
         Ok(())
@@ -650,7 +667,12 @@ impl ModuleLifecycle for BleAdvertiser {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> Result<()> {
-        *self.device_info.write().await = default_device_info(&ctx.config.identity);
+        let mut info = default_device_info(&ctx.config.identity);
+        info.port = ctx.config.device_runtime.listen_addr.port();
+        for endpoint in &mut info.endpoints {
+            endpoint.port = info.port;
+        }
+        *self.device_info.write().await = info;
         Ok(())
     }
 
@@ -824,6 +846,34 @@ fn stable_fingerprint(value: &str) -> [u8; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn mdns_and_ble_metadata_use_the_bound_runtime_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = crate::config::EmbeddedConfig::default();
+        config.device_runtime.listen_addr = "127.0.0.1:43210".parse().unwrap();
+        config.discovery.mdns_enabled = false;
+        let ctx = ModuleContext {
+            config: Arc::new(config.clone()),
+            state_store: crate::storage::EmbeddedStore::open(dir.path().join("state.sqlite"))
+                .await
+                .unwrap(),
+            event_bus: crate::module::context::EventBus::new(8),
+            audio_bus: crate::module::context::AudioBus::new(8),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            sensors: Arc::new(crate::module::sensor::SensorRegistry::new()),
+        };
+        let mut mdns = MdnsDiscovery::new(config.discovery, config.identity);
+        mdns.init(&ctx).await.unwrap();
+        let info = mdns.device_info.read().await;
+        assert_eq!(info.port, 43210);
+        assert!(info.endpoints.iter().all(|endpoint| endpoint.port == 43210));
+        if let Some(ble) = &mdns.ble {
+            let info = ble.device_info.read().await;
+            assert_eq!(info.port, 43210);
+            assert!(info.endpoints.iter().all(|endpoint| endpoint.port == 43210));
+        }
+    }
 
     #[test]
     fn parses_network_provisioning_payload() {

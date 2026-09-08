@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -26,6 +27,7 @@ pub struct MotionRuntime {
     servo: Arc<dyn ServoBackend>,
     state: Mutex<MotionState>,
     servo_state: Mutex<ServoOutputState>,
+    activation_attempted: AtomicBool,
 }
 
 #[derive(Default)]
@@ -82,6 +84,7 @@ impl MotionRuntime {
             servo,
             state: Mutex::new(MotionState::default()),
             servo_state: Mutex::new(ServoOutputState::default()),
+            activation_attempted: AtomicBool::new(false),
         })
     }
 
@@ -101,6 +104,7 @@ impl MotionRuntime {
             servo,
             state: Mutex::new(MotionState::default()),
             servo_state: Mutex::new(ServoOutputState::default()),
+            activation_attempted: AtomicBool::new(false),
         }
     }
 
@@ -610,6 +614,7 @@ impl ModuleLifecycle for MotionRuntime {
 
     async fn start(&self) -> Result<()> {
         if self.config.enabled && self.mapper.is_some() {
+            self.activation_attempted.store(true, Ordering::Release);
             let duration_ms = if self.config.soft_start_enabled {
                 self.config.soft_start_duration_ms
             } else {
@@ -622,12 +627,17 @@ impl ModuleLifecycle for MotionRuntime {
 
     async fn stop(&self) -> Result<()> {
         let _ = self.cancel_expression_json("motion runtime stopping").await;
-        if self.config.enabled
+        // Rolling back an initialized, never activated node must not move servos.
+        // A failed start may already have moved hardware and still requires reset.
+        if self.activation_attempted.swap(false, Ordering::AcqRel)
+            && self.config.enabled
             && self.mapper.is_some()
             && self.config.reset_on_stop
-            && let Err(error) = self.reset_to_center(self.config.reset_duration_ms).await
         {
-            warn!(error = %error, "motion reset on stop failed");
+            if let Err(error) = self.reset_to_center(self.config.reset_duration_ms).await {
+                self.activation_attempted.store(true, Ordering::Release);
+                return Err(error.context("resetting motion during shutdown"));
+            }
         }
         Ok(())
     }
@@ -826,6 +836,62 @@ impl ResultReason for serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RecordingServo {
+        writes: std::sync::atomic::AtomicUsize,
+        fail: AtomicBool,
+    }
+    #[tonic::async_trait]
+    impl ServoBackend for RecordingServo {
+        async fn set_angle(&self, _channel: usize, _angle: f32) -> Result<()> {
+            self.writes.fetch_add(1, Ordering::Relaxed);
+            anyhow::ensure!(
+                !self.fail.load(Ordering::Relaxed),
+                "injected servo I/O failure"
+            );
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn rollback_before_activation_does_not_move_servos_and_failed_start_is_cleaned() {
+        let config = MotionConfig {
+            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("assets/neck/controller/neck_matrix_config.json"),
+            soft_start_enabled: false,
+            reset_duration_ms: 0,
+            ..MotionConfig::default()
+        };
+        let servo = Arc::new(RecordingServo {
+            writes: 0.into(),
+            fail: true.into(),
+        });
+        let mut runtime = MotionRuntime::new(config).unwrap();
+        runtime.servo = servo.clone();
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ModuleContext {
+            config: Arc::new(crate::config::EmbeddedConfig::default()),
+            state_store: crate::storage::EmbeddedStore::open(dir.path().join("state.sqlite"))
+                .await
+                .unwrap(),
+            event_bus: crate::module::context::EventBus::new(8),
+            audio_bus: crate::module::context::AudioBus::new(8),
+            cancel_token: CancellationToken::new(),
+            sensors: Arc::new(crate::module::sensor::SensorRegistry::new()),
+        };
+        runtime.init(&ctx).await.unwrap();
+        // This is the state reached when a subsequent module init fails.
+        runtime.stop().await.unwrap();
+        assert_eq!(servo.writes.load(Ordering::Relaxed), 0);
+        assert!(runtime.start().await.is_err());
+        let writes_after_start = servo.writes.load(Ordering::Relaxed);
+        assert!(writes_after_start > 0);
+        assert!(
+            runtime.stop().await.is_err(),
+            "hardware reset errors must be propagated"
+        );
+        assert!(servo.writes.load(Ordering::Relaxed) > writes_after_start);
+    }
 
     #[tokio::test]
     async fn capabilities_use_boolean_power_and_thermal_state() {

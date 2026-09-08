@@ -19,8 +19,20 @@ use alia_embedded::module;
 #[cfg(feature = "sherpa-onnx")]
 use alia_embedded::module::traits::{EdgeSttEngine, WakeWordEngine};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("creating embedded runtime")?;
+    let result = runtime.block_on(async_main());
+    // Normal node shutdown already joined workers. If native cleanup exceeded its
+    // deadline, preserve that error and bound this final runtime reclamation step.
+    // This timeout does not prove the remaining hardware workers stopped safely.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    result
+}
+
+async fn async_main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(default_env_filter())

@@ -25,11 +25,7 @@ use super::volume::AudioVolumeState;
 pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
     match config.modules.wakeword.as_str() {
         "sherpa_onnx" => create_sherpa_wakeword(config),
-        "porcupine" => {
-            // TODO: Replace with PorcupineKws once pv_porcupine crate is integrated
-            tracing::warn!("porcupine wakeword not yet implemented, using noop");
-            Ok(Box::new(NoopWakeWord))
-        }
+        "porcupine" => bail!("porcupine wakeword is not implemented"),
         "noop" => Ok(Box::new(NoopWakeWord)),
         other => bail!("unknown wakeword engine: {other}"),
     }
@@ -125,11 +121,7 @@ pub fn create_audio_playback(
 /// Create the audio mixer based on config.
 pub fn create_mixer(config: &EmbeddedConfig) -> Result<Box<dyn AudioMixer>> {
     match config.modules.mixer.as_str() {
-        "priority" => {
-            // TODO: Replace with PriorityMixer
-            tracing::warn!("priority mixer not yet implemented, using noop");
-            Ok(Box::new(NoopMixer))
-        }
+        "priority" => bail!("priority mixer is not implemented; select noop to disable mixing"),
         "noop" => Ok(Box::new(NoopMixer)),
         other => bail!("unknown mixer: {other}"),
     }
@@ -141,6 +133,13 @@ pub fn create_face_tracker(
     motion: Arc<MotionRuntime>,
     debug_hub: Option<Arc<VisionDebugHub>>,
 ) -> Result<Box<dyn FaceTracker>> {
+    if !config.vision.enabled {
+        return Ok(Box::new(NoopFaceTracker));
+    }
+    #[cfg(not(feature = "vision-opencv"))]
+    if config.modules.face_tracker == "yunet" {
+        bail!("module face_tracker='yunet' requires the alia-embedded 'vision-opencv' feature");
+    }
     match config.modules.face_tracker.as_str() {
         "yunet" => Ok(Box::new(YuNetFaceTracker::new(
             config.vision.clone(),

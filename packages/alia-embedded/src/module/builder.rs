@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::info;
 
 use crate::binding::BindingManager;
 use crate::config::EmbeddedConfig;
@@ -17,12 +18,11 @@ use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
 use super::hmmd_mmwave::HmmdMmWaveModule;
-use super::lifecycle::ModuleLifecycle;
-use super::motion::MotionRuntime;
-use super::noop::{
-    NoopAudioCapture, NoopAudioPlayback, NoopDirectResponse, NoopDiscovery, NoopEdgeStt,
-    NoopFaceTracker, NoopMixer, NoopVad, NoopWakeWord,
+use super::lifecycle::{
+    CancelOnDrop, ModuleCleanup, ModuleLifecycle, ShutdownHandle, initialize, startup_step,
 };
+use super::motion::MotionRuntime;
+use super::noop::NoopEdgeStt;
 use super::playback_session::PlaybackSession;
 use super::registry::EmbeddedModuleRegistry;
 use super::sensor::SensorRegistry;
@@ -31,12 +31,18 @@ use super::traits::*;
 use super::vision_debug::{VisionDebugHub, VisionDebugServer};
 use super::volume::{AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState};
 
+mod transport;
+use transport::Connections;
+
 const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 /// The assembled embedded node, ready to run.
 pub struct EmbeddedNode {
     pub registry: EmbeddedModuleRegistry,
+    /// Effective configuration used by modules, including the actual bound port.
     pub config: Arc<EmbeddedConfig>,
+    /// Requested settings retained for persistence/restart (e.g. listen port 0).
+    pub requested_config: Arc<EmbeddedConfig>,
     pub cancel_token: CancellationToken,
     pub binding_manager: Arc<BindingManager>,
     pub settings_manager: Arc<EmbeddedSettingsManager>,
@@ -44,19 +50,65 @@ pub struct EmbeddedNode {
     pub volume_state: AudioVolumeState,
     pub audio_debug: AudioDebugRecorder,
     pub event_bus: EventBus,
+    listener: Option<tokio::net::TcpListener>,
+    connections: Arc<Connections>,
+    bound_addr: SocketAddr,
 }
 
 impl EmbeddedNode {
-    /// Run the embedded node (starts gRPC server, blocks until cancellation).
-    pub async fn run(self) -> Result<()> {
-        let result = self.run_services().await;
-        self.cancel_token.cancel();
-        info!("shutting down modules");
-        self.registry.shutdown().await;
-        result
+    /// The actual bound address, including the selected port when configured as :0.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.bound_addr
     }
 
-    async fn run_services(&self) -> Result<()> {
+    /// Obtain before running if the host needs to await cleanup after a deadline.
+    pub fn shutdown_handle(&self) -> ShutdownHandle {
+        self.registry.cleanup.handle()
+    }
+
+    /// Stop a built node without starting the gRPC request loop.
+    pub async fn shutdown(mut self) -> Result<()> {
+        self.listener.take();
+        self.connections.close();
+        let deadline = tokio::time::Instant::now() + self.shutdown_grace();
+        self.registry.cleanup.start().wait_until(deadline).await
+    }
+
+    fn shutdown_grace(&self) -> Duration {
+        Duration::from_millis(self.config.device_runtime.shutdown_grace_ms)
+    }
+
+    /// Run until cancellation. No logger, signal handler, or global runtime is installed.
+    /// Dropping this future also requests cleanup through the node's resource owner.
+    pub async fn run(mut self) -> Result<()> {
+        let cancel = self.cancel_token.clone();
+        let grace = self.shutdown_grace();
+        let drain = Duration::from_millis(self.config.device_runtime.grpc_drain_timeout_ms);
+        let (result, deadline) = {
+            let services = self.run_services();
+            tokio::pin!(services);
+            tokio::select! {
+                result = &mut services => (result, tokio::time::Instant::now() + grace),
+                _ = cancel.cancelled() => {
+                    let deadline = tokio::time::Instant::now() + grace;
+                    let result = tokio::time::timeout(drain, &mut services).await
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!("gRPC drain deadline exceeded; remaining streams closed")));
+                    (result, deadline)
+                }
+            }
+        }; // Stop accepting requests; the socket fence below terminates remaining streams.
+        self.connections.close();
+        let cleanup = self.registry.cleanup.start().wait_until(deadline).await;
+        match (result, cleanup) {
+            (Ok(()), result) => result,
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(cleanup)) => {
+                Err(cleanup.context(format!("runtime also failed: {error:#}")))
+            }
+        }
+    }
+
+    async fn run_services(&mut self) -> Result<()> {
         use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::expression::embedded_expression_server::EmbeddedExpressionServer;
@@ -124,7 +176,15 @@ impl EmbeddedNode {
             self.registry.motion.clone(),
         ));
 
-        let addr: SocketAddr = "0.0.0.0:50051".parse()?;
+        let addr = self.local_addr();
+        let listener = self
+            .listener
+            .take()
+            .context("node listener already consumed")?;
+        let connections = self.connections.clone();
+        let incoming = async_stream::stream! {
+            loop { yield listener.accept().await.map(|(stream, _)| connections.wrap(stream)); }
+        };
         info!(%addr, "gRPC server listening");
 
         let cancel = self.cancel_token.clone();
@@ -136,12 +196,20 @@ impl EmbeddedNode {
             .add_service(sensor_svc)
             .add_service(playback_svc)
             .add_service(expression_svc)
-            .serve_with_shutdown(addr, async move {
+            .serve_with_incoming_shutdown(incoming, async move {
                 cancel.cancelled().await;
             })
             .await?;
 
         Ok(())
+    }
+}
+
+impl Drop for EmbeddedNode {
+    fn drop(&mut self) {
+        self.cancel_token.cancel();
+        self.connections.close();
+        self.registry.cleanup.start();
     }
 }
 
@@ -167,7 +235,9 @@ pub struct EmbeddedBuilder {
 
 impl EmbeddedBuilder {
     /// Create a builder from the loaded configuration.
-    pub async fn from_config(config: EmbeddedConfig) -> Result<Self> {
+    pub async fn from_config(mut config: EmbeddedConfig) -> Result<Self> {
+        crate::config::resolve_config_paths(&mut config)?;
+        config.speech.validate(&config.audio)?;
         Ok(Self {
             config: Arc::new(config),
             cancel_token: CancellationToken::new(),
@@ -233,183 +303,167 @@ impl EmbeddedBuilder {
         self
     }
 
-    /// Build the embedded node: instantiate modules, initialize them, start services.
-    pub async fn build(self) -> Result<EmbeddedNode> {
-        let config = self.config.clone();
-        config.speech.validate(&config.audio)?;
+    /// Bind, construct and initialize transactionally, then start in dependency order.
+    /// The internal owner survives caller-future cancellation and finishes rollback.
+    pub async fn build(mut self) -> Result<EmbeddedNode> {
+        self.cancel_token = self.cancel_token.child_token();
+        let cancelled = self.cancel_token.clone();
+        let mut guard = CancelOnDrop(Some(cancelled.clone()));
+        let result = tokio::spawn(async move {
+            let grace = Duration::from_millis(self.config.device_runtime.shutdown_grace_ms);
+            let cleanup = ModuleCleanup::new(self.cancel_token.clone(), grace);
+            let result = std::panic::AssertUnwindSafe(self.build_owned(cleanup.clone()))
+                .catch_unwind()
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("embedded startup panicked")));
+            if result.is_err() {
+                if let Err(error) = cleanup
+                    .start()
+                    .wait_until(tokio::time::Instant::now() + grace)
+                    .await
+                {
+                    return Err(
+                        error.context(format!("startup failed: {:#}", result.err().unwrap()))
+                    );
+                }
+            }
+            result
+        })
+        .await
+        .context("embedded startup task failed")?;
+        // A successful node takes ownership of cancellation. Failed/dropped callers cancel.
+        if result.is_ok() {
+            guard.0.take();
+        }
+        result
+    }
 
-        // Create shared context resources
-        let run_dir = PathBuf::from("run");
-        let state_store = EmbeddedStore::open(run_dir.join("embedded-state.sqlite3"))
+    async fn build_owned(self, cleanup: Arc<ModuleCleanup>) -> Result<EmbeddedNode> {
+        anyhow::ensure!(
+            !self.cancel_token.is_cancelled(),
+            "startup cancelled before binding"
+        );
+        let listener = tokio::net::TcpListener::bind(self.config.device_runtime.listen_addr)
             .await
-            .context("opening embedded SQLite state store")?;
-        let event_bus = EventBus::new(256);
-        let audio_bus = AudioBus::new(512);
+            .context("binding embedded gRPC listener")?;
+        let connections = Connections::new();
+        cleanup.add(connections.clone());
+        let mut resolved_config = (*self.config).clone();
+        let bound_addr = listener.local_addr()?;
+        resolved_config.device_runtime.listen_addr = bound_addr;
+        let config = Arc::new(resolved_config);
+        let state_store = startup_step(
+            &self.cancel_token,
+            "opening embedded SQLite state store",
+            EmbeddedStore::open(&config.device_runtime.state_path),
+        )
+        .await?;
         let sensors = Arc::new(SensorRegistry::new());
         let ctx = ModuleContext {
             config: config.clone(),
             state_store: state_store.clone(),
-            event_bus,
+            event_bus: EventBus::new(256),
+            audio_bus: AudioBus::new(512),
             cancel_token: self.cancel_token.clone(),
-            audio_bus,
             sensors: sensors.clone(),
         };
-        let volume_config = match state_store
-            .load_json::<AudioVolumeConfig>(AUDIO_VOLUME_STATE_KEY)
-            .await
-        {
-            Ok(Some(value)) => value.sanitized(),
-            Ok(None) => {
-                let value = AudioVolumeConfig::from_audio_config(&config.audio);
-                if let Err(error) = state_store.save_json(AUDIO_VOLUME_STATE_KEY, &value).await {
-                    warn!(
-                        error = %error,
-                        "failed to persist default audio volume; continuing with config defaults"
-                    );
-                }
-                value
-            }
-            Err(error) => {
-                warn!(
-                    error = %error,
-                    "failed to load persisted audio volume; using config defaults"
-                );
-                AudioVolumeConfig::from_audio_config(&config.audio)
-            }
-        };
+        let volume_config = startup_step(
+            &self.cancel_token,
+            "loading persisted audio volume",
+            state_store.load_json::<AudioVolumeConfig>(AUDIO_VOLUME_STATE_KEY),
+        )
+        .await?
+        .map(|value| value.sanitized())
+        .unwrap_or_else(|| AudioVolumeConfig::from_audio_config(&config.audio));
         let volume_state = AudioVolumeState::new(volume_config);
         let audio_debug = AudioDebugRecorder::new(config.audio_debug.clone());
         let vision_debug_hub = Arc::new(VisionDebugHub::new(config.vision_debug.clone()));
 
-        // Resolve modules: use overrides or fall back to factory
-        let mut wakeword: Box<dyn WakeWordEngine> = match self.wakeword {
-            Some(m) => m,
-            None => factory::create_wakeword(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "wakeword module creation failed; using noop");
-                Box::new(NoopWakeWord)
-            }),
-        };
-        let mut edge_stt: Box<dyn EdgeSttEngine> = match self.edge_stt {
-            Some(m) => m,
-            None if config.speech.mode == crate::config::SpeechMode::ServerTurn => {
-                Box::new(NoopEdgeStt)
-            }
-            None => factory::create_edge_stt(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "edge STT module creation failed; using noop");
-                Box::new(NoopEdgeStt)
-            }),
-        };
-        let mut vad: Box<dyn VoiceActivityEngine> = match self.vad {
-            Some(m) => m,
-            None => factory::create_vad(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "VAD module creation failed; using noop");
-                Box::new(NoopVad)
-            }),
-        };
-        let mut direct_response: Box<dyn DirectResponseEngine> = match self.direct_response {
-            Some(m) => m,
-            None => factory::create_direct_response(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "direct response module creation failed; using noop");
-                Box::new(NoopDirectResponse)
-            }),
-        };
-        let mut audio_capture: Box<dyn AudioCaptureBackend> = match self.audio_capture {
-            Some(m) => m,
-            None => factory::create_audio_capture(&config, volume_state.clone()).unwrap_or_else(
-                |error| {
-                    warn!(error = ?error, "audio capture module creation failed; using noop");
-                    Box::new(NoopAudioCapture)
-                },
-            ),
-        };
-        let mut audio_playback: Box<dyn AudioPlaybackBackend> = match self.audio_playback {
-            Some(m) => m,
-            None => factory::create_audio_playback(&config, volume_state.clone()).unwrap_or_else(
-                |error| {
-                    warn!(error = ?error, "audio playback module creation failed; using noop");
-                    Box::new(NoopAudioPlayback)
-                },
-            ),
-        };
-        let mut mixer: Box<dyn AudioMixer> = match self.mixer {
-            Some(m) => m,
-            None => factory::create_mixer(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "mixer module creation failed; using noop");
-                Box::new(NoopMixer)
-            }),
-        };
-        let mut discovery: Box<dyn DiscoveryBackend> = match self.discovery {
-            Some(m) => m,
-            None => factory::create_discovery(&config).unwrap_or_else(|error| {
-                warn!(error = ?error, "discovery module creation failed; using noop");
-                Box::new(NoopDiscovery)
-            }),
-        };
-        let mut sensor_modules: Vec<Box<dyn ModuleLifecycle>> = Vec::new();
-        if config.hmmd_mmwave.enabled {
-            sensor_modules.push(Box::new(HmmdMmWaveModule::new(config.hmmd_mmwave.clone())));
+        // Register even a failed/cancelled init before propagating its error.
+        macro_rules! init {
+            ($module:expr) => {{
+                let (module, result) = initialize($module, &ctx).await;
+                cleanup.add(module.clone());
+                result?;
+                module
+            }};
         }
-        let mut motion = MotionRuntime::new(config.motion.clone()).unwrap_or_else(|error| {
-            warn!(
-                error = %format!("{error:#}"),
-                "motion module creation failed; using disabled motion runtime"
-            );
-            MotionRuntime::disabled(config.motion.clone())
+        let wakeword = init!(match self.wakeword {
+            Some(module) => module,
+            None => factory::create_wakeword(&config)?,
         });
-
-        // Initialize all modules
-        info!("initializing modules");
-        init_embedded_module(wakeword.as_mut(), &ctx).await;
-        init_embedded_module(edge_stt.as_mut(), &ctx).await;
-        init_embedded_module(vad.as_mut(), &ctx).await;
-        init_embedded_module(direct_response.as_mut(), &ctx).await;
-        init_embedded_module(audio_capture.as_mut(), &ctx).await;
-        init_embedded_module(audio_playback.as_mut(), &ctx).await;
-        init_embedded_module(mixer.as_mut(), &ctx).await;
-        init_embedded_module(&mut motion, &ctx).await;
-        let motion = Arc::new(motion);
-        let mut face_tracker: Box<dyn FaceTracker> = match self.face_tracker {
-            Some(m) => m,
+        let edge_stt = init!(match self.edge_stt {
+            Some(module) => module,
+            None if config.speech.mode == crate::config::SpeechMode::ServerTurn =>
+                Box::new(NoopEdgeStt) as Box<dyn EdgeSttEngine>,
+            None => factory::create_edge_stt(&config)?,
+        });
+        let vad = init!(match self.vad {
+            Some(module) => module,
+            None => factory::create_vad(&config)?,
+        });
+        let direct_response = init!(match self.direct_response {
+            Some(module) => module,
+            None => factory::create_direct_response(&config)?,
+        });
+        let audio_playback = init!(match self.audio_playback {
+            Some(module) => module,
+            None => factory::create_audio_playback(&config, volume_state.clone())?,
+        });
+        let mixer = init!(match self.mixer {
+            Some(module) => module,
+            None => factory::create_mixer(&config)?,
+        });
+        let motion = init!(Box::new(
+            MotionRuntime::new(config.motion.clone()).context("creating motion module")?
+        ));
+        let face_tracker = init!(match self.face_tracker {
+            Some(module) => module,
             None => factory::create_face_tracker(
                 &config,
                 motion.clone(),
-                Some(vision_debug_hub.clone()),
-            )
-            .unwrap_or_else(|error| {
-                warn!(
-                    error = %format!("{error:#}"),
-                    "face tracker module creation failed; using noop"
-                );
-                Box::new(NoopFaceTracker)
-            }),
-        };
-        let mut vision_debug =
-            VisionDebugServer::new(config.vision_debug.clone(), vision_debug_hub.clone());
-        init_embedded_module(face_tracker.as_mut(), &ctx).await;
-        init_embedded_module(&mut vision_debug, &ctx).await;
-        init_embedded_module(discovery.as_mut(), &ctx).await;
-        for module in &mut sensor_modules {
-            init_embedded_module(module.as_mut(), &ctx).await;
+                Some(vision_debug_hub.clone())
+            )?,
+        });
+        let vision_debug = init!(Box::new(VisionDebugServer::new(
+            config.vision_debug.clone(),
+            vision_debug_hub
+        )));
+        let mut sensor_modules: Vec<Arc<dyn ModuleLifecycle>> = Vec::new();
+        if config.hmmd_mmwave.enabled {
+            sensor_modules.push(init!(Box::new(HmmdMmWaveModule::new(
+                config.hmmd_mmwave.clone()
+            ))));
         }
-
-        // Initialize core infrastructure
-        let plugins_dir = PathBuf::from("plugins");
-        let plugin_registry = Arc::new(PluginRegistry::new(plugins_dir));
-        if let Err(e) = plugin_registry.scan().await {
-            error!(error = %e, "failed to scan plugins directory");
-        }
-
-        let settings_manager = Arc::new(EmbeddedSettingsManager::new(&config));
-
-        // Initialize binding manager
+        let audio_capture = init!(match self.audio_capture {
+            Some(module) => module,
+            None => factory::create_audio_capture(&config, volume_state.clone())?,
+        });
+        let plugin_registry = Arc::new(PluginRegistry::new(
+            config.device_runtime.plugins_dir.clone(),
+        ));
+        cleanup.add(Arc::new(super::registry::PluginCleanup(
+            plugin_registry.clone(),
+        )));
+        startup_step(
+            &self.cancel_token,
+            "scanning embedded plugins",
+            plugin_registry.scan(),
+        )
+        .await?;
+        // Settings describe the next boot; do not persist an ephemeral selected port.
+        let settings_manager = Arc::new(EmbeddedSettingsManager::new(&self.config));
         let binding_manager = Arc::new(BindingManager::new(
-            state_store,
+            state_store.clone(),
             config.discovery.max_bind_attempts,
             config.discovery.lockout_duration_sec,
         ));
-        if let Err(e) = binding_manager.load().await {
-            error!(error = %e, "failed to load binding state");
-        }
+        startup_step(
+            &self.cancel_token,
+            "loading device binding",
+            binding_manager.load(),
+        )
+        .await?;
         if config.dev.skip_binding {
             let endpoint = if config.dev.server_endpoint.trim().is_empty() {
                 "http://127.0.0.1:3000"
@@ -426,26 +480,15 @@ impl EmbeddedBuilder {
             } else {
                 config.dev.server_name.trim()
             };
-            binding_manager
-                .seed_dev_binding(server_id, server_name, endpoint)
-                .await
-                .context("seeding dev binding")?;
+            startup_step(
+                &self.cancel_token,
+                "seeding dev binding",
+                binding_manager.seed_dev_binding(server_id, server_name, endpoint),
+            )
+            .await?;
         }
-
-        let wakeword: Arc<dyn WakeWordEngine> = Arc::from(wakeword);
-        let edge_stt: Arc<dyn EdgeSttEngine> = Arc::from(edge_stt);
-        let vad: Arc<dyn VoiceActivityEngine> = Arc::from(vad);
-        let direct_response: Arc<dyn DirectResponseEngine> = Arc::from(direct_response);
-        let audio_capture: Arc<dyn AudioCaptureBackend> = Arc::from(audio_capture);
-        let audio_playback: Arc<dyn AudioPlaybackBackend> = Arc::from(audio_playback);
-        let mixer: Arc<dyn AudioMixer> = Arc::from(mixer);
-        let face_tracker: Arc<dyn FaceTracker> = Arc::from(face_tracker);
-        let vision_debug = Arc::new(vision_debug);
-        let discovery: Arc<dyn DiscoveryBackend> = Arc::from(discovery);
-        let sensor_modules: Vec<Arc<dyn ModuleLifecycle>> =
-            sensor_modules.into_iter().map(Arc::from).collect();
         let playback_session = Arc::new(PlaybackSession::new(audio_playback.clone()));
-        let speech_pipeline = Arc::new(SpeechPipeline::new(
+        let speech_pipeline = init!(Box::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),
             ctx.event_bus.clone(),
             wakeword.clone(),
@@ -463,51 +506,11 @@ impl EmbeddedBuilder {
             &config.identity,
             audio_debug.clone(),
             self.cancel_token.clone(),
-        ));
-
-        // Start all modules
-        info!("starting modules");
-        start_embedded_module(wakeword.as_ref()).await;
-        start_embedded_module(edge_stt.as_ref()).await;
-        start_embedded_module(vad.as_ref()).await;
-        start_embedded_module(direct_response.as_ref()).await;
-        start_embedded_module(audio_capture.as_ref()).await;
-        start_embedded_module(audio_playback.as_ref()).await;
-        start_embedded_module(mixer.as_ref()).await;
-        start_embedded_module(speech_pipeline.as_ref()).await;
-        if let Err(error) = audio_capture.start_capture(&ctx.audio_bus) {
-            warn!(
-                module = audio_capture.name(),
-                error = ?error,
-                "audio capture stream failed to start; continuing without microphone capture"
-            );
-        }
-        start_embedded_module(motion.as_ref()).await;
-        start_embedded_module(face_tracker.as_ref()).await;
-        start_embedded_module(vision_debug.as_ref()).await;
-        start_embedded_module(discovery.as_ref()).await;
-        for module in &sensor_modules {
-            start_embedded_module(module.as_ref()).await;
-        }
-
-        let initial_discovery_metadata = binding_manager.status().await.discovery_metadata();
-        let mut initial_discovery_metadata = initial_discovery_metadata;
-        initial_discovery_metadata.attributes.insert(
-            "provisioning_mode".to_string(),
-            settings_manager.provisioning_mode().await.to_string(),
-        );
-        motion.enrich_discovery_metadata(&mut initial_discovery_metadata);
-        plugin_registry
-            .enrich_discovery_metadata(&mut initial_discovery_metadata)
-            .await;
-        discovery
-            .update_metadata(&initial_discovery_metadata)
-            .await
-            .unwrap_or_else(
-                |error| warn!(error = ?error, "failed to sync discovery metadata; continuing"),
-            );
-
-        // Build registry
+        )));
+        let discovery = init!(match self.discovery {
+            Some(module) => module,
+            None => factory::create_discovery(&config)?,
+        });
         let registry = EmbeddedModuleRegistry {
             wakeword,
             edge_stt,
@@ -525,50 +528,44 @@ impl EmbeddedBuilder {
             sensors,
             sensor_modules,
             plugin_registry,
+            cleanup,
         };
-
+        info!("starting embedded modules");
+        registry.start(&ctx).await?;
+        let mut metadata = binding_manager.status().await.discovery_metadata();
+        metadata.attributes.insert(
+            "provisioning_mode".to_string(),
+            settings_manager.provisioning_mode().await.to_string(),
+        );
+        registry.motion.enrich_discovery_metadata(&mut metadata);
+        registry
+            .plugin_registry
+            .enrich_discovery_metadata(&mut metadata)
+            .await;
+        startup_step(
+            &self.cancel_token,
+            "publishing discovery metadata",
+            registry.discovery.update_metadata(&metadata),
+        )
+        .await?;
+        anyhow::ensure!(
+            !self.cancel_token.is_cancelled(),
+            "startup cancelled after module start"
+        );
         Ok(EmbeddedNode {
             registry,
             config,
+            requested_config: self.config,
             cancel_token: self.cancel_token,
             binding_manager,
             settings_manager,
-            state_store: ctx.state_store.clone(),
+            state_store,
             volume_state,
             audio_debug,
-            event_bus: ctx.event_bus.clone(),
+            event_bus: ctx.event_bus,
+            listener: Some(listener),
+            connections,
+            bound_addr,
         })
-    }
-}
-
-async fn init_embedded_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
-    let name = module.name();
-    if let Err(error) = module.init(ctx).await {
-        warn!(
-            module = name,
-            error = %error,
-            "embedded module init failed; continuing in degraded mode"
-        );
-        tracing::debug!(
-            module = name,
-            error = ?error,
-            "embedded module init failure details"
-        );
-    }
-}
-
-async fn start_embedded_module(module: &dyn ModuleLifecycle) {
-    let name = module.name();
-    if let Err(error) = module.start().await {
-        warn!(
-            module = name,
-            error = %error,
-            "embedded module start failed; continuing in degraded mode"
-        );
-        tracing::debug!(
-            module = name,
-            error = ?error,
-            "embedded module start failure details"
-        );
     }
 }

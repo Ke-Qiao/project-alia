@@ -1,11 +1,31 @@
 # config/embedded.toml — Runtime-editable settings for alia-embedded
 #
-# The device now boots with compiled defaults when this file is missing.
+# A missing file uses compiled defaults; selected modules still require their
+# build features, model files, and configured hardware to initialize successfully.
 # Server/frontend OOBE can create or update this file over the settings API.
 #
 # User-editable sections:
 # - [runtime]
-# - [identity]
+# - [device_runtime]
+# - [modules]
+# - # Paths are relative to this config file's directory, including these defaults.
+# Each library instance should use its own state/key/plugin paths and address.
+# Port 0 chooses a free port; discovery advertises the actual bound port.
+[device_runtime]
+listen_addr = "0.0.0.0:50051"
+state_path = "run/embedded-state.sqlite3"
+plugins_dir = "plugins"
+# Total gRPC drain + module stop budget. A timeout is an incomplete shutdown error.
+shutdown_grace_ms = 5000
+grpc_drain_timeout_ms = 1000
+
+# Unavailable/unknown implementations are startup errors. "noop" explicitly disables
+# a slot; library hosts may also inject their own implementations with with_*.
+# The priority mixer is not implemented, so compiled defaults explicitly disable it.
+[modules]
+mixer = "noop"
+
+[identity]
 # - [audio]
 # - [audio_debug]
 # - [edge_stt]

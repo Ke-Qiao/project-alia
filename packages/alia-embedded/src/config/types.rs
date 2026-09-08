@@ -5,6 +5,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedConfig {
     pub modules: ModulesConfig,
+    #[serde(default)]
+    pub device_runtime: DeviceRuntimeConfig,
     pub identity: IdentityConfig,
     pub wakeword: WakewordConfig,
     #[serde(default)]
@@ -41,6 +43,48 @@ pub struct EmbeddedConfig {
     pub config_path: PathBuf,
     #[serde(skip)]
     pub provisioning_mode: bool,
+}
+
+/// Instance-local resources. Relative paths are based on the config file directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeviceRuntimeConfig {
+    pub listen_addr: std::net::SocketAddr,
+    pub state_path: PathBuf,
+    pub plugins_dir: PathBuf,
+    /// Total budget for gRPC drain plus module shutdown (also used for rollback).
+    pub shutdown_grace_ms: u64,
+    pub grpc_drain_timeout_ms: u64,
+}
+
+impl Default for DeviceRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            listen_addr: ([0, 0, 0, 0], 50051).into(),
+            state_path: PathBuf::from("run/embedded-state.sqlite3"),
+            plugins_dir: PathBuf::from("plugins"),
+            shutdown_grace_ms: 5_000,
+            grpc_drain_timeout_ms: 1_000,
+        }
+    }
+}
+
+impl DeviceRuntimeConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (1..=300_000).contains(&self.shutdown_grace_ms),
+            "device_runtime.shutdown_grace_ms must be between 1 and 300000"
+        );
+        anyhow::ensure!(
+            self.grpc_drain_timeout_ms <= self.shutdown_grace_ms,
+            "gRPC drain timeout must fit within shutdown_grace_ms"
+        );
+        anyhow::ensure!(
+            !self.state_path.as_os_str().is_empty() && !self.plugins_dir.as_os_str().is_empty(),
+            "device runtime paths must not be empty"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -113,7 +157,7 @@ fn default_audio_playback_module() -> String {
     "cpal".to_string()
 }
 fn default_mixer_module() -> String {
-    "priority".to_string()
+    "noop".to_string()
 }
 fn default_face_tracker_module() -> String {
     "yunet".to_string()
@@ -1135,6 +1179,10 @@ pub struct RuntimeConfigMeta {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
+    pub modules: ModulesConfig,
+    #[serde(default)]
+    pub device_runtime: DeviceRuntimeConfig,
+    #[serde(default)]
     pub runtime: RuntimeConfigMeta,
     #[serde(default)]
     pub identity: IdentityConfig,
@@ -1176,6 +1224,7 @@ impl Default for EmbeddedConfig {
     fn default() -> Self {
         Self {
             modules: ModulesConfig::default(),
+            device_runtime: DeviceRuntimeConfig::default(),
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
             edge_stt: EdgeSttConfig::default(),
@@ -1202,6 +1251,8 @@ impl Default for EmbeddedConfig {
 
 impl EmbeddedConfig {
     pub fn apply_runtime_settings(&mut self, runtime: EmbeddedRuntimeSettings) {
+        self.modules = runtime.modules;
+        self.device_runtime = runtime.device_runtime;
         self.identity = runtime.identity;
         self.wakeword = runtime.wakeword;
         self.audio = runtime.audio;
@@ -1224,6 +1275,8 @@ impl EmbeddedConfig {
 
     pub fn runtime_settings(&self) -> EmbeddedRuntimeSettings {
         EmbeddedRuntimeSettings {
+            modules: self.modules.clone(),
+            device_runtime: self.device_runtime.clone(),
             runtime: RuntimeConfigMeta {
                 provisioned: !self.provisioning_mode,
             },
