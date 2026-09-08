@@ -181,6 +181,7 @@ async fn execute_claim(
         request_id: effect.key.request_id,
         source_received_at: effect.source_received_at,
         source_event_id: effect.source_event_id,
+        source_privacy_epoch: effect.source_privacy_epoch,
         invocation_key: effect.key.invocation_key.clone(),
         conversation_id: effect.conversation_id,
         source: effect.source.clone(),

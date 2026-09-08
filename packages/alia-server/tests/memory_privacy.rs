@@ -6,7 +6,10 @@ use alia_server::{
     modules::platform::migrations,
     providers::{
         MemoryBackend,
-        adapter::{EmbeddingAdapter, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts},
+        adapter::{
+            EmbeddingAdapter, MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch,
+            MemoryWriteContext, RetrievalOpts,
+        },
         memory::AliaMemory,
     },
 };
@@ -127,6 +130,489 @@ async fn derived(memory: &AliaMemory, user: Uuid, source: &str, content: &str) -
         .source_memories
         .push((source.to_string(), original.revision));
     memory.store_guarded(&context, node(content)).await.unwrap()
+}
+
+async fn selected_context(memory: &AliaMemory, user: Uuid, ids: &[&str]) -> MemoryWriteContext {
+    let mut context = memory.write_snapshot(user).await.unwrap();
+    for id in ids {
+        let item = memory.get(user, id).await.unwrap().unwrap();
+        context
+            .source_memories
+            .push((id.to_string(), item.revision));
+    }
+    context
+}
+
+fn batch_update(id: &str, revision: i64, content: &str) -> (String, MemoryPatch) {
+    (
+        id.to_string(),
+        MemoryPatch {
+            expected_revision: Some(revision),
+            content: Some(content.into()),
+            ..Default::default()
+        },
+    )
+}
+
+async fn atomic_batch_and_lineage_contract(memory: &AliaMemory) {
+    let user = Uuid::new_v4();
+    let source = memory
+        .store(user, node("original source before replacement metadata"))
+        .await
+        .unwrap();
+    let first = derived(memory, user, &source, "first interpretation").await;
+    let second = memory
+        .store(user, node("second interpretation"))
+        .await
+        .unwrap();
+    let context = selected_context(memory, user, &[&first, &second]).await;
+    let created_id = Uuid::new_v4().to_string();
+    let mut created = node("combined interpretation");
+    created.id = Some(created_id.clone());
+    let mut update = batch_update(&first, 1, "corrected first interpretation");
+    update.1.metadata =
+        Some(serde_json::json!({"reason":"replace metadata, retain old provenance"}));
+    let result = memory
+        .apply_batch_guarded(
+            &context,
+            MemoryBatch {
+                updates: vec![
+                    update,
+                    (
+                        second.clone(),
+                        MemoryPatch {
+                            expected_revision: Some(1),
+                            status: Some("superseded".into()),
+                            superseded_by: Some(created_id.clone()),
+                            ..Default::default()
+                        },
+                    ),
+                ],
+                creates: vec![created],
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.updated, 2);
+    assert_eq!(result.created_ids, vec![created_id.clone()]);
+    assert_eq!(memory.get(user, &first).await.unwrap().unwrap().revision, 2);
+    let retired = memory.get(user, &second).await.unwrap().unwrap();
+    assert_eq!(retired.revision, 2);
+    assert_eq!(retired.status, "superseded");
+    assert_eq!(retired.content, "second interpretation");
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        context.privacy_epoch
+    );
+
+    // Replacement metadata must not remove the original source->first edge.
+    // The new read set also links the combined record and retired source.
+    let forget = selected_context(memory, user, &[&source]).await;
+    let later = memory
+        .store(user, node("later unrelated original source"))
+        .await
+        .unwrap();
+    assert_eq!(
+        memory
+            .forget_many_guarded(&forget, &forget.source_memories)
+            .await
+            .unwrap(),
+        4
+    );
+    for id in [&source, &first, &second, &created_id] {
+        assert!(memory.get(user, id).await.unwrap().is_none());
+    }
+    assert!(memory.get(user, &later).await.unwrap().is_some());
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        context.privacy_epoch + 1
+    );
+    assert!(
+        memory
+            .apply_batch_guarded(
+                &context,
+                MemoryBatch {
+                    creates: vec![node("late old interpretation")],
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
+    );
+}
+
+async fn exact_forget_selection_contract(memory: &AliaMemory) {
+    let user = Uuid::new_v4();
+    let first = memory
+        .store(user, node("selected first fact"))
+        .await
+        .unwrap();
+    let second = memory
+        .store(user, node("selected second fact"))
+        .await
+        .unwrap();
+    let original = selected_context(memory, user, &[&first, &second]).await;
+    let later = memory
+        .store(user, node("selected later fact"))
+        .await
+        .unwrap();
+    assert!(
+        memory
+            .forget_many_guarded(&original, &[(later.clone(), 1)])
+            .await
+            .is_err()
+    );
+    memory
+        .update(
+            user,
+            &second,
+            MemoryPatch {
+                content: Some("corrected after selection".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        memory
+            .forget_many_guarded(&original, &original.source_memories)
+            .await
+            .is_err()
+    );
+    assert!(memory.get(user, &first).await.unwrap().is_some());
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        original.privacy_epoch
+    );
+    let fresh = selected_context(memory, user, &[&first, &second]).await;
+    assert_eq!(
+        memory
+            .forget_many_guarded(&fresh, &fresh.source_memories)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        fresh.privacy_epoch + 1
+    );
+    assert!(memory.get(user, &later).await.unwrap().is_some());
+    assert!(
+        memory
+            .forget_many_guarded(&fresh, &fresh.source_memories)
+            .await
+            .is_err()
+    );
+    assert_eq!(memory.forget_many_guarded(&fresh, &[]).await.unwrap(), 0);
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        fresh.privacy_epoch + 1
+    );
+
+    // A logically retired source remains erasable, and forgetting it must
+    // erase its already committed derivative too.
+    let retirement = selected_context(memory, user, &[&later]).await;
+    let result = memory
+        .apply_batch_guarded(
+            &retirement,
+            MemoryBatch {
+                updates: vec![(
+                    later.clone(),
+                    MemoryPatch {
+                        expected_revision: Some(1),
+                        status: Some("rejected".into()),
+                        ..Default::default()
+                    },
+                )],
+                creates: vec![node("derived before logical source retirement")],
+            },
+        )
+        .await
+        .unwrap();
+    let retired_selection = selected_context(memory, user, &[&later]).await;
+    assert!(
+        memory
+            .store_guarded(
+                &retired_selection,
+                node("cannot newly derive from retired source")
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        memory
+            .forget_many_guarded(&retired_selection, &retired_selection.source_memories)
+            .await
+            .unwrap(),
+        2
+    );
+    assert!(
+        memory
+            .get(user, &result.created_ids[0])
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+async fn invalid_batch_contract(memory: &AliaMemory) {
+    let user = Uuid::new_v4();
+    let other = Uuid::new_v4();
+    let existing = memory
+        .store(user, node("unchanged valid source"))
+        .await
+        .unwrap();
+    let foreign = memory
+        .store(other, node("other owner source"))
+        .await
+        .unwrap();
+    let context = selected_context(memory, user, &[&existing]).await;
+    let mut colliding = node("cannot overwrite existing identity");
+    colliding.id = Some(existing.clone());
+    assert!(
+        memory
+            .apply_batch_guarded(
+                &context,
+                MemoryBatch {
+                    creates: vec![node("first creation must roll back"), colliding],
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
+    );
+    for status in ["deleted", "expired"] {
+        assert!(
+            memory
+                .apply_batch_guarded(
+                    &context,
+                    MemoryBatch {
+                        updates: vec![(
+                            existing.clone(),
+                            MemoryPatch {
+                                expected_revision: Some(1),
+                                status: Some(status.into()),
+                                ..Default::default()
+                            }
+                        )],
+                        ..Default::default()
+                    }
+                )
+                .await
+                .is_err()
+        );
+    }
+    assert!(
+        memory
+            .apply_batch_guarded(
+                &context,
+                MemoryBatch {
+                    updates: vec![
+                        batch_update(&existing, 1, "first"),
+                        batch_update(&existing, 1, "duplicate")
+                    ],
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
+    );
+    let mut forged = context.clone();
+    forged.source_memories.push((foreign.clone(), 1));
+    assert!(
+        memory
+            .apply_batch_guarded(
+                &forged,
+                MemoryBatch {
+                    updates: vec![batch_update(&foreign, 1, "foreign replacement")],
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        memory
+            .forget_many_guarded(&forged, &[(existing.clone(), 1), (foreign.clone(), 1)])
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        memory
+            .list(user, MemoryListOpts::default())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        memory.get(user, &existing).await.unwrap().unwrap().revision,
+        1
+    );
+    assert_eq!(
+        memory.get(other, &foreign).await.unwrap().unwrap().content,
+        "other owner source"
+    );
+    assert_eq!(
+        memory.write_snapshot(user).await.unwrap().privacy_epoch,
+        context.privacy_epoch
+    );
+}
+
+#[tokio::test]
+async fn postgres_batches_preserve_original_snapshot_and_prior_lineage() {
+    with_database(|database| async move {
+        atomic_batch_and_lineage_contract(database.memory(None).await.as_ref()).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_forget_uses_one_epoch_and_never_reselects_later_records() {
+    with_database(|database| async move {
+        exact_forget_selection_contract(database.memory(None).await.as_ref()).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn postgres_invalid_batches_and_foreign_forget_never_partially_commit() {
+    with_database(|database| async move {
+        invalid_batch_contract(database.memory(None).await.as_ref()).await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn batch_update_keeps_old_conversation_sources_and_adds_new_verified_sources() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = Uuid::new_v4();
+        let session = Uuid::new_v4();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'batch-source',$2)",
+            vec![session.into(),user.to_string().into()])).await.unwrap();
+        let mut events = Vec::new();
+        let epoch = memory.write_snapshot(user).await.unwrap().privacy_epoch;
+        for content in ["first observed source", "second observed source"] {
+            let id = Uuid::new_v4();
+            database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user',$4,clock_timestamp(),$5)",
+                vec![id.into(),session.into(),user.to_string().into(),content.into(),epoch.into()])).await.unwrap();
+            events.push(id);
+        }
+        let mut original = memory.write_snapshot(user).await.unwrap();
+        original.source_event_ids.push(events[0]);
+        let id = memory.store_guarded(&original, node("original source fact")).await.unwrap();
+        let mut next = selected_context(&memory, user, &[&id]).await;
+        next.source_event_ids.push(events[1]);
+        memory.apply_batch_guarded(&next, MemoryBatch {
+            updates: vec![batch_update(&id, 1, "fact corrected by new source")],
+            ..Default::default()
+        }).await.unwrap();
+        let stored = memory.get(user, &id).await.unwrap().unwrap();
+        assert_eq!(stored.revision, 2);
+        assert_eq!(stored.source_event_ids.len(), 2);
+        for id in events { assert!(stored.source_event_ids.contains(&id)); }
+    }).await;
+}
+
+#[tokio::test]
+async fn memory_mode_atomic_batches_and_exact_forget_match_persistent_contract() {
+    let memory = AliaMemory::new();
+    atomic_batch_and_lineage_contract(&memory).await;
+    exact_forget_selection_contract(&memory).await;
+    invalid_batch_contract(&memory).await;
+}
+
+#[tokio::test]
+async fn sql_failure_rolls_back_entire_batch_and_multi_target_forget() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = Uuid::new_v4();
+        let first = memory.store(user, node("first unchanged fact")).await.unwrap();
+        let second = memory.store(user, node("second unchanged fact")).await.unwrap();
+        let context = selected_context(&memory, user, &[&first, &second]).await;
+        let graph_count = database.count("memory_edges").await;
+        database.sql("CREATE FUNCTION reject_batch_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.content='injected failing update' OR NEW.status='deleted' THEN RAISE EXCEPTION 'injected batch rejection'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_batch_update BEFORE UPDATE ON memory_items FOR EACH ROW EXECUTE FUNCTION reject_batch_update()").await;
+        let mut ordered = [first.clone(), second.clone()]; ordered.sort();
+        assert!(memory.apply_batch_guarded(&context, MemoryBatch {
+            updates: vec![batch_update(&ordered[0], 1, "first update before failure"), batch_update(&ordered[1], 1, "injected failing update")],
+            creates: vec![node("new record before failing update")],
+        }).await.is_err());
+        assert_eq!(database.count("memory_items").await, 2);
+        assert_eq!(database.count("memory_edges").await, graph_count);
+        assert_eq!(database.count("memory_sources").await, 0);
+        assert_eq!(memory.get(user, &first).await.unwrap().unwrap().content, "first unchanged fact");
+        assert_eq!(memory.get(user, &second).await.unwrap().unwrap().revision, 1);
+        assert!(memory.forget_many_guarded(&context, &context.source_memories).await.is_err());
+        assert_eq!(memory.write_snapshot(user).await.unwrap().privacy_epoch, context.privacy_epoch);
+        assert_eq!(memory.list(user, MemoryListOpts::default()).await.unwrap().len(), 2);
+        assert_eq!(database.count("memory_edges").await, graph_count);
+        database.sql("DROP TRIGGER reject_batch_update ON memory_items").await;
+        database.sql("CREATE FUNCTION reject_batch_source() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected provenance rejection'; END $$; CREATE TRIGGER reject_batch_source BEFORE INSERT ON memory_sources FOR EACH ROW EXECUTE FUNCTION reject_batch_source()").await;
+        assert!(memory.apply_batch_guarded(&context, MemoryBatch {
+            updates: vec![batch_update(&first, 1, "update before provenance failure")],
+            creates: vec![node("create before provenance failure")],
+        }).await.is_err());
+        assert_eq!(database.count("memory_items").await, 2);
+        assert_eq!(database.count("memory_sources").await, 0);
+        assert_eq!(database.count("memory_edges").await, graph_count);
+        assert_eq!(memory.get(user, &first).await.unwrap().unwrap().revision, 1);
+        database.sql("DROP TRIGGER reject_batch_source ON memory_sources").await;
+        assert_eq!(memory.forget_many_guarded(&context, &context.source_memories).await.unwrap(), 2);
+    }).await;
+}
+
+#[tokio::test]
+async fn concurrent_batch_and_forget_cannot_commit_against_a_changed_original() {
+    with_database(|database| async move {
+        let first = database.memory(None).await;
+        let second = database.memory(None).await;
+        let user = Uuid::new_v4();
+        for index in 0..8 {
+            let source = first
+                .store(user, node(&format!("batch race source {index}")))
+                .await
+                .unwrap();
+            let context = selected_context(&first, user, &[&source]).await;
+            let batch = MemoryBatch {
+                updates: vec![batch_update(&source, 1, "updated while forget races")],
+                creates: vec![node("derived while forget races")],
+            };
+            let (applied, forgotten) = tokio::join!(
+                first.apply_batch_guarded(&context, batch),
+                second.forget_many_guarded(&context, &context.source_memories)
+            );
+            assert_ne!(
+                applied.is_ok(),
+                forgotten.is_ok(),
+                "one original snapshot must win"
+            );
+            if let Ok(result) = applied {
+                let fresh = selected_context(&second, user, &[&source]).await;
+                second
+                    .forget_many_guarded(&fresh, &fresh.source_memories)
+                    .await
+                    .unwrap();
+                assert!(
+                    first
+                        .get(user, &result.created_ids[0])
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+            assert!(
+                first
+                    .list(user, MemoryListOpts::default())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -420,11 +906,11 @@ async fn late_persisted_conversation_source_cannot_cross_the_forget_boundary() {
         memory.clear(user).await.unwrap();
         database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",vec![session.into(),user.to_string().into()])).await.unwrap();
         let source=Uuid::new_v4();
-        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at) VALUES($1,$2,$3,'user','input received before deletion',$4)",vec![source.into(),session.into(),user.to_string().into(),before.source_received_at.into()])).await.unwrap();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','input received before deletion',$4,$5)",vec![source.into(),session.into(),user.to_string().into(),before.source_received_at.into(),before.privacy_epoch.into()])).await.unwrap();
         let mut restarted=memory.write_snapshot(user).await.unwrap();restarted.source_event_ids.push(source);
         assert!(memory.store_guarded(&restarted,node("new job inspecting old late-persisted message")).await.is_err());
         let fresh=Uuid::new_v4();
-        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at) VALUES($1,$2,$3,'user','genuinely new input',clock_timestamp())",vec![fresh.into(),session.into(),user.to_string().into()])).await.unwrap();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','genuinely new input',clock_timestamp(),$4)",vec![fresh.into(),session.into(),user.to_string().into(),restarted.privacy_epoch.into()])).await.unwrap();
         let mut current=memory.write_snapshot(user).await.unwrap();current.source_event_ids.push(fresh);
         let id=memory.store_guarded(&current,node("new input accepted")).await.unwrap();
         assert_eq!(memory.get(user,&id).await.unwrap().unwrap().source_event_ids,vec![fresh]);
@@ -437,6 +923,112 @@ struct HeldEmbedding {
     calls: AtomicUsize,
     started: Semaphore,
     release: Semaphore,
+}
+
+#[tokio::test]
+async fn source_epoch_is_authoritative_with_fast_slow_and_unsourced_messages() {
+    with_database(|database| async move {
+        use alia_server::modules::memory::source::capture_source_epoch;
+        let memory = database.memory(None).await;
+        let user = Uuid::new_v4();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Source','test','user','active')",
+            vec![user.into(),format!("{user}@source.test").into()],
+        )).await.unwrap();
+        let epoch = capture_source_epoch(&database.db, user).await.unwrap();
+        let session = Uuid::new_v4();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'source-test',$2)",
+            vec![session.into(),user.to_string().into()],
+        )).await.unwrap();
+        for offset in [-300, 300] {
+            let source = Uuid::new_v4();
+            let received = chrono::DateTime::from_timestamp_micros(chrono::Utc::now().timestamp_micros()).unwrap()
+                + chrono::Duration::seconds(offset) + chrono::Duration::nanoseconds(400);
+            database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','trusted input',$4,$5)",
+                vec![source.into(),session.into(),user.to_string().into(),received.into(),epoch.into()],
+            )).await.unwrap();
+            let mut context = memory.write_snapshot(user).await.unwrap();
+            context.source_received_at = received;
+            context.source_event_ids.push(source);
+            context.exact_source_received_at = Some((source, received));
+            memory.validate_write_context(&context).await.unwrap();
+            memory.store_guarded(&context, node(&format!("clock case {offset}"))).await.unwrap();
+            let mut wrong = context.clone();
+            wrong.exact_source_received_at = Some((source, received + chrono::Duration::seconds(1)));
+            assert!(memory.validate_write_context(&wrong).await.is_err());
+            let mut precision = context.clone();
+            precision.exact_source_received_at = Some((source, received + chrono::Duration::nanoseconds(1)));
+            memory.validate_write_context(&precision).await.unwrap();
+            let mut foreign = memory.write_snapshot(Uuid::new_v4()).await.unwrap();
+            foreign.source_event_ids.push(source);
+            assert!(memory.validate_write_context(&foreign).await.is_err());
+        }
+        let unsourced = Uuid::new_v4();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at) VALUES($1,$2,$3,'user','no trusted epoch',clock_timestamp())",
+            vec![unsourced.into(),session.into(),user.to_string().into()],
+        )).await.unwrap();
+        let mut context = memory.write_snapshot(user).await.unwrap();
+        context.source_event_ids.push(unsourced);
+        assert!(memory.validate_write_context(&context).await.is_err());
+        assert!(memory.store_guarded(&context, node("null epoch cannot become current")).await.is_err());
+        memory.clear(user).await.unwrap();
+        assert!(memory.validate_write_context(&context).await.is_err());
+        assert_eq!(capture_source_epoch(&database.db, user).await.unwrap(), epoch + 1);
+    }).await;
+}
+
+#[tokio::test]
+async fn source_admission_is_bounded_by_the_privacy_lock_and_current_account() {
+    with_database(|database| async move {
+        use alia_server::modules::memory::source::capture_source_epoch;
+        use sea_orm::TransactionTrait;
+        let user = Uuid::new_v4();
+        assert!(capture_source_epoch(&database.db, user).await.is_err());
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Source','test','user','active')",
+            vec![user.into(),format!("{user}@source.test").into()],
+        )).await.unwrap();
+        capture_source_epoch(&database.db, user).await.unwrap();
+        let locked = database.db.begin().await.unwrap();
+        locked.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE", [user.into()],
+        )).await.unwrap();
+        let start = std::time::Instant::now();
+        let error = capture_source_epoch(&database.db, user).await.unwrap_err();
+        assert!(error.to_string().contains("timed out"));
+        assert!(start.elapsed() < Duration::from_secs(3));
+        locked.rollback().await.unwrap();
+        capture_source_epoch(&database.db, user).await.unwrap();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "UPDATE users SET status='disabled' WHERE id=$1", [user.into()],
+        )).await.unwrap();
+        assert!(capture_source_epoch(&database.db, user).await.unwrap_err().to_string().contains("currently active account"));
+    }).await;
+}
+
+#[tokio::test]
+async fn ram_epoch_rejects_old_sources_without_wall_clock_comparisons() {
+    let memory = AliaMemory::new();
+    let user = Uuid::new_v4();
+    let mut original = memory.write_snapshot(user).await.unwrap();
+    original.source_received_at += chrono::Duration::days(1);
+    memory
+        .store_guarded(&original, node("initial source"))
+        .await
+        .unwrap();
+    memory.clear(user).await.unwrap();
+    assert!(memory.validate_write_context(&original).await.is_err());
+    let mut fresh = memory.write_snapshot(user).await.unwrap();
+    fresh.source_received_at -= chrono::Duration::days(1);
+    memory
+        .store_guarded(&fresh, node("new source with a slow clock"))
+        .await
+        .unwrap();
+    fresh.exact_source_received_at = Some((Uuid::new_v4(), fresh.source_received_at));
+    assert!(memory.validate_write_context(&fresh).await.is_err());
 }
 
 #[tokio::test]
@@ -499,7 +1091,7 @@ async fn deterministic_consolidation_commits_functional_batch_and_tracks_promote
         assert_eq!(result.transformed_affective_guidance, 1);
         assert_eq!(
             memory.get(user, &weak).await.unwrap().unwrap().status,
-            "expired"
+            "rejected"
         );
         assert!(
             memory

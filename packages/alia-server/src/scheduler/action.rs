@@ -64,6 +64,31 @@ impl Default for ActionRegistry {
     }
 }
 
+/// Capture once per owner before condition evaluation or action queueing. An
+/// unowned system action keeps None; it cannot acquire memory authority later.
+pub(crate) async fn capture_action_sources(
+    db: &sea_orm::DatabaseConnection,
+    owners: impl IntoIterator<Item = uuid::Uuid>,
+) -> HashMap<uuid::Uuid, Option<i64>> {
+    let mut epochs = HashMap::new();
+    let owners = owners.into_iter().collect::<std::collections::HashSet<_>>();
+    for owner in owners {
+        if owner.is_nil() {
+            epochs.insert(owner, None);
+            continue;
+        }
+        match crate::modules::memory::source::capture_source_epoch(db, owner).await {
+            Ok(epoch) => {
+                epochs.insert(owner, Some(epoch));
+            }
+            Err(error) => {
+                tracing::warn!(%owner, error = %error, "automation source admission rejected; action not queued");
+            }
+        }
+    }
+    epochs
+}
+
 pub struct LogActionExecutor;
 
 #[async_trait]
@@ -223,6 +248,7 @@ impl ActionExecutor for ToolCallActionExecutor {
                     request_id: ctx.request_id,
                     source_received_at: ctx.source_received_at,
                     source_event_id: None,
+                    source_privacy_epoch: ctx.source_privacy_epoch,
                     invocation_key: "0".into(),
                     conversation_id: None,
                     source: ctx.source.clone(),

@@ -11,11 +11,12 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::event::{EventBus, ServerEvent};
+use crate::module::background::OwnedBackground;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, AutomationRule, RuleAction, RuleEvaluator, RuleFilter, RulePatch,
 };
-use crate::scheduler::action::ActionRegistry;
+use crate::scheduler::action::{ActionRegistry, capture_action_sources};
 use crate::scheduler::condition::{ConditionContext, ConditionRegistry};
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,7 @@ struct RuleState {
 }
 
 pub struct EventRuleEngine {
+    background: OwnedBackground,
     rules: Arc<RwLock<HashMap<Uuid, RuleState>>>,
     event_bus: Mutex<Option<EventBus>>,
     db: Mutex<Option<DatabaseConnection>>,
@@ -37,6 +39,7 @@ pub struct EventRuleEngine {
 impl EventRuleEngine {
     pub fn new() -> Self {
         Self {
+            background: OwnedBackground::default(),
             rules: Arc::new(RwLock::new(HashMap::new())),
             event_bus: Mutex::new(None),
             db: Mutex::new(None),
@@ -52,6 +55,7 @@ impl EventRuleEngine {
         actions: Arc<ActionRegistry>,
     ) -> Self {
         Self {
+            background: OwnedBackground::default(),
             rules: Arc::new(RwLock::new(HashMap::new())),
             event_bus: Mutex::new(None),
             db: Mutex::new(None),
@@ -72,6 +76,7 @@ impl EventRuleEngine {
         cancel_token: CancellationToken,
         conditions: Arc<ConditionRegistry>,
         actions: Arc<ActionRegistry>,
+        db: DatabaseConnection,
     ) {
         let mut rx = event_bus.subscribe();
 
@@ -89,6 +94,7 @@ impl EventRuleEngine {
                                 &event_bus,
                                 &conditions,
                                 &actions,
+                                &db,
                                 event,
                             ).await {
                                 tracing::warn!(error = %error, "rule event handling failed");
@@ -112,6 +118,7 @@ impl EventRuleEngine {
         event_bus: &EventBus,
         conditions: &ConditionRegistry,
         actions: &ActionRegistry,
+        db: &DatabaseConnection,
         event: ServerEvent,
     ) -> anyhow::Result<()> {
         let event_json = serde_json::to_value(&event).unwrap_or_default();
@@ -139,7 +146,12 @@ impl EventRuleEngine {
                 .collect::<Vec<_>>()
         };
 
+        let source_epochs =
+            capture_action_sources(db, candidates.iter().map(|(_, rule)| rule.user_id)).await;
         for (rule_id, rule) in candidates {
+            let Some(source_privacy_epoch) = source_epochs.get(&rule.user_id).copied() else {
+                continue;
+            };
             let matched = conditions
                 .evaluate_all(&rule.conditions, &ctx)
                 .await
@@ -166,6 +178,7 @@ impl EventRuleEngine {
                 user_id: rule.user_id,
                 request_id: Uuid::new_v4(),
                 source_received_at: now,
+                source_privacy_epoch,
                 source: "rule".to_string(),
                 trigger_id: Some(rule_id),
                 trigger_name: Some(rule.name.clone()),
@@ -216,18 +229,20 @@ impl ModuleLifecycle for EventRuleEngine {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        let parent = self
+            .cancel_token
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("rule engine not initialized"))?;
+        let mut background = self.background.begin_start(&parent).await?;
         let event_bus = self
             .event_bus
             .lock()
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("rule engine not initialized"))?;
-        let cancel_token = self
-            .cancel_token
-            .lock()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("rule engine not initialized"))?;
+        let cancel_token = background.token();
         let conditions = self
             .conditions
             .lock()
@@ -241,12 +256,22 @@ impl ModuleLifecycle for EventRuleEngine {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("rule engine missing action registry"))?;
         let rules = self.rules.clone();
+        let db = self
+            .db()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("rule engine database not initialized"))?;
 
-        tokio::spawn(async move {
-            Self::event_loop(rules, event_bus, cancel_token, conditions, actions).await;
-        });
+        background.spawn_loop(
+            "rule events",
+            Self::event_loop(rules, event_bus, cancel_token, conditions, actions, db),
+        );
+        background.commit();
         tracing::info!("EventRuleEngine started");
         Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        self.background.stop().await
     }
 
     async fn health_check(&self) -> ModuleHealth {

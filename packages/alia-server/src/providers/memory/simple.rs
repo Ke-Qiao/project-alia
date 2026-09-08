@@ -19,9 +19,9 @@ use uuid::Uuid;
 use crate::config::{MemorySection, default_memory_active_embedding_profile};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    EmbeddingAdapter, GraphFragment, GraphSnippet, MemoryBackend, MemoryCapabilities,
-    MemoryConsolidationResult, MemoryContextPack, MemoryEdge, MemoryExport, MemoryListOpts,
-    MemoryNode, MemoryPatch, MemoryWriteContext, RetrievalOpts, SuppressedMemory,
+    EmbeddingAdapter, GraphFragment, GraphSnippet, MemoryBackend, MemoryBatch, MemoryBatchResult,
+    MemoryCapabilities, MemoryConsolidationResult, MemoryContextPack, MemoryEdge, MemoryExport,
+    MemoryListOpts, MemoryNode, MemoryPatch, MemoryWriteContext, RetrievalOpts, SuppressedMemory,
     memory_context_pack_from_nodes,
 };
 
@@ -161,6 +161,14 @@ impl AliaMemory {
     }
 
     async fn validate_memory_context(&self, context: &MemoryWriteContext) -> anyhow::Result<()> {
+        self.validate_memory_sources(context, true).await
+    }
+
+    async fn validate_memory_sources(
+        &self,
+        context: &MemoryWriteContext,
+        require_live: bool,
+    ) -> anyhow::Result<()> {
         let states = self.privacy_states.read().await;
         let current = states
             .get(&context.user_id)
@@ -170,11 +178,7 @@ impl AliaMemory {
             "memory privacy epoch changed"
         );
         anyhow::ensure!(
-            context.source_received_at > current.source_cutoff_at,
-            "memory source predates privacy boundary"
-        );
-        anyhow::ensure!(
-            context.source_event_ids.is_empty(),
+            context.source_event_ids.is_empty() && context.exact_source_received_at.is_none(),
             "in-memory memory cannot verify persisted conversation sources"
         );
         let memories = self.memories.read().await;
@@ -184,7 +188,8 @@ impl AliaMemory {
                     .get(&context.user_id)
                     .is_some_and(|items| items.iter().any(|m| m.id.as_deref() == Some(id)
                         && m.revision == *revision
-                        && memory_live(m))),
+                        && m.status != "deleted"
+                        && (!require_live || memory_live(m)))),
                 "memory source changed, expired, deleted, or belongs to another user"
             );
         }
@@ -328,6 +333,86 @@ impl AliaMemory {
                     .push((source.to_string(), original.revision));
             }
         }
+        self.commit_memory_batch(context, patches, created, dependencies)
+            .await?;
+        Ok(())
+    }
+
+    async fn commit_memory_batch(
+        &self,
+        context: &MemoryWriteContext,
+        patches: BTreeMap<String, MemoryPatch>,
+        mut created: Vec<(MemoryNode, Vec<(String, i64)>)>,
+        mut dependencies: HashMap<String, Vec<(String, i64)>>,
+    ) -> anyhow::Result<MemoryBatchResult> {
+        let mut changed_ids = patches.keys().cloned().collect::<HashSet<_>>();
+        let mut created_ids = Vec::new();
+        for (node, sources) in &mut created {
+            let id = node
+                .id
+                .clone()
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+            anyhow::ensure!(
+                Uuid::parse_str(&id)?.to_string() == id,
+                "memory id must be canonical UUID"
+            );
+            anyhow::ensure!(
+                changed_ids.insert(id.clone()),
+                "duplicate memory batch target"
+            );
+            anyhow::ensure!(
+                node.status == "active" && node.superseded_by.is_none(),
+                "new batch memories must be active without a superseder"
+            );
+            anyhow::ensure!(
+                sources
+                    .iter()
+                    .all(|source| context.source_memories.contains(source)),
+                "batch provenance must come from the original snapshot"
+            );
+            node.id = Some(id.clone());
+            created_ids.push(id);
+        }
+        for (id, patch) in &patches {
+            let revision = patch
+                .expected_revision
+                .ok_or_else(|| anyhow::anyhow!("batch update requires expected revision"))?;
+            anyhow::ensure!(
+                context.source_memories.contains(&(id.clone(), revision)),
+                "batch target not in original snapshot"
+            );
+            anyhow::ensure!(
+                patch
+                    .status
+                    .as_deref()
+                    .is_none_or(|status| matches!(status, "active" | "superseded" | "rejected")),
+                "batch cannot forget or mark natural expiry"
+            );
+            if let Some(target) = &patch.superseded_by {
+                anyhow::ensure!(
+                    target != id
+                        && (created_ids.contains(target)
+                            || context
+                                .source_memories
+                                .iter()
+                                .any(|(source, _)| source == target)),
+                    "superseder must be another original or newly created memory"
+                );
+            }
+        }
+        for (id, sources) in &dependencies {
+            anyhow::ensure!(
+                patches.contains_key(id)
+                    && sources
+                        .iter()
+                        .all(|source| source.0 != *id && context.source_memories.contains(source)),
+                "batch update provenance is outside its original snapshot"
+            );
+        }
+        let result = MemoryBatchResult {
+            updated: patches.len(),
+            created_ids,
+        };
         if let Some(db) = self.db().await {
             let tx = db.begin().await?;
             // One immutable input snapshot and one commit: our own first update
@@ -341,8 +426,15 @@ impl AliaMemory {
             }
             for (id, patch) in patches {
                 projected.push(
-                    self.update_in_db(&tx, context.user_id, &id, patch, false)
-                        .await?,
+                    self.update_in_db(
+                        &tx,
+                        context.user_id,
+                        &id,
+                        patch,
+                        false,
+                        &context.source_event_ids,
+                    )
+                    .await?,
                 );
             }
             for (id, sources) in dependencies {
@@ -356,7 +448,7 @@ impl AliaMemory {
             for node in projected {
                 self.write_embedding_if_available(&db, context, &node).await;
             }
-            return Ok(());
+            return Ok(result);
         }
         let _guard = self.memory_write.lock().await;
         self.validate_memory_context(context).await?;
@@ -386,6 +478,11 @@ impl AliaMemory {
                 .find(|node| node.id.as_ref() == Some(&id))
                 .ok_or_else(|| anyhow::anyhow!("planned memory missing"))?;
             apply_planned_patch(node, patch)?;
+            for source in &context.source_event_ids {
+                if !node.source_event_ids.contains(source) {
+                    node.source_event_ids.push(*source);
+                }
+            }
         }
         // Every fallible check finishes before either canonical map is replaced.
         let mut sources = self.memory_sources.write().await;
@@ -396,7 +493,7 @@ impl AliaMemory {
                 .extend(links);
         }
         memories.insert(context.user_id, working);
-        Ok(())
+        Ok(result)
     }
 
     async fn embedding(&self) -> Option<Arc<dyn EmbeddingAdapter>> {
@@ -513,6 +610,7 @@ impl AliaMemory {
         node_id: &str,
         patch: MemoryPatch,
         require_live_superseder: bool,
+        source_event_ids: &[Uuid],
     ) -> anyhow::Result<MemoryNode> {
         let expected = patch
             .expected_revision
@@ -526,8 +624,8 @@ impl AliaMemory {
             );
         }
         let result = db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-                "UPDATE memory_items SET content=COALESCE($4,content),summary=CASE WHEN $4::text IS NULL THEN summary ELSE NULL END,metadata=COALESCE($5::jsonb,metadata),importance=COALESCE($6,importance),confidence=COALESCE($7,confidence),salience=COALESCE($8,salience),visibility=COALESCE($9,visibility),status=COALESCE($10,status),superseded_by=COALESCE($11::uuid,superseded_by),revision=revision+1,updated_at=clock_timestamp() WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$12 AND status<>'deleted'",
-                vec![node_id.to_string().into(),user_id.into(),DEFAULT_TENANT_ID.into(),patch.content.into(),patch.metadata.into(),patch.importance.into(),patch.confidence.into(),patch.salience.into(),patch.visibility.into(),patch.status.into(),patch.superseded_by.into(),expected.into()])).await?;
+                "UPDATE memory_items SET content=COALESCE($4,content),summary=CASE WHEN $4::text IS NULL THEN summary ELSE NULL END,metadata=COALESCE($5::jsonb,metadata),importance=COALESCE($6,importance),confidence=COALESCE($7,confidence),salience=COALESCE($8,salience),visibility=COALESCE($9,visibility),status=COALESCE($10,status),superseded_by=COALESCE($11::uuid,superseded_by),source_event_ids=ARRAY(SELECT DISTINCT v FROM unnest(source_event_ids || ARRAY(SELECT jsonb_array_elements_text($13::jsonb)::uuid)) AS ids(v)),revision=revision+1,updated_at=clock_timestamp() WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$12 AND status<>'deleted'",
+                vec![node_id.to_string().into(),user_id.into(),DEFAULT_TENANT_ID.into(),patch.content.into(),patch.metadata.into(),patch.importance.into(),patch.confidence.into(),patch.salience.into(),patch.visibility.into(),patch.status.into(),patch.superseded_by.into(),expected.into(),serde_json::json!(source_event_ids).into()])).await?;
         anyhow::ensure!(
             result.rows_affected() == 1,
             "memory was changed, deleted, or belongs to another user"
@@ -1454,6 +1552,16 @@ impl ModuleLifecycle for AliaMemory {
 
 #[async_trait]
 impl MemoryBackend for AliaMemory {
+    async fn validate_write_context(&self, context: &MemoryWriteContext) -> anyhow::Result<()> {
+        if let Some(db) = self.db().await {
+            let tx = db.begin().await?;
+            privacy::validate(&tx, context).await?;
+            tx.commit().await?;
+            return Ok(());
+        }
+        let _write = self.memory_write.lock().await;
+        self.validate_memory_context(context).await
+    }
     async fn write_snapshot(&self, user_id: Uuid) -> anyhow::Result<MemoryWriteContext> {
         if let Some(db) = self.db().await {
             let tx = db.begin().await?;
@@ -1468,6 +1576,75 @@ impl MemoryBackend for AliaMemory {
             .clone();
         context.source_received_at = chrono::Utc::now();
         Ok(context)
+    }
+
+    async fn apply_batch_guarded(
+        &self,
+        context: &MemoryWriteContext,
+        batch: MemoryBatch,
+    ) -> anyhow::Result<MemoryBatchResult> {
+        let mut patches = BTreeMap::new();
+        let mut dependencies = HashMap::new();
+        for (id, patch) in batch.updates {
+            anyhow::ensure!(
+                patches.insert(id.clone(), patch).is_none(),
+                "duplicate memory batch update"
+            );
+            dependencies.insert(
+                id.clone(),
+                context
+                    .source_memories
+                    .iter()
+                    .filter(|(source, _)| source != &id)
+                    .cloned()
+                    .collect(),
+            );
+        }
+        let created = batch
+            .creates
+            .into_iter()
+            .map(|mut node| {
+                if !node.metadata.is_object() {
+                    node.metadata = serde_json::json!({});
+                }
+                node.source_event_ids = context.source_event_ids.clone();
+                node.metadata["source_received_at"] = serde_json::json!(context.source_received_at);
+                node.metadata["source_memory_versions"] =
+                    serde_json::json!(context.source_memories);
+                (node, context.source_memories.clone())
+            })
+            .collect();
+        self.commit_memory_batch(context, patches, created, dependencies)
+            .await
+    }
+
+    async fn forget_many_guarded(
+        &self,
+        context: &MemoryWriteContext,
+        targets: &[(String, i64)],
+    ) -> anyhow::Result<u64> {
+        if targets.is_empty() {
+            return Ok(0);
+        }
+        let mut selected = HashSet::new();
+        for (id, revision) in targets {
+            anyhow::ensure!(selected.insert(id.clone()), "duplicate forget target");
+            anyhow::ensure!(
+                *revision > 0 && context.source_memories.contains(&(id.clone(), *revision)),
+                "forget target must belong to the original selection and revision"
+            );
+        }
+        let ids = targets.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        if let Some(db) = self.db().await {
+            let tx = db.begin().await?;
+            privacy::validate_forget(&tx, context).await?;
+            let count = privacy::erase(&tx, context.user_id, &ids).await?;
+            tx.commit().await?;
+            return Ok(count);
+        }
+        let _guard = self.memory_write.lock().await;
+        self.validate_memory_sources(context, false).await?;
+        self.erase_in_memory(context.user_id, &ids).await
     }
 
     async fn store(&self, user_id: Uuid, node: MemoryNode) -> anyhow::Result<String> {
@@ -1648,7 +1825,14 @@ impl MemoryBackend for AliaMemory {
             let tx = db.begin().await?;
             privacy::validate(&tx, context).await?;
             let stored = self
-                .update_in_db(&tx, context.user_id, node_id, patch, true)
+                .update_in_db(
+                    &tx,
+                    context.user_id,
+                    node_id,
+                    patch,
+                    true,
+                    &context.source_event_ids,
+                )
                 .await?;
             for (source, revision) in &context.source_memories {
                 if source == node_id {
@@ -2046,7 +2230,7 @@ impl MemoryBackend for AliaMemory {
                     &mut patches,
                     &id,
                     MemoryPatch {
-                        status: Some("expired".to_string()),
+                        status: Some("rejected".to_string()),
                         metadata: Some(consolidation_metadata(
                             memory,
                             memory,

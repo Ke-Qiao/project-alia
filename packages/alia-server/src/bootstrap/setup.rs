@@ -48,7 +48,9 @@ pub async fn run_setup(shutdown: CancellationToken) -> anyhow::Result<Option<Pat
         .with_state(OobeState { done_tx });
     let app = super::attach_frontend(app);
     let discovery =
-        match ServerDiscoveryAdvertisement::start(ServerDiscoveryAnnouncement::oobe(OOBE_PORT)) {
+        match ServerDiscoveryAdvertisement::start(ServerDiscoveryAnnouncement::oobe(OOBE_PORT))
+            .await
+        {
             Ok(discovery) => discovery,
             Err(error) => {
                 tracing::warn!(error = %error, "setup discovery unavailable");
@@ -74,14 +76,17 @@ pub async fn run_setup(shutdown: CancellationToken) -> anyhow::Result<Option<Pat
         }
     };
     cancel.cancel();
-    if let Some(discovery) = discovery {
-        discovery.shutdown();
-    }
+    let discovery_result = if let Some(discovery) = discovery {
+        discovery.shutdown().await
+    } else {
+        Ok(())
+    };
     // HTTP completion and caller cancellation must release stdin before return.
     if !input_completed && let Some(input) = input {
         input.await.context("joining setup input worker")??;
     }
     served?;
+    discovery_result?;
     if shutdown.is_cancelled() {
         return Ok(None);
     }

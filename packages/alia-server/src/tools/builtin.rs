@@ -16,6 +16,7 @@ use std::sync::{Arc, RwLock};
 #[cfg(feature = "tools-http")]
 use std::{net::IpAddr, time::Duration};
 
+use anyhow::Context;
 use async_trait::async_trait;
 use chrono::Utc;
 use chrono_tz::Tz;
@@ -477,14 +478,14 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         self.artifacts = Some(ctx.artifacts.clone());
         self.memory = ctx.memory.clone();
         self.scheduler = ctx.scheduler.clone();
-        if let Err(e) = self.remove_obsolete_builtin_tools().await {
-            tracing::warn!(error = %e, "failed to remove obsolete built-in noop tools");
-        }
+        self.remove_obsolete_builtin_tools()
+            .await
+            .context("removing obsolete built-in tools")?;
         self.register_builtins();
 
-        if let Err(e) = self.upsert_executor_tools_to_db().await {
-            tracing::warn!(error = %e, "failed to persist executor tool definitions");
-        }
+        self.upsert_executor_tools_to_db()
+            .await
+            .context("persisting built-in tool catalog")?;
 
         tracing::info!(
             executor_count = self.executors.read().unwrap().len(),
@@ -1382,66 +1383,79 @@ impl ToolExecutor for MemoryForget {
             });
         };
 
-        if let Some(id) = arguments
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|id| !id.is_empty())
-        {
-            if memory.get(ctx.user_id, id).await?.is_none() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Selection {
+            id: Option<String>,
+            query: Option<String>,
+            max_results: Option<u32>,
+        }
+        let selection: Selection = serde_json::from_value(arguments)?;
+        anyhow::ensure!(
+            selection.id.is_some() ^ selection.query.is_some(),
+            "provide exactly one memory id or query"
+        );
+        let max_results = selection.max_results.unwrap_or(1);
+        anyhow::ensure!(
+            (1..=10).contains(&max_results),
+            "max_results must be between 1 and 10"
+        );
+        anyhow::ensure!(
+            ctx.source != "ai" || ctx.source_event_id.is_some(),
+            "AI memory forget requires a persisted source user message"
+        );
+        // Capture before reading or embedding the selection. A later clear or
+        // revision change must invalidate this request, not refresh its authority.
+        let mut context = tool_memory_context(memory.as_ref(), ctx).await?;
+        let matches = if let Some(id) = selection.id.as_deref() {
+            anyhow::ensure!(!id.trim().is_empty(), "memory id must not be empty");
+            let Some(node) = memory.get(ctx.user_id, id.trim()).await? else {
                 return Ok(ToolResult {
                     call_id: String::new(),
                     success: false,
                     output: serde_json::json!({"error": "memory_not_found", "id": id}),
-                    display: Some("Memory not found".to_string()),
+                    display: Some("Memory not found".into()),
                 });
+            };
+            vec![node]
+        } else {
+            let query = selection.query.as_deref().unwrap().trim();
+            anyhow::ensure!(!query.is_empty(), "memory query must not be empty");
+            let opts = RetrievalOpts {
+                max_results: Some(max_results),
+                min_similarity: None,
+                layers: None,
+            };
+            let mut matches = memory.retrieve(ctx.user_id, query, opts.clone()).await?;
+            if matches.is_empty() {
+                matches =
+                    retrieve_memory_by_terms(memory.as_ref(), ctx.user_id, query, &opts).await?;
             }
-            memory.delete(ctx.user_id, id).await?;
-            return Ok(ToolResult {
-                call_id: String::new(),
-                success: true,
-                output: serde_json::json!({"deleted": 1, "ids": [id]}),
-                display: Some("Memory forgotten".to_string()),
-            });
-        }
-
-        let query = required_str(&arguments, "query")?;
-        let max_results = arguments
-            .get("max_results")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(1)
-            .clamp(1, 10) as u32;
-        let opts = RetrievalOpts {
-            max_results: Some(max_results),
-            min_similarity: None,
-            layers: None,
+            matches
         };
-        let mut matches = memory.retrieve(ctx.user_id, query, opts.clone()).await?;
-        if matches.is_empty() {
-            matches = retrieve_memory_by_terms(memory.as_ref(), ctx.user_id, query, &opts).await?;
-        }
-        let mut deleted = Vec::new();
-        for node in matches.into_iter().take(max_results as usize) {
-            if let Some(id) = node.id {
-                memory.delete(ctx.user_id, &id).await?;
-                deleted.push(id);
-            }
-        }
-        let deleted_count = deleted.len();
-
+        let targets: Vec<_> = matches
+            .into_iter()
+            .take(max_results as usize)
+            .filter_map(|node| node.id.map(|id| (id, node.revision)))
+            .collect();
+        context.source_memories = targets.clone();
+        let deleted_count = memory.forget_many_guarded(&context, &targets).await?;
+        let ids: Vec<_> = targets.iter().map(|(id, _)| id.as_str()).collect();
         Ok(ToolResult {
             call_id: String::new(),
             success: true,
             output: serde_json::json!({
-                "deleted": deleted_count,
-                "ids": deleted,
-                "query": query,
+                "deleted": deleted_count, "selected": ids.len(), "ids": ids,
+                "query": selection.query,
             }),
-            display: Some(if deleted_count == 0 {
-                "No matching memories found".to_string()
-            } else {
-                "Memory forgotten".to_string()
-            }),
+            display: Some(
+                if deleted_count == 0 {
+                    "No matching memories found"
+                } else {
+                    "Memory forgotten"
+                }
+                .into(),
+            ),
         })
     }
 }
@@ -1455,13 +1469,7 @@ async fn upsert_tool_memory(
         ctx.source != "ai" || ctx.source_event_id.is_some(),
         "AI memory writes require a persisted source user message"
     );
-    let mut context = memory.write_snapshot(ctx.user_id).await?;
-    context.source_received_at = ctx.source_received_at;
-    context.source_event_ids = ctx.source_event_id.into_iter().collect();
-    anyhow::ensure!(
-        context.source_received_at > context.source_cutoff_at,
-        "memory source predates the user's deletion cutoff"
-    );
+    let context = tool_memory_context(memory, ctx).await?;
     let merge_key = memory_merge_key(
         &incoming.memory_layer,
         &incoming.node_type,
@@ -1494,6 +1502,27 @@ async fn upsert_tool_memory(
     }
     memory.store_guarded(&context, incoming.clone()).await?;
     Ok("stored")
+}
+
+async fn tool_memory_context(
+    memory: &dyn MemoryBackend,
+    ctx: &ToolContext,
+) -> anyhow::Result<crate::providers::adapter::MemoryWriteContext> {
+    let source_epoch = ctx
+        .source_privacy_epoch
+        .context("memory tool requires a trusted source privacy epoch")?;
+    let mut context = memory.write_snapshot(ctx.user_id).await?;
+    anyhow::ensure!(
+        source_epoch >= 0 && context.privacy_epoch == source_epoch,
+        "memory source privacy epoch changed"
+    );
+    context.source_received_at = ctx.source_received_at;
+    context.source_event_ids = ctx.source_event_id.into_iter().collect();
+    context.exact_source_received_at = ctx.source_event_id.map(|id| (id, ctx.source_received_at));
+    // Even a duplicate/no-op result must validate its actual source. This read
+    // check does not replace guarded commit's atomic validation after selection.
+    memory.validate_write_context(&context).await?;
+    Ok(context)
 }
 
 /// Schedule a task

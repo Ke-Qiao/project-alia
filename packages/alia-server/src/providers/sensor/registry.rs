@@ -13,6 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::module::background::OwnedBackground;
 use crate::registry::{ArtifactRef, ArtifactRegistry};
 
 /// Metadata describing a registered sensor.
@@ -195,6 +196,7 @@ impl Default for SensorRegistryConfig {
 
 /// Sensor registry shared by APIs, tools, rules, and scheduler conditions.
 pub struct SensorRegistry {
+    background: OwnedBackground,
     config: SensorRegistryConfig,
     db: Arc<RwLock<Option<DatabaseConnection>>>,
     artifacts: Arc<RwLock<Option<Arc<ArtifactRegistry>>>>,
@@ -208,6 +210,7 @@ pub struct SensorRegistry {
 impl SensorRegistry {
     pub fn new(config: SensorRegistryConfig) -> Self {
         Self {
+            background: OwnedBackground::default(),
             config,
             db: Arc::new(RwLock::new(None)),
             artifacts: Arc::new(RwLock::new(None)),
@@ -699,14 +702,16 @@ impl SensorRegistry {
     }
 
     /// Spawn the auto-cleanup background task.
-    pub fn spawn_cleanup_loop(&self, cancel_token: CancellationToken) {
+    pub async fn spawn_cleanup_loop(&self, cancel_token: CancellationToken) -> anyhow::Result<()> {
+        let mut background = self.background.begin_start(&cancel_token).await?;
+        let cancel_token = background.token();
         let readings = self.readings.clone();
         let db = self.db.clone();
         let retention = self.config.retention_duration;
         let interval_sec = self.config.cleanup_interval_sec;
         let max_per_sensor = self.config.max_readings_per_sensor;
 
-        tokio::spawn(async move {
+        background.spawn_loop("sensor retention cleanup", async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_sec));
 
             loop {
@@ -735,6 +740,12 @@ impl SensorRegistry {
                 }
             }
         });
+        background.commit();
+        Ok(())
+    }
+
+    pub async fn stop_cleanup_loop(&self) -> anyhow::Result<()> {
+        self.background.stop().await
     }
 
     async fn touch_sensor(&self, sensor_id: &str, seen_at: DateTime<Utc>) -> anyhow::Result<()> {

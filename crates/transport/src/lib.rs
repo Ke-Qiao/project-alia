@@ -1,3 +1,5 @@
+pub mod connections;
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;
@@ -44,35 +46,104 @@ pub async fn discover_service(
     service_name: &str,
     timeout: Duration,
 ) -> Result<Option<DiscoveredService>> {
-    let service_name = normalize_service_name(service_name);
-    let mdns = ServiceDaemon::new().context("creating mDNS discovery daemon")?;
-    let receiver = mdns
-        .browse(&service_name)
-        .with_context(|| format!("browsing for {service_name}"))?;
+    discover_service_cancellable(
+        service_name,
+        timeout,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+}
 
-    let result = tokio::time::timeout(timeout, async move {
-        loop {
-            match receiver.recv_async().await {
-                Ok(ServiceEvent::ServiceResolved(info)) => {
-                    if let Some(service) = resolved_service(&info) {
-                        return Ok(Some(service));
+/// The worker owns the native daemon through its shutdown acknowledgement.
+/// Dropping this waiter requests cancellation without aborting that owner.
+/// Callers that own a runtime loop should cancel the token and keep awaiting to
+/// observe cleanup; the hosting Tokio runtime must remain alive during cleanup.
+pub async fn discover_service_cancellable(
+    service_name: &str,
+    timeout: Duration,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> Result<Option<DiscoveredService>> {
+    let service_name = normalize_service_name(service_name);
+    let cancel = cancellation.child_token();
+    let worker_cancel = cancel.clone();
+    let task = tokio::spawn(async move {
+        if worker_cancel.is_cancelled() {
+            return Ok(None);
+        }
+        let result = discover_owned(service_name, timeout, worker_cancel).await;
+        if let Err(error) = &result {
+            // The waiter may have been dropped; retain visible failure evidence.
+            tracing::warn!(error = %error, "mDNS discovery owner failed");
+        }
+        result
+    });
+    await_discovery(task, cancel).await
+}
+
+async fn await_discovery(
+    task: tokio::task::JoinHandle<Result<Option<DiscoveredService>>>,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<Option<DiscoveredService>> {
+    let _cancel_on_drop = cancel.drop_guard();
+    task.await.context("joining mDNS discovery owner")?
+}
+
+async fn discover_owned(
+    service_name: String,
+    timeout: Duration,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<Option<DiscoveredService>> {
+    let mdns = ServiceDaemon::new().context("creating mDNS discovery daemon")?;
+    let result = async {
+        let receiver = mdns.browse(&service_name)
+            .with_context(|| format!("browsing for {service_name}"))?;
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Ok(None),
+            _ = tokio::time::sleep(timeout) => Ok(None),
+            result = async {
+                loop {
+                    match receiver.recv_async().await {
+                        Ok(ServiceEvent::ServiceResolved(info)) => {
+                            if let Some(service) = resolved_service(&info) { return Ok(Some(service)); }
+                        }
+                        Ok(_) => {},
+                        Err(error) => return Err(anyhow::anyhow!("mDNS receiver closed: {error}")),
                     }
                 }
-                Ok(_) => {}
-                Err(error) => {
-                    return Err(anyhow::anyhow!("mDNS receiver closed: {error}"));
-                }
-            }
+            } => result,
         }
-    })
-    .await;
-
-    let _ = mdns.shutdown();
-
-    match result {
-        Ok(found) => found,
-        Err(_) => Ok(None),
+    }.await;
+    let closed = shutdown_discovery_daemon(&mdns).await;
+    match (result, closed) {
+        (Ok(result), Ok(())) => Ok(result),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(cleanup)) => {
+            Err(error.context(format!("mDNS shutdown also failed: {cleanup:#}")))
+        }
     }
+}
+
+/// Wait for the native library's shutdown evidence. This is not an OS-thread
+/// JoinHandle: the library exposes a daemon acknowledgement, not thread join.
+pub async fn shutdown_discovery_daemon(mdns: &ServiceDaemon) -> Result<()> {
+    let receiver = loop {
+        match mdns.shutdown() {
+            Ok(receiver) => break receiver,
+            Err(mdns_sd::Error::Again) => tokio::time::sleep(Duration::from_millis(10)).await,
+            Err(error) => return Err(error).context("requesting mDNS daemon shutdown"),
+        }
+    };
+    let status = receiver
+        .recv_async()
+        .await
+        .context("waiting for mDNS daemon shutdown")?;
+    anyhow::ensure!(
+        status == mdns_sd::DaemonStatus::Shutdown,
+        "unexpected mDNS shutdown status: {status:?}"
+    );
+    Ok(())
 }
 
 pub fn current_unix_timestamp() -> Result<u64> {
@@ -299,4 +370,40 @@ fn resolved_service(info: &ResolvedService) -> Option<DiscoveredService> {
         port: info.get_port(),
         properties,
     })
+}
+
+#[cfg(test)]
+mod discovery_lifecycle_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn dropping_discovery_waiter_preserves_owner_through_native_shutdown_ack() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let owner_cancel = cancel.clone();
+        let (completed, completion) = tokio::sync::oneshot::channel();
+        let owner = tokio::spawn(async move {
+            let result = discover_owned(
+                "_alia-test-drop._tcp.local.".into(),
+                Duration::from_secs(60),
+                owner_cancel,
+            )
+            .await;
+            // discover_owned returns only after the actual daemon shutdown ACK.
+            let _ = completed.send(result);
+            Ok(None)
+        });
+        let waiter = tokio::spawn(await_discovery(owner, cancel.clone()));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        waiter.abort();
+        assert!(waiter.await.unwrap_err().is_cancelled());
+        assert!(cancel.is_cancelled());
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), completion)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+    }
 }

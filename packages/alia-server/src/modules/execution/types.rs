@@ -25,6 +25,8 @@ pub struct NewEffect {
     pub model_call_id: String,
     pub source_received_at: DateTime<Utc>,
     pub source_event_id: Option<Uuid>,
+    /// Source admission epoch; never refreshed when queued work executes.
+    pub source_privacy_epoch: Option<i64>,
     pub source: String,
     pub conversation_id: Option<Uuid>,
     pub channel_id: Option<String>,
@@ -96,6 +98,8 @@ pub struct EffectRecord {
     /// First trusted source observation; retransmission never replaces it.
     pub source_received_at: DateTime<Utc>,
     pub source_event_id: Option<Uuid>,
+    /// Source admission epoch; never refreshed when queued work executes.
+    pub source_privacy_epoch: Option<i64>,
     pub source: String,
     pub conversation_id: Option<Uuid>,
     pub channel_id: Option<String>,

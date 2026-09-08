@@ -73,6 +73,7 @@ pub(super) async fn run_llm_tool_loop(
         .map(|tool| (tool.name.clone(), tool.clone()))
         .collect::<HashMap<_, _>>();
     let ctx = ToolContext {
+        source_privacy_epoch: turn.and_then(|turn| turn.source_privacy_epoch),
         user_id,
         source_received_at: turn
             .map(|turn| turn.received_at)

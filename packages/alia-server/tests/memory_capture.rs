@@ -77,6 +77,7 @@ impl LlmAdapter for StaticLlm {
 fn pending_turn(user_id: Uuid) -> PendingTextPersistence {
     PendingTextPersistence {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: 0,
         source_event_id: None,
         session_id: Uuid::new_v4(),
         user_id,
@@ -127,7 +128,7 @@ async fn pending_turn_received_before_clear_cannot_be_extracted_later() {
     assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
     assert_eq!(
         trace.reason.as_deref(),
-        Some("source_predates_privacy_boundary")
+        Some("source_privacy_epoch_revoked")
     );
     assert!(
         memory

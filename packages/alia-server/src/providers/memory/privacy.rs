@@ -22,6 +22,7 @@ pub(super) async fn lock_user(
         source_cutoff_at: row.try_get("", "source_cutoff_at")?,
         source_received_at: row.try_get("", "observed_at")?,
         source_event_ids: Vec::new(),
+        exact_source_received_at: None,
         source_memories: Vec::new(),
     })
 }
@@ -30,28 +31,51 @@ pub(super) async fn validate(
     tx: &DatabaseTransaction,
     expected: &MemoryWriteContext,
 ) -> anyhow::Result<()> {
+    validate_sources(tx, expected, true).await
+}
+
+pub(super) async fn validate_forget(
+    tx: &DatabaseTransaction,
+    expected: &MemoryWriteContext,
+) -> anyhow::Result<()> {
+    validate_sources(tx, expected, false).await
+}
+
+async fn validate_sources(
+    tx: &DatabaseTransaction,
+    expected: &MemoryWriteContext,
+    require_live: bool,
+) -> anyhow::Result<()> {
     let current = lock_user(tx, expected.user_id).await?;
     anyhow::ensure!(
         current.privacy_epoch == expected.privacy_epoch,
         "memory privacy epoch changed"
     );
-    anyhow::ensure!(
-        expected.source_received_at > current.source_cutoff_at,
-        "memory source predates privacy boundary"
-    );
-    for id in &expected.source_event_ids {
-        let valid = tx.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "SELECT m.id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND s.creator_id=$2 AND m.role='user' AND m.user_id=$2 AND m.source_received_at>$3 AND m.source_received_at<=$4",
-            vec![(*id).into(),expected.user_id.to_string().into(),current.source_cutoff_at.into(),expected.source_received_at.into()])).await?.is_some();
+    if let Some((id, _)) = expected.exact_source_received_at {
         anyhow::ensure!(
-            valid,
-            "conversation source was erased, predates privacy boundary, or belongs to another user"
+            expected.source_event_ids.contains(&id),
+            "exact source must be part of the verified source set"
         );
+    }
+    for id in &expected.source_event_ids {
+        let source = tx.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT m.source_received_at FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND s.creator_id=$2 AND m.role='user' AND m.user_id=$2 AND m.source_received_at IS NOT NULL AND m.source_privacy_epoch=$3",
+            vec![(*id).into(),expected.user_id.to_string().into(),current.privacy_epoch.into()])).await?
+            .ok_or_else(|| anyhow::anyhow!("conversation source was erased, belongs to another privacy epoch, is unsourced, or belongs to another user"))?;
+        if let Some((exact_id, received_at)) = expected.exact_source_received_at
+            && exact_id == *id
+        {
+            let stored: DateTime<Utc> = source.try_get("", "source_received_at")?;
+            anyhow::ensure!(
+                stored.timestamp_micros() == received_at.timestamp_micros(),
+                "conversation source timestamp does not match the original message"
+            );
+        }
     }
     for (id, revision) in &expected.source_memories {
         let valid = tx.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "SELECT id FROM memory_items WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$4 AND status='active' AND (expires_at IS NULL OR expires_at>clock_timestamp())",
-            vec![id.clone().into(), expected.user_id.into(), Uuid::nil().into(), (*revision).into()])).await?.is_some();
+            "SELECT id FROM memory_items WHERE id=$1::uuid AND user_id=$2 AND tenant_id=$3 AND revision=$4 AND status<>'deleted' AND (NOT $5 OR (status='active' AND (expires_at IS NULL OR expires_at>clock_timestamp())))",
+            vec![id.clone().into(), expected.user_id.into(), Uuid::nil().into(), (*revision).into(), require_live.into()])).await?.is_some();
         anyhow::ensure!(
             valid,
             "memory source was changed, expired, deleted, or belongs to another user"
@@ -112,6 +136,7 @@ pub(super) fn initial_context(user: Uuid) -> MemoryWriteContext {
         source_cutoff_at: DateTime::UNIX_EPOCH,
         source_received_at: Utc::now(),
         source_event_ids: Vec::new(),
+        exact_source_received_at: None,
         source_memories: Vec::new(),
     }
 }

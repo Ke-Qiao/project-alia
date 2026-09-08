@@ -52,18 +52,7 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
     if profile.kind != LlmProfileKind::Chat {
         anyhow::bail!("LLM profile '{profile_id}' is not a chat profile");
     }
-    let provider = match config.llm_provider_profile(&profile.provider) {
-        Ok(provider) => provider,
-        Err(error) => {
-            tracing::warn!(
-                profile = profile_id,
-                provider = %profile.provider,
-                error = %error,
-                "unknown LLM provider profile, using noop"
-            );
-            return Ok(Box::new(NoopLlm));
-        }
-    };
+    let provider = config.llm_provider_profile(&profile.provider)?;
     match provider.kind() {
         LlmProviderKind::OpenAi => {
             #[cfg(feature = "llm-openai")]
@@ -77,12 +66,7 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
             }
             #[cfg(not(feature = "llm-openai"))]
             {
-                tracing::warn!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "OpenAI LLM feature disabled, using noop"
-                );
-                Ok(Box::new(NoopLlm))
+                anyhow::bail!("profile '{profile_id}' requires feature 'llm-openai'")
             }
         }
         LlmProviderKind::Anthropic => {
@@ -97,12 +81,7 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
             }
             #[cfg(not(feature = "llm-anthropic"))]
             {
-                tracing::warn!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "Anthropic LLM feature disabled, using noop"
-                );
-                Ok(Box::new(NoopLlm))
+                anyhow::bail!("profile '{profile_id}' requires feature 'llm-anthropic'")
             }
         }
         LlmProviderKind::Gemini => {
@@ -117,12 +96,7 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
             }
             #[cfg(not(feature = "llm-gemini"))]
             {
-                tracing::warn!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "Gemini LLM feature disabled, using noop"
-                );
-                Ok(Box::new(NoopLlm))
+                anyhow::bail!("profile '{profile_id}' requires feature 'llm-gemini'")
             }
         }
         LlmProviderKind::Noop => {
@@ -132,39 +106,25 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
     }
 }
 
-pub fn create_stt(name: &str) -> Box<dyn SttAdapter> {
+pub fn create_stt(name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {
     match name {
         #[cfg(feature = "stt-whisper")]
-        "whisper" | "whisper_cpp" => {
-            tracing::info!(module = name, "creating STT adapter (Whisper)");
-            Box::new(WhisperCppStt::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating STT adapter (noop)");
-            Box::new(NoopStt)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown STT adapter, using noop");
-            Box::new(NoopStt)
-        }
+        "whisper" | "whisper_cpp" => Ok(Box::new(WhisperCppStt::new())),
+        #[cfg(not(feature = "stt-whisper"))]
+        "whisper" | "whisper_cpp" => anyhow::bail!("STT '{name}' requires feature 'stt-whisper'"),
+        "noop" => Ok(Box::new(NoopStt)),
+        _ => anyhow::bail!("unknown STT adapter '{name}'"),
     }
 }
 
-pub fn create_tts(name: &str) -> Box<dyn TtsAdapter> {
+pub fn create_tts(name: &str) -> anyhow::Result<Box<dyn TtsAdapter>> {
     match name {
         #[cfg(feature = "tts-sovits")]
-        "gpt_sovits" | "sovits" => {
-            tracing::info!(module = name, "creating TTS adapter (GPT-SoVITS)");
-            Box::new(GptSovitsTts::new())
-        }
-        "noop" => {
-            tracing::info!(module = name, "creating TTS adapter (noop)");
-            Box::new(NoopTts)
-        }
-        _ => {
-            tracing::warn!(module = name, "unknown TTS adapter, using noop");
-            Box::new(NoopTts)
-        }
+        "gpt_sovits" | "sovits" => Ok(Box::new(GptSovitsTts::new())),
+        #[cfg(not(feature = "tts-sovits"))]
+        "gpt_sovits" | "sovits" => anyhow::bail!("TTS '{name}' requires feature 'tts-sovits'"),
+        "noop" => Ok(Box::new(NoopTts)),
+        _ => anyhow::bail!("unknown TTS adapter '{name}'"),
     }
 }
 
@@ -180,18 +140,7 @@ pub fn create_embedding(
     if profile.kind != LlmProfileKind::Embedding {
         anyhow::bail!("LLM profile '{profile_id}' is not an embedding profile");
     }
-    let provider = match config.llm_provider_profile(&profile.provider) {
-        Ok(provider) => provider,
-        Err(error) => {
-            tracing::warn!(
-                profile = profile_id,
-                provider = %profile.provider,
-                error = %error,
-                "unknown embedding provider profile, using noop"
-            );
-            return Ok(Box::new(NoopEmbedding));
-        }
-    };
+    let provider = config.llm_provider_profile(&profile.provider)?;
     match provider.kind() {
         LlmProviderKind::OpenAi => {
             #[cfg(feature = "embed-openai")]
@@ -205,12 +154,7 @@ pub fn create_embedding(
             }
             #[cfg(not(feature = "embed-openai"))]
             {
-                tracing::warn!(
-                    profile = profile_id,
-                    provider = %profile.provider,
-                    "OpenAI embedding feature disabled, using noop"
-                );
-                Ok(Box::new(NoopEmbedding))
+                anyhow::bail!("profile '{profile_id}' requires feature 'embed-openai'")
             }
         }
         LlmProviderKind::Noop => {
@@ -218,12 +162,7 @@ pub fn create_embedding(
             Ok(Box::new(NoopEmbedding))
         }
         LlmProviderKind::Anthropic | LlmProviderKind::Gemini => {
-            tracing::warn!(
-                profile = profile_id,
-                provider = %profile.provider,
-                "unknown embedding adapter, using noop"
-            );
-            Ok(Box::new(NoopEmbedding))
+            anyhow::bail!("profile '{profile_id}' selects an unsupported embedding provider")
         }
     }
 }
@@ -253,22 +192,21 @@ pub fn create_persona() -> Box<dyn PersonaProvider> {
     Box::new(TemplatePersona::new())
 }
 
-pub fn create_insights(enabled: bool) -> Box<dyn InsightStrategy> {
+pub fn create_insights(enabled: bool) -> anyhow::Result<Box<dyn InsightStrategy>> {
     if !enabled {
         tracing::info!("insights disabled by policy");
-        return Box::new(NoopInsights);
+        return Ok(Box::new(NoopInsights));
     }
 
     #[cfg(feature = "insights")]
     {
         tracing::info!("creating core insights strategy (ScheduledInsights)");
-        return Box::new(ScheduledInsights::new());
+        return Ok(Box::new(ScheduledInsights::new()));
     }
 
     #[cfg(not(feature = "insights"))]
     {
-        tracing::warn!("insights feature is disabled; using noop insights strategy");
-        Box::new(NoopInsights)
+        anyhow::bail!("enabled insights require feature 'insights'")
     }
 }
 
@@ -361,10 +299,26 @@ pub fn create_channel(
     }
 }
 
-#[cfg(all(test, not(feature = "channel-embedded")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn adapters_require_explicit_valid_selection() {
+        assert!(create_stt("noop").is_ok());
+        assert!(create_tts("noop").is_ok());
+        assert!(create_insights(false).is_ok());
+        assert!(create_stt("whispr").is_err());
+        assert!(create_tts("sovit").is_err());
+        #[cfg(not(feature = "stt-whisper"))]
+        assert!(create_stt("whisper").is_err());
+        #[cfg(not(feature = "tts-sovits"))]
+        assert!(create_tts("sovits").is_err());
+        #[cfg(not(feature = "insights"))]
+        assert!(create_insights(true).is_err());
+    }
+
+    #[cfg(not(feature = "channel-embedded"))]
     #[test]
     fn embedded_channel_without_feature_returns_error() {
         let config = ChannelConfig::Embedded {

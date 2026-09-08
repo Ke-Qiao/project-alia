@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use alia_transport::{
     DEFAULT_AUTH_MAX_SKEW, EMBEDDED_INGRESS_SCOPE, bind_payload, current_unix_timestamp,
-    discover_service, discover_service_endpoint, embedded_device_auth_subject,
-    handoff_completion_payload, handoff_intent_payload, sign_payload, verify_auth_token,
+    discover_service_cancellable, embedded_device_auth_subject, handoff_completion_payload,
+    handoff_intent_payload, sign_payload, verify_auth_token,
 };
+use anyhow::Context;
 use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
@@ -37,6 +38,7 @@ use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 use crate::auth::load_server_keypair;
 use crate::event::{EventBus, ServerEvent};
 use crate::module::ModuleLifecycle;
+use crate::module::background::{BackgroundStart, OwnedBackground};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::sensor::SensorRegistry;
 
@@ -133,6 +135,7 @@ pub struct EmbeddedChannel {
     sensor_registry: Arc<RwLock<Option<Arc<SensorRegistry>>>>,
     discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
     discovery_cancel: CancellationToken,
+    background: Arc<OwnedBackground>,
     signing_key: Option<SigningKey>,
     server_public_key: Vec<u8>,
     device_id: Arc<RwLock<Option<String>>>,
@@ -169,6 +172,7 @@ impl EmbeddedChannel {
             sensor_registry: Arc::new(RwLock::new(None)),
             discovered_candidate: Arc::new(RwLock::new(None)),
             discovery_cancel: CancellationToken::new(),
+            background: Arc::new(OwnedBackground::default()),
             signing_key: None,
             server_public_key: Vec::new(),
             device_id: Arc::new(RwLock::new(None)),
@@ -184,14 +188,16 @@ impl EmbeddedChannel {
             return Ok(Some(self.config.endpoint.clone()));
         }
 
-        discover_service_endpoint(
+        Ok(discover_service_cancellable(
             &self.config.discovery_service_name,
             Duration::from_secs(self.config.discovery_timeout_sec),
+            &self.discovery_cancel,
         )
-        .await
+        .await?
+        .map(|service| service.endpoint))
     }
 
-    fn spawn_discovery_loop(&self) {
+    fn spawn_discovery_loop(&self, background: &mut BackgroundStart<'_>) {
         let cancel = self.discovery_cancel.child_token();
         let status = self.status.clone();
         let discovered_candidate = self.discovered_candidate.clone();
@@ -200,13 +206,14 @@ impl EmbeddedChannel {
         let service_name = self.config.discovery_service_name.clone();
         let timeout = self.config.discovery_timeout_sec;
 
-        tokio::spawn(async move {
+        background.spawn_owned("embedded discovery", async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(15));
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     _ = ticker.tick() => {
-                        let discovered = discover_service(&service_name, Duration::from_secs(timeout)).await;
+                        let discovered = discover_service_cancellable(&service_name, Duration::from_secs(timeout), &cancel).await;
+                        if cancel.is_cancelled() { break; }
                         let next_candidate = match discovered {
                             Ok(Some(service)) => {
                                 let status_value = service.properties.get("status").cloned().unwrap_or_else(|| "unknown".to_string());
@@ -272,10 +279,11 @@ impl EmbeddedChannel {
                     }
                 }
             }
+            Ok(())
         });
     }
 
-    fn spawn_sensor_sync_loop(&self) {
+    fn spawn_sensor_sync_loop(&self, background: &mut BackgroundStart<'_>) {
         let cancel = self.discovery_cancel.child_token();
         let sensor_client = self.sensor_client.clone();
         let sensor_registry = self.sensor_registry.clone();
@@ -283,7 +291,7 @@ impl EmbeddedChannel {
         let signing_key = self.signing_key.clone();
         let server_id = self.default_server_id.clone();
 
-        tokio::spawn(async move {
+        background.spawn_loop("embedded sensor sync", async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(SENSOR_SYNC_INTERVAL_SEC));
             loop {
                 tokio::select! {
@@ -345,11 +353,11 @@ impl EmbeddedChannel {
         });
     }
 
-    fn spawn_connection_loop(&self) {
+    fn spawn_connection_loop(&self, background: &mut BackgroundStart<'_>) {
         let channel = self.clone();
         let cancel = self.discovery_cancel.child_token();
 
-        tokio::spawn(async move {
+        background.spawn_owned("embedded connection", async move {
             let base_delay = Duration::from_secs(channel.config.reconnect_interval_sec.max(1));
             let max_delay = Duration::from_secs(channel.config.reconnect_max_backoff_sec.max(1));
             let mut delay = Duration::ZERO;
@@ -391,12 +399,27 @@ impl EmbeddedChannel {
                     }
                 }
             }
+            Ok(())
         });
     }
 
     /// Establish gRPC connection to alia-embedded.
     async fn connect(&self) -> anyhow::Result<()> {
-        let Some(endpoint) = self.resolve_endpoint().await? else {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
+        // Keep the discovery await alive until its native daemon acknowledges shutdown.
+        let endpoint = self.resolve_endpoint().await?;
+        tokio::select! {
+            biased;
+            _ = self.discovery_cancel.cancelled() => anyhow::bail!("embedded channel is stopping"),
+            result = self.connect_endpoint(endpoint) => result,
+        }
+    }
+
+    async fn connect_endpoint(&self, endpoint: Option<String>) -> anyhow::Result<()> {
+        let Some(endpoint) = endpoint else {
             *self.status.write().await = ConnectionStatus::Disconnected {
                 since: Utc::now(),
                 reason: format!(
@@ -414,6 +437,8 @@ impl EmbeddedChannel {
 
             match Channel::from_shared(endpoint.clone())
                 .map_err(|e| anyhow::anyhow!("invalid endpoint: {e}"))?
+                .connect_timeout(Duration::from_secs(self.config.grpc_timeout_sec.max(1)))
+                .timeout(Duration::from_secs(self.config.grpc_timeout_sec.max(1)))
                 .connect()
                 .await
             {
@@ -491,6 +516,10 @@ impl EmbeddedChannel {
 
     /// Get a PluginManagerClient, connecting lazily if needed.
     pub async fn plugin_client(&self) -> anyhow::Result<PluginManagerClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.plugin_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -503,6 +532,10 @@ impl EmbeddedChannel {
 
     /// Get a DeviceBindingClient, connecting lazily if needed.
     pub async fn binding_client(&self) -> anyhow::Result<DeviceBindingClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.binding_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -515,6 +548,10 @@ impl EmbeddedChannel {
 
     /// Get an AudioStreamClient, connecting lazily if needed.
     pub async fn audio_client(&self) -> anyhow::Result<AudioStreamClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.audio_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -526,6 +563,10 @@ impl EmbeddedChannel {
     }
 
     async fn playback_client(&self) -> anyhow::Result<PlaybackClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.playback_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -546,6 +587,10 @@ impl EmbeddedChannel {
 
     /// Get an EmbeddedSettingsClient, connecting lazily if needed.
     pub async fn settings_client(&self) -> anyhow::Result<EmbeddedSettingsClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.settings_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -558,6 +603,10 @@ impl EmbeddedChannel {
 
     /// Get an EmbeddedSensorClient, connecting lazily if needed.
     pub async fn sensor_client(&self) -> anyhow::Result<EmbeddedSensorClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.sensor_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -569,6 +618,10 @@ impl EmbeddedChannel {
     }
 
     pub async fn expression_client(&self) -> anyhow::Result<EmbeddedExpressionClient<Channel>> {
+        anyhow::ensure!(
+            !self.discovery_cancel.is_cancelled(),
+            "embedded channel is stopping"
+        );
         if self.expression_client.read().await.is_none() {
             self.connect().await?;
         }
@@ -715,30 +768,45 @@ impl ModuleLifecycle for EmbeddedChannel {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        self.spawn_discovery_loop();
-        self.spawn_connection_loop();
-        self.spawn_sensor_sync_loop();
+        let mut background = self.background.begin_start(&self.discovery_cancel).await?;
+        self.spawn_discovery_loop(&mut background);
+        self.spawn_connection_loop(&mut background);
+        self.spawn_sensor_sync_loop(&mut background);
+        background.commit();
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
         self.discovery_cancel.cancel();
+        let mut errors = Vec::new();
+        if let Err(error) = self.background.stop().await {
+            errors.push(format!("background: {error:#}"));
+        }
         if let Err(error) = self.mark_embedded_sensors_offline().await {
-            tracing::warn!(
-                channel_id = %self.config.id,
-                error = %error,
-                "failed to mark embedded sensors offline during shutdown"
-            );
+            errors.push(format!("mark sensors offline: {error:#}"));
         }
         if let Some(registry) = self.sensor_registry.read().await.clone() {
             registry
                 .unregister_read_provider(&embedded_sensor_source(&self.config.id))
                 .await;
         }
+        self.audio_client.write().await.take();
+        self.playback_client.write().await.take();
+        self.plugin_client.write().await.take();
+        self.binding_client.write().await.take();
+        self.settings_client.write().await.take();
+        self.sensor_client.write().await.take();
+        self.expression_client.write().await.take();
+        self.discovered_candidate.write().await.take();
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
             reason: "shutdown".into(),
         };
+        anyhow::ensure!(
+            errors.is_empty(),
+            "embedded channel shutdown failed: {}",
+            errors.join("; ")
+        );
         Ok(())
     }
 
@@ -757,6 +825,17 @@ impl ModuleLifecycle for EmbeddedChannel {
 
 #[async_trait]
 impl ChannelAdapter for EmbeddedChannel {
+    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+        let db = self
+            .account_database
+            .as_ref()
+            .context("channel account database unavailable")?;
+        let owner = self
+            .owner_user_id()
+            .context("channel owner is not configured")?;
+        crate::modules::memory::source::capture_source_epoch(db, owner).await
+    }
+
     async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
         crate::modules::platform::identity::require_active_owner(
             self.account_database.as_ref(),
@@ -926,20 +1005,17 @@ impl ChannelAdapter for EmbeddedChannel {
         }
 
         let (tx, rx) = mpsc::channel(AUDIO_STREAM_BACKPRESSURE_CHUNKS);
-        let producer = tokio::spawn(async move {
-            produce_streaming_audio_chunks(first, audio, tx, encoding).await
-        });
-
         let mut upload_client = self.audio_client().await?;
-        let upload_result = upload_client
-            .upload_audio(self.auth_request(tokio_stream::wrappers::ReceiverStream::new(rx))?)
-            .await;
-
-        let producer_result = producer
-            .await
-            .map_err(|error| anyhow::anyhow!("audio stream producer join failed: {error}"));
-        upload_result?;
-        producer_result??;
+        let request = self.auth_request(tokio_stream::wrappers::ReceiverStream::new(rx))?;
+        // Structured concurrency: dropping this delivery drops both async halves.
+        // A producer awaiting an upstream stream must not outlive its upload.
+        tokio::try_join!(
+            produce_streaming_audio_chunks(first, audio, tx, encoding),
+            async move {
+                upload_client.upload_audio(request).await?;
+                Ok::<(), anyhow::Error>(())
+            },
+        )?;
         Ok(())
     }
 

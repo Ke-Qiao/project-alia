@@ -119,6 +119,7 @@ struct PlannedExpression {
 #[derive(Debug, Clone)]
 pub struct PendingTextPersistence {
     pub source_received_at: chrono::DateTime<chrono::Utc>,
+    pub source_privacy_epoch: i64,
     pub source_event_id: Option<Uuid>,
     pub session_id: Uuid,
     pub user_id: Uuid,
@@ -665,6 +666,7 @@ async fn process_event(
             user_id,
             text,
             source_received_at,
+            source_privacy_epoch,
         } => {
             debug_component_text(
                 debug_output,
@@ -681,6 +683,7 @@ async fn process_event(
 
             let mut turn = VoiceTurn::request(request_cancel);
             turn.received_at = source_received_at;
+            turn.source_privacy_epoch = Some(source_privacy_epoch);
             let result = match process_text(
                 &text,
                 &user_id,
@@ -842,6 +845,7 @@ async fn process_event(
             user_id,
             audio,
             source_received_at,
+            source_privacy_epoch,
         } => {
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
@@ -859,6 +863,7 @@ async fn process_event(
 
             // STT → Router → LLM → TTS
             turn.received_at = source_received_at;
+            turn.source_privacy_epoch = Some(source_privacy_epoch);
             debug_component_audio(
                 debug_output,
                 "stt",
@@ -1144,6 +1149,10 @@ async fn process_text(
     defer_persistence: bool,
     transcript_correction: Option<TranscriptCorrectionResult>,
 ) -> anyhow::Result<TextResult> {
+    let source_privacy_epoch = turn
+        .and_then(|turn| turn.source_privacy_epoch)
+        .ok_or_else(|| anyhow::anyhow!("input has no trusted source privacy epoch"))?;
+    anyhow::ensure!(source_privacy_epoch >= 0, "invalid source privacy epoch");
     let source_received_at = turn
         .map(|turn| turn.received_at)
         .unwrap_or_else(chrono::Utc::now);
@@ -1151,6 +1160,13 @@ async fn process_text(
         return Ok(TextResult::interrupted());
     }
     let uid = stable_user_uuid(user_id);
+    if memory_config.enabled {
+        let current = modules.memory.write_snapshot(uid).await?;
+        anyhow::ensure!(
+            current.privacy_epoch == source_privacy_epoch,
+            "input source privacy epoch was revoked"
+        );
+    }
     let (mut base_system_messages, runtime_context) = match cancellable_stage(
         turn,
         "context",
@@ -1208,6 +1224,7 @@ async fn process_text(
                 session_id,
                 ChatMessage::new("user", text),
                 source_received_at,
+                source_privacy_epoch,
             ),
         )
         .await?
@@ -1306,6 +1323,7 @@ async fn process_text(
                     .await;
                 let pending = PendingTextPersistence {
                     source_received_at,
+                    source_privacy_epoch,
                     source_event_id: Some(source_event_id),
                     session_id,
                     user_id: uid,
@@ -1473,6 +1491,7 @@ async fn process_text(
                 .await;
             let pending = PendingTextPersistence {
                 source_received_at,
+                source_privacy_epoch,
                 source_event_id: Some(source_event_id),
                 session_id,
                 user_id: uid,
@@ -2175,6 +2194,7 @@ async fn process_text(
 
     let pending_persistence = PendingTextPersistence {
         source_received_at,
+        source_privacy_epoch,
         source_event_id: Some(source_event_id),
         session_id,
         user_id: uid,
@@ -3641,6 +3661,7 @@ async fn persist_text_interaction(
                     ..ChatMessage::default()
                 },
                 pending.source_received_at,
+                pending.source_privacy_epoch,
             )
             .await;
 

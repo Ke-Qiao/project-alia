@@ -36,7 +36,7 @@ struct Probe {
     active: AtomicUsize,
     max_active: AtomicUsize,
     outcome_mode: AtomicU8,
-    sources: std::sync::Mutex<Vec<(chrono::DateTime<chrono::Utc>, Option<Uuid>)>>,
+    sources: std::sync::Mutex<Vec<(chrono::DateTime<chrono::Utc>, Option<Uuid>, Option<i64>)>>,
 }
 
 struct Running<'a>(&'a AtomicUsize);
@@ -70,10 +70,11 @@ impl ToolExecutor for Probe {
         arguments: serde_json::Value,
         context: &ToolContext,
     ) -> anyhow::Result<ToolResult> {
-        self.sources
-            .lock()
-            .unwrap()
-            .push((context.source_received_at, context.source_event_id));
+        self.sources.lock().unwrap().push((
+            context.source_received_at,
+            context.source_event_id,
+            context.source_privacy_epoch,
+        ));
         self.calls.fetch_add(1, Ordering::SeqCst);
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.max_active.fetch_max(active, Ordering::SeqCst);
@@ -175,6 +176,7 @@ impl Fixture {
         ToolContext {
             source_received_at: chrono::Utc::now(),
             source_event_id: None,
+            source_privacy_epoch: None,
             user_id: self.user,
             request_id: Uuid::new_v4(),
             invocation_key: "0:0".into(),
@@ -192,17 +194,28 @@ impl Fixture {
         }
     }
     async fn status(&self, id: Uuid, expected: EffectStatus) -> EffectRecord {
-        tokio::time::timeout(Duration::from_secs(8), async {
+        let mut observed = None;
+        let result = tokio::time::timeout(Duration::from_secs(8), async {
             loop {
                 let effect = self.service.get(self.user, id).await.unwrap();
                 if effect.status == expected {
                     break effect;
                 }
+                assert!(
+                    !effect.status.is_terminal(),
+                    "effect {id} reached unexpected terminal status {:?}, expected {expected:?}; completion={:?}",
+                    effect.status, effect.completion,
+                );
+                observed = Some((effect.status, effect.completion));
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
-        .await
-        .expect("effect reaches expected status")
+        .await;
+        result.unwrap_or_else(|error| {
+            panic!(
+                "effect {id} did not reach {expected:?}: {error}; last persisted state={observed:?}"
+            )
+        })
     }
     async fn calls(&self, expected: usize) {
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -272,6 +285,7 @@ async fn queued_effect_and_retransmission_preserve_the_original_source() {
     with_fixture(false, 5, 0, |f| async move {
         let mut context = f.context();
         context.source_received_at -= chrono::Duration::minutes(5);
+        context.source_privacy_epoch = Some(17);
         context.source_event_id = Some(Uuid::new_v4());
         let first = f.service.submit(f.call(), &context).await.unwrap();
         assert_eq!(first.status, EffectStatus::Approved);
@@ -288,11 +302,24 @@ async fn queued_effect_and_retransmission_preserve_the_original_source() {
         assert_eq!(retry.effect_id, first.effect_id);
         assert_eq!(retry.source_received_at, first.source_received_at);
         assert_eq!(retry.source_event_id, first.source_event_id);
+        assert_eq!(retry.source_privacy_epoch, Some(17));
+        for changed_stamp in [None, Some(18)] {
+            let mut changed = context.clone();
+            changed.source_privacy_epoch = changed_stamp;
+            assert!(matches!(
+                f.service.submit(f.call(), &changed).await,
+                Err(ExecutionError::IdempotencyConflict)
+            ));
+        }
         f.service.start().await.unwrap();
         f.calls(1).await;
         assert_eq!(
             f.probe.sources.lock().unwrap().as_slice(),
-            &[(first.source_received_at, context.source_event_id)]
+            &[(
+                first.source_received_at,
+                context.source_event_id,
+                context.source_privacy_epoch
+            )]
         );
         f.probe.permits.add_permits(1);
         f.status(first.effect_id, EffectStatus::Succeeded).await;
@@ -302,11 +329,25 @@ async fn queued_effect_and_retransmission_preserve_the_original_source() {
 
 #[tokio::test]
 async fn queued_ai_memory_tool_cannot_write_back_after_clear() {
+    queued_memory_after_clear_case(chrono::Duration::zero()).await;
+}
+
+#[tokio::test]
+async fn queued_ai_memory_tool_cannot_survive_clear_when_server_clock_is_ahead() {
+    queued_memory_after_clear_case(chrono::Duration::minutes(1)).await;
+}
+
+#[tokio::test]
+async fn queued_ai_memory_tool_cannot_survive_clear_when_server_clock_is_behind() {
+    queued_memory_after_clear_case(-chrono::Duration::minutes(1)).await;
+}
+
+async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
     use alia_server::providers::adapter::MemoryBackend;
     use alia_server::providers::memory::AliaMemory;
     use alia_server::tools::builtin::MemoryStore;
 
-    with_fixture(false, 5, 0, |f| async move {
+    with_fixture(false, 5, 0, move |f| async move {
         let memory = Arc::new(AliaMemory::new());
         memory.attach_runtime_for_test(f.db.clone(), None, Default::default()).await.unwrap();
         let memory_tool = Arc::new(MemoryStore::new(Some(memory.clone())));
@@ -320,31 +361,62 @@ async fn queued_ai_memory_tool_cannot_write_back_after_clear() {
         let session = Uuid::new_v4();
         let source = Uuid::new_v4();
         let mut context = f.context();
+        context.source_received_at += source_clock_offset;
         context.source_event_id = Some(source);
         context.conversation_id = Some(session);
+        context.source_privacy_epoch = Some(alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user).await.unwrap());
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",
             vec![session.into(),f.user.to_string().into()])).await.unwrap();
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at) VALUES($1,$2,$3,'user','Please remember my preference.',$4)",
-            vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into()])).await.unwrap();
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
+            vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into(),context.source_privacy_epoch.into()])).await.unwrap();
         let call = ToolCall { tool_name: "memory_store".into(), arguments: json!({"content":"The user prefers concise replies."}), call_id: "memory_call".into() };
         let effect = f.service.submit(call.clone(), &context).await.unwrap();
         assert_eq!(effect.status, EffectStatus::Approved);
+        assert_eq!(effect.source_privacy_epoch, context.source_privacy_epoch);
         memory.clear(f.user).await.unwrap();
+        let boundary = memory.write_snapshot(f.user).await.unwrap();
+        assert!(boundary.privacy_epoch > context.source_privacy_epoch.unwrap());
+        let source_row = f.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT created_at FROM chat_messages WHERE id=$1", [source.into()],
+        )).await.unwrap().unwrap();
+        let source_created_at: chrono::DateTime<chrono::Utc> = source_row.try_get("", "created_at").unwrap();
+        assert!(source_created_at <= boundary.source_cutoff_at, "source was durably present before clear");
+        if source_clock_offset > chrono::Duration::zero() {
+            assert!(effect.source_received_at > boundary.source_cutoff_at, "the test must exercise distinct clock domains");
+        }
         // A redelivery observed after clear must still execute with the earlier source.
         context.source_received_at = chrono::Utc::now();
-        let retry = f.service.submit(call, &context).await.unwrap();
+        let retry = f.service.submit(call.clone(), &context).await.unwrap();
         assert_eq!(retry.source_received_at, effect.source_received_at);
         f.service.start().await.unwrap();
         let stopped = f.status(effect.effect_id, EffectStatus::Unknown).await;
-        assert!(serde_json::to_string(&stopped.completion).unwrap().contains("deletion cutoff"));
+        assert!(serde_json::to_string(&stopped.completion).unwrap().contains("memory source privacy epoch changed"));
         assert!(memory.list(f.user, Default::default()).await.unwrap().is_empty());
+
+        // A new, admitted source after clear is valid in every clock domain.
+        // In particular a slow Server clock cannot make fresh input look stale.
+        let mut fresh = context.clone();
+        fresh.request_id = Uuid::new_v4();
+        fresh.source_event_id = Some(Uuid::new_v4());
+        fresh.source_received_at = chrono::Utc::now() + source_clock_offset;
+        fresh.source_privacy_epoch = Some(alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user).await.unwrap());
+        assert!(fresh.source_privacy_epoch.unwrap() > effect.source_privacy_epoch.unwrap());
+        if source_clock_offset < chrono::Duration::zero() {
+            assert!(fresh.source_received_at < boundary.source_cutoff_at);
+        }
+        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','A new input after clear.',$4,$5)",
+            vec![fresh.source_event_id.into(),session.into(),f.user.to_string().into(),fresh.source_received_at.into(),fresh.source_privacy_epoch.into()])).await.unwrap();
+        let new_effect = f.service.submit(call, &fresh).await.unwrap();
+        f.status(new_effect.effect_id, EffectStatus::Succeeded).await;
+        assert_eq!(memory.list(f.user, Default::default()).await.unwrap().len(), 1);
     }).await;
 }
 
 #[tokio::test]
-async fn ai_memory_tool_validates_persisted_source_owner_and_time_in_postgres() {
+async fn ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres() {
     use alia_server::providers::adapter::MemoryBackend;
     use alia_server::providers::memory::AliaMemory;
     use alia_server::tools::builtin::MemoryStore;
@@ -358,16 +430,19 @@ async fn ai_memory_tool_validates_persisted_source_owner_and_time_in_postgres() 
         let mut context = f.context();
         context.source_event_id = Some(source);
         context.conversation_id = Some(session);
+        context.source_privacy_epoch = Some(alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user).await.unwrap());
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",
             vec![session.into(),f.user.to_string().into()])).await.unwrap();
         let arguments = json!({"content":"The user prefers concise replies."});
         assert!(store.execute(arguments.clone(), &context).await.is_err(), "unpersisted source cannot write");
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at) VALUES($1,$2,$3,'user','Please remember my preference.',$4)",
-            vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into()])).await.unwrap();
-        let earlier = ToolContext { source_received_at: context.source_received_at - chrono::Duration::seconds(1), ..context.clone() };
-        assert!(store.execute(arguments.clone(), &earlier).await.is_err(), "source cannot arrive after the claimed input time");
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
+            vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into(),context.source_privacy_epoch.into()])).await.unwrap();
+        for epoch in [None, Some(context.source_privacy_epoch.unwrap() + 1)] {
+            let unstamped = ToolContext { source_privacy_epoch: epoch, ..context.clone() };
+            assert!(store.execute(arguments.clone(), &unstamped).await.is_err(), "missing or different source admission cannot write");
+        }
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "UPDATE chat_sessions SET creator_id=$1 WHERE id=$2", vec![Uuid::new_v4().to_string().into(),session.into()])).await.unwrap();
         assert!(store.execute(arguments.clone(), &context).await.is_err(), "other owner's source cannot write");

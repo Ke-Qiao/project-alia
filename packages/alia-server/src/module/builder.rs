@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sea_orm::{DatabaseConnection, EntityTrait};
+use anyhow::Context;
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, EntityTrait};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -13,16 +14,17 @@ use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
 use crate::module::factory;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::module::lifecycle::{
+    ModuleContext, ModuleHealth, ModuleLifecycle, RuntimeCleanup, ShutdownPhase, start_module,
+    startup_step,
+};
 use crate::module::registry::ModuleRegistry;
 use crate::plugins::PluginStorageService;
 #[cfg(feature = "plugin-home-assistant")]
 use crate::plugins::home_assistant::HomeAssistantPlugin;
 use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, MemoryBackend,
-    SchedulerBackend, SttAdapter, ToolRegistry, TtsAdapter,
+    ConversationBackend, EmbeddingAdapter, LlmAdapter, SttAdapter, ToolRegistry, TtsAdapter,
 };
-use crate::providers::memory::NoopMemory;
 use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
@@ -39,7 +41,7 @@ use crate::state::AppState;
 
 pub struct ServerBuilder {
     config: Arc<ServerConfig>,
-    db: DatabaseConnection,
+    db: Option<DatabaseConnection>,
     event_bus: EventBus,
     cancel_token: CancellationToken,
 
@@ -60,6 +62,40 @@ pub struct ServerBuilder {
     extensions: Vec<Box<dyn ModuleLifecycle>>,
 }
 
+/// An owned startup operation. Dropping its ready waiter cancels construction;
+/// the independent owner still completes rollback and reports through the handle.
+pub struct ServerStartup {
+    cancel: CancellationToken,
+    cleanup: Arc<RuntimeCleanup>,
+    task: Option<tokio::task::JoinHandle<anyhow::Result<crate::bootstrap::ServerRuntime>>>,
+    handed_off: bool,
+}
+impl ServerStartup {
+    pub fn shutdown_handle(&self) -> crate::module::lifecycle::ShutdownHandle {
+        self.cleanup.handle()
+    }
+    pub async fn wait(mut self) -> anyhow::Result<crate::bootstrap::ServerRuntime> {
+        let result = self
+            .task
+            .as_mut()
+            .expect("startup waiter already consumed")
+            .await
+            .context("server startup owner failed")?;
+        self.task.take();
+        self.handed_off = result.is_ok();
+        result
+    }
+}
+impl Drop for ServerStartup {
+    fn drop(&mut self) {
+        if !self.handed_off {
+            self.cancel.cancel();
+        }
+        // Dropping the JoinHandle does not abort the independent startup owner.
+        self.task.take();
+    }
+}
+
 impl ServerBuilder {
     pub fn new(
         config: Arc<ServerConfig>,
@@ -69,7 +105,7 @@ impl ServerBuilder {
     ) -> Self {
         Self {
             config,
-            db,
+            db: Some(db),
             event_bus,
             cancel_token,
             channels: Vec::new(),
@@ -83,6 +119,18 @@ impl ServerBuilder {
             embedding: None,
             extensions: Vec::new(),
         }
+    }
+
+    /// Create an instance whose PostgreSQL pool is owned and closed by the runtime.
+    pub fn from_config(config: Arc<ServerConfig>, cancel_token: CancellationToken) -> Self {
+        let mut builder = Self::new(
+            config,
+            DatabaseConnection::Disconnected,
+            EventBus::new(1024),
+            cancel_token,
+        );
+        builder.db = None;
+        builder
     }
 
     pub fn with_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
@@ -140,7 +188,84 @@ impl ServerBuilder {
         self
     }
 
-    pub async fn build(self) -> anyhow::Result<AppState> {
+    /// Begin construction while retaining a handle that can outlive the ready waiter.
+    pub fn start_build(mut self) -> ServerStartup {
+        self.cancel_token = self.cancel_token.child_token();
+        let cancel = self.cancel_token.clone();
+        let cleanup = RuntimeCleanup::new(
+            cancel.clone(),
+            Duration::from_millis(self.config.server.shutdown_grace_ms),
+        );
+        let owner = cleanup.clone();
+        let task = tokio::spawn(async move {
+            let cancel = self.cancel_token.clone();
+            let result = startup_step(
+                &cancel,
+                "assembling server runtime",
+                self.build_owned(owner.clone()),
+            )
+            .await;
+            if let Err(error) = result {
+                owner.record_failure(format!("startup: {error:#}"));
+                return match owner.start().wait_until(owner.deadline()).await {
+                    Ok(()) => Err(error),
+                    Err(cleanup) => {
+                        Err(cleanup.context(format!("server startup failed: {error:#}")))
+                    }
+                };
+            }
+            result
+        });
+        ServerStartup {
+            cancel,
+            cleanup,
+            task: Some(task),
+            handed_off: false,
+        }
+    }
+
+    pub async fn build(self) -> anyhow::Result<crate::bootstrap::ServerRuntime> {
+        self.start_build().wait().await
+    }
+
+    async fn build_owned(
+        mut self,
+        cleanup: Arc<RuntimeCleanup>,
+    ) -> anyhow::Result<crate::bootstrap::ServerRuntime> {
+        let requested_config = self.config.clone();
+        let (wiring, config) = crate::bootstrap::RuntimeWiring::bind(
+            self.config.clone(),
+            self.cancel_token.clone(),
+            cleanup.clone(),
+        )
+        .await?;
+        self.config = config;
+        let db = match self.db.take() {
+            Some(db) => db,
+            None => {
+                let mut options = ConnectOptions::new(&self.config.database.url);
+                options
+                    .max_connections(self.config.database.max_connections)
+                    .min_connections(self.config.database.min_connections);
+                let db = startup_step(&self.cancel_token, "connecting to PostgreSQL", async {
+                    Database::connect(options).await.map_err(Into::into)
+                })
+                .await?;
+                let pool = db.clone();
+                cleanup.add("postgresql", ShutdownPhase::Database, move || {
+                    let pool = pool.clone();
+                    async move { pool.close().await.map_err(Into::into) }
+                });
+                db
+            }
+        };
+        startup_step(
+            &self.cancel_token,
+            "migrating PostgreSQL",
+            crate::modules::platform::migrations::run(&db),
+        )
+        .await?;
+
         // Owners are explicit configuration, never synthesized from channel IDs.
         // Validate before starting any module or creating background work.
         let owners = self
@@ -156,7 +281,7 @@ impl ServerBuilder {
             .collect::<std::collections::HashSet<_>>();
         for owner in owners {
             let user = crate::entity::user::Entity::find_by_id(owner)
-                .one(&self.db)
+                .one(&db)
                 .await?;
             anyhow::ensure!(
                 user.is_some_and(|user| user.status == "active"),
@@ -169,22 +294,23 @@ impl ServerBuilder {
         // Create sensor registry early so tools and modules can reference it
         let sensor_registry = Arc::new(SensorRegistry::new(SensorRegistryConfig::default()));
         let channel_registry = Arc::new(ChannelRegistry::new());
-        let artifact_registry = Arc::new(ArtifactRegistry::new(self.db.clone()));
-        let plugin_storage = Arc::new(PluginStorageService::new(self.db.clone()));
+        let artifact_registry = Arc::new(ArtifactRegistry::new(db.clone()));
+        let plugin_storage = Arc::new(PluginStorageService::new(db.clone()));
         let settings = SettingsRegistry::new();
         settings.seed_from_config(&self.config).await;
         let settings_path = self.config.resolve_path("settings.toml");
-        if let Err(e) = settings.load_persisted(&settings_path).await {
-            tracing::warn!(error = %e, "failed to load persisted settings (non-fatal)");
-        }
+        settings
+            .load_persisted(&settings_path)
+            .await
+            .context("loading persisted server settings")?;
         settings.set_persist_path(settings_path).await;
-        sensor_registry.attach_db(self.db.clone()).await?;
+        sensor_registry.attach_db(db.clone()).await?;
         sensor_registry
             .attach_artifacts(artifact_registry.clone())
             .await;
 
         let base_ctx = ModuleContext {
-            db: self.db.clone(),
+            db: db.clone(),
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
@@ -210,21 +336,21 @@ impl ServerBuilder {
         };
 
         // Create provider adapters from config; core services are fixed below.
-        let mut minor_llm = match self.minor_llm {
+        let minor_llm = match self.minor_llm {
             Some(llm) => llm,
             None if self.config.policies.routing.minor_llm_enabled => {
                 factory::create_llm(&self.config, &self.config.llm.roles.minor)?
             }
             None => factory::create_llm(&self.config, "noop")?,
         };
-        let mut major_llm = match self.major_llm {
+        let major_llm = match self.major_llm {
             Some(llm) => llm,
             None if self.config.policies.routing.major_llm_enabled => {
                 factory::create_llm(&self.config, &self.config.llm.roles.major)?
             }
             None => factory::create_llm(&self.config, "noop")?,
         };
-        let mut transcript_correction_llm = match self.transcript_correction_llm {
+        let transcript_correction_llm = match self.transcript_correction_llm {
             Some(llm) => Some(llm),
             None => self
                 .config
@@ -235,7 +361,7 @@ impl ServerBuilder {
                 .map(|profile| factory::create_llm(&self.config, profile))
                 .transpose()?,
         };
-        let mut memory_capture_llm = match self.memory_capture_llm {
+        let memory_capture_llm = match self.memory_capture_llm {
             Some(llm) => Some(llm),
             None => self
                 .config
@@ -246,7 +372,7 @@ impl ServerBuilder {
                 .map(|profile| factory::create_llm(&self.config, profile))
                 .transpose()?,
         };
-        let mut sentence_expression_llm = match self.sentence_expression_llm {
+        let sentence_expression_llm = match self.sentence_expression_llm {
             Some(llm) => Some(llm),
             None => self
                 .config
@@ -257,25 +383,27 @@ impl ServerBuilder {
                 .map(|profile| factory::create_llm(&self.config, profile))
                 .transpose()?,
         };
-        let mut stt = self
-            .stt
-            .unwrap_or_else(|| factory::create_stt(&self.config.modules.stt));
-        let mut tts = self
-            .tts
-            .unwrap_or_else(|| factory::create_tts(&self.config.modules.tts));
-        let mut embedding = match self.embedding {
+        let stt = match self.stt {
+            Some(module) => module,
+            None => factory::create_stt(&self.config.modules.stt)?,
+        };
+        let tts = match self.tts {
+            Some(module) => module,
+            None => factory::create_tts(&self.config.modules.tts)?,
+        };
+        let embedding = match self.embedding {
             Some(embedding) => embedding,
             None => factory::create_embedding(&self.config, &self.config.llm.roles.embedding)?,
         };
-        let mut conversation: Box<dyn ConversationBackend> =
+        let conversation: Box<dyn ConversationBackend> =
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
-        let mut memory = factory::create_memory(&self.config.policies.memory);
-        let mut cache = factory::create_cache();
-        let mut skills = factory::create_skills();
-        let mut persona = factory::create_persona();
-        let mut insights = factory::create_insights(self.config.policies.insights.enabled);
-        let mut router = factory::create_router();
-        let mut rule_engine = factory::create_rule_engine();
+        let memory = factory::create_memory(&self.config.policies.memory);
+        let cache = factory::create_cache();
+        let skills = factory::create_skills();
+        let persona = factory::create_persona();
+        let insights = factory::create_insights(self.config.policies.insights.enabled)?;
+        let router = factory::create_router();
+        let rule_engine = factory::create_rule_engine();
 
         // Build condition registry with built-in evaluators
         let condition_registry = Arc::new(ConditionRegistry::new());
@@ -305,27 +433,26 @@ impl ServerBuilder {
             )))
             .await;
 
-        let mut scheduler =
+        let scheduler =
             factory::create_scheduler(condition_registry.clone(), action_registry.clone());
 
-        let mut tools =
+        let tools =
             factory::create_tools_with_sensors(sensor_registry.clone(), channel_registry.clone());
         let expression_runtime = Arc::new(ExpressionRuntime::from_config(&self.config));
-        if let Err(error) = expression_runtime.attach_db(self.db.clone()).await {
-            tracing::warn!(
-                error = ?error,
-                "expression persistence unavailable; expression state will run in memory only"
-            );
-        }
+        expression_runtime
+            .attach_db(db.clone())
+            .await
+            .context("attaching expression persistence")?;
 
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
-        init_module(scheduler.as_mut(), &base_ctx).await;
-        let scheduler: Arc<dyn SchedulerBackend> = Arc::from(scheduler);
+        let scheduler = cleanup
+            .initialize(scheduler, &base_ctx, ShutdownPhase::Producers)
+            .await?;
 
         // Context with scheduler for modules that need it
         let ctx = ModuleContext {
-            db: self.db.clone(),
+            db: db.clone(),
             config: self.config.clone(),
             event_bus: self.event_bus.clone(),
             cancel_token: self.cancel_token.clone(),
@@ -351,36 +478,50 @@ impl ServerBuilder {
         };
 
         // Initialize remaining modules in dependency order
-        init_module(embedding.as_mut(), &ctx).await;
-        let embedding_arc: Arc<dyn EmbeddingAdapter> = Arc::from(embedding);
+        let embedding_arc = cleanup
+            .initialize(embedding, &ctx, ShutdownPhase::Resources)
+            .await?;
         let ctx = ModuleContext {
             embedding: Some(embedding_arc.clone()),
             ..ctx
         };
-        init_module(conversation.as_mut(), &ctx).await;
-        let conversation_arc: Arc<dyn ConversationBackend> = Arc::from(conversation);
+        let conversation_arc = cleanup
+            .initialize(conversation, &ctx, ShutdownPhase::Resources)
+            .await?;
         let ctx = ModuleContext {
             conversation: Some(conversation_arc.clone()),
             ..ctx
         };
-        init_module(minor_llm.as_mut(), &ctx).await;
-        init_module(major_llm.as_mut(), &ctx).await;
-        if let Some(llm) = transcript_correction_llm.as_mut() {
-            init_module(llm.as_mut(), &ctx).await;
-        }
-        if let Some(llm) = memory_capture_llm.as_mut() {
-            init_module(llm.as_mut(), &ctx).await;
-        }
-        if let Some(llm) = sentence_expression_llm.as_mut() {
-            init_module(llm.as_mut(), &ctx).await;
-        }
-        let minor_llm: Arc<dyn LlmAdapter> = Arc::from(minor_llm);
-        let major_llm: Arc<dyn LlmAdapter> = Arc::from(major_llm);
-        let transcript_correction_llm: Option<Arc<dyn LlmAdapter>> =
-            transcript_correction_llm.map(Arc::from);
-        let memory_capture_llm: Option<Arc<dyn LlmAdapter>> = memory_capture_llm.map(Arc::from);
-        let sentence_expression_llm: Option<Arc<dyn LlmAdapter>> =
-            sentence_expression_llm.map(Arc::from);
+        let minor_llm = cleanup
+            .initialize(minor_llm, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let major_llm = cleanup
+            .initialize(major_llm, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let transcript_correction_llm = match transcript_correction_llm {
+            Some(module) => Some(
+                cleanup
+                    .initialize(module, &ctx, ShutdownPhase::Resources)
+                    .await?,
+            ),
+            None => None,
+        };
+        let memory_capture_llm = match memory_capture_llm {
+            Some(module) => Some(
+                cleanup
+                    .initialize(module, &ctx, ShutdownPhase::Resources)
+                    .await?,
+            ),
+            None => None,
+        };
+        let sentence_expression_llm = match sentence_expression_llm {
+            Some(module) => Some(
+                cleanup
+                    .initialize(module, &ctx, ShutdownPhase::Resources)
+                    .await?,
+            ),
+            None => None,
+        };
         let default_llm = if self.config.llm.roles.default == self.config.llm.roles.minor {
             minor_llm.clone()
         } else {
@@ -395,43 +536,64 @@ impl ServerBuilder {
             sentence_expression_llm: sentence_expression_llm.clone(),
             ..ctx
         };
-        init_module(stt.as_mut(), &ctx).await;
-        init_module(tts.as_mut(), &ctx).await;
-        init_module(memory.as_mut(), &ctx).await;
-        let mut effective_memory_config = self.config.policies.memory.clone();
-        if effective_memory_config.enabled
-            && let Err(reason) =
-                verify_memory_health(memory.as_ref(), &effective_memory_config).await
-        {
-            tracing::warn!(
-                module = memory.name(),
-                reason = %reason,
-                "memory system health checks failed; disabling memory module for this server run"
-            );
-            effective_memory_config.enabled = false;
-            memory = Box::new(NoopMemory);
+        let stt = cleanup
+            .initialize(stt, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let tts = cleanup
+            .initialize(tts, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let memory_arc = cleanup
+            .initialize(memory, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let effective_memory_config = self.config.policies.memory.clone();
+        if effective_memory_config.enabled {
+            startup_step(&self.cancel_token, "checking configured memory", async {
+                verify_memory_health(memory_arc.as_ref(), &effective_memory_config)
+                    .await
+                    .map_err(anyhow::Error::msg)
+            })
+            .await?;
         }
-        let memory_arc: Arc<dyn MemoryBackend> = Arc::from(memory);
         let memory_for_ctx = effective_memory_config.enabled.then(|| memory_arc.clone());
         let ctx = ModuleContext {
             memory: memory_for_ctx,
             ..ctx
         };
-        init_module(cache.as_mut(), &ctx).await;
-        let cache_arc: Arc<dyn CacheBackend> = Arc::from(cache);
+        let cache_arc = cleanup
+            .initialize(cache, &ctx, ShutdownPhase::Resources)
+            .await?;
         let ctx = ModuleContext {
             cache: Some(cache_arc.clone()),
             ..ctx
         };
-        tools.init(&ctx).await?;
-        let raw_tools: Arc<dyn ToolRegistry> = Arc::from(tools);
+        let raw_tools = cleanup
+            .initialize(tools, &ctx, ShutdownPhase::Resources)
+            .await?;
         let execution = crate::modules::execution::ExecutionService::new(
-            crate::modules::execution::repository::ExecutionRepository::new(self.db.clone()),
+            crate::modules::execution::repository::ExecutionRepository::new(db.clone()),
             raw_tools,
             &self.config.policies.tools,
             &self.cancel_token,
         )
         .await?;
+        let effect_owner = execution.clone();
+        cleanup.add("execution", ShutdownPhase::Execution, move || {
+            let effect_owner = effect_owner.clone();
+            async move {
+                let mut failure = None;
+                loop {
+                    let result = effect_owner.shutdown().await;
+                    if let Err(error) = result {
+                        failure = Some(error);
+                    }
+                    if !effect_owner.shutdown_pending() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                failure.map_or(Ok(()), Err)
+            }
+        });
         let tools_arc: Arc<dyn ToolRegistry> = Arc::new(
             crate::modules::execution::ExecutionToolRegistry::new(execution.clone()),
         );
@@ -456,31 +618,45 @@ impl ServerBuilder {
             configured_extensions.push(Box::new(HomeAssistantPlugin::new()));
         }
         #[cfg(not(feature = "plugin-home-assistant"))]
-        if self.config.plugins.home_assistant.enabled {
-            tracing::warn!(
-                "home_assistant plugin is enabled in config but the plugin-home-assistant feature is disabled"
+        anyhow::ensure!(
+            !self.config.plugins.home_assistant.enabled,
+            "configured home_assistant requires plugin-home-assistant feature"
+        );
+        for ext in configured_extensions {
+            extensions.push(
+                cleanup
+                    .initialize(ext, &ctx, ShutdownPhase::Resources)
+                    .await?,
             );
         }
-
-        for mut ext in configured_extensions {
-            let name = ext.name();
-            if let Err(error) = ext.init(&ctx).await {
-                tracing::warn!(
-                    module = name,
-                    error = ?error,
-                    "extension init failed; extension disabled"
-                );
-                continue;
+        let skills = cleanup
+            .initialize(skills, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let persona = cleanup
+            .initialize(persona, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let router = cleanup
+            .initialize(router, &ctx, ShutdownPhase::Resources)
+            .await?;
+        let insights = cleanup
+            .initialize(insights, &ctx, ShutdownPhase::Producers)
+            .await?;
+        let rule_engine = cleanup
+            .initialize(rule_engine, &ctx, ShutdownPhase::Producers)
+            .await?;
+        let channels = channel_registry.clone();
+        cleanup.add("channels", ShutdownPhase::Channels, move || {
+            let channels = channels.clone();
+            async move { channels.shutdown().await }
+        });
+        let channels = channel_registry.clone();
+        cleanup.add("channel_admission", ShutdownPhase::Ingress, move || {
+            let channels = channels.clone();
+            async move {
+                channels.close_admission();
+                Ok(())
             }
-            extensions.push(Arc::from(ext));
-        }
-
-        init_module(skills.as_mut(), &ctx).await;
-        init_module(persona.as_mut(), &ctx).await;
-        init_module(router.as_mut(), &ctx).await;
-        init_module(insights.as_mut(), &ctx).await;
-        init_module(rule_engine.as_mut(), &ctx).await;
-
+        });
         // Initialize channels from config + explicit with_channel() calls
         // Create channels from [[channels]] config
         for ch_cfg in &self.config.channels {
@@ -488,126 +664,50 @@ impl ServerBuilder {
                 tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
                 continue;
             }
-            match factory::create_channel(ch_cfg, self.event_bus.clone()) {
-                Ok(channel) => {
-                    register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
-                }
-                Err(error) => {
-                    let channel_id = ch_cfg.id().to_string();
-                    let channel_type = ch_cfg.channel_type();
-                    let reason = error.to_string();
-                    tracing::warn!(
-                        channel_type,
-                        channel_id = %channel_id,
-                        error = ?error,
-                        "channel creation failed; channel disabled"
-                    );
-                    channel_registry
-                        .mark_disabled(&channel_id, channel_type, reason)
-                        .await;
-                }
-            }
+            let channel = factory::create_channel(ch_cfg, self.event_bus.clone())?;
+            register_initialized_channel(channel, &ctx, channel_registry.as_ref(), &cleanup)
+                .await?;
         }
-        // Register explicitly added channels
         for channel in self.channels {
-            register_initialized_channel(channel, &ctx, channel_registry.as_ref()).await;
+            register_initialized_channel(channel, &ctx, channel_registry.as_ref(), &cleanup)
+                .await?;
         }
 
         // Build registry
         let registry = ModuleRegistry {
+            cleanup: cleanup.clone(),
             llm: default_llm,
             minor_llm,
             major_llm,
             transcript_correction_llm,
             memory_capture_llm,
             sentence_expression_llm,
-            stt: Arc::from(stt),
-            tts: Arc::from(tts),
+            stt,
+            tts,
             embedding: embedding_arc,
             conversation: conversation_arc,
             memory: memory_arc,
             cache: cache_arc,
-            skills: Arc::from(skills),
-            persona: Arc::from(persona),
-            insights: Arc::from(insights),
-            router: Arc::from(router),
-            rule_engine: Arc::from(rule_engine),
+            skills,
+            persona,
+            insights,
+            router,
+            rule_engine,
             scheduler,
             tools: tools_arc,
             expression: expression_runtime,
             extensions,
         };
 
-        // Start downstream adapters before any durable execution can dispatch.
-        tracing::info!("starting modules...");
-        start_module(registry.minor_llm.as_ref()).await;
-        start_module(registry.major_llm.as_ref()).await;
-        if let Some(llm) = &registry.transcript_correction_llm {
-            start_module(llm.as_ref()).await;
-        }
-        if let Some(llm) = &registry.memory_capture_llm {
-            start_module(llm.as_ref()).await;
-        }
-        if let Some(llm) = &registry.sentence_expression_llm {
-            start_module(llm.as_ref()).await;
-        }
-        start_module(registry.stt.as_ref()).await;
-        start_module(registry.tts.as_ref()).await;
-        start_module(registry.embedding.as_ref()).await;
-        start_module(registry.conversation.as_ref()).await;
-        start_module(registry.memory.as_ref()).await;
-        start_module(registry.cache.as_ref()).await;
-        start_module(registry.skills.as_ref()).await;
-        start_module(registry.persona.as_ref()).await;
-        start_module(registry.router.as_ref()).await;
-        start_module(registry.insights.as_ref()).await;
-        for ext in &registry.extensions {
-            start_module(ext.as_ref()).await;
-        }
-        // No scheduler or product ingress may run without a healthy ledger.
-        if let Err(error) = registry.tools.start().await {
-            self.cancel_token.cancel();
-            if let Err(cleanup) = registry.shutdown().await {
-                tracing::error!(error = %cleanup, "cleanup after execution startup failure");
-            }
-            return Err(error);
-        }
-        start_module(registry.scheduler.as_ref()).await;
-        start_module(registry.rule_engine.as_ref()).await;
-
-        // Start channels
-        for channel in channel_registry.list().await {
-            let channel_id = channel.channel_id().to_string();
-            if let Err(error) = channel.start().await {
-                let reason = error.to_string();
-                tracing::warn!(
-                    channel_type = channel.channel_type(),
-                    channel_id = %channel_id,
-                    error = ?error,
-                    "channel start failed; channel disabled"
-                );
-                if let Err(disable_error) = channel_registry.disable(&channel_id, reason).await {
-                    tracing::warn!(
-                        channel_type = channel.channel_type(),
-                        channel_id = %channel_id,
-                        error = ?disable_error,
-                        "failed to disable channel"
-                    );
-                }
-                continue;
-            }
-            tracing::info!(
-                channel_type = channel.channel_type(),
-                channel_id = %channel_id,
-                "channel started"
-            );
-        }
-
         // Build JWT keys
         let jwt_keys = JwtKeys::new(&self.config.auth.jwt_secret);
 
         // Start sensor auto-cleanup
-        sensor_registry.spawn_cleanup_loop(self.cancel_token.clone());
+        let sensors = sensor_registry.clone();
+        cleanup.add("sensor_cleanup", ShutdownPhase::Producers, move || {
+            let sensors = sensors.clone();
+            async move { sensors.stop_cleanup_loop().await }
+        });
         let pipeline_policies = Arc::new(RwLock::new(PipelinePolicies::new(
             self.config.policies.conversation.clone(),
             self.config.policies.tools.clone(),
@@ -619,11 +719,12 @@ impl ServerBuilder {
 
         let (voice_input, voice_input_rx) = crate::modules::interaction::voice_input::channel();
         let state = AppState {
+            runtime_tasks: wiring.tasks.clone(),
             execution,
             voice_input,
             pipeline_task: Arc::default(),
             turn_detector,
-            db: self.db,
+            db,
             channels: channel_registry,
             event_bus: self.event_bus,
             artifacts: artifact_registry,
@@ -654,10 +755,9 @@ impl ServerBuilder {
             .collect();
         for report in state.modules.apply_settings(&runtime_settings).await {
             if let Some(error) = report.error {
-                tracing::warn!(
-                    module = %report.module,
-                    error = %error,
-                    "failed to apply persisted runtime settings"
+                anyhow::bail!(
+                    "failed to apply persisted settings to {}: {error}",
+                    report.module
                 );
             }
         }
@@ -673,7 +773,52 @@ impl ServerBuilder {
             );
         }
 
+        // Start downstream adapters before any durable execution can dispatch.
+        tracing::info!("starting modules...");
+        start_module(state.modules.minor_llm.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.major_llm.as_ref(), &state.cancel_token).await?;
+        if let Some(llm) = &state.modules.transcript_correction_llm {
+            start_module(llm.as_ref(), &state.cancel_token).await?;
+        }
+        if let Some(llm) = &state.modules.memory_capture_llm {
+            start_module(llm.as_ref(), &state.cancel_token).await?;
+        }
+        if let Some(llm) = &state.modules.sentence_expression_llm {
+            start_module(llm.as_ref(), &state.cancel_token).await?;
+        }
+        start_module(state.modules.stt.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.tts.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.embedding.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.conversation.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.memory.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.cache.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.skills.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.persona.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.router.as_ref(), &state.cancel_token).await?;
+        for ext in &state.modules.extensions {
+            start_module(ext.as_ref(), &state.cancel_token).await?;
+        }
+
         // Spawn the Channel → AI Pipeline processing loop
+        let pipeline_owner = state.pipeline_task.clone();
+        cleanup.add(
+            "interaction_pipeline",
+            ShutdownPhase::Producers,
+            move || {
+                let pipeline_owner = pipeline_owner.clone();
+                async move {
+                    let mut slot = pipeline_owner.lock().await;
+                    if let Some(task) = slot.as_mut() {
+                        task.await.context("joining interaction pipeline")?;
+                        slot.take();
+                    }
+                    Ok(())
+                }
+            },
+        );
+        // Acquire the slot before spawning: a cancelled lock wait must not drop
+        // the only handle of an already-running pipeline.
+        let mut pipeline_slot = state.pipeline_task.lock().await;
         let pipeline_task = spawn_pipeline(
             &state.event_bus,
             state.modules.clone(),
@@ -684,25 +829,27 @@ impl ServerBuilder {
             pipeline_policies,
             voice_input_rx,
         );
-        *state.pipeline_task.lock().await = Some(pipeline_task);
+        *pipeline_slot = Some(pipeline_task);
+        drop(pipeline_slot);
 
-        Ok(state)
-    }
-}
+        for channel in state.channels.list().await {
+            startup_step(
+                &state.cancel_token,
+                "starting channel",
+                state.channels.start(channel.channel_id()),
+            )
+            .await?;
+        }
+        start_module(state.modules.tools.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.insights.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.scheduler.as_ref(), &state.cancel_token).await?;
+        start_module(state.modules.rule_engine.as_ref(), &state.cancel_token).await?;
+        state
+            .sensors
+            .spawn_cleanup_loop(state.cancel_token.clone())
+            .await?;
 
-async fn init_module(module: &mut dyn ModuleLifecycle, ctx: &ModuleContext) {
-    let name = module.name();
-    if let Err(error) = module.init(ctx).await {
-        tracing::warn!(
-            module = name,
-            error = %error,
-            "module init failed; continuing in degraded mode"
-        );
-        tracing::debug!(
-            module = name,
-            error = ?error,
-            "module init failure details"
-        );
+        crate::bootstrap::ServerRuntime::assembled(state, requested_config, cleanup, wiring).await
     }
 }
 
@@ -747,55 +894,16 @@ async fn verify_memory_health(
     Err("memory system health check failed".to_string())
 }
 
-async fn start_module(module: &dyn ModuleLifecycle) {
-    let name = module.name();
-    if let Err(error) = module.start().await {
-        tracing::warn!(
-            module = name,
-            error = %error,
-            "module start failed; continuing in degraded mode"
-        );
-        tracing::debug!(
-            module = name,
-            error = ?error,
-            "module start failure details"
-        );
-    }
-}
-
 async fn register_initialized_channel(
-    mut channel: Box<dyn ChannelAdapter>,
+    channel: Box<dyn ChannelAdapter>,
     ctx: &ModuleContext,
-    channel_registry: &ChannelRegistry,
-) {
-    let channel_type = channel.channel_type();
-    let channel_id = channel.channel_id().to_string();
-
-    if let Err(error) = channel.init(ctx).await {
-        let reason = error.to_string();
-        tracing::warn!(
-            channel_type,
-            channel_id = %channel_id,
-            error = ?error,
-            "channel init failed; channel disabled"
-        );
-        channel_registry
-            .mark_disabled(&channel_id, channel_type, reason)
-            .await;
-        return;
-    }
-
-    let channel: Arc<dyn ChannelAdapter> = Arc::from(channel);
-    if let Err(error) = channel_registry.register(channel).await {
-        let reason = error.to_string();
-        tracing::warn!(
-            channel_type,
-            channel_id = %channel_id,
-            error = ?error,
-            "channel registration failed; channel disabled"
-        );
-        channel_registry
-            .mark_disabled(&channel_id, channel_type, reason)
-            .await;
-    }
+    registry: &ChannelRegistry,
+    cleanup: &RuntimeCleanup,
+) -> anyhow::Result<()> {
+    let (channel, transferred) = cleanup
+        .initialize_owned(channel, ctx, ShutdownPhase::Channels)
+        .await?;
+    registry.register(channel).await?;
+    transferred.store(true, std::sync::atomic::Ordering::Release);
+    Ok(())
 }

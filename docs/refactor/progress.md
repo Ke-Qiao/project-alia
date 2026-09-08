@@ -14,8 +14,32 @@
 | `33a7c98` | 持续采集 v1 协议、端侧 server_turn 模式、Server 窗口与模型决策、可靠语音入口、可监督交互管线 | 实际 gRPC→Rust→CPU 模型；136 个 Server 常规单元测试及全部 Server 集成测试（带真实数据库）通过；Embedded 无默认特性 98 项通过 |
 | `1ecb2ce` | boot/session/generation 播放协议、原子入队失效、凭证续期与解绑关闭、端侧信号退出 | macOS 默认特性整个 workspace 409 项通过；真实 DB 套件通过；两项真实模型测试另跑通过；Server 无默认特性 all-targets 通过；Linux ARM64 端侧变更检查通过 |
 | `c257f07` | Embedded 启动失败回滚、可等待的有界关闭、实际监听地址、长 HTTP/2 连接清理及原生任务所有权 | 无默认特性 122 项通过；macOS 默认 all-targets 和 Linux ARM64 无默认 all-targets 检查通过，见 [Embedded 生命周期](embedded-runtime.md) |
+| `5aecb38` | 持久 Execution 共用入口、Memory 规范来源与隐私栅栏、可信输入贯穿消息和工具 | 空数据库默认 workspace 500 项；真实 CPU 模型与 gRPC 两项另跑通过；固定提交 Linux ARM64 Server 检查及 152 项库测试、Embedded 默认完整链接通过 |
 
-## 本轮 P2 整合包
+## Server runtime、原子 Memory 和来源版本整合包
+
+本包建立可嵌入的 ServerRuntime：启动失败完整回滚、实例独立取消、连接和后台 actor 排空、统一关闭期限，以及超时后继续保留真实 worker 和依赖的 ShutdownHandle。工具目录写入或显式 Provider 配置出错会拒绝 ready。现有 WS 是管理员诊断流，依据数据库当前账户和角色授权、定期复核，并随宿主关闭实际连接。详见[运行时契约](server-runtime-design.md)。
+
+Memory 的 LLM 整理改为一次完整原子批次，模型只可退役记录；用户批量遗忘在一个事务内处理全部目标。最终回归还复现并修复了时间戳的因果漏洞：当 Server 时钟比数据库快 60 秒，旧请求可能在 clear 后重新写入记忆。现在所有可信入口在数据库接纳时固定 source_privacy_epoch，排队、Execution、用户消息和后台抽取保留该版本；版本变化后旧请求被拒绝，新请求不受快慢钟影响。具体边界见[来源接纳](source-admission.md)和[Memory 记录](memory-findings.md)。
+
+最终默认特性 workspace 为 **561 passed、0 failed、4 ignored**。日志另含故障测试启动的 1 次子进程内部运行，统计去重；Server 常规 lib 161 项、Execution repository/service 19/27 项、Memory 隐私 24 项、后台 13 项、Server runtime 21 项均通过。新来源迁移已在本任务专用的全新数据库上实际运行。Server 无默认特性 all-targets 检查也通过。
+
+4 项 ignored 测试均随后显式运行通过：两个真实 PTY 退出与终端恢复测试，以及真实 CPU Easy-Turn 与 gRPC 持续语音两项测试。模型直接 Backchannel 322 ms；gRPC Complete/Backchannel/Wait 为 511/337/405 ms，均为模型调用时间，不是端到端声学延迟。最终回归同时修正两项过时 Provider 测试，明确未知配置必须失败、noop 必须显式选择。
+
+```sh
+ALIA_TEST_DATABASE_URL='postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_runtime_v1' \
+  cargo test --workspace --locked --no-fail-fast
+cargo check -p alia-server --no-default-features --all-targets --locked
+# 在真实 PTY 内执行：
+cargo test -p alia-server --lib --locked -- --ignored --nocapture --test-threads=1
+ALIA_EASY_TURN_PCM="$PWD/run/easy-turn-backchannel.pcm" \
+ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
+  cargo test -p alia-server --test easy_turn_live --test voice_stream_live --locked -- --ignored --nocapture
+```
+
+本包尚未以 Linux ARM64 固定提交验证；下述平台证据明确对应先前提交。持久 Delivery、播放后端提交证据、完整遗忘传播及硬件联调继续属于未完成主线。
+
+## 先前 P2 整合包（5aecb38）
 
 Execution 已成为工具入口共用的持久执行边界，拥有意图、确认、Outbox、认领、结果、幂等与 unknown 恢复。提交/等待/关闭有整体期限；批准已提交但 ACK 丢失时仍保留会话取消所有权。操作入口与证据见 [Execution API](execution-api.md) 和 [数据库验证](execution-validation.md)。
 
@@ -23,7 +47,7 @@ Memory 在真实事务内处理用户隔离、规范 revision、隐私 epoch、�
 
 最终默认特性 workspace 结果为 **500 passed、0 failed、4 ignored**，包含两端实际默认特性编译/链接。Execution repository 19 项、service 25 项、Memory 原有 13 项、Memory 隐私 14 项、gRPC 身份 6 项和迁移 7 项全部通过。两项 ignored 的真实模型测试随后单独运行通过；另外两项 PTY 测试本轮未重复执行，先前基础包已实际通过。
 
-最新 Server 无默认特性 all-targets 检查也通过（18.05 秒）。本包尚未取得新的 Linux/Windows 原生运行结果，不能把早前固定提交的平台结果当成新源码已验证。
+该提交的 Server 无默认特性 all-targets 检查也通过（18.05 秒）。随后已对固定 `5aecb38` 获得 Linux ARM64 容器原生检查、152 项 Server 库测试及 Embedded 默认特性完整构建链接证据，详见[平台验证](platform-validation.md)。这些结果不覆盖下一包未提交的运行时变化，也不代表 Windows 或 Pi 音频外设已通过。
 
 ```sh
 ALIA_TEST_DATABASE_URL='postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_p2_verify2' \
@@ -34,7 +58,7 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
   cargo test -p alia-server --test easy_turn_live --test voice_stream_live --locked -- --ignored --nocapture
 ```
 
-数据库为本任务独有的临时实例。首次全空数据库运行发现 pgvector 被安装到临时 schema，已将数据库扩展准备固定到 public，并从另一个无扩展、无表的空库完成上述 500 项回归；未修改旧迁移内容。最新真实 CPU 模型直接 Backchannel 约 827 ms，gRPC Complete/Backchannel/Wait 约 497/326/396 ms，仍只是模型调用时间，不含 LLM/TTS 和声学呈现。
+数据库为本任务独有的临时实例。首次全空数据库运行发现 pgvector 被安装到临时 schema，已将数据库扩展准备固定到 public，并从另一个无扩展、无表的空库完成上述 500 项回归；未修改旧迁移内容。该包真实 CPU 模型直接 Backchannel 约 827 ms，gRPC Complete/Backchannel/Wait 约 497/326/396 ms，仍只是模型调用时间，不含 LLM/TTS 和声学呈现。
 
 `33a7c98` 中嵌入渠道测试的 feature 属性位置随后修正；修正后默认特性测试及 `--no-default-features --all-targets` 检查均通过。记录验证时应以修正后的分支为准。
 
@@ -59,9 +83,8 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
 2. 规范 Response / Delivery 事实、投递取消和呈现证据、表达回执与身份栅栏，依据 [Delivery 设计](delivery-design.md) 实施。Execution 持久账本已完成本包整合，不代表投递或硬件完成。
-3. Memory 的 LLM 原子整理/批量遗忘、缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。
-4. Server 装配、后台生产者和长连接的完整生命周期，依据 [Server 生命周期设计](server-runtime-design.md) 实施。Embedded 的独立运行时包已经提交；Server 在 Execution 返回未完成时仍需保留整个依赖链继续清理。
-5. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。
+3. 缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。LLM 原子整理和批量遗忘已在本轮接通并通过专项回归。
+4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
 

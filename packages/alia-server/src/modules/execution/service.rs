@@ -216,6 +216,14 @@ impl ExecutionService {
         self.task.try_lock().map_or(true, |task| task.is_some())
     }
 
+    /// Dependencies must outlive admission, receipt persistence and cancellation,
+    /// even when a previous shutdown attempt has already reported an error.
+    pub(crate) fn shutdown_pending(&self) -> bool {
+        self.worker_pending()
+            || self.catalog_gate.try_write().is_err()
+            || !self.cancellations.lock().unwrap().is_empty()
+    }
+
     pub fn health(&self) -> ModuleHealth {
         match self.fault.lock().unwrap().as_ref() {
             Some(fault) => ModuleHealth::Unhealthy(fault.clone()),
@@ -278,6 +286,7 @@ impl ExecutionService {
                 model_call_id: call.call_id,
                 source_received_at: ctx.source_received_at,
                 source_event_id: ctx.source_event_id,
+                source_privacy_epoch: ctx.source_privacy_epoch,
                 source: ctx.source.clone(),
                 conversation_id: ctx.conversation_id,
                 channel_id: ctx.channel_id.clone(),

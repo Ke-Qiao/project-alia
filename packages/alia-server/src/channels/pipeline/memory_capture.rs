@@ -203,10 +203,20 @@ async fn llm_selected_turn_memory(
     };
     context.source_received_at = pending.source_received_at;
     context.source_event_ids = pending.source_event_id.into_iter().collect();
-    if context.source_received_at <= context.source_cutoff_at {
+    context.exact_source_received_at = pending
+        .source_event_id
+        .map(|id| (id, pending.source_received_at));
+    if context.privacy_epoch != pending.source_privacy_epoch {
         return MemoryCaptureTrace::skipped(
             MemoryCaptureMode::LlmSelected,
-            "source_predates_privacy_boundary",
+            "source_privacy_epoch_revoked",
+        );
+    }
+    if let Err(error) = memory.validate_write_context(&context).await {
+        return MemoryCaptureTrace::failed(
+            MemoryCaptureMode::LlmSelected,
+            Some(model),
+            format!("invalid_memory_source: {error}"),
         );
     }
 

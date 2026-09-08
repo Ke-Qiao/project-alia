@@ -1,74 +1,89 @@
-# Server library runtime 设计
+# Server library runtime
 
-状态：待实施设计，2026-09-08。本文依据当前 P2 工作树的只读核查，准备 P2 提交后的独立构建包；不表示下列运行时能力已经完成。源码行号可能随 P2 收尾移动，以同时列出的函数名定位。
+状态：2026-09-08，运行时所有权、启动回滚、连接/actor 排空及后台任务停止已实现，并通过最终 workspace、真实 PostgreSQL 和 PTY 验收。本文描述当前实现，不以 Embedded 测试代替 Server 验证。
 
-目标范围是 Server 库的启动、资源所有权和退出；保留现有认证、Execution 账本和 Memory 来源边界，不重开产品架构规划。Embedded 的 `ShutdownHandle` / `ShutdownIncomplete` 语义可作为接口参考，不能据此假定 Server 中任意原生线程可以被强制终止。Web/iOS/Android 产品开发仍搁置，但已开放的 HTTP/WS 入口必须安全退出并遵守账号边界。
+范围是 macOS Server 库和现有 Pi5 接口的启动、资源所有权与退出。Easy-Turn 仍仅在 Server。Web/iOS/Android 产品延期；现有 HTTP/WS 服务仍必须遵守身份边界并能被宿主关闭。
 
-## 已具备的基础
+## 公共入口与资源所有权
 
-`bootstrap::run` 已与日志、信号安装分离，使用调用方 token 的子 token；HTTP/gRPC 在模块启动前绑定。监听服务异常会触发同级取消。Continuous voice 有会话取消、鉴权续期和精确 scope 关闭；Execution 有独立持久账本、5 秒提交期限和单次 10 秒关闭预算，关闭等待被丢弃不会丢失 worker JoinHandle。上述局部保证仍不足以证明整个 Server 退出完成。
+```rust
+let startup = ServerBuilder::from_config(config, host_cancel).start_build();
+let completion = startup.shutdown_handle(); // ready 之前即可保留
+let runtime = startup.wait().await?;
+let http = runtime.http_addr();
+let grpc = runtime.grpc_addr();
+runtime.run().await?;
+completion.wait().await?;
+```
 
-## 已确认缺陷
+`ServerBuilder::from_config` 创建并拥有 PostgreSQL pool；`ServerBuilder::new` 接受宿主注入的 pool，实例退出只释放引用，不关闭宿主 pool。`build().await` 是 `start_build().wait().await` 的便利入口；`bootstrap::build` 和 `bootstrap::run` 仍可直接使用。业务代码可以 clone `runtime.state()`，但 `AppState` 不是生命周期所有者。
 
-| 缺陷 | 代码证据 | 实际后果 |
-|---|---|---|
-| 调用方丢弃 `run` 只触发 token，没有保留整个清理流程 | [bootstrap::run:41](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/bootstrap/mod.rs:41)、[run_connected:189](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/bootstrap/mod.rs:189) | 后面的 pipeline、Execution、模块和 DB 清理 await 被跳过；取消请求不能替代 join 或成功证明。pipeline 先 `take()` 再 await 也会失去原句柄的集中所有权。 |
-| Builder 对选定模块吞掉 init/start 错误，部分对象退出路径没有 rollback | [init_module:679](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/module/builder.rs:679)、[start_module:736](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/module/builder.rs:736)、[register_initialized_channel:752](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/module/builder.rs:752)、[STT/TTS factory:135](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/module/factory.rs:135) | 失败模块仍进入后续步骤；扩展/渠道初始化失败或注册失败的对象没有统一 stop。未知 STT/TTS 配置回退 Noop。现有 tools.start 失败分支的局部清理无法覆盖全部构建失败和 drop。 |
-| 监听器 drain 不等于连接与会话结束 | [raw gRPC incoming:168](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/bootstrap/mod.rs:168)、[drain:243](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/bootstrap/mod.rs:243)、[WS:74](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/ws/handler.rs:74)、[voice actor spawn:172](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/grpc/voice_session.rs:172) | 10 秒后 abort listener 不能证明框架内部 HTTP/2 连接或升级后的 WS 已结束。WS 收发均未监听 runtime cancel；voice actor 有取消但没有纳入可 join 的总所有者。legacy 上传已有 40 秒上传期限，但 auth/owner await 与 runtime 退出没有统一取消。 |
-| 后台生产者丢弃任务句柄，部分 stop 只记录或通知 | [scheduler:511](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/scheduler/cron.rs:511)、[rules:245](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/rules/engine.rs:245)、[insights:1967](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/providers/insights/scheduled.rs:1967)、[sensor cleanup:702](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/providers/sensor/registry.rs:702)、[EmbeddedChannel::stop:724](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/embedded/channel.rs:724) | 根 token 能通知这些循环退出，但不能证明退出或获取异常。scheduler/rules 未提供相应 stop join；insights stop 删除 scheduler 项却未 join 两个循环；embedded 渠道的发现、连接、传感同步循环同样缺集中 join。 |
-| 超时与错误传播不能保证依赖安全 | [ModuleRegistry::shutdown:54](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/module/registry.rs:54)、[ChannelRegistry::shutdown:199](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/channels/registry.rs:199)、[bootstrap cleanup:198](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/bootstrap/mod.rs:198)、[discovery shutdown:114](/Users/ke-qiao/Developer/project-alia/packages/alia-server/src/discovery.rs:114) | 每模块各 10 秒不是全局预算；timeout 会丢弃 stop future。渠道 stop 错误被吞掉，pipeline 子任务 panic 只记录。Execution 报告仍有 live worker 后，bootstrap 仍继续停渠道、插件并关闭 DB，可能破坏回执写入。discovery 没有等待停止确认。多个错误最终只保留首个返回值。 |
+`ServerStartup` 拥有独立启动任务。丢弃 startup、取消其 ready waiter 或取消宿主 token 都触发回滚；丢弃调用方 future 不会 abort 唯一的启动/清理任务。预先取得的 `ShutdownHandle` 可继续等待结果。启动成功后所有权交给 `ServerRuntime`；丢弃 runtime 或它的 run/shutdown waiter 同样触发独立清理。实例使用宿主 token 的子 token，关闭一个实例不会反向取消宿主或同级实例。
 
-另有同文件的已确认 WS 边界问题：`ws_handler` 仅 decode JWT，未重新验证 active account；转发整个 EventBus，只按事件类别过滤，未按用户授权过滤。`pending` 在每次串行 send 前后增减，并不形成 64 条有界队列。此入口不得因 frontend 被延期而继续把任意已登录用户当作全局观察者；修复前应显式禁用，或在同一入口包补齐最小身份和事件授权策略。
+| 接口 | 含义 |
+|---|---|
+| `ServerRuntime::state()` | 已装配的业务状态与有效配置。 |
+| `http_addr()` / `grpc_addr()` | 真实绑定地址；未编译 Embedded 服务时 gRPC 为 `None`。 |
+| `requested_config` | 调用方原始配置，保留原先的端口 0。 |
+| `run(self)` | 启动已绑定的 listener，服务退出后等待同一清理所有者。 |
+| `shutdown(self)` | 请求关闭并在本轮全局预算内等待。 |
+| `shutdown_handle()` | 可复制的完成观察者；不转移唯一 worker handle。 |
+| `ShutdownHandle::wait()` / `wait_until(deadline)` | 等待真实清理结果；后者超时返回可 downcast 的 `ShutdownIncomplete`。 |
+| `pending_modules()` / `failures()` / `is_finished()` | 观察仍未完成的阶段、累计错误和完成状态。完成带错误不等于成功。 |
 
-## 目标所有权与合法状态
+`ShutdownIncomplete` 携带 pending 名称和同一个可继续等待的 handle。deadline 只结束当前调用方的等待，不能据此移除资源、丢弃唯一 join handle或伪报成功。
 
-采用一个实例级运行时所有者，公共 `AppState` 只提供业务服务，不承担“最后一个 Arc drop 就算停止”的隐式职责。建议接口方向：Builder 创建可提前取得关闭句柄的启动对象；宿主等待 ready 得到 `ServerRuntime`，由 runtime 运行服务；宿主可在启动等待或 run future 被丢弃后，通过同一个 `ShutdownHandle` 等待最终结果。具体 Rust 签名在实现包内确定，但以下语义不可省略。
+## 启动和回滚
 
-| 所有者 | 必须持有的资源 | 释放条件 |
-|---|---|---|
-| Server runtime | 配置、实际 listener 地址、启动记录、服务/连接/actor 任务集、关闭状态 | 清理完成，或将仍在运行的清理所有权保留在可等待句柄中。 |
-| 单个模块/渠道 | 自己创建的循环、子 token、原生或 async join handle | stop 完成表示真实 join；超时不能移走唯一句柄。 |
-| ExecutionService | 已领取 effect 的 executor Arc、worker handle、持久化责任 | 确切结果写入或明确失败；调用方停止等待不能释放依赖。 |
-| DB 生命周期所有者 | 自建 pool，或宿主明确借用的 pool | 所有持 DB 引用的工作已结束后关闭自建 pool；库不得自行关闭宿主借用的共享 pool。 |
+启动顺序为绑定 HTTP/gRPC、取得数据库并迁移、校验显式 owner、构建选定组件、应用持久设置、启动依赖和渠道，再启动 Execution/主动生产者。Pipeline consumer 在渠道开始发事件前建立；渠道可发送后 Execution 才开始领取 effect。
 
-顶层合法迁移为 `Building → Starting → Running → Stopping → Stopped`。任意失败、取消或调用 future drop 都进入同一个 `Stopping` 流程。超过预算是 `Stopping` 的一次 `ShutdownIncomplete` 报告，不是伪造的 `Stopped`。最终结果包含原始启动/服务错误、各阶段停止错误和仍未结束的资源名称；后续 join 成功不抹去已报告的失败事实。
+每个模块在第一次 `init` poll **之前**进入回滚 slot。slot 先持有部分初始化的 Box，再同步转换为 Arc；转换不跨 await。init/start 的错误、取消或 panic 都让构建失败。渠道成功注册后将 stop 责任转给 ChannelRegistry，失败时仍由原 slot 回滚，避免漏停与重复 stop。显式选中的 provider 未知、功能未编译、必需配置不完整或 init/start 失败均返回错误；显式 `noop` 与禁用配置仍合法。配置的 Memory 健康检查失败不会静默替换另一后端。
 
-每个资源在首次可能分配外部状态的 init/start await **之前**进入清理记录。允许部分 init、部分 start 失败后的 stop；实现必须区分“未实际激活”和“需要实际恢复”的状态，避免回滚时制造新的外部动作。相同模块 Arc 注入多个角色时只清理一次。显式禁用或测试注入 Noop 合法，已选定必需能力的 factory/feature/init/start 失败必须阻止 ready；可选能力的 Degraded 必须有明确配置和可观察原因。
+RuntimeCleanup 按依赖阶段与阶段内逆注册顺序执行回滚。清理所有者在专用 blocking worker 中驱动 stop future，使单线程 Tokio 宿主仍能观察退出 deadline。它使用宿主 runtime 的 I/O 与计时设施；宿主在等待完成期间必须保持 Tokio runtime 运转，不为每个模块创建新 runtime。
 
-运行时使用一个清理所有者，不给每模块新建 Tokio runtime，不把所有 async stop 都包装成多层 blocking supervisor。已存在的同步原生 join 在其后端保留单一所有权，必要时交给受管理的 blocking 工作。异步 timeout 不能抢占正在同步阻塞的原生代码；此时必须保留未完成证据。
+## 关闭顺序和完成证明
 
-## 停止顺序与预算
+1. 关闭渠道与入站 actor admission，取消实例子 token，停止接收新连接，并撤销 discovery 广播。
+2. 给 listener 一个短 drain 预算；之后关闭共享 `Connections` 中的真实 socket。继续 join listener、HTTP/2/WS 连接和 `RuntimeTasks` 中的 voice/WS/渠道管理 actor。内部框架任务不能仅凭顶层 listener 被丢弃就算结束。
+3. 停止并 join Pipeline、sensor cleanup、insights、rules、scheduler 等生产者。各后台组件使用保留句柄的所有者，stop waiter 被丢弃后仍能重新等待。
+4. 关闭 Execution admission，等待已 dispatch 的执行和回执。Execution 自己的等待预算耗尽但 `shutdown_pending()` 仍为 true 时，整体清理继续保留 outbound、插件、raw tools 与 DB，并向宿主返回 incomplete。不能先停这些依赖。
+5. Execution 确认结束后关闭 outbound channels，再按逆序停止插件、模型和存储等资源；最后关闭自有 PostgreSQL pool。
 
-1. 封闭新 HTTP/gRPC/WS、pipeline、scheduler/rules/insights 的业务 admission，并发出生产者取消；撤销发现广告的新连接入口。已领取的 Execution 不随响应 token 直接中止。
-2. 取消并 join 所有入站会话、请求等待者及生产者循环。Continuous voice 的精确 close fence 要在 outbound channel 仍可用时完成。WS 的 recv、send 都响应取消；握手、Refresh/Auth 和 legacy stream 的等待统一受 runtime 控制。
-3. 给 listener 和现存连接有限排空时间；期限后关闭实例拥有的 socket 并等待连接计数归零。追踪升级后的 WS 与框架内部连接，不能只 abort 顶层 serve 任务。请求任务的 join/panic 错误写入清理报告。
-4. 请求 Execution 停止 admission、取消全部未领取会话自动意图，等待已领取任务及回执。若局部 10 秒预算已耗尽但 worker 仍运行，总清理所有者继续保留 outbound/plugins/DB，向宿主返回可继续等待的 incomplete；不继续拆除这些依赖。
-5. Execution 和其他依赖使用者结束后，再按实际依赖逆序 stop outbound、插件、模型/Memory/会话存储等。停止失败继续清理与其无依赖的资源，不能绕过仍在使用的依赖。
-6. 等待 discovery 的停止确认，最后关闭自有 PostgreSQL pool并发布最终报告。借用 pool 只释放本实例引用。
+曾发生的 Execution 局部关闭超时仍保留为历史错误；后来全部 join 会使 pending 归零，但不会把最终报告改成“从未失败”。这与 deadline 当下的 incomplete、最终是否已 join 是两个分别可观察的事实。
 
-整体关闭预算覆盖以上阶段，采用同一个绝对 deadline；可以给连接排空较短子预算，但不能按模块数累加超时时间。预算耗尽只结束宿主这一轮等待，清理所有者继续存在。`main` 如需承诺 CLI 返回期限，应显式管理 Tokio runtime，并将最终 `shutdown_timeout` 写为独立尾部预算；库不安装 logger、信号或退出进程。原生任务仍活跃时必须以失败结束 CLI，不能宣称硬件或线程已安全停止。
+`ModuleLifecycle::stop` 的明确契约是：包括返回 `Err` 时，所有自有 worker 已结束，错误表示已完成清理中出现的问题。此类错误累计到最终报告，后续清理继续。若 stop panic，完成无法证明：保留该 action 的原始 owner 和剩余依赖，停止推进 pending 集合，不自动重试 panicked stop；宿主只能得到 incomplete 和可检查的错误，不能得到假成功。内部后台所有者也必须保留尚未证明退出的句柄，不能把这种情况折成普通“已完成 Err”。
 
-## 分包实施与独占范围
+清理 action 的 owner 捕获与实际 stop future 分开保留，避免 future 的 panic unwind 摧毁唯一资源引用。非合作原生 stop 或不可恢复 panic 可能永久 pending；库没有安全强杀任意线程的能力。Discovery 能证明 mDNS daemon 的 unregister/shutdown ACK；其第三方库没有 native OS-thread join API，因此不宣称已取得该线程的 join 证据。
 
-以下均为待实施。按包提交，每包先通过自身真实故障测试，再进入下一包；共享文件由 root 串行集成。
+## 连接和账号边界
 
-| 包 | 完整结果 | 建议独占文件 |
-|---|---|---|
-| R1：启动与统一清理所有者 | 构建/启动/drop rollback、必需模块严格失败、typed 关闭报告、提前可取句柄；不再由裸 AppState 代表运行时所有权 | `bootstrap/mod.rs`、新增 `bootstrap/runtime.rs` / cleanup 模块、`module/{builder,registry,lifecycle,factory}.rs`、`state.rs`、必要 `config.rs` 和 library runtime tests。 |
-| R2：连接与入站 actor | 实际 HTTP/2、WS、legacy、continuous 会话全部可取消和 join；WS active account/事件授权及背压边界 | `ws/handler.rs`、`grpc/{audio_ingress,voice_session}.rs`、必要连接包装模块及真实 loopback tests；bootstrap 装配由 R1 所有者合并。 |
-| R3：模块后台任务与依赖排空 | scheduler/rules/insights/sensor/channel 的所有循环句柄被保留并 join；Execution incomplete 时依赖保持活跃；停止错误不丢失 | `scheduler/cron.rs`、`rules/engine.rs`、`providers/{insights/scheduled,sensor/registry}.rs`、`channels/{registry,embedded/channel}.rs`、`channels/pipeline/supervision.rs`、`discovery.rs`；Execution 只在必要接口处与其所有者协调。 |
-| R4：可组合配置和 CLI 总退出 | 独立 HTTP/gRPC listen 配置支持端口 0、暴露实际地址、mDNS 使用实际端口；两实例独立身份/目录；CLI 尾部 runtime 预算 | `config.rs`、`main.rs`、`discovery.rs`、配置示例及 bootstrap 组合测试。不得让旧 `http_port + 1` 把随机 HTTP 端口变成 gRPC 端口 1。 |
+HTTP 与 gRPC 都通过 `alia_transport::connections::Connections` 包装已接受的 TCP socket。`close` 与 `wrap` 使用同一个 admission 锁，关闭后新 socket 不会加入；计数归零并且 listener/actor join 后才继续清理依赖。`RuntimeTasks` 封闭后拒绝新任务，收集失败和 panic，不用裸 `tokio::spawn` 代表已经托管。
 
-R2/R3 可独立开发其任务所有权，但没有集成 R1 的关闭所有者之前不宣告整体退出完成。R4 不引入跨平台插件系统，也不要求此次实现进程内媒体传输。
+现有 `/api/v1/ws` 定义为**管理员诊断流**，因为 EventBus 包含全局设备、工具和会话事件。握手用数据库当前 active 状态和当前角色授权，普通用户 403、停用账户 401；不信任 JWT 中旧 admin claim。连接内每 30 秒复查，角色降级或停用后退出。发送有 1 秒期限；事件滞后断开，不能静默跳过丢失事件。用户级订阅产品不在本轮范围，不能以其延期为由继续向任意登录用户广播全局会话数据。
 
-## 真实测试出口
+## 配置与 CLI
 
-- 显式 fake module/channel 在 factory、init、start 各阶段失败；记录调用次序，确认部分初始化对象也停止一次、依赖逆序、必需模块失败没有 ready。禁用模块仍可启动。
-- 单线程 Tokio 宿主取消/丢弃 startup 和 run future：关闭句柄仍可等待，端口释放，所有 fake worker 已 join；重复/并发 shutdown 不重复清理。两个库实例停止一个不影响另一个，宿主共享 pool 仍可使用。
-- 临时 loopback 的占用 HTTP/gRPC 端口、serve 错误、无限 HTTP/2 request、持续 WS、legacy 永不 EOF、continuous auth 等待。必须验证对端连接断开和 actor/连接计数为零，不能只断言顶层函数返回。
-- 用实际 PostgreSQL 独立 schema及可控 executor：stop 期间 effect 仍在执行时，channel/plugin/DB 不先关闭；释放 executor 后成功写入最终事实。表锁和回执写失败要进入可检查错误，未完成 effect 不被写成已取消或成功。
-- 可控 stop 永远不返回：关闭调用在预算内报告准确 pending 集合，释放 stop 后同一 handle 能收到真实终态。非合作原生任务用受控测试替身验证“未完成”，不测试或宣称可强杀硬件。
-- scheduler/rules/insights/sensor/embedded 重复 start 的处理明确；循环 panic 与 stop 错误传递到宿主。停止后没有新的 effect admission、数据库写入或设备重连。
-- WS 账号停用、跨用户订阅、慢接收端与事件滞后必须有真实 socket 测试。任何收到消息的断言必须证明账号授权和实例取消边界。
+`server.grpc_port` 可单独设置，`0` 请求独立随机端口。未设置时固定 HTTP 端口仍默认 `HTTP + 1`；HTTP 为 `0` 时 gRPC 也独立绑定 `0`，不会推导为端口 1。有效配置与 mDNS 使用实际绑定值。`shutdown_grace_ms` 是整体清理等待预算（默认 10000 ms）；`drain_timeout_ms` 是其中 listener drain 的短预算（默认 1000 ms）。两实例应使用不同身份文件和配置目录。
 
-实施验收命令至少包含 Server 定向集成测试、默认与 `--no-default-features` 的 `--all-targets --locked` 检查，以及独立 PG 故障套件。Embedded 已完成的 122 项替身测试只提供接口参考，不作为 Server 的验收替代。
+库不安装 logger 或进程信号，也不退出进程。Server binary 显式创建 Tokio runtime；返回库结果后执行独立 1 秒 `shutdown_timeout` 尾部预算。库的 incomplete 或清理错误保留非零退出结果，进程尾部预算不构成原生线程已经安全停止的证明。初始 OOBE 的 `run_setup` 保留独立流程，本包仅迁移其 discovery async start/shutdown 调用，不能把普通 ServerRuntime 的所有权保证外推到任意 setup future。
+
+## 已验证与集成出口
+
+`tests/server_runtime.rs` 使用真实 PostgreSQL 独立 schema和 loopback socket；缺少测试数据库直接失败。当前 12 项运行时测试覆盖：
+
+- init/start 部分失败精确停止一次及逆序清理；构建取消、drop ready waiter 后仍由提前保留的 handle 等待回滚。
+- 原生 stop 超时、启动失败后原生 rollback 超时，均保留 owner 与 pool，释放替身后同一 handle 到达真实终态。
+- stop 已 join 后返回 Err，仍清理后续资源并关闭自有 pool；重复等待不会擦除错误。
+- drop run 后端口释放、worker 排空、宿主 token不受反向影响；同进程两个实例停一个后另一个仍能实际响应 HTTP，宿主 pool 可继续使用。
+- 占用 listener 和非法 provider 配置在模块 init 前失败；HTTP/gRPC 端口 0 的实际值可检查。
+- 工具目录持久化失败使启动失败；撤除数据库故障后可重新构建并完整关闭，不能带着未持久化的工具目录报告 ready。
+- 真实持久 effect 跨过宿主短预算及 Execution 自身 10 秒等待预算时，outbound、插件和 DB 仍保持活跃；释放 executor 后回执为 `Succeeded`，之后才关闭依赖和自有 pool；最终报告仍保留先前局部超时错误。
+- 管理员 WS 可用、普通用户与禁用账户拒绝；真实连接上的降级/禁用复查断开；shutdown 排空升级 socket 和 actor。
+
+同一集成测试入口还包含 5 项真实 Insights 来源/错误传播测试和 4 项调度/规则来源版本测试。最终 workspace 中该入口为 **21 passed、0 failed、0 ignored**（40.95 秒）；其中 12 项为上述运行时/WS 验证，5 项为 Insights 验证，4 项为自动化来源验证。
+
+另有独立子进程 panic 故障测试：stop panic 后原 owner 和 DB 阶段仍被保留，deadline 返回 incomplete，依赖未被停止。子进程以显式 runtime 尾部预算结束，避免向正常测试进程遗留故意永不完成的 worker。`cargo test -p alia-server --lib module::lifecycle::tests --locked` 已通过该项。
+
+后台组件另有定向测试，覆盖 scheduler/rules/sensors/channel/insights 的停止、重复启动、回滚和等待句柄保留；它们与真实 Runtime 测试共同验证整体契约。当前尚不以这些替身测试声称 Pi5 真实音频硬件退出、任意外部推理原生线程停止，或 Delivery 播放完成。
+
+最终默认 workspace 为 561 项通过、0 失败、4 项显式跳过；日志另含上述 panic 测试的 1 次子进程内部运行，不重复计数。4 项跳过的真实 PTY 和真实 Easy-Turn/gRPC 测试已分别显式运行通过。Server 无默认特性 all-targets 检查通过。完整命令、独立数据库及限制见[构建记录](progress.md)。

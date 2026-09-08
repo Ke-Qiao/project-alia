@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use super::audio_ingress::ServerAudioIngressService;
+use super::audio_ingress::{AdmittedSource, ServerAudioIngressService};
 use crate::channels::ChannelRegistry;
 use crate::modules::interaction::turn_detector::{DetectionError, TurnDetector};
 use crate::modules::interaction::voice_input::{RecognizedVoiceInput, VoiceInputHandle};
@@ -42,6 +42,7 @@ pub struct VoiceSessionService {
     detector: Option<Arc<dyn TurnDetector>>,
     input: VoiceInputHandle,
     shutdown: CancellationToken,
+    runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     sessions: Sessions,
 }
 
@@ -52,6 +53,7 @@ impl VoiceSessionService {
         detector: Option<Arc<dyn TurnDetector>>,
         input: VoiceInputHandle,
         shutdown: CancellationToken,
+        runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     ) -> Self {
         Self {
             auth,
@@ -59,6 +61,7 @@ impl VoiceSessionService {
             detector,
             input,
             shutdown,
+            runtime_tasks,
             sessions: Arc::default(),
         }
     }
@@ -169,26 +172,30 @@ impl VoiceSession for VoiceSessionService {
         let auth = self.auth.clone();
         let channels = self.channels.clone();
         let input = self.input.clone();
-        tokio::spawn(async move {
-            let result = run_session(
-                stream,
-                &tx,
-                &lease,
-                boot,
-                detector,
-                input,
-                channels.clone(),
-                SessionCredentials {
-                    auth,
-                    request: auth_request,
-                    channel: lease.channel.clone(),
-                },
-            )
-            .await;
-            if let Err(error) = result {
-                let _ = tx.try_send(Err(error));
-            }
-        });
+        self.runtime_tasks
+            .try_spawn("voice_session", async move {
+                let result = run_session(
+                    stream,
+                    &tx,
+                    &lease,
+                    boot,
+                    detector,
+                    input,
+                    channels.clone(),
+                    SessionCredentials {
+                        auth,
+                        request: auth_request,
+                        channel: lease.channel.clone(),
+                        source: None,
+                    },
+                )
+                .await;
+                if let Err(error) = result {
+                    let _ = tx.try_send(Err(error));
+                }
+                Ok(())
+            })
+            .map_err(|_| Status::unavailable("server is stopping"))?;
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }
@@ -199,6 +206,8 @@ struct SessionCredentials {
     auth: ServerAudioIngressService,
     request: Request<()>,
     channel: String,
+    /// Captured once before Ready. Refresh may invalidate, never replace it.
+    source: Option<AdmittedSource>,
 }
 
 impl SessionCredentials {
@@ -213,6 +222,9 @@ impl SessionCredentials {
             return Err(Status::permission_denied(
                 "voice credential binding changed",
             ));
+        }
+        if let Some(source) = &self.source {
+            self.auth.revalidate_source(&self.channel, source).await?;
         }
         Ok(())
     }
@@ -398,7 +410,14 @@ async fn run_session_inner<S>(
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
 {
-    let owner_user_id = credentials.auth.owner_user_id(&lease.channel).await?;
+    let source = credentials.auth.admit_source(&lease.channel).await?;
+    let owner_user_id = source.user_id;
+    let source_privacy_epoch = source.privacy_epoch;
+    credentials.source = Some(source);
+    // A channel can be replaced between the initial handshake authentication
+    // and admission. Verify the credential and pinned source together before
+    // allowing capture or model work.
+    credentials.revalidate().await?;
     send_event(
         tx,
         lease,
@@ -446,9 +465,6 @@ where
                 // periodic check of the old token. This drain is also bounded.
                 if !drain_pending(&mut stream, &mut window, &mut credentials).await? { return Ok(()); }
                 credentials.revalidate().await?;
-                if credentials.auth.owner_user_id(&lease.channel).await? != owner_user_id {
-                    return Err(Status::permission_denied("channel owner changed during voice session"));
-                }
             },
             _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
                 retry_at = None;
@@ -486,9 +502,6 @@ where
                     TurnDecision::Stale => continue,
                     TurnDecision::Respond { generation_epoch, transcript } => {
                         credentials.revalidate().await?;
-                        if credentials.auth.owner_user_id(&lease.channel).await? != owner_user_id {
-                            return Err(Status::permission_denied("channel owner changed during voice session"));
-                        }
                         let owner = lease.slot.owner.lock().await;
                         if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
                             return Ok(());
@@ -504,6 +517,7 @@ where
                             session_id: lease.id, device_boot_id: boot, generation_epoch, cancel: response_cancel.clone(),
                             source_received_at: window.source_received_at()
                                 .ok_or_else(|| Status::internal("complete utterance has no receiver timestamp"))?.into(),
+                            source_privacy_epoch,
                         }).map_err(|_| Status::resource_exhausted("voice processing capacity reached"))?;
                         drop(owner);
                         window.finish_utterance();
@@ -588,6 +602,7 @@ mod tests {
 
     struct AuthChannel {
         revoked: std::sync::atomic::AtomicBool,
+        privacy_epoch: std::sync::atomic::AtomicI64,
         required_token: std::sync::Mutex<Option<String>>,
         checked: std::sync::Mutex<Vec<String>>,
         fences: std::sync::Mutex<Vec<(VoiceScope, bool)>>,
@@ -596,6 +611,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 revoked: false.into(),
+                privacy_epoch: 7.into(),
                 required_token: Default::default(),
                 checked: Default::default(),
                 fences: Default::default(),
@@ -609,6 +625,10 @@ mod tests {
     }
     #[async_trait::async_trait]
     impl crate::channels::adapter::ChannelAdapter for AuthChannel {
+        async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+            Ok(self.privacy_epoch.load(std::sync::atomic::Ordering::SeqCst))
+        }
+
         async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
             Ok(Uuid::from_u128(7))
         }
@@ -695,6 +715,7 @@ mod tests {
             ),
             request,
             channel: "device".into(),
+            source: None,
         }
     }
 
@@ -711,6 +732,10 @@ mod tests {
 
     impl Harness {
         async fn new() -> Self {
+            Self::with_channel(Arc::new(AuthChannel::default())).await
+        }
+
+        async fn with_channel(channel: Arc<AuthChannel>) -> Self {
             let cancel = CancellationToken::new();
             let lease = SessionLease::acquire(Arc::default(), "device".into(), &cancel)
                 .await
@@ -720,7 +745,6 @@ mod tests {
             let (call_tx, calls) = mpsc::channel(2);
             let detector = Arc::new(ControlledDetector(call_tx));
             let (input_handle, input) = voice_input::channel();
-            let channel = Arc::new(AuthChannel::default());
             let channels = Arc::new(ChannelRegistry::new());
             channels.register(channel.clone()).await.unwrap();
             let auth = credentials(channels.clone());
@@ -824,6 +848,7 @@ mod tests {
         assert_eq!(h.event().await.generation_epoch, 2);
         let first = h.input.recv().await.unwrap();
         assert_eq!(first.transcript, "sample");
+        assert_eq!(first.source_privacy_epoch, 7);
         h.speech().await;
         h.call().await.answer(TurnState::Backchannel);
         assert_eq!(h.event().await.generation_epoch, 2);
@@ -859,6 +884,7 @@ mod tests {
         let input = h.input.recv().await.unwrap();
         assert!(input.source_received_at >= received_after);
         assert!(input.source_received_at <= received_before);
+        assert_eq!(input.source_privacy_epoch, 7);
         h.finish().await;
     }
 
@@ -902,7 +928,74 @@ mod tests {
         let input = h.input.recv().await.unwrap();
         assert!(input.source_received_at >= received_after);
         assert!(input.source_received_at <= received_before);
+        assert_eq!(input.source_privacy_epoch, 7);
         h.finish().await;
+    }
+
+    #[tokio::test]
+    async fn privacy_change_during_detection_retires_session_and_new_session_gets_new_epoch() {
+        let mut old = Harness::new().await;
+        old.speech().await;
+        let call = old.call().await;
+        let channel = old.channel.clone();
+        channel
+            .privacy_epoch
+            .store(8, std::sync::atomic::Ordering::SeqCst);
+        call.answer(TurnState::Complete);
+        let error = tokio::time::timeout(Duration::from_secs(2), old.task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert!(error.message().contains("privacy epoch changed"));
+        assert!(old.input.try_recv().is_err());
+        assert!(channel.fences.lock().unwrap().last().unwrap().1);
+
+        let mut fresh = Harness::with_channel(channel).await;
+        fresh.speech().await;
+        fresh.call().await.answer(TurnState::Complete);
+        fresh.event().await;
+        assert_eq!(fresh.input.recv().await.unwrap().source_privacy_epoch, 8);
+        fresh.finish().await;
+    }
+
+    #[tokio::test]
+    async fn source_epoch_is_fixed_at_ready_before_first_audio_and_not_renewed_by_auth() {
+        let h = Harness::new().await;
+        h.channel
+            .privacy_epoch
+            .store(8, std::sync::atomic::Ordering::SeqCst);
+        h.refresh(token(1)).await;
+        let error = tokio::time::timeout(Duration::from_secs(2), h.task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn privacy_change_retires_idle_session_and_cancels_queued_response() {
+        let mut h = Harness::new().await;
+        h.speech().await;
+        h.call().await.answer(TurnState::Complete);
+        h.event().await;
+        h.channel
+            .privacy_epoch
+            .store(8, std::sync::atomic::Ordering::SeqCst);
+        for _ in 0..6 {
+            h.silence().await;
+            tokio::time::advance(Duration::from_secs(5)).await;
+            tokio::task::yield_now().await;
+        }
+        let error = h.task.await.unwrap().unwrap_err();
+        assert_eq!(error.code(), tonic::Code::PermissionDenied);
+        let queued = h.input.recv().await.unwrap();
+        assert_eq!(queued.source_privacy_epoch, 7);
+        assert!(queued.cancel.is_cancelled());
+        assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
     }
 
     #[tokio::test]

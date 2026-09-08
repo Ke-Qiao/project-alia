@@ -236,17 +236,19 @@ impl ConversationBackend for DatabaseConversationBackend {
         session_id: Uuid,
         message: ChatMessage,
         received_at: chrono::DateTime<chrono::Utc>,
+        source_privacy_epoch: i64,
     ) -> anyhow::Result<Uuid> {
         use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
         anyhow::ensure!(
             message.role == "user",
             "only user input can be a memory source"
         );
+        anyhow::ensure!(source_privacy_epoch >= 0, "invalid source privacy epoch");
         let tx = self.db()?.begin().await?;
         let id = Uuid::new_v4();
         let inserted = tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at) SELECT $1,$2,$3,'user',$4,clock_timestamp(),$5 FROM chat_sessions WHERE id=$2 AND creator_id=$3",
-            vec![id.into(),session_id.into(),user_id.to_string().into(),message.content.into(),received_at.into()])).await?;
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) SELECT $1,$2,$3,'user',$4,clock_timestamp(),$5,$6 FROM chat_sessions WHERE id=$2 AND creator_id=$3",
+            vec![id.into(),session_id.into(),user_id.to_string().into(),message.content.into(),received_at.into(),source_privacy_epoch.into()])).await?;
         anyhow::ensure!(
             inserted.rows_affected() == 1,
             "conversation session is not owned by this account"

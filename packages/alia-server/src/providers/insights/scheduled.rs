@@ -31,8 +31,8 @@ use crate::memory_policy::detect_sensitive_memory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     CACHE_METADATA_SCHEMA, ChatMessage, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
-    LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryPatch, MemoryWriteContext,
-    ScheduleConfig, ScheduledTask, SchedulerBackend,
+    LlmAdapter, MemoryBackend, MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch,
+    MemoryWriteContext, ScheduleConfig, ScheduledTask, SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
@@ -41,6 +41,22 @@ const TASK_NAME_REFLECTION: &str = "insight_reflection";
 const TASK_NAME_HABIT_DETECTION: &str = "insight_habit_detection";
 const CACHE_STATUS_PENDING: &str = "pending_insights_review";
 const CACHE_STATUS_ACTIVE: &str = "active";
+
+/// The caller's future owns the count, including cancellation and early errors.
+struct PendingTask<'a>(&'a AtomicU32);
+
+impl<'a> PendingTask<'a> {
+    fn new(counter: &'a AtomicU32) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self(counter)
+    }
+}
+
+impl Drop for PendingTask<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 #[derive(Debug, Clone)]
 struct PendingCacheEntry {
@@ -88,7 +104,7 @@ struct InsightUserContext {
 struct MemoryInsightStats {
     created: u32,
     updated: u32,
-    deleted: u32,
+    retired: u32,
     ingested: u32,
     pending: u32,
     summary: String,
@@ -119,13 +135,14 @@ struct MemoryCandidate {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MemoryConsolidationResponse {
     #[serde(default)]
     summary: Option<String>,
     #[serde(default)]
     updates: Vec<MemoryUpdateDecision>,
     #[serde(default)]
-    deletes: Vec<MemoryDeleteDecision>,
+    retirements: Vec<MemoryRetirementDecision>,
     #[serde(default)]
     creates: Vec<MemoryCandidate>,
 }
@@ -142,10 +159,17 @@ struct MemoryUpdateDecision {
 }
 
 #[derive(Debug, Deserialize)]
-struct MemoryDeleteDecision {
+struct MemoryRetirementDecision {
     id: String,
-    #[serde(default)]
-    reason: Option<String>,
+    status: RetirementStatus,
+    reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RetirementStatus {
+    Superseded,
+    Rejected,
 }
 
 /// Internal state tracking last execution and pending tasks
@@ -165,6 +189,8 @@ pub struct ScheduledInsights {
     memory: Mutex<Option<Arc<dyn MemoryBackend>>>,
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
+    background: crate::module::background::OwnedBackground,
+    scheduler_task_gate: Mutex<()>,
     scheduler: Mutex<Option<Arc<dyn SchedulerBackend>>>,
     condition_registry: Mutex<Option<Arc<ConditionRegistry>>>,
     /// Task IDs registered with the scheduler (for cleanup on stop)
@@ -185,6 +211,8 @@ impl ScheduledInsights {
             memory: Mutex::new(None),
             event_bus: Mutex::new(None),
             cancel_token: Mutex::new(None),
+            background: crate::module::background::OwnedBackground::default(),
+            scheduler_task_gate: Mutex::new(()),
             scheduler: Mutex::new(None),
             condition_registry: Mutex::new(None),
             reflection_task_id: Mutex::new(None),
@@ -219,6 +247,19 @@ impl ScheduledInsights {
             .await
             .map_err(|_| anyhow::anyhow!("insights semaphore closed"))?;
 
+        // Recent interaction context is not proof that the account is still active.
+        // Recheck after waiting for capacity and before reading or sending any context.
+        let account = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            crate::entity::user::Entity::find_by_id(user.user_id).one(db),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("insights account authorization timed out"))??;
+        anyhow::ensure!(
+            account.is_some_and(|account| account.status == "active"),
+            "insights requires a currently active account"
+        );
+
         let phase_str = phase.as_str();
 
         event_bus.publish(ServerEvent::InsightStarted {
@@ -230,7 +271,7 @@ impl ScheduledInsights {
         let result = Self::run_phase(db, llm, memory, phase, &user, config).await;
         let duration_ms = start.elapsed().as_millis() as i32;
 
-        let log = match result {
+        let (log, failure) = match result {
             Ok(stats) => {
                 let log = InsightLog {
                     summary: stats.summary,
@@ -242,25 +283,20 @@ impl ScheduledInsights {
                     duration_ms,
                 };
 
-                event_bus.publish(ServerEvent::InsightCompleted {
-                    phase: phase_str.to_string(),
-                    nodes_created: log.nodes_created as u32,
-                    nodes_updated: log.nodes_updated as u32,
-                });
-
-                log
+                (log, None)
             }
             Err(e) => {
                 tracing::error!(phase = phase_str, error = %e, "insights phase failed");
-                InsightLog {
-                    summary: format!("Phase failed: {e}"),
+                let log = InsightLog {
+                    summary: format!("Phase failed; earlier changes may already be committed: {e}"),
                     nodes_created: 0,
                     nodes_updated: 0,
                     nodes_merged: 0,
                     edges_created: 0,
                     model_used: None,
                     duration_ms,
-                }
+                };
+                (log, Some(e))
             }
         };
 
@@ -280,10 +316,25 @@ impl ScheduledInsights {
             duration_ms: Set(Some(log.duration_ms)),
             created_at: Set(Utc::now()),
         };
-        if let Err(e) = active_model.insert(db).await {
-            tracing::error!(error = %e, "failed to persist insights log");
+        if let Err(error) = active_model.insert(db).await {
+            return Err(anyhow::anyhow!(
+                "insights log persistence failed; earlier phase changes may already be committed: {error}; phase failure: {}",
+                failure
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "none".into())
+            ));
         }
 
+        if let Some(error) = failure {
+            return Err(error
+                .context("insights phase failed; earlier phase changes may already be committed"));
+        }
+        event_bus.publish(ServerEvent::InsightCompleted {
+            phase: phase_str.to_string(),
+            nodes_created: log.nodes_created as u32,
+            nodes_updated: log.nodes_updated as u32,
+        });
         Ok(log)
     }
 
@@ -329,7 +380,7 @@ impl ScheduledInsights {
                     ),
                     nodes_created: memory_stats.created as i32,
                     nodes_updated: (memory_stats.updated + cache_stats.approved) as i32,
-                    nodes_merged: memory_stats.deleted as i32,
+                    nodes_merged: memory_stats.retired as i32,
                     edges_created: 0,
                     model_used: Some(join_model_labels(&[
                         memory_stats.model_used,
@@ -508,7 +559,7 @@ impl ScheduledInsights {
                         );
                         return;
                     }
-                    pending_tasks.fetch_add(1, Ordering::Relaxed);
+                    let _pending = PendingTask::new(pending_tasks);
                     for user in users {
                         let _ = Self::execute_phase(
                             db,
@@ -523,7 +574,6 @@ impl ScheduledInsights {
                         )
                         .await;
                     }
-                    pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
                     let mut s = state.lock().await;
                     s.last_phase = Some(phase_str.to_string());
@@ -547,7 +597,7 @@ impl ScheduledInsights {
                     tracing::debug!("voice idle insights extraction skipped without active user");
                     return;
                 };
-                pending_tasks.fetch_add(1, Ordering::Relaxed);
+                let _pending = PendingTask::new(pending_tasks);
                 let db = db.clone();
                 let event_bus = event_bus.clone();
                 let semaphore_ref = semaphore;
@@ -576,7 +626,6 @@ impl ScheduledInsights {
                     }
                     Err(e) => tracing::error!(error = %e, "extraction phase failed"),
                 }
-                pending_tasks.fetch_sub(1, Ordering::Relaxed);
             }
 
             // Sensor-triggered insights: presence sensor detects user left/returned
@@ -610,7 +659,7 @@ impl ScheduledInsights {
                     tracing::debug!("sensor insights skipped without active user");
                     return;
                 };
-                pending_tasks.fetch_add(1, Ordering::Relaxed);
+                let _pending = PendingTask::new(pending_tasks);
                 let _ = Self::execute_phase(
                     db,
                     event_bus,
@@ -635,7 +684,6 @@ impl ScheduledInsights {
                     semaphore,
                 )
                 .await;
-                pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
                 let mut s = state.lock().await;
                 s.last_phase = Some("reflection".to_string());
@@ -693,12 +741,11 @@ impl ScheduledInsights {
                             s.last_interaction_at = None;
                             continue;
                         };
-                        pending_tasks.fetch_add(1, Ordering::Relaxed);
+                        let _pending = PendingTask::new(&pending_tasks);
                         let _ = Self::execute_phase(
                             &db, &event_bus, llm.clone(), memory.clone(), user,
                             &InsightPhase::Consolidation, "idle", &config, &semaphore,
                         ).await;
-                        pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
                         let mut s = state.lock().await;
                         s.last_phase = Some("consolidation".to_string());
@@ -981,92 +1028,96 @@ impl ScheduledInsights {
             ])
             .await?;
         let decision = parse_memory_consolidation_response(&response)?;
-        let mut stats = MemoryInsightStats {
-            summary: decision
-                .summary
-                .unwrap_or_else(|| "Memory consolidation completed.".to_string()),
-            model_used: join_model_labels(&[memory.name().to_string(), llm.name().to_string()]),
-            pending: memories.len() as u32,
-            ..MemoryInsightStats::default()
-        };
-
+        let _proposed_summary = decision.summary;
+        let mut batch = MemoryBatch::default();
+        let mut selected = std::collections::HashSet::new();
+        let updated = decision.updates.len() as u32;
+        let retired = decision.retirements.len() as u32;
         for update in decision.updates {
-            let Some(source) = memories
+            anyhow::ensure!(
+                selected.insert(update.id.clone()),
+                "duplicate consolidation target"
+            );
+            let source = memories
                 .iter()
                 .find(|m| m.id.as_deref() == Some(update.id.as_str()))
-            else {
-                continue;
-            };
-            if update.id.trim().is_empty() {
-                continue;
+                .ok_or_else(|| anyhow::anyhow!("consolidation references an unknown memory"))?;
+            if let Some(content) = &update.content {
+                anyhow::ensure!(!content.trim().is_empty(), "empty consolidation content");
+                anyhow::ensure!(
+                    detect_sensitive_memory(content).is_none(),
+                    "sensitive consolidation content rejected"
+                );
             }
-            let metadata = update.reason.as_ref().map(|reason| {
-                serde_json::json!({
-                    "source": "insights",
-                    "phase": "consolidation",
-                    "reason": reason,
-                    "updated_at": Utc::now().to_rfc3339(),
-                })
-            });
-            memory
-                .update_guarded(
-                    &context,
-                    &update.id,
-                    MemoryPatch {
-                        expected_revision: Some(source.revision),
-                        content: update
-                            .content
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .map(ToOwned::to_owned),
-                        metadata,
-                        importance: update.importance.map(clamp_score),
-                        ..MemoryPatch::default()
-                    },
-                )
-                .await
-                .map_err(|error| anyhow::anyhow!(
-                    "consolidation stopped after {} updates and {} deletions; earlier writes remain committed: {error}",
-                    stats.updated, stats.deleted
-                ))?;
-            stats.updated += 1;
+            anyhow::ensure!(
+                update.content.is_some() || update.importance.is_some(),
+                "empty consolidation update"
+            );
+            batch.updates.push((
+                update.id,
+                MemoryPatch {
+                    expected_revision: Some(source.revision),
+                    content: update.content.map(|content| content.trim().to_owned()),
+                    importance: update.importance.map(clamp_score),
+                    metadata: Some(serde_json::json!({
+                        "source": "insights", "phase": "consolidation", "reason": update.reason,
+                        "updated_at": Utc::now().to_rfc3339(),
+                    })),
+                    ..MemoryPatch::default()
+                },
+            ));
         }
-
-        for delete in decision.deletes {
-            if delete.id.trim().is_empty() {
-                continue;
-            }
-            if !memories
+        for retirement in decision.retirements {
+            anyhow::ensure!(
+                selected.insert(retirement.id.clone()),
+                "duplicate consolidation target"
+            );
+            anyhow::ensure!(
+                !retirement.reason.trim().is_empty(),
+                "retirement requires a reason"
+            );
+            let source = memories
                 .iter()
-                .any(|m| m.id.as_deref() == Some(delete.id.as_str()))
-            {
-                continue;
-            }
-            memory.delete_guarded(&context, &delete.id).await.map_err(|error| anyhow::anyhow!(
-                "consolidation stopped after {} updates and {} deletions; earlier writes remain committed: {error}",
-                stats.updated, stats.deleted
-            ))?;
-            stats.deleted += 1;
+                .find(|m| m.id.as_deref() == Some(retirement.id.as_str()))
+                .ok_or_else(|| anyhow::anyhow!("retirement references an unknown memory"))?;
+            let status = match retirement.status {
+                RetirementStatus::Superseded => "superseded",
+                RetirementStatus::Rejected => "rejected",
+            };
+            batch.updates.push((
+                retirement.id,
+                MemoryPatch {
+                    expected_revision: Some(source.revision),
+                    status: Some(status.into()),
+                    metadata: Some(serde_json::json!({
+                        "source": "insights", "phase": "consolidation", "reason": retirement.reason,
+                        "retired_at": Utc::now().to_rfc3339(),
+                    })),
+                    ..MemoryPatch::default()
+                },
+            ));
         }
-
-        stats.created += Self::store_memory_candidates(
-            memory.as_ref(),
-            user,
-            &context,
-            decision.creates,
-            "consolidation",
-        )
-        .await?;
-        stats.pending = stats
-            .pending
-            .saturating_sub(stats.updated.saturating_add(stats.deleted));
-        // A model's proposed summary is not evidence of committed mutations.
-        stats.summary = format!(
-            "Consolidation committed {} updates, {} deletions and {} creates.",
-            stats.updated, stats.deleted, stats.created
+        batch.creates = Self::prepare_memory_candidates(user, decision.creates, "consolidation")?;
+        let committed = memory
+            .apply_batch_guarded(&context, batch)
+            .await
+            .map_err(|error| anyhow::anyhow!("consolidation batch was not confirmed: {error}"))?;
+        let created = committed.created_ids.len() as u32;
+        anyhow::ensure!(
+            committed.updated == (updated + retired) as usize,
+            "memory batch receipt count mismatch"
         );
-        Ok(stats)
+        Ok(MemoryInsightStats {
+            created,
+            updated,
+            retired,
+            pending: (memories.len() as u32).saturating_sub(updated + retired),
+            model_used: join_model_labels(&[memory.name().to_string(), llm.name().to_string()]),
+            summary: format!(
+                "Consolidation committed {updated} updates, {retired} retirements and {created} creates atomically."
+            ),
+            ..MemoryInsightStats::default()
+        })
     }
 
     async fn reflect_on_user_context(
@@ -1227,59 +1278,57 @@ impl ScheduledInsights {
         candidates: Vec<MemoryCandidate>,
         phase: &str,
     ) -> anyhow::Result<u32> {
-        let mut created = 0;
+        let creates = Self::prepare_memory_candidates(user, candidates, phase)?;
+        let result = memory
+            .apply_batch_guarded(
+                context,
+                MemoryBatch {
+                    creates,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!("{phase} batch was not confirmed: {error}"))?;
+        Ok(result.created_ids.len() as u32)
+    }
+
+    fn prepare_memory_candidates(
+        user: &InsightUserContext,
+        candidates: Vec<MemoryCandidate>,
+        phase: &str,
+    ) -> anyhow::Result<Vec<MemoryNode>> {
+        anyhow::ensure!(candidates.len() <= 64, "too many insight memory candidates");
+        let mut nodes = Vec::new();
         for candidate in candidates {
             let content = candidate.content.trim();
-            if content.is_empty() || candidate.confidence.unwrap_or(1.0) < 0.6 {
-                continue;
-            }
-            if let Some(sensitive) = detect_sensitive_memory(content) {
-                tracing::debug!(
-                    user_id = %user.user_id,
-                    category = sensitive.category,
-                    phase,
-                    "skipped sensitive insight memory candidate"
-                );
+            let confidence = clamp_score(candidate.confidence.unwrap_or(1.0));
+            if content.is_empty() || confidence < 0.6 || detect_sensitive_memory(content).is_some()
+            {
                 continue;
             }
             let layer = candidate
                 .memory_layer
                 .or(candidate.layer)
                 .map(|layer| normalize_memory_layer(&layer))
-                .unwrap_or_else(|| "core".to_string());
+                .unwrap_or_else(|| "core".into());
             let node_type = candidate
                 .node_type
                 .as_deref()
                 .map(normalize_memory_node_type)
-                .unwrap_or_else(|| "fact".to_string());
+                .unwrap_or_else(|| "fact".into());
             let importance = clamp_score(candidate.importance.unwrap_or(0.6));
             let metadata = serde_json::json!({
-                "source": "insights",
-                "phase": phase,
-                "confidence": candidate.confidence.unwrap_or(1.0),
-                "reason": candidate.reason,
-                "user_id_text": user.user_id_text.clone(),
-                "channel_id": user.channel_id.clone(),
-                "created_at": Utc::now().to_rfc3339(),
+                "source": "insights", "phase": phase, "confidence": confidence,
+                "reason": candidate.reason, "user_id_text": user.user_id_text,
+                "channel_id": user.channel_id, "created_at": Utc::now().to_rfc3339(),
             });
-            match memory
-                .store_guarded(
-                    context,
-                    MemoryNode::new(layer, node_type, content.to_string(), importance)
-                        .with_metadata(metadata)
-                        .with_runtime_fields("semantic", "user", 0.8, importance, "internal"),
-                )
-                .await
-            {
-                Ok(_) => created += 1,
-                Err(error) => {
-                    return Err(anyhow::anyhow!(
-                        "{phase} stopped after {created} candidate writes; earlier writes remain committed: {error}"
-                    ));
-                }
-            }
+            nodes.push(
+                MemoryNode::new(layer, node_type, content, importance)
+                    .with_metadata(metadata)
+                    .with_runtime_fields("semantic", "user", confidence, importance, "internal"),
+            );
         }
-        Ok(created)
+        Ok(nodes)
     }
 
     async fn load_recent_messages(
@@ -1296,8 +1345,8 @@ impl ScheduledInsights {
             return Ok(Vec::new());
         };
         let mut rows = db.query_all(Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
-            "SELECT m.id,m.content,m.user_id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE s.id=$1 AND s.creator_id=$2 AND m.user_id=$2 AND m.role='user' AND m.source_received_at>$3 AND m.source_received_at<=$4 ORDER BY m.created_at DESC,m.id DESC LIMIT $5",
-            vec![session_id.into(),user.user_id.to_string().into(),context.source_cutoff_at.into(),context.source_received_at.into(),(limit.clamp(1,100) as i64).into()])).await?;
+            "SELECT m.id,m.content,m.user_id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE s.id=$1 AND s.creator_id=$2 AND m.user_id=$2 AND m.role='user' AND m.source_received_at IS NOT NULL AND m.source_privacy_epoch=$3 ORDER BY m.created_at DESC,m.id DESC LIMIT $4",
+            vec![session_id.into(),user.user_id.to_string().into(),context.privacy_epoch.into(),(limit.clamp(1,100) as i64).into()])).await?;
         rows.reverse();
         let mut messages = Vec::with_capacity(rows.len());
         for row in rows {
@@ -1585,6 +1634,7 @@ impl ScheduledInsights {
 
     /// Register cron-based insights tasks with the SchedulerBackend
     async fn register_scheduler_tasks(
+        &self,
         scheduler: &dyn SchedulerBackend,
         config: &InsightsSection,
         conditions: &[serde_json::Value],
@@ -1613,6 +1663,8 @@ impl ScheduledInsights {
             max_retries: 0,
             created_by: "system".to_string(),
         };
+        // Retain the identity before the DB await: a committed write can lose its ACK.
+        *self.reflection_task_id.lock().await = Some(reflection_task.id);
         let reflection_id = scheduler.create_task(reflection_task).await?;
         tracing::info!(
             task_id = %reflection_id,
@@ -1642,6 +1694,7 @@ impl ScheduledInsights {
             max_retries: 0,
             created_by: "system".to_string(),
         };
+        *self.habit_task_id.lock().await = Some(habit_task.id);
         let habit_id = scheduler.create_task(habit_task).await?;
         tracing::info!(
             task_id = %habit_id,
@@ -1955,10 +2008,14 @@ impl ModuleLifecycle for ScheduledInsights {
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
+        let mut background = self.background.begin_start(&cancel_token).await?;
+        let cancel_token = background.token();
+        let _tasks = self.scheduler_task_gate.lock().await;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
 
         if !config.enabled {
+            background.commit();
             tracing::info!("insights is disabled by config");
             return Ok(());
         }
@@ -1968,12 +2025,10 @@ impl ModuleLifecycle for ScheduledInsights {
         let (reflection_task_id, habit_task_id) = if let Some(scheduler) =
             self.scheduler.lock().await.as_ref()
         {
-            match Self::register_scheduler_tasks(scheduler.as_ref(), &config, &conditions).await {
-                Ok(ids) => ids,
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to register insights cron tasks");
-                    (None, None)
-                }
+            tokio::select! {
+                biased;
+                _ = cancel_token.cancelled() => anyhow::bail!("insights startup cancelled"),
+                result = self.register_scheduler_tasks(scheduler.as_ref(), &config, &conditions) => result?,
             }
         } else {
             tracing::warn!("no scheduler available, cron-based insights phases disabled");
@@ -2003,7 +2058,7 @@ impl ModuleLifecycle for ScheduledInsights {
         let cfg_clone = self.config.clone();
         let listener_llm = llm.clone();
         let listener_memory = memory.clone();
-        tokio::spawn(async move {
+        background.spawn_loop("insights events", async move {
             Self::event_listener_loop(
                 db_clone,
                 eb_clone,
@@ -2030,7 +2085,7 @@ impl ModuleLifecycle for ScheduledInsights {
         let sem_clone = semaphore.clone();
         let st_clone = state.clone();
         let idle_config = self.config.clone();
-        tokio::spawn(async move {
+        background.spawn_loop("insights idle checks", async move {
             Self::idle_check_loop(
                 db_clone,
                 eb_clone,
@@ -2046,20 +2101,34 @@ impl ModuleLifecycle for ScheduledInsights {
             .await;
         });
 
+        background.commit();
         tracing::info!("ScheduledInsights started (2 background tasks, cron via scheduler)");
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        // Clean up scheduler tasks
+        self.background.request_stop();
+        let mut errors = Vec::new();
+        if let Err(error) = self.background.stop().await {
+            errors.push(format!("workers: {error:#}"));
+        }
+        let _tasks = self.scheduler_task_gate.lock().await;
         if let Some(scheduler) = self.scheduler.lock().await.as_ref() {
-            if let Some(id) = *self.reflection_task_id.lock().await {
-                let _ = scheduler.delete_task(id).await;
-            }
-            if let Some(id) = *self.habit_task_id.lock().await {
-                let _ = scheduler.delete_task(id).await;
+            for task in [&self.reflection_task_id, &self.habit_task_id] {
+                let mut id = task.lock().await;
+                if let Some(task_id) = *id {
+                    match scheduler.delete_task(task_id).await {
+                        Ok(()) => *id = None,
+                        Err(error) => errors.push(format!("scheduler task {task_id}: {error:#}")),
+                    }
+                }
             }
         }
+        anyhow::ensure!(
+            errors.is_empty(),
+            "insights shutdown incomplete: {}",
+            errors.join("; ")
+        );
         tracing::info!("ScheduledInsights stopped");
         Ok(())
     }
@@ -2130,6 +2199,7 @@ fn apply_prompt_setting(
 #[async_trait]
 impl InsightStrategy for ScheduledInsights {
     async fn schedule(&self, task: InsightTask) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.background.is_stopping(), "insights is stopping");
         if !self.enabled.load(Ordering::Relaxed) {
             anyhow::bail!("insights is disabled");
         }
@@ -2172,10 +2242,10 @@ impl InsightStrategy for ScheduledInsights {
             return Ok(());
         }
 
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let _pending = PendingTask::new(&self.pending_tasks);
 
         for user in users {
-            let _ = Self::execute_phase(
+            Self::execute_phase(
                 &db,
                 &event_bus,
                 llm.clone(),
@@ -2186,9 +2256,8 @@ impl InsightStrategy for ScheduledInsights {
                 &config,
                 &self.concurrency_semaphore,
             )
-            .await;
+            .await?;
         }
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
         Ok(())
     }
@@ -2224,6 +2293,8 @@ impl InsightStrategy for ScheduledInsights {
     }
 
     async fn trigger(&self, user_id: Uuid, phase: InsightPhase) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.background.is_stopping(), "insights is stopping");
+        anyhow::ensure!(self.enabled.load(Ordering::Relaxed), "insights is disabled");
         let db = self
             .db
             .lock()
@@ -2256,7 +2327,7 @@ impl InsightStrategy for ScheduledInsights {
                 last_seen_at: Utc::now(),
             });
 
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let _pending = PendingTask::new(&self.pending_tasks);
         let result = Self::execute_phase(
             &db,
             &event_bus,
@@ -2269,7 +2340,6 @@ impl InsightStrategy for ScheduledInsights {
             &self.concurrency_semaphore,
         )
         .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
 
         // Update internal state
         {
@@ -2296,39 +2366,47 @@ impl InsightStrategy for ScheduledInsights {
     }
 
     async fn set_conditions(&self, conditions: Vec<serde_json::Value>) -> anyhow::Result<()> {
-        // Store the override
-        {
-            let mut state = self.state.lock().await;
-            state.conditions_override = Some(conditions.clone());
+        let _tasks = self.scheduler_task_gate.lock().await;
+        anyhow::ensure!(!self.background.is_stopping(), "insights is stopping");
+        tokio::select! {
+            biased;
+            _ = self.background.cancelled() => anyhow::bail!("insights is stopping"),
+            result = async {
+                // Store the override
+                {
+                    let mut state = self.state.lock().await;
+                    state.conditions_override = Some(conditions.clone());
+                }
+
+                // Re-register scheduler tasks with updated conditions
+                let scheduler = self.scheduler.lock().await;
+                let config = self.config.lock().await;
+                let (scheduler, config) = match (scheduler.as_ref(), config.as_ref()) {
+                    (Some(s), Some(c)) => (s, c),
+                    _ => return Ok(()), // No scheduler or config — nothing to update
+                };
+
+                // Delete old tasks
+                if let Some(id) = *self.reflection_task_id.lock().await {
+                    scheduler.delete_task(id).await?;
+                }
+                if let Some(id) = *self.habit_task_id.lock().await {
+                    scheduler.delete_task(id).await?;
+                }
+
+                // Re-register with new conditions
+                let (reflection_id, habit_id) =
+                    self.register_scheduler_tasks(scheduler.as_ref(), config, &conditions).await?;
+                *self.reflection_task_id.lock().await = reflection_id;
+                *self.habit_task_id.lock().await = habit_id;
+
+                tracing::info!(
+                    num_conditions = conditions.len(),
+                    "insights conditions updated, scheduler tasks re-registered"
+                );
+                Ok(())
+            } => result,
         }
-
-        // Re-register scheduler tasks with updated conditions
-        let scheduler = self.scheduler.lock().await;
-        let config = self.config.lock().await;
-        let (scheduler, config) = match (scheduler.as_ref(), config.as_ref()) {
-            (Some(s), Some(c)) => (s, c),
-            _ => return Ok(()), // No scheduler or config — nothing to update
-        };
-
-        // Delete old tasks
-        if let Some(id) = *self.reflection_task_id.lock().await {
-            let _ = scheduler.delete_task(id).await;
-        }
-        if let Some(id) = *self.habit_task_id.lock().await {
-            let _ = scheduler.delete_task(id).await;
-        }
-
-        // Re-register with new conditions
-        let (reflection_id, habit_id) =
-            Self::register_scheduler_tasks(scheduler.as_ref(), config, &conditions).await?;
-        *self.reflection_task_id.lock().await = reflection_id;
-        *self.habit_task_id.lock().await = habit_id;
-
-        tracing::info!(
-            num_conditions = conditions.len(),
-            "insights conditions updated, scheduler tasks re-registered"
-        );
-        Ok(())
     }
 }
 
@@ -2378,7 +2456,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn consolidation_reports_prior_commit_and_rejects_second_update_from_stale_snapshot() {
+    async fn consolidation_commits_multiple_updates_and_creates_in_one_snapshot() {
         let memory = Arc::new(AliaMemory::new());
         let user = insight_user();
         let first = memory
@@ -2407,14 +2485,14 @@ mod tests {
                     {"id": first, "content": "First revised fact"},
                     {"id": second, "content": "Second revised fact"}
                 ],
-                "deletes": [],
-                "creates": [{"content": "Must not run after the failed update"}]
+                "retirements": [],
+                "creates": [{"content": "A durable combined fact"}]
             })
             .to_string(),
             calls: AtomicU32::new(0),
         });
 
-        let error = ScheduledInsights::consolidate_memories(
+        let stats = ScheduledInsights::consolidate_memories(
             Some(memory.clone()),
             Some(llm.clone()),
             &user,
@@ -2422,29 +2500,24 @@ mod tests {
             &InsightsSection::default(),
         )
         .await
-        .expect_err("a partially committed plan must not report successful consolidation");
-        let message = error.to_string();
-        assert!(message.contains("1 updates and 0 deletions"), "{message}");
-        assert!(
-            message.contains("earlier writes remain committed"),
-            "{message}"
-        );
-        assert!(message.contains("memory source changed"), "{message}");
+        .unwrap();
+        assert_eq!((stats.updated, stats.retired, stats.created), (2, 0, 1));
+        assert!(stats.summary.contains("atomically"));
         assert_eq!(llm.calls.load(Ordering::SeqCst), 1);
 
         let stored_first = memory.get(user.user_id, &first).await.unwrap().unwrap();
         let stored_second = memory.get(user.user_id, &second).await.unwrap().unwrap();
         assert_eq!(stored_first.content, "First revised fact");
         assert_eq!(stored_first.revision, 2);
-        assert_eq!(stored_second.content, "Second original fact");
-        assert_eq!(stored_second.revision, 1);
+        assert_eq!(stored_second.content, "Second revised fact");
+        assert_eq!(stored_second.revision, 2);
         assert_eq!(
             memory
                 .list(user.user_id, MemoryListOpts::default())
                 .await
                 .unwrap()
                 .len(),
-            2
+            3
         );
         assert_eq!(
             memory
@@ -2483,7 +2556,7 @@ mod tests {
         .expect_err("a rejected old candidate must not be swallowed as Ok(0)");
         let message = error.to_string();
         assert!(
-            message.contains("extraction stopped after 0 candidate writes"),
+            message.contains("extraction batch was not confirmed"),
             "{message}"
         );
         assert!(
@@ -2504,6 +2577,113 @@ mod tests {
                 .unwrap()
                 .privacy_epoch,
             cleared_epoch
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_later_consolidation_target_leaves_the_entire_plan_unwritten() {
+        let memory = Arc::new(AliaMemory::new());
+        let user = insight_user();
+        let id = memory
+            .store(
+                user.user_id,
+                MemoryNode::new("core", "fact", "Original fact", 0.8),
+            )
+            .await
+            .unwrap();
+        let llm = Arc::new(FixedMemoryLlm {
+            response: serde_json::json!({
+                "updates": [{"id": id, "content": "Revised fact"}],
+                "retirements": [{"id": Uuid::new_v4(), "status": "superseded", "reason": "duplicate"}],
+                "creates": [{"content": "New fact"}]
+            }).to_string(), calls: AtomicU32::new(0),
+        });
+        assert!(
+            ScheduledInsights::consolidate_memories(
+                Some(memory.clone()),
+                Some(llm),
+                &user,
+                50,
+                &InsightsSection::default(),
+            )
+            .await
+            .is_err()
+        );
+        let unchanged = memory.get(user.user_id, &id).await.unwrap().unwrap();
+        assert_eq!(
+            (unchanged.content.as_str(), unchanged.revision),
+            ("Original fact", 1)
+        );
+        assert_eq!(
+            memory
+                .list(user.user_id, MemoryListOpts::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn consolidation_retirement_preserves_evidence_and_does_not_advance_privacy_epoch() {
+        let memory = Arc::new(AliaMemory::new());
+        let user = insight_user();
+        let id = memory
+            .store(
+                user.user_id,
+                MemoryNode::new("core", "fact", "Old wording", 0.8),
+            )
+            .await
+            .unwrap();
+        let epoch = memory
+            .write_snapshot(user.user_id)
+            .await
+            .unwrap()
+            .privacy_epoch;
+        let llm = Arc::new(FixedMemoryLlm {
+            response: serde_json::json!({
+                "retirements": [{"id": id, "status": "superseded", "reason": "refined wording"}],
+                "creates": [{"content": "Refined wording"}]
+            })
+            .to_string(),
+            calls: AtomicU32::new(0),
+        });
+        let stats = ScheduledInsights::consolidate_memories(
+            Some(memory.clone()),
+            Some(llm),
+            &user,
+            50,
+            &InsightsSection::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!((stats.retired, stats.created), (1, 1));
+        let retired = memory.get(user.user_id, &id).await.unwrap().unwrap();
+        assert_eq!(retired.status, "superseded");
+        assert_eq!(retired.content, "Old wording");
+        assert_eq!(
+            memory
+                .write_snapshot(user.user_id)
+                .await
+                .unwrap()
+                .privacy_epoch,
+            epoch
+        );
+        let mut forget = memory.write_snapshot(user.user_id).await.unwrap();
+        forget.source_memories = vec![(id, retired.revision)];
+        assert_eq!(
+            memory
+                .forget_many_guarded(&forget, &forget.source_memories)
+                .await
+                .unwrap(),
+            2
+        );
+        assert!(
+            memory
+                .list(user.user_id, MemoryListOpts::default())
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -2551,13 +2731,13 @@ mod tests {
     #[test]
     fn parses_memory_consolidation_with_surrounding_text() {
         let parsed = parse_memory_consolidation_response(
-            "Result:\n{\"summary\":\"merged duplicates\",\"updates\":[{\"id\":\"mem_1\",\"content\":\"KeQiao likes Japanese music\",\"importance\":0.8,\"reason\":\"clearer\"}],\"deletes\":[{\"id\":\"mem_2\",\"reason\":\"duplicate\"}],\"creates\":[]}\nThanks.",
+            "Result:\n{\"summary\":\"merged duplicates\",\"updates\":[{\"id\":\"mem_1\",\"content\":\"KeQiao likes Japanese music\",\"importance\":0.8,\"reason\":\"clearer\"}],\"retirements\":[{\"id\":\"mem_2\",\"status\":\"superseded\",\"reason\":\"duplicate\"}],\"creates\":[]}\nThanks.",
         )
         .unwrap();
 
         assert_eq!(parsed.summary.as_deref(), Some("merged duplicates"));
         assert_eq!(parsed.updates[0].id, "mem_1");
-        assert_eq!(parsed.deletes[0].id, "mem_2");
+        assert_eq!(parsed.retirements[0].id, "mem_2");
     }
 
     #[test]
@@ -2582,4 +2762,49 @@ fn source_versions(memories: &[MemoryNode]) -> Vec<(String, i64)> {
         .iter()
         .filter_map(|memory| memory.id.clone().map(|id| (id, memory.revision)))
         .collect()
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use crate::providers::adapter::TaskFilter;
+    use crate::scheduler::action::ActionRegistry;
+    use crate::scheduler::{AutomationScheduler, ConditionRegistry};
+
+    #[tokio::test]
+    async fn failed_second_cron_registration_rolls_back_first_and_rejects_restart() {
+        let scheduler = Arc::new(AutomationScheduler::with_registries(
+            Arc::new(ConditionRegistry::new()),
+            Arc::new(ActionRegistry::new()),
+        ));
+        let insights = ScheduledInsights::new();
+        let mut config = InsightsSection::default();
+        config.enabled = true;
+        config.habit_detection_schedule = "invalid cron".into();
+        *insights.config.lock().await = Some(config);
+        *insights.db.lock().await = Some(DatabaseConnection::Disconnected);
+        *insights.event_bus.lock().await = Some(EventBus::new(8));
+        *insights.cancel_token.lock().await = Some(CancellationToken::new());
+        *insights.scheduler.lock().await = Some(scheduler.clone());
+        assert!(insights.start().await.is_err());
+        assert_eq!(
+            scheduler
+                .list_tasks(TaskFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        insights.stop().await.unwrap();
+        assert!(
+            scheduler
+                .list_tasks(TaskFilter::default())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        insights.stop().await.unwrap();
+        assert!(insights.start().await.is_err());
+        assert!(insights.set_conditions(vec![]).await.is_err());
+    }
 }

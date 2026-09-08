@@ -53,6 +53,10 @@ impl ModuleLifecycle for TestChannel {
 
 #[async_trait]
 impl ChannelAdapter for TestChannel {
+    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+        Ok(0) // Explicit test authority; this smoke does not exercise a database.
+    }
+
     async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
         Ok(Uuid::from_u128(7))
     }
@@ -194,7 +198,14 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
     let (input, mut recognized) = voice_input::channel();
     let shutdown = CancellationToken::new();
     let _cancel_on_drop = shutdown.clone().drop_guard();
-    let service = VoiceSessionService::new(auth, channels, Some(detector), input, shutdown.clone());
+    let service = VoiceSessionService::new(
+        auth,
+        channels,
+        Some(detector),
+        input,
+        shutdown.clone(),
+        std::sync::Arc::new(alia_server::module::lifecycle::RuntimeTasks::default()),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let grpc_endpoint = format!("http://{}", listener.local_addr().unwrap());
     let incoming = async_stream::stream! {

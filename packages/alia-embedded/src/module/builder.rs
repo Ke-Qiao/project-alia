@@ -183,7 +183,7 @@ impl EmbeddedNode {
             .context("node listener already consumed")?;
         let connections = self.connections.clone();
         let incoming = async_stream::stream! {
-            loop { yield listener.accept().await.map(|(stream, _)| connections.wrap(stream)); }
+            loop { yield listener.accept().await.and_then(|(stream, _)| connections.wrap(stream)); }
         };
         info!(%addr, "gRPC server listening");
 

@@ -72,17 +72,21 @@ impl ServerDiscoveryAnnouncement {
 }
 
 pub struct ServerDiscoveryAdvertisement {
-    daemon: ServiceDaemon,
-    fullname: String,
+    cancel: tokio_util::sync::CancellationToken,
+    cleanup: tokio::sync::Mutex<AdvertisementCleanup>,
+}
+
+struct AdvertisementCleanup {
+    task: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
+    result: Option<Result<(), String>>,
 }
 
 impl ServerDiscoveryAdvertisement {
-    pub fn start(announcement: ServerDiscoveryAnnouncement) -> anyhow::Result<Option<Self>> {
+    pub async fn start(announcement: ServerDiscoveryAnnouncement) -> anyhow::Result<Option<Self>> {
         if !announcement.enabled {
             return Ok(None);
         }
 
-        let daemon = ServiceDaemon::new().context("creating server mDNS daemon")?;
         let hostname = mdns_hostname(&announcement.server_id);
         let service_info = ServiceInfo::new(
             &announcement.service_name,
@@ -96,9 +100,44 @@ impl ServerDiscoveryAdvertisement {
         .enable_addr_auto();
 
         let fullname = service_info.get_fullname().to_string();
-        daemon
-            .register(service_info)
-            .context("registering server mDNS service")?;
+        let daemon = ServiceDaemon::new().context("creating server mDNS daemon")?;
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let cleanup_cancel = cancel.clone();
+        let cleanup_daemon = daemon.clone();
+        let cleanup = tokio::spawn(async move {
+            cleanup_cancel.cancelled().await;
+            // Request daemon shutdown even when unregister fails. Its ACK is
+            // the native library's evidence; it exposes no OS-thread join.
+            let unregister = cleanup_daemon.unregister(&fullname);
+            let shutdown = alia_transport::shutdown_discovery_daemon(&cleanup_daemon).await;
+            let mut errors = Vec::new();
+            match unregister {
+                Ok(ack) => {
+                    if let Err(error) = ack.recv_async().await {
+                        errors.push(format!("unregister acknowledgement: {error}"));
+                    }
+                }
+                Err(error) => errors.push(format!("unregister: {error}")),
+            }
+            if let Err(error) = shutdown {
+                errors.push(format!("daemon shutdown: {error:#}"));
+            }
+            anyhow::ensure!(errors.is_empty(), "{}", errors.join("; "));
+            Ok(())
+        });
+        let advertisement = Self {
+            cancel,
+            cleanup: tokio::sync::Mutex::new(AdvertisementCleanup {
+                task: Some(cleanup),
+                result: None,
+            }),
+        };
+        if let Err(error) = daemon.register(service_info) {
+            let cleanup = advertisement.shutdown().await;
+            return Err(anyhow::anyhow!(
+                "registering server mDNS service: {error}; cleanup: {cleanup:?}"
+            ));
+        }
 
         tracing::info!(
             service = %announcement.service_name,
@@ -108,12 +147,30 @@ impl ServerDiscoveryAdvertisement {
             "server discovery advertised"
         );
 
-        Ok(Some(Self { daemon, fullname }))
+        Ok(Some(advertisement))
     }
 
-    pub fn shutdown(self) {
-        let _ = self.daemon.unregister(&self.fullname);
-        let _ = self.daemon.shutdown();
+    pub async fn shutdown(&self) -> anyhow::Result<()> {
+        self.cancel.cancel();
+        let mut cleanup = self.cleanup.lock().await;
+        if let Some(task) = cleanup.task.as_mut() {
+            let result = task
+                .await
+                .map_err(anyhow::Error::from)
+                .and_then(|result| result);
+            cleanup.task.take();
+            cleanup.result = Some(result.map_err(|error| format!("{error:#}")));
+        }
+        match cleanup.result.as_ref().expect("discovery cleanup retained") {
+            Ok(()) => Ok(()),
+            Err(error) => anyhow::bail!("{error}"),
+        }
+    }
+}
+
+impl Drop for ServerDiscoveryAdvertisement {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }
 

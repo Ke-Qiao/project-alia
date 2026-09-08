@@ -79,6 +79,14 @@ pub async fn execute_tool(
     body: std::result::Result<Json<ExecuteToolRequest>, JsonRejection>,
 ) -> std::result::Result<Json<EffectRecord>, ExecutionApiError> {
     let source_received_at = chrono::Utc::now();
+    let source_privacy_epoch =
+        crate::modules::memory::source::capture_source_epoch(&state.db, auth.id)
+            .await
+            .map_err(|error| {
+                crate::modules::execution::types::ExecutionError::Database(sea_orm::DbErr::Custom(
+                    format!("source admission unavailable: {error:#}"),
+                ))
+            })?;
     let Json(body) = body?;
     let call = ToolCall {
         tool_name: body.tool_name,
@@ -91,6 +99,7 @@ pub async fn execute_tool(
         request_id: body.request_id,
         source_received_at,
         source_event_id: None,
+        source_privacy_epoch: Some(source_privacy_epoch),
         invocation_key: "0".into(),
         conversation_id: None,
         source: "manual".to_string(),

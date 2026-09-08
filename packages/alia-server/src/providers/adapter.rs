@@ -1181,15 +1181,55 @@ pub struct MemoryWriteContext {
     /// Trusted input timestamp, never an extractor-generated timestamp.
     pub source_received_at: chrono::DateTime<chrono::Utc>,
     pub source_event_ids: Vec<Uuid>,
+    /// Optional audit consistency for a tool's single original user message.
+    pub exact_source_received_at: Option<(Uuid, chrono::DateTime<chrono::Utc>)>,
     pub source_memories: Vec<(String, i64)>,
+}
+
+/// A consolidation plan against one immutable source snapshot. Retirement is
+/// represented by a superseded/rejected update; this API never performs forget.
+#[derive(Debug, Clone, Default)]
+pub struct MemoryBatch {
+    pub updates: Vec<(String, MemoryPatch)>,
+    pub creates: Vec<MemoryNode>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MemoryBatchResult {
+    pub updated: usize,
+    pub created_ids: Vec<String>,
 }
 
 #[async_trait]
 pub trait MemoryBackend: ModuleLifecycle {
+    /// Validate source authority before reads or duplicate shortcuts. Mutations
+    /// must still repeat this check in their own commit transaction.
+    async fn validate_write_context(&self, _context: &MemoryWriteContext) -> anyhow::Result<()> {
+        anyhow::bail!("memory backend does not support source validation")
+    }
     /// Capture before reading source data or awaiting an extractor. A later
     /// privacy change invalidates this token at the database commit boundary.
     async fn write_snapshot(&self, _user_id: Uuid) -> anyhow::Result<MemoryWriteContext> {
         anyhow::bail!("memory backend does not support guarded writes")
+    }
+    /// Validate the original snapshot once, then commit all canonical changes
+    /// and provenance atomically. A failure cannot leave an earlier mutation.
+    async fn apply_batch_guarded(
+        &self,
+        _context: &MemoryWriteContext,
+        _batch: MemoryBatch,
+    ) -> anyhow::Result<MemoryBatchResult> {
+        anyhow::bail!("memory backend does not support atomic batches")
+    }
+    /// Forget the exact original selection, including its derived records, in
+    /// one privacy transition. Targets must occur in context.source_memories.
+    /// An empty selection is a no-op; clear has its own invalidation semantics.
+    async fn forget_many_guarded(
+        &self,
+        _context: &MemoryWriteContext,
+        _targets: &[(String, i64)],
+    ) -> anyhow::Result<u64> {
+        anyhow::bail!("memory backend does not support atomic forget")
     }
     async fn store_guarded(
         &self,
@@ -1767,6 +1807,7 @@ pub trait ConversationBackend: ModuleLifecycle {
         _session_id: Uuid,
         _message: ChatMessage,
         _received_at: chrono::DateTime<chrono::Utc>,
+        _source_privacy_epoch: i64,
     ) -> anyhow::Result<Uuid> {
         anyhow::bail!("conversation backend does not support durable input provenance")
     }
@@ -2024,6 +2065,8 @@ pub struct ActionContext {
     pub request_id: Uuid,
     /// Trusted trigger observation time, retained while actions wait or retry.
     pub source_received_at: chrono::DateTime<chrono::Utc>,
+    /// Captured at trusted source admission; queueing and retries must retain it.
+    pub source_privacy_epoch: Option<i64>,
     pub source: String,
     pub trigger_id: Option<Uuid>,
     pub trigger_name: Option<String>,
@@ -2108,6 +2151,8 @@ pub struct ToolContext {
     pub request_id: Uuid,
     /// Original input observation time; queueing, approval and retries cannot refresh it.
     pub source_received_at: chrono::DateTime<chrono::Utc>,
+    /// Captured at trusted source admission; absent is not the current epoch.
+    pub source_privacy_epoch: Option<i64>,
     /// Persisted user message for AI-triggered writes; absent for manual/scheduled work.
     pub source_event_id: Option<Uuid>,
     /// Position within the request (for example LLM depth:index).

@@ -52,11 +52,15 @@ and optional `completion`. Clients should retain `effect_id`, `request_id`, and
 `intent_digest` for inspection and consent. A retry can use a new correlation
 label, while the stored record retains its original `model_call_id`.
 
-Trusted `source_received_at` and optional `source_event_id` are also stored with
-the effect and restored in its worker context. They cannot be set through this
-request body. Retransmission preserves the first observed input time; a source
-message ID is part of the immutable intent. AI memory writes require a committed
-source user message and revalidate its owner and deletion boundary at write time.
+Trusted `source_privacy_epoch`, `source_received_at` and optional `source_event_id`
+are stored with the effect and restored unchanged in its worker context. They
+cannot be set through this request body. Retransmission preserves the original
+source; its epoch and message ID are part of the immutable intent. Missing epoch
+does not mean the current version. Memory tools require an admitted source epoch;
+AI memory writes also require a committed user message and revalidate its owner,
+stored source epoch and original audit time. The epoch, rather than a comparison
+between Server and database wall clocks, establishes the deletion boundary. See
+[source admission](source-admission.md) for the ingress and queue contract.
 
 ## Confirmation and cancellation
 

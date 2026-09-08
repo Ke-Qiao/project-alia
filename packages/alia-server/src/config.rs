@@ -36,6 +36,13 @@ pub struct ServerSection {
     pub id: String,
     pub host: String,
     pub port: u16,
+    /// None follows the HTTP port + 1; HTTP port 0 also binds an ephemeral gRPC port.
+    #[serde(default)]
+    pub grpc_port: Option<u16>,
+    #[serde(default = "default_shutdown_grace_ms")]
+    pub shutdown_grace_ms: u64,
+    #[serde(default = "default_drain_timeout_ms")]
+    pub drain_timeout_ms: u64,
     #[serde(default)]
     pub public_endpoint: Option<String>,
     #[serde(default = "default_true")]
@@ -51,6 +58,14 @@ pub struct ServerSection {
 
 fn default_server_id() -> String {
     "alia-server".to_string()
+}
+
+fn default_shutdown_grace_ms() -> u64 {
+    10_000
+}
+
+fn default_drain_timeout_ms() -> u64 {
+    1_000
 }
 
 fn default_server_discovery_service() -> String {
@@ -1944,7 +1959,7 @@ pub fn default_insights_memory_extraction_prompt() -> String {
 }
 
 pub fn default_insights_memory_consolidation_prompt() -> String {
-    "You consolidate a user's memory store for a personal assistant. Merge duplicates, refine wording, remove contradicted or low-value episodic noise, and create concise durable memories when needed. Keep the configured assistant memory policy in charge: be conservative, preserve user intent, and never delete or rewrite if unsure. Do not create or keep credentials, identifiers, health details, religious views, political views, or sensitive speculation from chat-derived memory. Return exactly one JSON object with keys: summary, updates, deletes, creates. updates items: {\"id\":\"existing id\",\"content\":\"optional refined content\",\"importance\":0.0-1.0,\"reason\":\"...\"}. deletes items: {\"id\":\"existing id\",\"reason\":\"...\"}. creates use the same fields as memory extraction candidates.".to_string()
+    "You consolidate a user's memory store for a personal assistant. Merge duplicates, refine wording, retire contradicted or low-value episodic noise, and create concise durable memories when needed. Retirement preserves source evidence; physical deletion is reserved for explicit user forget actions. Keep the configured assistant memory policy in charge: be conservative, preserve user intent, and never retire or rewrite if unsure. Do not create or keep credentials, identifiers, health details, religious views, political views, or sensitive speculation from chat-derived memory. Return exactly one JSON object with keys: summary, updates, retirements, creates. updates items: {\"id\":\"existing id\",\"content\":\"optional refined content\",\"importance\":0.0-1.0,\"reason\":\"...\"}. retirements items: {\"id\":\"existing id\",\"status\":\"superseded|rejected\",\"reason\":\"...\"}. Each existing id may occur at most once across updates and retirements. creates use the same fields as memory extraction candidates.".to_string()
 }
 
 pub fn default_insights_reflection_prompt() -> String {

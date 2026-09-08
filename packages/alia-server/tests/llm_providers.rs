@@ -28,18 +28,19 @@ fn creates_provider_neutral_llm_adapters() {
 }
 
 #[test]
-fn unknown_llm_provider_falls_back_to_noop() {
+fn unknown_llm_provider_is_rejected_and_noop_requires_explicit_selection() {
     let mut config = test_config();
     insert_llm_profile(&mut config, "unknown_test", "unknown", LlmProfileKind::Chat);
 
-    assert_eq!(
-        create_llm(&config, "unknown_test").unwrap().name(),
-        "noop_llm"
-    );
+    let error = create_llm(&config, "unknown_test")
+        .err()
+        .expect("unknown providers must fail configuration validation");
+    assert!(error.to_string().contains("not configured"));
+    assert_eq!(create_llm(&config, "noop").unwrap().name(), "noop_llm");
 }
 
 #[test]
-fn unknown_embedding_provider_falls_back_to_noop() {
+fn unknown_embedding_provider_is_rejected_and_noop_requires_explicit_selection() {
     let mut config = test_config();
     insert_llm_profile(
         &mut config,
@@ -48,10 +49,12 @@ fn unknown_embedding_provider_falls_back_to_noop() {
         LlmProfileKind::Embedding,
     );
 
+    let error = create_embedding(&config, "unknown_embedding_test")
+        .err()
+        .expect("unknown providers must fail configuration validation");
+    assert!(error.to_string().contains("not configured"));
     assert_eq!(
-        create_embedding(&config, "unknown_embedding_test")
-            .unwrap()
-            .name(),
+        create_embedding(&config, "noop").unwrap().name(),
         "noop_embedding"
     );
 }

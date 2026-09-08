@@ -48,6 +48,7 @@ pub(super) async fn process_recognized_voice(
         generation_epoch: input.generation_epoch,
     });
     turn.received_at = input.source_received_at;
+    turn.source_privacy_epoch = Some(input.source_privacy_epoch);
     tracing::debug!(session_id = %input.session_id, device_boot_id = %input.device_boot_id,
         generation_epoch = input.generation_epoch, "processing recognized voice input");
     let result = process_voice_response(

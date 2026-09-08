@@ -7,11 +7,19 @@ use alia_proto::audio::{
 };
 use tonic::{Request, Response, Status};
 
-use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelEvent};
+use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelEvent};
 use crate::channels::registry::ChannelRegistry;
 use crate::event::{EventBus, ServerEvent};
 
 const CHANNEL_ID_METADATA: &str = "x-alia-channel-id";
+
+/// A capability for one already admitted source. Keep its adapter pinned so a
+/// same-name channel replacement cannot lend authority to old media.
+pub(crate) struct AdmittedSource {
+    pub user_id: uuid::Uuid,
+    pub privacy_epoch: i64,
+    channel: Arc<dyn ChannelAdapter>,
+}
 
 #[derive(Clone)]
 pub struct ServerAudioIngressService {
@@ -39,24 +47,48 @@ impl ServerAudioIngressService {
             .get(channel_id)
             .await
             .ok_or_else(|| Status::failed_precondition("channel is no longer available"))?;
-        let configured = channel
-            .owner_user_id()
-            .filter(|id| !id.is_nil())
-            .ok_or_else(|| {
-                Status::failed_precondition(
-                    "identity_unlinked: configure this channel's owner_user_id before voice input",
-                )
+        verified_owner(channel.as_ref()).await
+    }
+
+    /// The successful database transaction is the logical source admission
+    /// point. Call before reading media, never at dispatch of buffered content.
+    pub(crate) async fn admit_source(&self, channel_id: &str) -> Result<AdmittedSource, Status> {
+        let channel = self
+            .channels
+            .get(channel_id)
+            .await
+            .ok_or_else(|| Status::failed_precondition("channel is no longer available"))?;
+        let user_id = verified_owner(channel.as_ref()).await?;
+        let privacy_epoch = source_epoch(channel.as_ref()).await?;
+        Ok(AdmittedSource {
+            user_id,
+            privacy_epoch,
+            channel,
+        })
+    }
+
+    /// Revalidation may retire a source, but never replaces its original stamp.
+    pub(crate) async fn revalidate_source(
+        &self,
+        channel_id: &str,
+        source: &AdmittedSource,
+    ) -> Result<(), Status> {
+        let channel =
+            self.channels.get(channel_id).await.ok_or_else(|| {
+                Status::failed_precondition("source channel is no longer available")
             })?;
-        let verified = channel.authenticated_owner().await.map_err(|error| {
-            tracing::warn!(%channel_id, %error, "channel owner verification failed");
-            Status::permission_denied("channel owner is inactive or cannot be verified")
-        })?;
-        if verified != configured {
+        if !Arc::ptr_eq(&channel, &source.channel) {
+            return Err(Status::permission_denied("source channel was replaced"));
+        }
+        if verified_owner(channel.as_ref()).await? != source.user_id {
+            return Err(Status::permission_denied("source account changed"));
+        }
+        if source_epoch(channel.as_ref()).await? != source.privacy_epoch {
             return Err(Status::permission_denied(
-                "channel owner verification mismatch",
+                "source privacy epoch changed; open a new source",
             ));
         }
-        Ok(verified)
+        Ok(())
     }
 
     async fn resolve_channel_id(&self, requested: Option<String>) -> Result<String, Status> {
@@ -123,6 +155,44 @@ impl ServerAudioIngressService {
     }
 }
 
+async fn verified_owner(channel: &dyn ChannelAdapter) -> Result<uuid::Uuid, Status> {
+    let configured = channel
+        .owner_user_id()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| {
+            Status::failed_precondition(
+                "identity_unlinked: configure this channel's owner_user_id before voice input",
+            )
+        })?;
+    let verified = channel.authenticated_owner().await.map_err(|error| {
+            tracing::warn!(channel_id = channel.channel_id(), %error, "channel owner verification failed");
+            Status::permission_denied("channel owner is inactive or cannot be verified")
+        })?;
+    if verified != configured {
+        return Err(Status::permission_denied(
+            "channel owner verification mismatch",
+        ));
+    }
+    Ok(verified)
+}
+
+async fn source_epoch(channel: &dyn ChannelAdapter) -> Result<i64, Status> {
+    let epoch = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        channel.authenticated_source_epoch(),
+    )
+    .await
+    .map_err(|_| Status::unavailable("source admission deadline"))?
+    .map_err(|error| {
+        tracing::warn!(channel_id = channel.channel_id(), %error, "source admission failed");
+        Status::unavailable("source admission failed")
+    })?;
+    if epoch < 0 {
+        return Err(Status::failed_precondition("invalid source privacy epoch"));
+    }
+    Ok(epoch)
+}
+
 #[tonic::async_trait]
 impl ServerAudioIngress for ServerAudioIngressService {
     async fn upload_captured_audio(
@@ -140,7 +210,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
         let authenticated_channel_id = self
             .authenticate_ingress_token(token.clone(), None, metadata_channel_id)
             .await?;
-        let owner_user_id = self.owner_user_id(&authenticated_channel_id).await?;
+        let source = self.admit_source(&authenticated_channel_id).await?;
         let mut stream = request.into_inner();
         let mut audio = alia_core::voice::AudioWindowBuffer::default();
         let upload_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(40);
@@ -182,17 +252,15 @@ impl ServerAudioIngress for ServerAudioIngressService {
         // Uploads may last 40 seconds. Recheck binding before publishing content.
         self.authenticate_ingress_token(token, Some(authenticated_channel_id.clone()), None)
             .await?;
-        if self.owner_user_id(&authenticated_channel_id).await? != owner_user_id {
-            return Err(Status::permission_denied(
-                "channel owner changed during upload",
-            ));
-        }
+        self.revalidate_source(&authenticated_channel_id, &source)
+            .await?;
 
         self.event_bus
             .publish(ServerEvent::ChannelInput(ChannelEvent::AudioInput {
                 channel_id: authenticated_channel_id,
-                user_id: owner_user_id.to_string(),
+                user_id: source.user_id.to_string(),
                 source_received_at,
+                source_privacy_epoch: source.privacy_epoch,
                 audio: AudioPayload {
                     data: audio.as_bytes().to_vec(),
                     sample_rate: 16_000,

@@ -34,6 +34,7 @@ fn effect(user_id: Uuid) -> NewEffect {
         model_call_id: "model_call_0".to_string(),
         source_received_at: chrono::Utc::now(),
         source_event_id: None,
+        source_privacy_epoch: None,
         source: "integration_test".to_string(),
         conversation_id: None,
         channel_id: None,
@@ -262,6 +263,14 @@ async fn concurrent_idempotency_preserves_one_effect_and_rejects_changed_intent(
             retried.source_received_at.timestamp_micros(),
             original.source_received_at.timestamp_micros()
         );
+
+        let mut changed_epoch = original.clone();
+        changed_epoch.source_privacy_epoch = Some(1);
+        assert!(matches!(
+            repository.propose(changed_epoch).await,
+            Err(ExecutionError::IdempotencyConflict)
+        ));
+        assert_eq!(retried.source_privacy_epoch, original.source_privacy_epoch);
 
         let mut changed_source = original.clone();
         changed_source.source_event_id = Some(Uuid::new_v4());

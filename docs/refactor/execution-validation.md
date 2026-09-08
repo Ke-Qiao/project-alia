@@ -1,6 +1,6 @@
 # Execution 验证记录
 
-更新：2026-09-08。整合后的默认 workspace 在专用空 PostgreSQL 上 500 项通过、0 失败。Execution repository 19 项通过（2.04 秒），Execution service 25 项通过（20.36 秒），均无忽略。状态、API 和故障语义分别见[Execution 设计](execution-design.md)和[操作契约](execution-api.md)。
+更新：2026-09-08。`5aecb38` 的默认 workspace 在专用空 PostgreSQL 上 500 项通过、0 失败，其中 Execution repository 19 项、service 25 项。本轮进一步加入可信 source epoch 和真实调度/规则来源验证；最新总结果见 [构建记录](progress.md)。状态、API 和故障语义分别见[Execution 设计](execution-design.md)和[操作契约](execution-api.md)。
 
 ## 真实数据库与故障边界
 
@@ -14,9 +14,9 @@
 | 提交确认不确定 | 真实 PG COMMIT 已执行后截断、扣住 ACK 或 drop 提交等待者，取消所有权仍保留，旧会话意图不能因丢失 ACK 而脱离管理。 |
 | 关闭与等待 | 持续表锁验证提交 5 秒、整批关闭 10 秒预算；超时列出未完成 ID 并保留 JoinHandle。锁住账本也不能让工具结果等待无限延长或伪造取消。 |
 | 固定 executor | 同 schema 热替换会拒绝未认领旧版本；已认领任务使用原 Arc，不被新注册替换。 |
-| 可信记忆来源 | 请求入队、重试和 worker 保留时间/消息 ID；AI MemoryStore 缺消息、跨用户、时间不符、clear 后旧请求被拒；合法来源可写入。 |
+| 可信记忆来源 | 请求入队、重试和 worker 保留 source epoch / 时间 / 消息 ID；AI MemoryStore 缺 stamp、缺消息、跨用户、原时间不符、clear 后旧版本均拒绝；合法新来源可写入。 |
 
-适配器探针只用来控制调用时点、返回和副作用计数。PostgreSQL、事务锁、故障触发器及 COMMIT ACK 代理均真实运行，不用 mock DB 替代。source 时间的重试断言和最新的工具结果等待期限测试已包含在以上数量中。
+适配器探针只用来控制调用时点、返回和副作用计数。PostgreSQL、事务锁、故障触发器及 COMMIT ACK 代理均真实运行，不用 mock DB 替代。新增真实回归把 Server 审计时间设置为相对数据库快 / 慢 60 秒：已批准旧请求在 clear 后启动 worker 仍被拒，新版本输入仍能成功。重试改变 epoch 或改成 NULL 不可重用同一幂等意图；数据库中的原 stamp 会一直保留到 worker。
 
 ## 复现
 
@@ -28,4 +28,4 @@
 
 ## 尚未由本包证明
 
-Execution 账本证明意图、授权、分派和适配器回执，不证明声学呈现或机构到位。整体 Server 在 Execution 返回未完成时保留出站通道和数据库、启动失败回滚及长期连接退出，仍需[Server 生命周期包](server-runtime-design.md)实现；service 级保留句柄不能替代宿主生命周期。多租户框架、真实设备配对、真实外部副作用核对和持续运行验收也不在这些测试的声明范围内。
+Execution 账本证明意图、授权、分派和适配器回执，不证明声学呈现或机构到位。[Server 生命周期包](server-runtime-design.md)已实现整体依赖保留、启动回滚和连接关闭，并用实际执行跨过局部 10 秒预算后取得回执的测试验证；service 级测试与宿主测试分别记录。多租户框架、真实设备外部副作用核对和持续运行验收不在这些软件测试的声明范围内。

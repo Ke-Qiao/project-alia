@@ -15,6 +15,7 @@ async fn test_get_current_time() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: None,
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
@@ -42,6 +43,7 @@ async fn test_get_current_time_uses_iana_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: None,
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
@@ -76,6 +78,7 @@ async fn test_get_current_time_rejects_invalid_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: None,
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
@@ -102,6 +105,7 @@ async fn test_calculate_expression() {
     let tool = Calculate;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: None,
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
@@ -126,6 +130,7 @@ async fn test_calculate_rejects_division_by_zero() {
     let tool = Calculate;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: None,
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
@@ -201,13 +206,16 @@ fn test_parse_openai_tool_call() {
 #[tokio::test]
 async fn memory_store_and_search_use_memory_system() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let user_id = Uuid::new_v4();
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(epoch),
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
         cancel: None,
-        user_id: Uuid::new_v4(),
+        user_id,
         conversation_id: None,
         source: "test".to_string(),
         channel_id: Some("test".to_string()),
@@ -252,13 +260,16 @@ async fn memory_store_and_search_use_memory_system() {
 #[tokio::test]
 async fn memory_store_blocks_sensitive_chat_memory() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let user_id = Uuid::new_v4();
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(epoch),
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
         cancel: None,
-        user_id: Uuid::new_v4(),
+        user_id,
         conversation_id: None,
         source: "test".to_string(),
         channel_id: Some("test".to_string()),
@@ -292,10 +303,13 @@ async fn memory_store_blocks_sensitive_chat_memory() {
 async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
     let memory = Arc::new(AliaMemory::new());
     let store = MemoryStore::new(Some(memory.clone()));
+    let user_id = Uuid::new_v4();
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let old = ToolContext {
-        user_id: Uuid::new_v4(),
+        user_id,
         request_id: Uuid::new_v4(),
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(epoch),
         source_event_id: None,
         invocation_key: "0".into(),
         conversation_id: None,
@@ -318,6 +332,7 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
 
     let fresh = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(memory.write_snapshot(user_id).await.unwrap().privacy_epoch),
         request_id: Uuid::new_v4(),
         ..old.clone()
     };
@@ -337,10 +352,13 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
 async fn ai_memory_tool_requires_a_persisted_source_message() {
     let memory = Arc::new(AliaMemory::new());
     let store = MemoryStore::new(Some(memory.clone()));
+    let user_id = Uuid::new_v4();
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let context = ToolContext {
-        user_id: Uuid::new_v4(),
+        user_id,
         request_id: Uuid::new_v4(),
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(epoch),
         source_event_id: None,
         invocation_key: "0".into(),
         conversation_id: None,
@@ -368,13 +386,16 @@ async fn ai_memory_tool_requires_a_persisted_source_message() {
 #[tokio::test]
 async fn memory_forget_deletes_matching_memory() {
     let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let user_id = Uuid::new_v4();
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(epoch),
         source_event_id: None,
         request_id: uuid::Uuid::new_v4(),
         invocation_key: "0".into(),
         cancel: None,
-        user_id: Uuid::new_v4(),
+        user_id,
         conversation_id: None,
         source: "test".to_string(),
         channel_id: Some("test".to_string()),
@@ -408,4 +429,66 @@ async fn memory_forget_deletes_matching_memory() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn memory_forget_batch_has_one_privacy_transition_and_rejects_old_request() {
+    use alia_server::providers::adapter::MemoryNode;
+    let memory = Arc::new(AliaMemory::new());
+    let user_id = Uuid::new_v4();
+    for content in [
+        "The user drinks green tea",
+        "The user drinks black tea",
+        "The user drinks coffee",
+    ] {
+        memory
+            .store(user_id, MemoryNode::new("core", "fact", content, 0.8))
+            .await
+            .unwrap();
+    }
+    let ctx = ToolContext {
+        source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: Some(memory.write_snapshot(user_id).await.unwrap().privacy_epoch),
+        source_event_id: None,
+        request_id: Uuid::new_v4(),
+        invocation_key: "0".into(),
+        cancel: None,
+        user_id,
+        conversation_id: None,
+        source: "test".into(),
+        channel_id: None,
+    };
+    let forget = MemoryForget::new(Some(memory.clone()));
+    let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
+    let result = forget
+        .execute(serde_json::json!({"query":"tea", "max_results":2}), &ctx)
+        .await
+        .unwrap();
+    assert_eq!(result.output["selected"], 2);
+    assert_eq!(result.output["deleted"], 2);
+    assert_eq!(
+        memory.write_snapshot(user_id).await.unwrap().privacy_epoch,
+        epoch + 1
+    );
+    let kept = memory.list(user_id, Default::default()).await.unwrap();
+    assert_eq!(kept.len(), 1);
+    assert!(kept[0].content.contains("coffee"));
+
+    // A delayed old tool request must not refresh its source time to erase the
+    // user's later memory, even though its selection happens after the clear.
+    memory.clear(user_id).await.unwrap();
+    let id = memory
+        .store(
+            user_id,
+            MemoryNode::new("core", "fact", "New coffee preference", 0.8),
+        )
+        .await
+        .unwrap();
+    assert!(
+        forget
+            .execute(serde_json::json!({"query":"coffee"}), &ctx)
+            .await
+            .is_err()
+    );
+    assert!(memory.get(user_id, &id).await.unwrap().is_some());
 }

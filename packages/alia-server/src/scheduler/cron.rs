@@ -12,9 +12,10 @@ use tokio::sync::{Mutex, RwLock, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::action::ActionRegistry;
+use super::action::{ActionRegistry, capture_action_sources};
 use super::condition::{ConditionContext, ConditionRegistry};
 use crate::event::{EventBus, ServerEvent};
+use crate::module::background::OwnedBackground;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, EventSubscription, ScheduleConfig, ScheduledTask, SchedulerBackend, TaskFilter,
@@ -63,16 +64,21 @@ enum ActionMessage {
         task_id: Uuid,
         request_id: Uuid,
         source_received_at: DateTime<Utc>,
+        source_privacy_epoch: Option<i64>,
+        source_user_id: Uuid,
     },
     Subscription {
         subscription_id: Uuid,
         request_id: Uuid,
         source_received_at: DateTime<Utc>,
+        source_privacy_epoch: Option<i64>,
+        source_user_id: Uuid,
         event: serde_json::Value,
     },
 }
 
 pub struct AutomationScheduler {
+    background: OwnedBackground,
     tasks: Arc<RwLock<HashMap<Uuid, TaskState>>>,
     subscriptions: Arc<RwLock<HashMap<Uuid, SubscriptionState>>>,
     action_tx: Mutex<Option<mpsc::Sender<ActionMessage>>>,
@@ -94,6 +100,7 @@ impl AutomationScheduler {
         actions: Arc<ActionRegistry>,
     ) -> Self {
         Self {
+            background: OwnedBackground::default(),
             tasks: Arc::new(RwLock::new(HashMap::new())),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             action_tx: Mutex::new(None),
@@ -120,6 +127,7 @@ impl AutomationScheduler {
         cancel_token: CancellationToken,
         tick_interval_sec: u64,
         conditions: Arc<ConditionRegistry>,
+        db: DatabaseConnection,
     ) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(tick_interval_sec));
 
@@ -130,7 +138,7 @@ impl AutomationScheduler {
                     break;
                 }
                 _ = interval.tick() => {
-                    Self::check_due_tasks(&tasks, &action_tx, &conditions).await;
+                    Self::check_due_tasks(&tasks, &action_tx, &conditions, &db).await;
                 }
             }
         }
@@ -140,6 +148,7 @@ impl AutomationScheduler {
         tasks: &Arc<RwLock<HashMap<Uuid, TaskState>>>,
         action_tx: &mpsc::Sender<ActionMessage>,
         conditions: &ConditionRegistry,
+        db: &DatabaseConnection,
     ) {
         let now = Utc::now();
         let candidates = {
@@ -156,12 +165,17 @@ impl AutomationScheduler {
                             return None;
                         }
                     }
-                    Some((*id, state.task.conditions.clone()))
+                    Some((*id, state.task.user_id, state.task.conditions.clone()))
                 })
                 .collect::<Vec<_>>()
         };
 
-        for (task_id, task_conditions) in candidates {
+        let source_epochs =
+            capture_action_sources(db, candidates.iter().map(|(_, owner, _)| *owner)).await;
+        for (task_id, owner, task_conditions) in candidates {
+            let Some(source_privacy_epoch) = source_epochs.get(&owner).copied() else {
+                continue;
+            };
             let matched = conditions
                 .evaluate_all(&task_conditions, &ConditionContext::new(None))
                 .await
@@ -176,6 +190,8 @@ impl AutomationScheduler {
                         task_id,
                         request_id: Uuid::new_v4(),
                         source_received_at: now,
+                        source_privacy_epoch,
+                        source_user_id: owner,
                     })
                     .await
                     .is_err()
@@ -206,6 +222,7 @@ impl AutomationScheduler {
         event_bus: EventBus,
         cancel_token: CancellationToken,
         conditions: Arc<ConditionRegistry>,
+        db: DatabaseConnection,
     ) {
         let mut rx = event_bus.subscribe();
 
@@ -218,7 +235,7 @@ impl AutomationScheduler {
                 result = rx.recv() => {
                     match result {
                         Ok(event) => {
-                            Self::handle_event(&subscriptions, &action_tx, &conditions, event).await;
+                            Self::handle_event(&subscriptions, &action_tx, &conditions, &db, event).await;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             tracing::warn!(lagged = n, "scheduler event loop lagged");
@@ -237,6 +254,7 @@ impl AutomationScheduler {
         subscriptions: &Arc<RwLock<HashMap<Uuid, SubscriptionState>>>,
         action_tx: &mpsc::Sender<ActionMessage>,
         conditions: &ConditionRegistry,
+        db: &DatabaseConnection,
         event: ServerEvent,
     ) {
         let event_json = serde_json::to_value(&event).unwrap_or_default();
@@ -255,12 +273,22 @@ impl AutomationScheduler {
                             return None;
                         }
                     }
-                    Some((*id, state.sub.conditions.clone(), event_json.clone()))
+                    Some((
+                        *id,
+                        state.sub.user_id,
+                        state.sub.conditions.clone(),
+                        event_json.clone(),
+                    ))
                 })
                 .collect::<Vec<_>>()
         };
 
-        for (sub_id, sub_conditions, event_data) in candidates {
+        let source_epochs =
+            capture_action_sources(db, candidates.iter().map(|(_, owner, _, _)| *owner)).await;
+        for (sub_id, owner, sub_conditions, event_data) in candidates {
+            let Some(source_privacy_epoch) = source_epochs.get(&owner).copied() else {
+                continue;
+            };
             let matched = conditions
                 .evaluate_all(&sub_conditions, &ConditionContext::new(Some(event_data.clone())))
                 .await
@@ -274,6 +302,8 @@ impl AutomationScheduler {
                         subscription_id: sub_id,
                         request_id: Uuid::new_v4(),
                         source_received_at: now,
+                        source_privacy_epoch,
+                        source_user_id: owner,
                         event: event_data,
                     })
                     .await
@@ -302,7 +332,7 @@ impl AutomationScheduler {
                 }
                 Some(msg) = action_rx.recv() => {
                     match msg {
-                        ActionMessage::Task { task_id, request_id, source_received_at } => {
+                        ActionMessage::Task { task_id, request_id, source_received_at, source_privacy_epoch, source_user_id } => {
                             Self::execute_task(
                                 &tasks,
                                 &event_bus,
@@ -312,9 +342,11 @@ impl AutomationScheduler {
                                 task_id,
                                 request_id,
                                 source_received_at,
+                                source_privacy_epoch,
+                                source_user_id,
                             ).await;
                         }
-                        ActionMessage::Subscription { subscription_id, request_id, source_received_at, event } => {
+                        ActionMessage::Subscription { subscription_id, request_id, source_received_at, source_privacy_epoch, source_user_id, event } => {
                             Self::execute_subscription(
                                 &subscriptions,
                                 &actions,
@@ -323,6 +355,8 @@ impl AutomationScheduler {
                                 subscription_id,
                                 request_id,
                                 source_received_at,
+                                source_privacy_epoch,
+                                source_user_id,
                                 event,
                             ).await;
                         }
@@ -341,6 +375,8 @@ impl AutomationScheduler {
         task_id: Uuid,
         request_id: Uuid,
         source_received_at: DateTime<Utc>,
+        source_privacy_epoch: Option<i64>,
+        source_user_id: Uuid,
     ) {
         let task = {
             let tasks = tasks.read().await;
@@ -350,6 +386,11 @@ impl AutomationScheduler {
             tracing::warn!(%task_id, "task not found during execution");
             return;
         };
+
+        if task.user_id != source_user_id {
+            tracing::warn!(%task_id, "queued task owner changed; source admission is not transferable");
+            return;
+        }
 
         event_bus.publish(ServerEvent::TaskTriggered {
             task_id,
@@ -368,6 +409,7 @@ impl AutomationScheduler {
                         user_id: task.user_id,
                         request_id,
                         source_received_at,
+                        source_privacy_epoch,
                         source: "scheduler".to_string(),
                         trigger_id: Some(task_id),
                         trigger_name: Some(task.name.clone()),
@@ -442,6 +484,8 @@ impl AutomationScheduler {
         sub_id: Uuid,
         request_id: Uuid,
         source_received_at: DateTime<Utc>,
+        source_privacy_epoch: Option<i64>,
+        source_user_id: Uuid,
         event_data: serde_json::Value,
     ) {
         let sub = {
@@ -453,6 +497,10 @@ impl AutomationScheduler {
             return;
         };
 
+        if sub.user_id != source_user_id {
+            tracing::warn!(%sub_id, "queued subscription owner changed; source admission is not transferable");
+            return;
+        }
         let result = match semaphore.acquire_owned().await {
             Ok(_permit) => tokio::time::timeout(
                 std::time::Duration::from_secs(task_timeout_sec.max(1)),
@@ -462,6 +510,7 @@ impl AutomationScheduler {
                         user_id: sub.user_id,
                         request_id,
                         source_received_at,
+                        source_privacy_epoch,
                         source: "subscription".to_string(),
                         trigger_id: Some(sub_id),
                         trigger_name: Some(sub.name.clone()),
@@ -521,53 +570,77 @@ impl ModuleLifecycle for AutomationScheduler {
     }
 
     async fn start(&self) -> anyhow::Result<()> {
-        let (action_tx, action_rx) = mpsc::channel::<ActionMessage>(256);
-        *self.action_tx.lock().await = Some(action_tx.clone());
-
-        let cancel_token = self
+        let parent = self
             .cancel_token
             .lock()
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("scheduler not initialized"))?;
+        let mut background = self.background.begin_start(&parent).await?;
+        let cancel_token = background.token();
+        let (action_tx, action_rx) = mpsc::channel::<ActionMessage>(256);
+        *self.action_tx.lock().await = Some(action_tx.clone());
+
         let event_bus = self
             .event_bus
             .lock()
             .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("scheduler not initialized"))?;
+        let db = self
+            .db()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("scheduler database not initialized"))?;
         let tick_interval_sec = *self.tick_interval_sec.lock().await;
         let task_timeout_sec = *self.task_timeout_sec.lock().await;
         let max_concurrent_actions = *self.max_concurrent_actions.lock().await;
         let semaphore = Arc::new(Semaphore::new(max_concurrent_actions as usize));
 
-        tokio::spawn(Self::tick_loop(
-            self.tasks.clone(),
-            action_tx.clone(),
-            cancel_token.clone(),
-            tick_interval_sec,
-            self.conditions.clone(),
-        ));
-        tokio::spawn(Self::event_loop(
-            self.subscriptions.clone(),
-            action_tx,
-            event_bus.clone(),
-            cancel_token.clone(),
-            self.conditions.clone(),
-        ));
-        tokio::spawn(Self::action_loop(
-            self.tasks.clone(),
-            self.subscriptions.clone(),
-            action_rx,
-            event_bus,
-            cancel_token,
-            self.actions.clone(),
-            semaphore,
-            task_timeout_sec,
-        ));
+        background.spawn_loop(
+            "scheduler ticks",
+            Self::tick_loop(
+                self.tasks.clone(),
+                action_tx.clone(),
+                cancel_token.clone(),
+                tick_interval_sec,
+                self.conditions.clone(),
+                db.clone(),
+            ),
+        );
+        background.spawn_loop(
+            "scheduler events",
+            Self::event_loop(
+                self.subscriptions.clone(),
+                action_tx,
+                event_bus.clone(),
+                cancel_token.clone(),
+                self.conditions.clone(),
+                db,
+            ),
+        );
+        background.spawn_loop(
+            "scheduler actions",
+            Self::action_loop(
+                self.tasks.clone(),
+                self.subscriptions.clone(),
+                action_rx,
+                event_bus,
+                cancel_token,
+                self.actions.clone(),
+                semaphore,
+                task_timeout_sec,
+            ),
+        );
 
+        background.commit();
         tracing::info!("AutomationScheduler started");
         Ok(())
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        self.background.request_stop();
+        self.action_tx.lock().await.take();
+        self.background.stop().await
     }
 
     async fn health_check(&self) -> ModuleHealth {
@@ -627,11 +700,10 @@ impl SchedulerBackend for AutomationScheduler {
     }
 
     async fn delete_task(&self, task_id: Uuid) -> anyhow::Result<()> {
-        self.tasks
-            .write()
-            .await
-            .remove(&task_id)
-            .ok_or_else(|| anyhow::anyhow!("task not found: {task_id}"))?;
+        // Idempotent cleanup also covers create committed with a lost ACK.
+        // Stop local dispatch immediately; failed durable deletion stays an
+        // error and can be retried even after this local entry is removed.
+        self.tasks.write().await.remove(&task_id);
         if let Some(db) = self.db().await {
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,

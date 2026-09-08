@@ -23,7 +23,7 @@ mdns-sd = "0.19"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["rt"] }
 futures = "0.3"
 
 # gRPC / Protobuf

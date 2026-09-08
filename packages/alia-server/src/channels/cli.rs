@@ -186,19 +186,26 @@ impl ModuleLifecycle for CliChannel {
             let restore = terminal.restore();
             result.and(restore)
         });
+        *worker = Some(ConsoleWorker {
+            cancel: cancel.clone(),
+            handle,
+        });
         match ready_rx
             .await
             .context("CLI worker stopped before initialization")?
         {
             Ok(()) => {
                 *self.output.write().await = Some(output_tx);
-                *worker = Some(ConsoleWorker { cancel, handle });
                 cancel_failed_start.disarm();
                 Ok(())
             }
             Err(message) => {
                 cancel.cancel();
-                let _ = handle.await;
+                let joined = (&mut worker.as_mut().unwrap().handle).await;
+                worker.take();
+                if let Err(error) = joined {
+                    anyhow::bail!("{message}; joining failed CLI startup: {error}");
+                }
                 anyhow::bail!(message)
             }
         }
@@ -207,11 +214,13 @@ impl ModuleLifecycle for CliChannel {
     async fn stop(&self) -> anyhow::Result<()> {
         let mut worker = self.worker.lock().await;
         self.output.write().await.take();
-        if let Some(worker) = worker.take() {
-            worker.cancel.cancel();
+        if let Some(active) = worker.as_mut() {
+            active.cancel.cancel();
             // Do not abort or detach: after this await, poll/read has stopped
             // and the terminal guard has restored the original input mode.
-            worker.handle.await.context("joining CLI input worker")??;
+            let result = (&mut active.handle).await;
+            worker.take();
+            result.context("joining CLI input worker")??;
         }
         Ok(())
     }
@@ -226,6 +235,10 @@ impl ModuleLifecycle for CliChannel {
 
 #[async_trait]
 impl ChannelAdapter for CliChannel {
+    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+        admit_console_source(self.account_database.as_ref(), self.owner_user_id).await
+    }
+
     async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
         crate::modules::platform::identity::require_active_owner(
             self.account_database.as_ref(),
@@ -414,37 +427,57 @@ fn run_console(
                             "/help  /quit  /clear  /session new|list|switch <uuid>\nBackspace edits; Up/Down recall this session's input; Ctrl+C clears; Ctrl+D exits.\n",
                         )?;
                     } else if owner_user_id.is_none() {
-                        print_text(&mut out, "Error: identity_unlinked; configure this channel's owner_user_id before conversation input.\n")?;
-                    } else if runtime.block_on(async {
-                        tokio::select! {
-                            _ = cancel.cancelled() => Err(anyhow::anyhow!("CLI stopped")),
-                            result = crate::modules::platform::identity::require_active_owner(account_database, owner_user_id.and_then(|id| id.parse().ok())) => result,
-                        }
-                    }).is_err() {
-                        print_text(&mut out, "Error: channel owner is inactive or cannot be verified.\n")?;
-                    } else if text.split_whitespace().next() == Some("/session") {
-                        let reply = runtime.block_on(async {
-                            tokio::select! {
-                                _ = cancel.cancelled() => Ok(String::new()),
-                                reply = session_command(conversation, channel_id, owner_user_id.expect("checked above"), &text) => reply,
-                            }
-                        });
                         print_text(
                             &mut out,
-                            &format!(
-                                "{}\n",
-                                reply.unwrap_or_else(|error| format!("Error: {error}"))
-                            ),
+                            "Error: identity_unlinked; configure this channel's owner_user_id before conversation input.\n",
                         )?;
                     } else {
-                        busy = true;
-                        bus.publish(ServerEvent::ChannelInput(ChannelEvent::TextMessage {
-                            channel_id: channel_id.to_owned(),
-                            user_id: owner_user_id.expect("checked above").to_owned(),
-                            text,
-                            source_received_at,
-                        }));
-                        print_text(&mut out, "thinking…")?;
+                        // Enter requests admission. Only the database transaction
+                        // below admits this source; the earlier timestamp is audit
+                        // data. There is no application input queue before this
+                        // point, and published lines must never be re-stamped.
+                        let source_privacy_epoch = runtime.block_on(async {
+                            tokio::select! {
+                                _ = cancel.cancelled() => Err(anyhow::anyhow!("CLI stopped")),
+                                result = admit_console_source(account_database, owner_user_id.and_then(|id| id.parse().ok())) => result,
+                            }
+                        });
+                        let source_privacy_epoch = match source_privacy_epoch {
+                            Ok(epoch) => epoch,
+                            Err(error) => {
+                                print_text(
+                                    &mut out,
+                                    &format!("Error: source admission failed: {error}\n"),
+                                )?;
+                                render_prompt(&mut out, &line)?;
+                                continue;
+                            }
+                        };
+                        if text.split_whitespace().next() == Some("/session") {
+                            let reply = runtime.block_on(async {
+                                tokio::select! {
+                                    _ = cancel.cancelled() => Ok(String::new()),
+                                    reply = session_command(conversation, channel_id, owner_user_id.expect("checked above"), &text) => reply,
+                                }
+                            });
+                            print_text(
+                                &mut out,
+                                &format!(
+                                    "{}\n",
+                                    reply.unwrap_or_else(|error| format!("Error: {error}"))
+                                ),
+                            )?;
+                        } else {
+                            busy = true;
+                            bus.publish(ServerEvent::ChannelInput(ChannelEvent::TextMessage {
+                                channel_id: channel_id.to_owned(),
+                                user_id: owner_user_id.expect("checked above").to_owned(),
+                                text,
+                                source_received_at,
+                                source_privacy_epoch,
+                            }));
+                            print_text(&mut out, "thinking…")?;
+                        }
                     }
                 }
             }
@@ -456,6 +489,17 @@ fn run_console(
     }
     print_text(&mut out, "\n")?;
     Ok(())
+}
+
+async fn admit_console_source(
+    db: Option<&sea_orm::DatabaseConnection>,
+    owner: Option<uuid::Uuid>,
+) -> anyhow::Result<i64> {
+    let db = db.context("CLI account database unavailable")?;
+    let owner = owner
+        .filter(|id| !id.is_nil())
+        .context("CLI owner is not configured")?;
+    crate::modules::memory::source::capture_source_epoch(db, owner).await
 }
 
 async fn session_command(
@@ -502,6 +546,38 @@ async fn session_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_stop_waiter_retains_real_blocking_worker_until_join() {
+        let channel = CliChannel::new("cli-fake-native", EventBus::new(4));
+        let cancel = CancellationToken::new();
+        let (release, blocked) = std::sync::mpsc::channel();
+        let finished = Arc::new(AtomicBool::new(false));
+        let worker_finished = finished.clone();
+        *channel.worker.lock().await = Some(ConsoleWorker {
+            cancel: cancel.clone(),
+            handle: tokio::task::spawn_blocking(move || {
+                blocked.recv()?;
+                worker_finished.store(true, Ordering::Release);
+                Ok(())
+            }),
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), channel.stop())
+                .await
+                .is_err()
+        );
+        assert!(cancel.is_cancelled());
+        assert!(channel.worker.lock().await.is_some());
+        assert!(!finished.load(Ordering::Acquire));
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), channel.stop())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(finished.load(Ordering::Acquire));
+        assert!(channel.worker.lock().await.is_none());
+    }
 
     #[tokio::test]
     async fn output_without_a_running_worker_fails_explicitly() {

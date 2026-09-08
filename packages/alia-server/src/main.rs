@@ -10,8 +10,20 @@ use alia_server::bootstrap;
 use alia_server::config::ServerConfig;
 use alia_server::oobe;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("creating server runtime")?;
+    let result = runtime.block_on(async_main());
+    // The library has its own overall cleanup deadline and retains unfinished
+    // ownership. Bound process teardown separately; an incomplete result remains
+    // an error, not a claim that a stuck native worker stopped safely.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    result
+}
+
+async fn async_main() -> anyhow::Result<()> {
     let needs_setup = oobe::bootstrap::needs_setup();
     let config_path = ServerConfig::discover_config_path();
     let preloaded_config = if needs_setup {

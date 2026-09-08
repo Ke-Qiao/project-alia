@@ -73,8 +73,8 @@ impl ExecutionRepository {
             return Err(ExecutionError::CapacityExceeded);
         }
         let effect_id = Uuid::new_v4();
-        tx.execute(stmt("INSERT INTO execution_effects(effect_id,user_id,request_id,invocation_key,model_call_id,source,conversation_id,channel_id,tool_name,arguments,tool_digest,policy_digest,catalog_digest,intent_digest,requires_confirmation,required_role,source_received_at,source_event_id,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'proposed')", vec![
-            effect_id.into(), input.key.user_id.into(), input.key.request_id.into(), input.key.invocation_key.into(), input.model_call_id.into(), input.source.into(), input.conversation_id.into(), input.channel_id.into(), input.tool_name.into(), input.arguments.into(), input.tool_digest.into(), input.policy_digest.into(), catalog_digest.into(), intent_digest.into(), (input.requires_confirmation || catalog["require_confirmation"] == true).into(), input.required_role.into(), input.source_received_at.into(), input.source_event_id.into(),
+        tx.execute(stmt("INSERT INTO execution_effects(effect_id,user_id,request_id,invocation_key,model_call_id,source,conversation_id,channel_id,tool_name,arguments,tool_digest,policy_digest,catalog_digest,intent_digest,requires_confirmation,required_role,source_received_at,source_event_id,source_privacy_epoch,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'proposed')", vec![
+            effect_id.into(), input.key.user_id.into(), input.key.request_id.into(), input.key.invocation_key.into(), input.model_call_id.into(), input.source.into(), input.conversation_id.into(), input.channel_id.into(), input.tool_name.into(), input.arguments.into(), input.tool_digest.into(), input.policy_digest.into(), catalog_digest.into(), intent_digest.into(), (input.requires_confirmation || catalog["require_confirmation"] == true).into(), input.required_role.into(), input.source_received_at.into(), input.source_event_id.into(), input.source_privacy_epoch.into(),
         ])).await?;
         audit(
             &tx,
@@ -572,6 +572,11 @@ async fn reject_in_transaction(
 }
 
 fn validate_input(input: &NewEffect) -> ExecutionResult<()> {
+    if input.source_privacy_epoch.is_some_and(|epoch| epoch < 0) {
+        return Err(ExecutionError::InvalidInput(
+            "source privacy epoch must be non-negative".into(),
+        ));
+    }
     let valid_digest =
         |value: &str| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit());
     if input.key.user_id.is_nil() {

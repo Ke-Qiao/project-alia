@@ -74,6 +74,7 @@ fn detects_minor_llm_escalation_marker() {
 fn pipeline_cache_entry_uses_default_lookup_scope() {
     let pending = PendingTextPersistence {
         source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: 0,
         source_event_id: None,
         session_id: uuid::Uuid::new_v4(),
         user_id: uuid::Uuid::new_v4(),

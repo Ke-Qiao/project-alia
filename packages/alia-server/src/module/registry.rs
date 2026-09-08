@@ -14,6 +14,7 @@ use crate::providers::adapter::{
 
 /// Runtime module registry — read-only after construction, shared via Arc
 pub struct ModuleRegistry {
+    pub(crate) cleanup: Arc<crate::module::lifecycle::RuntimeCleanup>,
     // AI adapters
     pub llm: Arc<dyn LlmAdapter>,
     pub minor_llm: Arc<dyn LlmAdapter>,
@@ -50,63 +51,12 @@ pub struct ModuleSettingsApplyReport {
 }
 
 impl ModuleRegistry {
-    /// Graceful shutdown: stop all modules in reverse order
+    /// Request dependency-ordered cleanup; a deadline retains the cleanup owner.
     pub async fn shutdown(&self) -> anyhow::Result<()> {
-        // Stop producers, drain effects while their adapters remain alive, then
-        // retire plugins and downstream resources. Continue cleanup after errors.
-        let mut modules: Vec<Option<&dyn ModuleLifecycle>> = vec![
-            Some(self.scheduler.as_ref()),
-            Some(self.rule_engine.as_ref()),
-            Some(self.tools.as_ref()),
-        ];
-        modules.extend(self.extensions.iter().rev().map(|ext| Some(ext.as_ref())));
-        let downstream: Vec<Option<&dyn ModuleLifecycle>> = vec![
-            Some(self.insights.as_ref()),
-            Some(self.router.as_ref()),
-            Some(self.persona.as_ref()),
-            Some(self.skills.as_ref()),
-            Some(self.cache.as_ref()),
-            Some(self.memory.as_ref()),
-            Some(self.conversation.as_ref()),
-            Some(self.tts.as_ref()),
-            Some(self.stt.as_ref()),
-            Some(self.embedding.as_ref()),
-            self.transcript_correction_llm
-                .as_deref()
-                .map(|module| module as &dyn ModuleLifecycle),
-            self.memory_capture_llm
-                .as_deref()
-                .map(|module| module as &dyn ModuleLifecycle),
-            self.sentence_expression_llm
-                .as_deref()
-                .map(|module| module as &dyn ModuleLifecycle),
-            Some(self.major_llm.as_ref()),
-            Some(self.minor_llm.as_ref()),
-        ];
-        modules.extend(downstream);
-        let mut errors = Vec::new();
-        for m in modules.into_iter().flatten() {
-            let result = if std::ptr::eq(m, self.tools.as_ref() as &dyn ModuleLifecycle) {
-                // The execution service applies its own finite dispatch and
-                // persistence deadlines. An outer timeout would drop its join.
-                m.stop().await
-            } else {
-                tokio::time::timeout(std::time::Duration::from_secs(10), m.stop())
-                    .await
-                    .map_err(anyhow::Error::from)
-                    .and_then(|result| result)
-            };
-            if let Err(e) = result {
-                tracing::warn!(module = m.name(), error = ?e, "module stop failed");
-                errors.push(format!("{}: {e}", m.name()));
-            }
-        }
-        anyhow::ensure!(
-            errors.is_empty(),
-            "module shutdown incomplete: {}",
-            errors.join("; ")
-        );
-        Ok(())
+        self.cleanup
+            .start()
+            .wait_until(self.cleanup.deadline())
+            .await
     }
 
     /// Aggregate health check for GET /health endpoint

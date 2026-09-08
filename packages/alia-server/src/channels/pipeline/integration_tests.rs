@@ -17,6 +17,7 @@ struct Conversation {
     messages: Mutex<Vec<ChatMessage>>,
     events: Mutex<Vec<ConversationEventEntry>>,
     source_times: Mutex<Vec<chrono::DateTime<chrono::Utc>>>,
+    source_epochs: Mutex<Vec<i64>>,
     fail_user: AtomicBool,
     fail_assistant: AtomicBool,
 }
@@ -60,6 +61,7 @@ impl ConversationBackend for Conversation {
         session: Uuid,
         message: ChatMessage,
         received_at: chrono::DateTime<chrono::Utc>,
+        source_privacy_epoch: i64,
     ) -> anyhow::Result<Uuid> {
         anyhow::ensure!(
             !self.fail_user.load(Ordering::SeqCst),
@@ -68,6 +70,10 @@ impl ConversationBackend for Conversation {
         anyhow::ensure!(message.role == "user", "source must be user input");
         self.append_message(session, message).await?;
         self.source_times.lock().unwrap().push(received_at);
+        self.source_epochs
+            .lock()
+            .unwrap()
+            .push(source_privacy_epoch);
         Ok(Uuid::new_v4())
     }
     async fn append_event(&self, _: Uuid, event: ConversationEventEntry) -> anyhow::Result<()> {
@@ -210,6 +216,10 @@ impl Fixture {
         let output = Arc::new(OutputChannel::default());
         channels.register(output.clone()).await.unwrap();
         let modules = Arc::new(ModuleRegistry {
+            cleanup: crate::module::lifecycle::RuntimeCleanup::new(
+                tokio_util::sync::CancellationToken::new(),
+                std::time::Duration::from_secs(1),
+            ),
             llm: llm.clone(),
             minor_llm: llm.clone(),
             major_llm: llm,
@@ -217,14 +227,14 @@ impl Fixture {
             memory_capture_llm: None,
             sentence_expression_llm: None,
             stt: Arc::new(UnexpectedStt),
-            tts: factory::create_tts("noop").into(),
+            tts: factory::create_tts("noop").unwrap().into(),
             embedding: factory::create_embedding(&config, "noop").unwrap().into(),
             conversation: conversation.clone(),
             memory: Arc::new(crate::providers::memory::NoopMemory),
             cache: factory::create_cache().into(),
             skills: factory::create_skills().into(),
             persona: factory::create_persona().into(),
-            insights: factory::create_insights(false).into(),
+            insights: factory::create_insights(false).unwrap().into(),
             router: Arc::new(DirectRouter),
             rule_engine: factory::create_rule_engine().into(),
             scheduler: factory::create_scheduler(Arc::default(), Arc::default()).into(),
@@ -256,6 +266,7 @@ impl Fixture {
 fn input(text: &str) -> RecognizedVoiceInput {
     RecognizedVoiceInput {
         source_received_at: chrono::Utc::now() - chrono::Duration::hours(1),
+        source_privacy_epoch: 41,
         channel_id: "test".into(),
         user_id: text.into(),
         transcript: text.into(),
@@ -283,6 +294,7 @@ async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
         let mut events = bus.subscribe();
         let pending = PendingTextPersistence {
             source_received_at: chrono::Utc::now(),
+            source_privacy_epoch: 0,
             source_event_id: None,
             session_id: Uuid::new_v4(),
             user_id: user,
@@ -319,7 +331,8 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
     let mut fixture = Fixture::new(false).await;
     fixture.conversation.fail_user.store(true, Ordering::SeqCst);
     let user = Uuid::new_v4().to_string();
-    let turn = VoiceTurn::request(CancellationToken::new());
+    let mut turn = VoiceTurn::request(CancellationToken::new());
+    turn.source_privacy_epoch = Some(0);
     let result = process_text(
         "Remember this new preference",
         &user,
@@ -382,7 +395,17 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
     assert_eq!(
         fixture.conversation.source_times.lock().unwrap().as_slice(),
         &[source_received_at],
-        "processing a queued input must preserve ingress time for the memory privacy boundary"
+        "processing a queued input must preserve the original audit time"
+    );
+    assert_eq!(
+        fixture
+            .conversation
+            .source_epochs
+            .lock()
+            .unwrap()
+            .as_slice(),
+        &[41],
+        "queued speech must keep its admitted source epoch"
     );
     let messages = fixture.conversation.messages.lock().unwrap();
     assert_eq!(

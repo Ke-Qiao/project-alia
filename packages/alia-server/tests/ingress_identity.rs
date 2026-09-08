@@ -2,7 +2,7 @@
 //! Real gRPC ingress checks: signed devices cannot select another account.
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
@@ -33,6 +33,8 @@ struct Device {
     revoked: AtomicBool,
     account_disabled: AtomicBool,
     checks: AtomicUsize,
+    privacy_epoch: AtomicI64,
+    source_admissions: AtomicUsize,
     pause_next_auth: AtomicBool,
     resume_auth: tokio::sync::Semaphore,
 }
@@ -43,6 +45,12 @@ impl ModuleLifecycle for Device {
 }
 #[async_trait]
 impl ChannelAdapter for Device {
+    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+        let epoch = self.privacy_epoch.load(Ordering::SeqCst);
+        self.source_admissions.fetch_add(1, Ordering::SeqCst);
+        Ok(epoch)
+    }
+
     fn channel_type(&self) -> &'static str {
         "embedded"
     }
@@ -103,6 +111,8 @@ impl Fixture {
             revoked: false.into(),
             account_disabled: false.into(),
             checks: 0.into(),
+            privacy_epoch: 0.into(),
+            source_admissions: 0.into(),
             pause_next_auth: false.into(),
             resume_auth: tokio::sync::Semaphore::new(0),
         });
@@ -320,5 +330,71 @@ async fn upload_source_time_precedes_auth_wait_and_ignores_device_clock() {
     };
     assert!(source_received_at >= received_after);
     assert!(source_received_at <= auth_wait_started);
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn privacy_change_after_admission_before_media_rejects_old_upload() {
+    let mut f = Fixture::new(Some(OWNER)).await;
+    let (tx, rx) = mpsc::channel(2);
+    let mut client = f.client.clone();
+    let upload = tokio::spawn(async move {
+        client
+            .upload_captured_audio(request(ReceiverStream::new(rx)))
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while f.device.source_admissions.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // No application media was read before admission. Media sent after a clear
+    // still belongs to the already admitted request, not to a fresh source.
+    f.device.privacy_epoch.store(1, Ordering::SeqCst);
+    tx.send(frame()).await.unwrap();
+    drop(tx);
+    let error = tokio::time::timeout(Duration::from_secs(2), upload)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::PermissionDenied);
+    assert!(error.message().contains("privacy epoch changed"));
+    assert!(f.events.try_recv().is_err());
+
+    f.client
+        .upload_captured_audio(request(tokio_stream::iter([frame()])))
+        .await
+        .unwrap();
+    let ServerEvent::ChannelInput(ChannelEvent::AudioInput {
+        source_privacy_epoch,
+        ..
+    }) = f.events.recv().await.unwrap()
+    else {
+        panic!("expected fresh audio source")
+    };
+    assert_eq!(source_privacy_epoch, 1);
+    f.shutdown().await;
+}
+
+#[tokio::test]
+async fn published_source_keeps_admitted_epoch_while_queued() {
+    let mut f = Fixture::new(Some(OWNER)).await;
+    f.device.privacy_epoch.store(12, Ordering::SeqCst);
+    f.client
+        .upload_captured_audio(request(tokio_stream::iter([frame()])))
+        .await
+        .unwrap();
+    f.device.privacy_epoch.store(13, Ordering::SeqCst);
+    let ServerEvent::ChannelInput(ChannelEvent::AudioInput {
+        source_privacy_epoch,
+        ..
+    }) = f.events.recv().await.unwrap()
+    else {
+        panic!("expected queued audio source")
+    };
+    assert_eq!(source_privacy_epoch, 12);
     f.shutdown().await;
 }
