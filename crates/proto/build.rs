@@ -8,6 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/voice_session.proto",
                 "proto/playback.proto",
                 "proto/binding.proto",
+                "proto/body.proto",
                 "proto/expression.proto",
                 "proto/plugin.proto",
                 "proto/settings.proto",

@@ -26,10 +26,7 @@ use alia_proto::audio::{
     StopPlaybackRequest,
 };
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
-use alia_proto::expression::embedded_expression_client::EmbeddedExpressionClient;
-use alia_proto::expression::{
-    CancelExpressionRequest, ExecuteExpressionRequest, ExpressionCapabilitiesRequest,
-};
+use alia_proto::body::body_control_client::BodyControlClient;
 use alia_proto::playback::playback_client::PlaybackClient;
 use alia_proto::plugin::plugin_manager_client::PluginManagerClient;
 use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
@@ -47,6 +44,7 @@ use super::audio::{
     normalize_embedded_playback_payload, produce_streaming_audio_chunks,
 };
 use super::auth::auth_request_with_signing_key;
+use super::body::{BodyDeliveryStore, EmbeddedBodyRuntime, SignedBodyClient};
 use super::direct_response::{direct_response_rule_from_json, direct_response_rule_to_json};
 use super::sensor::{
     EmbeddedSensorReadProvider, embedded_sensor_command_response_to_json,
@@ -61,11 +59,97 @@ use crate::channels::adapter::{
 
 const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 
+#[cfg(test)]
+mod body_pin_tests {
+    use super::*;
+
+    fn config() -> EmbeddedChannelConfig {
+        EmbeddedChannelConfig {
+            id: "pin-test".into(),
+            owner_user_id: None,
+            expected_device_id: None,
+            expected_device_public_key: None,
+            endpoint: String::new(),
+            discovery_service_name: "_alia-test._tcp".into(),
+            discovery_timeout_sec: 1,
+            reconnect_interval_sec: 1,
+            reconnect_max_backoff_sec: 1,
+            grpc_timeout_sec: 1,
+            voice_turn_interrupt_enabled: true,
+            cancel_streaming_tts_on_interrupt: true,
+            discard_interrupted_turn_history: true,
+        }
+    }
+
+    #[test]
+    fn body_pin_is_optional_but_partial_malformed_and_wrong_length_pins_are_rejected() {
+        let mut config = config();
+        assert!(config.body_device_pin().unwrap().is_none());
+        config.expected_device_id = Some("trusted-device".into());
+        assert!(config.body_device_pin().is_err());
+        config.expected_device_public_key = Some("not base64".into());
+        assert!(config.body_device_pin().is_err());
+        config.expected_device_public_key =
+            Some(base64::engine::general_purpose::STANDARD.encode([7; 31]));
+        assert!(config.body_device_pin().is_err());
+        let key = SigningKey::from_bytes(&[7; 32]).verifying_key().to_bytes();
+        config.expected_device_public_key =
+            Some(base64::engine::general_purpose::STANDARD.encode(key));
+        assert_eq!(
+            config.body_device_pin().unwrap(),
+            Some(("trusted-device".into(), key.to_vec()))
+        );
+    }
+
+    #[tokio::test]
+    async fn unsigned_binding_status_cannot_populate_a_body_pin_or_replace_its_configured_key() {
+        let mut config = config();
+        let pinned = SigningKey::from_bytes(&[7; 32]).verifying_key().to_bytes();
+        config.expected_device_id = Some("trusted-device".into());
+        config.expected_device_public_key =
+            Some(base64::engine::general_purpose::STANDARD.encode(pinned));
+        let mut channel = EmbeddedChannel::new(config.clone(), EventBus::new(2));
+        channel.signing_key = Some(SigningKey::from_bytes(&[8; 32]));
+        *channel.body_client.write().await = Some(BodyControlClient::new(
+            Channel::from_static("http://127.0.0.1:1").connect_lazy(),
+        ));
+        let impostor = SigningKey::from_bytes(&[9; 32]).verifying_key().to_bytes();
+        channel
+            .remember_bound_device("trusted-device".into(), pinned.to_vec())
+            .await
+            .unwrap();
+        assert!(channel.body_runtime.has_pinned_transport().await);
+        channel
+            .remember_bound_device("trusted-device".into(), impostor.to_vec())
+            .await
+            .unwrap();
+        assert!(!channel.body_runtime.has_pinned_transport().await);
+        assert_eq!(
+            channel.config.body_device_pin().unwrap(),
+            Some(("trusted-device".into(), pinned.to_vec()))
+        );
+        let capability = channel.body_runtime.capabilities().await.unwrap();
+        assert!(capability["command_protocol"].is_null());
+        assert_eq!(capability["capabilities"]["small_nod"]["supported"], false);
+        channel
+            .remember_bound_device("other-device".into(), pinned.to_vec())
+            .await
+            .unwrap();
+        assert!(!channel.body_runtime.has_pinned_transport().await);
+        assert_eq!(
+            channel.config.body_device_pin().unwrap(),
+            config.body_device_pin().unwrap()
+        );
+    }
+}
+
 /// Configuration for a single EmbeddedChannel instance.
 #[derive(Debug, Clone)]
 pub struct EmbeddedChannelConfig {
     pub id: String,
     pub owner_user_id: Option<uuid::Uuid>,
+    pub expected_device_id: Option<String>,
+    pub expected_device_public_key: Option<String>,
     pub endpoint: String,
     pub discovery_service_name: String,
     pub discovery_timeout_sec: u64,
@@ -75,6 +159,31 @@ pub struct EmbeddedChannelConfig {
     pub voice_turn_interrupt_enabled: bool,
     pub cancel_streaming_tts_on_interrupt: bool,
     pub discard_interrupted_turn_history: bool,
+}
+
+impl EmbeddedChannelConfig {
+    fn body_device_pin(&self) -> anyhow::Result<Option<(String, Vec<u8>)>> {
+        match (&self.expected_device_id, &self.expected_device_public_key) {
+            (None, None) => Ok(None),
+            (Some(device_id), Some(encoded_key)) => {
+                anyhow::ensure!(
+                    !device_id.trim().is_empty() && device_id.len() <= 256,
+                    "invalid pinned body device ID"
+                );
+                let key = base64::engine::general_purpose::STANDARD
+                    .decode(encoded_key)
+                    .context("invalid pinned body device public key base64")?;
+                let bytes: [u8; 32] = key
+                    .as_slice()
+                    .try_into()
+                    .context("body device pin must be a 32-byte Ed25519 key")?;
+                ed25519_dalek::VerifyingKey::from_bytes(&bytes)
+                    .context("invalid pinned body Ed25519 key")?;
+                Ok(Some((device_id.clone(), key)))
+            }
+            _ => anyhow::bail!("body device ID and public key pins must be configured together"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -131,7 +240,8 @@ pub struct EmbeddedChannel {
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
     sensor_client: Arc<RwLock<Option<EmbeddedSensorClient<Channel>>>>,
-    expression_client: Arc<RwLock<Option<EmbeddedExpressionClient<Channel>>>>,
+    body_client: Arc<RwLock<Option<BodyControlClient<Channel>>>>,
+    body_runtime: EmbeddedBodyRuntime,
     sensor_registry: Arc<RwLock<Option<Arc<SensorRegistry>>>>,
     discovered_candidate: Arc<RwLock<Option<DiscoveryCandidate>>>,
     discovery_cancel: CancellationToken,
@@ -156,6 +266,7 @@ impl EmbeddedChannel {
             ConnectionStatus::Reconnecting { attempt: 0 }
         };
 
+        let body_runtime = EmbeddedBodyRuntime::new(config.id.clone());
         Self {
             config,
             account_database: None,
@@ -168,7 +279,8 @@ impl EmbeddedChannel {
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
             sensor_client: Arc::new(RwLock::new(None)),
-            expression_client: Arc::new(RwLock::new(None)),
+            body_client: Arc::new(RwLock::new(None)),
+            body_runtime,
             sensor_registry: Arc::new(RwLock::new(None)),
             discovered_candidate: Arc::new(RwLock::new(None)),
             discovery_cancel: CancellationToken::new(),
@@ -457,8 +569,7 @@ impl EmbeddedChannel {
                     *self.binding_client.write().await = Some(binding_client.clone());
                     *self.settings_client.write().await =
                         Some(EmbeddedSettingsClient::new(channel.clone()));
-                    *self.expression_client.write().await =
-                        Some(EmbeddedExpressionClient::new(channel.clone()));
+                    *self.body_client.write().await = Some(BodyControlClient::new(channel.clone()));
                     let sensor_client = EmbeddedSensorClient::new(channel);
                     *self.sensor_client.write().await = Some(sensor_client.clone());
                     *self.status.write().await = ConnectionStatus::Connected;
@@ -617,19 +728,8 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
-    pub async fn expression_client(&self) -> anyhow::Result<EmbeddedExpressionClient<Channel>> {
-        anyhow::ensure!(
-            !self.discovery_cancel.is_cancelled(),
-            "embedded channel is stopping"
-        );
-        if self.expression_client.read().await.is_none() {
-            self.connect().await?;
-        }
-        self.expression_client
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
+    pub(crate) async fn set_body_delivery_store(&self, store: Arc<dyn BodyDeliveryStore>) {
+        self.body_runtime.set_store(store).await;
     }
 
     async fn sync_embedded_sensors(&self) -> anyhow::Result<usize> {
@@ -709,6 +809,33 @@ impl EmbeddedChannel {
         }
         *self.device_id.write().await = Some(device_id);
         *self.device_public_key.write().await = Some(device_public_key);
+        if let (Some(client), Some(signing_key), Some(reported_id), Some(reported_key)) = (
+            self.body_client.read().await.clone(),
+            self.signing_key.clone(),
+            self.device_id.read().await.clone(),
+            self.device_public_key.read().await.clone(),
+        ) {
+            match self.config.body_device_pin() {
+                Ok(Some((device_id, device_public_key)))
+                    if device_id == reported_id && device_public_key == reported_key =>
+                {
+                    self.body_runtime
+                        .set_client(SignedBodyClient::new(
+                            client,
+                            signing_key,
+                            self.default_server_id.clone(),
+                            device_id,
+                            device_public_key,
+                        )?)
+                        .await;
+                }
+                Ok(None) => self.body_runtime.revoke().await,
+                outcome => {
+                    self.body_runtime.revoke().await;
+                    tracing::warn!(channel_id = %self.config.id, detail = ?outcome, "body control disabled: device status does not match the configured trusted pin");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -723,6 +850,8 @@ impl EmbeddedChannel {
         if status.is_bound && !status.device_public_key.is_empty() {
             self.remember_bound_device(status.device_id, status.device_public_key)
                 .await?;
+        } else {
+            self.body_runtime.revoke().await;
         }
         Ok(())
     }
@@ -736,6 +865,10 @@ impl ModuleLifecycle for EmbeddedChannel {
 
     async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
         self.account_database = Some(_ctx.db.clone());
+        let body_delivery =
+            crate::modules::body_delivery::BodyDeliveryRepository::new(_ctx.db.clone());
+        body_delivery.recover_expired().await?;
+        self.set_body_delivery_store(Arc::new(body_delivery)).await;
         *self.sensor_registry.write().await = Some(_ctx.sensors.clone());
         let keypair = load_server_keypair(&_ctx.config.auth.server_keypair_path)?;
         self.server_public_key = keypair.public_key_bytes().to_vec();
@@ -772,11 +905,13 @@ impl ModuleLifecycle for EmbeddedChannel {
         self.spawn_discovery_loop(&mut background);
         self.spawn_connection_loop(&mut background);
         self.spawn_sensor_sync_loop(&mut background);
+        self.body_runtime.start(&mut background)?;
         background.commit();
         Ok(())
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
+        self.body_runtime.request_stop();
         self.discovery_cancel.cancel();
         let mut errors = Vec::new();
         if let Err(error) = self.background.stop().await {
@@ -796,7 +931,8 @@ impl ModuleLifecycle for EmbeddedChannel {
         self.binding_client.write().await.take();
         self.settings_client.write().await.take();
         self.sensor_client.write().await.take();
-        self.expression_client.write().await.take();
+        self.body_client.write().await.take();
+        self.body_runtime.revoke().await;
         self.discovered_candidate.write().await.take();
         *self.status.write().await = ConnectionStatus::Disconnected {
             since: Utc::now(),
@@ -925,7 +1061,7 @@ impl ChannelAdapter for EmbeddedChannel {
 
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
-            text: true,
+            text: false,
             voice_input: true,
             voice_output: true,
             images: false,
@@ -1369,6 +1505,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 if resp.success {
                     *self.device_id.write().await = None;
                     *self.device_public_key.write().await = None;
+                    self.body_runtime.revoke().await;
                 }
                 Ok(serde_json::json!({
                     "success": resp.success,
@@ -1542,44 +1679,10 @@ impl ChannelAdapter for EmbeddedChannel {
                     .into_inner();
                 Ok(volume_settings_to_json(resp))
             }
-            "expression_capabilities" => {
-                let mut client = self.expression_client().await?;
-                let resp = client
-                    .get_capabilities(self.auth_request(ExpressionCapabilitiesRequest {})?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::from_str::<serde_json::Value>(
-                    &resp.capabilities_json,
-                )?)
-            }
-            "execute_expression" => {
-                let mut client = self.expression_client().await?;
-                let resp = client
-                    .execute_expression(self.auth_request(ExecuteExpressionRequest {
-                        plan_json: serde_json::to_string(&action.params)?,
-                    })?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::from_str::<serde_json::Value>(
-                    &resp.result_json,
-                )?)
-            }
-            "cancel_expression" => {
-                let mut client = self.expression_client().await?;
-                let reason = action
-                    .params
-                    .get("reason")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("cancelled by server")
-                    .to_string();
-                let resp = client
-                    .cancel_expression(self.auth_request(CancelExpressionRequest { reason })?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::from_str::<serde_json::Value>(
-                    &resp.result_json,
-                )?)
-            }
+            "expression_capabilities" => self.body_runtime.capabilities().await,
+            "execute_expression" => self.body_runtime.submit(action.params).await,
+            "cancel_expression" => self.body_runtime.observe(action.params, true).await,
+            "observe_expression" => self.body_runtime.observe(action.params, false).await,
             "end_continuous_dialogue" => {
                 let reason = action
                     .params

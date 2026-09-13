@@ -1,6 +1,6 @@
 # Delivery 与设备证据
 
-状态：2026-09-08，D1 / D2 实现已冻结并通过最终整包回归。本文描述当前实现与剩余边界；测试和提交见[构建记录](progress.md)。D3 身体命令见[设计](body-command-design.md)。真实声卡、机构到位、AEC 与自然全双工声学效果仍未验收。
+状态：2026-09-13，D1 / D2 已提交；TextDelivery 与 D3 实现已冻结并通过 macOS 整包及末次恢复回归。本文描述当前实现与剩余边界；测试和提交见[构建记录](progress.md)。D3 身体命令见[协议与实现](body-command-design.md)。真实声卡、机构到位、AEC 与自然全双工声学效果仍未验收。
 
 Delivery 保存内容向输出端交付的意图与已知事实。Execution 保存外部操作的批准、领取和结果。响应被替换不能撤销已发生的 effect，工具成功也不证明用户听到了语音说明。
 
@@ -53,15 +53,22 @@ Server DeliveryService 拥有有界 admission、媒体 future、精确控制与�
 
 Embedded PlaybackSession 拥有 Push actor、输入 lease 和观察者。End native enqueue handle 完成并释放输入 lease 后才确认输入结束，后端观察继续。response drop、撤权或会话关闭取消原身份并等待真实工作。PlaybackSession 在 Audio 之前清理，不能先释放声卡依赖。
 
+## 文本投递
+
+CLI 文本复用 DeliveryService 的有界监督与唯一发送许可，使用独立的 TextIdentity 和文本回执。每块 UTF-8 在输出前不可变地持久化，sequence 与字节 offset 连续；总量上限 256 KiB、1,024 块、单块 8 KiB。没有明确 End 或模型断流时，不提交完整助手历史。
+
+终端 native worker 保留固定 stdout 句柄，记录系统实际接受的源字节前缀，包括只写出部分 UTF-8 编码的情况。精确取消关闭该 writer 的后续写入，等待在途调用返回；等待者 drop 不丢失工作归属。Submitted 不表示用户已读，CLI 没有 Completed 证据。ESC/OSC 等控制字符被拒绝，不能把模型文本交给终端作为控制指令执行。
+
+普通、流式、澄清和错误提示均经同一文本路径。仅支持音频的通道继续生成/TTS，不生成空文本投递；PostSpeech 只检查音频呈现证据。文本分页保留原块与字节偏移，查询/取消语义见 [Delivery API](delivery-api.md)。
+
 ## 表达与下一主线
 
-Server 表达归 ExpressionRuntime 实例，已删除全局活跃表与 legacy JSON 自动升级 completed。回执须匹配命令、scope 和 typed actions。当前 Embedded 未实现 `expression-command-v1`，身体动作明确 skipped。Affect 持久化改为实例有界队列并随 runtime 排空，见 [Expression D1](expression-evidence.md)。
+Server 表达归 ExpressionRuntime 实例，已删除全局活跃表与 legacy JSON 自动升级 completed。回执须匹配命令、scope 和 typed actions。当前身体动作接入签名 body v1 与独立账本，旧无身份 JSON 不执行动作；缺少可信 pin/Response/账本时不会开放身体能力。Affect 持久化使用实例有界队列并随 runtime 排空，见 [Expression D1](expression-evidence.md)。
 
 以下仍是本轮未完成主线，不能归入用户延期项：
 
-1. D3 身体唯一 writer、有限反重放、绑定/voice 栅栏、精准取消及 Submitted/位置反馈分级。
-2. CLI/Text Delivery 的持久发送所有权与回执，独立文本输出不能用空 Audio 冒充交付。
-3. 缓存、在途 ContextPack、输出和 Companion 派生状态的完整来源失效。
-4. 实际播放时钟、AEC、可恢复暂停、带作用域本地提示音、真机双讲和动作安全验收。
+1. 缓存、在途 ContextPack、输出和 Companion 派生状态的完整来源失效。
+2. 实际播放时钟、AEC、可恢复暂停、带作用域本地提示音、真机双讲和动作安全验收。
+3. D3 和文本固定提交的跨平台验证，以及依赖真实传感器的呈现/位置确认。
 
 Web/iOS/Android、Embedded 通用适配、未来设备推理/合并部署按[台账](deferred.md)保留。

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package alia.body.v1;
+
+// Payloads are strict alia-core BodyRequest / BodyReply JSON bytes. The exact
+// bytes, not a reserialized object, are signed with the direction-specific
+// alia-body-v1 domain. Every reply echoes the signed request nonce and device.
+service BodyControl {
+  rpc Exchange(SignedBodyPayload) returns (SignedBodyPayload);
+}
+
+message SignedBodyPayload {
+  bytes payload = 1;
+  bytes signature = 2;
+}

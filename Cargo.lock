@@ -48,6 +48,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "axum",
+ "base64",
  "bluer",
  "chrono",
  "cpal",

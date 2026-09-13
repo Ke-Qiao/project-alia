@@ -159,6 +159,7 @@ pub(super) async fn notify_pipeline_error(
         .await
     } else {
         deliver_text_error_notice(
+            modules,
             channel,
             target,
             channel_id,
@@ -171,6 +172,9 @@ pub(super) async fn notify_pipeline_error(
     };
 
     record_pipeline_error_event(modules, channel_id, user_id, &notice, delivery, user_input).await;
+    if let (Some(turn), Ok(owner)) = (turn, Uuid::parse_str(user_id)) {
+        super::delivery::interrupt_response(modules, turn, owner).await;
+    }
 
     PipelineErrorNotification { notice, delivery }
 }
@@ -271,6 +275,7 @@ fn build_pipeline_error_notice(
 }
 
 async fn deliver_text_error_notice(
+    modules: &ModuleRegistry,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
     channel_id: &str,
@@ -279,6 +284,12 @@ async fn deliver_text_error_notice(
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
+    if turn_is_interrupted(turn) {
+        return PipelineErrorDelivery::Cancelled;
+    }
+    if !channel.capabilities().text {
+        return PipelineErrorDelivery::Failed;
+    }
     debug_component_json(
         debug_output,
         "pipeline_error",
@@ -292,12 +303,23 @@ async fn deliver_text_error_notice(
     match cancellable_stage(
         turn,
         "error_text",
-        channel.send_message(target, &notice.user_text),
+        super::delivery::text(
+            modules,
+            target,
+            turn,
+            &format!("text:error:{}", notice.error_id),
+            &notice.user_text,
+        ),
     )
     .await
     {
         Ok(None) => PipelineErrorDelivery::Cancelled,
-        Ok(Some(())) => PipelineErrorDelivery::Text,
+        Ok(Some(record))
+            if record.status == crate::modules::delivery::types::DeliveryStatus::Submitted =>
+        {
+            PipelineErrorDelivery::Text
+        }
+        Ok(Some(_)) => PipelineErrorDelivery::Failed,
         Err(error) => {
             log_channel_delivery_failure(channel, error).await;
             PipelineErrorDelivery::Failed
@@ -559,6 +581,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_error_does_not_dispatch_direct_response_or_text() {
+        let fixture = super::super::integration_tests::Fixture::new(false).await;
         let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
         turn.token.cancel();
         let channel = RecordingChannel::default();
@@ -574,6 +597,7 @@ mod tests {
         );
         assert_eq!(
             deliver_text_error_notice(
+                &fixture.modules,
                 &channel,
                 &target,
                 "test",

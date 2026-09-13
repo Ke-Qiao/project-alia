@@ -101,6 +101,11 @@ pub enum ChannelConfig {
         /// Explicit account associated with this device; audio cannot assert an account.
         #[serde(default)]
         owner_user_id: Option<uuid::Uuid>,
+        /// Body control requires an independently verified, persistent device pin.
+        #[serde(default)]
+        expected_device_id: Option<String>,
+        #[serde(default)]
+        expected_device_public_key: Option<String>,
         #[serde(default = "default_true")]
         enabled: bool,
         #[serde(default)]

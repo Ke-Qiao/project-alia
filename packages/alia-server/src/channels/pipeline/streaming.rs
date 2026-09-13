@@ -12,14 +12,16 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use super::debug::{
-    debug_component, debug_component_audio, debug_component_json, debug_component_stream_chunk,
+    debug_component_audio, debug_component_json, debug_component_stream_chunk,
     debug_component_text, log_channel_delivery_failure,
 };
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
 use crate::config::SentenceExpressionLlmPolicySection;
 use crate::event::{EventBus, ServerEvent};
-use crate::expression::orchestrator::{ExpressionExecutionPhase, execute_expression_plan_phase};
+use crate::expression::orchestrator::{
+    ExpressionExecutionPhase, execute_expression_plan_phase_with_response,
+};
 use crate::expression::{
     ExpressionConstraints, ExpressionConversationContext, ExpressionDeviceContext, ExpressionInput,
     ExpressionPlan, ExpressionSafetyContext, ExpressionUserState, SpeechExpression,
@@ -407,12 +409,13 @@ async fn execute_speech_start_expression(
         return;
     };
     let execution = cancellable_stage(turn, "speech_start_expression", async {
-        Ok(execute_expression_plan_phase(
+        Ok(execute_expression_plan_phase_with_response(
             orchestrator,
             channel,
             target,
             plan,
             ExpressionExecutionPhase::SpeechStart,
+            turn.and_then(|turn| turn.response_id.get().copied()),
         )
         .await)
     })
@@ -499,154 +502,19 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         Ok::<_, anyhow::Error>(())
     };
 
-    let llm_delivery = async move {
-        let mut token_stream =
-            match cancellable_stage(turn, "llm_stream_start", llm.chat_stream(messages)).await? {
-                Some(token_stream) => token_stream,
-                None => return Ok::<_, anyhow::Error>(String::new()),
-            };
-
-        debug_component(
-            debug_output,
-            "channel",
-            "begin_stream",
-            Some((channel_id, user_id)),
-        );
-        if let Err(error) =
-            cancellable_stage(turn, "stream_begin_delivery", channel.begin_stream(target)).await
-        {
-            tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
-            tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
-        }
-
-        let mut full_text = String::new();
-        let mut sentence_buffer = String::new();
-        let mut sentence_tx = Some(sentence_tx);
-        let mut stream_error: Option<anyhow::Error> = None;
-
-        loop {
-            let chunk_result = if let Some(turn) = turn {
-                tokio::select! {
-                biased;
-                    _ = turn.token.cancelled() => {
-                        turn.mark_interrupted_stage("llm_stream");
-                        break;
-                    }
-                    chunk_result = token_stream.next() => chunk_result,
-                }
-            } else {
-                token_stream.next().await
-            };
-
-            let Some(chunk_result) = chunk_result else {
-                break;
-            };
-            match chunk_result {
-                Ok(chunk) => {
-                    full_text.push_str(&chunk);
-                    sentence_buffer.push_str(&chunk);
-                    debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
-
-                    if let Err(e) = cancellable_stage(
-                        turn,
-                        "stream_chunk_delivery",
-                        channel.send_stream_chunk(target, &chunk),
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "stream chunk delivery failed");
-                        tracing::debug!(error = ?e, "stream chunk delivery failure details");
-                    }
-
-                    event_bus.publish(ServerEvent::StreamChunk {
-                        channel_id: channel_id.to_string(),
-                        user_id: user_id.to_string(),
-                        chunk,
-                    });
-
-                    while let Some(segment) = drain_speakable_segment(&mut sentence_buffer, false) {
-                        let Some(tx) = sentence_tx.as_ref() else {
-                            break;
-                        };
-                        if tx.send(segment).await.is_err() {
-                            sentence_tx = None;
-                            break;
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "LLM stream error");
-                    tracing::debug!(error = ?e, "LLM stream error details");
-                    stream_error = Some(e);
-                    break;
-                }
-            }
-        }
-
-        if let Some(error) = stream_error {
-            if full_text.trim().is_empty() {
-                drop(sentence_tx);
-                let _ = cancellable_stage(
-                    turn,
-                    "stream_end_delivery",
-                    channel.end_stream(target, &full_text),
-                )
-                .await;
-                return Err(error);
-            }
-            let notice = "抱歉，后面的内容生成中断了。";
-            full_text.push_str(notice);
-            if let Err(e) = cancellable_stage(
-                turn,
-                "stream_error_notice",
-                channel.send_stream_chunk(target, notice),
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "stream error notice delivery failed");
-                tracing::debug!(error = ?e, "stream error notice delivery failure details");
-            }
-            if let Some(tx) = sentence_tx.as_ref() {
-                let _ = tx.send(notice.to_string()).await;
-            }
-        }
-
-        while let Some(segment) = drain_speakable_segment(&mut sentence_buffer, true) {
-            let Some(tx) = sentence_tx.as_ref() else {
-                break;
-            };
-            if tx.send(segment).await.is_err() {
-                sentence_tx = None;
-                break;
-            }
-        }
-        drop(sentence_tx);
-
-        if let Err(error) = cancellable_stage(
-            turn,
-            "stream_end_delivery",
-            channel.end_stream(target, &full_text),
-        )
-        .await
-        {
-            tracing::warn!(channel_id, error = %error, "stream end delivery failed");
-            tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
-        }
-        debug_component_text(
-            debug_output,
-            "channel",
-            "end_stream",
-            &full_text,
-            Some((channel_id, user_id)),
-        );
-
-        event_bus.publish(ServerEvent::StreamEnd {
-            channel_id: channel_id.to_string(),
-            user_id: user_id.to_string(),
-        });
-
-        Ok::<_, anyhow::Error>(full_text)
-    };
+    let llm_delivery = stream_generated_text(
+        modules,
+        llm,
+        channel,
+        target,
+        channel_id,
+        user_id,
+        event_bus,
+        messages,
+        debug_output,
+        turn,
+        Some(sentence_tx),
+    );
 
     let (llm_result, audio_result, tts_result) =
         futures::join!(llm_delivery, audio_delivery, tts_worker);
@@ -1512,7 +1380,7 @@ fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<Str
 }
 
 pub(super) async fn stream_llm_response(
-    _modules: &ModuleRegistry,
+    modules: &ModuleRegistry,
     llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
@@ -1523,124 +1391,158 @@ pub(super) async fn stream_llm_response(
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<String> {
-    let mut token_stream =
+    stream_generated_text(
+        modules,
+        llm,
+        channel,
+        target,
+        channel_id,
+        user_id,
+        event_bus,
+        messages,
+        debug_output,
+        turn,
+        None,
+    )
+    .await
+}
+
+#[derive(Default)]
+struct GeneratedText {
+    body: String,
+    complete: bool,
+    error: Option<String>,
+}
+
+/// The delivery supervisor owns this generator after admission, including the
+/// model stream and bounded TTS queue. A caller dropping its reply cannot detach
+/// the original writer or start another dispatch for the same representation.
+async fn stream_generated_text(
+    modules: &ModuleRegistry,
+    llm: &dyn LlmAdapter,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    channel_id: &str,
+    user_id: &str,
+    event_bus: &EventBus,
+    messages: &[ChatMessage],
+    debug_output: bool,
+    turn: Option<&VoiceTurn>,
+    sentence_tx: Option<mpsc::Sender<String>>,
+) -> anyhow::Result<String> {
+    use alia_core::text_delivery::{
+        MAX_TEXT_BYTES, MAX_TEXT_CHUNK_BYTES, MAX_TEXT_CHUNKS, TextChunk, TextFrame,
+    };
+    let mut tokens =
         match cancellable_stage(turn, "llm_stream_start", llm.chat_stream(messages)).await? {
-            Some(token_stream) => token_stream,
+            Some(tokens) => tokens,
             None => return Ok(String::new()),
         };
-
-    debug_component(
-        debug_output,
-        "channel",
-        "begin_stream",
-        Some((channel_id, user_id)),
-    );
-    if let Err(error) =
-        cancellable_stage(turn, "stream_begin_delivery", channel.begin_stream(target)).await
-    {
-        tracing::warn!(channel_id, error = %error, "stream begin delivery failed");
-        tracing::debug!(channel_id, error = ?error, "stream begin delivery failure details");
-    }
-
-    let mut full_text = String::new();
-    let mut stream_error: Option<anyhow::Error> = None;
-
-    loop {
-        let chunk_result = if let Some(turn) = turn {
-            tokio::select! {
-                biased;
-                _ = turn.token.cancelled() => {
-                    turn.mark_interrupted_stage("llm_stream");
-                    break;
+    let generated = Arc::new(Mutex::new(GeneratedText::default()));
+    let state = generated.clone();
+    let stream_channel = channel_id.to_owned();
+    let stream_user = user_id.to_owned();
+    let bus = event_bus.clone();
+    let text = async_stream::try_stream! {
+        let mut pending = String::new();
+        let mut sentence_buffer = String::new();
+        let mut sentence_tx = sentence_tx;
+        let mut sequence = 0;
+        let mut offset = 0;
+        let mut ended = false;
+        loop {
+            let next = if ended || pending.len() >= 512 {
+                None
+            } else if pending.is_empty() {
+                Some(tokens.next().await)
+            } else {
+                tokio::time::timeout(Duration::from_millis(40), tokens.next()).await.ok()
+            };
+            let timed_flush = next.is_none();
+            match next {
+                Some(Some(Ok(chunk))) => {
+                    if state.lock().unwrap().body.len().saturating_add(chunk.len()) > MAX_TEXT_BYTES as usize {
+                        state.lock().unwrap().error = Some("generated text exceeds 256 KiB".into());
+                        ended = true;
+                    } else {
+                        state.lock().unwrap().body.push_str(&chunk);
+                        pending.push_str(&chunk);
+                        sentence_buffer.push_str(&chunk);
+                        debug_component_stream_chunk(debug_output, &chunk, Some((&stream_channel, &stream_user)));
+                    }
                 }
-                chunk_result = token_stream.next() => chunk_result,
-            }
-        } else {
-            token_stream.next().await
-        };
-
-        let Some(chunk_result) = chunk_result else {
-            break;
-        };
-        match chunk_result {
-            Ok(chunk) => {
-                full_text.push_str(&chunk);
-                debug_component_stream_chunk(debug_output, &chunk, Some((channel_id, user_id)));
-
-                if let Err(e) = cancellable_stage(
-                    turn,
-                    "stream_chunk_delivery",
-                    channel.send_stream_chunk(target, &chunk),
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, "stream chunk delivery failed");
-                    tracing::debug!(error = ?e, "stream chunk delivery failure details");
+                Some(Some(Err(error))) => {
+                    state.lock().unwrap().error = Some(error.to_string());
+                    ended = true;
                 }
-
-                event_bus.publish(ServerEvent::StreamChunk {
-                    channel_id: channel_id.to_string(),
-                    user_id: user_id.to_string(),
-                    chunk,
-                });
+                Some(None) => ended = true,
+                None => {}
             }
-            Err(e) => {
-                tracing::error!(error = %e, "LLM stream error");
-                tracing::debug!(error = ?e, "LLM stream error details");
-                stream_error = Some(e);
+            while let Some(segment) = drain_speakable_segment(&mut sentence_buffer, ended) {
+                if let Some(sender) = &sentence_tx {
+                    if sender.send(segment).await.is_err() { sentence_tx = None; }
+                }
+            }
+            if !pending.is_empty() && (ended || pending.len() >= 512 || timed_flush) {
+                let mut boundary = pending.len().min(MAX_TEXT_CHUNK_BYTES);
+                while !pending.is_char_boundary(boundary) { boundary -= 1; }
+                if sequence >= MAX_TEXT_CHUNKS {
+                    state.lock().unwrap().error = Some("generated text exceeds 1024 chunks".into());
+                    Err(anyhow::anyhow!("generated text exceeds 1024 chunks"))?;
+                }
+                let chunk = pending[..boundary].to_owned();
+                pending.drain(..boundary);
+                yield TextFrame::Chunk(TextChunk { sequence, utf8_offset: offset, text: chunk.clone() });
+                // The adapter requested the next frame only after durable offer
+                // and its previous write attempt. This event is not read evidence.
+                bus.publish(ServerEvent::StreamChunk { channel_id: stream_channel.clone(), user_id: stream_user.clone(), chunk: chunk.clone() });
+                sequence += 1;
+                offset += chunk.len() as u64;
+            }
+            if ended && pending.is_empty() {
+                drop(sentence_tx);
+                let error = state.lock().unwrap().error.clone();
+                if let Some(error) = error { Err(anyhow::anyhow!(error))?; }
+                if state.lock().unwrap().body.trim().is_empty() { Err(anyhow::anyhow!("model generated an empty response"))?; }
+                state.lock().unwrap().complete = true;
+                yield TextFrame::End { chunks: sequence, utf8_bytes: offset };
                 break;
             }
         }
-    }
-
-    if let Some(error) = stream_error {
-        if full_text.trim().is_empty() {
-            let _ = cancellable_stage(
-                turn,
-                "stream_end_delivery",
-                channel.end_stream(target, &full_text),
-            )
-            .await;
-            return Err(error);
-        }
-        let notice = "抱歉，后面的内容生成中断了。";
-        full_text.push_str(notice);
-        if let Err(e) = cancellable_stage(
+    };
+    if channel.capabilities().text {
+        let record = super::delivery::text_stream(
+            modules,
+            target,
             turn,
-            "stream_error_notice",
-            channel.send_stream_chunk(target, notice),
+            "text:response",
+            json!({"representation":"plain_utf8","source":"model_stream"}),
+            Box::pin(text),
         )
-        .await
-        {
-            tracing::warn!(error = %e, "stream error notice delivery failed");
-            tracing::debug!(error = ?e, "stream error notice delivery failure details");
+        .await?;
+        if record.status != crate::modules::delivery::types::DeliveryStatus::Submitted {
+            tracing::warn!(delivery_id=%record.delivery_id,status=?record.status,"text delivery ended without complete stdout write evidence");
+        }
+    } else {
+        futures::pin_mut!(text);
+        while let Some(frame) = text.next().await {
+            frame?;
         }
     }
-
-    if let Err(error) = cancellable_stage(
-        turn,
-        "stream_end_delivery",
-        channel.end_stream(target, &full_text),
-    )
-    .await
-    {
-        tracing::warn!(channel_id, error = %error, "stream end delivery failed");
-        tracing::debug!(channel_id, error = ?error, "stream end delivery failure details");
-    }
-    debug_component_text(
-        debug_output,
-        "channel",
-        "end_stream",
-        &full_text,
-        Some((channel_id, user_id)),
+    let mut state = generated.lock().unwrap();
+    anyhow::ensure!(
+        state.complete,
+        "model stream did not complete: {}",
+        state
+            .error
+            .as_deref()
+            .unwrap_or("delivery admission or observation ended early")
     );
-
     event_bus.publish(ServerEvent::StreamEnd {
-        channel_id: channel_id.to_string(),
-        user_id: user_id.to_string(),
+        channel_id: channel_id.into(),
+        user_id: user_id.into(),
     });
-
-    Ok(full_text)
+    Ok(std::mem::take(&mut state.body))
 }
 
 #[cfg(test)]

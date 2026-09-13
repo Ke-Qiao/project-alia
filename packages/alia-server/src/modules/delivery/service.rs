@@ -3,6 +3,7 @@
 use super::{repository::DeliveryRepository, types::*};
 use crate::channels::adapter::{
     AudioDeliveryReport, AudioPayloadStream, ChannelAdapter, ChannelTarget, PlaybackObserver,
+    TextObserver,
 };
 use alia_core::delivery::{ObservationEnd, PlaybackProgress};
 use async_trait::async_trait;
@@ -21,6 +22,9 @@ use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+mod media;
+pub use media::TextDelivery;
+use media::{DeliveryInput, MediaIdentity, MediaProgress, MediaReport};
 
 const DB_TIMEOUT: Duration = Duration::from_secs(2);
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
@@ -37,7 +41,7 @@ pub struct AudioDelivery {
     pub cancel: CancellationToken,
 }
 struct Command {
-    input: AudioDelivery,
+    input: DeliveryInput,
     reply: oneshot::Sender<DeliveryResult<DeliveryRecord>>,
 }
 
@@ -199,6 +203,26 @@ impl DeliveryService {
         bounded(self.repository.response(owner, response)).await
     }
     pub async fn deliver_audio(&self, input: AudioDelivery) -> DeliveryResult<DeliveryRecord> {
+        self.deliver(input.into()).await
+    }
+    pub async fn deliver_text(&self, input: TextDelivery) -> DeliveryResult<DeliveryRecord> {
+        self.deliver(input.into()).await
+    }
+    pub async fn text_chunks(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+        after: Option<u64>,
+        limit: u32,
+    ) -> DeliveryResult<Vec<alia_core::text_delivery::TextChunk>> {
+        if !(1..=256).contains(&limit) {
+            return Err(DeliveryError::InvalidInput(
+                "text chunk page limit must be between 1 and 256".into(),
+            ));
+        }
+        bounded(self.repository.text_chunks(owner, id, after, limit)).await
+    }
+    async fn deliver(&self, input: DeliveryInput) -> DeliveryResult<DeliveryRecord> {
         let receive = {
             let _boundary = self.admission_boundary.lock().unwrap();
             self.ensure_open()?;
@@ -256,7 +280,7 @@ impl DeliveryService {
         }
         Ok(())
     }
-    async fn supervise(self: &Arc<Self>, input: AudioDelivery) -> DeliveryResult<DeliveryRecord> {
+    async fn supervise(self: &Arc<Self>, input: DeliveryInput) -> DeliveryResult<DeliveryRecord> {
         let owner = Uuid::parse_str(&input.target.user_id)
             .map_err(|_| DeliveryError::Unauthorized("target has no linked account".into()))?;
         let gate = tokio::select! {biased;_=self.stop.cancelled()=>return Err(DeliveryError::InvalidTransition("delivery stopped before reservation".into())),guard=self.admission.lock()=>guard};
@@ -276,7 +300,9 @@ impl DeliveryService {
         .await?
         {
             if existing.content != input.content
-                || existing.identity.map(|id| id.scope) != input.target.voice
+                || existing.media_kind != input.payload.medium()
+                || (existing.media_kind == DeliveryMedium::Audio
+                    && existing.identity.map(|id| id.scope) != input.target.voice)
             {
                 return Err(DeliveryError::IdempotencyConflict);
             }
@@ -284,30 +310,68 @@ impl DeliveryService {
             return Ok(existing);
         }
         self.ensure_open()?;
-        let playback_id = Uuid::new_v4();
-        let identity = input
-            .channel
-            .reserve_playback(&input.target, playback_id)
-            .map_err(|error| DeliveryError::InvalidInput(format!("reserve playback: {error:#}")))?;
-        if identity
-            .is_some_and(|id| id.playback_id != playback_id || Some(id.scope) != input.target.voice)
-            || (input.target.voice.is_some() && identity.is_none())
-        {
-            return Err(DeliveryError::InvalidInput(
-                "reserved playback identity differs from original target".into(),
-            ));
-        }
-        let record = bounded(self.repository.prepare_delivery(
-            owner,
-            NewDelivery {
-                response_id: input.response_id,
-                output_key: input.output_key,
-                content: input.content,
-                identity,
-                owner_id: self.instance_id,
-            },
-        ))
-        .await?;
+        let media_id = Uuid::new_v4();
+        let identity = match input.payload.medium() {
+            DeliveryMedium::Audio => {
+                let identity = input
+                    .channel
+                    .reserve_playback(&input.target, media_id)
+                    .map_err(|error| {
+                        DeliveryError::InvalidInput(format!("reserve playback: {error:#}"))
+                    })?;
+                if identity.is_some_and(|id| {
+                    id.playback_id != media_id || Some(id.scope) != input.target.voice
+                }) || (input.target.voice.is_some() && identity.is_none())
+                {
+                    return Err(DeliveryError::InvalidInput(
+                        "reserved playback identity differs from original target".into(),
+                    ));
+                }
+                MediaIdentity::Audio(identity)
+            }
+            DeliveryMedium::Text => {
+                let identity = input
+                    .channel
+                    .reserve_text(&input.target, media_id)
+                    .map_err(|error| {
+                        DeliveryError::InvalidInput(format!("reserve text: {error:#}"))
+                    })?;
+                if identity.is_some_and(|id| id.text_id != media_id || !id.is_valid()) {
+                    return Err(DeliveryError::InvalidInput(
+                        "reserved text identity differs from server allocation".into(),
+                    ));
+                }
+                MediaIdentity::Text(identity)
+            }
+        };
+        let record = match identity {
+            MediaIdentity::Audio(identity) => {
+                bounded(self.repository.prepare_delivery(
+                    owner,
+                    NewDelivery {
+                        response_id: input.response_id,
+                        output_key: input.output_key,
+                        content: input.content,
+                        identity,
+                        owner_id: self.instance_id,
+                    },
+                ))
+                .await?
+            }
+            MediaIdentity::Text(identity) => {
+                bounded(self.repository.prepare_text_delivery(
+                    owner,
+                    NewTextDelivery {
+                        response_id: input.response_id,
+                        output_key: input.output_key,
+                        content: input.content,
+                        identity,
+                        owner_id: self.instance_id,
+                    },
+                ))
+                .await?
+            }
+        };
         let cancel = input.cancel.child_token();
         self.active
             .lock()
@@ -342,10 +406,10 @@ impl DeliveryService {
             permit: Arc::new(permit),
         });
         let adapter_cancel = CancellationToken::new();
-        let mut delivery = Box::pin(input.channel.deliver_audio(
+        let mut delivery = Box::pin(input.payload.deliver(
+            input.channel.as_ref(),
             &input.target,
             identity,
-            input.audio,
             observer.clone(),
             adapter_cancel.clone(),
         ));
@@ -381,12 +445,12 @@ impl DeliveryService {
                 break "observation ended without a final checkpoint".to_string();
                }
                if matches!(report.observation_end, ObservationEnd::Unknown { .. })
-                && report.progress.as_ref().is_some_and(|progress| progress.observation_end.is_none()) {
+                && report.progress.as_ref().is_some_and(|progress| progress.end().is_none()) {
                 // A transport timeout is local information, not a device
                 // terminal receipt. Preserve its last real observation and
                 // try the independent precise checkpoint before freezing Unknown.
                 if let Some(progress) = report.progress {
-                 if let Err(error) = bounded(self.repository.progress(&observer.permit, progress)).await {
+                 if let Err(error) = bounded(observer.record(progress,false)).await {
                   self.failures.lock().unwrap().push(format!("last delivery observation: {error}"));
                  }
                 }
@@ -414,13 +478,7 @@ impl DeliveryService {
         adapter_cancel.cancel();
         // The adapter gets a bounded opportunity to close its observation stream.
         // A separate exact fence is necessary if cancellation interrupts its ACK path.
-        let mut fence_future = Box::pin(async {
-            if let Some(identity) = identity {
-                input.channel.cancel_playback(identity, &reason).await
-            } else {
-                anyhow::bail!("legacy output has no precise cancellation evidence")
-            }
-        });
+        let mut fence_future = Box::pin(identity.cancel(input.channel.as_ref(), &reason));
         let (fence_progress, fence_pending) = match tokio::time::timeout(
             CANCEL_TIMEOUT,
             AssertUnwindSafe(&mut fence_future).catch_unwind(),
@@ -539,14 +597,9 @@ impl DeliveryService {
     async fn save_checkpoint(
         &self,
         observer: &DurableObserver,
-        progress: PlaybackProgress,
+        progress: MediaProgress,
     ) -> Option<DeliveryRecord> {
-        match bounded(
-            self.repository
-                .terminal_checkpoint(&observer.permit, progress),
-        )
-        .await
-        {
+        match bounded(observer.record(progress, true)).await {
             Ok(record) => Some(record),
             Err(error) => {
                 self.failures
@@ -560,17 +613,11 @@ impl DeliveryService {
     async fn finish_report(
         &self,
         observer: &DurableObserver,
-        report: AudioDeliveryReport,
+        report: MediaReport,
     ) -> DeliveryResult<DeliveryRecord> {
         match report.progress {
-            Some(progress)
-                if progress.observation_end.as_ref() == Some(&report.observation_end) =>
-            {
-                bounded(
-                    self.repository
-                        .terminal_checkpoint(&observer.permit, progress),
-                )
-                .await
+            Some(progress) if progress.end().as_ref() == Some(&report.observation_end) => {
+                bounded(observer.record(progress, true)).await
             }
             Some(_) => Err(DeliveryError::InvalidEvidence(
                 "terminal report contradicts progress evidence".into(),
@@ -597,6 +644,52 @@ impl Drop for ActiveGuard {
 struct DurableObserver {
     repository: DeliveryRepository,
     permit: Arc<DispatchPermit>,
+}
+impl DurableObserver {
+    async fn record(
+        &self,
+        progress: MediaProgress,
+        checkpoint: bool,
+    ) -> DeliveryResult<DeliveryRecord> {
+        match progress {
+            MediaProgress::Audio(progress) if checkpoint => {
+                self.repository
+                    .terminal_checkpoint(&self.permit, progress)
+                    .await
+            }
+            MediaProgress::Audio(progress) => {
+                self.repository.progress(&self.permit, progress).await
+            }
+            MediaProgress::Text(progress) => {
+                self.repository
+                    .text_progress(&self.permit, progress, checkpoint)
+                    .await
+            }
+        }
+    }
+}
+#[async_trait]
+impl TextObserver for DurableObserver {
+    async fn start(&self) -> anyhow::Result<()> {
+        Ok(bounded(self.repository.text_start(&self.permit)).await?)
+    }
+    async fn offered(&self, chunk: &alia_core::text_delivery::TextChunk) -> anyhow::Result<()> {
+        Ok(bounded(self.repository.offer_text_chunk(&self.permit, chunk)).await?)
+    }
+    async fn end(&self, chunks: u64, utf8_bytes: u64) -> anyhow::Result<()> {
+        Ok(bounded(
+            self.repository
+                .offer_text_end(&self.permit, chunks, utf8_bytes),
+        )
+        .await?)
+    }
+    async fn progress(
+        &self,
+        progress: alia_core::text_delivery::TextProgress,
+    ) -> anyhow::Result<()> {
+        bounded(self.repository.text_progress(&self.permit, progress, false)).await?;
+        Ok(())
+    }
 }
 #[async_trait]
 impl PlaybackObserver for DurableObserver {

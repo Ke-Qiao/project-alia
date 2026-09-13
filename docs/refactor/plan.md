@@ -2,7 +2,7 @@
 
 更新：2026-09-08。
 
-状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界已提交；本轮完成 Server 运行时所有权和 Memory 原子批次，整合证据见 [构建记录](progress.md)。Delivery、缓存与在途遗忘传播、Companion 和真实硬件验收继续执行。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
+状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时与音频 Delivery 已提交。当前整合 TextDelivery 与签名 D3 身体链路，证据见 [构建记录](progress.md)。缓存与在途上下文的遗忘传播、Companion 和真实硬件验收继续执行。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
 
 ## 1. 决策来源与已确认范围
 

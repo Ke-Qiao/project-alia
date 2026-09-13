@@ -447,6 +447,10 @@ pub struct ExpressionExecutionResult {
     pub command_id: Option<String>,
     #[serde(default)]
     pub voice_scope: Option<alia_core::delivery::VoiceScope>,
+    /// Original command and raw device facts; local observation failure is kept
+    /// separate and never stamped into the device's monotonic receipt stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyExecutionEvidence>,
     #[serde(default)]
     pub completion_acknowledged: bool,
     #[serde(default)]
@@ -466,6 +470,7 @@ impl ExpressionExecutionResult {
             status: "skipped".to_string(),
             command_id: None,
             voice_scope: None,
+            body: None,
             completion_acknowledged: false,
             action_receipts: vec![ExpressionActionReceipt {
                 action: "*".to_string(),
@@ -482,11 +487,145 @@ impl ExpressionExecutionResult {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BodyExecutionEvidence {
+    pub command: alia_core::body::BodyCommand,
+    pub progress: Option<alia_core::body::BodyProgress>,
+    pub unknown_reason: Option<String>,
+}
+
+impl BodyExecutionEvidence {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.command.validate()?;
+        if let Some(progress) = &self.progress {
+            progress.validate(None, &self.command)?;
+        }
+        Ok(())
+    }
+
+    pub fn writer_retired(&self) -> bool {
+        self.progress
+            .as_ref()
+            .is_some_and(|progress| progress.writer_quiescent && progress.end.is_some())
+    }
+}
+
+impl ExpressionExecutionResult {
+    /// The v1 body driver is open loop. Submitted and Cancelled can retire a
+    /// software writer, but neither is evidence that a motor reached a position.
+    pub(crate) fn from_body(
+        body: BodyExecutionEvidence,
+        actions: &[String],
+        cancellation: bool,
+    ) -> Self {
+        use alia_core::body::BodyEnd;
+        let progress = body.progress.as_ref();
+        let end = progress.and_then(|progress| progress.end.as_ref());
+        let local_unknown = body.unknown_reason.is_some();
+        let (status, terminal_action, reason) = if local_unknown {
+            (
+                "unknown",
+                ExpressionActionStatus::Unknown,
+                body.unknown_reason.clone(),
+            )
+        } else {
+            match end {
+                Some(BodyEnd::Submitted) => ("submitted", ExpressionActionStatus::Submitted, None),
+                Some(BodyEnd::Cancelled { reason }) => (
+                    "cancelled",
+                    ExpressionActionStatus::Cancelled,
+                    Some(reason.clone()),
+                ),
+                Some(BodyEnd::Failed { reason }) => (
+                    "failed",
+                    ExpressionActionStatus::Failed,
+                    Some(reason.clone()),
+                ),
+                Some(BodyEnd::Rejected { reason }) => (
+                    "rejected",
+                    ExpressionActionStatus::Rejected,
+                    Some(reason.clone()),
+                ),
+                Some(BodyEnd::Unknown { reason }) => (
+                    "unknown",
+                    ExpressionActionStatus::Unknown,
+                    Some(reason.clone()),
+                ),
+                None if progress.is_some_and(|progress| progress.started_actions > 0) => {
+                    ("started", ExpressionActionStatus::Started, None)
+                }
+                None if progress.is_some() => ("accepted", ExpressionActionStatus::Accepted, None),
+                None => (
+                    "unknown",
+                    ExpressionActionStatus::Unknown,
+                    Some("body command admission has no acknowledgement".into()),
+                ),
+            }
+        };
+        let action_receipts = actions
+            .iter()
+            .enumerate()
+            .map(|(index, action)| {
+                let observed = if cancellation {
+                    terminal_action.clone()
+                } else if progress.is_some_and(|p| index < p.submitted_actions as usize) {
+                    ExpressionActionStatus::Submitted
+                } else if end.is_some() || local_unknown {
+                    terminal_action.clone()
+                } else if progress.is_some_and(|p| index < p.started_actions as usize) {
+                    ExpressionActionStatus::Started
+                } else if progress.is_some_and(|p| index < p.accepted_actions as usize) {
+                    ExpressionActionStatus::Accepted
+                } else {
+                    ExpressionActionStatus::Unknown
+                };
+                ExpressionActionReceipt {
+                    action: action.clone(),
+                    status: observed,
+                    reason: reason.clone(),
+                }
+            })
+            .collect();
+        Self {
+            status: status.into(),
+            command_id: Some(body.command.source_command_id.clone()),
+            voice_scope: body.command.scope.voice(),
+            body: Some(body),
+            completion_acknowledged: false,
+            action_receipts,
+            executed_actions: Vec::new(),
+            skipped_actions: Vec::new(),
+            safety_modifications: Vec::new(),
+        }
+    }
+
+    pub(crate) fn writer_retired(&self) -> bool {
+        self.body.as_ref().map_or_else(
+            || {
+                !self.action_receipts.is_empty()
+                    && self.action_receipts.iter().all(|receipt| {
+                        matches!(
+                            receipt.status,
+                            ExpressionActionStatus::Completed
+                                | ExpressionActionStatus::Failed
+                                | ExpressionActionStatus::Rejected
+                                | ExpressionActionStatus::Skipped
+                        )
+                    })
+            },
+            BodyExecutionEvidence::writer_retired,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpressionActionStatus {
     Accepted,
     Started,
+    Submitted,
+    Cancelled,
     Completed,
     Failed,
     TimedOut,

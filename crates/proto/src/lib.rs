@@ -14,6 +14,10 @@ pub mod binding {
     tonic::include_proto!("alia.binding");
 }
 
+pub mod body {
+    tonic::include_proto!("alia.body.v1");
+}
+
 pub mod expression {
     tonic::include_proto!("alia.expression");
 }

@@ -1,5 +1,8 @@
 mod neck_mapper;
+mod plan;
 mod runtime;
 mod servo;
+mod writer;
 
-pub use runtime::MotionRuntime;
+pub use plan::PreparedBodyCommand;
+pub use runtime::{BodyAuthorization, BodyObservation, MotionRuntime};

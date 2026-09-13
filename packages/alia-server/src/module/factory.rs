@@ -252,6 +252,8 @@ pub fn create_channel(
         ChannelConfig::Embedded {
             id,
             owner_user_id,
+            expected_device_id,
+            expected_device_public_key,
             endpoint,
             discovery_service_name,
             discovery_timeout_sec,
@@ -268,6 +270,8 @@ pub fn create_channel(
                 EmbeddedChannelConfig {
                     id: id.clone(),
                     owner_user_id: *owner_user_id,
+                    expected_device_id: expected_device_id.clone(),
+                    expected_device_public_key: expected_device_public_key.clone(),
                     endpoint: endpoint.clone(),
                     discovery_service_name: discovery_service_name.clone(),
                     discovery_timeout_sec: *discovery_timeout_sec,
@@ -324,6 +328,8 @@ mod tests {
         let config = ChannelConfig::Embedded {
             id: "pi-living-room".to_string(),
             owner_user_id: None,
+            expected_device_id: None,
+            expected_device_public_key: None,
             enabled: true,
             endpoint: String::new(),
             discovery_service_name: "_alia-embedded._tcp".to_string(),

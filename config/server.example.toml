@@ -55,6 +55,10 @@ enabled = true
 # Set to an existing active account UUID before voice input is enabled.
 # The authenticated account API returns its user ID. Never use a device-supplied ID.
 # owner_user_id = "<existing-account-uuid>"
+# Body commands additionally require both values read from the trusted device
+# locally. Discovery/GetBindingStatus never populates or replaces this pin.
+# expected_device_id = "<verified-device-id>"
+# expected_device_public_key = "<base64-encoded-32-byte-Ed25519-public-key>"
 endpoint = ""
 discovery_service_name = "_alia-embedded._tcp"
 discovery_timeout_sec = 3

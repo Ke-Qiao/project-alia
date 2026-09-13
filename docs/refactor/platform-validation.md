@@ -1,6 +1,102 @@
 # 隔离平台验证
 
-更新：2026-09-08。最新验证覆盖已提交的 Server runtime、原子 Memory 与来源 epoch 包 `2f8797c7b1ce73f62e8abb798820bb5bdbdf1cbe`；下方保留 `5aecb38`、`ef07d43` 历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+更新：2026-09-08。最新验证覆盖 D1/D2 固定提交 `ee9cbfd4f8b2c4c2fbe8c8a1c985be7fddb2d38b`；下方保留 `2f8797c`、`5aecb38`、`ef07d43` 历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+
+## D1/D2：固定提交 ee9cbfd
+
+本轮从 `ee9cbfd4f8b2c4c2fbe8c8a1c985be7fddb2d38b` 导出 **555 个文件**至 `/private/tmp/alia-platform-ee9cbfd.hKIL5z/source`，只读挂载 `/src`。使用 APFS `cp -cR` 从 `/private/tmp/alia-platform-2f8797c.QL6Y8V/cache` 克隆独立缓存至本轮 `cache`，没有修改旧缓存、归档源码或工作区 Cargo.lock。所有 555 个归档文件的开始/结束 SHA256 完全一致。
+
+| 输入或环境 | 本轮实际值 |
+| --- | --- |
+| 官方 Rust 镜像 | `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1` |
+| ARM64 image ID | `sha256:7cf1e580ef5539f03b58560753e8ab84c8c360960d99dff714004aa98f203977` |
+| Rust / Cargo / LLVM | Rust `1.95.0 (59807616e 2026-04-14)`、Cargo `1.95.0 (f2d3ce0bd 2026-03-21)`、LLVM `22.1.2` |
+| 系统 | Debian 12，`aarch64-unknown-linux-gnu`，OrbStack kernel `7.0.14-orbstack-00380-ga7e0a2dc9535` |
+| Cargo.lock SHA256 | `475d4f5b42bcfde3f9194d9040ed52a513ecc9ad47271560beaea220b6b98ea9`，前后相同 |
+| 资源限制 | 6 CPU、12 GiB、512 PIDs，`CARGO_BUILD_JOBS=4` |
+| 任务容器 | `alia-platform-ee9cbfd-hkil5z`，`--rm` 结束后确认移除 |
+| 任务数据库 | 已授权 `alia-refactor-test-db` 容器中新建空库 `alia_platform_ee9cbfd`，账号 `alia_test`，容器访问 `host.docker.internal:32768` |
+| PostgreSQL / 扩展 | PostgreSQL `17.10`，aarch64；`vector 0.8.2`；测试结束 `pgcrypto 1.3`、`plpgsql 1.0` 同时存在 |
+
+系统依赖实际包含 protobuf `3.21.12-3+deb12u1`、Clang `1:14.0-55.7~deb12u1`、CMake `3.25.1-1`、ALSA `1.2.8-1+b1`、DBus `1.14.10-1~deb12u1`、OpenSSL `3.0.20-1~deb12u2` 和 PostgreSQL client `15.19-0+deb12u1`，完整包版本见 evidence/system-packages.txt。没有挂载宿主 Cargo 目录或 Docker socket，也没有操作用户 `alia-postgres`（5433）、模型服务或其他用户容器。
+
+### 实际结果与计数
+
+| 检查 | 实际命令 | 结果 | 墙钟耗时 |
+| --- | --- | --- | --- |
+| Server 默认 features，所有 targets | `cargo check -p alia-server --all-targets --locked` | exit 0 | 17.27 s |
+| Server 默认库测试 | `cargo test -p alia-server --lib --locked` | 176 passed / 0 failed / 2 ignored | 36.87 s，测试执行 0.49 s |
+| Server 全部 36 个集成 targets | 下方完整命令 | 296 passed / 0 failed / 2 ignored | 190.39 s |
+| Embedded 默认 Sherpa 完整构建 | `cargo build -p alia-embedded --locked` | 编译与最终链接 exit 0 | 16.23 s |
+| Embedded 默认库测试 | `cargo test -p alia-embedded --lib --locked` | 70 passed / 0 failed / 0 ignored | 40.72 s，测试执行 25.75 s |
+
+五阶段时间为 **2026-09-08 07:41:49–07:46:50 UTC**，北京时间 **15:41:49–15:46:50**。共 **542 项 unique passed、0 failed、4 ignored**：Server 472 项，Embedded 70 项。Server 库测试内子进程再次执行的一项已包含在 176 中，不重复累计。复制缓存的耗时不是冷缓存性能基准；所有阶段使用默认 features，没有以 no-default 替代。
+
+编译没有 Rust warning。Embedded 库测试输出一条 ONNX Runtime `Unknown CPU vendor` 警告；测试仍全部通过。此处记录真实 native 初始化输出，不把它描述为模型推理或真实音频验收。
+
+重点集成目标如下，其余目标同属上表 296 项，完整逐目标计数见 evidence/result-summary.json：
+
+| 目标 | passed | 测试执行耗时 |
+| --- | ---: | ---: |
+| `delivery_repository` | 14 | 1.61 s |
+| `delivery_service` | 12 | 10.62 s |
+| `execution_repository` | 19 | 2.48 s |
+| `execution_service` | 27 | 34.09 s |
+| `memory` / `memory_privacy` | 13 / 24 | 0.16 / 3.73 s |
+| `migrations` | 7 | 0.41 s |
+| `server_runtime` | 32 | 61.29 s |
+| `ingress_identity` | 8 | 0.01 s |
+| `tools` | 15 | 0.01 s |
+
+Delivery 的并发幂等、单次 dispatch、取消、恢复 Unknown 和 native owner 保留在真实 PostgreSQL/运行时测试中通过。Memory/Execution 的删除后旧来源、快慢钟、当前 source epoch、跨 owner、事务故障与旧 embedding 回填回归均实际执行。模型和工具使用受控替身，数据库与网络 loopback 为真实环境。
+
+Embedded 库测试实际包含本轮 D2 的 CPAL 在途完整帧取消 barrier、ALSA 部分提交取消 barrier、End ACK 等待输入租约释放、等待 Start 撤权、排队 begin 撤权、响应断开后的 native enqueue join、同 epoch 精确取消保留后续 FIFO、重采样相位/尾部/频谱等用例。它们验证生产控制及计数逻辑在 ARM64 的执行，没有开启真实声卡。
+
+### 扩展、迁移与链接证据
+
+测试库初始为空，预先在 `public` 安装 pgvector。归档内 manifest 包含 **20 个 SQL 迁移**，包括 Execution、Memory privacy、source privacy epoch 和 Delivery 的 `m20260908_000001` 至 `000004`。`bundled_schema_installs_with_pgvector_and_restarts_without_changes` 真实执行完整迁移，验证重复启动不再执行，以及 pgvector 属于 public；其余迁移测试覆盖并发只应用一次、SQL 和 journal 回滚、已应用 SQL 改变被拒绝与带分号的函数体。
+
+各真实 PG fixture 创建并清理独立随机 schema。最后查询数据库只剩 `information_schema`、`pg_catalog`、`pg_toast`、`public`，没有遗留测试 schema；任务数据库与 PostgreSQL 容器保留运行。完整迁移文件 SHA256 记录在 evidence/migration-manifest-sha256.txt。
+
+Embedded 默认 `wakeword-sherpa`、`stt-sherpa`、`direct-response` 保留。产物 `/private/tmp/alia-platform-ee9cbfd.hKIL5z/cache/target/debug/alia-embedded` 是 ARM aarch64 ELF 64-bit PIE，解释器 `/lib/ld-linux-aarch64.so.1`，BuildID `b196b86ceef9a1d8a0f8fb311b30c13530616fb3`，SHA256 `ea025bf856aa5363a2e97a9273554e0f7e354528631e52f7f2fea879ffb816c1`。官方 Sherpa `1.13.1` Linux aarch64 静态归档 SHA256 仍为 `86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749`。没有设置 DOCS_RS、禁用 Sherpa 或下载模型。
+
+### 复现与排除项
+
+实际脚本：`/private/tmp/alia-platform-ee9cbfd.hKIL5z/evidence/run.sh`。完整 Docker 命令使用下列隔离参数；启动后脚本安装与上方相同的系统依赖，数据库预检失败会立即终止，各 Cargo 阶段使用 `/usr/bin/time -v timeout 2400`：
+
+```bash
+docker run --rm --name alia-platform-ee9cbfd-hkil5z --platform linux/arm64 \
+  --cpus 6 --memory 12g --pids-limit 512 \
+  --mount type=bind,source=/private/tmp/alia-platform-ee9cbfd.hKIL5z/source,target=/src,readonly \
+  --mount type=bind,source=/private/tmp/alia-platform-ee9cbfd.hKIL5z/cache,target=/cache \
+  --mount type=bind,source=/private/tmp/alia-platform-ee9cbfd.hKIL5z/evidence,target=/evidence \
+  --env CARGO_HOME=/cache/cargo --env CARGO_TARGET_DIR=/cache/target \
+  --env CARGO_BUILD_JOBS=4 --env DEBIAN_FRONTEND=noninteractive \
+  --env ALIA_TEST_DATABASE_URL=postgresql://alia_test:alia_test@host.docker.internal:32768/alia_platform_ee9cbfd \
+  --workdir /src \
+  rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 \
+  bash /evidence/run.sh
+```
+
+脚本中实际的全部集成测试命令：
+
+```bash
+cargo test -p alia-server --test channel_registry --test config \
+  --test delivery_repository --test delivery_service --test easy_turn_live \
+  --test embedded_channel --test execution_repository --test execution_service \
+  --test expression_abi --test expression_appraisal --test expression_eval \
+  --test expression_regulation --test expression_trace --test ingress_identity \
+  --test llm --test llm_providers --test memory --test memory_capture \
+  --test memory_privacy --test migrations --test persona --test pipeline \
+  --test pipeline_tools --test plugin_storage --test provider_adapters \
+  --test registry --test router --test rules --test scheduler --test sensors \
+  --test server_background --test server_runtime --test settings --test skills \
+  --test tools --test voice_stream_live --locked
+```
+
+原始 evidence 包含镜像 ID、环境/依赖、数据库前后检查、五阶段 command/start/end/status/log、测试汇总、迁移摘要、全部源码前后摘要、链接产物摘要以及容器退出确认。四项 ignored 是两项真实 PTY 库测试及 `easy_turn_live`、`voice_stream_live` 各一项，未计入通过。宿主另跑的 PTY/模型结果不能计作本轮 Linux 结果。
+
+本轮没有执行完整 workspace、Embedded 集成测试或设备二进制；没有真实 Easy-Turn/LLM/TTS、声卡/ALSA 设备、Pi 5、蓝牙、AEC、双讲或物理呈现验收。它不证明 Linux x86_64、Windows、macOS Intel，也不覆盖 `ee9cbfd` 后的 ContextLease 或 D3 身体动作实施。
 
 ## Runtime 与来源 epoch：固定提交 2f8797c
 

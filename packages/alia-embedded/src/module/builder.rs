@@ -111,6 +111,7 @@ impl EmbeddedNode {
     async fn run_services(&mut self) -> Result<()> {
         use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
+        use alia_proto::body::body_control_server::BodyControlServer;
         use alia_proto::expression::embedded_expression_server::EmbeddedExpressionServer;
         use alia_proto::playback::playback_server::PlaybackServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
@@ -175,6 +176,16 @@ impl EmbeddedNode {
             self.binding_manager.clone(),
             self.registry.motion.clone(),
         ));
+        let body_key = identity::load_device_keypair(&self.config.identity.keypair_path)?;
+        let body_svc = BodyControlServer::new(crate::grpc::EmbeddedBodyService::new(
+            self.binding_manager.clone(),
+            self.registry.motion.clone(),
+            self.registry.playback_session.clone(),
+            self.config.identity.device_id.clone(),
+            body_key.signing_key().clone(),
+        ))
+        .max_decoding_message_size(alia_core::body::MAX_BODY_PAYLOAD_BYTES + 1024)
+        .max_encoding_message_size(alia_core::body::MAX_BODY_PAYLOAD_BYTES + 1024);
 
         let addr = self.local_addr();
         let listener = self
@@ -196,6 +207,7 @@ impl EmbeddedNode {
             .add_service(sensor_svc)
             .add_service(playback_svc)
             .add_service(expression_svc)
+            .add_service(body_svc)
             .serve_with_incoming_shutdown(incoming, async move {
                 cancel.cancelled().await;
             })
@@ -339,6 +351,7 @@ impl EmbeddedBuilder {
     }
 
     async fn build_owned(self, cleanup: Arc<ModuleCleanup>) -> Result<EmbeddedNode> {
+        let device_boot_id = uuid::Uuid::new_v4();
         anyhow::ensure!(
             !self.cancel_token.is_cancelled(),
             "startup cancelled before binding"
@@ -415,7 +428,8 @@ impl EmbeddedBuilder {
             None => factory::create_mixer(&config)?,
         });
         let motion = init!(Box::new(
-            MotionRuntime::new(config.motion.clone()).context("creating motion module")?
+            MotionRuntime::new_with_boot(config.motion.clone(), device_boot_id)
+                .context("creating motion module")?
         ));
         let face_tracker = init!(match self.face_tracker {
             Some(module) => module,
@@ -487,7 +501,16 @@ impl EmbeddedBuilder {
             )
             .await?;
         }
-        let playback_session = Arc::new(PlaybackSession::new(audio_playback.clone()));
+        let motion_revocation = motion.clone();
+        binding_manager.install_output_revocation(Arc::new(move || {
+            if let Err(error) = motion_revocation.revoke_control("device binding changed") {
+                tracing::error!(%error, "body binding revocation failed; control state is unknown");
+            }
+        }))?;
+        let playback_session = Arc::new(PlaybackSession::with_output_fence(
+            audio_playback.clone(),
+            motion.clone(),
+        ));
         cleanup.add(playback_session.clone());
         let speech_pipeline = init!(Box::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),
@@ -498,6 +521,7 @@ impl EmbeddedBuilder {
             direct_response.clone(),
             audio_playback.clone(),
             playback_session.clone(),
+            device_boot_id,
             binding_manager.clone(),
             &config.edge_stt,
             &config.speech,

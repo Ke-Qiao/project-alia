@@ -35,6 +35,9 @@ mod delivery;
 #[path = "server_runtime/expression.rs"]
 mod expression;
 
+#[path = "server_runtime/body.rs"]
+mod body;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,

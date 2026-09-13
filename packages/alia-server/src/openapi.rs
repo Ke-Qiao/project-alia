@@ -23,6 +23,9 @@ use crate::api;
         api::deliveries::list_deliveries,
         api::deliveries::response_events,
         api::deliveries::get_delivery,
+        api::deliveries::text_chunks,
+        api::body_deliveries::get_delivery,
+        api::body_deliveries::for_response,
         api::deliveries::cancel_response,
         // Auth
         api::auth::login,
@@ -65,6 +68,7 @@ use crate::api;
         api::deliveries::DeliveryErrorResponse,
         api::deliveries::DeliveryErrorDetail,
         api::deliveries::DeliveryErrorCode,
+        crate::modules::body_delivery::BodyDeliveryRecord,
         crate::modules::delivery::types::ResponseRecord,
         crate::modules::delivery::types::ResponseKey,
         crate::modules::delivery::types::ResponseStatus,

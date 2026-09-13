@@ -1,592 +1,975 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+//! One admission gate and one native writer own every body output. Dropping an
+//! RPC waiter cannot drop preparation, an admitted command, or a native write.
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use alia_core::body::{
+    BodyCommand, BodyCommandIdentity, BodyControlLease, BodyControlState, BodyEnd, BodyProgress,
+    BodyScope, MAX_BODY_CHANNELS,
+};
+use alia_core::delivery::VoiceScope;
+use anyhow::{Context, Result, bail, ensure};
 use serde_json::json;
-use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tokio::sync::{Mutex as AsyncMutex, oneshot, watch};
+use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use crate::config::MotionConfig;
-use crate::module::context::ModuleContext;
 use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::module::playback_session::VoiceOutputFence;
 use crate::module::traits::DiscoveryMetadata;
 
 use super::neck_mapper::NeckMapper;
+use super::plan::{PreparedBodyCommand, face_rotation};
 use super::servo::{ServoBackend, create_servo_backend};
 
-const NATIVE_EXPRESSION_ACTIONS: &[&str] =
-    &["look_at_user", "small_nod", "small_bow", "play_animation"];
+const QUEUE_CAPACITY: usize = 8;
+const RECEIPT_CAPACITY: usize = 64;
+const PREPARATION_CAPACITY: usize = 4;
+const MAX_AUTHORIZATION: Duration = Duration::from_secs(60);
+const CANCEL_DEADLINE: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Clone, Copy)]
+pub struct BodyAuthorization {
+    /// Monotonic deadline derived from the verified signed request. It is
+    /// checked again before each frame and each individual native write.
+    pub expires_at: Instant,
+}
+
+impl BodyAuthorization {
+    fn validate(self) -> Result<()> {
+        let now = Instant::now();
+        ensure!(self.expires_at > now, "body authorization has expired");
+        ensure!(
+            self.expires_at.duration_since(now) <= MAX_AUTHORIZATION,
+            "body authorization exceeds 60 seconds"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct BodyObservation {
+    progress: watch::Receiver<BodyProgress>,
+}
+
+impl BodyObservation {
+    pub fn snapshot(&self) -> BodyProgress {
+        self.progress.borrow().clone()
+    }
+
+    pub async fn changed(&mut self) -> Result<()> {
+        self.progress
+            .changed()
+            .await
+            .context("body observation owner ended")
+    }
+}
+
+struct AuthorityState {
+    expires_at: Instant,
+    revoked: Option<String>,
+}
+
+pub(super) struct Authority(Mutex<AuthorityState>);
+
+impl Authority {
+    fn new(authorization: BodyAuthorization) -> Self {
+        Self(Mutex::new(AuthorityState {
+            expires_at: authorization.expires_at,
+            revoked: None,
+        }))
+    }
+
+    fn reason(&self) -> Option<String> {
+        let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        if state.revoked.is_none() && Instant::now() >= state.expires_at {
+            state.revoked = Some("body authorization expired".into());
+        }
+        state.revoked.clone()
+    }
+
+    fn renew(&self, authorization: BodyAuthorization) -> Result<()> {
+        authorization.validate()?;
+        let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        if state.revoked.is_none() && Instant::now() >= state.expires_at {
+            state.revoked = Some("body authorization expired".into());
+        }
+        ensure!(
+            state.revoked.is_none(),
+            "body control lease is revoked or expired"
+        );
+        // A valid but earlier request cannot shorten another verified renewal.
+        state.expires_at = state.expires_at.max(authorization.expires_at);
+        Ok(())
+    }
+
+    fn revoke(&self, reason: &str) {
+        let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        state.revoked.get_or_insert_with(|| reason.into());
+    }
+}
+
+pub(super) struct Permit {
+    authority: Arc<Authority>,
+    cancelled: Mutex<Option<String>>,
+    pub scope: Option<VoiceScope>,
+    deadline: Option<Instant>,
+}
+
+impl Permit {
+    fn new(authority: Arc<Authority>, scope: Option<VoiceScope>) -> Arc<Self> {
+        Arc::new(Self {
+            authority,
+            cancelled: Mutex::new(None),
+            scope,
+            deadline: None,
+        })
+    }
+
+    pub fn local() -> Arc<Self> {
+        Self::new(
+            Arc::new(Authority::new(BodyAuthorization {
+                expires_at: Instant::now() + MAX_AUTHORIZATION,
+            })),
+            None,
+        )
+    }
+
+    pub fn reason(&self) -> Option<String> {
+        let mut cancelled = self
+            .cancelled
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if cancelled.is_none() {
+            *cancelled = self.authority.reason();
+        }
+        if cancelled.is_none() && self.deadline.is_some_and(|time| Instant::now() >= time) {
+            *cancelled = Some("local face target expired".into());
+        }
+        cancelled.clone()
+    }
+
+    pub fn cancel(&self, reason: &str) {
+        self.cancelled
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get_or_insert_with(|| bounded_reason(reason));
+    }
+}
+
+pub(super) struct CommandRecord {
+    pub command: BodyCommand,
+    canonical: Vec<u8>,
+    pub permit: Arc<Permit>,
+    current: Mutex<BodyProgress>,
+    events: watch::Sender<BodyProgress>,
+}
+
+impl CommandRecord {
+    fn new(
+        command: BodyCommand,
+        canonical: Vec<u8>,
+        permit: Arc<Permit>,
+        rejection: Option<String>,
+    ) -> Arc<Self> {
+        let progress = BodyProgress {
+            identity: command.identity,
+            receipt_sequence: 1,
+            accepted_actions: if rejection.is_some() {
+                0
+            } else {
+                command.actions.len() as u32
+            },
+            started_actions: 0,
+            submitted_actions: 0,
+            submitted_frames: 0,
+            partial_frame: None,
+            last_partial_channels: Vec::new(),
+            last_uncertain_channels: Vec::new(),
+            backend: None,
+            writer_quiescent: rejection.is_some(),
+            position_confirmed_actions: None,
+            end: rejection.map(|reason| BodyEnd::Rejected { reason }),
+        };
+        let events = watch::channel(progress.clone()).0;
+        Arc::new(Self {
+            command,
+            canonical,
+            permit,
+            current: Mutex::new(progress),
+            events,
+        })
+    }
+
+    pub fn observation(&self) -> BodyObservation {
+        BodyObservation {
+            progress: self.events.subscribe(),
+        }
+    }
+
+    pub fn snapshot(&self) -> BodyProgress {
+        self.current
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    pub fn update(&self, change: impl FnOnce(&mut BodyProgress)) -> Result<()> {
+        let mut current = self
+            .current
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        ensure!(
+            current.end.is_none(),
+            "body observation is already terminal"
+        );
+        let mut next = current.clone();
+        next.receipt_sequence = next
+            .receipt_sequence
+            .checked_add(1)
+            .context("body receipt sequence exhausted")?;
+        change(&mut next);
+        next.validate(Some(&current), &self.command)
+            .map_err(anyhow::Error::msg)?;
+        *current = next.clone();
+        self.events.send_replace(next);
+        Ok(())
+    }
+
+    pub fn finish(&self, end: BodyEnd) -> Result<()> {
+        self.update(|progress| {
+            progress.writer_quiescent = true;
+            progress.end = Some(end);
+        })
+    }
+}
+
+pub(super) struct QueuedCommand {
+    pub prepared: PreparedBodyCommand,
+    pub record: Arc<CommandRecord>,
+}
+
+pub(super) struct FaceWork {
+    pub rotation: [f32; 3],
+    pub permit: Arc<Permit>,
+}
+
+pub(super) enum ActiveWork {
+    Command(Arc<CommandRecord>),
+    Face(Arc<Permit>),
+    Reset(Arc<Permit>),
+}
+
+impl ActiveWork {
+    fn permit(&self) -> &Arc<Permit> {
+        match self {
+            Self::Command(record) => &record.permit,
+            Self::Face(permit) | Self::Reset(permit) => permit,
+        }
+    }
+}
+
+struct LeaseState {
+    identity: BodyControlLease,
+    authority: Arc<Authority>,
+    high_water: u64,
+}
+
+pub(super) struct State {
+    pub boot: Uuid,
+    generation: u64,
+    lease: Option<LeaseState>,
+    voice: Option<VoiceScope>,
+    pub queue: VecDeque<QueuedCommand>,
+    pub face: Option<FaceWork>,
+    records: HashMap<BodyCommandIdentity, Arc<CommandRecord>>,
+    receipts: VecDeque<BodyCommandIdentity>,
+    pub active: Option<ActiveWork>,
+    smoothed_face: [f32; 3],
+    pub spawned: bool,
+    pub ready: bool,
+    pub stopping: bool,
+    pub finished: bool,
+    pub fault: Option<String>,
+}
+
+impl State {
+    fn new(boot: Uuid) -> Self {
+        Self {
+            boot,
+            generation: 0,
+            lease: None,
+            voice: None,
+            queue: VecDeque::new(),
+            face: None,
+            records: HashMap::new(),
+            receipts: VecDeque::new(),
+            active: None,
+            smoothed_face: [0.0; 3],
+            spawned: false,
+            ready: false,
+            stopping: false,
+            finished: false,
+            fault: None,
+        }
+    }
+
+    fn available(&self) -> bool {
+        self.ready && !self.stopping && self.fault.is_none()
+    }
+
+    fn next_generation(&mut self) -> Result<u64> {
+        self.generation = self
+            .generation
+            .checked_add(1)
+            .context("body control generation exhausted")?;
+        Ok(self.generation)
+    }
+
+    fn check_lease(&self, lease: &BodyControlLease) -> Result<&LeaseState> {
+        let current = self
+            .lease
+            .as_ref()
+            .context("body control lease is absent")?;
+        ensure!(current.identity == *lease, "body control lease is stale");
+        if let Some(reason) = current.authority.reason() {
+            bail!(reason);
+        }
+        Ok(current)
+    }
+
+    /// This gate also serializes dequeue. A removed queued command has never
+    /// entered native code and may immediately attest software quiescence.
+    fn cancel_matching(
+        &mut self,
+        reason: &str,
+        matches: impl Fn(&CommandRecord) -> bool,
+    ) -> Result<()> {
+        if let Some(ActiveWork::Command(record)) = &self.active
+            && matches(record)
+        {
+            record.permit.cancel(reason);
+        }
+        let mut kept = VecDeque::with_capacity(QUEUE_CAPACITY);
+        while let Some(queued) = self.queue.pop_front() {
+            if matches(&queued.record) {
+                queued.record.permit.cancel(reason);
+                queued.record.finish(BodyEnd::Cancelled {
+                    reason: bounded_reason(reason),
+                })?;
+            } else {
+                kept.push_back(queued);
+            }
+        }
+        self.queue = kept;
+        Ok(())
+    }
+
+    fn cancel_face(&mut self, reason: &str) {
+        self.face = None;
+        if let Some(ActiveWork::Face(permit)) = &self.active {
+            permit.cancel(reason);
+        }
+    }
+
+    fn revoke(&mut self, reason: &str) -> Result<()> {
+        if let Some(lease) = self.lease.take() {
+            lease.authority.revoke(reason);
+        }
+        // Invalidate previously inspected generations even if no lease was open.
+        self.next_generation()?;
+        self.cancel_face(reason);
+        self.cancel_matching(reason, |_| true)
+    }
+
+    fn retire_receipts(&mut self) -> Result<()> {
+        while self.records.len() >= RECEIPT_CAPACITY {
+            let position = self
+                .receipts
+                .iter()
+                .position(|identity| {
+                    self.records
+                        .get(identity)
+                        .is_some_and(|record| record.snapshot().end.is_some())
+                })
+                .context("body receipt capacity is exhausted")?;
+            let identity = self.receipts.remove(position).expect("selected receipt");
+            self.records.remove(&identity);
+        }
+        Ok(())
+    }
+}
+
+pub(super) struct Shared {
+    state: Mutex<State>,
+    pub wake: Condvar,
+    pub startup: watch::Sender<Option<std::result::Result<(), String>>>,
+}
+
+impl Shared {
+    pub fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub fn writer_finished(&self, result: &Result<()>) {
+        let mut state = self.lock();
+        state.ready = false;
+        state.finished = true;
+        if let Err(error) = result {
+            state.fault.get_or_insert_with(|| format!("{error:#}"));
+        }
+        let reason = state
+            .fault
+            .clone()
+            .unwrap_or_else(|| "body writer stopped".into());
+        if let Some(lease) = state.lease.take() {
+            lease.authority.revoke(&reason);
+        }
+        let active_identity = match &state.active {
+            Some(ActiveWork::Command(record)) => Some(record.command.identity),
+            _ => None,
+        };
+        for record in state.records.values() {
+            if record.snapshot().end.is_none() {
+                // A panic supplies no facts about the entered frame. Keep the
+                // previous complete prefix and report the evidence gap.
+                let end = if active_identity == Some(record.command.identity) {
+                    BodyEnd::Unknown {
+                        reason: reason.clone(),
+                    }
+                } else {
+                    BodyEnd::Failed {
+                        reason: reason.clone(),
+                    }
+                };
+                let _ = record.finish(end);
+            }
+        }
+        state.active = None;
+        state.queue.clear();
+        state.face = None;
+        if self.startup.borrow().is_none() {
+            self.startup.send_replace(Some(Err(reason)));
+        }
+        self.wake.notify_all();
+    }
+}
 
 pub struct MotionRuntime {
-    config: MotionConfig,
-    mapper: Option<Mutex<NeckMapper>>,
+    config: Arc<MotionConfig>,
+    mapper: Option<NeckMapper>,
     servo: Arc<dyn ServoBackend>,
-    state: Mutex<MotionState>,
-    servo_state: Mutex<ServoOutputState>,
-    activation_attempted: AtomicBool,
-}
-
-#[derive(Default)]
-struct MotionState {
-    busy: bool,
-    cancel: Option<CancellationToken>,
-    smoothed_face_rot: [f32; 3],
-}
-
-#[derive(Default)]
-struct ServoOutputState {
-    last_angles: Option<Vec<f32>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ExpressionPlan {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    timeline: Vec<ExpressionTimelineAction>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ExpressionTimelineAction {
-    #[serde(default)]
-    action: String,
-    #[serde(default)]
-    intensity: f32,
-    #[serde(default)]
-    duration_ms: u32,
-    #[serde(default)]
-    params: serde_json::Value,
+    shared: Arc<Shared>,
+    // Await the handle by mutable reference. Cancelling start/stop waiters leaves
+    // ownership in the instance for the next shutdown observer.
+    writer: AsyncMutex<Option<JoinHandle<Result<()>>>>,
+    preparations: AsyncMutex<Vec<JoinHandle<()>>>,
+    #[cfg(test)]
+    preparation_hook: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl MotionRuntime {
     pub fn new(config: MotionConfig) -> Result<Self> {
-        let servo_config = if config.enabled {
-            config.clone()
-        } else {
-            MotionConfig {
-                hardware_enabled: false,
-                ..config.clone()
-            }
-        };
-        let servo: Arc<dyn ServoBackend> = create_servo_backend(&servo_config)?.into();
-        let mapper = if config.enabled {
-            Some(Mutex::new(NeckMapper::load(&config.neck_config_file)?))
-        } else {
-            None
-        };
-        Ok(Self {
-            config,
-            mapper,
-            servo,
-            state: Mutex::new(MotionState::default()),
-            servo_state: Mutex::new(ServoOutputState::default()),
-            activation_attempted: AtomicBool::new(false),
-        })
+        Self::new_with_boot(config, Uuid::new_v4())
+    }
+
+    pub fn new_with_boot(config: MotionConfig, boot: Uuid) -> Result<Self> {
+        ensure!(!boot.is_nil(), "body device boot ID must not be nil");
+        if !config.enabled {
+            return Ok(Self::disabled_with_boot(config, boot));
+        }
+        validate_config(&config)?;
+        // All calibration validation precedes opening a hardware backend.
+        let mapper = NeckMapper::load(&config.neck_config_file)?;
+        ensure!(
+            mapper.servo_count() == config.servo_count,
+            "servo count must match the calibration output count"
+        );
+        mapper.validate_angles(&vec![config.center_angle; config.servo_count])?;
+        let servo = create_servo_backend(&config)?.into();
+        Ok(Self::from_parts(config, boot, Some(mapper), servo))
     }
 
     pub fn disabled(config: MotionConfig) -> Self {
-        let servo: Arc<dyn ServoBackend> = create_servo_backend(&MotionConfig {
+        Self::disabled_with_boot(config, Uuid::new_v4())
+    }
+
+    pub fn disabled_with_boot(config: MotionConfig, boot: Uuid) -> Self {
+        let config = MotionConfig {
+            enabled: false,
             hardware_enabled: false,
-            ..config.clone()
-        })
-        .expect("mock servo backend should not fail")
-        .into();
-        Self {
-            config: MotionConfig {
-                enabled: false,
-                ..config
-            },
-            mapper: None,
-            servo,
-            state: Mutex::new(MotionState::default()),
-            servo_state: Mutex::new(ServoOutputState::default()),
-            activation_attempted: AtomicBool::new(false),
-        }
-    }
-
-    pub async fn capabilities_json(&self) -> serde_json::Value {
-        let state = self.state.lock().await;
-        let ready = self.motion_ready();
-        json!({
-            "adapter": "embedded_native_motion_v1",
-            "state_source": "embedded_native_motion",
-            "capabilities": {
-                "look_at_user": {
-                    "supported": ready,
-                    "params": ["intensity", "duration_ms", "target", "rotation", "face_center"],
-                    "safety_class": "low_risk",
-                    "max_intensity": 0.45,
-                    "max_duration_ms": 1200,
-                    "max_frequency_per_min": 6
-                },
-                "small_nod": {
-                    "supported": ready,
-                    "params": ["intensity", "duration_ms"],
-                    "safety_class": "low_risk",
-                    "max_intensity": 0.45,
-                    "max_duration_ms": 900,
-                    "max_frequency_per_min": 6
-                },
-                "small_bow": {
-                    "supported": ready,
-                    "params": ["intensity", "duration_ms"],
-                    "safety_class": "low_risk",
-                    "max_intensity": 0.35,
-                    "max_duration_ms": 1200,
-                    "max_frequency_per_min": 4
-                },
-                "play_animation": {
-                    "supported": ready,
-                    "params": ["name", "file", "fps", "loops", "duration_ms"],
-                    "safety_class": "low_risk",
-                    "max_intensity": 0.45,
-                    "max_duration_ms": 5000,
-                    "max_frequency_per_min": 4
-                }
-            },
-            "current_state": {
-                "busy": state.busy,
-                "motion_adapter_registered": ready,
-                "thermal_limit": false,
-                "battery_saver": false,
-                "battery_level": null
-            },
-            "motion_safety": {
-                "soft_start_enabled": self.config.soft_start_enabled,
-                "soft_start_duration_ms": self.config.soft_start_duration_ms,
-                "reset_on_stop": self.config.reset_on_stop,
-                "reset_duration_ms": self.config.reset_duration_ms,
-                "max_servo_speed_deg_per_sec": self.config.max_servo_speed_deg_per_sec
-            },
-            "receipt_model": {
-                "statuses": ["accepted", "started", "completed", "failed", "timed_out"],
-                "state_quality": "unknown_when_no_sensor_provider"
-            }
-        })
-    }
-
-    pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
-        metadata.capabilities.extend(self.discovery_capabilities());
-        metadata.capabilities.sort();
-        metadata.capabilities.dedup();
-    }
-
-    fn discovery_capabilities(&self) -> Vec<String> {
-        if !self.motion_ready() {
-            return Vec::new();
-        }
-
-        let mut capabilities = vec![
-            "embedded.expression".to_string(),
-            "embedded.hardware_control".to_string(),
-            "expression.state.ready".to_string(),
-            "hardware_control".to_string(),
-            "motion.native".to_string(),
-        ];
-        capabilities.extend(
-            NATIVE_EXPRESSION_ACTIONS
-                .iter()
-                .map(|action| format!("expression.action.{action}")),
-        );
-        capabilities.sort();
-        capabilities.dedup();
-        capabilities
-    }
-
-    fn motion_ready(&self) -> bool {
-        self.config.enabled && self.mapper.is_some()
-    }
-
-    pub async fn execute_expression_json(&self, plan_json: &str) -> Result<serde_json::Value> {
-        if !self.config.enabled || self.mapper.is_none() {
-            return Ok(expression_result(
-                "skipped",
-                None,
-                Vec::new(),
-                vec![skipped("*", "embedded native motion is disabled")],
-                true,
-            ));
-        }
-
-        let plan: ExpressionPlan =
-            serde_json::from_str(plan_json).context("parsing expression plan")?;
-        if plan.timeline.is_empty() {
-            return Ok(expression_result(
-                "skipped",
-                plan.id,
-                Vec::new(),
-                vec![skipped("execute_expression", "empty expression timeline")],
-                true,
-            ));
-        }
-
-        let cancel = CancellationToken::new();
-        {
-            let mut state = self.state.lock().await;
-            if state.busy {
-                return Ok(expression_result(
-                    "blocked",
-                    plan.id,
-                    Vec::new(),
-                    plan.timeline
-                        .iter()
-                        .map(|action| skipped(&action.action, "embedded native motion is busy"))
-                        .collect(),
-                    true,
-                ));
-            }
-            state.busy = true;
-            state.cancel = Some(cancel.clone());
-        }
-
-        let plan_id = plan.id.clone();
-        let mut executed = Vec::new();
-        let mut skipped_actions = Vec::new();
-        for action in &plan.timeline {
-            if cancel.is_cancelled() {
-                skipped_actions.push(skipped(&action.action, "expression execution cancelled"));
-                continue;
-            }
-            match self.execute_action(action, &cancel).await {
-                Ok(()) => executed.push(action.action.clone()),
-                Err(error) => skipped_actions.push(skipped(&action.action, error.to_string())),
-            }
-        }
-
-        {
-            let mut state = self.state.lock().await;
-            state.busy = false;
-            state.cancel = None;
-        }
-
-        let status = if skipped_actions.is_empty() {
-            "completed"
-        } else if executed.is_empty() {
-            "skipped"
-        } else {
-            "partial"
+            ..config
         };
-        Ok(expression_result(
-            status,
-            plan_id,
-            executed,
-            skipped_actions,
-            true,
-        ))
+        let servo = create_servo_backend(&config)
+            .expect("disabled mock servo backend")
+            .into();
+        Self::from_parts(config, boot, None, servo)
     }
 
-    pub async fn cancel_expression_json(&self, reason: &str) -> serde_json::Value {
-        let mut state = self.state.lock().await;
-        if let Some(cancel) = state.cancel.take() {
-            cancel.cancel();
+    fn from_parts(
+        config: MotionConfig,
+        boot: Uuid,
+        mapper: Option<NeckMapper>,
+        servo: Arc<dyn ServoBackend>,
+    ) -> Self {
+        Self {
+            config: Arc::new(config),
+            mapper,
+            servo,
+            shared: Arc::new(Shared {
+                state: Mutex::new(State::new(boot)),
+                wake: Condvar::new(),
+                startup: watch::channel(None).0,
+            }),
+            writer: AsyncMutex::new(None),
+            preparations: AsyncMutex::new(Vec::with_capacity(PREPARATION_CAPACITY)),
+            #[cfg(test)]
+            preparation_hook: None,
         }
-        state.busy = false;
-        expression_result(
-            "completed",
+    }
+
+    pub fn control_state(&self) -> BodyControlState {
+        let state = self.shared.lock();
+        BodyControlState {
+            device_boot_id: state.boot,
+            generation: state.generation,
+            lease: state
+                .lease
+                .as_ref()
+                .filter(|lease| lease.authority.reason().is_none())
+                .map(|lease| lease.identity),
+            available: state.available(),
+        }
+    }
+
+    pub fn open_control(
+        &self,
+        expected_generation: u64,
+        server_instance_id: Uuid,
+        authorization: BodyAuthorization,
+    ) -> Result<BodyControlLease> {
+        authorization.validate()?;
+        ensure!(!server_instance_id.is_nil(), "nil body server instance");
+        let mut state = self.shared.lock();
+        ensure!(state.available(), "body writer is unavailable");
+        ensure!(
+            state.generation == expected_generation,
+            "body control generation changed"
+        );
+        state.revoke("body control lease replaced")?;
+        let identity = BodyControlLease {
+            device_boot_id: state.boot,
+            server_instance_id,
+            generation: state.generation,
+        };
+        state.lease = Some(LeaseState {
+            identity,
+            authority: Arc::new(Authority::new(authorization)),
+            high_water: 0,
+        });
+        self.shared.wake.notify_all();
+        Ok(identity)
+    }
+
+    pub fn renew_control(
+        &self,
+        lease: &BodyControlLease,
+        authorization: BodyAuthorization,
+    ) -> Result<()> {
+        let state = self.shared.lock();
+        ensure!(state.available(), "body writer is unavailable");
+        state.check_lease(lease)?.authority.renew(authorization)
+    }
+
+    pub fn close_control(&self, lease: &BodyControlLease, reason: &str) -> Result<()> {
+        let mut state = self.shared.lock();
+        // Expired owners may still close their exact current lease. An old
+        // generation must never revoke a replacement owner's output.
+        ensure!(
+            state
+                .lease
+                .as_ref()
+                .is_some_and(|current| current.identity == *lease),
+            "body control lease is stale"
+        );
+        state.revoke(reason)?;
+        self.shared.wake.notify_all();
+        Ok(())
+    }
+
+    pub fn revoke_control(&self, reason: &str) -> Result<()> {
+        self.shared.lock().revoke(reason)?;
+        self.shared.wake.notify_all();
+        Ok(())
+    }
+
+    pub async fn prepare(
+        &self,
+        command: BodyCommand,
+        canonical_command_bytes: Vec<u8>,
+    ) -> Result<PreparedBodyCommand> {
+        let result_rx = {
+            let mut preparations = self.preparations.lock().await;
+            // Finished jobs have left their blocking closure; pending jobs retain
+            // both capacity and an owned join handle after their RPC is dropped.
+            let mut index = 0;
+            while index < preparations.len() {
+                if preparations[index].is_finished() {
+                    preparations
+                        .swap_remove(index)
+                        .await
+                        .context("body preparation worker panicked")?;
+                } else {
+                    index += 1;
+                }
+            }
+            ensure!(
+                preparations.len() < PREPARATION_CAPACITY,
+                "body preparation capacity is exhausted"
+            );
+            let state = self.shared.lock();
+            ensure!(state.available(), "body writer is unavailable");
+            let config = self.config.clone();
+            #[cfg(test)]
+            let preparation_hook = self.preparation_hook.clone();
+            let (result_tx, result_rx) = oneshot::channel();
+            preparations.push(tokio::task::spawn_blocking(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    #[cfg(test)]
+                    if let Some(hook) = preparation_hook {
+                        hook();
+                    }
+                    super::plan::prepare(&config, command, canonical_command_bytes)
+                }))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("body preparation panicked")));
+                let _ = result_tx.send(result);
+            }));
+            result_rx
+        };
+        result_rx.await.context("body preparation owner ended")?
+    }
+
+    pub fn submit(
+        &self,
+        prepared: PreparedBodyCommand,
+        authorization: BodyAuthorization,
+    ) -> Result<BodyObservation> {
+        authorization.validate()?;
+        let identity = prepared.command.identity;
+        let mut state = self.shared.lock();
+        ensure!(state.available(), "body writer is unavailable");
+        let current = state.check_lease(&identity.lease)?;
+        current.authority.renew(authorization)?;
+        if let Some(record) = state.records.get(&identity) {
+            ensure!(
+                record.canonical == prepared.signed_bytes,
+                "body identity was reused with a different intent"
+            );
+            return Ok(record.observation());
+        }
+        ensure!(
+            identity.sequence > current.high_water,
+            "body command sequence is retired or stale"
+        );
+        if let BodyScope::Voice { scope } = prepared.command.scope {
+            ensure!(
+                state.voice == Some(scope),
+                "body command has no matching local voice scope"
+            );
+        }
+        ensure!(
+            state.queue.len() < QUEUE_CAPACITY,
+            "body command queue is full"
+        );
+        let authority = current.authority.clone();
+        state.retire_receipts()?;
+        let permit = Permit::new(authority, prepared.command.scope.voice());
+        let record = CommandRecord::new(
+            prepared.command.clone(),
+            prepared.signed_bytes.clone(),
+            permit,
             None,
-            vec!["cancel_expression".to_string()],
-            Vec::new(),
-            true,
-        )
-        .with_reason(reason)
+        );
+        if let Some(ActiveWork::Command(active)) = &state.active
+            && active.command.scope == record.command.scope
+            && active.command.owner_id == record.command.owner_id
+            && active.command.interruptible
+            && active.command.priority < record.command.priority
+        {
+            active
+                .permit
+                .cancel("preempted by higher priority in the original scope");
+        }
+        state.cancel_face("body command admitted");
+        state
+            .lease
+            .as_mut()
+            .expect("checked control lease")
+            .high_water = identity.sequence;
+        state.records.insert(identity, record.clone());
+        state.receipts.push_back(identity);
+        state.queue.push_back(QueuedCommand {
+            prepared,
+            record: record.clone(),
+        });
+        self.shared.wake.notify_all();
+        Ok(record.observation())
+    }
+
+    /// Prove that this immutable identity has never been admitted. An absent
+    /// retired receipt is not rejection evidence: it may have executed earlier.
+    /// Advancing the same admission waterline also fences preparation that has
+    /// already started but has not yet returned to its RPC caller.
+    pub fn reject(
+        &self,
+        command: BodyCommand,
+        canonical: Vec<u8>,
+        reason: &str,
+    ) -> Result<BodyObservation> {
+        super::plan::validate_canonical(&command, &canonical)?;
+        let identity = command.identity;
+        let mut state = self.shared.lock();
+        if let Some(record) = state.records.get(&identity) {
+            ensure!(
+                record.canonical == canonical,
+                "body identity was reused with a different intent"
+            );
+            return Ok(record.observation());
+        }
+        let lease = state
+            .lease
+            .as_ref()
+            .context("body rejection cannot be proven without the original current lease")?;
+        ensure!(
+            identity.lease == lease.identity,
+            "body rejection for a retired or unknown lease cannot be proven"
+        );
+        ensure!(
+            identity.sequence > lease.high_water,
+            "body rejection for a retired sequence cannot be proven"
+        );
+        // Authority may already have expired. The identity and admission
+        // waterline, not renewed write permission, prove this specific rejection.
+        let permit = Permit::new(lease.authority.clone(), command.scope.voice());
+        state.retire_receipts()?;
+        let record = CommandRecord::new(command, canonical, permit, Some(bounded_reason(reason)));
+        state
+            .lease
+            .as_mut()
+            .expect("verified original control lease")
+            .high_water = identity.sequence;
+        state.receipts.push_back(identity);
+        state.records.insert(identity, record.clone());
+        Ok(record.observation())
+    }
+
+    pub fn observe(&self, identity: BodyCommandIdentity) -> Result<BodyObservation> {
+        let state = self.shared.lock();
+        ensure!(
+            identity.is_valid() && identity.lease.device_boot_id == state.boot,
+            "invalid original body identity"
+        );
+        Ok(state
+            .records
+            .get(&identity)
+            .context("body observation is unavailable; submission must not be replayed")?
+            .observation())
+    }
+
+    pub async fn cancel(
+        &self,
+        identity: BodyCommandIdentity,
+        reason: &str,
+    ) -> Result<BodyProgress> {
+        let mut observation = {
+            let mut state = self.shared.lock();
+            let record = state
+                .records
+                .get(&identity)
+                .context("body observation is unavailable; cancellation has no quiescence proof")?
+                .clone();
+            state.cancel_matching(reason, |candidate| candidate.command.identity == identity)?;
+            self.shared.wake.notify_all();
+            record.observation()
+        };
+        tokio::time::timeout(CANCEL_DEADLINE, async {
+            loop {
+                let progress = observation.snapshot();
+                if progress.writer_quiescent && progress.end.is_some() {
+                    return Ok(progress);
+                }
+                observation.changed().await?;
+            }
+        })
+        .await
+        .context("body cancellation deadline exceeded; native writer remains owned")?
+    }
+
+    pub fn activate_voice(&self, scope: &VoiceScope) -> Result<()> {
+        let mut state = self.shared.lock();
+        ensure!(
+            scope.is_valid() && scope.device_boot_id == state.boot,
+            "invalid local body voice scope"
+        );
+        if let Some(current) = state.voice
+            && current.session_id == scope.session_id
+        {
+            ensure!(
+                scope.generation_epoch >= current.generation_epoch,
+                "body voice generation regressed"
+            );
+        }
+        state.voice = Some(*scope);
+        state.cancel_matching("local body voice scope replaced", |record| {
+            record
+                .command
+                .scope
+                .voice()
+                .is_some_and(|old| old != *scope)
+        })?;
+        state.cancel_face("local body voice scope replaced");
+        self.shared.wake.notify_all();
+        Ok(())
+    }
+
+    pub fn fence_voice(&self, scope: &VoiceScope) -> Result<()> {
+        let mut state = self.shared.lock();
+        ensure!(
+            scope.is_valid() && scope.device_boot_id == state.boot,
+            "invalid local body voice scope"
+        );
+        let Some(current) = state.voice else {
+            return Ok(());
+        };
+        if current.session_id != scope.session_id
+            || scope.generation_epoch <= current.generation_epoch
+        {
+            return Ok(());
+        }
+        state.voice = Some(*scope);
+        state.cancel_matching("local body voice generation fenced", |record| {
+            record.command.scope.voice().is_some_and(|old| {
+                old.session_id == scope.session_id && old.generation_epoch < scope.generation_epoch
+            })
+        })?;
+        state.cancel_face("local body voice generation fenced");
+        self.shared.wake.notify_all();
+        Ok(())
+    }
+
+    pub fn close_voice(&self, scope: &VoiceScope) -> Result<()> {
+        let mut state = self.shared.lock();
+        ensure!(
+            scope.is_valid() && scope.device_boot_id == state.boot,
+            "invalid local body voice scope"
+        );
+        if state.voice != Some(*scope) {
+            return Ok(());
+        }
+        state.voice = None;
+        state.cancel_matching("local body voice scope closed", |record| {
+            record.command.scope.voice() == Some(*scope)
+        })?;
+        state.cancel_face("local body voice scope closed");
+        self.shared.wake.notify_all();
+        Ok(())
     }
 
     pub async fn track_face_center(
         &self,
         cx: f32,
         cy: f32,
-        frame_w: f32,
-        frame_h: f32,
+        width: f32,
+        height: f32,
     ) -> Result<bool> {
-        if !self.config.enabled || self.mapper.is_none() {
+        if !self.config.enabled {
             return Ok(false);
         }
-        if self.state.lock().await.busy {
+        let rotation = face_rotation(&self.config, cx, cy, width, height)?;
+        let mut state = self.shared.lock();
+        if !state.available()
+            || !state.queue.is_empty()
+            || matches!(
+                state.active,
+                Some(ActiveWork::Command(_) | ActiveWork::Reset(_))
+            )
+        {
             return Ok(false);
         }
-
-        let rot = self.face_center_to_rotation(cx, cy, frame_w, frame_h).await;
-        self.set_rotation(rot, true).await?;
+        let Some(lease) = &state.lease else {
+            return Ok(false);
+        };
+        if lease.authority.reason().is_some() {
+            return Ok(false);
+        }
+        let authority = lease.authority.clone();
+        let alpha = self.config.face_smooth_alpha;
+        for (previous, value) in state.smoothed_face.iter_mut().zip(rotation) {
+            *previous = *previous * (1.0 - alpha) + value * alpha;
+        }
+        state.cancel_face("newer local face target");
+        state.face = Some(FaceWork {
+            rotation: state.smoothed_face,
+            permit: Arc::new(Permit {
+                authority,
+                cancelled: Mutex::new(None),
+                scope: state.voice,
+                deadline: Some(Instant::now() + Duration::from_millis(200)),
+            }),
+        });
+        self.shared.wake.notify_all();
         Ok(true)
     }
 
-    async fn execute_action(
-        &self,
-        action: &ExpressionTimelineAction,
-        cancel: &CancellationToken,
-    ) -> Result<()> {
-        match action.action.as_str() {
-            "small_nod" => {
-                let amp = scaled_amplitude(action.intensity, 3.0, 20.0, 12.0);
-                let duration = action.duration_ms.clamp(240, 900);
-                self.play_rotation_path(
-                    &[
-                        [0.0, 0.0, 0.0],
-                        [amp, 0.0, 0.0],
-                        [-amp * 0.55, 0.0, 0.0],
-                        [0.0, 0.0, 0.0],
-                    ],
-                    duration,
-                    false,
-                    cancel,
-                )
-                .await
-            }
-            "small_bow" => {
-                let amp = scaled_amplitude(action.intensity, 4.0, 22.0, 12.0);
-                let duration = action.duration_ms.clamp(300, 1200);
-                self.play_rotation_path(
-                    &[
-                        [0.0, 0.0, 0.0],
-                        [amp, 0.0, 0.0],
-                        [amp * 0.85, 0.0, 0.0],
-                        [0.0, 0.0, 0.0],
-                    ],
-                    duration,
-                    false,
-                    cancel,
-                )
-                .await
-            }
-            "look_at_user" => {
-                let rot = self.rotation_from_params(&action.params).await?;
-                let duration = action.duration_ms.clamp(120, 1200);
-                self.play_rotation_path(&[[0.0, 0.0, 0.0], rot], duration, true, cancel)
-                    .await
-            }
-            "play_animation" | "play_anim" => self.play_animation(action, cancel).await,
-            other => bail!("unsupported embedded native motion action '{other}'"),
-        }
+    /// The old JSON RPC has neither immutable identity nor a scoped fence.
+    pub async fn execute_expression_json(&self, _plan_json: &str) -> Result<serde_json::Value> {
+        bail!("scope-free expression execution is disabled; use the signed body v1 contract")
     }
 
-    async fn play_animation(
-        &self,
-        action: &ExpressionTimelineAction,
-        cancel: &CancellationToken,
-    ) -> Result<()> {
-        let file = animation_file_from_params(&self.config.animation_dir, &action.params)?;
-        let frames = load_animation_frames(&file)?;
-        if frames.is_empty() {
-            bail!(
-                "animation file contains no rotation frames: {}",
-                file.display()
-            );
-        }
-        let fps = action
-            .params
-            .get("fps")
-            .and_then(serde_json::Value::as_u64)
-            .map(|fps| fps.clamp(1, 120) as u32)
-            .unwrap_or_else(|| self.config.fps.max(1));
-        let loops = action
-            .params
-            .get("loops")
-            .and_then(serde_json::Value::as_u64)
-            .map(|loops| loops.clamp(1, 20) as usize)
-            .unwrap_or(1);
-        let frame_limit = if action.duration_ms > 0 {
-            Some(((action.duration_ms as u64 * fps as u64) / 1000).max(1) as usize)
-        } else {
-            None
-        };
-        self.play_animation_frames(&frames, fps, loops, frame_limit, cancel)
-            .await
+    pub async fn cancel_expression_json(&self, _reason: &str) -> serde_json::Value {
+        json!({ "status": "rejected", "completion_acknowledged": false, "executed_actions": [], "action_receipts": [], "reason": "scope-free cancellation is disabled; use the original body command identity" })
     }
 
-    async fn rotation_from_params(&self, params: &serde_json::Value) -> Result<[f32; 3]> {
-        if let Some(rot) = parse_rotation(params.get("rotation")) {
-            return Ok(rot);
-        }
-        if let Some(rot) = parse_rotation(
-            params
-                .get("target")
-                .and_then(|target| target.get("rotation")),
-        ) {
-            return Ok(rot);
-        }
-        let face = params.get("face_center").or_else(|| {
-            params
-                .get("target")
-                .and_then(|target| target.get("face_center"))
-        });
-        if let Some(face) = face {
-            let cx = number(face, "cx")?;
-            let cy = number(face, "cy")?;
-            let frame_w = number(face, "frame_w")?;
-            let frame_h = number(face, "frame_h")?;
-            return Ok(self.face_center_to_rotation(cx, cy, frame_w, frame_h).await);
-        }
-        Ok([0.0, 0.0, 0.0])
+    pub async fn capabilities_json(&self) -> serde_json::Value {
+        let state = self.shared.lock();
+        let ready = state.available();
+        json!({
+            "adapter": "embedded_body_v1",
+            "state_source": "owned_body_writer",
+            "capabilities": {
+                "look_at_user": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 1200 },
+                "small_nod": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 900 },
+                "small_bow": { "supported": ready, "max_intensity": 0.35, "max_duration_ms": 1200 },
+                "play_animation": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 5000 }
+            },
+            "current_state": { "busy": state.active.is_some() || !state.queue.is_empty(), "motion_adapter_registered": ready, "thermal_limit": false, "battery_saver": false, "battery_level": null },
+            "motion_safety": { "soft_start_enabled": self.config.soft_start_enabled, "soft_start_duration_ms": self.config.soft_start_duration_ms, "reset_on_stop": self.config.reset_on_stop, "reset_duration_ms": self.config.reset_duration_ms, "max_servo_speed_deg_per_sec": self.config.max_servo_speed_deg_per_sec },
+            "receipt_model": { "statuses": ["accepted", "submitted", "cancelled", "failed", "unknown", "rejected"], "completion_acknowledged": false, "position_feedback": false }
+        })
     }
 
-    async fn face_center_to_rotation(
-        &self,
-        cx: f32,
-        cy: f32,
-        frame_w: f32,
-        frame_h: f32,
-    ) -> [f32; 3] {
-        let half_w = (frame_w * 0.5).max(1.0);
-        let half_h = (frame_h * 0.5).max(1.0);
-        let center_x = half_w + self.config.face_center_offset_x;
-        let center_y = half_h + self.config.face_center_offset_y;
-        let raw_nx = (cx - center_x) / half_w;
-        let raw_ny = (cy - center_y) / half_h;
-        let theta = self.config.face_camera_roll_deg.to_radians();
-        let mut nx = raw_nx * theta.cos() + raw_ny * theta.sin();
-        let mut ny = -raw_nx * theta.sin() + raw_ny * theta.cos();
-        if nx.abs() < self.config.face_deadzone {
-            nx = 0.0;
+    pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
+        // The persistent BodyDelivery integration must opt into command-v1.
+        // A native writer alone must never advertise end-to-end completion.
+        if self.config.enabled && self.mapper.is_some() {
+            metadata.capabilities.push("motion.native".into());
         }
-        if ny.abs() < self.config.face_deadzone {
-            ny = 0.0;
-        }
-        nx = nx.clamp(-1.0, 1.0);
-        ny = ny.clamp(-1.0, 1.0);
-
-        let pitch = ny * self.config.face_max_pitch;
-        let yaw = -nx * self.config.face_max_yaw;
-        let alpha = self.config.face_smooth_alpha.clamp(0.0, 1.0);
-        let mut state = self.state.lock().await;
-        state.smoothed_face_rot[0] = state.smoothed_face_rot[0] * (1.0 - alpha) + pitch * alpha;
-        state.smoothed_face_rot[1] = state.smoothed_face_rot[1] * (1.0 - alpha) + yaw * alpha;
-        state.smoothed_face_rot[2] *= 1.0 - alpha;
-        state.smoothed_face_rot
+        metadata.capabilities.sort();
+        metadata.capabilities.dedup();
     }
+}
 
-    async fn play_rotation_path(
-        &self,
-        points: &[[f32; 3]],
-        duration_ms: u32,
-        apply_mapper_smoothing: bool,
-        cancel: &CancellationToken,
-    ) -> Result<()> {
-        if points.is_empty() {
-            return Ok(());
-        }
-        if points.len() == 1 {
-            return self
-                .set_rotation_with_cancel(points[0], apply_mapper_smoothing, Some(cancel))
-                .await;
-        }
-        let fps = self.config.fps.max(1);
-        let total_steps = ((duration_ms.max(1) as u64 * fps as u64) / 1000).max(1) as usize;
-        let sleep = Duration::from_millis((1000 / fps as u64).max(1));
-        for step in 0..=total_steps {
-            if cancel.is_cancelled() {
-                bail!("expression execution cancelled");
-            }
-            let progress = step as f32 / total_steps as f32;
-            let rot = sample_path(points, progress);
-            self.set_rotation_with_cancel(rot, apply_mapper_smoothing, Some(cancel))
-                .await?;
-            tokio::time::sleep(sleep).await;
-        }
-        Ok(())
+impl VoiceOutputFence for MotionRuntime {
+    fn activate_voice(&self, scope: &VoiceScope) -> Result<()> {
+        MotionRuntime::activate_voice(self, scope)
     }
-
-    async fn play_animation_frames(
-        &self,
-        frames: &[[f32; 3]],
-        fps: u32,
-        loops: usize,
-        frame_limit: Option<usize>,
-        cancel: &CancellationToken,
-    ) -> Result<()> {
-        let sleep = Duration::from_millis((1000 / fps.max(1) as u64).max(1));
-        let mut played = 0usize;
-        for _ in 0..loops.max(1) {
-            for frame in frames {
-                if cancel.is_cancelled() {
-                    bail!("expression execution cancelled");
-                }
-                if frame_limit.is_some_and(|limit| played >= limit) {
-                    return Ok(());
-                }
-                self.set_rotation_with_cancel(*frame, false, Some(cancel))
-                    .await?;
-                played += 1;
-                tokio::time::sleep(sleep).await;
-            }
-        }
-        Ok(())
+    fn fence_voice(&self, scope: &VoiceScope) -> Result<()> {
+        MotionRuntime::fence_voice(self, scope)
     }
-
-    async fn set_rotation(&self, rot: [f32; 3], apply_smoothing: bool) -> Result<()> {
-        self.set_rotation_with_cancel(rot, apply_smoothing, None)
-            .await
-    }
-
-    async fn set_rotation_with_cancel(
-        &self,
-        rot: [f32; 3],
-        apply_smoothing: bool,
-        cancel: Option<&CancellationToken>,
-    ) -> Result<()> {
-        let mapper = self
-            .mapper
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("neck mapper unavailable"))?;
-        let mut mapper = mapper.lock().await;
-        let angles = mapper.map(rot, apply_smoothing);
-        drop(mapper);
-        self.drive_servo_angles_safely(&angles, None, cancel).await
-    }
-
-    async fn reset_to_center(&self, duration_ms: u32) -> Result<()> {
-        let angles = vec![self.config.center_angle; self.config.servo_count];
-        let duration = Duration::from_millis(duration_ms as u64);
-        self.drive_servo_angles_safely(&angles, Some(duration), None)
-            .await
-    }
-
-    async fn drive_servo_angles_safely(
-        &self,
-        target_angles: &[f32],
-        min_duration: Option<Duration>,
-        cancel: Option<&CancellationToken>,
-    ) -> Result<()> {
-        if target_angles.is_empty() {
-            return Ok(());
-        }
-
-        let fps = self.config.fps.max(1);
-        let frame_interval = Duration::from_millis((1_000 / fps as u64).max(1));
-        let max_step_deg = max_servo_step_deg(self.config.max_servo_speed_deg_per_sec, fps);
-        let min_steps = min_duration
-            .map(|duration| {
-                let millis = duration.as_millis() as u64;
-                ((millis * fps as u64).div_ceil(1_000)).max(1) as usize
-            })
-            .unwrap_or(1);
-
-        let mut servo_state = self.servo_state.lock().await;
-        let previous = servo_state
-            .last_angles
-            .as_ref()
-            .filter(|angles| angles.len() == target_angles.len())
-            .cloned()
-            .unwrap_or_else(|| target_angles.to_vec());
-        let steps = servo_transition_steps(&previous, target_angles, max_step_deg, min_steps);
-
-        for step in 1..=steps {
-            if cancel.is_some_and(CancellationToken::is_cancelled) {
-                bail!("expression execution cancelled");
-            }
-            let t = step as f32 / steps as f32;
-            let frame = interpolate_servo_frame(&previous, target_angles, t);
-            self.servo.set_angles(&frame).await?;
-            servo_state.last_angles = Some(frame);
-            if step < steps {
-                tokio::time::sleep(frame_interval).await;
-            }
-        }
-
-        Ok(())
+    fn close_voice(&self, scope: &VoiceScope) -> Result<()> {
+        MotionRuntime::close_voice(self, scope)
     }
 }
 
@@ -596,54 +979,108 @@ impl ModuleLifecycle for MotionRuntime {
         "motion"
     }
 
-    async fn init(&mut self, _ctx: &ModuleContext) -> Result<()> {
-        if self.config.enabled
-            && let Some(mapper) = &self.mapper
+    async fn start(&self) -> Result<()> {
+        if !self.config.enabled {
+            return Ok(());
+        }
         {
-            let servo_count = mapper.lock().await.servo_count();
-            if servo_count != self.config.servo_count {
-                warn!(
-                    configured = self.config.servo_count,
-                    matrix = servo_count,
-                    "motion servo count differs from neck matrix output count"
-                );
+            let mut writer = self.writer.lock().await;
+            let mut state = self.shared.lock();
+            ensure!(
+                !state.stopping && !state.finished,
+                "body runtime cannot restart after shutdown"
+            );
+            if !state.spawned {
+                state.spawned = true;
+                let shared = self.shared.clone();
+                let config = self.config.clone();
+                let mapper = self
+                    .mapper
+                    .clone()
+                    .context("body calibration is unavailable")?;
+                let servo = self.servo.clone();
+                *writer = Some(tokio::task::spawn_blocking(move || {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        super::writer::run(&shared, &config, mapper, servo.clone())
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err(anyhow::anyhow!(
+                            "owned body writer panicked; native evidence is unknown"
+                        ))
+                    });
+                    let close =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| servo.close()))
+                            .map_err(|_| anyhow::anyhow!("closing owned body backend panicked"));
+                    let result = result.and(close);
+                    shared.writer_finished(&result);
+                    result
+                }));
             }
         }
-        Ok(())
-    }
-
-    async fn start(&self) -> Result<()> {
-        if self.config.enabled && self.mapper.is_some() {
-            self.activation_attempted.store(true, Ordering::Release);
-            let duration_ms = if self.config.soft_start_enabled {
-                self.config.soft_start_duration_ms
-            } else {
-                0
-            };
-            self.reset_to_center(duration_ms).await?;
+        let mut startup = self.shared.startup.subscribe();
+        loop {
+            if let Some(result) = startup.borrow_and_update().clone() {
+                return result.map_err(anyhow::Error::msg);
+            }
+            startup
+                .changed()
+                .await
+                .context("body startup owner ended")?;
         }
-        Ok(())
     }
 
     async fn stop(&self) -> Result<()> {
-        let _ = self.cancel_expression_json("motion runtime stopping").await;
-        // Rolling back an initialized, never activated node must not move servos.
-        // A failed start may already have moved hardware and still requires reset.
-        if self.activation_attempted.swap(false, Ordering::AcqRel)
-            && self.config.enabled
-            && self.mapper.is_some()
-            && self.config.reset_on_stop
         {
-            if let Err(error) = self.reset_to_center(self.config.reset_duration_ms).await {
-                self.activation_attempted.store(true, Ordering::Release);
-                return Err(error.context("resetting motion during shutdown"));
+            let mut state = self.shared.lock();
+            if !state.stopping {
+                state.stopping = true;
+                state.ready = false;
+                state.revoke("body runtime stopping")?;
+                if let Some(active) = &state.active {
+                    active.permit().cancel("body runtime stopping");
+                }
+                if !state.spawned {
+                    state.finished = true;
+                }
             }
+            self.shared.wake.notify_all();
+        }
+        let mut preparations = self.preparations.lock().await;
+        while let Some(job) = preparations.last_mut() {
+            let result = job.await;
+            preparations.pop();
+            if let Err(error) = result {
+                self.shared
+                    .lock()
+                    .fault
+                    .get_or_insert_with(|| format!("joining body preparation: {error}"));
+            }
+        }
+        drop(preparations);
+        let mut writer = self.writer.lock().await;
+        if let Some(job) = writer.as_mut() {
+            let result = job
+                .await
+                .context("joining owned body writer")
+                .and_then(|result| result);
+            *writer = None;
+            // Also handles a task-level panic outside the writer's native panic
+            // boundary. Never leave a completed JoinHandle to be polled twice.
+            if result.is_err() {
+                self.shared.writer_finished(&result);
+            }
+        }
+        if let Some(error) = self.shared.lock().fault.clone() {
+            bail!(error);
         }
         Ok(())
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        if self.config.enabled && self.mapper.is_some() {
+        let state = self.shared.lock();
+        if state.fault.is_some() {
+            ModuleHealth::Unhealthy
+        } else if state.available() {
             ModuleHealth::Healthy
         } else {
             ModuleHealth::Degraded
@@ -651,374 +1088,96 @@ impl ModuleLifecycle for MotionRuntime {
     }
 }
 
-fn sample_path(points: &[[f32; 3]], progress: f32) -> [f32; 3] {
-    let progress = progress.clamp(0.0, 1.0);
-    let scaled = progress * (points.len() - 1) as f32;
-    let index = scaled.floor() as usize;
-    let next = (index + 1).min(points.len() - 1);
-    let t = scaled - index as f32;
-    [
-        lerp(points[index][0], points[next][0], t),
-        lerp(points[index][1], points[next][1], t),
-        lerp(points[index][2], points[next][2], t),
-    ]
-}
-
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-fn max_servo_step_deg(max_speed_deg_per_sec: f32, fps: u32) -> f32 {
-    if !max_speed_deg_per_sec.is_finite() || max_speed_deg_per_sec <= 0.0 {
-        return f32::INFINITY;
-    }
-    max_speed_deg_per_sec / fps.max(1) as f32
-}
-
-fn servo_transition_steps(
-    previous: &[f32],
-    target: &[f32],
-    max_step_deg: f32,
-    min_steps: usize,
-) -> usize {
-    let max_delta = previous
-        .iter()
-        .zip(target.iter())
-        .map(|(left, right)| (right - left).abs())
-        .fold(0.0_f32, f32::max);
-    let speed_steps = if max_step_deg.is_finite() && max_step_deg > 0.0 {
-        (max_delta / max_step_deg).ceil() as usize
-    } else {
-        1
-    };
-    speed_steps.max(min_steps).max(1)
-}
-
-fn interpolate_servo_frame(previous: &[f32], target: &[f32], t: f32) -> Vec<f32> {
-    let t = t.clamp(0.0, 1.0);
-    previous
-        .iter()
-        .zip(target.iter())
-        .map(|(left, right)| lerp(*left, *right, t))
-        .collect()
-}
-
-fn scaled_amplitude(intensity: f32, base: f32, per_intensity: f32, max: f32) -> f32 {
-    (base + intensity.clamp(0.0, 1.0) * per_intensity).clamp(0.0, max)
-}
-
-fn parse_rotation(value: Option<&serde_json::Value>) -> Option<[f32; 3]> {
-    let values = value?.as_array()?;
-    if values.len() < 3 {
-        return None;
-    }
-    Some([
-        values[0].as_f64()? as f32,
-        values[1].as_f64()? as f32,
-        values[2].as_f64()? as f32,
-    ])
-}
-
-fn number(value: &serde_json::Value, key: &str) -> Result<f32> {
-    value
-        .get(key)
-        .and_then(serde_json::Value::as_f64)
-        .map(|value| value as f32)
-        .with_context(|| format!("face_center.{key} must be numeric"))
-}
-
-fn animation_file_from_params(animation_dir: &Path, params: &serde_json::Value) -> Result<PathBuf> {
-    let name = params
-        .get("name")
-        .or_else(|| params.get("file"))
-        .or_else(|| params.get("animation"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("neck");
-    let name = name.trim();
-    if name.is_empty() {
-        bail!("animation name must not be empty");
-    }
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        bail!("animation name must be a file name, not a path");
-    }
-    let file_name = if name.ends_with(".anim") {
-        name.to_string()
-    } else {
-        format!("{name}.anim")
-    };
-    Ok(animation_dir.join(file_name))
-}
-
-fn load_animation_frames(path: &Path) -> Result<Vec<[f32; 3]>> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("reading animation file: {}", path.display()))?;
-    let mut frames = Vec::new();
-    for line in content.lines().skip(1) {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+impl Drop for MotionRuntime {
+    fn drop(&mut self) {
+        // The module cleanup normally awaits stop. A library host dropping its
+        // last handle still seals admission and wakes the already owned worker.
+        let mut state = self.shared.lock();
+        state.stopping = true;
+        state.ready = false;
+        let _ = state.revoke("body runtime owner dropped");
+        if let Some(active) = &state.active {
+            active.permit().cancel("body runtime owner dropped");
         }
-        let parts = line.split_whitespace().take(3).collect::<Vec<_>>();
-        if parts.len() < 3 {
-            continue;
-        }
-        let rot = [
-            parts[0]
-                .parse::<f32>()
-                .with_context(|| format!("parsing animation rot_x in {}", path.display()))?,
-            parts[1]
-                .parse::<f32>()
-                .with_context(|| format!("parsing animation rot_y in {}", path.display()))?,
-            parts[2]
-                .parse::<f32>()
-                .with_context(|| format!("parsing animation rot_z in {}", path.display()))?,
-        ];
-        frames.push(rot);
+        self.shared.wake.notify_all();
     }
-    Ok(frames)
 }
 
-fn skipped(action: impl Into<String>, reason: impl Into<String>) -> serde_json::Value {
-    json!({
-        "action": action.into(),
-        "reason": reason.into()
-    })
-}
-
-fn expression_result(
-    status: &str,
-    command_id: Option<String>,
-    executed_actions: Vec<String>,
-    skipped_actions: Vec<serde_json::Value>,
-    completion_acknowledged: bool,
-) -> serde_json::Value {
-    let mut action_receipts = executed_actions
+fn validate_config(config: &MotionConfig) -> Result<()> {
+    ensure!(
+        (1..=MAX_BODY_CHANNELS).contains(&config.servo_count),
+        "body servo count must be 1..32"
+    );
+    ensure!(
+        (1..=120).contains(&config.fps),
+        "body writer FPS must be 1..120"
+    );
+    ensure!(
+        config.max_servo_speed_deg_per_sec.is_finite()
+            && config.max_servo_speed_deg_per_sec > 0.0
+            && config.max_servo_speed_deg_per_sec <= 720.0,
+        "body servo speed must be finite and 0..720 degrees/second"
+    );
+    ensure!(
+        config.center_angle.is_finite() && (0.0..=180.0).contains(&config.center_angle),
+        "invalid body center angle"
+    );
+    ensure!(
+        config.soft_start_duration_ms <= 30_000 && config.reset_duration_ms <= 30_000,
+        "body reset exceeds 30 seconds"
+    );
+    ensure!(
+        config.serial_startup_delay_ms <= 30_000,
+        "serial startup delay exceeds 30 seconds"
+    );
+    ensure!(
+        [
+            config.face_max_yaw,
+            config.face_max_pitch,
+            config.face_deadzone,
+            config.face_smooth_alpha,
+            config.face_center_offset_x,
+            config.face_center_offset_y,
+            config.face_camera_roll_deg
+        ]
         .iter()
-        .map(|action| {
-            json!({
-                "action": action,
-                "status": "completed"
-            })
-        })
-        .collect::<Vec<_>>();
-    action_receipts.extend(skipped_actions.iter().map(|item| {
-        json!({
-            "action": item.get("action").and_then(serde_json::Value::as_str).unwrap_or("unknown"),
-            "status": "failed",
-            "reason": item.get("reason").and_then(serde_json::Value::as_str).unwrap_or("failed")
-        })
-    }));
-
-    json!({
-        "status": status,
-        "command_id": command_id,
-        "completion_acknowledged": completion_acknowledged,
-        "action_receipts": action_receipts,
-        "executed_actions": executed_actions,
-        "skipped_actions": skipped_actions,
-        "safety_modifications": []
-    })
-}
-
-trait ResultReason {
-    fn with_reason(self, reason: &str) -> serde_json::Value;
-}
-
-impl ResultReason for serde_json::Value {
-    fn with_reason(mut self, reason: &str) -> serde_json::Value {
-        if let Some(object) = self.as_object_mut() {
-            object.insert("reason".to_string(), json!(reason));
-        }
-        self
+        .all(|value| value.is_finite()),
+        "body face configuration must be finite"
+    );
+    ensure!(
+        (0.0..=180.0).contains(&config.face_max_yaw)
+            && (0.0..=180.0).contains(&config.face_max_pitch)
+            && (0.0..=1.0).contains(&config.face_deadzone)
+            && (0.0..=1.0).contains(&config.face_smooth_alpha),
+        "invalid body face limits"
+    );
+    ensure!(
+        config.min_pulse_us < config.max_pulse_us && config.pca_frequency_hz > 0,
+        "invalid body PWM configuration"
+    );
+    if config.hardware_enabled && matches!(config.servo_backend.as_str(), "pca9685" | "i2c") {
+        ensure!(
+            config.pca9685_addresses.len() * 16 >= config.servo_count
+                && config
+                    .pca9685_addresses
+                    .iter()
+                    .all(|address| (0x03..=0x77).contains(address)),
+            "PCA9685 board configuration does not cover channels"
+        );
+        let mut sorted = config.pca9685_addresses.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        ensure!(
+            sorted.len() == config.pca9685_addresses.len(),
+            "duplicate PCA9685 board addresses"
+        );
     }
+    Ok(())
+}
+
+pub(super) fn bounded_reason(reason: &str) -> String {
+    reason.chars().take(256).collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct RecordingServo {
-        writes: std::sync::atomic::AtomicUsize,
-        fail: AtomicBool,
-    }
-    #[tonic::async_trait]
-    impl ServoBackend for RecordingServo {
-        async fn set_angle(&self, _channel: usize, _angle: f32) -> Result<()> {
-            self.writes.fetch_add(1, Ordering::Relaxed);
-            anyhow::ensure!(
-                !self.fail.load(Ordering::Relaxed),
-                "injected servo I/O failure"
-            );
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn rollback_before_activation_does_not_move_servos_and_failed_start_is_cleaned() {
-        let config = MotionConfig {
-            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets/neck/controller/neck_matrix_config.json"),
-            soft_start_enabled: false,
-            reset_duration_ms: 0,
-            ..MotionConfig::default()
-        };
-        let servo = Arc::new(RecordingServo {
-            writes: 0.into(),
-            fail: true.into(),
-        });
-        let mut runtime = MotionRuntime::new(config).unwrap();
-        runtime.servo = servo.clone();
-        let dir = tempfile::tempdir().unwrap();
-        let ctx = ModuleContext {
-            config: Arc::new(crate::config::EmbeddedConfig::default()),
-            state_store: crate::storage::EmbeddedStore::open(dir.path().join("state.sqlite"))
-                .await
-                .unwrap(),
-            event_bus: crate::module::context::EventBus::new(8),
-            audio_bus: crate::module::context::AudioBus::new(8),
-            cancel_token: CancellationToken::new(),
-            sensors: Arc::new(crate::module::sensor::SensorRegistry::new()),
-        };
-        runtime.init(&ctx).await.unwrap();
-        // This is the state reached when a subsequent module init fails.
-        runtime.stop().await.unwrap();
-        assert_eq!(servo.writes.load(Ordering::Relaxed), 0);
-        assert!(runtime.start().await.is_err());
-        let writes_after_start = servo.writes.load(Ordering::Relaxed);
-        assert!(writes_after_start > 0);
-        assert!(
-            runtime.stop().await.is_err(),
-            "hardware reset errors must be propagated"
-        );
-        assert!(servo.writes.load(Ordering::Relaxed) > writes_after_start);
-    }
-
-    #[tokio::test]
-    async fn capabilities_use_boolean_power_and_thermal_state() {
-        let runtime = MotionRuntime::disabled(MotionConfig::default());
-
-        let capabilities = runtime.capabilities_json().await;
-        let state = &capabilities["current_state"];
-
-        assert_eq!(state["thermal_limit"], serde_json::json!(false));
-        assert_eq!(state["battery_saver"], serde_json::json!(false));
-        assert!(state["battery_level"].is_null());
-        assert_eq!(
-            capabilities["motion_safety"]["max_servo_speed_deg_per_sec"],
-            serde_json::json!(60.0)
-        );
-    }
-
-    #[test]
-    fn samples_path_by_linear_segments() {
-        let path = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 10.0, 0.0]];
-        assert_eq!(sample_path(&path, 0.0), [0.0, 0.0, 0.0]);
-        assert_eq!(sample_path(&path, 0.5), [10.0, 0.0, 0.0]);
-        assert_eq!(sample_path(&path, 1.0), [10.0, 10.0, 0.0]);
-    }
-
-    #[test]
-    fn servo_transition_steps_respect_speed_limit_and_min_duration() {
-        let max_step = max_servo_step_deg(60.0, 30);
-
-        assert_eq!(max_step, 2.0);
-        assert_eq!(
-            servo_transition_steps(&[90.0, 90.0], &[100.0, 94.0], max_step, 1),
-            5
-        );
-        assert_eq!(servo_transition_steps(&[90.0], &[92.0], max_step, 12), 12);
-    }
-
-    #[test]
-    fn interpolates_servo_frames_between_previous_and_target() {
-        let frame = interpolate_servo_frame(&[90.0, 100.0], &[100.0, 80.0], 0.25);
-
-        assert_eq!(frame, vec![92.5, 95.0]);
-    }
-
-    #[test]
-    fn disabled_motion_has_no_discovery_capabilities() {
-        let runtime = MotionRuntime::disabled(MotionConfig::default());
-
-        assert!(runtime.discovery_capabilities().is_empty());
-    }
-
-    #[test]
-    fn ready_motion_reports_hardware_control_discovery_capabilities() {
-        let config = MotionConfig {
-            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets/neck/controller/neck_matrix_config.json"),
-            ..MotionConfig::default()
-        };
-        let runtime = MotionRuntime::new(config).unwrap();
-
-        let capabilities = runtime.discovery_capabilities();
-
-        assert!(capabilities.contains(&"hardware_control".to_string()));
-        assert!(capabilities.contains(&"embedded.hardware_control".to_string()));
-        assert!(capabilities.contains(&"embedded.expression".to_string()));
-        assert!(capabilities.contains(&"expression.state.ready".to_string()));
-        assert!(capabilities.contains(&"expression.action.small_nod".to_string()));
-    }
-
-    #[test]
-    fn discovery_metadata_includes_native_motion_capabilities() {
-        let config = MotionConfig {
-            neck_config_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets/neck/controller/neck_matrix_config.json"),
-            ..MotionConfig::default()
-        };
-        let runtime = MotionRuntime::new(config).unwrap();
-        let mut metadata = DiscoveryMetadata {
-            status: "bound".to_string(),
-            server_id: Some("server-main".to_string()),
-            capabilities: vec!["plugin.runtime".to_string()],
-            attributes: Default::default(),
-        };
-
-        runtime.enrich_discovery_metadata(&mut metadata);
-
-        assert!(
-            metadata
-                .capabilities
-                .contains(&"plugin.runtime".to_string())
-        );
-        assert!(
-            metadata
-                .capabilities
-                .contains(&"hardware_control".to_string())
-        );
-        assert!(
-            metadata
-                .capabilities
-                .contains(&"expression.action.look_at_user".to_string())
-        );
-    }
-
-    #[test]
-    fn resolves_animation_file_names_under_animation_dir() {
-        let path =
-            animation_file_from_params(Path::new("assets/anim"), &json!({"name": "neck"})).unwrap();
-        assert_eq!(path, PathBuf::from("assets/anim/neck.anim"));
-
-        let path =
-            animation_file_from_params(Path::new("assets/anim"), &json!({"file": "neck2.anim"}))
-                .unwrap();
-        assert_eq!(path, PathBuf::from("assets/anim/neck2.anim"));
-
-        assert!(
-            animation_file_from_params(Path::new("assets/anim"), &json!({"name": "../neck"}))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn parses_python_anim_rotation_frames() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("sample.anim");
-        std::fs::write(&path, "1\n0.0 1.0 2.0\n\n3.5 -4.0 5.25 99.0\nbad\n").unwrap();
-
-        let frames = load_animation_frames(&path).unwrap();
-        assert_eq!(frames, vec![[0.0, 1.0, 2.0], [3.5, -4.0, 5.25]]);
-    }
-}
+mod tests;

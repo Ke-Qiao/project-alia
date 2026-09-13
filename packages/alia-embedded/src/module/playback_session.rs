@@ -9,6 +9,14 @@ use uuid::Uuid;
 mod submission;
 pub use submission::{AudioSubmission, SubmissionWrite};
 
+/// Other output owners follow the same locally activated voice epoch. Hooks
+/// must only update admission/cancellation; no I/O or waits under this gate.
+pub trait VoiceOutputFence: Send + Sync {
+    fn activate_voice(&self, scope: &VoiceScope) -> Result<()>;
+    fn fence_voice(&self, scope: &VoiceScope) -> Result<()>;
+    fn close_voice(&self, scope: &VoiceScope) -> Result<()>;
+}
+
 #[derive(Clone, Debug)]
 pub struct PlaybackLease {
     pub scope: VoiceScope,
@@ -37,6 +45,7 @@ pub struct PlaybackSession {
     shutdown: tokio_util::sync::CancellationToken,
     task_gate: Mutex<()>,
     task_errors: Arc<Mutex<Vec<String>>>,
+    output_fence: Option<Arc<dyn VoiceOutputFence>>,
 }
 impl PlaybackSession {
     pub fn new(backend: Arc<dyn AudioPlaybackBackend>) -> Self {
@@ -47,7 +56,35 @@ impl PlaybackSession {
             shutdown: tokio_util::sync::CancellationToken::new(),
             task_gate: Mutex::new(()),
             task_errors: Arc::default(),
+            output_fence: None,
         }
+    }
+
+    pub fn with_output_fence(
+        backend: Arc<dyn AudioPlaybackBackend>,
+        output_fence: Arc<dyn VoiceOutputFence>,
+    ) -> Self {
+        Self {
+            output_fence: Some(output_fence),
+            ..Self::new(backend)
+        }
+    }
+
+    /// Body admission is ordered with all local Ready/fence/close transitions.
+    /// Binding authentication holds its read lock outside this lock; an output
+    /// sink must never call back into PlaybackSession while holding its own gate.
+    pub fn with_voice_admission<T>(
+        &self,
+        scope: &VoiceScope,
+        admit: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let state = self.lock()?;
+        ensure!(
+            !self.shutdown.is_cancelled()
+                && state.as_ref().is_some_and(|active| active.scope == *scope),
+            "body voice scope is not locally current"
+        );
+        admit()
     }
     pub fn shutdown_token(&self) -> tokio_util::sync::CancellationToken {
         self.shutdown.clone()
@@ -128,7 +165,15 @@ impl PlaybackSession {
             }
         }
         if let Some(mut old) = state.take() {
-            self.retire(&mut old, "local voice session replaced")?;
+            let body = self
+                .output_fence
+                .as_ref()
+                .map_or(Ok(()), |sink| sink.close_voice(&old.scope));
+            let audio = self.retire(&mut old, "local voice session replaced");
+            body.and(audio)?;
+        }
+        if let Some(sink) = &self.output_fence {
+            sink.activate_voice(scope)?;
         }
         *state = Some(ActiveSession {
             scope: *scope,
@@ -153,7 +198,12 @@ impl PlaybackSession {
         }
         if close_session {
             let mut retired = state.take().expect("checked above");
-            self.retire(&mut retired, "matching voice session closed")?;
+            let body = self
+                .output_fence
+                .as_ref()
+                .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
+            let audio = self.retire(&mut retired, "matching voice session closed");
+            body.and(audio)?;
             return Ok(true);
         }
         if minimum.generation_epoch <= active.scope.generation_epoch {
@@ -161,7 +211,12 @@ impl PlaybackSession {
         }
         // State is invalidated even when hardware stop fails.
         active.scope.generation_epoch = minimum.generation_epoch;
-        self.retire(active, "voice generation fence applied")?;
+        let body = self
+            .output_fence
+            .as_ref()
+            .map_or(Ok(()), |sink| sink.fence_voice(minimum));
+        let audio = self.retire(active, "voice generation fence applied");
+        body.and(audio)?;
         Ok(true)
     }
     pub fn begin(
@@ -207,7 +262,12 @@ impl PlaybackSession {
         active.highest_sequence = playback_sequence;
         if newer {
             active.scope = *scope;
-            self.retire(active, "new playback generation fence applied")?;
+            let body = self
+                .output_fence
+                .as_ref()
+                .map_or(Ok(()), |sink| sink.fence_voice(scope));
+            let audio = self.retire(active, "new playback generation fence applied");
+            body.and(audio)?;
         }
         active
             .observations

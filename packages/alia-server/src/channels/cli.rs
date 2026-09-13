@@ -26,6 +26,8 @@ use crate::module::ModuleLifecycle;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::adapter::ConversationBackend;
 
+mod text;
+
 pub(crate) const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_LINE_CHARS: usize = 4096;
 const MAX_HISTORY: usize = 1000;
@@ -82,6 +84,7 @@ enum ConsoleOutput {
     StreamStart,
     StreamChunk(String),
     StreamEnd,
+    Text(text::TextCommand),
 }
 
 struct ConsoleWorker {
@@ -91,6 +94,8 @@ struct ConsoleWorker {
 
 pub struct CliChannel {
     id: String,
+    instance_id: uuid::Uuid,
+    text_writers: Arc<text::TextWriters>,
     owner_user_id: Option<uuid::Uuid>,
     account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
@@ -104,6 +109,8 @@ impl CliChannel {
     pub fn new(id: impl Into<String>, event_bus: EventBus) -> Self {
         Self {
             id: id.into(),
+            instance_id: uuid::Uuid::new_v4(),
+            text_writers: Arc::new(text::TextWriters::default()),
             owner_user_id: None,
             account_database: None,
             event_bus,
@@ -162,6 +169,7 @@ impl ModuleLifecycle for CliChannel {
         let conversation = self.conversation.clone();
         let worker_cancel = cancel.clone();
         let runtime = tokio::runtime::Handle::current();
+        let text_writers = self.text_writers.clone();
         let handle = tokio::task::spawn_blocking(move || {
             let _cancel_on_exit = worker_cancel.clone().drop_guard();
             let mut terminal = match TerminalSession::acquire() {
@@ -182,6 +190,7 @@ impl ModuleLifecycle for CliChannel {
                 &runtime,
                 &worker_cancel,
                 &parent,
+                &text_writers,
             );
             let restore = terminal.restore();
             result.and(restore)
@@ -213,6 +222,7 @@ impl ModuleLifecycle for CliChannel {
 
     async fn stop(&self) -> anyhow::Result<()> {
         let mut worker = self.worker.lock().await;
+        self.text_writers.stop();
         self.output.write().await.take();
         if let Some(active) = worker.as_mut() {
             active.cancel.cancel();
@@ -266,6 +276,44 @@ impl ChannelAdapter for CliChannel {
     }
     async fn send_message(&self, _target: &ChannelTarget, text: &str) -> anyhow::Result<()> {
         self.output(ConsoleOutput::Message(text.to_owned())).await
+    }
+    fn reserve_text(
+        &self,
+        _target: &ChannelTarget,
+        text_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<alia_core::text_delivery::TextIdentity>> {
+        ensure!(!text_id.is_nil(), "text identity is empty");
+        Ok(Some(alia_core::text_delivery::TextIdentity {
+            text_id,
+            channel_instance_id: self.instance_id,
+        }))
+    }
+    async fn deliver_text(
+        &self,
+        _target: &ChannelTarget,
+        identity: Option<alia_core::text_delivery::TextIdentity>,
+        input: super::adapter::TextPayloadStream,
+        observer: Arc<dyn super::adapter::TextObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<super::adapter::TextDeliveryReport> {
+        self.deliver_owned_text(
+            identity.context("CLI needs an exact text identity")?,
+            input,
+            observer,
+            cancel,
+        )
+        .await
+    }
+    async fn cancel_text(
+        &self,
+        identity: alia_core::text_delivery::TextIdentity,
+        reason: &str,
+    ) -> anyhow::Result<alia_core::text_delivery::TextProgress> {
+        ensure!(
+            identity.channel_instance_id == self.instance_id,
+            "text belongs to another CLI instance"
+        );
+        self.text_writers.cancel(identity, reason).await
     }
     async fn begin_stream(&self, _target: &ChannelTarget) -> anyhow::Result<()> {
         self.output(ConsoleOutput::StreamStart).await
@@ -324,12 +372,16 @@ fn run_console(
     runtime: &tokio::runtime::Handle,
     cancel: &CancellationToken,
     parent: &CancellationToken,
+    text_writers: &text::TextWriters,
 ) -> anyhow::Result<()> {
-    let mut out = io::stdout();
+    // Bypass Rust's line buffer so a successful source write reports the real
+    // native stdout boundary even when a chunk contains no newline.
+    let mut out = native_stdout()?;
     let mut line = String::new();
     let mut history = Vec::<String>::new();
     let mut history_index: usize = 0;
     let mut busy = false;
+    let mut active_text = None;
     render_prompt(&mut out, &line)?;
     while !cancel.is_cancelled() {
         if output.is_closed() && output.is_empty() {
@@ -357,6 +409,18 @@ fn run_console(
                     busy = false;
                     render_prompt(&mut out, &line)?;
                 }
+                ConsoleOutput::Text(command) => {
+                    active_text = Some(command.identity());
+                    command.run(&mut out, &line, &mut busy)?;
+                }
+            }
+        }
+        if active_text.is_some_and(|id| text_writers.is_terminal(id)) {
+            active_text = None;
+            if busy {
+                print_text(&mut out, "\n")?;
+                busy = false;
+                render_prompt(&mut out, &line)?;
             }
         }
         if !event::poll(INPUT_POLL_INTERVAL)? || cancel.is_cancelled() {
@@ -489,6 +553,22 @@ fn run_console(
     }
     print_text(&mut out, "\n")?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn native_stdout() -> io::Result<std::fs::File> {
+    use std::os::fd::AsFd;
+    Ok(std::fs::File::from(
+        io::stdout().as_fd().try_clone_to_owned()?,
+    ))
+}
+
+#[cfg(windows)]
+fn native_stdout() -> io::Result<std::fs::File> {
+    use std::os::windows::io::AsHandle;
+    Ok(std::fs::File::from(
+        io::stdout().as_handle().try_clone_to_owned()?,
+    ))
 }
 
 async fn admit_console_source(

@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
+mod text_delivery;
 
 #[derive(Default)]
 struct Conversation {
@@ -837,7 +838,24 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
             .list_deliveries(Uuid::from_u128(42), id)
             .await
             .unwrap();
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 3);
+        let text_record = records
+            .iter()
+            .find(|record| {
+                record.media_kind == crate::modules::delivery::types::DeliveryMedium::Text
+            })
+            .unwrap();
+        assert_eq!(
+            text_record.status,
+            crate::modules::delivery::types::DeliveryStatus::Unknown
+        );
+        assert!(text_record.text.as_ref().unwrap().end_offered);
+        let records = records
+            .into_iter()
+            .filter(|record| {
+                record.media_kind == crate::modules::delivery::types::DeliveryMedium::Audio
+            })
+            .collect::<Vec<_>>();
         assert_eq!(records[0].output_key, "speech_sentence:0");
         assert_eq!(records[1].output_key, "speech_sentence:1");
         assert_ne!(

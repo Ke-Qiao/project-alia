@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use alia_core::delivery::{ObservationEnd, PlaybackIdentity, PlaybackProgress};
+use alia_core::text_delivery::{TextChunk, TextFrame, TextIdentity, TextProgress};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
@@ -86,6 +87,33 @@ pub struct AudioPayload {
 
 pub type AudioPayloadStream =
     Pin<Box<dyn Stream<Item = anyhow::Result<AudioPayload>> + Send + 'static>>;
+
+pub type TextPayloadStream =
+    Pin<Box<dyn Stream<Item = anyhow::Result<TextFrame>> + Send + 'static>>;
+
+#[async_trait]
+pub trait TextObserver: Send + Sync {
+    async fn start(&self) -> anyhow::Result<()>;
+    async fn offered(&self, chunk: &TextChunk) -> anyhow::Result<()>;
+    async fn end(&self, chunks: u64, utf8_bytes: u64) -> anyhow::Result<()>;
+    async fn progress(&self, progress: TextProgress) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextDeliveryReport {
+    pub progress: Option<TextProgress>,
+    pub observation_end: ObservationEnd,
+}
+impl TextDeliveryReport {
+    pub fn unobserved(reason: impl Into<String>) -> Self {
+        Self {
+            progress: None,
+            observation_end: ObservationEnd::Unknown {
+                reason: reason.into(),
+            },
+        }
+    }
+}
 
 /// The transport awaits these durable writes before sending Start/Audio or
 /// acknowledging progress. A database failure stops further media admission.
@@ -217,6 +245,89 @@ pub trait ChannelAdapter: ModuleLifecycle {
 
     /// Send a text message to the channel.
     async fn send_message(&self, target: &ChannelTarget, msg: &str) -> anyhow::Result<()>;
+
+    /// Reserve a writer identity without external output. The service owns the
+    /// UUID and commits it before the adapter may display any part of a stream.
+    fn reserve_text(
+        &self,
+        _target: &ChannelTarget,
+        _text_id: uuid::Uuid,
+    ) -> anyhow::Result<Option<TextIdentity>> {
+        Ok(None)
+    }
+
+    /// Legacy compatibility retains unknown evidence. Empty send acknowledgements
+    /// never certify a write or a human reading the generated text.
+    async fn deliver_text(
+        &self,
+        target: &ChannelTarget,
+        identity: Option<TextIdentity>,
+        mut text: TextPayloadStream,
+        observer: Arc<dyn TextObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<TextDeliveryReport> {
+        anyhow::ensure!(
+            identity.is_none(),
+            "text writer does not implement scoped delivery"
+        );
+        observer.start().await?;
+        if cancel.is_cancelled() {
+            return Ok(TextDeliveryReport::unobserved("legacy text cancelled"));
+        }
+        let streaming = self.capabilities().streaming;
+        let mut buffered = String::new();
+        if streaming {
+            self.begin_stream(target).await?;
+        }
+        loop {
+            let frame = tokio::select! {
+                _ = cancel.cancelled() => return Ok(TextDeliveryReport::unobserved("legacy text cancelled without exact writer evidence")),
+                frame = text.next() => frame,
+            };
+            let Some(frame) = frame else {
+                break;
+            };
+            if cancel.is_cancelled() {
+                return Ok(TextDeliveryReport::unobserved(
+                    "legacy text cancelled without exact writer evidence",
+                ));
+            }
+            match frame? {
+                TextFrame::Chunk(chunk) => {
+                    observer.offered(&chunk).await?;
+                    if streaming {
+                        self.send_stream_chunk(target, &chunk.text).await?;
+                    } else {
+                        buffered.push_str(&chunk.text);
+                    }
+                }
+                TextFrame::End { chunks, utf8_bytes } => {
+                    observer.end(chunks, utf8_bytes).await?;
+                    if streaming {
+                        self.end_stream(target, "").await?;
+                    } else {
+                        self.send_message(target, &buffered).await?;
+                    }
+                    return Ok(TextDeliveryReport::unobserved(
+                        "legacy text send returned without a writer checkpoint",
+                    ));
+                }
+            }
+        }
+        Ok(TextDeliveryReport::unobserved(
+            "text producer ended without explicit End",
+        ))
+    }
+
+    /// Exact writer cancellation closes this identity's admission and returns a
+    /// checkpoint only after in-flight writes have finished. No global stop.
+    async fn cancel_text(
+        &self,
+        _identity: TextIdentity,
+        _reason: &str,
+    ) -> anyhow::Result<TextProgress> {
+        anyhow::bail!("channel does not support exact text cancellation")
+    }
 
     /// Send audio (TTS output) to the channel.
     async fn send_audio(

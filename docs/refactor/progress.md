@@ -1,6 +1,6 @@
 # 构建记录
 
-更新：2026-09-08。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
+更新：2026-09-13。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
 用户已授权开始构建，当前 Easy-Turn 只运行在 Server。当前记录是 P1、P2 与运行时基础改造的结果，首轮整体交付尚未完成。前端和 Embedded 通用适配仍按 [台账](deferred.md) 搁置。
 
@@ -16,8 +16,25 @@
 | `c257f07` | Embedded 启动失败回滚、可等待的有界关闭、实际监听地址、长 HTTP/2 连接清理及原生任务所有权 | 无默认特性 122 项通过；macOS 默认 all-targets 和 Linux ARM64 无默认 all-targets 检查通过，见 [Embedded 生命周期](embedded-runtime.md) |
 | `5aecb38` | 持久 Execution 共用入口、Memory 规范来源与隐私栅栏、可信输入贯穿消息和工具 | 空数据库默认 workspace 500 项；真实 CPU 模型与 gRPC 两项另跑通过；固定提交 Linux ARM64 Server 检查及 152 项库测试、Embedded 默认完整链接通过 |
 | `2f8797c` | Server 运行时所有权与故障回滚、Memory 原子批次与批量遗忘、数据库排序的可信 source epoch | 默认 workspace 561 项通过；真实 PTY 与 CPU 模型 4 项另跑通过；固定提交 Linux ARM64 Server 库和真实 PG 共 280 项通过，Embedded 默认完整链接通过 |
+| `ee9cbfd` | 规范 Response、逐句音频 Delivery、播放 v2、真实后端提交回执与生命周期监督 | macOS 默认 workspace 636 项通过；4 项真实 PTY/模型另跑通过；固定提交 Linux ARM64 Server + Embedded 库及 Server 集成共 542 项通过，Embedded 默认完整链接通过 |
 
-## Response / Delivery 与播放 v2 整合包
+## TextDelivery 与 D3 身体动作（已冻结）
+
+文本输出已接入共用 DeliveryService，UTF-8 分块先持久化再交给 CLI native writer，保留实际字节前缀和准确取消，模型断流不提交完整助手历史。文本、音频和身体分别记录证据，未将 Submitted 解释为已读、已听到或机构到位。
+
+身体链路包含 Core 严格类型、双向签名 gRPC、可信配置公钥、规范 Response 对应的唯一 dispatch permit、设备共享 boot、control lease/sequence 和唯一 native writer。绑定/voice 撤销、回执淘汰、动画完整预检、部分串口/I²C 写入、旧身份取消和关闭纳入同一生命周期。设备明确拒绝的新身份会留下签名 Rejected；取消携带完整原意图，先退休尚未入队的序号，阻止迟到 preparation 执行。Server 对未确认的原取消限频重试，永不重试 Submit。
+
+独立审查发现并修复两条真实竞态：普通拒绝只返回无签名错误导致 Server 永久等待不存在的命令，以及取消先于 preparation 到达后迟到 Submit 仍可能执行。另收紧 Unknown 的迟到证据校验，已确认 terminal/quiescent 后不能再增长 native 提交量。
+
+定向证据：Motion 45 项、真实签名设备 gRPC 6 项、身体 PostgreSQL 6 项、运行时 HTTP 身体/文本接口 1 项；Text repository 5 项、service 4 项、Pipeline 38 项、CLI 7 项通过。Core 20 项、Server 签名身体/pin/原播放 26 项通过。关闭异常的测试包含已完成 JoinError 不被重复 poll，以及继续 join 其余 owner。
+
+默认 workspace 的完整回归 **720 个不同测试通过、0 失败、5 显式跳过**；内嵌子进程重复执行的一项不再累计。5 项随后另跑通过：真实 PTY 3 项、官方音频→CPU Easy-Turn 和持续 gRPC 2 项。当前模型直接 Backchannel 848 ms；gRPC Complete/Backchannel/Wait 为 508/311/372 ms，仅代表这次模型调用，不是端到端声学延迟。两端 no-default-features all-targets 检查通过，60 个变更 Rust 文件格式检查通过。
+
+整包回归修复了一处新测试 fixture：删除本 schema 的表会沿 search_path 回退到其他迁移测试安装的 public 同名表；故障注入改为本 schema 内列定义故障，HTTP 503 与诊断隐藏已通过。末次恢复修复另跑身体仓储 **6 项**、Server runtime **33 项**与签名客户端/pin/播放 **26 项**，全部通过，验证 `latest_checkpoint` 恢复已确认的 quiescence，同时原 Unknown/status/progress 不改写、原动作不重播。这些是对应既有用例的末次回归，不重复累计。
+
+本包新增迁移 `m20260908_000005_text_delivery.sql` 与 `m20260913_000006_body_delivery.sql`，没有修改已提交迁移。前端没有进入构建。真实执行器和音频呈现仍需硬件信息；当前旧 `neck.anim` / `neck2.anim` 超过 v1 短动作时长/帧界限，会明确拒绝，未截断或修改原素材。短动作资产与真实机构验收仍属身体产品化工作。
+
+## 已提交的 Response / Delivery 与播放 v2（ee9cbfd）
 
 本包将规范 Response、逐句音频 Delivery、投递监督和设备回执接入同一个 Server runtime。Response 与唯一助手历史原子提交；输出前持久化意图、原始身份与发送许可。重复调用查询已有事实，过期恢复不重播。CLI 文本也在外发前建立 Response，独立 TextDelivery 发送监督继续进入下一包。接口与状态见 [Delivery API](delivery-api.md)。
 
@@ -108,13 +125,13 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
-2. TextDelivery 持久发送监督、D3 身体命令及呈现证据，依据 [Delivery 设计](delivery-design.md) 实施。规范 Response、音频 Delivery 和播放 v2 已进入本包整合，仍不等于硬件已完成。
+2. TextDelivery 和 D3 的固定提交跨平台验证、短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。已实现的唯一发送与软件提交不能代表硬件已完成。
 3. 缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。LLM 原子整理和批量遗忘已在本轮接通并通过专项回归。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
 
-模型观测成功、文本回复生成、音频被接收、提交后端和实际呈现分别记录。播放 v2 已提供 accepted/submitted 的软件证据，presented 仍未知。旧全局中断错误提示旁路已停止外发，无法验证的表达 JSON 不再升级 completed；带作用域提示音与身体动作仍待接入，不能称全链路已证明声学完成。旧广播事件入口仍有可见丢弃策略，尚未全部替换为可靠命令入口。
+模型观测成功、文本回复生成、音频被接收、提交后端和实际呈现分别记录。播放 v2 已提供 accepted/submitted 的软件证据，presented 仍未知。旧全局中断错误提示旁路已停止外发，无法验证的表达 JSON 不再升级 completed；身体 signed v1 已接入，带作用域提示音仍待接入，不能称全链路已证明声学完成。旧广播事件入口仍有可见丢弃策略，尚未全部替换为可靠命令入口。
 
 ## 待补充的实机信息
 

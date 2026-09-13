@@ -139,7 +139,7 @@ pub(super) async fn process_voice_response(
     }
 
     // Text delivery: only if not already streamed
-    if !result.streamed {
+    if !result.streamed && channel.capabilities().text {
         debug_component_text(
             debug_output,
             "channel",
@@ -150,7 +150,7 @@ pub(super) async fn process_voice_response(
         if let Err(error) = cancellable_stage(
             Some(turn),
             "text_delivery",
-            channel.send_message(target, &result.text),
+            delivery::text(modules, target, Some(turn), "text:response", &result.text),
         )
         .await
         {
@@ -220,6 +220,13 @@ pub(super) async fn process_voice_response(
             .await
         {
             Ok(deliveries) => {
+                let deliveries = deliveries
+                    .into_iter()
+                    .filter(|delivery| {
+                        delivery.media_kind
+                            == crate::modules::delivery::types::DeliveryMedium::Audio
+                    })
+                    .collect::<Vec<_>>();
                 !deliveries.is_empty()
                     && deliveries.iter().all(|delivery| {
                         delivery.status

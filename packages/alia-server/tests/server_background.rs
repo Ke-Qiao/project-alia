@@ -332,6 +332,8 @@ async fn embedded_stop_interrupts_stalled_http2_connect_and_discovery() {
         EmbeddedChannelConfig {
             id: "test-device".into(),
             owner_user_id: None,
+            expected_device_id: None,
+            expected_device_public_key: None,
             endpoint: format!("http://{}", listener.local_addr().unwrap()),
             discovery_service_name: format!("_alia-test-{}._tcp", uuid::Uuid::new_v4().simple()),
             discovery_timeout_sec: 60,

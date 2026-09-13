@@ -1,6 +1,6 @@
 # Response 与 Delivery 操作契约
 
-状态：2026-09-08，Delivery 实施包正在整合；本文定义本包接口，最终测试证据见[构建记录](progress.md)。不代表实际声卡或机构已验收。
+状态：2026-09-13，音频、文本与身体投递接口已实现并通过 macOS 整包及真实 HTTP 回归，测试证据见[构建记录](progress.md)。不代表实际声卡或机构已验收。
 
 一个 Response 对应一次规范响应，拥有最初接纳的用户、请求、来源版本和生成意图。逐句 TTS 的每个 Delivery 保存同一 Response 下不可变的文本片段。Response 最终正文与助手会话消息在同一事务提交；重试返回原消息 UUID，不能产生第二份历史。取消或设备失联不会改写已经发生的工具 Effect。
 
@@ -14,9 +14,14 @@
 | `GET /api/v1/responses/{id}/deliveries` | 同一响应的 Delivery 集合；每个响应最多 256 项，准备阶段执行此上限。 |
 | `GET /api/v1/responses/{id}/events?after=0&limit=64` | 依 event_id 升序读取该 owner 的审计，包含 Unknown 后取得的 late_checkpoint；用末尾 event_id 继续，limit 为 1–256。 |
 | `GET /api/v1/deliveries/{id}` | 独立投递身份、已知采样帧前缀、回执序号和终止原因。 |
+| `GET /api/v1/deliveries/{id}/text-chunks?limit=64` | 文本投递的不可变 UTF-8 块、sequence 和字节 offset。省略 after 从首块开始；之后传最后的 sequence，例如 after=0；limit 为 1–256。 |
+| `GET /api/v1/responses/{id}/body-deliveries` | 同一 Response 的身体命令、设备原始身份和事实，最多 32 项。 |
+| `GET /api/v1/body-deliveries/{id}` | 身体独立账本；Submitted 只到已标明的硬件提交边界，位置确认仍为 null。 |
 | `POST /api/v1/responses/{id}/cancel` | 请求取消该响应的未完成投递；结果中的 cancel_requested 不是设备取消 ACK，随后查询各 Delivery。 |
 
 数据库不可用或提交 ACK 超时返回 503 与 delivery_unavailable 错误码，隐藏连接诊断。请求可能已提交，调用方应查询原响应/投递。不能用重新播放来判断上一次播放是否发生。
+
+文本 Submitted 需要明确 End 和全部源字节的 native 写入证据，不证明读取；没有独立读取证据时不返回 Completed。身体事实以动作、帧和部分通道计数，绝不复用音频采样数。Response cancel 同时撤销两类输出的新准入，但返回值仍不是设备 quiescence/物理停止证明。身体本地 Unknown 后的回执在 Response events 中以 body_late_checkpoint 保存，保持原终态不变；查询返回独立 latest_checkpoint，重启时可据此恢复已确认的软件停止事实，不重写原 progress 或取得发送许可。
 
 ## 四种分别保存的事实
 

@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use alia_embedded::module::EmbeddedBuilder;
 use alia_embedded::{config, identity};
 use anyhow::{Context, Result};
+use base64::Engine;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -86,6 +87,7 @@ async fn async_main() -> Result<()> {
     info!(
         keypair_path = %config.identity.keypair_path.display(),
         public_key_len = keypair.public_key_bytes().len(),
+        expected_device_public_key = %base64::engine::general_purpose::STANDARD.encode(keypair.public_key_bytes()),
         "device keypair ready"
     );
 

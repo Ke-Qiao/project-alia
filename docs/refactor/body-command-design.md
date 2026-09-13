@@ -1,10 +1,26 @@
-# D3 身体动作命令设计（待实施）
+# D3 身体动作命令与回执
 
-状态：2026-09-08 只读设计已收敛，尚未实施 command-v1。本文记录下一包边界，不表示协议、硬件停止或位置反馈已经验收。D1 已对缺少 `expression-command-v1` 能力的旧适配器拒绝执行身体动作；不能仅添加能力宣告来绕过此保护。
+状态：2026-09-13，D3 已实现并通过 macOS 整包及末次恢复回归。下方先记录当前实现，再保留 9 月 8 日的设计基线。测试和提交以 [构建记录](progress.md) 为准；软件提交与取消证据不等于机构到位、物理停止或硬件安全验收。
 
 目标是打通命令身份、设备唯一写入者和真实回执观察。保留当前校准文件、限位数值和硬件配置默认值。不假定 Pi 5 上的实际控制板、固件或舵机具有位置反馈，也不开展 Easy-Turn 性能验证。
 
-## 现有代码与可复用边界
+## 当前实现
+
+Core 的 `body` 模块定义无数据库/网络依赖的命令、作用域和回执。`alia.body.v1.BodyControl/Exchange` 承载严格、有界的 JSON payload；请求和设备响应分别以域分离 Ed25519 签名覆盖原始字节。响应回显本次 nonce、设备 ID 和版本，旧签名不能冒充新控制状态。
+
+设备身份固定到 Server channel 配置的 `expected_device_id` 与 `expected_device_public_key`，后者是 Base64 编码的 32 字节公钥。两项应从可信设备本地启动日志取得：`identity loaded` 的 device_id 和 `device keypair ready` 的 expected_device_public_key；日志不输出私钥。发现服务和无签名的 GetBindingStatus 不更新公钥。缺少 pin 时身体输出不可用，签名不匹配时拒绝身体链路。用户 owner、规范 Response 和持久身体账本也是生产准入条件。
+
+Builder 为同一设备进程生成共享 boot UUID。Motion 维护 CAS control generation 和单调命令 sequence；身份直接由 boot/server-instance/generation/sequence 构成，不另设可被重新包装的命令 UUID。Voice 复用真实 Ready 的作用域，Nonvoice 使用规范 Response UUID。绑定变更、voice fence 与本地关闭均在同步准入门下撤销旧动作，锁顺序为 Binding → Playback → Motion。
+
+Motion 独占一个保留句柄的 native writer，设备打开、初始化、表达、人脸跟随、可选回中和关闭都由它执行。准备并发上限 4，动作队列 8，回执缓存 64；人脸只保留最新目标。序号水位独立于缓存淘汰，相同身份与内容返回原事实，变造内容拒绝。可证明未接纳的新身份会写入 Rejected 并退休其序号；旧 lease 或已淘汰事实只能保持不可知，不能伪造零写入。
+
+动作数最多 32、名义动作合计 5 秒、最多 3,600 个 native 帧；映射、有限值、文件/循环/帧率与整个动画在进入硬件前校验。沿用已有校准和限位，速度限制跨命令延续。串口按实际短写字节完成边界、I²C 按通道事务记录提交；部分或不确定写入隔离后端。取消只关闭新写入并等在途 native 返回，5 秒等待超时不会丢弃 owner 或宣称电机已停止。
+
+Server 以 `(response_id, phase)` 固定同一身体意图，先查原账本，才允许对新意图打开控制。新发送必须在 PostgreSQL 原子保存 intent、唯一 dispatch permit 和审计后发生。最多 64 个活跃账本项、每 Response 32 项；短租约不延长绝对观察期限。传输丢 ACK 后只查询/精确取消原身份；重启不重播。同实例观察 owner、native 依赖和最终 join 纳入 Server 关闭流程。
+
+Submitted 只表示指定串口主机/I²C 寄存器/模拟边界已提交；v1 不提供位置反馈。表达编排可以在 quiescent 的 Submitted/Cancelled 后解除软件占用，`completion_acknowledged` 仍为 false。Unknown 保留原前缀；迟到回执独立审计，已确认终态不能被后续检查点改写。查询接口见 [Delivery API](delivery-api.md)。
+
+## 设计时源码与可复用边界（历史基线）
 
 以下是设计时源码的静态观察，路径与实现会随后续包变化；并非本设计新增测试的结果。
 

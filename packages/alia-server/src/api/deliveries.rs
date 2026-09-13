@@ -65,6 +65,21 @@ pub struct ResponseEventsQuery {
     pub limit: Option<u32>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct TextChunksQuery {
+    /// Return immutable chunks strictly after this zero-based sequence.
+    pub after: Option<u64>,
+    /// Page size from 1 to 256; defaults to 64.
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TextChunkRecord {
+    pub sequence: u64,
+    pub utf8_offset: u64,
+    pub text: String,
+}
+
 impl IntoResponse for DeliveryApiError {
     fn into_response(self) -> Response {
         use DeliveryErrorCode as Code;
@@ -85,7 +100,7 @@ impl IntoResponse for DeliveryApiError {
         };
         let message = if status == StatusCode::SERVICE_UNAVAILABLE {
             tracing::error!(error = %self.0, "delivery API unavailable");
-            "Delivery acknowledgement unavailable. Query the existing response or delivery; do not replay audio to infer its outcome.".to_string()
+            "Delivery acknowledgement unavailable. Query the existing response or delivery; do not replay output to infer its outcome.".to_string()
         } else {
             self.0.to_string()
         };
@@ -196,6 +211,38 @@ pub async fn response_events(
     ))
 }
 
+#[utoipa::path(get, path = "/api/v1/deliveries/{id}/text-chunks", tag = "delivery", security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Text delivery identity"), TextChunksQuery), responses(
+        (status = 200, description = "Owner's immutable offered UTF-8 chunks; a durable chunk is not proof it was written or read", body = [TextChunkRecord]),
+        (status = 400, description = "Invalid UUID, cursor or page size", body = DeliveryErrorResponse),
+        (status = 401, description = "Authentication required"),
+        (status = 404, description = "Delivery absent or owned by another account", body = DeliveryErrorResponse),
+        (status = 409, description = "Delivery medium is not text", body = DeliveryErrorResponse),
+        (status = 503, description = "Ledger unavailable", body = DeliveryErrorResponse)
+    ))]
+pub async fn text_chunks(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    id: Result<Path<Uuid>, PathRejection>,
+    query: Result<Query<TextChunksQuery>, QueryRejection>,
+) -> Result<Json<Vec<TextChunkRecord>>, DeliveryApiError> {
+    let Path(id) = id?;
+    let Query(query) = query?;
+    Ok(Json(
+        state
+            .delivery
+            .text_chunks(auth.id, id, query.after, query.limit.unwrap_or(64))
+            .await?
+            .into_iter()
+            .map(|chunk| TextChunkRecord {
+                sequence: chunk.sequence,
+                utf8_offset: chunk.utf8_offset,
+                text: chunk.text,
+            })
+            .collect(),
+    ))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/responses/{id}", get(get_response))
@@ -203,6 +250,7 @@ pub fn routes() -> Router<AppState> {
         .route("/responses/{id}/events", get(response_events))
         .route("/responses/{id}/cancel", post(cancel_response))
         .route("/deliveries/{id}", get(get_delivery))
+        .route("/deliveries/{id}/text-chunks", get(text_chunks))
 }
 
 #[cfg(test)]

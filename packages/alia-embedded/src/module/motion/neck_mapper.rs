@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
@@ -29,15 +30,22 @@ struct NeckMatrixConfig {
 
 impl NeckMapper {
     pub fn load(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
+        let file = std::fs::File::open(path)
             .with_context(|| format!("reading neck matrix config {}", path.display()))?;
+        ensure!(
+            file.metadata()?.is_file(),
+            "neck calibration must be a regular file"
+        );
+        let mut content = String::new();
+        file.take(1_048_577).read_to_string(&mut content)?;
+        ensure!(content.len() <= 1_048_576, "neck calibration exceeds 1 MiB");
         Self::from_json(&content)
     }
 
     pub fn from_json(content: &str) -> Result<Self> {
         let config: NeckMatrixConfig =
             serde_json::from_str(content).context("parsing neck matrix config")?;
-        if config.sigma <= f32::EPSILON {
+        if !config.sigma.is_finite() || config.sigma <= f32::EPSILON {
             bail!("neck matrix sigma must be positive");
         }
         if config.matrix_size.len() != 2 {
@@ -49,6 +57,24 @@ impl NeckMapper {
 
         let rows = config.matrix_size[0];
         let cols = config.matrix_size[1];
+        ensure!(
+            (1..=512).contains(&rows) && (1..=32).contains(&cols),
+            "invalid bounded calibration dimensions"
+        );
+        ensure!(
+            config
+                .neck_angle_min_max
+                .iter()
+                .all(|v| v.is_finite() && v.abs() <= 180.0),
+            "invalid neck angle limits"
+        );
+        ensure!(
+            config
+                .neck_angle_min_max
+                .chunks_exact(2)
+                .all(|v| v[0] <= v[1]),
+            "neck angle limits must be ordered"
+        );
         if config.neck_angles.len() != rows {
             bail!(
                 "NeckAngles row count {} does not match MatrixSize rows {}",
@@ -81,6 +107,11 @@ impl NeckMapper {
             if pair.len() < 2 {
                 bail!("ServoMinMax.{key} must contain [min, max]");
             }
+            ensure!(
+                pair.iter()
+                    .all(|v| v.is_finite() && (0.0..=180.0).contains(v)),
+                "invalid servo calibration limits"
+            );
             let min = pair[0].min(pair[1]);
             let max = pair[0].max(pair[1]);
             servo_minmax.push([min, max]);
@@ -94,11 +125,19 @@ impl NeckMapper {
                 if values.len() != 3 {
                     bail!("NeckAngles[{index}] must contain [x, y, z]");
                 }
+                ensure!(
+                    values.iter().all(|v| v.is_finite() && v.abs() <= 180.0),
+                    "invalid calibration rotation"
+                );
                 Ok([values[0], values[1], values[2]])
             })
             .collect::<Result<Vec<_>>>()?;
 
         for (index, row) in config.matrix.iter().enumerate() {
+            ensure!(
+                row.iter().all(|v| v.is_finite() && v.abs() <= 1_000_000.0),
+                "invalid calibration coefficient"
+            );
             if row.len() != cols {
                 bail!(
                     "Matrix[{index}] length {} does not match cols {cols}",
@@ -127,6 +166,15 @@ impl NeckMapper {
 
     pub fn servo_count(&self) -> usize {
         self.matrix_size[1]
+    }
+
+    pub fn validate_angles(&self, angles: &[f32]) -> Result<()> {
+        ensure!(
+            angles.len() == self.servo_count(),
+            "servo target dimensions differ from calibration"
+        );
+        ensure!(angles.iter().zip(&self.servo_minmax).all(|(angle, bounds)| angle.is_finite() && (bounds[0]..=bounds[1]).contains(angle)), "servo target exceeds calibrated limits");
+        Ok(())
     }
 
     pub fn map(&mut self, rot: [f32; 3], apply_smoothing: bool) -> Vec<f32> {

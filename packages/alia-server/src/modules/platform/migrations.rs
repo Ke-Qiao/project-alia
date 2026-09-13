@@ -56,6 +56,8 @@ pub const MIGRATIONS: &[Migration<'static>] = &[
     migration!("m20260908_000002_memory_privacy.sql"),
     migration!("m20260908_000003_source_privacy_epoch.sql"),
     migration!("m20260908_000004_delivery.sql"),
+    migration!("m20260908_000005_text_delivery.sql"),
+    migration!("m20260913_000006_body_delivery.sql"),
 ];
 
 pub async fn run(db: &DatabaseConnection) -> anyhow::Result<MigrationReport> {

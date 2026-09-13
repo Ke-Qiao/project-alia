@@ -93,6 +93,9 @@ pub struct BindingManager {
     lockout_until: RwLock<Option<Instant>>,
     max_attempts: u32,
     lockout_duration_secs: u64,
+    // Installed once by the device Builder. Runs synchronously under the
+    // binding write lock, in the same lock order as authenticated admission.
+    output_revocation: std::sync::OnceLock<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl BindingManager {
@@ -104,6 +107,7 @@ impl BindingManager {
             lockout_until: RwLock::new(None),
             max_attempts,
             lockout_duration_secs,
+            output_revocation: std::sync::OnceLock::new(),
         }
     }
 
@@ -114,7 +118,9 @@ impl BindingManager {
             .load_json::<BindingData>(BINDING_STATE_KEY)
             .await?
         {
-            *self.data.write().await = data;
+            let mut current = self.data.write().await;
+            self.revoke_outputs();
+            *current = data;
         }
 
         Ok(())
@@ -128,8 +134,24 @@ impl BindingManager {
     #[doc(hidden)]
     pub async fn update_for_test(&self, state: BindingState, server_id: Option<String>) {
         let mut data = self.data.write().await;
+        self.revoke_outputs();
         data.state = state;
         data.server_id = server_id;
+    }
+
+    pub fn install_output_revocation(
+        &self,
+        hook: std::sync::Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<()> {
+        self.output_revocation
+            .set(hook)
+            .map_err(|_| anyhow::anyhow!("binding output revocation is already installed"))
+    }
+
+    fn revoke_outputs(&self) {
+        if let Some(hook) = self.output_revocation.get() {
+            hook();
+        }
     }
 
     /// Check if currently locked out due to too many failed attempts.
@@ -191,6 +213,7 @@ impl BindingManager {
             );
         }
 
+        self.revoke_outputs();
         data.state = BindingState::Bound;
         data.server_id = Some(server_id.to_string());
         data.server_name = Some(server_name.to_string());
@@ -219,6 +242,7 @@ impl BindingManager {
             _ => bail!("not bound"),
         }
 
+        self.revoke_outputs();
         *data = BindingData::default();
         drop(data);
         self.persist().await?;
@@ -269,6 +293,7 @@ impl BindingManager {
             .as_secs()
             + 300; // 5 minutes
 
+        self.revoke_outputs();
         data.state = BindingState::HandoffPending;
         data.handoff_token = Some(token.clone());
         data.handoff_expires_at = Some(expires_at);
@@ -344,6 +369,7 @@ impl BindingManager {
         );
         verify_payload(new_server_public_key, &payload, authorization)?;
 
+        self.revoke_outputs();
         data.state = BindingState::Bound;
         data.server_id = Some(new_server_id.to_string());
         data.server_name = Some(new_server_name.to_string());
@@ -378,6 +404,7 @@ impl BindingManager {
         server_endpoint: &str,
     ) -> Result<()> {
         let mut data = self.data.write().await;
+        self.revoke_outputs();
         data.state = BindingState::Bound;
         data.server_id = Some(server_id.to_string());
         data.server_name = Some(server_name.to_string());
@@ -430,6 +457,58 @@ impl BindingManager {
             )?;
         }
         admit()
+    }
+
+    /// Concrete body payload authentication and admission share one binding
+    /// read lock. The returned deadline is checked again at each native write.
+    pub async fn with_verified_body<T>(
+        &self,
+        token: &str,
+        payload: &[u8],
+        signature: &[u8],
+        admit: impl FnOnce(Instant) -> Result<T>,
+    ) -> Result<T> {
+        let data = self.data.read().await;
+        anyhow::ensure!(
+            data.state == BindingState::Bound,
+            "device is not currently bound"
+        );
+        anyhow::ensure!(
+            payload.len() <= alia_core::body::MAX_BODY_PAYLOAD_BYTES,
+            "body payload is too large"
+        );
+        // This protocol requires a real bound key even when legacy local
+        // development channels explicitly bypass bearer authentication.
+        anyhow::ensure!(
+            !data.dev_skip_auth,
+            "signed body control requires a cryptographic binding"
+        );
+        let server_id = data
+            .server_id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing bound server identity"))?;
+        let public_key = data
+            .server_public_key
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing bound server public key"))?;
+        let claims = verify_auth_token(
+            token,
+            public_key,
+            server_id,
+            alia_transport::EMBEDDED_CONTROL_SCOPE,
+            DEFAULT_AUTH_MAX_SKEW,
+        )?;
+        verify_payload(
+            public_key,
+            &alia_transport::body_request_payload(payload),
+            signature,
+        )?;
+        let wall_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+        let remaining = std::time::Duration::from_secs(claims.exp)
+            .checked_sub(wall_now)
+            .ok_or_else(|| anyhow::anyhow!("body authorization expired"))?;
+        // Bound the lease independently of a token's more permissive skew.
+        admit(Instant::now() + remaining.min(std::time::Duration::from_secs(60)))
     }
 }
 

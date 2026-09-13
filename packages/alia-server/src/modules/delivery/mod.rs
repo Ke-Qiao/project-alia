@@ -3,4 +3,4 @@ pub mod repository;
 pub mod types;
 
 mod service;
-pub use service::{AudioDelivery, DeliveryService};
+pub use service::{AudioDelivery, DeliveryService, TextDelivery};

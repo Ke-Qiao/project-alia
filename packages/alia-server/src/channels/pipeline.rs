@@ -6,9 +6,8 @@
 //!
 //! When the originating channel has `capabilities().streaming == true` and the
 //! route decision is an LLM call, the pipeline uses `chat_stream` and delivers
-//! tokens incrementally via `begin_stream / send_stream_chunk / end_stream`.
-//! For non-streaming channels the pipeline calls `send_message` with the full
-//! response.
+//! tokens incrementally through an owned, durable TextDelivery.
+//! Non-streaming responses use the same immutable UTF-8 chunk and End contract.
 
 use std::sync::Arc;
 
@@ -54,8 +53,8 @@ mod transcript_correction;
 mod turn;
 mod voice;
 use crate::expression::orchestrator::{
-    ExpressionExecutionPhase, cancel_expression_execution, execute_expression_plan,
-    execute_expression_plan_phase, negotiate_expression_capabilities,
+    ExpressionExecutionPhase, cancel_expression_execution,
+    execute_expression_plan_phase_with_response, negotiate_expression_capabilities,
 };
 use crate::expression::{
     AffectAssistantResponse, AffectUserInput, ExpressionDeviceContext, ExpressionInput,
@@ -81,8 +80,8 @@ const CACHE_STATUS_PENDING_INSIGHTS_REVIEW: &str = "pending_insights_review";
 /// was already delivered to the channel via streaming.
 struct TextResult {
     text: String,
-    /// `true` when tokens were already delivered via `begin_stream / send_stream_chunk
-    /// / end_stream`.  Callers must NOT call `send_message` again.
+    /// `true` when generation already ran through its output stream. A caller
+    /// must not create another delivery or infer success from this flag.
     streamed: bool,
     /// `true` when voice audio was already streamed while text was generated.
     /// Callers must NOT synthesize and send the same answer again.
@@ -734,8 +733,7 @@ async fn process_event(
             if result.interrupted || turn_is_interrupted(Some(&turn)) {
                 return Ok(());
             }
-            // Only call send_message when the text was NOT already streamed.
-            if !result.streamed {
+            if !result.streamed && channel.capabilities().text {
                 debug_component_text(
                     debug_output,
                     "channel",
@@ -746,7 +744,7 @@ async fn process_event(
                 if let Err(error) = cancellable_stage(
                     Some(&turn),
                     "text_delivery",
-                    channel.send_message(&target, &result.text),
+                    delivery::text(modules, &target, Some(&turn), "text:response", &result.text),
                 )
                 .await
                 {
@@ -1140,7 +1138,7 @@ fn stable_user_uuid(user_id: &str) -> Uuid {
 /// 2. The channel reports `capabilities().streaming == true`
 ///
 /// For non-streaming paths (cache hit, skill, or non-streaming channel) the
-/// caller is responsible for calling `send_message` with the returned text.
+/// caller admits the returned text through the same durable Delivery service.
 async fn process_text(
     text: &str,
     user_id: &str,
@@ -2925,12 +2923,13 @@ async fn handle_transcript_correction_confirmation(
         clarification,
         Some((channel_id, user_id)),
     );
-    if let Err(error) = cancellable_stage(
-        turn,
-        "clarification_delivery",
-        channel.send_message(target, clarification),
-    )
-    .await
+    if channel.capabilities().text
+        && let Err(error) = cancellable_stage(
+            turn,
+            "clarification_delivery",
+            delivery::text(modules, target, turn, "text:clarification", clarification),
+        )
+        .await
     {
         log_channel_delivery_failure(channel, error).await;
         return;
@@ -3008,12 +3007,15 @@ async fn execute_expression_and_trace(
     turn: Option<&VoiceTurn>,
 ) {
     let execution = cancellable_stage(turn, "expression", async {
-        Ok(match phase {
-            Some(phase) => {
-                execute_expression_plan_phase(orchestrator, channel, target, plan, phase).await
-            }
-            None => execute_expression_plan(orchestrator, channel, target, plan).await,
-        })
+        Ok(execute_expression_plan_phase_with_response(
+            orchestrator,
+            channel,
+            target,
+            plan,
+            phase.unwrap_or(ExpressionExecutionPhase::Full),
+            turn.and_then(|turn| turn.response_id.get().copied()),
+        )
+        .await)
     })
     .await
     .ok()

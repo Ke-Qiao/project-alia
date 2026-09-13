@@ -90,6 +90,7 @@ pub struct DeliveryRecord {
     pub delivery_id: Uuid,
     pub response_id: Uuid,
     pub output_key: String,
+    pub media_kind: DeliveryMedium,
     pub content: Value,
     #[schema(value_type = Option<serde_json::Value>)]
     pub identity: Option<alia_core::delivery::PlaybackIdentity>,
@@ -113,6 +114,35 @@ pub struct DeliveryRecord {
     pub outcome: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub text: Option<TextDeliveryState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryMedium {
+    Audio,
+    Text,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct TextDeliveryState {
+    #[schema(value_type=Option<serde_json::Value>)]
+    pub identity: Option<alia_core::text_delivery::TextIdentity>,
+    pub offered_utf8_bytes: u64,
+    pub offered_chunks: u64,
+    pub end_offered: bool,
+    #[schema(value_type=Option<serde_json::Value>)]
+    pub progress: Option<alia_core::text_delivery::TextProgress>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewTextDelivery {
+    pub response_id: Uuid,
+    pub output_key: String,
+    /// Immutable representation intent. Generated body is stored in ordered chunks.
+    pub content: Value,
+    pub identity: Option<alia_core::text_delivery::TextIdentity>,
+    pub owner_id: Uuid,
 }
 
 /// A successful CAS returned this permit to exactly one supervisor. It is not

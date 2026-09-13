@@ -13,7 +13,7 @@ use super::types::{
 };
 use crate::channels::adapter::{ChannelAction, ChannelAdapter, ChannelTarget};
 
-/// This is a local adapter contract, not a claim that Embedded implements D3.
+/// The adapter must bind this capability to typed, original command evidence.
 pub const EXPRESSION_COMMAND_PROTOCOL: &str = "expression-command-v1";
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -22,9 +22,13 @@ struct ActiveExpression {
     plan_id: Uuid,
     plan: serde_json::Value,
     scope: Option<VoiceScope>,
+    response_id: Option<Uuid>,
     priority: ExpressionPriority,
     interruptible: bool,
     command_id: Option<String>,
+    phase: ExpressionExecutionPhase,
+    expected_actions: Vec<String>,
+    command_params: serde_json::Value,
     results: BTreeMap<ExpressionExecutionPhase, ExpressionExecutionResult>,
     closed: bool,
 }
@@ -33,6 +37,7 @@ impl ActiveExpression {
     fn same_owner(&self, other: &Self) -> bool {
         self.plan_id == other.plan_id
             && self.scope == other.scope
+            && self.response_id == other.response_id
             && self.command_id == other.command_id
     }
 }
@@ -174,7 +179,7 @@ pub async fn cancel_expression_execution(
         return ExpressionExecutionResult::skipped("original expression owner has already changed");
     }
     let result = cancel_owned(channel, &original, &target.user_id, reason).await;
-    if original.command_id.is_none() || result.completion_acknowledged {
+    if original.command_id.is_none() || cancellation_retired(&result) {
         if let Some(active) = state
             .active
             .lock()
@@ -212,7 +217,7 @@ async fn cancel_owned(
     }
     let output = tokio::time::timeout(OPERATION_TIMEOUT, channel.execute_action(ChannelAction {
         name: "cancel_expression".into(),
-        params: serde_json::json!({"command_id": command_id, "voice_scope": active.scope, "target_user_id": user, "plan_id": active.plan_id, "reason": reason}),
+        params: serde_json::json!({"command_id": command_id, "voice_scope": active.scope, "target_user_id": user, "plan_id": active.plan_id, "reason": reason, "body_intent": active.command_params}),
     })).await;
     match output {
         Ok(Ok(output)) => validate_result(
@@ -220,6 +225,8 @@ async fn cancel_owned(
             command_id,
             active.scope,
             &["cancel_expression".into()],
+            active.plan_id,
+            user,
         ),
         Ok(Err(error)) => unknown(
             Some(command_id.into()),
@@ -242,6 +249,21 @@ pub async fn execute_expression_plan_phase(
     target: &ChannelTarget,
     plan: &ExpressionPlan,
     phase: ExpressionExecutionPhase,
+) -> ExpressionExecutionResult {
+    execute_expression_plan_phase_with_response(orchestrator, channel, target, plan, phase, None)
+        .await
+}
+
+/// Production body dispatch is attached to the same canonical Response as its
+/// speech/text output. The wrapper without an origin remains useful for local
+/// adapter tests; Embedded refuses to send it to a device.
+pub async fn execute_expression_plan_phase_with_response(
+    orchestrator: &ExpressionOrchestrator,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    plan: &ExpressionPlan,
+    phase: ExpressionExecutionPhase,
+    response_id: Option<Uuid>,
 ) -> ExpressionExecutionResult {
     if plan.timeline.is_empty() || !channel.capabilities().hardware_control {
         return ExpressionExecutionResult::skipped("channel has no executable expression timeline");
@@ -266,6 +288,7 @@ pub async fn execute_expression_plan_phase(
             "adapter has no command-bound expression protocol",
         );
     }
+    refresh_observation(&state, channel, target, &capabilities).await;
     let original = state
         .active
         .lock()
@@ -273,7 +296,9 @@ pub async fn execute_expression_plan_phase(
         .clone();
     if let Some(active) = &original {
         if active.plan_id == plan.id
-            && (active.scope != target.voice || active.plan != serialized_plan)
+            && (active.scope != target.voice
+                || active.plan != serialized_plan
+                || active.response_id != response_id)
         {
             return ExpressionExecutionResult::skipped(
                 "expression plan identity was reused with different intent or scope",
@@ -309,7 +334,7 @@ pub async fn execute_expression_plan_phase(
                 "preempted_by_higher_priority_expression",
             )
             .await;
-            if active.command_id.is_some() && !cancellation.completion_acknowledged {
+            if active.command_id.is_some() && !cancellation_retired(&cancellation) {
                 return cancellation;
             }
         }
@@ -365,11 +390,17 @@ pub async fn execute_expression_plan_phase(
     };
     // The plan UUID and phase are immutable. The adapter must bind repeated IDs
     // to identical command payloads; this local layer does not retry commands.
-    let command_id = format!("{}:{}:{}", state.identity, plan.id, phase.label());
+    let command_id = format!(
+        "{}:{}:{}",
+        response_id.unwrap_or(state.identity),
+        plan.id,
+        phase.label()
+    );
     params["command_id"] = serde_json::json!(command_id);
     params["voice_scope"] = serde_json::json!(target.voice);
     params["target_user_id"] = serde_json::json!(target.user_id);
     params["phase"] = serde_json::json!(phase.label());
+    params["response_id"] = serde_json::json!(response_id);
     {
         let mut guard = state
             .active
@@ -383,14 +414,25 @@ pub async fn execute_expression_plan_phase(
                 plan_id: plan.id,
                 plan: serialized_plan,
                 scope: target.voice,
+                response_id,
                 priority: plan.priority,
                 interruptible: plan.interruptible,
                 command_id: None,
+                phase,
+                expected_actions: Vec::new(),
+                command_params: serde_json::Value::Null,
                 results: BTreeMap::new(),
                 closed: false,
             });
         }
         guard.as_mut().unwrap().command_id = Some(command_id.clone());
+        guard.as_mut().unwrap().phase = phase;
+        guard.as_mut().unwrap().command_params = params.clone();
+        guard.as_mut().unwrap().expected_actions = phase_plan
+            .timeline
+            .iter()
+            .map(|action| action.action.clone())
+            .collect();
     }
     let expected = phase_plan
         .timeline
@@ -406,7 +448,14 @@ pub async fn execute_expression_plan_phase(
     )
     .await;
     let mut result = match output {
-        Ok(Ok(output)) => validate_result(output, &command_id, target.voice, &expected),
+        Ok(Ok(output)) => validate_result(
+            output,
+            &command_id,
+            target.voice,
+            &expected,
+            plan.id,
+            &target.user_id,
+        ),
         Ok(Err(error)) => unknown(
             Some(command_id.clone()),
             target.voice,
@@ -436,15 +485,7 @@ pub async fn execute_expression_plan_phase(
             && active.scope == target.voice
             && active.command_id.as_deref() == Some(command_id.as_str())
         {
-            let terminal = result.action_receipts.iter().all(|receipt| {
-                matches!(
-                    receipt.status,
-                    ExpressionActionStatus::Completed
-                        | ExpressionActionStatus::Failed
-                        | ExpressionActionStatus::Rejected
-                        | ExpressionActionStatus::Skipped
-                )
-            });
+            let terminal = result.writer_retired();
             if terminal {
                 active.command_id = None;
                 active.closed = phase.closes_plan();
@@ -453,6 +494,68 @@ pub async fn execute_expression_plan_phase(
         }
     }
     result
+}
+
+fn cancellation_retired(result: &ExpressionExecutionResult) -> bool {
+    result
+        .body
+        .as_ref()
+        .map_or(result.completion_acknowledged, |body| body.writer_retired())
+}
+
+async fn refresh_observation(
+    state: &ChannelState,
+    channel: &dyn ChannelAdapter,
+    target: &ChannelTarget,
+    capabilities: &ExpressionCapabilitySnapshot,
+) {
+    let original = state
+        .active
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    let Some(original) = original.filter(|active| active.command_id.is_some() && !active.closed)
+    else {
+        return;
+    };
+    if capabilities.adapter != "embedded_body_v1"
+        && !original
+            .results
+            .values()
+            .any(|result| result.body.is_some())
+    {
+        return;
+    }
+    let command_id = original.command_id.as_ref().unwrap();
+    let output = tokio::time::timeout(OPERATION_TIMEOUT, channel.execute_action(ChannelAction {
+        name: "observe_expression".into(), params: serde_json::json!({
+            "command_id":command_id,"voice_scope":original.scope,"target_user_id":target.user_id,"plan_id":original.plan_id,"body_intent":original.command_params
+        }),
+    })).await;
+    let Ok(Ok(output)) = output else {
+        return;
+    };
+    let result = validate_result(
+        output,
+        command_id,
+        original.scope,
+        &original.expected_actions,
+        original.plan_id,
+        &target.user_id,
+    );
+    let mut guard = state
+        .active
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    if let Some(active) = guard.as_mut()
+        && active.same_owner(&original)
+    {
+        if result.writer_retired() {
+            active.command_id = None;
+            active.closed = original.phase.closes_plan();
+        }
+        active.results.insert(original.phase, result);
+    }
 }
 
 fn priority_rank(priority: ExpressionPriority) -> u8 {
@@ -469,6 +572,8 @@ fn validate_result(
     command_id: &str,
     scope: Option<VoiceScope>,
     expected: &[String],
+    plan_id: Uuid,
+    user_id: &str,
 ) -> ExpressionExecutionResult {
     let invalid = |reason: &str| {
         unknown(
@@ -495,6 +600,35 @@ fn validate_result(
             .any(|(receipt, action)| &receipt.action != action)
     {
         return invalid("missing or mismatched typed action receipts");
+    }
+    if let Some(body) = &result.body {
+        if body.validate().is_err()
+            || body.command.source_command_id != command_id
+            || body.command.scope.voice() != scope
+            || body.command.plan_id != plan_id
+            || Uuid::parse_str(user_id).ok() != Some(body.command.owner_id)
+        {
+            return invalid("invalid original body command evidence");
+        }
+        let cancellation = expected == ["cancel_expression"];
+        if !cancellation && body.command.actions.len() != expected.len() {
+            return invalid("body command action count differs from original plan");
+        }
+        let derived = ExpressionExecutionResult::from_body(body.clone(), expected, cancellation);
+        if result.status != derived.status
+            || result.completion_acknowledged
+            || !result.executed_actions.is_empty()
+            || result
+                .action_receipts
+                .iter()
+                .zip(&derived.action_receipts)
+                .any(|(a, b)| a.status != b.status)
+        {
+            return invalid(
+                "body submission was misrepresented as execution or position completion",
+            );
+        }
+        return result;
     }
     let completed = result
         .action_receipts
@@ -579,6 +713,7 @@ fn unknown(
         status: "unknown".into(),
         command_id,
         voice_scope,
+        body: None,
         completion_acknowledged: false,
         action_receipts: vec![ExpressionActionReceipt {
             action: action.into(),

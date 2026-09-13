@@ -18,6 +18,7 @@ alia-transport.workspace = true
 anyhow.workspace = true
 async-stream.workspace = true
 axum.workspace = true
+base64 = "0.22.1"
 chrono.workspace = true
 cpal.workspace = true
 ed25519-dalek = "2.2"

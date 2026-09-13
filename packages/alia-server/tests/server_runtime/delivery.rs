@@ -13,7 +13,7 @@ use alia_server::state::AppState;
 use sea_orm::{DatabaseBackend, Statement};
 use serde_json::json;
 
-async fn account(state: &AppState, role: &str) -> (Uuid, String) {
+pub(super) async fn account(state: &AppState, role: &str) -> (Uuid, String) {
     let id = Uuid::new_v4();
     state.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login-hash',$3,'active')",
@@ -26,7 +26,7 @@ async fn account(state: &AppState, role: &str) -> (Uuid, String) {
     (id, token)
 }
 
-async fn draft(
+pub(super) async fn draft(
     state: &AppState,
     owner: Uuid,
 ) -> alia_server::modules::delivery::types::ResponseRecord {

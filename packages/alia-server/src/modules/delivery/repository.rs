@@ -10,14 +10,15 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::types::*;
+mod text;
 
 const RESPONSE: &str = "SELECT to_jsonb(r) || jsonb_build_object('key', jsonb_build_object('user_id',r.user_id,'request_id',r.request_id,'output_key',r.output_key)) AS record FROM delivery_responses r ";
-const DELIVERY: &str = "SELECT to_jsonb(d) AS record FROM deliveries d ";
+const DELIVERY: &str = "SELECT to_jsonb(d) || jsonb_build_object('text', CASE WHEN d.media_kind='text' THEN jsonb_build_object('identity',d.text_identity,'offered_utf8_bytes',d.text_offered_utf8_bytes,'offered_chunks',d.text_offered_chunks,'end_offered',d.text_end_offered,'progress',d.text_progress) ELSE NULL END) AS record FROM deliveries d ";
 const CAPACITY_LOCK: i64 = 0x414c_4941_4445_4c49;
 
 #[derive(Clone)]
 pub struct DeliveryRepository {
-    db: DatabaseConnection,
+    pub(super) db: DatabaseConnection,
 }
 
 impl DeliveryRepository {
@@ -207,6 +208,37 @@ impl DeliveryRepository {
         owner: Uuid,
         input: NewDelivery,
     ) -> DeliveryResult<DeliveryRecord> {
+        self.prepare_media(owner, input, DeliveryMedium::Audio, None)
+            .await
+    }
+
+    pub async fn prepare_text_delivery(
+        &self,
+        owner: Uuid,
+        input: NewTextDelivery,
+    ) -> DeliveryResult<DeliveryRecord> {
+        self.prepare_media(
+            owner,
+            NewDelivery {
+                response_id: input.response_id,
+                output_key: input.output_key,
+                content: input.content,
+                identity: None,
+                owner_id: input.owner_id,
+            },
+            DeliveryMedium::Text,
+            input.identity,
+        )
+        .await
+    }
+
+    async fn prepare_media(
+        &self,
+        owner: Uuid,
+        input: NewDelivery,
+        medium: DeliveryMedium,
+        text_identity: Option<alia_core::text_delivery::TextIdentity>,
+    ) -> DeliveryResult<DeliveryRecord> {
         if input.owner_id.is_nil()
             || !valid_key(&input.output_key)
             || serde_json::to_vec(&input.content)?.len() > MAX_CONTENT_BYTES
@@ -224,11 +256,17 @@ impl DeliveryRepository {
                 "invalid playback identity".into(),
             ));
         }
+        if text_identity.is_some_and(|identity| !identity.is_valid()) {
+            return Err(DeliveryError::InvalidInput("invalid text identity".into()));
+        }
         let tx = self.db.begin().await?;
         let response = validate_response_source(&tx, owner, input.response_id).await?;
-        let intent_digest = digest(
-            &json!({"response_id":input.response_id,"output_key":input.output_key,"content":input.content,"identity":input.identity}),
-        )?;
+        let mut intent = json!({"response_id":input.response_id,"output_key":input.output_key,"content":input.content,"identity":input.identity});
+        if medium == DeliveryMedium::Text {
+            intent["media_kind"] = json!("text");
+            intent["text_identity"] = json!(text_identity);
+        }
+        let intent_digest = digest(&intent)?;
         if let Some(old) = delivery_row(
             &tx,
             "WHERE d.response_id=$1 AND d.output_key=$2 FOR UPDATE OF d",
@@ -273,7 +311,7 @@ impl DeliveryRepository {
             return Err(DeliveryError::CapacityExceeded);
         }
         let id = Uuid::new_v4();
-        tx.execute(stmt("INSERT INTO deliveries(delivery_id,response_id,output_key,content,playback_id,identity,intent_digest,owner_id,lease_expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,clock_timestamp()+make_interval(secs=>$9))",vec![id.into(),input.response_id.into(),input.output_key.into(),input.content.into(),input.identity.as_ref().map(|identity|identity.playback_id).into(),input.identity.map(serde_json::to_value).transpose()?.into(),intent_digest.into(),input.owner_id.into(),(LEASE_SECONDS as f64).into()])).await?;
+        tx.execute(stmt("INSERT INTO deliveries(delivery_id,response_id,output_key,content,playback_id,identity,intent_digest,owner_id,lease_expires_at,media_kind,text_identity) VALUES($1,$2,$3,$4,$5,$6,$7,$8,clock_timestamp()+make_interval(secs=>$9),$10,$11)",vec![id.into(),input.response_id.into(),input.output_key.into(),input.content.into(),input.identity.as_ref().map(|identity|identity.playback_id).into(),input.identity.map(serde_json::to_value).transpose()?.into(),intent_digest.into(),input.owner_id.into(),(LEASE_SECONDS as f64).into(),enum_name(medium)?.into(),text_identity.map(serde_json::to_value).transpose()?.into()])).await?;
         audit(&tx, input.response_id, Some(id), "pending", json!({})).await?;
         let result = required_delivery(&tx, id).await?;
         tx.commit().await?;
@@ -776,7 +814,7 @@ async fn validate_epoch(
     }
     Ok(())
 }
-async fn validate_response_source(
+pub(crate) async fn validate_response_source(
     db: &impl ConnectionTrait,
     owner: Uuid,
     id: Uuid,

@@ -1,6 +1,8 @@
 mod audio_service;
 mod auth;
 mod binding_service;
+mod body_service;
+pub use body_service::EmbeddedBodyService;
 mod expression_service;
 mod playback_service;
 mod plugin_service;
