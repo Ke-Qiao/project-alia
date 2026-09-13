@@ -95,6 +95,7 @@ pub async fn execute_tool(
     };
 
     let ctx = ToolContext {
+        context_id: None,
         user_id: auth.id,
         request_id: body.request_id,
         source_received_at,

@@ -22,6 +22,7 @@ pub struct EffectKey {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewEffect {
     pub key: EffectKey,
+    pub context_id: Option<Uuid>,
     pub model_call_id: String,
     pub source_received_at: DateTime<Utc>,
     pub source_event_id: Option<Uuid>,
@@ -94,6 +95,7 @@ pub enum Completion {
 pub struct EffectRecord {
     pub effect_id: Uuid,
     pub key: EffectKey,
+    pub context_id: Option<Uuid>,
     pub model_call_id: String,
     /// First trusted source observation; retransmission never replaces it.
     pub source_received_at: DateTime<Utc>,

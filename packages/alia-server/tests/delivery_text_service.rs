@@ -251,7 +251,7 @@ fn input(response_id: Uuid, channel: Arc<Channel>, end: bool) -> TextDelivery {
 async fn started(f: &Fixture) -> (Arc<DeliveryService>, ResponseRecord) {
     let service = DeliveryService::new(f.repo(), &CancellationToken::new());
     service.start().await.unwrap();
-    let response = service.prepare(f.response()).await.unwrap();
+    let response = service.prepare(f.response().await).await.unwrap();
     (service, response)
 }
 
@@ -389,7 +389,7 @@ async fn failed_text_offer_never_reaches_native_and_error_eof_never_completes() 
         assert_eq!(record.text.unwrap().offered_utf8_bytes, 0);
         assert_ne!(record.status, DeliveryStatus::Submitted);
         f.sql("DROP TRIGGER reject_text_offer ON delivery_text_chunks").await;
-        let response = service.prepare(f.response()).await.unwrap();
+        let response = service.prepare(f.response().await).await.unwrap();
         let channel = Channel::new(f.user, None, false);
         let record = service.deliver_text(input(response.response_id, channel.clone(), false)).await.unwrap();
         assert_eq!(channel.native_bytes.load(Ordering::SeqCst), 6);

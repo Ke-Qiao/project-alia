@@ -58,6 +58,8 @@ pub const MIGRATIONS: &[Migration<'static>] = &[
     migration!("m20260908_000004_delivery.sql"),
     migration!("m20260908_000005_text_delivery.sql"),
     migration!("m20260913_000006_body_delivery.sql"),
+    migration!("m20260913_000007_context_lease.sql"),
+    migration!("m20260913_000008_cache_context.sql"),
 ];
 
 pub async fn run(db: &DatabaseConnection) -> anyhow::Result<MigrationReport> {

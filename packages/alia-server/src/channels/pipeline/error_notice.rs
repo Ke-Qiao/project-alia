@@ -5,6 +5,7 @@ use super::debug::{debug_component_json, log_channel_delivery_failure};
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
 use crate::module::ModuleRegistry;
+use crate::modules::memory::context::{ContextSource, SourceNotice};
 use crate::providers::adapter::{ConversationEventEntry, TtsRequest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -113,6 +114,67 @@ pub(super) async fn notify_pipeline_error(
     }
 
     let notice = build_pipeline_error_notice(stage, user_input);
+    let Some(original_turn) = turn else {
+        return PipelineErrorNotification {
+            notice,
+            delivery: PipelineErrorDelivery::Failed,
+        };
+    };
+    if turn_is_interrupted(turn) {
+        return PipelineErrorNotification {
+            notice,
+            delivery: PipelineErrorDelivery::Cancelled,
+        };
+    }
+    let notice_turn = async {
+        let owner = Uuid::parse_str(user_id)?;
+        super::delivery::interrupt_response(modules, original_turn, owner).await;
+        let existing = original_turn.context.lock().await.generation.clone();
+        let source = if let Some(context) = existing {
+            context.source().clone()
+        } else {
+            let event = original_turn.source_event_id.get().copied();
+            ContextSource {
+                owner_id: owner,
+                request_id: original_turn.id,
+                channel_id: channel_id.into(),
+                conversation_id: if event.is_some() {
+                    Some(
+                        modules
+                            .conversation
+                            .get_or_create_active_session(channel_id, user_id)
+                            .await?,
+                    )
+                } else {
+                    None
+                },
+                source_event_id: event,
+                source_received_at: original_turn.received_at,
+                source_privacy_epoch: original_turn
+                    .source_privacy_epoch
+                    .ok_or_else(|| anyhow::anyhow!("notice has no original source epoch"))?,
+            }
+        };
+        let kind = if user_input.map(contains_cjk).unwrap_or(true) {
+            SourceNotice::ProcessingFailedZh
+        } else {
+            SourceNotice::ProcessingFailedEn
+        };
+        let lease = modules.context.source_notice_for(source, kind).await?;
+        Ok::<_, anyhow::Error>(original_turn.for_notice(lease))
+    }
+    .await;
+    let notice_turn = match notice_turn {
+        Ok(turn) => turn,
+        Err(error) => {
+            tracing::warn!(%error, "trusted error notice was not admitted");
+            return PipelineErrorNotification {
+                notice,
+                delivery: PipelineErrorDelivery::Failed,
+            };
+        }
+    };
+    let turn = Some(&notice_turn);
     if !turn_is_interrupted(turn)
         && super::delivery::prepare_response(
             modules,
@@ -254,16 +316,14 @@ fn build_pipeline_error_notice(
     } else {
         stage.en_summary().to_string()
     };
-    let user_text = if chinese {
-        format!("抱歉，{safe_summary}。请再试一次。错误编号：{error_id}。")
+    let literal = if chinese {
+        SourceNotice::ProcessingFailedZh
     } else {
-        format!("Sorry, {safe_summary}. Please try again. Error ID: {error_id}.")
-    };
-    let tts_text = if chinese {
-        format!("抱歉，{safe_summary}。请再试一次。")
-    } else {
-        format!("Sorry, {safe_summary}. Please try again.")
-    };
+        SourceNotice::ProcessingFailedEn
+    }
+    .text();
+    let user_text = literal.to_string();
+    let tts_text = literal.to_string();
 
     PipelineErrorNotice {
         error_id,
@@ -467,8 +527,8 @@ mod tests {
     fn builds_chinese_notice_without_raw_error() {
         let notice = build_pipeline_error_notice(PipelineErrorStage::Llm, Some("介绍一下终末地"));
 
-        assert!(notice.user_text.contains("生成回复"));
-        assert!(notice.tts_text.contains("请再试一次"));
+        assert_eq!(notice.user_text, SourceNotice::ProcessingFailedZh.text());
+        assert_eq!(notice.tts_text, SourceNotice::ProcessingFailedZh.text());
         assert!(!notice.user_text.contains("connection refused"));
         assert_eq!(notice.error_id.len(), 8);
     }
@@ -477,7 +537,7 @@ mod tests {
     fn builds_english_notice_for_non_cjk_input() {
         let notice = build_pipeline_error_notice(PipelineErrorStage::Stt, Some("hello"));
 
-        assert!(notice.user_text.starts_with("Sorry,"));
+        assert_eq!(notice.user_text, SourceNotice::ProcessingFailedEn.text());
         assert!(notice.safe_summary.contains("speech recognition"));
     }
     #[derive(Default)]

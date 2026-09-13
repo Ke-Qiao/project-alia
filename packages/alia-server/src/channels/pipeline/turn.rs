@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::adapter::ChannelInterruptConfig;
+use crate::modules::memory::context::{ContextBinding, ContextLease, GenerationContext};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct VoiceTurnKey {
@@ -25,11 +26,31 @@ pub(super) struct VoiceTurn {
     pub(super) source_privacy_epoch: Option<i64>,
     /// Committed user source shared by every tool and output task of this turn.
     pub(super) source_event_id: Arc<std::sync::OnceLock<Uuid>>,
+    /// Actual model inputs may grow through tools until response preparation.
+    /// Outputs and derived writes then share that frozen lease.
+    pub(super) context: Arc<Mutex<TurnContext>>,
     pub(super) token: CancellationToken,
     pub(super) interrupt_config: ChannelInterruptConfig,
     pub(super) voice_scope: Option<VoiceSessionScope>,
     interrupt_state: Arc<StdMutex<VoiceTurnInterruptState>>,
     key: VoiceTurnKey,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct TurnContext {
+    pub(super) generation: Option<GenerationContext>,
+    pub(super) notice: Option<ContextLease>,
+    pub(super) frozen: bool,
+}
+
+impl TurnContext {
+    pub(super) fn lease(&self) -> anyhow::Result<&ContextLease> {
+        self.generation
+            .as_ref()
+            .map(GenerationContext::lease)
+            .or(self.notice.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("turn has no materialized context"))
+    }
 }
 
 impl std::fmt::Debug for VoiceTurn {
@@ -98,6 +119,7 @@ impl VoiceTurnRegistry {
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_event_id: Arc::default(),
+            context: Arc::default(),
             key: key.clone(),
             token,
             interrupt_config,
@@ -163,6 +185,30 @@ impl VoiceTurnRegistry {
 }
 
 impl VoiceTurn {
+    pub(super) async fn generation_context(&self) -> anyhow::Result<GenerationContext> {
+        self.context
+            .lock()
+            .await
+            .generation
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("turn has no generation context"))
+    }
+
+    pub(super) async fn context_binding(&self) -> anyhow::Result<ContextBinding> {
+        Ok(self.context.lock().await.lease()?.binding())
+    }
+
+    pub(super) fn for_notice(&self, lease: ContextLease) -> Self {
+        let mut notice = self.clone();
+        notice.response_id = Arc::default();
+        notice.context = Arc::new(Mutex::new(TurnContext {
+            generation: None,
+            notice: Some(lease),
+            frozen: false,
+        }));
+        notice
+    }
+
     pub(super) fn request(token: CancellationToken) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -171,6 +217,7 @@ impl VoiceTurn {
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_event_id: Arc::default(),
+            context: Arc::default(),
             token,
             interrupt_config: ChannelInterruptConfig::default(),
             voice_scope: None,

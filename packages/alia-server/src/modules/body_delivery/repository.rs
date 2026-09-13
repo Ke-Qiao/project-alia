@@ -62,6 +62,7 @@ impl BodyDeliveryRepository {
             ensure!(serde_json::to_vec(&command_value)?.len() <= alia_core::body::MAX_BODY_PAYLOAD_BYTES, "body intent too large");
             let tx = self.db.begin().await?;
             let response = validate_response_source(&tx, command.owner_id, origin.response_id).await?;
+            ensure!(response.kind != "source_notice", "fixed source notice cannot authorize body actions");
             ensure!(!response.cancel_requested && !matches!(response.status, crate::modules::delivery::types::ResponseStatus::Interrupted | crate::modules::delivery::types::ResponseStatus::Discarded), "response no longer authorizes body delivery");
             ensure!(response.channel_id == channel_id, "body channel differs from original response");
             let original_scope: Option<VoiceScope> = serde_json::from_value(response.content.get("voice_scope").cloned().unwrap_or(Value::Null))?;
@@ -91,6 +92,7 @@ impl BodyDeliveryRepository {
             let tx = self.db.begin().await?;
             let old = required(&tx, delivery_id, dispatch_id, false).await?;
             let response = validate_response_source(&tx, old.command.owner_id, old.response_id).await?;
+            ensure!(response.kind != "source_notice", "fixed source notice cannot authorize body actions");
             let row = tx.query_one(stmt("UPDATE body_deliveries SET lease_expires_at=LEAST(clock_timestamp()+interval '15 seconds',observation_deadline_at),updated_at=clock_timestamp() WHERE delivery_id=$1 AND dispatch_id=$2 AND status IN ('sending','observing') AND lease_expires_at>clock_timestamp() AND observation_deadline_at>clock_timestamp() AND NOT $3 RETURNING delivery_id", vec![delivery_id.into(), dispatch_id.into(), (response.cancel_requested || matches!(response.status, crate::modules::delivery::types::ResponseStatus::Interrupted | crate::modules::delivery::types::ResponseStatus::Discarded)).into()])).await?;
             tx.commit().await?;
             Ok(row.is_some())

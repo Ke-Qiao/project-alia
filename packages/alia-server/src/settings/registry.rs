@@ -53,6 +53,7 @@ pub struct SettingSchema {
 #[derive(Clone)]
 pub struct SettingsRegistry {
     inner: Arc<RwLock<RegistryInner>>,
+    updates: Arc<tokio::sync::Mutex<()>>,
 }
 
 struct RegistryInner {
@@ -65,11 +66,16 @@ struct RegistryInner {
 impl SettingsRegistry {
     pub fn new() -> Self {
         Self {
+            updates: Arc::default(),
             inner: Arc::new(RwLock::new(RegistryInner {
                 entries: BTreeMap::new(),
                 persist_path: None,
             })),
         }
+    }
+
+    pub async fn lock_updates(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.updates.lock().await
     }
 
     /// Set the file path for persisting runtime settings.
@@ -246,6 +252,9 @@ impl SettingsRegistry {
         let values: BTreeMap<String, serde_json::Value> = inner
             .entries
             .iter()
+            .filter(|(key, entry)| {
+                !crate::settings::context_policy::owns(key) && !entry.value.is_null()
+            })
             .map(|(k, e)| (k.clone(), e.value.clone()))
             .collect();
 
@@ -776,7 +785,7 @@ impl SettingsRegistry {
             (
                 "core.policies.memory.enabled",
                 json!(config.policies.memory.enabled),
-                schema("Enable Memory", "bool", true),
+                schema("Enable Memory", "bool", false),
             ),
             (
                 "core.policies.memory.capture_mode",
@@ -1075,7 +1084,9 @@ impl SettingsRegistry {
             if profile.kind == crate::config::LlmProfileKind::Embedding {
                 profile_entries.push((
                     format!("{prefix}.dimensions"),
-                    json!(profile.dimensions),
+                    json!(profile.dimensions.unwrap_or_else(|| {
+                        crate::providers::adapter::embedding_model_dimension(&profile.model)
+                    })),
                     schema("Embedding Dimensions", "number", false),
                 ));
             } else {

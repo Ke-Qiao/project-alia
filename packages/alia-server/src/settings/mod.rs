@@ -6,6 +6,7 @@
 //! - TOML serialization for persistence
 //! - Schema declarations for frontend rendering
 
+pub mod context_policy;
 pub mod registry;
 pub mod values;
 pub use registry::SettingsRegistry;

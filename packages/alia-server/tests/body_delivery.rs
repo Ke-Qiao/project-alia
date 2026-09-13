@@ -61,7 +61,7 @@ async fn setup(
     Uuid,
     Uuid,
 ) {
-    let response = f.repo().prepare(f.response()).await.unwrap();
+    let response = f.repo().prepare(f.response().await).await.unwrap();
     let origin = BodyDeliveryOrigin {
         response_id: response.response_id,
         output_key: "speech_start".into(),
@@ -79,9 +79,27 @@ async fn setup(
 }
 
 #[tokio::test]
+async fn fixed_source_notice_cannot_authorize_a_body_command() {
+    with_db(|f| async move {
+        let response = f.repo().prepare(f.notice().await).await.unwrap();
+        let origin = BodyDeliveryOrigin {
+            response_id: response.response_id,
+            output_key: "pre_speech".into(),
+        };
+        let error = BodyDeliveryRepository::new(f.db.clone())
+            .claim(&origin, "test-device", &command(f.user))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("notice cannot authorize body"));
+        assert_eq!(f.count("body_deliveries").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn concurrent_claims_grant_one_physical_permission_and_preserve_original_identity() {
     with_db(|f| async move {
-        let response = f.repo().prepare(f.response()).await.unwrap();
+        let response = f.repo().prepare(f.response().await).await.unwrap();
         let origin = BodyDeliveryOrigin {
             response_id: response.response_id,
             output_key: "pre_speech".into(),
@@ -124,7 +142,7 @@ async fn concurrent_claims_grant_one_physical_permission_and_preserve_original_i
 #[tokio::test]
 async fn audit_failure_rolls_back_permission_before_external_output() {
     with_db(|f| async move {
-        let response = f.repo().prepare(f.response()).await.unwrap();
+        let response = f.repo().prepare(f.response().await).await.unwrap();
         let origin = BodyDeliveryOrigin { response_id: response.response_id, output_key: "pre_speech".into() };
         let command = command(f.user);
         let repo = BodyDeliveryRepository::new(f.db.clone());

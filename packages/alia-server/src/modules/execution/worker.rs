@@ -177,6 +177,7 @@ async fn execute_claim(
 ) -> anyhow::Result<()> {
     let effect = &claim.effect;
     let context = ToolContext {
+        context_id: effect.context_id,
         user_id: effect.key.user_id,
         request_id: effect.key.request_id,
         source_received_at: effect.source_received_at,

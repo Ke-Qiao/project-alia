@@ -3,6 +3,7 @@
 use alia_core::delivery::{PlaybackIdentity, PlaybackProgress, VoiceScope};
 use alia_server::modules::{
     delivery::{repository::DeliveryRepository, types::*},
+    memory::context::{ContextPolicy, ContextService, ContextSource},
     platform::migrations,
 };
 use futures::FutureExt;
@@ -10,7 +11,7 @@ use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
 };
 use serde_json::json;
-use std::{future::Future, panic::AssertUnwindSafe, time::Duration};
+use std::{future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use uuid::Uuid;
 static CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
 
@@ -53,6 +54,16 @@ impl Fixture {
             panic!("install migrations: {error:#}");
         }
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login','user','active')",vec![user.into(),format!("{user}@delivery.test").into()])).await.unwrap();
+        f.context()
+            .initialize_policy(
+                ContextPolicy::from_config(
+                    &alia_server::config::MemorySection::default(),
+                    &alia_server::config::ConversationSection::default(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
         alia_server::modules::memory::source::capture_source_epoch(&f.db, user)
             .await
             .unwrap();
@@ -69,24 +80,75 @@ impl Fixture {
     pub fn repo(&self) -> DeliveryRepository {
         DeliveryRepository::new(self.db.clone())
     }
-    pub fn response(&self) -> NewResponse {
+    pub fn context(&self) -> ContextService {
+        ContextService::new(
+            self.db.clone(),
+            Arc::new(alia_server::providers::embedding::NoopEmbedding),
+        )
+    }
+    pub async fn response(&self) -> NewResponse {
+        self.response_in_session(Uuid::new_v4()).await
+    }
+    pub async fn notice(&self) -> NewResponse {
+        let mut input = self.response().await;
+        let lease = self
+            .context()
+            .source_notice(ContextSource {
+                owner_id: self.user,
+                request_id: input.key.request_id,
+                channel_id: input.channel_id.clone(),
+                conversation_id: input.conversation_id,
+                source_event_id: input.source_event_id,
+                source_received_at: input.source_received_at,
+                source_privacy_epoch: input.source_privacy_epoch.unwrap(),
+            })
+            .await
+            .unwrap();
+        input.context_id = lease.id();
+        input.kind = "source_notice".into();
+        input.content = json!({"text": lease.notice_text().unwrap()});
+        input
+    }
+    pub async fn response_in_session(&self, session: Uuid) -> NewResponse {
+        self.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test-device',$2) ON CONFLICT(id) DO NOTHING",vec![session.into(),self.user.to_string().into()])).await.unwrap();
+        let epoch = alia_server::modules::memory::source::capture_source_epoch(&self.db, self.user)
+            .await
+            .unwrap();
+        let event = Uuid::new_v4();
+        let request = Uuid::new_v4();
+        let row=self.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','answer source',clock_timestamp(),$4) RETURNING source_received_at",vec![event.into(),session.into(),self.user.to_string().into(),epoch.into()])).await.unwrap().unwrap();
+        let source = ContextSource {
+            owner_id: self.user,
+            request_id: request,
+            channel_id: "test-device".into(),
+            conversation_id: Some(session),
+            source_event_id: Some(event),
+            source_received_at: row.try_get("", "source_received_at").unwrap(),
+            source_privacy_epoch: epoch,
+        };
+        let context = self
+            .context()
+            .materialize(source.clone(), "answer source")
+            .await
+            .unwrap();
         NewResponse {
             key: ResponseKey {
                 user_id: self.user,
-                request_id: Uuid::new_v4(),
+                request_id: request,
                 output_key: "answer".into(),
             },
-            conversation_id: None,
-            source_event_id: None,
-            source_received_at: chrono::Utc::now(),
-            source_privacy_epoch: Some(0),
+            context_id: context.lease().id(),
+            conversation_id: Some(session),
+            source_event_id: Some(event),
+            source_received_at: source.source_received_at,
+            source_privacy_epoch: Some(epoch),
             channel_id: "test-device".into(),
             kind: "conversation".into(),
             content: json!({"intent":"answer source"}),
         }
     }
     pub async fn prepared(&self) -> (ResponseRecord, NewDelivery, DeliveryRecord) {
-        let response = self.repo().prepare(self.response()).await.unwrap();
+        let response = self.repo().prepare(self.response().await).await.unwrap();
         let input = NewDelivery {
             response_id: response.response_id,
             output_key: "speech_sentence:0".into(),
@@ -110,6 +172,18 @@ impl Fixture {
             .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT COUNT(*) AS n FROM {table}"),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "n")
+            .unwrap()
+    }
+    pub async fn assistant_count(&self) -> i64 {
+        self.db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT COUNT(*) AS n FROM chat_messages WHERE role='assistant'",
             ))
             .await
             .unwrap()

@@ -17,8 +17,24 @@
 | `5aecb38` | 持久 Execution 共用入口、Memory 规范来源与隐私栅栏、可信输入贯穿消息和工具 | 空数据库默认 workspace 500 项；真实 CPU 模型与 gRPC 两项另跑通过；固定提交 Linux ARM64 Server 检查及 152 项库测试、Embedded 默认完整链接通过 |
 | `2f8797c` | Server 运行时所有权与故障回滚、Memory 原子批次与批量遗忘、数据库排序的可信 source epoch | 默认 workspace 561 项通过；真实 PTY 与 CPU 模型 4 项另跑通过；固定提交 Linux ARM64 Server 库和真实 PG 共 280 项通过，Embedded 默认完整链接通过 |
 | `ee9cbfd` | 规范 Response、逐句音频 Delivery、播放 v2、真实后端提交回执与生命周期监督 | macOS 默认 workspace 636 项通过；4 项真实 PTY/模型另跑通过；固定提交 Linux ARM64 Server + Embedded 库及 Server 集成共 542 项通过，Embedded 默认完整链接通过 |
+| `e63d40c` | TextDelivery 与签名 D3 身体动作，唯一发送、精确取消、部分提交与迟到事实 | macOS 默认 workspace 720 项通过，5 项 PTY/真实模型另跑通过；固定提交 Linux ARM64 642 个不同测试通过、5 项跳过，保留首次 Runtime 并行超时和同源串行复核记录 |
+| 本包 | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；两端无默认特性 all-targets 与 67 个变更 Rust 文件格式检查通过 |
 
-## TextDelivery 与 D3 身体动作（已冻结）
+## ContextLease、派生缓存与持久政策（2026-09-13）
+
+本包将实际进入模型的 Memory、图、历史、缓存与工具事实绑定到不可变 ContextLease。原始用户消息在纠错或模型执行之前持久化，生成过程可有界扩展读集，第一次准备 Response 时冻结；旧 epoch、policy、来源身份和规范 revision 不能通过重试刷新。缓存写入要求已提交的规范 Response，审核、向量回填与替换采用真实 SQL 版本比较。自动记忆抽取、维护、工具写入和输出接纳各自使用明确用途。
+
+持久政策由 PostgreSQL 管理，HTTP PATCH 先做管理员授权与 CAS，再发布进程设置。停止记忆检索仍保留真实存储和清除能力；恢复或模型/profile 切换产生明确版本转换。独立复核已修复设置应用中断后重试无效、模型隐式维度未保存、合法省略维度导致启动失败，以及关闭 Memory 时误选 Noop 后端的问题。Context 的共同事务门槛不覆盖尚未接入来源的 Appraisal/Relationship；完整 Companion 闭环仍属后续主线。
+
+最终默认 workspace **785 个不同测试通过、0 失败、5 显式跳过**，排除同一测试启动的子进程重复计数。Server 库为 218 通过、3 跳过，Context 23、Cache/Insights 16、Execution service 30、Memory 隐私 24、Server runtime 37 项通过。完整日志 `/private/tmp/alia-context-workspace-verified.log`，按 target 去重的汇总 `/private/tmp/alia-context-verification-summary.json`。两端 `--no-default-features --all-targets`、67 个变更 Rust 文件格式检查和 `git diff --check` 通过。
+
+5 项跳过测试均在冻结生产源码后另跑通过：真实 PTY 3 项、官方音频 → CPU Easy-Turn 和持续 gRPC 2 项。直接 Backchannel 为 821 ms；gRPC Complete/Backchannel/Wait 为 527/335/404 ms，仅代表这次模型调用。PTY 首次命令将 stdout 重定向到文件导致终端前置条件失败；修正为真实 PTY 的直接输出后 3 项通过，记录 `/private/tmp/alia-context-pty-actual.log`。真实模型记录 `/private/tmp/alia-context-model-final.log`。
+
+整包首次运行揭示三个旧测试夹具问题：停用账户仍期待清除成功、Memory PG 用例未建立有效账户且没有隔离 schema、Insights 的断言未检查新增外层说明中的完整错误链。已保留原有故障语义并修正夹具，随后重新运行完整 workspace 得到上述结果。生产代码没有为通过这些测试放宽授权。首轮原日志 `/private/tmp/alia-context-workspace-final.log` 与源码 manifest 保留用于核对。
+
+新增迁移 `000007_context_lease` 与 `000008_cache_context`，没有修改已提交迁移。需要退回前一程序版本时，应使用其对应的独立数据库；旧程序不能解释本包新增的来源和缓存约束。当前结果不覆盖 Appraisal/Relationship、旧 Memory embedding 写回、真实硬件、长期负载或当前包的非 macOS 平台。实现边界见 [Context 契约](context-revocation-design.md)。
+
+## TextDelivery 与 D3 身体动作（e63d40c）
 
 文本输出已接入共用 DeliveryService，UTF-8 分块先持久化再交给 CLI native writer，保留实际字节前缀和准确取消，模型断流不提交完整助手历史。文本、音频和身体分别记录证据，未将 Submitted 解释为已读、已听到或机构到位。
 
@@ -33,6 +49,8 @@
 整包回归修复了一处新测试 fixture：删除本 schema 的表会沿 search_path 回退到其他迁移测试安装的 public 同名表；故障注入改为本 schema 内列定义故障，HTTP 503 与诊断隐藏已通过。末次恢复修复另跑身体仓储 **6 项**、Server runtime **33 项**与签名客户端/pin/播放 **26 项**，全部通过，验证 `latest_checkpoint` 恢复已确认的 quiescence，同时原 Unknown/status/progress 不改写、原动作不重播。这些是对应既有用例的末次回归，不重复累计。
 
 本包新增迁移 `m20260908_000005_text_delivery.sql` 与 `m20260913_000006_body_delivery.sql`，没有修改已提交迁移。前端没有进入构建。真实执行器和音频呈现仍需硬件信息；当前旧 `neck.anim` / `neck2.anim` 超过 v1 短动作时长/帧界限，会明确拒绝，未截断或修改原素材。短动作资产与真实机构验收仍属身体产品化工作。
+
+固定 `e63d40c` 的 Linux ARM64 复核现已完成：Core 20、Server 514、Embedded 108，共 **642 个不同测试通过、5 项跳过**，Embedded 默认完整构建与链接通过。Server Runtime 首次并行运行出现一项同步期限超时，原源码串行复核 33 项全过；这一时序敏感性保留在 [平台记录](platform-validation.md)，不将串行通过描述为并行稳定性证明。这些结果只覆盖已提交的 TextDelivery/D3 包，不覆盖当前 Context 变化。
 
 ## 已提交的 Response / Delivery 与播放 v2（ee9cbfd）
 
@@ -125,8 +143,8 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
-2. TextDelivery 和 D3 的固定提交跨平台验证、短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。已实现的唯一发送与软件提交不能代表硬件已完成。
-3. 缓存与在途 ContextPack/输出的遗忘传播、Companion 状态与主动表达，以及端侧动作安全与恢复。LLM 原子整理和批量遗忘已在本轮接通并通过专项回归。
+2. D3 短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。TextDelivery/D3 固定提交的 Linux ARM64 复核已完成；唯一发送与软件提交不能代表硬件已完成。
+3. 接入 Appraisal/Relationship 的规范来源和失效重建、Companion 状态与主动表达。旧逐句 Expression 缓存没有 owner/context/epoch/TTL，须移除该旁路；这不属于本包规范 `llm_cache` 的覆盖范围。旧 Memory embedding 写回须升级到与请求描述绑定的身份；在此之前生成路径对不能证明身份的旧向量使用关键词检索。这些均是首轮未完成工作，不是用户明确延期。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。

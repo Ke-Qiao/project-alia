@@ -304,6 +304,21 @@ impl ServerBuilder {
             .await
             .context("loading persisted server settings")?;
         settings.set_persist_path(settings_path).await;
+        let mut initial_policies = PipelinePolicies::new(
+            self.config.policies.conversation.clone(),
+            self.config.policies.tools.clone(),
+            self.config.policies.cache.clone(),
+            self.config.resources.cache_policy.clone(),
+            self.config.policies.memory.clone(),
+            self.config.policies.transcript_correction.clone(),
+        );
+        let saved_settings = settings
+            .all()
+            .await
+            .into_iter()
+            .map(|(key, entry)| (key, entry.value))
+            .collect();
+        initial_policies.apply_settings(&saved_settings);
         sensor_registry.attach_db(db.clone()).await?;
         sensor_registry
             .attach_artifacts(artifact_registry.clone())
@@ -397,7 +412,7 @@ impl ServerBuilder {
         };
         let conversation: Box<dyn ConversationBackend> =
             Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
-        let memory = factory::create_memory(&self.config.policies.memory);
+        let memory = factory::create_memory();
         let cache = factory::create_cache();
         let skills = factory::create_skills();
         let persona = factory::create_persona();
@@ -490,7 +505,49 @@ impl ServerBuilder {
         let embedding_arc = cleanup
             .initialize(embedding, &ctx, ShutdownPhase::Resources)
             .await?;
+        let mut policy_seed = crate::modules::memory::context::ContextPolicy::from_config(
+            &initial_policies.memory,
+            &initial_policies.conversation,
+        )?
+        .with_cache(&initial_policies.cache)?;
+        // Profile identity and settings parsing share the provider's actual
+        // request snapshot. No embedding request is needed during this step.
+        let actual_profile = embedding_arc
+            .preview_profile_settings(&saved_settings)
+            .await?;
+        policy_seed.cache_embedding_profile_id =
+            actual_profile.as_ref().map(|p| p.id()).transpose()?;
+        let persisted_policy = startup_step(&self.cancel_token, "loading context policy", async {
+            crate::modules::memory::context::ContextPolicyStore::new(db.clone())
+                .initialize_or_load(policy_seed)
+                .await
+        })
+        .await?;
+        embedding_arc.apply_settings(&saved_settings).await?;
+        if persisted_policy.policy.cache_semantic_enabled
+            && persisted_policy.policy.cache_embedding_profile_id
+                != actual_profile.as_ref().map(|p| p.id()).transpose()?
+        {
+            tracing::warn!(
+                "configured embedding profile differs from persistent policy; semantic cache remains unavailable until an explicit policy update"
+            );
+        }
+        let policy_settings = crate::settings::context_policy::projection(&persisted_policy.policy);
+        settings.batch_update(&policy_settings).await;
+        initial_policies.apply_settings(&policy_settings);
+        // The database wins over a previous process's TOML projection before
+        // memory/cache producers or the Pipeline can start work.
+        let mut effective_config = (*self.config).clone();
+        effective_config.policies.memory = initial_policies.memory.clone();
+        effective_config.policies.conversation = initial_policies.conversation.clone();
+        effective_config.policies.cache = initial_policies.cache.clone();
+        self.config = Arc::new(effective_config);
+        let context = Arc::new(crate::modules::memory::context::ContextService::new(
+            db.clone(),
+            embedding_arc.clone(),
+        ));
         let ctx = ModuleContext {
+            config: self.config.clone(),
             embedding: Some(embedding_arc.clone()),
             ..ctx
         };
@@ -563,7 +620,7 @@ impl ServerBuilder {
             })
             .await?;
         }
-        let memory_for_ctx = effective_memory_config.enabled.then(|| memory_arc.clone());
+        let memory_for_ctx = Some(memory_arc.clone());
         let ctx = ModuleContext {
             memory: memory_for_ctx,
             ..ctx
@@ -725,6 +782,7 @@ impl ServerBuilder {
             embedding: embedding_arc,
             conversation: conversation_arc,
             memory: memory_arc,
+            context,
             cache: cache_arc,
             skills,
             persona,

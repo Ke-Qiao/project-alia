@@ -6,8 +6,11 @@ use alia_server::providers::memory::NoopMemory;
 use alia_server::providers::memory::simple::AliaMemory;
 use alia_server::{config::MemorySection, module::ModuleLifecycle};
 use async_trait::async_trait;
-use sea_orm::{ConnectionTrait, Database, DatabaseBackend, Statement};
+use futures::FutureExt;
+use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseBackend, Statement};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
 
 // ── AliaMemory ───────────────────────────────────────────────────────
@@ -473,14 +476,29 @@ fn memory_runtime_migration_declares_pgvector_profile_and_graph_tables() {
 async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph() {
     let database_url = std::env::var("ALIA_TEST_DATABASE_URL")
         .expect("set ALIA_TEST_DATABASE_URL to the disposable PostgreSQL/pgvector database");
-    let db = Database::connect(&database_url)
+    let admin = Database::connect(&database_url)
         .await
         .expect("test PostgreSQL must be reachable");
+    let schema = format!("memory_runtime_test_{}", Uuid::new_v4().simple());
+    admin
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let mut options = ConnectOptions::new(database_url);
+    options
+        .max_connections(4)
+        .set_schema_search_path(format!("{schema},public"));
+    let db = Database::connect(options).await.unwrap();
+    let result = AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(30), async {
     alia_server::modules::platform::migrations::run(&db)
         .await
         .expect("install packaged schema");
 
     let user_id = Uuid::new_v4();
+    db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Memory runtime test','not-a-login-hash','user','active')",
+        vec![user_id.into(),format!("{user_id}@memory-runtime.test").into()],
+    )).await.unwrap();
     let memory = AliaMemory::new();
     memory
         .attach_runtime_for_test(
@@ -584,20 +602,18 @@ async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph
         .unwrap();
     assert!(!pack.graph_context.is_empty());
 
-    db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "DELETE FROM memory_items WHERE user_id = $1::uuid",
-        vec![user_id.to_string().into()],
-    ))
-    .await
-    .unwrap();
-    db.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "DELETE FROM memory_nodes WHERE user_id = $1::uuid",
-        vec![user_id.to_string().into()],
-    ))
-    .await
-    .unwrap();
+    })).catch_unwind().await;
+    db.close().await.unwrap();
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    admin.close().await.unwrap();
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => panic!("memory runtime test exceeded deadline"),
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
 }
 
 struct DeterministicEmbedding1536;

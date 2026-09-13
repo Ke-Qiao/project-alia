@@ -52,11 +52,30 @@ pub(super) async fn draft(
         )
         .await
         .unwrap();
+    let request_id = Uuid::new_v4();
+    let context = state
+        .modules
+        .context
+        .materialize(
+            alia_server::modules::memory::context::ContextSource {
+                owner_id: owner,
+                request_id,
+                channel_id: "delivery-test".into(),
+                conversation_id: Some(session),
+                source_event_id: Some(source),
+                source_received_at: received,
+                source_privacy_epoch: epoch,
+            },
+            "请回应",
+        )
+        .await
+        .unwrap();
     DeliveryRepository::new(state.db.clone())
         .prepare(NewResponse {
+            context_id: context.lease().id(),
             key: ResponseKey {
                 user_id: owner,
-                request_id: Uuid::new_v4(),
+                request_id,
                 output_key: "assistant_response".into(),
             },
             conversation_id: Some(session),

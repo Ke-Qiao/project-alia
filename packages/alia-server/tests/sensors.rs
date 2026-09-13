@@ -109,6 +109,7 @@ async fn sensor_tools_read_from_shared_registry() {
         .unwrap();
 
     let ctx = ToolContext {
+        context_id: None,
         source_privacy_epoch: None,
         source_received_at: chrono::Utc::now(),
         source_event_id: None,
@@ -163,6 +164,7 @@ async fn sensor_read_tool_refreshes_from_registered_provider() {
         .unwrap();
 
     let ctx = ToolContext {
+        context_id: None,
         source_privacy_epoch: None,
         source_received_at: chrono::Utc::now(),
         source_event_id: None,

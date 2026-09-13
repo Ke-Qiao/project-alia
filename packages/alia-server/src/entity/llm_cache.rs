@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     #[sea_orm(column_type = "String(StringLen::N(100))")]
     pub scope: String,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
@@ -22,11 +22,14 @@ pub struct Model {
     pub response_text: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub metadata: serde_json::Value,
-    /// Stored as raw bytes; actual vector ops done via raw SQL with pgvector
-    #[sea_orm(nullable)]
-    pub embedding: Option<Vec<u8>>,
+    pub revision: i64,
+    pub context_id: Uuid,
+    pub origin_response_id: Uuid,
+    pub status: String,
+    pub content_digest: String,
     pub hit_count: i32,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 

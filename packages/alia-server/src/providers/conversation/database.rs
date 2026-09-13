@@ -246,16 +246,23 @@ impl ConversationBackend for DatabaseConversationBackend {
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             let tx = db.begin().await?;
             let repository = crate::modules::delivery::repository::DeliveryRepository::new(db.clone());
+            let proposed_message_id = Uuid::new_v4();
             let response = repository.mark_generated_in_transaction(
                 &tx,
                 user_id,
                 response_id,
-                Uuid::new_v4(),
+                proposed_message_id,
                 serde_json::json!({ "text": &message.content }),
             ).await?;
             anyhow::ensure!(response.conversation_id == Some(session_id), "response belongs to a different conversation");
             let id = response.assistant_message_id
                 .ok_or_else(|| anyhow::anyhow!("committed response lacks its assistant message identity"))?;
+            // A retry observes a historical commit. It must never recreate a
+            // message that was erased after that commit, even in another process.
+            if id != proposed_message_id {
+                tx.commit().await?;
+                return Ok(id);
+            }
             tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
                 "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch) VALUES($1,$2,NULL,'assistant',$3,clock_timestamp(),$4,$5) ON CONFLICT(id) DO NOTHING",
                 [id.into(), session_id.into(), message.content.clone().into(), response.source_received_at.into(), response.source_privacy_epoch.into()],

@@ -10,6 +10,7 @@ use alia_server::module::lifecycle::ModuleHealth;
 use alia_server::modules::execution::repository::ExecutionRepository;
 use alia_server::modules::execution::types::{EffectRecord, EffectStatus, ExecutionError};
 use alia_server::modules::execution::{ExecutionService, ExecutionToolRegistry};
+use alia_server::modules::memory::context::{ContextPolicy, ContextService, ContextSource};
 use alia_server::modules::platform::migrations;
 use alia_server::providers::adapter::{
     ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
@@ -172,19 +173,83 @@ impl Fixture {
             raw,
         }
     }
-    fn context(&self) -> ToolContext {
-        ToolContext {
+    fn contexts(&self) -> ContextService {
+        ContextService::new(
+            self.db.clone(),
+            Arc::new(alia_server::providers::embedding::NoopEmbedding),
+        )
+    }
+    async fn bind_source(&self, context: &mut ToolContext) {
+        if context.context_id.is_some() {
+            context.request_id = Uuid::new_v4();
+        }
+        let service = self.contexts();
+        service
+            .initialize_policy(
+                ContextPolicy::from_config(&Default::default(), &Default::default()).unwrap(),
+            )
+            .await
+            .unwrap();
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT content FROM chat_messages WHERE id=$1",
+                [context.source_event_id.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        let raw: String = row.try_get("", "content").unwrap();
+        let generation = service
+            .materialize(
+                ContextSource {
+                    owner_id: context.user_id,
+                    request_id: context.request_id,
+                    channel_id: context.channel_id.clone().unwrap(),
+                    conversation_id: context.conversation_id,
+                    source_event_id: context.source_event_id,
+                    source_received_at: context.source_received_at,
+                    source_privacy_epoch: context.source_privacy_epoch.unwrap(),
+                },
+                &raw,
+            )
+            .await
+            .unwrap();
+        context.context_id = Some(generation.lease().id());
+    }
+    async fn context(&self) -> ToolContext {
+        let session = Uuid::new_v4();
+        let source = Uuid::new_v4();
+        let epoch = alia_server::modules::memory::source::capture_source_epoch(&self.db, self.user)
+            .await
+            .unwrap();
+        let mut context = ToolContext {
+            context_id: None,
             source_received_at: chrono::Utc::now(),
-            source_event_id: None,
-            source_privacy_epoch: None,
+            source_event_id: Some(source),
+            source_privacy_epoch: Some(epoch),
             user_id: self.user,
             request_id: Uuid::new_v4(),
             invocation_key: "0:0".into(),
-            conversation_id: None,
+            conversation_id: Some(session),
             source: "ai".into(),
             channel_id: Some("probe".into()),
             cancel: None,
-        }
+        };
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'probe',$2)",
+                vec![session.into(), self.user.to_string().into()],
+            ))
+            .await
+            .unwrap();
+        self.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
+            vec![source.into(),session.into(),self.user.to_string().into(),context.source_received_at.into(),epoch.into()])).await.unwrap();
+        self.bind_source(&mut context).await;
+        context
     }
     fn call(&self) -> ToolCall {
         ToolCall {
@@ -262,7 +327,7 @@ where
 async fn duplicate_request_and_changed_model_correlation_execute_once() {
     with_fixture(false, 5, 2, |f| async move {
         f.service.start().await.unwrap();
-        let context = f.context();
+        let context = f.context().await;
         let first = f.service.execute(f.call(), &context).await.unwrap();
         assert!(first.success);
         let mut retry = f.call();
@@ -272,7 +337,11 @@ async fn duplicate_request_and_changed_model_correlation_execute_once() {
         assert_eq!(result.call_id, "new_model_correlation");
         assert_eq!(result.output["effect_id"], first.output["effect_id"]);
         assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
-        let next_turn = f.service.execute(f.call(), &f.context()).await.unwrap();
+        let next_turn = f
+            .service
+            .execute(f.call(), &f.context().await)
+            .await
+            .unwrap();
         assert!(next_turn.success);
         assert_ne!(next_turn.output["effect_id"], first.output["effect_id"]);
         assert_eq!(f.probe.calls.load(Ordering::SeqCst), 2);
@@ -281,12 +350,124 @@ async fn duplicate_request_and_changed_model_correlation_execute_once() {
 }
 
 #[tokio::test]
+async fn policy_change_blocks_old_approval_and_claim_but_fresh_context_can_execute() {
+    with_fixture(true, 5, 1, |f| async move {
+        let old = f.context().await;
+        let proposed = f.service.submit(f.call(), &old).await.unwrap();
+        let mut queued_context = old.clone();
+        queued_context.invocation_key = "0:1".into();
+        let queued = f.service.submit(f.call(), &queued_context).await.unwrap();
+        f.service
+            .confirm(f.user, queued.effect_id, queued.intent_digest)
+            .await
+            .unwrap();
+
+        let contexts = f.contexts();
+        let store = contexts.policy_store();
+        let current = store.current().await.unwrap();
+        let mut next = current.policy;
+        next.max_history_messages = 7;
+        store.replace(current.version, next).await.unwrap();
+        assert!(matches!(
+            f.service
+                .confirm(f.user, proposed.effect_id, proposed.intent_digest)
+                .await,
+            Err(ExecutionError::Unauthorized(_))
+        ));
+        assert!(f.service.submit(f.call(), &old).await.is_err());
+        f.service.start().await.unwrap();
+        let stopped = f.status(queued.effect_id, EffectStatus::Failed).await;
+        assert!(stopped.claim_id.is_none());
+        assert_eq!(
+            serde_json::to_value(stopped.completion).unwrap()["evidence"]["execution_started"],
+            false
+        );
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
+
+        let fresh = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
+        f.service
+            .confirm(f.user, fresh.effect_id, fresh.intent_digest)
+            .await
+            .unwrap();
+        f.status(fresh.effect_id, EffectStatus::Succeeded).await;
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn revocation_after_dispatch_preserves_the_actual_late_completion() {
+    with_fixture(false, 5, 0, |f| async move {
+        let old = f.context().await;
+        f.service.start().await.unwrap();
+        let effect = f.service.submit(f.call(), &old).await.unwrap();
+        f.calls(1).await;
+        let contexts = f.contexts();
+        let store = contexts.policy_store();
+        let current = store.current().await.unwrap();
+        let mut next = current.policy;
+        next.memory_enabled = !next.memory_enabled;
+        store.replace(current.version, next).await.unwrap();
+        assert!(f.service.submit(f.call(), &old).await.is_err());
+        f.probe.permits.add_permits(1);
+        let completed = f.status(effect.effect_id, EffectStatus::Succeeded).await;
+        assert!(completed.claim_id.is_some());
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 1);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn source_notice_cannot_authorize_a_tool_effect() {
+    with_fixture(false, 5, 1, |f| async move {
+        let mut context = f.context().await;
+        let notice = f
+            .contexts()
+            .source_notice(ContextSource {
+                owner_id: f.user,
+                request_id: context.request_id,
+                channel_id: context.channel_id.clone().unwrap(),
+                conversation_id: context.conversation_id,
+                source_event_id: context.source_event_id,
+                source_received_at: context.source_received_at,
+                source_privacy_epoch: context.source_privacy_epoch.unwrap(),
+            })
+            .await
+            .unwrap();
+        context.context_id = Some(notice.id());
+        assert!(matches!(
+            f.service.submit(f.call(), &context).await,
+            Err(ExecutionError::Unauthorized(_))
+        ));
+        assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
+        assert!(
+            ExecutionRepository::new(f.db.clone())
+                .pending(10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn queued_effect_and_retransmission_preserve_the_original_source() {
     with_fixture(false, 5, 0, |f| async move {
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.source_received_at -= chrono::Duration::minutes(5);
         context.source_privacy_epoch = Some(17);
         context.source_event_id = Some(Uuid::new_v4());
+        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "UPDATE memory_privacy_state SET privacy_epoch=17 WHERE user_id=$1", [f.user.into()])).await.unwrap();
+        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Original source',$4,17)",
+            vec![context.source_event_id.into(),context.conversation_id.into(),f.user.to_string().into(),context.source_received_at.into()])).await.unwrap();
+        f.bind_source(&mut context).await;
         let first = f.service.submit(f.call(), &context).await.unwrap();
         assert_eq!(first.status, EffectStatus::Approved);
         assert_eq!(
@@ -298,7 +479,8 @@ async fn queued_effect_and_retransmission_preserve_the_original_source() {
         retry_context.source_received_at = chrono::Utc::now();
         let mut retry_call = f.call();
         retry_call.call_id = "another_provider_id".into();
-        let retry = f.service.submit(retry_call, &retry_context).await.unwrap();
+        assert!(f.service.submit(retry_call.clone(), &retry_context).await.is_err(), "a retry cannot replace the source observation attached to its context");
+        let retry = f.service.submit(retry_call, &context).await.unwrap();
         assert_eq!(retry.effect_id, first.effect_id);
         assert_eq!(retry.source_received_at, first.source_received_at);
         assert_eq!(retry.source_event_id, first.source_event_id);
@@ -308,7 +490,7 @@ async fn queued_effect_and_retransmission_preserve_the_original_source() {
             changed.source_privacy_epoch = changed_stamp;
             assert!(matches!(
                 f.service.submit(f.call(), &changed).await,
-                Err(ExecutionError::IdempotencyConflict)
+                Err(ExecutionError::IdempotencyConflict | ExecutionError::Unauthorized(_))
             ));
         }
         f.service.start().await.unwrap();
@@ -360,17 +542,18 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
         f.registry.register_tool_executor("builtin", memory_tool).await.unwrap();
         let session = Uuid::new_v4();
         let source = Uuid::new_v4();
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.source_received_at += source_clock_offset;
         context.source_event_id = Some(source);
         context.conversation_id = Some(session);
         context.source_privacy_epoch = Some(alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user).await.unwrap());
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'probe',$2)",
             vec![session.into(),f.user.to_string().into()])).await.unwrap();
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
             vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into(),context.source_privacy_epoch.into()])).await.unwrap();
+        f.bind_source(&mut context).await;
         let call = ToolCall { tool_name: "memory_store".into(), arguments: json!({"content":"The user prefers concise replies."}), call_id: "memory_call".into() };
         let effect = f.service.submit(call.clone(), &context).await.unwrap();
         assert_eq!(effect.status, EffectStatus::Approved);
@@ -386,13 +569,13 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
         if source_clock_offset > chrono::Duration::zero() {
             assert!(effect.source_received_at > boundary.source_cutoff_at, "the test must exercise distinct clock domains");
         }
-        // A redelivery observed after clear must still execute with the earlier source.
+        // Revocation stops the queued effect before the native executor runs.
         context.source_received_at = chrono::Utc::now();
-        let retry = f.service.submit(call.clone(), &context).await.unwrap();
-        assert_eq!(retry.source_received_at, effect.source_received_at);
+        assert!(f.service.submit(call.clone(), &context).await.is_err());
         f.service.start().await.unwrap();
-        let stopped = f.status(effect.effect_id, EffectStatus::Unknown).await;
-        assert!(serde_json::to_string(&stopped.completion).unwrap().contains("memory source privacy epoch changed"));
+        let stopped = f.status(effect.effect_id, EffectStatus::Failed).await;
+        assert!(stopped.claim_id.is_none());
+        assert_eq!(serde_json::to_value(stopped.completion).unwrap()["evidence"]["execution_started"], false);
         assert!(memory.list(f.user, Default::default()).await.unwrap().is_empty());
 
         // A new, admitted source after clear is valid in every clock domain.
@@ -409,6 +592,7 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','A new input after clear.',$4,$5)",
             vec![fresh.source_event_id.into(),session.into(),f.user.to_string().into(),fresh.source_received_at.into(),fresh.source_privacy_epoch.into()])).await.unwrap();
+        f.bind_source(&mut fresh).await;
         let new_effect = f.service.submit(call, &fresh).await.unwrap();
         f.status(new_effect.effect_id, EffectStatus::Succeeded).await;
         assert_eq!(memory.list(f.user, Default::default()).await.unwrap().len(), 1);
@@ -427,18 +611,19 @@ async fn ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres()
         let store = MemoryStore::new(Some(memory.clone()));
         let session = Uuid::new_v4();
         let source = Uuid::new_v4();
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.source_event_id = Some(source);
         context.conversation_id = Some(session);
         context.source_privacy_epoch = Some(alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user).await.unwrap());
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'probe',$2)",
             vec![session.into(),f.user.to_string().into()])).await.unwrap();
         let arguments = json!({"content":"The user prefers concise replies."});
         assert!(store.execute(arguments.clone(), &context).await.is_err(), "unpersisted source cannot write");
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4,$5)",
             vec![source.into(),session.into(),f.user.to_string().into(),context.source_received_at.into(),context.source_privacy_epoch.into()])).await.unwrap();
+        f.bind_source(&mut context).await;
         for epoch in [None, Some(context.source_privacy_epoch.unwrap() + 1)] {
             let unstamped = ToolContext { source_privacy_epoch: epoch, ..context.clone() };
             assert!(store.execute(arguments.clone(), &unstamped).await.is_err(), "missing or different source admission cannot write");
@@ -459,7 +644,11 @@ async fn ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres()
 async fn model_confirmed_argument_does_not_approve_and_rest_owner_must_match() {
     with_fixture(true, 5, 1, |f| async move {
         f.service.start().await.unwrap();
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         assert_eq!(effect.status, EffectStatus::Proposed);
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
@@ -490,7 +679,7 @@ async fn workers_are_bounded_and_cancelled_queued_voice_never_dispatches() {
         for _ in 0..4 {
             ids.push(
                 f.service
-                    .submit(f.call(), &f.context())
+                    .submit(f.call(), &f.context().await)
                     .await
                     .unwrap()
                     .effect_id,
@@ -499,7 +688,7 @@ async fn workers_are_bounded_and_cancelled_queued_voice_never_dispatches() {
         f.service.start().await.unwrap();
         f.calls(4).await;
         let token = CancellationToken::new();
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.cancel = Some(token.clone());
         let queued = f.service.submit(f.call(), &context).await.unwrap();
         token.cancel();
@@ -518,7 +707,11 @@ async fn workers_are_bounded_and_cancelled_queued_voice_never_dispatches() {
 async fn shutdown_joins_dispatched_deadline_and_persists_unknown_without_retry() {
     with_fixture(false, 1, 0, |f| async move {
         f.service.start().await.unwrap();
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         f.calls(1).await;
         f.service.shutdown().await.unwrap();
         let effect = f.status(effect.effect_id, EffectStatus::Unknown).await;
@@ -535,13 +728,17 @@ async fn shutdown_joins_dispatched_deadline_and_persists_unknown_without_retry()
 #[tokio::test]
 async fn missing_identity_and_revoked_owner_fail_before_executor() {
     with_fixture(false, 5, 1, |f| async move {
-        let mut anonymous = f.context();
+        let mut anonymous = f.context().await;
         anonymous.user_id = Uuid::new_v4();
         assert!(matches!(
             f.service.submit(f.call(), &anonymous).await,
-            Err(ExecutionError::IdentityUnlinked)
+            Err(ExecutionError::IdentityUnlinked | ExecutionError::Unauthorized(_))
         ));
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         f.db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE users SET status='disabled' WHERE id=$1",
@@ -550,7 +747,12 @@ async fn missing_identity_and_revoked_owner_fail_before_executor() {
         .await
         .unwrap();
         f.service.start().await.unwrap();
-        f.status(effect.effect_id, EffectStatus::Failed).await;
+        let stopped = f.status(effect.effect_id, EffectStatus::Failed).await;
+        assert!(stopped.claim_id.is_none());
+        assert_eq!(
+            serde_json::to_value(stopped.completion).unwrap()["evidence"]["execution_started"],
+            false
+        );
         assert_eq!(f.probe.calls.load(Ordering::SeqCst), 0);
     })
     .await;
@@ -559,7 +761,7 @@ async fn missing_identity_and_revoked_owner_fail_before_executor() {
 #[tokio::test]
 async fn receipt_write_failure_is_shutdown_failure_then_recovers_unknown() {
     with_fixture(false, 5, 1, |f| async move {
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f.service.submit(f.call(), &f.context().await).await.unwrap();
         f.db.execute_unprepared("CREATE FUNCTION reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='succeeded' THEN RAISE EXCEPTION 'injected receipt write failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_receipt BEFORE UPDATE ON execution_effects FOR EACH ROW EXECUTE FUNCTION reject_receipt();").await.unwrap();
         f.service.start().await.unwrap();
         f.calls(1).await;
@@ -580,7 +782,11 @@ async fn transport_errors_and_legacy_false_results_require_definitive_failure_ev
         f.service.start().await.unwrap();
         for (mode, expected) in [(1, "unknown"), (2, "unknown"), (3, "failed")] {
             f.probe.outcome_mode.store(mode, Ordering::SeqCst);
-            let result = f.service.execute(f.call(), &f.context()).await.unwrap();
+            let result = f
+                .service
+                .execute(f.call(), &f.context().await)
+                .await
+                .unwrap();
             assert!(!result.success);
             assert_eq!(result.output["execution_status"], expected);
         }
@@ -603,7 +809,11 @@ async fn claim_uses_pinned_executor_when_catalog_is_hot_replaced() {
             sources: std::sync::Mutex::new(Vec::new()),
         });
         f.service.start().await.unwrap();
-        let first = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let first = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         f.calls(1).await; // The first effect has committed its claim and entered this Arc.
         f.registry
             .register_tool_executor("builtin", replacement.clone())
@@ -615,7 +825,7 @@ async fn claim_uses_pinned_executor_when_catalog_is_hot_replaced() {
         assert_eq!(replacement.calls.load(Ordering::SeqCst), 0);
         assert!(
             f.service
-                .execute(f.call(), &f.context())
+                .execute(f.call(), &f.context().await)
                 .await
                 .unwrap()
                 .success
@@ -628,7 +838,11 @@ async fn claim_uses_pinned_executor_when_catalog_is_hot_replaced() {
 #[tokio::test]
 async fn same_schema_hot_replacement_invalidates_undispatched_approval() {
     with_fixture(false, 5, 1, |f| async move {
-        let first = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let first = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         let replacement = Arc::new(Probe {
             confirmation: false,
             revision: Some("execution.test.Probe"),
@@ -649,7 +863,7 @@ async fn same_schema_hot_replacement_invalidates_undispatched_approval() {
         assert_eq!(replacement.calls.load(Ordering::SeqCst), 0);
         assert!(
             f.service
-                .execute(f.call(), &f.context())
+                .execute(f.call(), &f.context().await)
                 .await
                 .unwrap()
                 .success
@@ -683,7 +897,7 @@ async fn missing_implementation_revision_is_rejected_at_registration_and_proposa
             // must still reject it instead of persisting an unverifiable proposal.
             f.raw.register_executor(unversioned.clone());
             assert!(matches!(
-                f.service.submit(f.call(), &f.context()).await,
+                f.service.submit(f.call(), &f.context().await).await,
                 Err(ExecutionError::InvalidInput(_))
             ));
             assert_eq!(unversioned.calls.load(Ordering::SeqCst), 0);
@@ -698,7 +912,7 @@ async fn replay_of_unknown_effect_returns_existing_fact_without_retrying_executo
     with_fixture(false, 5, 2, |f| async move {
         f.probe.outcome_mode.store(2, Ordering::SeqCst);
         f.service.start().await.unwrap();
-        let context = f.context();
+        let context = f.context().await;
         let first = f.service.execute(f.call(), &context).await.unwrap();
         assert_eq!(first.output["execution_status"], "unknown");
         let retry = f.service.execute(f.call(), &context).await.unwrap();
@@ -720,10 +934,14 @@ async fn replay_of_unknown_effect_returns_existing_fact_without_retrying_executo
 async fn shutdown_cancels_session_intent_without_requiring_prior_parent_cancellation() {
     with_fixture(false, 5, 1, |f| async move {
         let token = CancellationToken::new();
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.cancel = Some(token.clone());
         let session_effect = f.service.submit(f.call(), &context).await.unwrap();
-        let durable_effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let durable_effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         assert!(!token.is_cancelled());
         f.service.shutdown().await.unwrap();
         assert!(token.is_cancelled());
@@ -752,7 +970,7 @@ async fn shutdown_cancels_session_intent_without_requiring_prior_parent_cancella
 async fn shutdown_cancellation_write_failure_is_visible_and_does_not_claim_execution() {
     with_fixture(false, 5, 1, |f| async move {
         let token = CancellationToken::new();
-        let mut context = f.context(); context.cancel = Some(token.clone());
+        let mut context = f.context().await; context.cancel = Some(token.clone());
         let effect = f.service.submit(f.call(), &context).await.unwrap();
         f.db.execute_unprepared("CREATE FUNCTION reject_cancel() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='cancelled' THEN RAISE EXCEPTION 'injected cancellation write failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_cancel BEFORE UPDATE ON execution_effects FOR EACH ROW EXECUTE FUNCTION reject_cancel();").await.unwrap();
         assert!(f.service.shutdown().await.is_err());
@@ -767,7 +985,11 @@ async fn shutdown_cancellation_write_failure_is_visible_and_does_not_claim_execu
 async fn dropping_shutdown_wait_retains_worker_join_and_receipt_persistence() {
     with_fixture(false, 5, 0, |f| async move {
         f.service.start().await.unwrap();
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         f.calls(1).await;
         assert!(
             tokio::time::timeout(Duration::from_millis(30), f.service.shutdown())
@@ -789,7 +1011,7 @@ async fn shutdown_waits_for_inflight_admission_before_cancelling_session_intent(
         let blocked = f.db.begin().await.unwrap();
         blocked.execute_unprepared("LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE").await.unwrap();
         let token = CancellationToken::new();
-        let mut context = f.context(); context.cancel = Some(token.clone());
+        let mut context = f.context().await; context.cancel = Some(token.clone());
         let service = f.service.clone(); let call = f.call();
         let proposal = tokio::spawn(async move { service.submit(call, &context).await });
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -817,7 +1039,7 @@ async fn shutdown_waits_for_inflight_admission_before_cancelling_session_intent(
 #[tokio::test]
 async fn shutdown_preserves_unapproved_proposal_for_later_explicit_owner_review() {
     with_fixture(true, 5, 1, |f| async move {
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.cancel = Some(CancellationToken::new());
         let proposal = f.service.submit(f.call(), &context).await.unwrap();
         f.service.shutdown().await.unwrap();
@@ -842,7 +1064,7 @@ async fn locked_ledger_bounds_admission_and_entire_shutdown_cancellation_batch()
         let mut effects = Vec::new();
         let mut tokens = Vec::new();
         for _ in 0..24 {
-            let mut context = f.context();
+            let mut context = f.context().await;
             let token = CancellationToken::new();
             context.cancel = Some(token.clone());
             effects.push(
@@ -859,7 +1081,7 @@ async fn locked_ledger_bounds_admission_and_entire_shutdown_cancellation_batch()
             .execute_unprepared("LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE")
             .await
             .unwrap();
-        let mut context = f.context();
+        let mut context = f.context().await;
         context.cancel = Some(CancellationToken::new());
         let service = f.service.clone();
         let call = f.call();
@@ -904,7 +1126,7 @@ async fn locked_ledger_bounds_admission_and_entire_shutdown_cancellation_batch()
 async fn locked_ledger_cannot_extend_the_tool_result_wait_or_fabricate_cancellation() {
     with_fixture(false, 30, 0, |f| async move {
         f.service.start().await.unwrap();
-        let mut context = f.context();
+        let mut context = f.context().await;
         let cancellation = CancellationToken::new();
         context.cancel = Some(cancellation.clone());
         let service = f.service.clone();
@@ -1071,7 +1293,7 @@ async fn approval_ack_case(f: Fixture, hold_ack: bool, drop_waiter: bool) {
     .await
     .unwrap();
     let token = CancellationToken::new();
-    let mut context = f.context();
+    let mut context = f.context().await;
     context.cancel = Some(token.clone());
     let call = f.call();
     let submitting = service.clone();
@@ -1124,7 +1346,11 @@ async fn approval_commit_ack_timeout_keeps_session_cancellation_ownership() {
 async fn shutdown_deadline_reports_live_worker_and_retains_its_eventual_receipt() {
     with_fixture(false, 30, 0, |f| async move {
         f.service.start().await.unwrap();
-        let effect = f.service.submit(f.call(), &f.context()).await.unwrap();
+        let effect = f
+            .service
+            .submit(f.call(), &f.context().await)
+            .await
+            .unwrap();
         f.calls(1).await;
         let error = tokio::time::timeout(Duration::from_secs(11), f.service.shutdown())
             .await

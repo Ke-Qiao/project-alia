@@ -38,6 +38,9 @@ mod expression;
 #[path = "server_runtime/body.rs"]
 mod body;
 
+#[path = "server_runtime/context_policy.rs"]
+mod context_policy;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,
@@ -769,6 +772,7 @@ async fn dispatched_execution_retains_outbound_plugin_and_database_until_receipt
             "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Runtime test','unused','user','active')",
             vec![user.into(),format!("{user}@test.invalid").into()])).await.unwrap();
         let effect = state.execution.submit(ToolCall { tool_name: "runtime_effect_probe".into(), arguments: serde_json::json!({}), call_id: "call".into() }, &ToolContext {
+            context_id: None,
             source_privacy_epoch: None,
             user_id: user, request_id: Uuid::new_v4(), invocation_key: "0".into(), source: "manual".into(), source_received_at: chrono::Utc::now(), source_event_id: None,
             conversation_id: None, channel_id: Some("outbound".into()), cancel: None,

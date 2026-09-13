@@ -307,12 +307,12 @@ async fn disabled_cached_user_is_rejected_by_trigger_and_schedule_without_llm() 
         }).await.unwrap();
         disable(&state, owner).await;
         let error = state.modules.insights.trigger(owner, InsightPhase::Consolidation).await.unwrap_err();
-        assert!(error.to_string().contains("currently active account"));
+        assert!(format!("{error:#}").contains("currently active account"), "{error:#}");
         let error = state.modules.insights.schedule(InsightTask {
             user_id: owner, phase: "consolidation".into(), trigger: "test-schedule".into(),
             context: serde_json::json!({}),
         }).await.unwrap_err();
-        assert!(error.to_string().contains("currently active account"));
+        assert!(format!("{error:#}").contains("currently active account"), "{error:#}");
         assert_eq!(llm.calls.load(Ordering::SeqCst), 0);
         let stored = state.modules.memory.get(owner, &id).await.unwrap().unwrap();
         assert_eq!(stored.content, "Original preference");
@@ -356,7 +356,10 @@ async fn cancelled_trigger_releases_count_and_waiter_rechecks_account_after_capa
         first.abort();
         assert!(first.await.unwrap_err().is_cancelled());
         let error = waiting.await.unwrap().unwrap_err();
-        assert!(error.to_string().contains("currently active account"));
+        assert!(
+            format!("{error:#}").contains("currently active account"),
+            "{error:#}"
+        );
         assert_eq!(llm.calls.load(Ordering::SeqCst), 1);
         pending(&state, first_owner, 0).await;
         runtime.shutdown().await.unwrap();

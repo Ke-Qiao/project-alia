@@ -245,6 +245,7 @@ mod tests {
         registry.register(channel.clone()).await.unwrap();
         let tool = EndContinuousDialogueTool::new(registry);
         let ctx = ToolContext {
+            context_id: None,
             source_privacy_epoch: None,
             source_received_at: chrono::Utc::now(),
             source_event_id: None,
@@ -273,6 +274,7 @@ mod tests {
     async fn tool_noops_when_no_channel_supports_conversation_control() {
         let tool = EndContinuousDialogueTool::new(Arc::new(ChannelRegistry::new()));
         let ctx = ToolContext {
+            context_id: None,
             source_privacy_epoch: None,
             source_received_at: chrono::Utc::now(),
             source_event_id: None,

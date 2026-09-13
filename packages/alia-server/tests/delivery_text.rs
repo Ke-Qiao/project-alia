@@ -9,7 +9,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 async fn prepared(f: &Fixture) -> (ResponseRecord, DeliveryRecord, DispatchPermit, TextIdentity) {
-    let response = f.repo().prepare(f.response()).await.unwrap();
+    let response = f.repo().prepare(f.response().await).await.unwrap();
     let identity = TextIdentity {
         text_id: Uuid::new_v4(),
         channel_instance_id: Uuid::new_v4(),
@@ -55,6 +55,100 @@ fn progress(identity: TextIdentity, seq: u64, bytes: u64, written: u64) -> TextP
         end_accepted: false,
         observation_end: None,
     }
+}
+
+#[tokio::test]
+async fn source_notice_only_admits_its_fixed_literal_and_cannot_commit_history() {
+    use sea_orm::TransactionTrait;
+    with_db(|f| async move {
+        let input = f.notice().await;
+        let literal = input.content["text"].as_str().unwrap().to_owned();
+        let mut changed = input.clone();
+        changed.content = json!({"text":"arbitrary model output"});
+        assert!(matches!(
+            f.repo().prepare(changed).await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        let mut changed = input.clone();
+        changed.kind = "conversation".into();
+        assert!(matches!(
+            f.repo().prepare(changed).await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        let response = f.repo().prepare(input).await.unwrap();
+        let tx = f.db.begin().await.unwrap();
+        assert!(matches!(
+            f.repo()
+                .mark_generated_in_transaction(
+                    &tx,
+                    f.user,
+                    response.response_id,
+                    Uuid::new_v4(),
+                    json!({"text":literal})
+                )
+                .await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        tx.rollback().await.unwrap();
+        assert_eq!(f.assistant_count().await, 0);
+
+        let owner = Uuid::new_v4();
+        let mut delivery = NewTextDelivery {
+            response_id: response.response_id,
+            output_key: "notice".into(),
+            content: json!({"text":"different literal"}),
+            identity: Some(TextIdentity {
+                text_id: Uuid::new_v4(),
+                channel_instance_id: Uuid::new_v4(),
+            }),
+            owner_id: owner,
+        };
+        assert!(matches!(
+            f.repo()
+                .prepare_text_delivery(f.user, delivery.clone())
+                .await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        delivery.content = json!({"text":literal});
+        let record = f
+            .repo()
+            .prepare_text_delivery(f.user, delivery)
+            .await
+            .unwrap();
+        let permit = f
+            .repo()
+            .dispatch(f.user, record.delivery_id, owner)
+            .await
+            .unwrap()
+            .unwrap();
+        f.repo().text_start(&permit).await.unwrap();
+        assert!(matches!(
+            f.repo()
+                .offer_text_chunk(&permit, &chunk(0, 0, "篡改"))
+                .await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        let first = literal.chars().next().unwrap().len_utf8();
+        f.repo()
+            .offer_text_chunk(&permit, &chunk(0, 0, &literal[..first]))
+            .await
+            .unwrap();
+        assert!(
+            f.repo()
+                .offer_text_end(&permit, 1, first as u64)
+                .await
+                .is_err()
+        );
+        f.repo()
+            .offer_text_chunk(&permit, &chunk(1, first as u64, &literal[first..]))
+            .await
+            .unwrap();
+        f.repo()
+            .offer_text_end(&permit, 2, literal.len() as u64)
+            .await
+            .unwrap();
+    })
+    .await;
 }
 
 #[tokio::test]

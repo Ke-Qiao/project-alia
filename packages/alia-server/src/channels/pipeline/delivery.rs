@@ -21,10 +21,59 @@ pub(super) async fn prepare_response(
     let turn = turn.ok_or_else(|| anyhow::anyhow!("output has no admitted turn owner"))?;
     let owner = Uuid::parse_str(user_id)
         .map_err(|_| anyhow::anyhow!("identity_unlinked: output requires a real account"))?;
+    let mut state = turn.context.lock().await;
     if let Some(id) = turn.response_id.get() {
         return Ok(*id);
     }
-    let response=modules.delivery.prepare(NewResponse{key:ResponseKey{user_id:owner,request_id:turn.id,output_key:"response".into()},conversation_id,source_event_id:turn.source_event_id.get().copied(),source_received_at:turn.received_at,source_privacy_epoch:turn.source_privacy_epoch,channel_id:channel_id.into(),kind:kind.into(),content:json!({"kind":kind,"source_event_id":turn.source_event_id.get(),"voice_scope":turn.voice_scope})}).await?;
+    let lease = state.lease()?.clone();
+    let source = lease.source();
+    anyhow::ensure!(
+        source.owner_id == owner
+            && source.request_id == turn.id
+            && source.channel_id == channel_id
+            && source.source_event_id == turn.source_event_id.get().copied()
+            && Some(source.source_privacy_epoch) == turn.source_privacy_epoch,
+        "output differs from original context source"
+    );
+    if let Some(session) = conversation_id {
+        anyhow::ensure!(
+            source.conversation_id == Some(session),
+            "output changed conversation"
+        );
+    }
+    // Once admission has been attempted, even an unknown database acknowledgement
+    // must be retried with this immutable context rather than a fresh lease.
+    state.frozen = true;
+    let notice_text = lease.notice_text();
+    let kind = if notice_text.is_some() {
+        "source_notice"
+    } else {
+        kind
+    };
+    let response = modules
+        .delivery
+        .prepare(NewResponse {
+            key: ResponseKey {
+                user_id: owner,
+                request_id: turn.id,
+                output_key: if notice_text.is_some() {
+                    "trusted_notice"
+                } else {
+                    "response"
+                }
+                .into(),
+            },
+            context_id: lease.id(),
+            conversation_id: source.conversation_id,
+            source_event_id: source.source_event_id,
+            source_received_at: source.source_received_at,
+            source_privacy_epoch: Some(source.source_privacy_epoch),
+            channel_id: channel_id.into(),
+            kind: kind.into(),
+            content: json!({"kind":kind,"source_event_id":source.source_event_id,
+            "voice_scope":turn.voice_scope,"text":notice_text}),
+        })
+        .await?;
     if let Err(id) = turn.response_id.set(response.response_id) {
         anyhow::ensure!(
             turn.response_id.get() == Some(&id),
@@ -52,6 +101,31 @@ pub(super) async fn text_stream(
         channel.capabilities().text,
         "channel does not accept text delivery"
     );
+    let notice = turn.context.lock().await.lease()?.notice_text();
+    let text = if let Some(literal) = notice {
+        use alia_core::text_delivery::TextFrame;
+        use futures::StreamExt;
+        let mut next = 0u8;
+        Box::pin(text.map(move |frame| {
+            let frame = frame?;
+            let valid = match &frame {
+                TextFrame::Chunk(chunk) => {
+                    next == 0
+                        && chunk.sequence == 0
+                        && chunk.utf8_offset == 0
+                        && chunk.text == literal
+                }
+                TextFrame::End { chunks, utf8_bytes } => {
+                    next == 1 && *chunks == 1 && *utf8_bytes == literal.len() as u64
+                }
+            };
+            anyhow::ensure!(valid, "notice stream differs from its trusted literal");
+            next += 1;
+            Ok(frame)
+        })) as TextPayloadStream
+    } else {
+        text
+    };
     let response_id = prepare_response(
         modules,
         Some(turn),
@@ -138,6 +212,12 @@ pub(super) async fn audio(
         target.voice == turn.voice_scope,
         "audio target differs from original voice scope"
     );
+    if let Some(literal) = turn.context.lock().await.lease()?.notice_text() {
+        anyhow::ensure!(
+            text == literal,
+            "notice audio differs from its trusted literal"
+        );
+    }
     let response_id = prepare_response(
         modules,
         Some(turn),

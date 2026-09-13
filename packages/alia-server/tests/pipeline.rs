@@ -7,7 +7,31 @@ use alia_server::channels::pipeline::{
     escalation_reason, render_runtime_context_system_prompt,
 };
 use alia_server::config::{CachePolicyResourceSection, CacheSection};
-use alia_server::providers::adapter::{CACHE_METADATA_SCHEMA, CachedResponse};
+use alia_server::modules::memory::context::ContextBinding;
+use alia_server::providers::adapter::{
+    CACHE_METADATA_SCHEMA, CacheStatus, CacheVersion, CachedResponse,
+};
+use uuid::Uuid;
+
+fn cached_fixture() -> CachedResponse {
+    CachedResponse {
+        version: CacheVersion {
+            cache_id: Uuid::new_v4(),
+            revision: 1,
+            context_id: Uuid::new_v4(),
+        },
+        owner_id: Uuid::new_v4(),
+        scope: "default".into(),
+        query_digest: String::new(),
+        content_digest: String::new(),
+        origin_response_id: Uuid::new_v4(),
+        query_text: "query".into(),
+        response_text: String::new(),
+        metadata: serde_json::json!({}),
+        status: CacheStatus::Active,
+        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+    }
+}
 
 fn test_cache_config() -> CacheSection {
     CacheSection {
@@ -72,13 +96,21 @@ fn detects_minor_llm_escalation_marker() {
 
 #[test]
 fn pipeline_cache_entry_uses_default_lookup_scope() {
+    let owner = Uuid::new_v4();
     let pending = PendingTextPersistence {
+        context: ContextBinding {
+            context_id: Uuid::new_v4(),
+            owner_id: owner,
+            request_id: Uuid::new_v4(),
+            source_event_id: None,
+            source_privacy_epoch: 0,
+        },
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: 0,
         source_event_id: None,
         response_id: uuid::Uuid::new_v4(),
         session_id: uuid::Uuid::new_v4(),
-        user_id: uuid::Uuid::new_v4(),
+        user_id: owner,
         user_id_text: "test-user".to_string(),
         query_text: "hello".to_string(),
         response_text: "hi".to_string(),
@@ -128,6 +160,7 @@ fn cache_policy_allows_safe_memory_independent_exact_entries() {
             "tool_free": true,
             "dynamic_free": true,
         }),
+        ..cached_fixture()
     };
     assert_eq!(entry.metadata["status"], "pending_insights_review");
     assert_eq!(entry.metadata["safe_direct_return"], false);
@@ -179,6 +212,7 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
     assert!(!cached_response_is_safe_direct(&CachedResponse {
         response_text: "old cache".to_string(),
         metadata: serde_json::json!({}),
+        ..cached_fixture()
     }));
     assert!(!cached_response_is_safe_direct(&CachedResponse {
         response_text: "pending cache".to_string(),
@@ -191,6 +225,7 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
             "tool_free": true,
             "dynamic_free": true,
         }),
+        ..cached_fixture()
     }));
 }
 
@@ -281,6 +316,7 @@ fn renders_runtime_context_prompt_outside_persona() {
         assistant_name: "玲珑".to_string(),
         core_memories: vec!["The user likes coffee.".to_string()],
         memory_context: None,
+        materialized_memory_prompt: None,
         relationship_summary: Some("developing rapport; concise interaction style".to_string()),
         relationship_preference_summary: Some("Prefers concise responses".to_string()),
         user_preferences: vec![("Temperature".to_string(), "26 C".to_string())],
@@ -293,8 +329,9 @@ fn renders_runtime_context_prompt_outside_persona() {
 
     assert!(prompt.contains("## Runtime Context"));
     assert!(prompt.contains("The user likes coffee."));
-    assert!(prompt.contains("## Relationship Context"));
-    assert!(prompt.contains("Do not mention internal relationship state"));
+    assert!(!prompt.contains("## Relationship Context"));
+    assert!(!prompt.contains("developing rapport"));
+    assert!(!prompt.contains("Prefers concise responses"));
     assert!(prompt.contains("## Skill Routing Context"));
     assert!(prompt.contains("They are not functions to call directly"));
 }

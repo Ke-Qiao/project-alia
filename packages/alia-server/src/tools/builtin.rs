@@ -1139,6 +1139,23 @@ impl ToolExecutor for MemorySearch {
             });
         };
 
+        if ctx.source == "ai" {
+            anyhow::ensure!(
+                ctx.context_id.is_some(),
+                "AI memory search requires original context lineage"
+            );
+            // Execution checks the current catalog, confirmation and original
+            // context before dispatch. The Pipeline then performs the read as
+            // an extension of that context; no unversioned memory text is
+            // copied into this execution receipt.
+            return Ok(ToolResult {
+                call_id: String::new(),
+                success: true,
+                output: serde_json::json!({"context_read_requested": true}),
+                display: None,
+            });
+        }
+
         let max_results = arguments
             .get("max_results")
             .and_then(serde_json::Value::as_u64)
@@ -1519,6 +1536,31 @@ async fn tool_memory_context(
     context.source_received_at = ctx.source_received_at;
     context.source_event_ids = ctx.source_event_id.into_iter().collect();
     context.exact_source_received_at = ctx.source_event_id.map(|id| (id, ctx.source_received_at));
+    if ctx.source == "ai" {
+        let id = ctx
+            .context_id
+            .context("AI memory tool requires original context lineage")?;
+        context = memory
+            .bind_context(
+                context,
+                id,
+                crate::providers::adapter::MemoryWriteOrigin::Ai,
+            )
+            .await?;
+        anyhow::ensure!(
+            context.source_received_at.timestamp_micros()
+                == ctx.source_received_at.timestamp_micros()
+                && context
+                    .exact_source_received_at
+                    .map(|(id, at)| (id, at.timestamp_micros()))
+                    == ctx
+                        .source_event_id
+                        .map(|id| (id, ctx.source_received_at.timestamp_micros())),
+            "AI memory tool source differs from its original context"
+        );
+    } else if ctx.source == "scheduler" {
+        context.origin = crate::providers::adapter::MemoryWriteOrigin::Maintenance;
+    }
     // Even a duplicate/no-op result must validate its actual source. This read
     // check does not replace guarded commit's atomic validation after selection.
     memory.validate_write_context(&context).await?;

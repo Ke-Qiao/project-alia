@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::types::*;
+use crate::modules::memory::context::{ContextBinding, ContextError, ContextService, ContextUse};
 
 const SELECT_EFFECT: &str = "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS record FROM execution_effects e ";
 const QUEUE_LOCK: i64 = 0x414c_4941_4558_4543;
@@ -29,6 +30,19 @@ impl ExecutionRepository {
     pub async fn propose(&self, input: NewEffect) -> ExecutionResult<EffectRecord> {
         validate_input(&input)?;
         let tx = self.db.begin().await?;
+        validate_context(
+            &tx,
+            input.key.user_id,
+            input.key.request_id,
+            input.context_id,
+            &input.source,
+            input.conversation_id,
+            input.channel_id.as_deref(),
+            input.source_event_id,
+            input.source_received_at,
+            input.source_privacy_epoch,
+        )
+        .await?;
         // Serializes this owner's proposal admission; it does not lock another
         // owner's operations while checking the per-owner quota.
         tx.execute(stmt(
@@ -73,8 +87,8 @@ impl ExecutionRepository {
             return Err(ExecutionError::CapacityExceeded);
         }
         let effect_id = Uuid::new_v4();
-        tx.execute(stmt("INSERT INTO execution_effects(effect_id,user_id,request_id,invocation_key,model_call_id,source,conversation_id,channel_id,tool_name,arguments,tool_digest,policy_digest,catalog_digest,intent_digest,requires_confirmation,required_role,source_received_at,source_event_id,source_privacy_epoch,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'proposed')", vec![
-            effect_id.into(), input.key.user_id.into(), input.key.request_id.into(), input.key.invocation_key.into(), input.model_call_id.into(), input.source.into(), input.conversation_id.into(), input.channel_id.into(), input.tool_name.into(), input.arguments.into(), input.tool_digest.into(), input.policy_digest.into(), catalog_digest.into(), intent_digest.into(), (input.requires_confirmation || catalog["require_confirmation"] == true).into(), input.required_role.into(), input.source_received_at.into(), input.source_event_id.into(), input.source_privacy_epoch.into(),
+        tx.execute(stmt("INSERT INTO execution_effects(effect_id,user_id,request_id,invocation_key,model_call_id,source,conversation_id,channel_id,tool_name,arguments,tool_digest,policy_digest,catalog_digest,intent_digest,requires_confirmation,required_role,source_received_at,source_event_id,source_privacy_epoch,context_id,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'proposed')", vec![
+            effect_id.into(), input.key.user_id.into(), input.key.request_id.into(), input.key.invocation_key.into(), input.model_call_id.into(), input.source.into(), input.conversation_id.into(), input.channel_id.into(), input.tool_name.into(), input.arguments.into(), input.tool_digest.into(), input.policy_digest.into(), catalog_digest.into(), intent_digest.into(), (input.requires_confirmation || catalog["require_confirmation"] == true).into(), input.required_role.into(), input.source_received_at.into(), input.source_event_id.into(), input.source_privacy_epoch.into(), input.context_id.into(),
         ])).await?;
         audit(
             &tx,
@@ -101,14 +115,27 @@ impl ExecutionRepository {
             ));
         }
         let tx = self.db.begin().await?;
-        let record = owned_locked(&tx, owner, id).await?;
+        let observed = load(
+            &tx,
+            "WHERE e.effect_id=$1 AND e.user_id=$2",
+            vec![id.into(), owner.into()],
+        )
+        .await?
+        .ok_or(ExecutionError::NotFound)?;
+        validate_effect_context(&tx, &observed).await?;
         authorize(
             &tx,
             owner,
-            &record.tool_name,
-            record.required_role.as_deref(),
+            &observed.tool_name,
+            observed.required_role.as_deref(),
         )
         .await?;
+        let record = owned_locked(&tx, owner, id).await?;
+        if record.intent_digest != observed.intent_digest
+            || record.context_id != observed.context_id
+        {
+            return Err(ExecutionError::IdempotencyConflict);
+        }
         if record.intent_digest != approval.expected_intent_digest {
             return Err(ExecutionError::IdempotencyConflict);
         }
@@ -179,18 +206,30 @@ impl ExecutionRepository {
             ));
         }
         let tx = self.db.begin().await?;
-        let Some(record) = load(
-            &tx,
-            "WHERE e.effect_id=$1 FOR UPDATE OF e",
-            vec![request.effect_id.into()],
-        )
-        .await?
+        let Some(record) =
+            load(&tx, "WHERE e.effect_id=$1", vec![request.effect_id.into()]).await?
         else {
             return Ok(None);
         };
         if record.status != EffectStatus::Approved {
             return Ok(None);
         }
+        // Validate roots before the effect row lock, matching context reads.
+        // The immutable intent is compared again after acquiring that lock.
+        let source_valid: ExecutionResult<()> = async {
+            validate_effect_context(&tx, &record).await?;
+            active_user(&tx, record.key.user_id).await?;
+            Ok(())
+        }
+        .await;
+        let locked = owned_locked(&tx, record.key.user_id, record.effect_id).await?;
+        if locked.status != EffectStatus::Approved {
+            return Ok(None);
+        }
+        if locked.intent_digest != record.intent_digest || locked.context_id != record.context_id {
+            return Err(ExecutionError::IdempotencyConflict);
+        }
+        let record = locked;
         let has_intent = tx
             .query_one(stmt(
                 "SELECT effect_id FROM execution_outbox WHERE effect_id=$1",
@@ -205,6 +244,7 @@ impl ExecutionRepository {
         }
         let now = db_time(&tx).await?;
         let preflight = async {
+            source_valid?;
             validate_catalog(&tx, &record).await?;
             if record.tool_digest != request.expected_tool_digest
                 || record.policy_digest != request.expected_policy_digest
@@ -309,8 +349,8 @@ impl ExecutionRepository {
 
     pub async fn cancel(&self, owner: Uuid, id: Uuid) -> ExecutionResult<EffectRecord> {
         let tx = self.db.begin().await?;
-        let record = owned_locked(&tx, owner, id).await?;
         active_user(&tx, owner).await?;
+        let record = owned_locked(&tx, owner, id).await?;
         if record.status == EffectStatus::Cancelled {
             tx.commit().await?;
             return Ok(record);
@@ -494,6 +534,80 @@ async fn active_user(tx: &DatabaseTransaction, id: Uuid) -> ExecutionResult<Stri
         return Err(ExecutionError::Unauthorized("account is not active".into()));
     }
     Ok(row.try_get("", "role")?)
+}
+
+async fn validate_effect_context(
+    tx: &DatabaseTransaction,
+    effect: &EffectRecord,
+) -> ExecutionResult<()> {
+    validate_context(
+        tx,
+        effect.key.user_id,
+        effect.key.request_id,
+        effect.context_id,
+        &effect.source,
+        effect.conversation_id,
+        effect.channel_id.as_deref(),
+        effect.source_event_id,
+        effect.source_received_at,
+        effect.source_privacy_epoch,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn validate_context(
+    tx: &DatabaseTransaction,
+    owner: Uuid,
+    request: Uuid,
+    context_id: Option<Uuid>,
+    source_kind: &str,
+    conversation_id: Option<Uuid>,
+    channel_id: Option<&str>,
+    source_event_id: Option<Uuid>,
+    received_at: DateTime<Utc>,
+    epoch: Option<i64>,
+) -> ExecutionResult<()> {
+    let Some(context_id) = context_id else {
+        if source_kind == "ai" {
+            return Err(ExecutionError::Unauthorized(
+                "AI effect has no original context lease".into(),
+            ));
+        }
+        return Ok(());
+    };
+    let epoch = epoch
+        .ok_or_else(|| ExecutionError::Unauthorized("context source epoch is absent".into()))?;
+    let checked = ContextService::validate_in_transaction(
+        tx,
+        &ContextBinding {
+            context_id,
+            owner_id: owner,
+            request_id: request,
+            source_event_id,
+            source_privacy_epoch: epoch,
+        },
+        ContextUse::Execution,
+    )
+    .await
+    .map_err(|error| match error.downcast_ref::<ContextError>() {
+        Some(ContextError::Revoked(_) | ContextError::PolicyChanged) => {
+            ExecutionError::Unauthorized(error.to_string())
+        }
+        _ => ExecutionError::Database(sea_orm::DbErr::Custom(format!(
+            "context validation failed: {error:#}"
+        ))),
+    })?;
+    let original = checked.lease.source();
+    if original.conversation_id != conversation_id
+        || Some(original.channel_id.as_str()) != channel_id
+        || original.source_received_at.timestamp_micros() != received_at.timestamp_micros()
+    {
+        return Err(ExecutionError::Unauthorized(
+            "effect differs from its original context source".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn authorize(

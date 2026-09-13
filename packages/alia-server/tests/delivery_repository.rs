@@ -7,9 +7,82 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use serde_json::json;
 use uuid::Uuid;
 #[tokio::test]
+async fn policy_revocation_blocks_new_audio_admission_and_retains_inflight_facts() {
+    with_db(|f| async move {
+        let (response, input, record) = f.prepared().await;
+        let repo = f.repo();
+        let permit = repo
+            .dispatch(f.user, record.delivery_id, input.owner_id)
+            .await
+            .unwrap()
+            .unwrap();
+        repo.start(&permit, 24000, 1).await.unwrap();
+        repo.offered(&permit, 100).await.unwrap();
+        let mut accepted = receipt(input.identity.unwrap(), 1, 100);
+        accepted.end_accepted = true;
+        repo.progress(&permit, accepted.clone()).await.unwrap();
+        let contexts = f.context();
+        let policy = contexts.policy_store();
+        let current = policy.current().await.unwrap();
+        let mut next = current.policy;
+        next.max_history_messages = 7;
+        policy.replace(current.version, next).await.unwrap();
+        assert!(matches!(
+            repo.heartbeat(&permit).await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        assert!(matches!(
+            repo.offered(&permit, 101).await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        assert!(matches!(
+            repo.prepare_delivery(
+                f.user,
+                NewDelivery {
+                    output_key: "late-sentence".into(),
+                    ..input.clone()
+                }
+            )
+            .await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        let tx = f.db.begin().await.unwrap();
+        assert!(matches!(
+            repo.mark_generated_in_transaction(
+                &tx,
+                f.user,
+                response.response_id,
+                Uuid::new_v4(),
+                json!({"text":"late result"})
+            )
+            .await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        tx.rollback().await.unwrap();
+
+        accepted.receipt_sequence = 2;
+        accepted.submitted_source_frames = Some(100);
+        accepted.backend = Some(SubmissionBackend {
+            instance_id: Uuid::new_v4(),
+            boundary: SubmissionBoundary::AlsaWriteAccepted,
+            output_sample_rate_hz: 48000,
+            output_channels: 2,
+        });
+        accepted.observation_end = Some(ObservationEnd::SubmissionFinished);
+        let final_record = repo.progress(&permit, accepted).await.unwrap();
+        assert_eq!(final_record.status, DeliveryStatus::Submitted);
+        assert_eq!(final_record.submitted_frames, Some(100));
+        assert_eq!(final_record.presented_frames, None);
+        let fresh = f.response().await;
+        assert!(repo.prepare(fresh).await.is_ok());
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn concurrent_response_intent_and_delivery_reservation_are_idempotent() {
     with_db(|f| async move {
-        let input = f.response();
+        let input = f.response().await;
         let repo = f.repo();
         let results = futures::future::join_all((0..12).map(|_| repo.prepare(input.clone()))).await;
         let id = results[0].as_ref().unwrap().response_id;
@@ -21,25 +94,23 @@ async fn concurrent_response_intent_and_delivery_reservation_are_idempotent() {
         assert_eq!(f.count("delivery_responses").await, 1);
         let mut retry = input.clone();
         retry.source_received_at += chrono::Duration::minutes(1);
-        assert_eq!(
-            repo.prepare(retry)
-                .await
-                .unwrap()
-                .source_received_at
-                .timestamp_micros(),
-            input.source_received_at.timestamp_micros()
-        );
-        for mode in 1..3 {
+        assert!(matches!(
+            repo.prepare(retry).await,
+            Err(DeliveryError::Unauthorized(_))
+        ));
+        for mode in 0..3 {
             let mut changed = input.clone();
             match mode {
                 0 => changed.source_privacy_epoch = Some(1),
                 1 => changed.content = json!({"other":true}),
                 _ => changed.source_event_id = Some(Uuid::new_v4()),
             };
-            assert!(matches!(
-                repo.prepare(changed).await,
-                Err(DeliveryError::IdempotencyConflict)
-            ));
+            let error = repo.prepare(changed).await.unwrap_err();
+            if mode == 1 {
+                assert!(matches!(error, DeliveryError::IdempotencyConflict));
+            } else {
+                assert!(matches!(error, DeliveryError::Unauthorized(_)));
+            }
         }
         let delivery = NewDelivery {
             response_id: id,
@@ -280,10 +351,10 @@ async fn owner_lease_recovery_changes_only_expired_rows_and_never_replays() {
 #[tokio::test]
 async fn response_history_commit_is_atomic_and_freezes_final_content() {
     with_db(|f|async move{
- let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let mut input=f.response();input.conversation_id=Some(session);let repo=f.repo();let response=repo.prepare(input).await.unwrap();let message=Uuid::new_v4();
+ let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let input=f.response_in_session(session).await;let repo=f.repo();let response=repo.prepare(input).await.unwrap();let message=Uuid::new_v4();
  let tx=f.db.begin().await.unwrap();repo.mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
  let tx=f.db.begin().await.unwrap();let committed=repo.mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant','hello')",vec![message.into(),session.into()])).await.unwrap();tx.commit().await.unwrap();assert_eq!(committed.assistant_message_id,Some(message));
- let tx=f.db.begin().await.unwrap();let replay=repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.count("chat_messages").await,1);
+ let tx=f.db.begin().await.unwrap();let replay=repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
 }).await;
 }
 
@@ -357,7 +428,7 @@ async fn privacy_epoch_fences_every_new_media_boundary_but_keeps_observed_facts(
             .await
             .is_err()
         );
-        let mut new_response = f.response();
+        let mut new_response = f.response().await;
         new_response.source_privacy_epoch = Some(1);
         let response = repo.prepare(new_response).await.unwrap();
         let delivery = repo
@@ -391,7 +462,7 @@ async fn privacy_epoch_fences_every_new_media_boundary_but_keeps_observed_facts(
                 .status,
             DeliveryStatus::Unknown
         );
-        let mut new_response = f.response();
+        let mut new_response = f.response().await;
         new_response.source_privacy_epoch = Some(2);
         let response = repo.prepare(new_response).await.unwrap();
         let delivery = repo
@@ -515,9 +586,9 @@ async fn first_visible_cancel_checkpoint_after_ack_loss_is_valid_and_late_facts_
 #[tokio::test]
 async fn cleared_source_cannot_commit_old_assistant_history() {
     with_db(|f|async move{
- let repo=f.repo();let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let mut input=f.response();input.conversation_id=Some(session);let response=repo.prepare(input).await.unwrap();f.sql(&format!("UPDATE memory_privacy_state SET privacy_epoch=1 WHERE user_id='{}'",f.user)).await;
+ let repo=f.repo();let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let input=f.response_in_session(session).await;let response=repo.prepare(input).await.unwrap();f.sql(&format!("UPDATE memory_privacy_state SET privacy_epoch=1 WHERE user_id='{}'",f.user)).await;
  let tx=f.db.begin().await.unwrap();assert!(matches!(repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"old response"})).await,Err(DeliveryError::Unauthorized(_))));tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
- let mut unstamped=f.response();unstamped.source_privacy_epoch=None;assert!(matches!(repo.prepare(unstamped).await,Err(DeliveryError::Unauthorized(_))));
+ let mut unstamped=f.response().await;unstamped.source_privacy_epoch=None;assert!(matches!(repo.prepare(unstamped).await,Err(DeliveryError::Unauthorized(_))));
 }).await;
 }
 

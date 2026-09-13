@@ -52,6 +52,10 @@ async fn durable_input_provenance_preserves_time_owner_and_atomicity() {
         use crate::providers::{adapter::MemoryBackend, memory::AliaMemory};
         let memory = AliaMemory::new();
         memory.attach_runtime_for_test(db.clone(), None, Default::default()).await.unwrap();
+        assert!(memory.clear(owner).await.is_err());
+        db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "UPDATE users SET status='active' WHERE id=$1", [owner.into()],
+        )).await.unwrap();
         memory.clear(owner).await.unwrap();
         let late_time = chrono::Utc::now() + chrono::Duration::minutes(5);
         let late = backend.append_sourced_message(owner, session, ChatMessage::new("user", "原始消息仍须保存"), late_time, epoch).await.unwrap();
@@ -64,9 +68,6 @@ async fn durable_input_provenance_preserves_time_owner_and_atomicity() {
         old_context.source_event_ids.push(late);
         assert!(memory.validate_write_context(&old_context).await.is_err());
 
-        db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "UPDATE users SET status='active' WHERE id=$1", [owner.into()],
-        )).await.unwrap();
         let new_epoch = crate::modules::memory::source::capture_source_epoch(&db, owner).await.unwrap();
         assert_eq!(new_epoch, epoch + 1);
         let slow_time = chrono::Utc::now() - chrono::Duration::hours(2);

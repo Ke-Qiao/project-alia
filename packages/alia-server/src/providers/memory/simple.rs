@@ -14,6 +14,9 @@ use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 
 use super::privacy;
+#[path = "context_read.rs"]
+mod context_read;
+pub(crate) use context_read::{context_node, retrieve_context_nodes};
 use uuid::Uuid;
 
 use crate::config::{MemorySection, default_memory_active_embedding_profile};
@@ -27,6 +30,55 @@ use crate::providers::adapter::{
 
 const DEFAULT_TENANT_ID: Uuid = Uuid::nil();
 const EMBEDDING_PROFILE_1536: &str = "openai.text-embedding-3-small.1536.cosine.v1";
+
+async fn validate_nodes_policy(
+    tx: &sea_orm::DatabaseTransaction,
+    context: &MemoryWriteContext,
+    nodes: &[MemoryNode],
+) -> anyhow::Result<()> {
+    use crate::modules::memory::context::{ContextError, ContextService};
+    use crate::providers::adapter::MemoryWriteOrigin;
+    // Source roots were checked before this transaction's own mutations. Only
+    // policy is re-read here; rechecking modified source revisions would reject
+    // the transaction's legitimate, atomic update of its selected memories.
+    let policy = ContextService::policy_in_transaction(
+        tx,
+        context.policy_version,
+        privacy::context_use(context.origin),
+    )
+    .await?
+    .policy;
+    if context.origin == MemoryWriteOrigin::Manual {
+        return Ok(());
+    }
+    for node in nodes.iter().filter(|node| node.status == "active") {
+        if policy.sensitive_filter_enabled
+            && (node.sensitive
+                || node.visibility == "private_runtime"
+                || crate::memory_policy::detect_sensitive_memory(&node.content).is_some()
+                || node.summary.as_deref().is_some_and(|text| {
+                    crate::memory_policy::detect_sensitive_memory(text).is_some()
+                }))
+        {
+            return Err(ContextError::Revoked(
+                "persistent policy rejected sensitive derived memory".into(),
+            )
+            .into());
+        }
+        if context.origin == MemoryWriteOrigin::Automatic
+            && (!node.confidence.is_finite()
+                || !node.importance.is_finite()
+                || node.confidence < policy.capture_min_confidence
+                || node.importance < policy.capture_min_importance)
+        {
+            return Err(ContextError::Revoked(
+                "derived memory does not meet persistent capture thresholds".into(),
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
 
 type UserMemories = HashMap<Uuid, Vec<MemoryNode>>;
 
@@ -107,6 +159,12 @@ impl AliaMemory {
         embedding: Option<Arc<dyn EmbeddingAdapter>>,
         config: MemorySection,
     ) -> anyhow::Result<()> {
+        crate::modules::memory::context::ContextPolicyStore::new(db.clone())
+            .initialize_or_load(crate::modules::memory::context::ContextPolicy::from_config(
+                &config,
+                &crate::config::ConversationSection::default(),
+            )?)
+            .await?;
         *self.config.write().await = Self::from_config(&config);
         *self.embedding.write().await = embedding;
         Self::ensure_profile(&db).await?;
@@ -444,6 +502,7 @@ impl AliaMemory {
                         vec![id.clone().into(),source.into(),revision.into()])).await?;
                 }
             }
+            validate_nodes_policy(&tx, context, &projected).await?;
             tx.commit().await?;
             for node in projected {
                 self.write_embedding_if_available(&db, context, &node).await;
@@ -1247,115 +1306,22 @@ impl AliaMemory {
         query: &str,
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<MemoryNode>> {
-        if self.should_use_1536_embedding().await
-            && let Some(embedding) = self.embedding().await
-            && let Ok(vectors) = embedding.embed(&[query.to_string()]).await
-            && let Some(vector) = vectors.first()
-            && vector.len() == 1536
-        {
-            let vector_literal = vector_literal(vector);
-            let rows = db
-                .query_all(Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    r#"
-                    WITH ranked AS (
-                    SELECT m.id::text, m.revision, m.kind, m.scope, m.memory_layer, m.node_type,
-                           m.content, m.summary, m.confidence, m.salience, m.importance,
-                           m.visibility, m.sensitive, m.status,
-                           to_jsonb(m.topic_tags) AS topic_tags,
-                           to_jsonb(m.affect_tags) AS affect_tags,
-                           to_jsonb(m.source_event_ids) AS source_event_ids,
-                           m.evidence, m.metadata, m.superseded_by::text, m.expires_at,
-                           1 - (e.embedding <=> $3::vector) AS semantic_similarity,
-                           GREATEST(0.0, 1.0 - EXTRACT(EPOCH FROM (NOW() - m.updated_at)) / 2592000.0) AS recency_score,
-                           LEAST(1.0, COALESCE(edge_stats.edge_count, 0)::real / 3.0) AS graph_relevance,
-                           CASE WHEN cardinality(m.affect_tags) > 0 THEN 0.5 ELSE 0.0 END AS affect_relevance
-                    FROM memory_items m
-                    JOIN memory_embeddings_1536 e ON e.memory_id = m.id AND e.source_revision = m.revision
-                    LEFT JOIN LATERAL (
-                        SELECT COUNT(*) AS edge_count
-                        FROM memory_live_edges edge
-                        WHERE edge.evidence_memory_id = m.id
-                          AND edge.tenant_id = m.tenant_id
-                          AND edge.user_id = m.user_id
-                    ) edge_stats ON TRUE
-                    WHERE m.tenant_id = $1::uuid
-                      AND m.user_id = $2::uuid
-                      AND e.profile_id = $4
-                      AND m.status = 'active'
-                      AND ($5::text[] IS NULL OR m.memory_layer = ANY($5::text[]))
-                      AND (m.expires_at IS NULL OR m.expires_at > NOW())
-                    )
-                    SELECT *,
-                           (
-                               0.40 * semantic_similarity
-                             + 0.15 * recency_score
-                             + 0.15 * salience
-                             + 0.10 * importance
-                             + 0.10 * graph_relevance
-                             + 0.05 * confidence
-                             + 0.05 * affect_relevance
-                           ) AS final_score
-                    FROM ranked
-                    ORDER BY final_score DESC, semantic_similarity DESC
-                    LIMIT $6
-                    "#,
-                    vec![
-                        DEFAULT_TENANT_ID.to_string().into(),
-                        user_id.to_string().into(),
-                        vector_literal.into(),
-                        self.active_profile().await.into(),
-                        opts.layers.clone().into(),
-                        opts.max_results.unwrap_or(10).clamp(1, 50).into(),
-                    ],
-                ))
-                .await?;
-            let min_similarity = opts.min_similarity.unwrap_or(0.0).clamp(0.0, 1.0);
-            let mut nodes = Vec::new();
-            for row in rows {
-                let similarity: f32 = row.try_get("", "semantic_similarity").unwrap_or(0.0);
-                if similarity >= min_similarity {
-                    let final_score: f32 = row.try_get("", "final_score").unwrap_or(similarity);
-                    let recency_score: f32 = row.try_get("", "recency_score").unwrap_or(0.0);
-                    let graph_relevance: f32 = row.try_get("", "graph_relevance").unwrap_or(0.0);
-                    let affect_relevance: f32 = row.try_get("", "affect_relevance").unwrap_or(0.0);
-                    let mut node = row_to_memory_node(row)?;
-                    node.metadata = merge_retrieval_metadata(
-                        node.metadata,
-                        RetrievalScoreBreakdown {
-                            retrieval_path: "vector_hnsw".to_string(),
-                            semantic_similarity: similarity,
-                            recency_score,
-                            salience: node.salience,
-                            importance: node.importance,
-                            graph_relevance,
-                            confidence: node.confidence,
-                            affect_relevance,
-                            final_score,
-                            reason:
-                                "Vector similarity matched the query and was reranked with memory policy signals."
-                                    .to_string(),
-                        },
-                    );
-                    nodes.push(node);
-                }
+        let profile = self.active_profile().await;
+        let vector = if self.should_use_1536_embedding().await {
+            if let Some(embedding) = self.embedding().await {
+                embedding
+                    .embed(&[query.to_string()])
+                    .await
+                    .ok()
+                    .and_then(|mut vectors| (!vectors.is_empty()).then(|| vectors.remove(0)))
+                    .filter(|vector| vector.len() == 1536 && vector.iter().all(|v| v.is_finite()))
+            } else {
+                None
             }
-            if !nodes.is_empty() {
-                return Ok(nodes);
-            }
-        }
-
-        let candidates = self
-            .list_from_db(
-                db,
-                user_id,
-                MemoryListOpts {
-                    max_results: Some(200),
-                    layers: opts.layers.clone(),
-                },
-            )
-            .await?;
-        Ok(rank_keyword_candidates(query, candidates, opts))
+        } else {
+            None
+        };
+        retrieve_context_nodes(db, user_id, query, opts, &profile, vector.as_deref()).await
     }
 
     async fn graph_from_db(
@@ -1495,6 +1461,11 @@ impl ModuleLifecycle for AliaMemory {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+        crate::modules::memory::context::ContextPolicyStore::new(ctx.db.clone())
+            .initialize_or_load(
+                crate::modules::memory::context::ContextPolicy::from_server_config(&ctx.config)?,
+            )
+            .await?;
         *self.config.write().await = Self::from_config(&ctx.config.policies.memory);
         *self.embedding.write().await = ctx.embedding.clone();
         *self.db.write().await = Some(ctx.db.clone());
@@ -1552,6 +1523,36 @@ impl ModuleLifecycle for AliaMemory {
 
 #[async_trait]
 impl MemoryBackend for AliaMemory {
+    async fn bind_context(
+        &self,
+        snapshot: MemoryWriteContext,
+        context_id: Uuid,
+        origin: crate::providers::adapter::MemoryWriteOrigin,
+    ) -> anyhow::Result<MemoryWriteContext> {
+        use crate::modules::memory::context::{ContextService, ContextUse};
+        use crate::providers::adapter::MemoryWriteOrigin;
+        let db = self.db().await.ok_or_else(|| {
+            anyhow::anyhow!("in-memory Memory cannot bind a persistent ContextLease")
+        })?;
+        let purpose = match origin {
+            MemoryWriteOrigin::Manual => ContextUse::ManualMemoryWrite,
+            MemoryWriteOrigin::Automatic => ContextUse::AutomaticMemoryWrite,
+            MemoryWriteOrigin::Ai => ContextUse::AiMemoryWrite,
+            MemoryWriteOrigin::Maintenance => ContextUse::MemoryMaintenance,
+        };
+        let tx = db.begin().await?;
+        let valid = ContextService::validate_lease_in_transaction(
+            &tx,
+            snapshot.user_id,
+            context_id,
+            purpose,
+        )
+        .await?;
+        let context = valid.lease.memory_write_context(snapshot, origin)?;
+        privacy::validate(&tx, &context).await?;
+        tx.commit().await?;
+        Ok(context)
+    }
     async fn validate_write_context(&self, context: &MemoryWriteContext) -> anyhow::Result<()> {
         if let Some(db) = self.db().await {
             let tx = db.begin().await?;
@@ -1702,6 +1703,7 @@ impl MemoryBackend for AliaMemory {
                 .get_from_db(&tx, context.user_id, &id)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("stored memory missing"))?;
+            validate_nodes_policy(&tx, context, std::slice::from_ref(&stored)).await?;
             tx.commit().await?;
             self.write_embedding_if_available(&db, context, &stored)
                 .await;
@@ -1840,6 +1842,7 @@ impl MemoryBackend for AliaMemory {
                 }
                 tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO memory_sources(memory_id,source_id,source_revision) VALUES($1::uuid,$2::uuid,$3) ON CONFLICT(memory_id,source_id) DO UPDATE SET source_revision=EXCLUDED.source_revision",vec![node_id.to_string().into(),source.clone().into(),(*revision).into()])).await?;
             }
+            validate_nodes_policy(&tx, context, std::slice::from_ref(&stored)).await?;
             tx.commit().await?;
             self.write_embedding_if_available(&db, context, &stored)
                 .await;

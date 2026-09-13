@@ -8,14 +8,16 @@
 //! - Manual trigger via API
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, Statement,
+    QueryFilter, QueryOrder, QuerySelect, Set, Statement, TransactionTrait,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -25,22 +27,26 @@ use uuid::Uuid;
 
 use crate::channels::adapter::ChannelEvent;
 use crate::config::InsightsSection;
-use crate::entity::{chat_session, insight_log, llm_cache};
+use crate::entity::{chat_session, insight_log};
 use crate::event::{EventBus, ServerEvent};
 use crate::memory_policy::detect_sensitive_memory;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::memory::context::{ContextError, ContextService, ContextUse};
 use crate::providers::adapter::{
-    CACHE_METADATA_SCHEMA, ChatMessage, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
+    CACHE_METADATA_SCHEMA, CacheBackend, CacheCas, CacheReview, CacheWork, CachedResponse,
+    ChatMessage, EmbeddingAdapter, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
     LlmAdapter, MemoryBackend, MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch,
-    MemoryWriteContext, ScheduleConfig, ScheduledTask, SchedulerBackend,
+    MemoryWriteContext, MemoryWriteOrigin, ScheduleConfig, ScheduledTask, SchedulerBackend,
 };
 use crate::scheduler::ConditionRegistry;
 
 /// Well-known task name prefix for insights cron tasks
 const TASK_NAME_REFLECTION: &str = "insight_reflection";
 const TASK_NAME_HABIT_DETECTION: &str = "insight_habit_detection";
-const CACHE_STATUS_PENDING: &str = "pending_insights_review";
-const CACHE_STATUS_ACTIVE: &str = "active";
+// The same finite budget as a default scheduled task. It includes queueing,
+// authority reads and provider work; no phase may monopolize the shared permit.
+const PHASE_TIMEOUT: Duration = Duration::from_secs(30);
+const LOG_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The caller's future owns the count, including cancellation and early errors.
 struct PendingTask<'a>(&'a AtomicU32);
@@ -58,13 +64,13 @@ impl Drop for PendingTask<'_> {
     }
 }
 
-#[derive(Debug, Clone)]
-struct PendingCacheEntry {
-    id: Uuid,
-    query_text: String,
-    response_text: String,
-    metadata: serde_json::Value,
+#[derive(Clone, Default)]
+struct CacheReviewRuntime {
+    cache: Option<Arc<dyn CacheBackend>>,
+    embedding: Option<Arc<dyn EmbeddingAdapter>>,
 }
+
+type PendingCacheEntry = CachedResponse;
 
 #[derive(Debug, Clone, Default)]
 struct CacheReviewStats {
@@ -187,6 +193,7 @@ pub struct ScheduledInsights {
     db: Mutex<Option<DatabaseConnection>>,
     llm: Mutex<Option<Arc<dyn LlmAdapter>>>,
     memory: Mutex<Option<Arc<dyn MemoryBackend>>>,
+    cache_review: Mutex<CacheReviewRuntime>,
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
     background: crate::module::background::OwnedBackground,
@@ -209,6 +216,7 @@ impl ScheduledInsights {
             db: Mutex::new(None),
             llm: Mutex::new(None),
             memory: Mutex::new(None),
+            cache_review: Mutex::new(CacheReviewRuntime::default()),
             event_bus: Mutex::new(None),
             cancel_token: Mutex::new(None),
             background: crate::module::background::OwnedBackground::default(),
@@ -230,46 +238,58 @@ impl ScheduledInsights {
         }
     }
 
-    /// Execute an insights phase, guarded by the concurrency semaphore
+    async fn bounded_phase<T>(
+        semaphore: &Semaphore,
+        phase: impl Future<Output = anyhow::Result<T>>,
+    ) -> anyhow::Result<T> {
+        tokio::time::timeout(PHASE_TIMEOUT, async {
+            let _permit = semaphore
+                .acquire()
+                .await
+                .map_err(|_| anyhow::anyhow!("insights semaphore closed"))?;
+            phase.await
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!(
+            "insights phase deadline exceeded; completion is unconfirmed and earlier changes may already be committed"
+        ))?
+    }
+
+    /// Execute an insights phase, guarded by a bounded concurrency permit.
     async fn execute_phase(
         db: &DatabaseConnection,
         event_bus: &EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
         memory: Option<Arc<dyn MemoryBackend>>,
+        cache_review: CacheReviewRuntime,
         user: InsightUserContext,
         phase: &InsightPhase,
         trigger: &str,
         config: &InsightsSection,
         semaphore: &Semaphore,
     ) -> anyhow::Result<InsightLog> {
-        let _permit = semaphore
-            .acquire()
-            .await
-            .map_err(|_| anyhow::anyhow!("insights semaphore closed"))?;
-
-        // Recent interaction context is not proof that the account is still active.
-        // Recheck after waiting for capacity and before reading or sending any context.
-        let account = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            crate::entity::user::Entity::find_by_id(user.user_id).one(db),
-        )
-        .await
-        .map_err(|_| anyhow::anyhow!("insights account authorization timed out"))??;
-        anyhow::ensure!(
-            account.is_some_and(|account| account.status == "active"),
-            "insights requires a currently active account"
-        );
-
         let phase_str = phase.as_str();
-
-        event_bus.publish(ServerEvent::InsightStarted {
-            phase: phase_str.to_string(),
-            trigger: trigger.to_string(),
-        });
-
-        let start = std::time::Instant::now();
-        let result = Self::run_phase(db, llm, memory, phase, &user, config).await;
-        let duration_ms = start.elapsed().as_millis() as i32;
+        let start = tokio::time::Instant::now();
+        let result = Self::bounded_phase(semaphore, async {
+            // A queued event is not continuing account authorization.
+            let account = tokio::time::timeout(
+                LOG_TIMEOUT,
+                crate::entity::user::Entity::find_by_id(user.user_id).one(db),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("insights account authorization timed out"))??;
+            anyhow::ensure!(
+                account.is_some_and(|account| account.status == "active"),
+                "insights requires a currently active account"
+            );
+            event_bus.publish(ServerEvent::InsightStarted {
+                phase: phase_str.to_string(),
+                trigger: trigger.to_string(),
+            });
+            Self::run_phase(db, llm, memory, cache_review, phase, &user, config).await
+        })
+        .await;
+        let duration_ms = start.elapsed().as_millis().min(i32::MAX as u128) as i32;
 
         let (log, failure) = match result {
             Ok(stats) => {
@@ -316,7 +336,12 @@ impl ScheduledInsights {
             duration_ms: Set(Some(log.duration_ms)),
             created_at: Set(Utc::now()),
         };
-        if let Err(error) = active_model.insert(db).await {
+        // Logging cannot keep the permit or this caller alive indefinitely.
+        let persisted = tokio::time::timeout(LOG_TIMEOUT, active_model.insert(db))
+            .await
+            .map_err(|_| anyhow::anyhow!("insights log acknowledgement timed out"))
+            .and_then(|result| result.map_err(anyhow::Error::from));
+        if let Err(error) = persisted {
             return Err(anyhow::anyhow!(
                 "insights log persistence failed; earlier phase changes may already be committed: {error}; phase failure: {}",
                 failure
@@ -343,6 +368,7 @@ impl ScheduledInsights {
         db: &DatabaseConnection,
         llm: Option<Arc<dyn LlmAdapter>>,
         memory: Option<Arc<dyn MemoryBackend>>,
+        cache_review: CacheReviewRuntime,
         phase: &InsightPhase,
         user: &InsightUserContext,
         config: &InsightsSection,
@@ -366,13 +392,14 @@ impl ScheduledInsights {
             InsightPhase::Consolidation => {
                 tracing::info!("executing Phase 2: memory consolidation");
                 let memory_stats =
-                    Self::consolidate_memories(memory.clone(), llm.clone(), user, 50, config)
+                    Self::consolidate_memories(db, memory.clone(), llm.clone(), user, 50, config)
                         .await?;
                 let cache_stats =
-                    Self::review_pending_cache_entries(db, llm, user.user_id, 16).await?;
+                    Self::review_pending_cache_entries(&cache_review, llm, user.user_id, 16)
+                        .await?;
                 Ok(PhaseStats {
                     summary: format!(
-                        "{} Cache review approved {}, deleted {}, left pending {}.",
+                        "{} Cache review approved {}, deleted {}, unconfirmed {}.",
                         memory_stats.summary,
                         cache_stats.approved,
                         cache_stats.deleted,
@@ -400,10 +427,11 @@ impl ScheduledInsights {
                 )
                 .await?;
                 let cache_stats =
-                    Self::review_pending_cache_entries(db, llm, user.user_id, 24).await?;
+                    Self::review_pending_cache_entries(&cache_review, llm, user.user_id, 24)
+                        .await?;
                 Ok(PhaseStats {
                     summary: format!(
-                        "{} Cache review approved {}, deleted {}, left pending {}.",
+                        "{} Cache review approved {}, deleted {}, unconfirmed {}.",
                         memory_stats.summary,
                         cache_stats.approved,
                         cache_stats.deleted,
@@ -449,6 +477,7 @@ impl ScheduledInsights {
         event_bus: EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
         memory: Option<Arc<dyn MemoryBackend>>,
+        cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,
         enabled: Arc<AtomicBool>,
         pending_tasks: Arc<AtomicU32>,
@@ -474,7 +503,7 @@ impl ScheduledInsights {
                             }
                             let config = config.lock().await.clone().unwrap_or_default();
                             Self::handle_event(
-                                &db, &event_bus, llm.clone(), memory.clone(), &event, &enabled,
+                                &db, &event_bus, llm.clone(), memory.clone(), cache_review.clone(), &event, &enabled,
                                 &pending_tasks, &semaphore, &state, &config,
                                 reflection_task_id, habit_task_id,
                             ).await;
@@ -498,6 +527,7 @@ impl ScheduledInsights {
         event_bus: &EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
         memory: Option<Arc<dyn MemoryBackend>>,
+        cache_review: CacheReviewRuntime,
         event: &ServerEvent,
         enabled: &AtomicBool,
         pending_tasks: &AtomicU32,
@@ -566,6 +596,7 @@ impl ScheduledInsights {
                             event_bus,
                             llm.clone(),
                             memory.clone(),
+                            cache_review.clone(),
                             user,
                             &phase,
                             "schedule",
@@ -606,6 +637,7 @@ impl ScheduledInsights {
                     &event_bus,
                     llm.clone(),
                     memory.clone(),
+                    cache_review.clone(),
                     user,
                     &InsightPhase::Extraction,
                     "post_conversation",
@@ -665,6 +697,7 @@ impl ScheduledInsights {
                     event_bus,
                     llm.clone(),
                     memory.clone(),
+                    cache_review.clone(),
                     user.clone(),
                     &InsightPhase::Consolidation,
                     "sensor",
@@ -677,6 +710,7 @@ impl ScheduledInsights {
                     event_bus,
                     llm.clone(),
                     memory.clone(),
+                    cache_review.clone(),
                     user,
                     &InsightPhase::Reflection,
                     "sensor",
@@ -700,6 +734,7 @@ impl ScheduledInsights {
         event_bus: EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
         memory: Option<Arc<dyn MemoryBackend>>,
+        cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,
         enabled: Arc<AtomicBool>,
         pending_tasks: Arc<AtomicU32>,
@@ -743,7 +778,7 @@ impl ScheduledInsights {
                         };
                         let _pending = PendingTask::new(&pending_tasks);
                         let _ = Self::execute_phase(
-                            &db, &event_bus, llm.clone(), memory.clone(), user,
+                            &db, &event_bus, llm.clone(), memory.clone(), cache_review.clone(), user,
                             &InsightPhase::Consolidation, "idle", &config, &semaphore,
                         ).await;
 
@@ -906,6 +941,40 @@ impl ScheduledInsights {
         users.into_values().collect()
     }
 
+    async fn validate_insight_read_policy(
+        db: &DatabaseConnection,
+        context: &MemoryWriteContext,
+    ) -> anyhow::Result<bool> {
+        let usage = match context.origin {
+            MemoryWriteOrigin::Automatic => ContextUse::AutomaticMemoryWrite,
+            MemoryWriteOrigin::Maintenance => ContextUse::MemoryMaintenance,
+            _ => anyhow::bail!("invalid background insight origin"),
+        };
+        let expected = context
+            .policy_version
+            .ok_or_else(|| anyhow::anyhow!("insights requires persistent source policy"))?;
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let tx = db.begin().await?;
+            let allowed =
+                match ContextService::policy_in_transaction(&tx, Some(expected), usage).await {
+                    Ok(_) => true,
+                    Err(error)
+                        if matches!(
+                            error.downcast_ref::<ContextError>(),
+                            Some(ContextError::Revoked(_))
+                        ) =>
+                    {
+                        false
+                    }
+                    Err(error) => return Err(error),
+                };
+            tx.commit().await?;
+            Ok::<bool, anyhow::Error>(allowed)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("insights policy validation timed out"))?
+    }
+
     async fn extract_memories_from_recent_conversation(
         db: &DatabaseConnection,
         memory: Option<Arc<dyn MemoryBackend>>,
@@ -923,6 +992,14 @@ impl ScheduledInsights {
         };
 
         let mut context = memory.write_snapshot(user.user_id).await?;
+        context.origin = MemoryWriteOrigin::Automatic;
+        if !Self::validate_insight_read_policy(db, &context).await? {
+            return Ok(MemoryInsightStats {
+                summary: "Memory insights skipped: current policy disallows this phase.".into(),
+                model_used: memory.name().into(),
+                ..Default::default()
+            });
+        }
         let messages = Self::load_recent_messages(db, user, message_limit, &mut context).await?;
         if messages.is_empty() {
             return Ok(MemoryInsightStats {
@@ -944,7 +1021,25 @@ impl ScheduledInsights {
             ..MemoryInsightStats::default()
         };
 
-        let transcript = transcript_for_prompt(&messages, 10_000);
+        let captured = ContextService::new(
+            db.clone(),
+            Arc::new(crate::providers::embedding::NoopEmbedding),
+        )
+        .materialize_memory_capture(&context, MemoryWriteOrigin::Automatic)
+        .await?;
+        context = captured
+            .lease()
+            .memory_write_context(context, MemoryWriteOrigin::Automatic)?;
+        context = memory
+            .bind_context(context, captured.lease().id(), MemoryWriteOrigin::Automatic)
+            .await?;
+        let messages = captured
+            .messages()
+            .iter()
+            .map(|row| row.message().clone())
+            .collect::<Vec<_>>();
+        let transcript = transcript_for_prompt(&messages);
+        memory.validate_write_context(&context).await?;
         let response = llm
             .chat(&[
                 ChatMessage::new("system", config.memory_extraction_prompt.clone()),
@@ -974,6 +1069,7 @@ impl ScheduledInsights {
     }
 
     async fn consolidate_memories(
+        db: &DatabaseConnection,
         memory: Option<Arc<dyn MemoryBackend>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
@@ -996,6 +1092,14 @@ impl ScheduledInsights {
         };
 
         let mut context = memory.write_snapshot(user.user_id).await?;
+        context.origin = MemoryWriteOrigin::Maintenance;
+        if !Self::validate_insight_read_policy(db, &context).await? {
+            return Ok(MemoryInsightStats {
+                summary: "Memory insights skipped: current policy disallows this phase.".into(),
+                model_used: memory.name().into(),
+                ..Default::default()
+            });
+        }
         let memories = memory
             .list(
                 user.user_id,
@@ -1014,6 +1118,24 @@ impl ScheduledInsights {
             });
         }
 
+        let captured = ContextService::new(
+            db.clone(),
+            Arc::new(crate::providers::embedding::NoopEmbedding),
+        )
+        .materialize_memory_capture(&context, MemoryWriteOrigin::Maintenance)
+        .await?;
+        context = captured
+            .lease()
+            .memory_write_context(context, MemoryWriteOrigin::Maintenance)?;
+        context = memory
+            .bind_context(
+                context,
+                captured.lease().id(),
+                MemoryWriteOrigin::Maintenance,
+            )
+            .await?;
+        let memories = captured.memories().to_vec();
+        memory.validate_write_context(&context).await?;
         let response = llm
             .chat(&[
                 ChatMessage::new("system", config.memory_consolidation_prompt.clone()),
@@ -1022,12 +1144,31 @@ impl ScheduledInsights {
                     format!(
                         "User id: {}\nCurrent memories:\n{}",
                         user.user_id_text,
-                        memories_for_prompt(&memories, 14_000)
+                        memories_for_prompt(&memories)
                     ),
                 ),
             ])
             .await?;
-        let decision = parse_memory_consolidation_response(&response)?;
+        Self::apply_consolidation_response(
+            memory.as_ref(),
+            &context,
+            &memories,
+            user,
+            &response,
+            llm.name(),
+        )
+        .await
+    }
+
+    async fn apply_consolidation_response(
+        memory: &dyn MemoryBackend,
+        context: &MemoryWriteContext,
+        memories: &[MemoryNode],
+        user: &InsightUserContext,
+        response: &str,
+        llm_name: &str,
+    ) -> anyhow::Result<MemoryInsightStats> {
+        let decision = parse_memory_consolidation_response(response)?;
         let _proposed_summary = decision.summary;
         let mut batch = MemoryBatch::default();
         let mut selected = std::collections::HashSet::new();
@@ -1099,7 +1240,7 @@ impl ScheduledInsights {
         }
         batch.creates = Self::prepare_memory_candidates(user, decision.creates, "consolidation")?;
         let committed = memory
-            .apply_batch_guarded(&context, batch)
+            .apply_batch_guarded(context, batch)
             .await
             .map_err(|error| anyhow::anyhow!("consolidation batch was not confirmed: {error}"))?;
         let created = committed.created_ids.len() as u32;
@@ -1112,7 +1253,7 @@ impl ScheduledInsights {
             updated,
             retired,
             pending: (memories.len() as u32).saturating_sub(updated + retired),
-            model_used: join_model_labels(&[memory.name().to_string(), llm.name().to_string()]),
+            model_used: join_model_labels(&[memory.name().to_string(), llm_name.to_string()]),
             summary: format!(
                 "Consolidation committed {updated} updates, {retired} retirements and {created} creates atomically."
             ),
@@ -1144,6 +1285,14 @@ impl ScheduledInsights {
         };
 
         let mut context = memory.write_snapshot(user.user_id).await?;
+        context.origin = MemoryWriteOrigin::Automatic;
+        if !Self::validate_insight_read_policy(db, &context).await? {
+            return Ok(MemoryInsightStats {
+                summary: "Memory insights skipped: current policy disallows this phase.".into(),
+                model_used: memory.name().into(),
+                ..Default::default()
+            });
+        }
         let memories = memory
             .list(
                 user.user_id,
@@ -1164,6 +1313,25 @@ impl ScheduledInsights {
             });
         }
 
+        let captured = ContextService::new(
+            db.clone(),
+            Arc::new(crate::providers::embedding::NoopEmbedding),
+        )
+        .materialize_memory_capture(&context, MemoryWriteOrigin::Automatic)
+        .await?;
+        context = captured
+            .lease()
+            .memory_write_context(context, MemoryWriteOrigin::Automatic)?;
+        context = memory
+            .bind_context(context, captured.lease().id(), MemoryWriteOrigin::Automatic)
+            .await?;
+        let messages = captured
+            .messages()
+            .iter()
+            .map(|row| row.message().clone())
+            .collect::<Vec<_>>();
+        let memories = captured.memories().to_vec();
+        memory.validate_write_context(&context).await?;
         let response = llm
             .chat(&[
                 ChatMessage::new("system", config.reflection_prompt.clone()),
@@ -1172,8 +1340,8 @@ impl ScheduledInsights {
                     format!(
                         "User id: {}\nCurrent memories:\n{}\n\nRecent conversation:\n{}",
                         user.user_id_text,
-                        memories_for_prompt(&memories, 10_000),
-                        transcript_for_prompt(&messages, 8_000)
+                        memories_for_prompt(&memories),
+                        transcript_for_prompt(&messages)
                     ),
                 ),
             ])
@@ -1219,6 +1387,14 @@ impl ScheduledInsights {
         };
 
         let mut context = memory.write_snapshot(user.user_id).await?;
+        context.origin = MemoryWriteOrigin::Automatic;
+        if !Self::validate_insight_read_policy(db, &context).await? {
+            return Ok(MemoryInsightStats {
+                summary: "Memory insights skipped: current policy disallows this phase.".into(),
+                model_used: memory.name().into(),
+                ..Default::default()
+            });
+        }
         let memories = memory
             .list(
                 user.user_id,
@@ -1240,6 +1416,25 @@ impl ScheduledInsights {
             });
         }
 
+        let captured = ContextService::new(
+            db.clone(),
+            Arc::new(crate::providers::embedding::NoopEmbedding),
+        )
+        .materialize_memory_capture(&context, MemoryWriteOrigin::Automatic)
+        .await?;
+        context = captured
+            .lease()
+            .memory_write_context(context, MemoryWriteOrigin::Automatic)?;
+        context = memory
+            .bind_context(context, captured.lease().id(), MemoryWriteOrigin::Automatic)
+            .await?;
+        let messages = captured
+            .messages()
+            .iter()
+            .map(|row| row.message().clone())
+            .collect::<Vec<_>>();
+        let memories = captured.memories().to_vec();
+        memory.validate_write_context(&context).await?;
         let response = llm
             .chat(&[
                 ChatMessage::new("system", config.habit_detection_prompt.clone()),
@@ -1248,8 +1443,8 @@ impl ScheduledInsights {
                     format!(
                         "User id: {}\nCurrent memories:\n{}\n\nRecent conversation:\n{}",
                         user.user_id_text,
-                        memories_for_prompt(&memories, 10_000),
-                        transcript_for_prompt(&messages, 10_000)
+                        memories_for_prompt(&memories),
+                        transcript_for_prompt(&messages)
                     ),
                 ),
             ])
@@ -1385,145 +1580,121 @@ impl ScheduledInsights {
     }
 
     async fn review_pending_cache_entries(
-        db: &DatabaseConnection,
+        runtime: &CacheReviewRuntime,
         llm: Option<Arc<dyn LlmAdapter>>,
         user_id: Uuid,
         limit: usize,
     ) -> anyhow::Result<CacheReviewStats> {
-        let entries = Self::load_pending_cache_entries(db, user_id, limit).await?;
+        let Some(cache) = &runtime.cache else {
+            return Ok(CacheReviewStats::default());
+        };
+        cache.cleanup_expired(256).await?;
+        let entries = cache.load_pending(user_id, None, limit).await?;
         let mut stats = CacheReviewStats {
             pending: entries.len() as u32,
             model_used: "none".to_string(),
             ..CacheReviewStats::default()
         };
-
         let Some(llm) = llm else {
-            if !entries.is_empty() {
-                tracing::warn!(
-                    pending = entries.len(),
-                    "pending cache entries left disabled because no insights LLM is available"
-                );
-            }
             return Ok(stats);
         };
-
-        stats.model_used = llm.name().to_string();
         for entry in entries {
+            // A batch can wait behind earlier model requests. Its initial read
+            // is not continuing permission to send private text to a provider.
+            if !cache.authorize_work(&entry, CacheWork::Review).await? {
+                continue;
+            }
+            stats.model_used = llm.name().to_string();
             let decision = match Self::review_cache_entry_with_llm(llm.as_ref(), &entry).await {
                 Ok(decision) => decision,
                 Err(error) => {
-                    tracing::warn!(
-                        cache_entry_id = %entry.id,
-                        error = ?error,
-                        "cache review failed; leaving entry pending"
-                    );
+                    tracing::warn!(cache_entry_id = %entry.version.cache_id, error = ?error,
+                        "cache review failed; no decision was committed");
                     continue;
                 }
             };
-
             let action = decision.decision.trim().to_ascii_lowercase();
-            if action == "approve" {
-                if Self::cache_review_approves_direct_return(&decision) {
-                    let response_text = decision
-                        .refined_response
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|text| !text.is_empty())
-                        .unwrap_or(entry.response_text.trim())
-                        .to_string();
-                    Self::activate_cache_entry(db, &entry, response_text, &decision).await?;
-                    stats.approved += 1;
-                    stats.pending = stats.pending.saturating_sub(1);
-                } else if Self::cache_review_has_explicit_unsafe_flag(&decision) {
-                    Self::delete_cache_entry(db, entry.id, decision.reason.as_deref()).await?;
+            let review = if action == "approve"
+                && Self::cache_review_approves_direct_return(&decision)
+            {
+                let response_text = decision
+                    .refined_response
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or(entry.response_text.trim())
+                    .to_string();
+                let mut metadata = entry.metadata.clone();
+                metadata["schema"] = serde_json::json!(CACHE_METADATA_SCHEMA);
+                metadata["policy"] = serde_json::json!("private_exact");
+                for flag in [
+                    "safe_direct_return",
+                    "memory_independent",
+                    "tool_free",
+                    "dynamic_free",
+                ] {
+                    metadata[flag] = serde_json::json!(true);
+                }
+                metadata["reviewed_by"] = serde_json::json!("insights");
+                metadata["reviewed_at"] = serde_json::json!(Utc::now().to_rfc3339());
+                if let Some(reason) = decision.reason.as_deref() {
+                    metadata["review_reason"] =
+                        serde_json::json!(reason.chars().take(512).collect::<String>());
+                }
+                CacheReview::Approve {
+                    response_text,
+                    metadata,
+                }
+            } else if matches!(action.as_str(), "delete" | "reject")
+                || (action == "approve" && Self::cache_review_has_explicit_unsafe_flag(&decision))
+            {
+                CacheReview::Reject
+            } else {
+                continue;
+            };
+            match cache.apply_review(&entry, review).await? {
+                CacheCas::Stale => {}
+                CacheCas::Applied(None) => {
                     stats.deleted += 1;
                     stats.pending = stats.pending.saturating_sub(1);
-                } else {
-                    tracing::warn!(
-                        cache_entry_id = %entry.id,
-                        "cache review approved without all safety flags; leaving entry pending"
-                    );
                 }
-            } else if matches!(action.as_str(), "delete" | "reject") {
-                Self::delete_cache_entry(db, entry.id, decision.reason.as_deref()).await?;
-                stats.deleted += 1;
-                stats.pending = stats.pending.saturating_sub(1);
-            } else {
-                tracing::debug!(
-                    cache_entry_id = %entry.id,
-                    decision = %decision.decision,
-                    reason = ?decision.reason,
-                    "cache review left entry pending"
-                );
+                CacheCas::Applied(Some(approved)) => {
+                    stats.approved += 1;
+                    stats.pending = stats.pending.saturating_sub(1);
+                    // This task owns the network request. Only the approved
+                    // revision can receive its vector; there is no detached job.
+                    if let Some(embedding) = &runtime.embedding {
+                        let result = async {
+                            if !cache
+                                .authorize_work(&approved, CacheWork::Embedding)
+                                .await?
+                            {
+                                return Ok(());
+                            }
+                            if let Some(batch) = embedding
+                                .embed_profiled(&[approved.query_text.clone()])
+                                .await?
+                            {
+                                anyhow::ensure!(
+                                    batch.vectors.len() == 1,
+                                    "cache embedding result count mismatch"
+                                );
+                                cache
+                                    .fill_embedding(&approved, &batch.profile, &batch.vectors[0])
+                                    .await?;
+                            }
+                            Ok::<(), anyhow::Error>(())
+                        }
+                        .await;
+                        if let Err(error) = result {
+                            tracing::debug!(cache_entry_id=%approved.version.cache_id,error=?error,
+                                "approved cache embedding was not confirmed");
+                        }
+                    }
+                }
             }
         }
-
         Ok(stats)
-    }
-
-    async fn load_pending_cache_entries(
-        db: &DatabaseConnection,
-        user_id: Uuid,
-        limit: usize,
-    ) -> anyhow::Result<Vec<PendingCacheEntry>> {
-        let limit = limit.clamp(1, 100) as i64;
-        let (sql, values): (&str, Vec<sea_orm::Value>) = if user_id.is_nil() {
-            (
-                r#"
-                SELECT id::text AS id, query_text, response_text, metadata
-                FROM llm_cache
-                WHERE expires_at > NOW()
-                    AND metadata->>'schema' = $1
-                    AND metadata->>'status' = $2
-                ORDER BY created_at ASC
-                LIMIT $3
-                "#,
-                vec![
-                    CACHE_METADATA_SCHEMA.into(),
-                    CACHE_STATUS_PENDING.into(),
-                    limit.into(),
-                ],
-            )
-        } else {
-            (
-                r#"
-                SELECT id::text AS id, query_text, response_text, metadata
-                FROM llm_cache
-                WHERE expires_at > NOW()
-                    AND metadata->>'schema' = $1
-                    AND metadata->>'status' = $2
-                    AND user_id = $3::uuid
-                ORDER BY created_at ASC
-                LIMIT $4
-                "#,
-                vec![
-                    CACHE_METADATA_SCHEMA.into(),
-                    CACHE_STATUS_PENDING.into(),
-                    user_id.to_string().into(),
-                    limit.into(),
-                ],
-            )
-        };
-
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                sql,
-                values,
-            ))
-            .await?;
-
-        rows.into_iter()
-            .map(|row| {
-                let id: String = row.try_get("", "id")?;
-                Ok(PendingCacheEntry {
-                    id: Uuid::parse_str(&id)?,
-                    query_text: row.try_get("", "query_text")?,
-                    response_text: row.try_get("", "response_text")?,
-                    metadata: row.try_get("", "metadata")?,
-                })
-            })
-            .collect()
     }
 
     async fn review_cache_entry_with_llm(
@@ -1562,74 +1733,6 @@ impl ScheduledInsights {
             || decision.memory_independent == Some(false)
             || decision.tool_free == Some(false)
             || decision.dynamic_free == Some(false)
-    }
-
-    async fn activate_cache_entry(
-        db: &DatabaseConnection,
-        entry: &PendingCacheEntry,
-        response_text: String,
-        decision: &CacheReviewDecision,
-    ) -> anyhow::Result<()> {
-        let Some(model) = llm_cache::Entity::find_by_id(entry.id).one(db).await? else {
-            return Ok(());
-        };
-
-        let mut metadata = entry.metadata.clone();
-        if !metadata.is_object() {
-            metadata = serde_json::json!({});
-        }
-        let object = metadata.as_object_mut().expect("metadata object");
-        object.insert(
-            "schema".to_string(),
-            serde_json::Value::String(CACHE_METADATA_SCHEMA.to_string()),
-        );
-        object.insert(
-            "status".to_string(),
-            serde_json::Value::String(CACHE_STATUS_ACTIVE.to_string()),
-        );
-        object.insert("safe_direct_return".to_string(), serde_json::json!(true));
-        object.insert("memory_independent".to_string(), serde_json::json!(true));
-        object.insert("tool_free".to_string(), serde_json::json!(true));
-        object.insert("dynamic_free".to_string(), serde_json::json!(true));
-        object.insert(
-            "reviewed_by".to_string(),
-            serde_json::Value::String("insights".to_string()),
-        );
-        object.insert(
-            "reviewed_at".to_string(),
-            serde_json::Value::String(Utc::now().to_rfc3339()),
-        );
-        if let Some(reason) = decision
-            .reason
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            object.insert(
-                "review_reason".to_string(),
-                serde_json::Value::String(reason.to_string()),
-            );
-        }
-
-        let mut active: llm_cache::ActiveModel = model.into();
-        active.response_text = Set(response_text);
-        active.metadata = Set(metadata);
-        active.update(db).await?;
-        Ok(())
-    }
-
-    async fn delete_cache_entry(
-        db: &DatabaseConnection,
-        entry_id: Uuid,
-        reason: Option<&str>,
-    ) -> anyhow::Result<()> {
-        llm_cache::Entity::delete_by_id(entry_id).exec(db).await?;
-        tracing::debug!(
-            cache_entry_id = %entry_id,
-            reason = ?reason,
-            "deleted rejected pending cache entry"
-        );
-        Ok(())
     }
 
     /// Register cron-based insights tasks with the SchedulerBackend
@@ -1840,7 +1943,9 @@ fn stable_user_uuid(user_id: &str) -> Uuid {
     })
 }
 
-fn transcript_for_prompt(messages: &[ChatMessage], max_chars: usize) -> String {
+// CapturedMemoryContext bounds the complete canonical inputs before issuing
+// its lease. Formatting must not silently drop a declared source afterwards.
+fn transcript_for_prompt(messages: &[ChatMessage]) -> String {
     let mut output = String::new();
     for message in messages {
         let role = message.role.trim();
@@ -1855,11 +1960,11 @@ fn transcript_for_prompt(messages: &[ChatMessage], max_chars: usize) -> String {
             output.push_str(&format!("{role}: {content}\n"));
         }
     }
-    truncate_for_prompt(&output, max_chars)
+    output
 }
 
-fn memories_for_prompt(memories: &[MemoryNode], max_chars: usize) -> String {
-    let output = memories
+fn memories_for_prompt(memories: &[MemoryNode]) -> String {
+    memories
         .iter()
         .enumerate()
         .map(|(index, memory)| {
@@ -1874,16 +1979,7 @@ fn memories_for_prompt(memories: &[MemoryNode], max_chars: usize) -> String {
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
-    truncate_for_prompt(&output, max_chars)
-}
-
-fn truncate_for_prompt(text: &str, max_chars: usize) -> String {
-    let mut truncated = text.chars().take(max_chars).collect::<String>();
-    if text.chars().count() > max_chars {
-        truncated.push_str("\n...");
-    }
-    truncated
+        .join("\n")
 }
 
 fn clamp_score(value: f32) -> f32 {
@@ -1917,9 +2013,12 @@ fn normalize_memory_node_type(node_type: &str) -> String {
 
 fn join_model_labels(labels: &[String]) -> String {
     let mut output = Vec::new();
-    for label in labels {
+    for label in labels.iter().flat_map(|label| label.split('+')) {
         let label = label.trim();
-        if !label.is_empty() && !output.iter().any(|existing: &&str| *existing == label) {
+        if !label.is_empty()
+            && label != "none"
+            && !output.iter().any(|existing: &&str| *existing == label)
+        {
             output.push(label);
         }
     }
@@ -1974,6 +2073,10 @@ impl ModuleLifecycle for ScheduledInsights {
             .or_else(|| ctx.llm.clone())
             .or_else(|| ctx.minor_llm.clone());
         *self.memory.lock().await = ctx.memory.clone();
+        *self.cache_review.lock().await = CacheReviewRuntime {
+            cache: ctx.cache.clone(),
+            embedding: ctx.embedding.clone(),
+        };
         *self.event_bus.lock().await = Some(ctx.event_bus.clone());
         *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
         *self.scheduler.lock().await = ctx.scheduler.clone();
@@ -2013,6 +2116,7 @@ impl ModuleLifecycle for ScheduledInsights {
         let _tasks = self.scheduler_task_gate.lock().await;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
+        let cache_review = self.cache_review.lock().await.clone();
 
         if !config.enabled {
             background.commit();
@@ -2058,12 +2162,14 @@ impl ModuleLifecycle for ScheduledInsights {
         let cfg_clone = self.config.clone();
         let listener_llm = llm.clone();
         let listener_memory = memory.clone();
+        let listener_cache_review = cache_review.clone();
         background.spawn_loop("insights events", async move {
             Self::event_listener_loop(
                 db_clone,
                 eb_clone,
                 listener_llm,
                 listener_memory,
+                listener_cache_review,
                 ct_clone,
                 en_clone,
                 pt_clone,
@@ -2091,6 +2197,7 @@ impl ModuleLifecycle for ScheduledInsights {
                 eb_clone,
                 llm,
                 memory,
+                cache_review,
                 ct_clone,
                 en_clone,
                 pt_clone,
@@ -2232,6 +2339,7 @@ impl InsightStrategy for ScheduledInsights {
             .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
+        let cache_review = self.cache_review.lock().await.clone();
         let users = Self::resolve_phase_users(&db, &self.state, Some(task.user_id)).await;
         if users.is_empty() {
             tracing::debug!(
@@ -2250,6 +2358,7 @@ impl InsightStrategy for ScheduledInsights {
                 &event_bus,
                 llm.clone(),
                 memory.clone(),
+                cache_review.clone(),
                 user,
                 &phase,
                 &task.trigger,
@@ -2315,6 +2424,7 @@ impl InsightStrategy for ScheduledInsights {
             .ok_or_else(|| anyhow::anyhow!("insights not initialized"))?;
         let llm = self.llm.lock().await.clone();
         let memory = self.memory.lock().await.clone();
+        let cache_review = self.cache_review.lock().await.clone();
         let user = Self::resolve_phase_users(&db, &self.state, Some(user_id))
             .await
             .into_iter()
@@ -2333,6 +2443,7 @@ impl InsightStrategy for ScheduledInsights {
             &event_bus,
             llm,
             memory,
+            cache_review,
             user,
             &phase,
             "manual",
@@ -2415,6 +2526,15 @@ mod tests {
     use super::*;
     use crate::providers::memory::AliaMemory;
 
+    #[test]
+    fn composed_model_labels_retain_each_actual_provider_once() {
+        assert_eq!(
+            join_model_labels(&["memory+reviewer".into(), "reviewer".into(), "none".into(),]),
+            "memory+reviewer"
+        );
+        assert_eq!(join_model_labels(&["none".into(), "".into()]), "none");
+    }
+
     struct FixedMemoryLlm {
         response: String,
         calls: AtomicU32,
@@ -2444,6 +2564,39 @@ mod tests {
         }
     }
 
+    async fn consolidate_plan_fixture(
+        memory: Option<Arc<dyn MemoryBackend>>,
+        llm: Option<Arc<dyn LlmAdapter>>,
+        user: &InsightUserContext,
+        limit: u32,
+        _config: &InsightsSection,
+    ) -> anyhow::Result<MemoryInsightStats> {
+        // This fixture tests plan validation/atomic batches, not PG context admission.
+        let memory = memory.unwrap();
+        let llm = llm.unwrap();
+        let mut context = memory.write_snapshot(user.user_id).await?;
+        let memories = memory
+            .list(
+                user.user_id,
+                MemoryListOpts {
+                    max_results: Some(limit),
+                    layers: None,
+                },
+            )
+            .await?;
+        context.source_memories = source_versions(&memories);
+        let response = llm.chat(&[]).await?;
+        ScheduledInsights::apply_consolidation_response(
+            memory.as_ref(),
+            &context,
+            &memories,
+            user,
+            &response,
+            llm.name(),
+        )
+        .await
+    }
+
     fn insight_user() -> InsightUserContext {
         let user_id = Uuid::new_v4();
         InsightUserContext {
@@ -2453,6 +2606,207 @@ mod tests {
             session_id: None,
             last_seen_at: Utc::now(),
         }
+    }
+
+    struct ReviewCheckpoint {
+        row: Mutex<CachedResponse>,
+        approvals: AtomicU32,
+    }
+    #[async_trait]
+    impl ModuleLifecycle for ReviewCheckpoint {
+        fn name(&self) -> &'static str {
+            "acknowledged_review_fixture"
+        }
+    }
+    #[async_trait]
+    impl CacheBackend for ReviewCheckpoint {
+        async fn get(&self, _: Uuid, _: &str, _: &str) -> anyhow::Result<Option<CachedResponse>> {
+            Ok(None)
+        }
+        async fn put(
+            &self,
+            _: crate::providers::adapter::CacheEntry,
+        ) -> anyhow::Result<CachedResponse> {
+            anyhow::bail!("no new cache puts in deadline fixture")
+        }
+        async fn get_semantic_candidates(
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &crate::providers::adapter::EmbeddingProfile,
+            _: &crate::providers::adapter::EmbeddingVector,
+            _: usize,
+        ) -> anyhow::Result<Vec<crate::providers::adapter::SemanticCacheCandidate>> {
+            Ok(vec![])
+        }
+        async fn load_pending(
+            &self,
+            _: Uuid,
+            _: Option<&str>,
+            _: usize,
+        ) -> anyhow::Result<Vec<CachedResponse>> {
+            let row = self.row.lock().await;
+            Ok(
+                if row.status == crate::providers::adapter::CacheStatus::PendingInsightsReview {
+                    vec![row.clone()]
+                } else {
+                    vec![]
+                },
+            )
+        }
+        async fn apply_review(
+            &self,
+            expected: &CachedResponse,
+            review: CacheReview,
+        ) -> anyhow::Result<CacheCas<Option<CachedResponse>>> {
+            let mut row = self.row.lock().await;
+            if row.version != expected.version {
+                return Ok(CacheCas::Stale);
+            }
+            let CacheReview::Approve {
+                response_text,
+                metadata,
+            } = review
+            else {
+                anyhow::bail!("fixture expects approval")
+            };
+            row.status = crate::providers::adapter::CacheStatus::Active;
+            row.version.revision += 1;
+            row.response_text = response_text;
+            row.metadata = metadata;
+            self.approvals.fetch_add(1, Ordering::SeqCst);
+            Ok(CacheCas::Applied(Some(row.clone())))
+        }
+        async fn authorize_work(&self, _: &CachedResponse, _: CacheWork) -> anyhow::Result<bool> {
+            Ok(true)
+        }
+        async fn fill_embedding(
+            &self,
+            _: &CachedResponse,
+            _: &crate::providers::adapter::EmbeddingProfile,
+            _: &crate::providers::adapter::EmbeddingVector,
+        ) -> anyhow::Result<CacheCas<()>> {
+            anyhow::bail!("hanging inference must never write a vector")
+        }
+        async fn cleanup_expired(&self, _: usize) -> anyhow::Result<u64> {
+            Ok(0)
+        }
+    }
+
+    struct HangingEmbedding {
+        entered: tokio::sync::Notify,
+        dropped: CancellationToken,
+    }
+    #[async_trait]
+    impl ModuleLifecycle for HangingEmbedding {
+        fn name(&self) -> &'static str {
+            "hanging_embedding"
+        }
+    }
+    #[async_trait]
+    impl EmbeddingAdapter for HangingEmbedding {
+        async fn embed(&self, _: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+            anyhow::bail!("only profiled embedding is allowed")
+        }
+        async fn embed_profiled(
+            &self,
+            _: &[String],
+        ) -> anyhow::Result<Option<crate::providers::adapter::ProfiledEmbeddings>> {
+            let _owner = self.dropped.clone().drop_guard();
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+        fn dimension(&self) -> usize {
+            1536
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn hanging_phase_releases_its_permit_and_preserves_acknowledged_cache_approval() {
+        use crate::providers::adapter::{CacheStatus, CacheVersion};
+        let cache = Arc::new(ReviewCheckpoint {
+            row: Mutex::new(CachedResponse {
+                version: CacheVersion {
+                    cache_id: Uuid::new_v4(),
+                    revision: 1,
+                    context_id: Uuid::new_v4(),
+                },
+                owner_id: Uuid::new_v4(),
+                scope: "default".into(),
+                query_digest: "a".repeat(64),
+                content_digest: "b".repeat(64),
+                origin_response_id: Uuid::new_v4(),
+                query_text: "Stable question".into(),
+                response_text: "Stable answer".into(),
+                metadata: serde_json::json!({}),
+                status: CacheStatus::PendingInsightsReview,
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+            }),
+            approvals: AtomicU32::new(0),
+        });
+        let embedding = Arc::new(HangingEmbedding {
+            entered: tokio::sync::Notify::new(),
+            dropped: CancellationToken::new(),
+        });
+        let llm = Arc::new(FixedMemoryLlm {
+            response: serde_json::json!({"decision":"approve","safe_direct_return":true,"memory_independent":true,"tool_free":true,"dynamic_free":true}).to_string(),
+            calls: AtomicU32::new(0),
+        });
+        let semaphore = Arc::new(Semaphore::new(1));
+        let runtime = CacheReviewRuntime {
+            cache: Some(cache.clone()),
+            embedding: Some(embedding.clone()),
+        };
+        let worker_runtime = runtime.clone();
+        let worker_llm = llm.clone();
+        let worker_semaphore = semaphore.clone();
+        let task = tokio::spawn(async move {
+            ScheduledInsights::bounded_phase(
+                &worker_semaphore,
+                ScheduledInsights::run_phase(
+                    &DatabaseConnection::Disconnected,
+                    Some(worker_llm),
+                    None,
+                    worker_runtime,
+                    &InsightPhase::Consolidation,
+                    &insight_user(),
+                    &InsightsSection::default(),
+                ),
+            )
+            .await
+        });
+        embedding.entered.notified().await;
+        assert_eq!(cache.approvals.load(Ordering::SeqCst), 1);
+        assert_eq!(semaphore.available_permits(), 0);
+        tokio::time::advance(PHASE_TIMEOUT).await;
+        let error = match task.await.unwrap() {
+            Err(error) => error,
+            Ok(_) => panic!("hanging phase cannot complete"),
+        };
+        assert!(error.to_string().contains("completion is unconfirmed"));
+        assert!(embedding.dropped.is_cancelled());
+        assert_eq!(semaphore.available_permits(), 1);
+        assert_eq!(cache.row.lock().await.status, CacheStatus::Active);
+        ScheduledInsights::bounded_phase(
+            &semaphore,
+            ScheduledInsights::run_phase(
+                &DatabaseConnection::Disconnected,
+                Some(llm.clone()),
+                None,
+                runtime,
+                &InsightPhase::Consolidation,
+                &insight_user(),
+                &InsightsSection::default(),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            llm.calls.load(Ordering::SeqCst),
+            1,
+            "an acknowledged approval must not be replayed"
+        );
+        assert_eq!(cache.approvals.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -2492,7 +2846,7 @@ mod tests {
             calls: AtomicU32::new(0),
         });
 
-        let stats = ScheduledInsights::consolidate_memories(
+        let stats = consolidate_plan_fixture(
             Some(memory.clone()),
             Some(llm.clone()),
             &user,
@@ -2599,7 +2953,7 @@ mod tests {
             }).to_string(), calls: AtomicU32::new(0),
         });
         assert!(
-            ScheduledInsights::consolidate_memories(
+            consolidate_plan_fixture(
                 Some(memory.clone()),
                 Some(llm),
                 &user,
@@ -2648,7 +3002,7 @@ mod tests {
             .to_string(),
             calls: AtomicU32::new(0),
         });
-        let stats = ScheduledInsights::consolidate_memories(
+        let stats = consolidate_plan_fixture(
             Some(memory.clone()),
             Some(llm),
             &user,

@@ -26,6 +26,7 @@ static DATABASE_CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_ne
 
 fn effect(user_id: Uuid) -> NewEffect {
     NewEffect {
+        context_id: None,
         key: EffectKey {
             user_id,
             request_id: Uuid::new_v4(),

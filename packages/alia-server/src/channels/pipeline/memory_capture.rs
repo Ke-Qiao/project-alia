@@ -10,8 +10,10 @@ use crate::memory_policy::{
     normalize_memory_layer, normalize_memory_node_type,
 };
 use crate::module::ModuleRegistry;
+use crate::modules::memory::context::ContextUse;
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, MemoryBackend, MemoryListOpts, MemoryNode, MemoryWriteContext,
+    MemoryWriteOrigin,
 };
 
 const MEMORY_CAPTURE_SYSTEM_PROMPT: &str = r#"You decide whether a personal AI assistant should remember anything from one completed conversation turn.
@@ -153,11 +155,34 @@ pub async fn capture_turn_memory(
     pending: &PendingTextPersistence,
     memory_config: &MemorySection,
 ) -> MemoryCaptureTrace {
+    let validated = match modules
+        .context
+        .validate(&pending.context, ContextUse::ResponseCommit)
+        .await
+    {
+        Ok(context) => context,
+        Err(error) => {
+            return MemoryCaptureTrace::failed(
+                MemoryCaptureMode::LlmSelected,
+                None,
+                format!("context_revoked: {error}"),
+            );
+        }
+    };
+    let mut effective = memory_config.clone();
+    effective.enabled = validated.policy.memory_enabled;
+    effective.capture_mode = validated.policy.capture_mode;
+    effective.sensitive_filter_enabled = validated.policy.sensitive_filter_enabled;
+    effective.capture_min_confidence = validated.policy.capture_min_confidence;
+    effective.capture_min_importance = validated.policy.capture_min_importance;
+    if !effective.enabled || validated.policy.paused_until.is_some() {
+        return MemoryCaptureTrace::skipped(effective.capture_mode, "memory_policy_disabled");
+    }
     let llm = modules
         .memory_capture_llm
         .as_deref()
         .unwrap_or_else(|| modules.minor_llm.as_ref());
-    capture_turn_memory_with_backends(llm, modules.memory.as_ref(), pending, memory_config).await
+    capture_turn_memory_with_backends(llm, modules.memory.as_ref(), pending, &effective).await
 }
 
 pub async fn capture_turn_memory_with_backends(
@@ -201,17 +226,29 @@ async fn llm_selected_turn_memory(
             );
         }
     };
-    context.source_received_at = pending.source_received_at;
-    context.source_event_ids = pending.source_event_id.into_iter().collect();
-    context.exact_source_received_at = pending
-        .source_event_id
-        .map(|id| (id, pending.source_received_at));
     if context.privacy_epoch != pending.source_privacy_epoch {
         return MemoryCaptureTrace::skipped(
             MemoryCaptureMode::LlmSelected,
             "source_privacy_epoch_revoked",
         );
     }
+    context = match memory
+        .bind_context(
+            context,
+            pending.context.context_id,
+            MemoryWriteOrigin::Automatic,
+        )
+        .await
+    {
+        Ok(context) => context,
+        Err(error) => {
+            return MemoryCaptureTrace::failed(
+                MemoryCaptureMode::LlmSelected,
+                Some(model),
+                format!("context_binding_failed: {error}"),
+            );
+        }
+    };
     if let Err(error) = memory.validate_write_context(&context).await {
         return MemoryCaptureTrace::failed(
             MemoryCaptureMode::LlmSelected,

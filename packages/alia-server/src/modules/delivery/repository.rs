@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::types::*;
+use crate::modules::memory::context::{ContextBinding, ContextError, ContextService, ContextUse};
 mod text;
 
 const RESPONSE: &str = "SELECT to_jsonb(r) || jsonb_build_object('key', jsonb_build_object('user_id',r.user_id,'request_id',r.request_id,'output_key',r.output_key)) AS record FROM delivery_responses r ";
@@ -41,7 +42,19 @@ impl DeliveryRepository {
         input: NewResponse,
     ) -> DeliveryResult<ResponseRecord> {
         validate_response(&input)?;
-        validate_epoch(tx, input.key.user_id, input.source_privacy_epoch).await?;
+        let notice_text = validate_context(
+            tx,
+            input.context_id,
+            &input.key,
+            input.conversation_id,
+            input.source_event_id,
+            input.source_received_at,
+            input.source_privacy_epoch,
+            &input.channel_id,
+            ContextUse::OutputAdmission,
+        )
+        .await?;
+        validate_notice_intent(&input.kind, &input.content, notice_text)?;
         tx.execute(stmt(
             "SELECT pg_advisory_xact_lock(hashtextextended($1, 891129))",
             vec![
@@ -102,7 +115,7 @@ impl DeliveryRepository {
             }
         }
         let id = Uuid::new_v4();
-        tx.execute(stmt("INSERT INTO delivery_responses(response_id,user_id,request_id,output_key,conversation_id,source_event_id,source_received_at,source_privacy_epoch,channel_id,kind,content,intent_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",vec![id.into(),input.key.user_id.into(),input.key.request_id.into(),input.key.output_key.into(),input.conversation_id.into(),input.source_event_id.into(),input.source_received_at.into(),input.source_privacy_epoch.into(),input.channel_id.into(),input.kind.into(),input.content.into(),intent_digest.into()])).await?;
+        tx.execute(stmt("INSERT INTO delivery_responses(response_id,user_id,request_id,output_key,conversation_id,source_event_id,source_received_at,source_privacy_epoch,channel_id,kind,content,intent_digest,context_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",vec![id.into(),input.key.user_id.into(),input.key.request_id.into(),input.key.output_key.into(),input.conversation_id.into(),input.source_event_id.into(),input.source_received_at.into(),input.source_privacy_epoch.into(),input.channel_id.into(),input.kind.into(),input.content.into(),intent_digest.into(),input.context_id.into()])).await?;
         audit(tx, id, None, "prepared", json!({})).await?;
         required_response(tx, id).await
     }
@@ -127,7 +140,8 @@ impl DeliveryRepository {
             }
             return Ok(old);
         }
-        let old = validate_response_source(tx, owner, response_id).await?;
+        let old =
+            validate_response_context(tx, owner, response_id, ContextUse::ResponseCommit).await?;
         if old.status == ResponseStatus::Committed {
             if old.final_content.as_ref() != Some(&final_content) {
                 return Err(DeliveryError::IdempotencyConflict);
@@ -261,6 +275,13 @@ impl DeliveryRepository {
         }
         let tx = self.db.begin().await?;
         let response = validate_response_source(&tx, owner, input.response_id).await?;
+        if response.kind == "source_notice"
+            && input.content.get("text") != response.content.get("text")
+        {
+            return Err(DeliveryError::Unauthorized(
+                "notice representation differs from its fixed literal".into(),
+            ));
+        }
         let mut intent = json!({"response_id":input.response_id,"output_key":input.output_key,"content":input.content,"identity":input.identity});
         if medium == DeliveryMedium::Text {
             intent["media_kind"] = json!("text");
@@ -772,52 +793,18 @@ impl DeliveryRepository {
     }
 }
 
-async fn authorize(db: &impl ConnectionTrait, owner: Uuid) -> DeliveryResult<()> {
-    if owner.is_nil()
-        || db
-            .query_one(stmt(
-                "SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE",
-                vec![owner.into()],
-            ))
-            .await?
-            .is_none()
-    {
-        return Err(DeliveryError::Unauthorized(
-            "owner is not an active account".into(),
-        ));
-    }
-    Ok(())
-}
-/// Same lock order as source admission/erasure: account, privacy state, then
-/// response and delivery. This checks the original stamp without refreshing it.
-async fn validate_epoch(
-    db: &impl ConnectionTrait,
-    owner: Uuid,
-    expected: Option<i64>,
-) -> DeliveryResult<()> {
-    authorize(db, owner).await?;
-    let expected = expected.ok_or_else(|| {
-        DeliveryError::Unauthorized("response has no admitted source privacy epoch".into())
-    })?;
-    let row = db
-        .query_one(stmt(
-            "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE",
-            vec![owner.into()],
-        ))
-        .await?
-        .ok_or_else(|| DeliveryError::Unauthorized("source admission state missing".into()))?;
-    let current: i64 = row.try_get("", "privacy_epoch")?;
-    if current != expected {
-        return Err(DeliveryError::Unauthorized(
-            "response source privacy epoch changed".into(),
-        ));
-    }
-    Ok(())
-}
 pub(crate) async fn validate_response_source(
-    db: &impl ConnectionTrait,
+    db: &DatabaseTransaction,
     owner: Uuid,
     id: Uuid,
+) -> DeliveryResult<ResponseRecord> {
+    validate_response_context(db, owner, id, ContextUse::OutputAdmission).await
+}
+async fn validate_response_context(
+    db: &DatabaseTransaction,
+    owner: Uuid,
+    id: Uuid,
+    purpose: ContextUse,
 ) -> DeliveryResult<ResponseRecord> {
     let old = response_row(
         db,
@@ -826,16 +813,103 @@ pub(crate) async fn validate_response_source(
     )
     .await?
     .ok_or(DeliveryError::NotFound)?;
-    validate_epoch(db, owner, old.source_privacy_epoch).await?;
-    owned_response(db, owner, id).await
+    let context_id = old.context_id.ok_or_else(|| {
+        DeliveryError::Unauthorized("historical response has no context lease".into())
+    })?;
+    let notice_text = validate_context(
+        db,
+        context_id,
+        &old.key,
+        old.conversation_id,
+        old.source_event_id,
+        old.source_received_at,
+        old.source_privacy_epoch,
+        &old.channel_id,
+        purpose,
+    )
+    .await?;
+    validate_notice_intent(&old.kind, &old.content, notice_text)?;
+    let current = owned_response(db, owner, id).await?;
+    if current.context_id != old.context_id || current.intent_digest != old.intent_digest {
+        return Err(DeliveryError::IdempotencyConflict);
+    }
+    Ok(current)
 }
 async fn validate_delivery_source(
-    db: &impl ConnectionTrait,
+    db: &DatabaseTransaction,
     id: Uuid,
 ) -> DeliveryResult<ResponseRecord> {
     let delivery = required_delivery(db, id).await?;
     let response = required_response(db, delivery.response_id).await?;
     validate_response_source(db, response.key.user_id, response.response_id).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn validate_context(
+    tx: &DatabaseTransaction,
+    context_id: Uuid,
+    key: &ResponseKey,
+    conversation_id: Option<Uuid>,
+    source_event_id: Option<Uuid>,
+    received_at: chrono::DateTime<chrono::Utc>,
+    epoch: Option<i64>,
+    channel_id: &str,
+    purpose: ContextUse,
+) -> DeliveryResult<Option<&'static str>> {
+    let epoch =
+        epoch.ok_or_else(|| DeliveryError::Unauthorized("source epoch is absent".into()))?;
+    let validated = ContextService::validate_in_transaction(
+        tx,
+        &ContextBinding {
+            context_id,
+            owner_id: key.user_id,
+            request_id: key.request_id,
+            source_event_id,
+            source_privacy_epoch: epoch,
+        },
+        purpose,
+    )
+    .await
+    .map_err(context_failure)?;
+    let source = validated.lease.source();
+    if source.conversation_id != conversation_id
+        || source.channel_id != channel_id
+        || source.source_received_at.timestamp_micros() != received_at.timestamp_micros()
+    {
+        return Err(DeliveryError::Unauthorized(
+            "response differs from original context source".into(),
+        ));
+    }
+    Ok(validated.lease.notice_text())
+}
+
+fn validate_notice_intent(kind: &str, content: &Value, notice: Option<&str>) -> DeliveryResult<()> {
+    match notice {
+        Some(text)
+            if kind == "source_notice"
+                && content.get("text").and_then(Value::as_str) == Some(text) =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(DeliveryError::Unauthorized(
+            "source notice is restricted to its fixed literal".into(),
+        )),
+        None if kind == "source_notice" => Err(DeliveryError::Unauthorized(
+            "source notice requires its own notice context".into(),
+        )),
+        None => Ok(()),
+    }
+}
+
+fn context_failure(error: anyhow::Error) -> DeliveryError {
+    match error.downcast_ref::<ContextError>() {
+        Some(ContextError::Revoked(_) | ContextError::PolicyChanged) => {
+            DeliveryError::Unauthorized(error.to_string())
+        }
+        _ => DeliveryError::Database(sea_orm::DbErr::Custom(format!(
+            "context validation failed: {error:#}"
+        ))),
+    }
 }
 
 async fn owned_response(
@@ -970,6 +1044,7 @@ fn valid_key(key: &str) -> bool {
 }
 fn validate_response(input: &NewResponse) -> DeliveryResult<()> {
     if input.key.user_id.is_nil()
+        || input.context_id.is_nil()
         || input.key.request_id.is_nil()
         || !valid_key(&input.key.output_key)
         || !valid_key(&input.channel_id)

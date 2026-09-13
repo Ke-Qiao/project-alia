@@ -18,6 +18,8 @@ pub struct ResponseKey {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NewResponse {
     pub key: ResponseKey,
+    /// Required for new output. Nullable storage is historical evidence only.
+    pub context_id: Uuid,
     pub conversation_id: Option<Uuid>,
     pub source_event_id: Option<Uuid>,
     pub source_received_at: DateTime<Utc>,
@@ -40,6 +42,7 @@ pub enum ResponseStatus {
 pub struct ResponseRecord {
     pub response_id: Uuid,
     pub key: ResponseKey,
+    pub context_id: Option<Uuid>,
     pub conversation_id: Option<Uuid>,
     pub assistant_message_id: Option<Uuid>,
     pub source_event_id: Option<Uuid>,

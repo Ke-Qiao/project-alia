@@ -1,6 +1,41 @@
 # 隔离平台验证
 
-更新：2026-09-08。最新验证覆盖 D1/D2 固定提交 `ee9cbfd4f8b2c4c2fbe8c8a1c985be7fddb2d38b`；下方保留 `2f8797c`、`5aecb38`、`ef07d43` 历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+更新：2026-09-13。最新验证覆盖 TextDelivery / D3 固定提交 `e63d40ccac69cfb0162921e2b535737fd6c5ecec`；下方保留 D1/D2 和更早历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+
+## TextDelivery / D3：固定提交 e63d40c
+
+从 `e63d40ccac69cfb0162921e2b535737fd6c5ecec` 导出 **579 个文件**到 `/private/tmp/alia-platform-next.wMxQXW/source`，只读挂载为 `/src`。独立缓存由上一轮缓存 APFS 克隆，897 个克隆文件逐项 SHA256 一致；已清理的 registry / Sherpa 归档按 Cargo.lock 和固定公开发行版重新取得。三次运行前后源码清单、源码文件与 Cargo.lock 均完全一致，没有以正在实施的 ContextLease 工作区替换输入。
+
+| 输入 | 实际值 |
+| --- | --- |
+| 官方 Rust 镜像 | `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1` |
+| ARM64 image ID | `sha256:7cf1e580ef5539f03b58560753e8ab84c8c360960d99dff714004aa98f203977` |
+| Rust / Cargo / target | `1.95.0` / `1.95.0` / `aarch64-unknown-linux-gnu`，Debian 12 |
+| Cargo.lock SHA256 | `0736653b5c57a936dc71d2b18a82b927536acb7bb8c49341f845717c87fde2a2` |
+| 源码清单 SHA256 | `54e822a2cf77b5785284d268c7bf1ff015012fb688a4466355e2924fc995a3f6` |
+| 数据库 | 任务容器 `alia-refactor-test-db` 的独立库 `alia_platform_e63d40c`，端口 32768，PostgreSQL 17 / pgvector 0.8.2 |
+| Sherpa 静态归档 | `1.13.1` Linux aarch64，SHA256 `86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749` |
+
+实际验证保留了两次失败及复核过程。第一次遗漏系统包 `libprotobuf-dev`，Server 编译找不到 `google/protobuf/empty.proto`；第二次补齐该包，Core、Server 全 targets 检查和库测试通过。第二次 Server 集成测试中，`cancelling_or_dropping_build_future_rolls_back_partial_init` 在等待测试同步信号的 5 秒 deadline 处超时，Runtime 同组另外 32 项通过。第三次仅复核该 Runtime 目标并补跑尚未执行的目标，使用相同源码、锁文件和默认 features；Runtime 以 `--test-threads=1` 执行 33 项全部通过。**记录为并行执行时的测试时序敏感性，不能据串行通过宣称并行稳定性已得到证明。**
+
+| 验证范围 | 最终覆盖 | 墙钟耗时 |
+| --- | --- | --- |
+| Core 库契约 | 20 passed | 0.14 s |
+| Server 默认 `--all-targets --locked` 检查 | exit 0 | 17.40 s |
+| Server 默认库测试 | 202 passed / 3 ignored | 59.61 s |
+| Server 全部 39 个集成 targets | 312 unique passed / 2 ignored；包含上述串行复核 | 首次 202.11 s；Runtime 复核 92.39 s；余下 4 targets 0.27 s |
+| Embedded 默认完整 build/link | exit 0，保留 Sherpa、STT、direct-response | 27.06 s |
+| Embedded 默认库测试 | 108 passed | 45.56 s（测试执行 26.23 s） |
+
+完整覆盖合计 **642 unique passed、5 ignored**：Server 514、Embedded 108、Core 20。库内子进程重复测试及 Runtime 重跑不重复累计。五项 ignored 为三项真实 PTY 库测试和两个真实 Easy-Turn 集成目标，本轮未在 Linux 执行，不能将宿主 macOS 的验证结果算入。首轮和第二轮的非零退出状态原样保留。
+
+主要阶段时间为 2026-09-13 14:28:33–14:38:24 UTC（北京时间 22:28:33–22:38:24），中间包含故障分析和分阶段复核。完整 22 项迁移在随机 schema 中执行，包含 TextDelivery `000005` 和 BodyDelivery `000006`；最终测试库仅剩系统 schema 和 public。`alia-platform-e63d40c-wmxqxw` 与 `alia-platform-e63d40c-continuation` 已退出，查询确认均已自动移除。任务 PostgreSQL 保留，未操作用户 5433 数据库。
+
+Embedded 产物是 ARM aarch64 ELF 64-bit PIE，解释器 `/lib/ld-linux-aarch64.so.1`，BuildID `18aba3f82bacb89b4c5132a92d1e818b1ca1894b`，SHA256 `864a389f3bdf6c73dc08eabd98f41abfd53be2ab14306b3c10c6c3ed21a50d47`。没有通过禁用默认 features 或设置 DOCS_RS 绕过 native 链接。编译与测试使用克隆缓存，不是冷缓存性能测量。
+
+原始证据在 `/private/tmp/alia-platform-next.wMxQXW/evidence`，包含 `attempt-2`、`attempt-3` 各阶段 command/start/end/status/log、系统依赖、数据库前后状态和逐文件摘要。合并计数在 `combined-result-summary.json`；两个实际脚本为 `attempt-2/run.sh`、`attempt-3/run.sh`。第三次脚本明确只运行 Runtime 串行复核、`settings` / `skills` / `tools` / `voice_stream_live` 四个剩余集成目标以及 Embedded build/lib。
+
+本轮没有执行 Embedded 集成测试、真实 Pi 5、声卡、AEC、双讲或物理动作反馈，也没有执行真实 Easy-Turn / LLM / TTS。该结果覆盖 `e63d40c` 的 TextDelivery 与签名 Body 控制，**不覆盖后续 ContextLease / Cache 改动**，不证明其他操作系统或 CPU 架构已验收。
 
 ## D1/D2：固定提交 ee9cbfd
 

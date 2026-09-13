@@ -244,6 +244,7 @@ impl ActionExecutor for ToolCallActionExecutor {
                     call_id,
                 },
                 &ToolContext {
+                    context_id: None,
                     user_id: ctx.user_id,
                     request_id: ctx.request_id,
                     source_received_at: ctx.source_received_at,

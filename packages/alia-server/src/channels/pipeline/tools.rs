@@ -72,7 +72,9 @@ pub(super) async fn run_llm_tool_loop(
         .iter()
         .map(|tool| (tool.name.clone(), tool.clone()))
         .collect::<HashMap<_, _>>();
+    let admitted_turn = turn.ok_or_else(|| anyhow::anyhow!("tool loop has no original context"))?;
     let ctx = ToolContext {
+        context_id: Some(admitted_turn.context_binding().await?.context_id),
         source_privacy_epoch: turn.and_then(|turn| turn.source_privacy_epoch),
         user_id,
         source_received_at: turn
@@ -91,6 +93,7 @@ pub(super) async fn run_llm_tool_loop(
     let mut called_tool_names = Vec::new();
 
     for depth in 0..max_depth {
+        super::validate_generation_context(modules, turn).await?;
         debug_component_llm_call(
             debug_output,
             "llm",
@@ -143,6 +146,7 @@ pub(super) async fn run_llm_tool_loop(
                 &retry_messages,
                 Some((channel_id, user_id_text)),
             );
+            super::validate_generation_context(modules, turn).await?;
             let retry_text = match cancellable_stage(
                 turn,
                 "llm_tool_call_text_retry",
@@ -234,7 +238,10 @@ pub(super) async fn run_llm_tool_loop(
             }
             let mut call_context = ctx.clone();
             call_context.invocation_key = format!("{depth}:{index}");
-            let result = execute_pipeline_tool_call(modules, &call, &tool_map, &call_context).await;
+            call_context.context_id = Some(admitted_turn.context_binding().await?.context_id);
+            let result =
+                execute_pipeline_tool_call(modules, &call, &tool_map, &call_context, admitted_turn)
+                    .await?;
             trace
                 .record(
                     modules,
@@ -289,6 +296,7 @@ pub(super) async fn run_llm_tool_loop(
         "Tool-call depth limit reached. Stop calling tools and give the user a concise final answer based on the tool results already available.",
     ));
 
+    super::validate_generation_context(modules, turn).await?;
     let final_response = match cancellable_stage(turn, "llm", llm.chat(&messages)).await? {
         Some(final_response) => final_response,
         None => String::new(),
@@ -1102,43 +1110,169 @@ fn inject_tool_prompt(
     Ok(messages)
 }
 
-async fn execute_pipeline_tool_call(
+pub(super) async fn execute_pipeline_tool_call(
     modules: &ModuleRegistry,
     call: &LlmToolCall,
     tool_map: &HashMap<String, ToolDefinition>,
     ctx: &ToolContext,
-) -> ToolResult {
-    let Some(_) = tool_map.get(&call.tool_name) else {
-        return ToolResult {
+    turn: &VoiceTurn,
+) -> anyhow::Result<ToolResult> {
+    let Some(tool) = tool_map.get(&call.tool_name) else {
+        return Ok(ToolResult {
             call_id: call.id.clone(),
             success: false,
+            output: serde_json::json!({"error":"tool_not_available"}),
+            display: Some("The requested tool is not available.".into()),
+        });
+    };
+    // Output admission and every tool extension share this gate. Hold it through
+    // durable execution so preparation cannot freeze an incomplete read set.
+    let mut state = turn.context.lock().await;
+    anyhow::ensure!(
+        !state.frozen,
+        "tool completion cannot extend a frozen response"
+    );
+    let original = state
+        .generation
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("tool completion has no original context"))?;
+    anyhow::ensure!(
+        ctx.context_id == Some(original.lease().id()),
+        "tool invocation changed its original context"
+    );
+    let result = modules
+        .tools
+        .execute(
+            ToolCall {
+                tool_name: call.tool_name.clone(),
+                arguments: call.arguments.clone(),
+                call_id: call.id.clone(),
+            },
+            ctx,
+        )
+        .await?;
+    let effect_id = result
+        .output
+        .get("effect_id")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| anyhow::anyhow!("tool result has no durable execution identity"))?;
+    let (extended, canonical) = modules
+        .context
+        .extend_execution(original, effect_id)
+        .await?;
+    anyhow::ensure!(
+        canonical
+            .get("tool_name")
+            .and_then(serde_json::Value::as_str)
+            == Some(call.tool_name.as_str())
+            && canonical
+                .get("model_call_id")
+                .and_then(serde_json::Value::as_str)
+                == Some(call.id.as_str()),
+        "canonical execution belongs to another tool invocation"
+    );
+    let status = canonical.get("status").and_then(serde_json::Value::as_str);
+    let success = status == Some("succeeded");
+    if success && call.tool_name == "memory_search" && tool.source == "builtin" {
+        anyhow::ensure!(
+            canonical["completion"]["status"] == "succeeded"
+                && canonical["completion"]["receipt"]["success"] == true
+                && canonical["completion"]["receipt"]["call_id"] == call.id
+                && canonical["completion"]["receipt"]["output"]["context_read_requested"] == true,
+            "memory search lacks a canonical successful read authorization"
+        );
+        let (query, opts) = memory_search_request(&call.arguments)?;
+        let extended = modules
+            .context
+            .extend_memory_with_opts(&extended, query, opts)
+            .await?;
+        let result = ToolResult {
+            call_id: call.id.clone(),
+            success: true,
             output: serde_json::json!({
-                "error": "tool_not_available",
-                "tool": call.tool_name,
+                "execution":canonical,
+                "memory_context":extended.memory_prompt(),
             }),
-            display: Some(format!("Tool '{}' is not available", call.tool_name)),
+            display: None,
         };
-    };
-
-    let tool_call = ToolCall {
-        tool_name: call.tool_name.clone(),
-        arguments: call.arguments.clone(),
-        call_id: call.id.clone(),
-    };
-    match modules.tools.execute(tool_call, ctx).await {
-        Ok(result) => result,
-        Err(error) => ToolResult {
-            call_id: call.id.clone(),
-            success: false,
-            output: serde_json::json!({
-                "error": error.to_string(),
-            }),
-            display: Some(format!(
-                "Execution receipt unavailable for '{}'; inspect the ledger before retrying: {}",
-                call.tool_name, error
-            )),
-        },
+        state.generation = Some(extended);
+        return Ok(result);
     }
+    let display = match status {
+        Some("succeeded") => "Execution succeeded.",
+        Some("failed") => "Execution definitively failed.",
+        Some("cancelled") => "Execution was cancelled before dispatch.",
+        Some("proposed") => "Authenticated confirmation is required before execution.",
+        Some("approved" | "dispatched") => {
+            "Execution is pending; do not claim completion or repeat it."
+        }
+        _ => "Execution outcome is unknown; inspect its record before any retry.",
+    };
+    state.generation = Some(extended);
+    Ok(ToolResult {
+        call_id: call.id.clone(),
+        success,
+        output: canonical,
+        display: Some(display.into()),
+    })
+}
+
+fn memory_search_request(
+    arguments: &serde_json::Value,
+) -> anyhow::Result<(&str, crate::providers::adapter::RetrievalOpts)> {
+    let query = arguments
+        .get("query")
+        .and_then(serde_json::Value::as_str)
+        .filter(|query| !query.trim().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("memory search requires a non-empty query"))?;
+    let max_results = match arguments.get("max_results") {
+        None => 5,
+        Some(value) => value
+            .as_u64()
+            .filter(|value| (1..=20).contains(value))
+            .ok_or_else(|| anyhow::anyhow!("memory search max_results must be 1..=20"))?
+            as u32,
+    };
+    let layers = arguments
+        .get("layers")
+        .map(|value| -> anyhow::Result<Vec<String>> {
+            let values = value
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("memory search layers must be an array"))?;
+            values
+                .iter()
+                .map(|value| {
+                    let layer = value.as_str().ok_or_else(|| {
+                        anyhow::anyhow!("memory search layers must contain strings")
+                    })?;
+                    anyhow::ensure!(
+                        matches!(
+                            layer,
+                            "core"
+                                | "episodic"
+                                | "procedural"
+                                | "preference"
+                                | "relationship"
+                                | "reflection"
+                                | "project"
+                                | "boundary"
+                        ),
+                        "unsupported memory search layer"
+                    );
+                    Ok(layer.to_string())
+                })
+                .collect()
+        })
+        .transpose()?;
+    Ok((
+        query,
+        crate::providers::adapter::RetrievalOpts {
+            max_results: Some(max_results),
+            min_similarity: None,
+            layers,
+        },
+    ))
 }
 
 #[cfg(test)]

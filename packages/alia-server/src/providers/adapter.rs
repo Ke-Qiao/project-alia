@@ -719,10 +719,139 @@ pub trait TtsAdapter: ModuleLifecycle {
 
 // ========== Embedding Adapter ==========
 
+/// The immutable descriptor of the configuration used for one embedding request.
+/// `revision` names the deployment's descriptor format, not an unverifiable
+/// remote weights version. Model/endpoint/dimension changes change the ID.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EmbeddingProfile {
+    pub provider: String,
+    pub endpoint: String,
+    pub model: String,
+    pub revision: String,
+    pub dimensions: usize,
+    pub distance: String,
+    pub vector_type: String,
+}
+
+impl EmbeddingProfile {
+    pub fn from_server_config(
+        config: &crate::config::ServerConfig,
+    ) -> anyhow::Result<Option<Self>> {
+        if config.llm.roles.embedding == "noop" {
+            return Ok(None);
+        }
+        let profile = config.profiles.llm_profile(&config.llm.roles.embedding)?;
+        if profile.kind != crate::config::LlmProfileKind::Embedding {
+            return Ok(None);
+        }
+        let crate::config::LlmProviderProfileRef::OpenAi(provider) =
+            config.llm_provider_profile(&profile.provider)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            provider: profile.provider.clone(),
+            endpoint: provider.base_url.trim_end_matches('/').to_string(),
+            model: profile.model.clone(),
+            revision: "request-config.v1".into(),
+            dimensions: profile
+                .dimensions
+                .unwrap_or_else(|| embedding_model_dimension(&profile.model)),
+            distance: "cosine".into(),
+            vector_type: "vector".into(),
+        }))
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.provider.is_empty()
+                && self.provider.len() <= 256
+                && !self.endpoint.is_empty()
+                && self.endpoint.len() <= 2048
+                && !self.model.is_empty()
+                && self.model.len() <= 256
+                && !self.revision.is_empty()
+                && self.revision.len() <= 256
+                && (1..=16_000).contains(&self.dimensions)
+                && self.distance == "cosine"
+                && self.vector_type == "vector",
+            "invalid embedding profile"
+        );
+        Ok(())
+    }
+
+    pub fn id(&self) -> anyhow::Result<String> {
+        self.validate()?;
+        Ok(format!(
+            "alia.embedding.{}",
+            embedding_text_digest(&serde_json::to_string(self)?)
+        ))
+    }
+}
+
+pub fn embedding_model_dimension(model: &str) -> usize {
+    match model {
+        "text-embedding-3-large" => 3072,
+        _ => 1536,
+    }
+}
+
+pub fn embedding_text_digest(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbeddingVector {
+    pub input_digest: String,
+    pub values: Vec<f32>,
+}
+
+impl EmbeddingVector {
+    pub fn validate(&self, profile: &EmbeddingProfile) -> anyhow::Result<()> {
+        profile.validate()?;
+        anyhow::ensure!(
+            self.input_digest.len() == 64
+                && self
+                    .input_digest
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                && self.values.len() == profile.dimensions
+                && self.values.iter().all(|v| v.is_finite())
+                && self.values.iter().any(|v| *v != 0.0),
+            "invalid profiled embedding vector"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProfiledEmbeddings {
+    pub profile: EmbeddingProfile,
+    pub vectors: Vec<EmbeddingVector>,
+}
+
 #[async_trait]
 pub trait EmbeddingAdapter: ModuleLifecycle {
     /// Batch text embedding
     async fn embed(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>>;
+    /// None means this adapter cannot prove the profile of its returned vectors.
+    /// Callers must skip semantic indexing, never label `embed()` after the fact.
+    async fn embed_profiled(
+        &self,
+        _texts: &[String],
+    ) -> anyhow::Result<Option<ProfiledEmbeddings>> {
+        Ok(None)
+    }
+    /// Pure preview from one configuration snapshot. A policy CAS must commit
+    /// before apply_settings publishes a different embedding identity.
+    async fn preview_profile_settings(
+        &self,
+        _updates: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Option<EmbeddingProfile>> {
+        Ok(None)
+    }
     /// Vector dimension
     fn dimension(&self) -> usize;
 }
@@ -1173,10 +1302,24 @@ pub struct MemorySuppressedExplanation {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryWriteOrigin {
+    Manual,
+    Automatic,
+    Ai,
+    Maintenance,
+}
+
 #[derive(Debug, Clone)]
 pub struct MemoryWriteContext {
     pub user_id: Uuid,
     pub privacy_epoch: i64,
+    /// Persisted policy captured before reading or deriving a write. In-memory
+    /// fixtures have no authority to create a database policy snapshot.
+    pub policy_version: Option<i64>,
+    /// Immutable lineage of any model-derived content included in this write.
+    pub context_id: Option<Uuid>,
+    pub origin: MemoryWriteOrigin,
     pub source_cutoff_at: chrono::DateTime<chrono::Utc>,
     /// Trusted input timestamp, never an extractor-generated timestamp.
     pub source_received_at: chrono::DateTime<chrono::Utc>,
@@ -1202,6 +1345,15 @@ pub struct MemoryBatchResult {
 
 #[async_trait]
 pub trait MemoryBackend: ModuleLifecycle {
+    /// Resolve a derived write's complete roots from its original durable lease.
+    async fn bind_context(
+        &self,
+        _snapshot: MemoryWriteContext,
+        _context_id: Uuid,
+        _origin: MemoryWriteOrigin,
+    ) -> anyhow::Result<MemoryWriteContext> {
+        anyhow::bail!("memory backend cannot bind persistent context lineage")
+    }
     /// Validate source authority before reads or duplicate shortcuts. Mutations
     /// must still repeat this check in their own commit transaction.
     async fn validate_write_context(&self, _context: &MemoryWriteContext) -> anyhow::Result<()> {
@@ -1591,22 +1743,56 @@ fn bounded_affect_hint_for_memory(node: &MemoryNode) -> MemoryAffectHint {
 pub const DEFAULT_CACHE_SCOPE: &str = "default";
 pub const CACHE_METADATA_SCHEMA: &str = "alia.cache_metadata.v1";
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheVersion {
+    pub cache_id: Uuid,
+    pub revision: i64,
+    pub context_id: Uuid,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheStatus {
+    PendingInsightsReview,
+    Active,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
+    pub version: CacheVersion,
+    pub owner_id: Uuid,
+    pub scope: String,
+    pub query_digest: String,
+    pub content_digest: String,
+    pub origin_response_id: Uuid,
+    pub query_text: String,
     pub response_text: String,
     pub metadata: serde_json::Value,
+    pub status: CacheStatus,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl CachedResponse {
+    pub fn context_identity(&self) -> crate::modules::memory::context::CacheIdentity {
+        crate::modules::memory::context::CacheIdentity {
+            cache_id: self.version.cache_id,
+            revision: self.version.revision,
+            context_id: self.version.context_id,
+            scope: self.scope.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticCacheCandidate {
-    pub response_text: String,
-    pub metadata: serde_json::Value,
+    pub cached: CachedResponse,
     pub similarity: f32,
 }
 
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
-    pub user_id: Option<Uuid>,
+    pub context: crate::modules::memory::context::ContextBinding,
+    pub origin_response_id: Uuid,
     pub scope: String,
     pub query_text: String,
     pub response_text: String,
@@ -1614,38 +1800,68 @@ pub struct CacheEntry {
     pub ttl_seconds: u64,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct CacheFilter {
-    pub user_id: Option<Uuid>,
-    pub scope: Option<String>,
+#[derive(Debug, Clone)]
+pub enum CacheReview {
+    Approve {
+        response_text: String,
+        metadata: serde_json::Value,
+    },
+    Reject,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheWork {
+    Review,
+    Embedding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheCas<T> {
+    Applied(T),
+    Stale,
 }
 
 #[async_trait]
 pub trait CacheBackend: ModuleLifecycle {
     async fn get(
         &self,
-        user_id: Option<Uuid>,
+        owner_id: Uuid,
+        scope: &str,
         query: &str,
     ) -> anyhow::Result<Option<CachedResponse>>;
-    async fn put(&self, entry: CacheEntry) -> anyhow::Result<()>;
-    async fn invalidate(&self, filter: CacheFilter) -> anyhow::Result<u64>;
+    async fn put(&self, entry: CacheEntry) -> anyhow::Result<CachedResponse>;
     async fn get_semantic_candidates(
         &self,
-        _user_id: Option<Uuid>,
-        _query_embedding: &[f32],
-        _limit: usize,
-    ) -> anyhow::Result<Vec<SemanticCacheCandidate>> {
-        Ok(Vec::new())
-    }
-    async fn update_embedding(
+        owner_id: Uuid,
+        scope: &str,
+        profile: &EmbeddingProfile,
+        query_embedding: &EmbeddingVector,
+        limit: usize,
+    ) -> anyhow::Result<Vec<SemanticCacheCandidate>>;
+    async fn load_pending(
         &self,
-        _user_id: Option<Uuid>,
-        _query: &str,
-        _scope: &str,
-        _embedding: &[f32],
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
+        owner_id: Uuid,
+        scope: Option<&str>,
+        limit: usize,
+    ) -> anyhow::Result<Vec<CachedResponse>>;
+    async fn apply_review(
+        &self,
+        expected: &CachedResponse,
+        review: CacheReview,
+    ) -> anyhow::Result<CacheCas<Option<CachedResponse>>>;
+    /// Recheck immediately before sending private query/response text to a model.
+    async fn authorize_work(
+        &self,
+        expected: &CachedResponse,
+        work: CacheWork,
+    ) -> anyhow::Result<bool>;
+    async fn fill_embedding(
+        &self,
+        expected: &CachedResponse,
+        profile: &EmbeddingProfile,
+        embedding: &EmbeddingVector,
+    ) -> anyhow::Result<CacheCas<()>>;
+    async fn cleanup_expired(&self, limit: usize) -> anyhow::Result<u64>;
 }
 
 // ========== Skill Provider ==========
@@ -2160,6 +2376,8 @@ pub struct ToolRoutingIndexEntry {
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub user_id: Uuid,
+    /// Original model input lineage; required for every AI-originated effect.
+    pub context_id: Option<Uuid>,
     /// Assigned by the trusted ingress; never supplied by a model argument.
     pub request_id: Uuid,
     /// Original input observation time; queueing, approval and retries cannot refresh it.

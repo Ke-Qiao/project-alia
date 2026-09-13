@@ -18,6 +18,12 @@ pub enum AppError {
     #[error("validation error: {0}")]
     Validation(String),
 
+    #[error("conflict: {0}")]
+    Conflict(String),
+
+    #[error("service unavailable: {0}")]
+    Unavailable(&'static str),
+
     #[error("rate limited")]
     RateLimited,
 
@@ -62,6 +68,12 @@ impl IntoResponse for AppError {
             ),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             Self::Validation(msg) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", msg.clone()),
+            Self::Conflict(msg) => (StatusCode::CONFLICT, "VERSION_CONFLICT", msg.clone()),
+            Self::Unavailable(msg) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SERVICE_UNAVAILABLE",
+                (*msg).into(),
+            ),
             Self::RateLimited => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "RATE_LIMITED",

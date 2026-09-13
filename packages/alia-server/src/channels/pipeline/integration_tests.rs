@@ -11,6 +11,8 @@ use std::pin::Pin;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
+mod context;
+mod memory_search;
 mod text_delivery;
 
 #[derive(Default)]
@@ -42,7 +44,11 @@ impl ConversationBackend for Conversation {
         );
         if let Some(db) = &self.db {
             use sea_orm::ConnectionTrait;
-            let session = Uuid::from_u128(100);
+            let session = if channel == "test" {
+                Uuid::from_u128(100)
+            } else {
+                stable_user_uuid(&format!("{channel}:{user}"))
+            };
             db.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",vec![session.into(),channel.into(),user.into()])).await?;
             return Ok(session);
         }
@@ -214,6 +220,7 @@ impl RouterStrategy for DirectRouter {
 }
 #[derive(Default)]
 struct OutputChannel {
+    id: String,
     owner: Option<Uuid>,
     streaming: bool,
     sequence: std::sync::atomic::AtomicU64,
@@ -232,7 +239,7 @@ impl ChannelAdapter for OutputChannel {
         "test"
     }
     fn channel_id(&self) -> &str {
-        "test"
+        if self.id.is_empty() { "test" } else { &self.id }
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         self.owner
@@ -336,6 +343,10 @@ impl Fixture {
         let output = Arc::new(OutputChannel::default());
         channels.register(output.clone()).await.unwrap();
         let modules = Arc::new(ModuleRegistry {
+            context: Arc::new(crate::modules::memory::context::ContextService::new(
+                sea_orm::DatabaseConnection::Disconnected,
+                factory::create_embedding(&config, "noop").unwrap().into(),
+            )),
             delivery: crate::modules::delivery::DeliveryService::new(
                 crate::modules::delivery::repository::DeliveryRepository::new(
                     sea_orm::DatabaseConnection::Disconnected,
@@ -449,6 +460,13 @@ async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
         let bus = EventBus::new(8);
         let mut events = bus.subscribe();
         let pending = PendingTextPersistence {
+            context: ContextBinding {
+                context_id: Uuid::new_v4(),
+                owner_id: user,
+                request_id: Uuid::new_v4(),
+                source_event_id: None,
+                source_privacy_epoch: 0,
+            },
             source_received_at: chrono::Utc::now(),
             source_privacy_epoch: 0,
             source_event_id: None,
@@ -474,7 +492,10 @@ async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
             "incomplete interaction published completion"
         );
         let messages = fixture.conversation.messages.lock().unwrap();
-        assert_eq!(messages.len(), usize::from(!fail_user));
+        assert!(
+            messages.is_empty(),
+            "missing provenance must not be manufactured after generation"
+        );
         assert!(messages.iter().all(|message| message.role == "user"));
         assert!(
             fixture.conversation.events.lock().unwrap().is_empty(),
@@ -596,65 +617,96 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
 
 #[tokio::test]
 async fn saturated_voice_queue_rejects_overflow_and_skips_cancelled_input() {
-    let mut fixture = Fixture::new(true).await;
-    let (ingress, receiver) = crate::modules::interaction::voice_input::channel();
-    let shutdown = CancellationToken::new();
-    let pipeline = spawn_pipeline(
-        &EventBus::new(8),
-        fixture.modules,
-        fixture.channels,
-        fixture.sensors,
-        shutdown.clone(),
-        false,
-        Arc::new(RwLock::new(fixture.policy)),
-        receiver,
-    );
-    let mut active_tokens = Vec::new();
-    for index in 0..supervision::MAX_CONCURRENT_REQUESTS {
-        let input = input(&format!("running-{index}"));
-        active_tokens.push(input.cancel.clone());
-        ingress.try_submit(input).unwrap();
-    }
-    for _ in 0..supervision::MAX_CONCURRENT_REQUESTS {
-        tokio::time::timeout(std::time::Duration::from_secs(2), fixture.started.recv())
+    with_linked_fixture(|mut fixture| async move {
+        let (started_tx, mut started) = mpsc::unbounded_channel();
+        let llm = Arc::new(ObservedLlm {
+            started: started_tx,
+            block: true,
+        });
+        let modules = Arc::get_mut(&mut fixture.modules).unwrap();
+        modules.llm = llm.clone();
+        modules.minor_llm = llm.clone();
+        modules.major_llm = llm;
+        let channels = Arc::new(ChannelRegistry::new());
+        for index in 0..=supervision::MAX_CONCURRENT_REQUESTS {
+            channels
+                .register(Arc::new(OutputChannel {
+                    id: format!("test-{index}"),
+                    owner: Some(Uuid::from_u128(42)),
+                    ..Default::default()
+                }))
+                .await
+                .unwrap();
+        }
+        let queued_channel = format!("test-{}", supervision::MAX_CONCURRENT_REQUESTS);
+        let request = |text: &str, channel_id: String| {
+            let mut request = input(text);
+            request.user_id = Uuid::from_u128(42).to_string();
+            request.channel_id = channel_id;
+            request
+        };
+        let (ingress, receiver) = crate::modules::interaction::voice_input::channel();
+        let shutdown = CancellationToken::new();
+        let pipeline = spawn_pipeline(
+            &EventBus::new(8),
+            fixture.modules,
+            channels,
+            fixture.sensors,
+            shutdown.clone(),
+            false,
+            Arc::new(RwLock::new(fixture.policy)),
+            receiver,
+        );
+        let mut active_tokens = Vec::new();
+        for index in 0..supervision::MAX_CONCURRENT_REQUESTS {
+            let input = request(&format!("running-{index}"), format!("test-{index}"));
+            active_tokens.push(input.cancel.clone());
+            ingress.try_submit(input).unwrap();
+        }
+        for _ in 0..supervision::MAX_CONCURRENT_REQUESTS {
+            tokio::time::timeout(std::time::Duration::from_secs(3), started.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        let stale = request("cancelled-queued", queued_channel.clone());
+        stale.cancel.cancel();
+        ingress.try_submit(stale).unwrap();
+        for index in 0..7 {
+            ingress
+                .try_submit(request(&format!("queued-{index}"), queued_channel.clone()))
+                .unwrap();
+        }
+        assert!(matches!(
+            ingress.try_submit(request("overflow", queued_channel.clone())),
+            Err(mpsc::error::TrySendError::Full(_))
+        ));
+        active_tokens[0].cancel();
+        let next = tokio::time::timeout(std::time::Duration::from_secs(3), started.recv())
             .await
             .unwrap()
             .unwrap();
-    }
-    let stale = input("cancelled-queued");
-    stale.cancel.cancel();
-    ingress.try_submit(stale).unwrap();
-    for index in 0..7 {
-        ingress
-            .try_submit(input(&format!("queued-{index}")))
+        assert_eq!(next, "queued-0");
+        shutdown.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(3), pipeline)
+            .await
+            .unwrap()
             .unwrap();
-    }
-    assert!(matches!(
-        ingress.try_submit(input("overflow")),
-        Err(mpsc::error::TrySendError::Full(_))
-    ));
-    active_tokens[0].cancel();
-    let next = tokio::time::timeout(std::time::Duration::from_secs(2), fixture.started.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(next, "queued-0");
-    shutdown.cancel();
-    tokio::time::timeout(std::time::Duration::from_secs(2), pipeline)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(
-        fixture.started.try_recv().is_err(),
-        "queued work started after shutdown"
-    );
-    assert!(fixture.output.texts.lock().unwrap().is_empty());
-    assert!(fixture.output.audio.lock().unwrap().is_empty());
-    assert!(matches!(
-        ingress.try_submit(input("closed")),
-        Err(mpsc::error::TrySendError::Closed(_))
-    ));
+        assert!(
+            started.try_recv().is_err(),
+            "queued work started after shutdown"
+        );
+        assert!(fixture.output.texts.lock().unwrap().is_empty());
+        assert!(fixture.output.audio.lock().unwrap().is_empty());
+        assert!(matches!(
+            ingress.try_submit(request("closed", queued_channel)),
+            Err(mpsc::error::TrySendError::Closed(_))
+        ));
+    })
+    .await;
 }
+
+static PIPELINE_DATABASE_CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 
 async fn with_linked_fixture<F, Fut>(test: F)
 where
@@ -663,6 +715,7 @@ where
 {
     use futures::FutureExt;
     use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    let _slot = PIPELINE_DATABASE_CASES.acquire().await.unwrap();
     let url = std::env::var("ALIA_TEST_DATABASE_URL")
         .expect("pipeline Delivery test requires isolated PostgreSQL");
     let admin = sea_orm::Database::connect(url.clone()).await.unwrap();
@@ -677,6 +730,11 @@ where
         .set_schema_search_path(format!("{schema},public"))
         .sqlx_logging(false);
     let db = sea_orm::Database::connect(options).await.unwrap();
+    let delivery = crate::modules::delivery::DeliveryService::new(
+        crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
+        &CancellationToken::new(),
+    );
+    let result = std::panic::AssertUnwindSafe(Box::pin(async {
     crate::modules::platform::migrations::run(&db)
         .await
         .unwrap();
@@ -704,18 +762,29 @@ where
         .register(fixture.output.clone())
         .await
         .unwrap();
-    let delivery = crate::modules::delivery::DeliveryService::new(
-        crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
-        &CancellationToken::new(),
-    );
     delivery.start().await.unwrap();
     let modules = Arc::get_mut(&mut fixture.modules).unwrap();
     modules.delivery = delivery.clone();
     modules.conversation = fixture.conversation.clone();
-    let result = std::panic::AssertUnwindSafe(tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        test(fixture),
-    ))
+    modules.context = Arc::new(crate::modules::memory::context::ContextService::new(
+        db.clone(),
+        modules.embedding.clone(),
+    ));
+    modules
+        .context
+        .initialize_policy(
+            crate::modules::memory::context::ContextPolicy::from_config(
+                &fixture.policy.memory,
+                &fixture.policy.conversation,
+            )
+            .unwrap()
+            .with_cache(&fixture.policy.cache)
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(15), Box::pin(test(fixture))).await
+    }))
     .catch_unwind()
     .await;
     delivery.shutdown().await.unwrap();

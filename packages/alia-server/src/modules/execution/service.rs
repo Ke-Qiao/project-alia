@@ -278,6 +278,7 @@ impl ExecutionService {
         let effect = self
             .repository
             .propose(NewEffect {
+                context_id: ctx.context_id,
                 key: EffectKey {
                     user_id: ctx.user_id,
                     request_id: ctx.request_id,

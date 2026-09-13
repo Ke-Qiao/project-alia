@@ -74,6 +74,13 @@ impl TestDatabase {
             .unwrap();
         memory
     }
+    async fn user(&self) -> Uuid {
+        let id = Uuid::new_v4();
+        self.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Memory test','disabled','user','active')",
+            vec![id.into(),format!("{id}@memory.test").into()])).await.unwrap();
+        id
+    }
     async fn sql(&self, sql: &str) {
         self.db.execute_unprepared(sql).await.unwrap();
     }
@@ -154,8 +161,7 @@ fn batch_update(id: &str, revision: i64, content: &str) -> (String, MemoryPatch)
     )
 }
 
-async fn atomic_batch_and_lineage_contract(memory: &AliaMemory) {
-    let user = Uuid::new_v4();
+async fn atomic_batch_and_lineage_contract(memory: &AliaMemory, user: Uuid) {
     let source = memory
         .store(user, node("original source before replacement metadata"))
         .await
@@ -241,8 +247,7 @@ async fn atomic_batch_and_lineage_contract(memory: &AliaMemory) {
     );
 }
 
-async fn exact_forget_selection_contract(memory: &AliaMemory) {
-    let user = Uuid::new_v4();
+async fn exact_forget_selection_contract(memory: &AliaMemory, user: Uuid) {
     let first = memory
         .store(user, node("selected first fact"))
         .await
@@ -355,9 +360,7 @@ async fn exact_forget_selection_contract(memory: &AliaMemory) {
     );
 }
 
-async fn invalid_batch_contract(memory: &AliaMemory) {
-    let user = Uuid::new_v4();
-    let other = Uuid::new_v4();
+async fn invalid_batch_contract(memory: &AliaMemory, user: Uuid, other: Uuid) {
     let existing = memory
         .store(user, node("unchanged valid source"))
         .await
@@ -462,7 +465,11 @@ async fn invalid_batch_contract(memory: &AliaMemory) {
 #[tokio::test]
 async fn postgres_batches_preserve_original_snapshot_and_prior_lineage() {
     with_database(|database| async move {
-        atomic_batch_and_lineage_contract(database.memory(None).await.as_ref()).await;
+        atomic_batch_and_lineage_contract(
+            database.memory(None).await.as_ref(),
+            database.user().await,
+        )
+        .await;
     })
     .await;
 }
@@ -470,7 +477,11 @@ async fn postgres_batches_preserve_original_snapshot_and_prior_lineage() {
 #[tokio::test]
 async fn postgres_forget_uses_one_epoch_and_never_reselects_later_records() {
     with_database(|database| async move {
-        exact_forget_selection_contract(database.memory(None).await.as_ref()).await;
+        exact_forget_selection_contract(
+            database.memory(None).await.as_ref(),
+            database.user().await,
+        )
+        .await;
     })
     .await;
 }
@@ -478,7 +489,12 @@ async fn postgres_forget_uses_one_epoch_and_never_reselects_later_records() {
 #[tokio::test]
 async fn postgres_invalid_batches_and_foreign_forget_never_partially_commit() {
     with_database(|database| async move {
-        invalid_batch_contract(database.memory(None).await.as_ref()).await;
+        invalid_batch_contract(
+            database.memory(None).await.as_ref(),
+            database.user().await,
+            database.user().await,
+        )
+        .await;
     })
     .await;
 }
@@ -487,7 +503,7 @@ async fn postgres_invalid_batches_and_foreign_forget_never_partially_commit() {
 async fn batch_update_keeps_old_conversation_sources_and_adds_new_verified_sources() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let session = Uuid::new_v4();
         database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'batch-source',$2)",
@@ -520,16 +536,16 @@ async fn batch_update_keeps_old_conversation_sources_and_adds_new_verified_sourc
 #[tokio::test]
 async fn memory_mode_atomic_batches_and_exact_forget_match_persistent_contract() {
     let memory = AliaMemory::new();
-    atomic_batch_and_lineage_contract(&memory).await;
-    exact_forget_selection_contract(&memory).await;
-    invalid_batch_contract(&memory).await;
+    atomic_batch_and_lineage_contract(&memory, Uuid::new_v4()).await;
+    exact_forget_selection_contract(&memory, Uuid::new_v4()).await;
+    invalid_batch_contract(&memory, Uuid::new_v4(), Uuid::new_v4()).await;
 }
 
 #[tokio::test]
 async fn sql_failure_rolls_back_entire_batch_and_multi_target_forget() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let first = memory.store(user, node("first unchanged fact")).await.unwrap();
         let second = memory.store(user, node("second unchanged fact")).await.unwrap();
         let context = selected_context(&memory, user, &[&first, &second]).await;
@@ -569,7 +585,7 @@ async fn concurrent_batch_and_forget_cannot_commit_against_a_changed_original() 
     with_database(|database| async move {
         let first = database.memory(None).await;
         let second = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         for index in 0..8 {
             let source = first
                 .store(user, node(&format!("batch race source {index}")))
@@ -626,7 +642,7 @@ async fn automatic_and_batch_dedup_preserve_unicode_negation_and_punctuation() {
             ("用户喜欢咖啡", "用户不喜欢咖啡"),
             ("用户喜欢咖啡", "用户住在上海"),
         ] {
-            let user = Uuid::new_v4();
+            let user = database.user().await;
             let project = |content: &str| {
                 MemoryNode::new("core", "fact", content, 0.8)
                     .with_runtime_fields("project", "user", 0.8, 0.7, "internal")
@@ -650,7 +666,7 @@ async fn automatic_and_batch_dedup_preserve_unicode_negation_and_punctuation() {
 async fn deleting_source_erases_derived_records_and_graph_plaintext_atomically() {
     with_database(|database|async move{
         let memory=database.memory(None).await;
-        let user=Uuid::new_v4();let other=Uuid::new_v4();
+        let user=database.user().await;let other=database.user().await;
         let base=memory.store(user,node("private source maple orchard")).await.unwrap();
         let child=derived(&memory,user,&base,"derived maple orchard summary").await;
         let grandchild=derived(&memory,user,&child,"second generation maple orchard insight").await;
@@ -675,7 +691,7 @@ async fn source_delete_and_derived_commit_race_cannot_leave_a_live_copy() {
     with_database(|database| async move {
         let first = database.memory(None).await;
         let second = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         for index in 0..8 {
             let base = first
                 .store(user, node(&format!("source number {index}")))
@@ -709,7 +725,7 @@ async fn source_delete_and_derived_commit_race_cannot_leave_a_live_copy() {
 #[tokio::test]
 async fn deletion_sql_failure_rolls_back_epoch_and_projections_without_ram_success() {
     with_database(|database|async move{
-        let memory=database.memory(None).await;let user=Uuid::new_v4();
+        let memory=database.memory(None).await;let user=database.user().await;
         let id=memory.store(user,node("retain until transaction commits")).await.unwrap();
         let epoch=memory.write_snapshot(user).await.unwrap().privacy_epoch;
         let graph_count=database.count("memory_edges").await;
@@ -730,7 +746,7 @@ async fn deletion_sql_failure_rolls_back_epoch_and_projections_without_ram_succe
 async fn configured_database_failure_never_switches_to_in_memory_storage() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let id = memory.store(user, node("durable record")).await.unwrap();
         database.db.clone().close().await.unwrap();
         assert!(memory.store(user, node("not persisted")).await.is_err());
@@ -753,7 +769,7 @@ async fn old_epoch_is_rejected_across_instances_and_empty_clear_also_invalidates
     with_database(|database| async move {
         let first = database.memory(None).await;
         let second = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let old = first.write_snapshot(user).await.unwrap();
         assert_eq!(second.clear(user).await.unwrap(), 0);
         assert!(
@@ -784,8 +800,8 @@ async fn old_epoch_is_rejected_across_instances_and_empty_clear_also_invalidates
 async fn updates_deletes_ids_and_dependencies_are_owner_scoped() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let alice = Uuid::new_v4();
-        let bob = Uuid::new_v4();
+        let alice = database.user().await;
+        let bob = database.user().await;
         let id = memory.store(alice, node("Alice's fact")).await.unwrap();
         assert!(
             memory
@@ -835,7 +851,7 @@ async fn updates_deletes_ids_and_dependencies_are_owner_scoped() {
 async fn changed_revision_and_expired_sources_reject_background_writes() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let id = memory.store(user, node("old content")).await.unwrap();
         let mut context = memory.write_snapshot(user).await.unwrap();
         context.source_memories.push((id.clone(), 1));
@@ -901,7 +917,7 @@ async fn changed_revision_and_expired_sources_reject_background_writes() {
 #[tokio::test]
 async fn late_persisted_conversation_source_cannot_cross_the_forget_boundary() {
     with_database(|database|async move{
-        let memory=database.memory(None).await;let user=Uuid::new_v4();let session=Uuid::new_v4();
+        let memory=database.memory(None).await;let user=database.user().await;let session=Uuid::new_v4();
         let before=memory.write_snapshot(user).await.unwrap();
         memory.clear(user).await.unwrap();
         database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test',$2)",vec![session.into(),user.to_string().into()])).await.unwrap();
@@ -914,7 +930,7 @@ async fn late_persisted_conversation_source_cannot_cross_the_forget_boundary() {
         let mut current=memory.write_snapshot(user).await.unwrap();current.source_event_ids.push(fresh);
         let id=memory.store_guarded(&current,node("new input accepted")).await.unwrap();
         assert_eq!(memory.get(user,&id).await.unwrap().unwrap().source_event_ids,vec![fresh]);
-        let mut foreign=memory.write_snapshot(Uuid::new_v4()).await.unwrap();foreign.source_event_ids.push(fresh);
+        let mut foreign=memory.write_snapshot(database.user().await).await.unwrap();foreign.source_event_ids.push(fresh);
         assert!(memory.store_guarded(&foreign,node("foreign message source")).await.is_err());
     }).await;
 }
@@ -961,7 +977,7 @@ async fn source_epoch_is_authoritative_with_fast_slow_and_unsourced_messages() {
             let mut precision = context.clone();
             precision.exact_source_received_at = Some((source, received + chrono::Duration::nanoseconds(1)));
             memory.validate_write_context(&precision).await.unwrap();
-            let mut foreign = memory.write_snapshot(Uuid::new_v4()).await.unwrap();
+            let mut foreign = memory.write_snapshot(database.user().await).await.unwrap();
             foreign.source_event_ids.push(source);
             assert!(memory.validate_write_context(&foreign).await.is_err());
         }
@@ -1035,7 +1051,7 @@ async fn ram_epoch_rejects_old_sources_without_wall_clock_comparisons() {
 async fn deterministic_consolidation_commits_functional_batch_and_tracks_promoted_source() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         memory
             .store(user, node("The user works on Memory Runtime."))
             .await
@@ -1124,7 +1140,7 @@ async fn deterministic_consolidation_commits_functional_batch_and_tracks_promote
 async fn consolidation_of_weak_duplicates_does_not_depend_on_uuid_update_order() {
     with_database(|database| async move {
         let memory = database.memory(None).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let mut keeper = node("Weak duplicated guess");
         keeper.id = Some("00000000-0000-0000-0000-000000000001".into());
         keeper.importance = 0.2;
@@ -1189,7 +1205,7 @@ async fn embedding_returning_after_delete_cannot_restore_a_vector() {
     with_database(|database| async move {
         let embedding = Arc::new(HeldEmbedding::new());
         let memory = database.memory(Some(embedding.clone())).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let id = Uuid::new_v4().to_string();
         let mut input = node("late vector for deleted memory");
         input.id = Some(id.clone());
@@ -1212,7 +1228,7 @@ async fn older_embedding_cannot_overwrite_the_corrected_revision() {
     with_database(|database| async move {
         let embedding = Arc::new(HeldEmbedding::new());
         let memory = database.memory(Some(embedding.clone())).await;
-        let user = Uuid::new_v4();
+        let user = database.user().await;
         let id = Uuid::new_v4().to_string();
         let mut input = node("original content");
         input.id = Some(id.clone());

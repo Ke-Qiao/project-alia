@@ -14,6 +14,7 @@ use uuid::Uuid;
 async fn test_get_current_time() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: None,
         source_event_id: None,
@@ -42,6 +43,7 @@ async fn test_get_current_time() {
 async fn test_get_current_time_uses_iana_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: None,
         source_event_id: None,
@@ -77,6 +79,7 @@ async fn test_get_current_time_uses_iana_timezone() {
 async fn test_get_current_time_rejects_invalid_timezone() {
     let tool = GetCurrentTime;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: None,
         source_event_id: None,
@@ -104,6 +107,7 @@ async fn test_get_current_time_rejects_invalid_timezone() {
 async fn test_calculate_expression() {
     let tool = Calculate;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: None,
         source_event_id: None,
@@ -129,6 +133,7 @@ async fn test_calculate_expression() {
 async fn test_calculate_rejects_division_by_zero() {
     let tool = Calculate;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: None,
         source_event_id: None,
@@ -209,6 +214,7 @@ async fn memory_store_and_search_use_memory_system() {
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: Some(epoch),
         source_event_id: None,
@@ -263,6 +269,7 @@ async fn memory_store_blocks_sensitive_chat_memory() {
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: Some(epoch),
         source_event_id: None,
@@ -306,6 +313,7 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let old = ToolContext {
+        context_id: None,
         user_id,
         request_id: Uuid::new_v4(),
         source_received_at: chrono::Utc::now(),
@@ -331,6 +339,7 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
     );
 
     let fresh = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: Some(memory.write_snapshot(user_id).await.unwrap().privacy_epoch),
         request_id: Uuid::new_v4(),
@@ -355,6 +364,7 @@ async fn ai_memory_tool_requires_a_persisted_source_message() {
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let context = ToolContext {
+        context_id: None,
         user_id,
         request_id: Uuid::new_v4(),
         source_received_at: chrono::Utc::now(),
@@ -389,6 +399,7 @@ async fn memory_forget_deletes_matching_memory() {
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: Some(epoch),
         source_event_id: None,
@@ -447,6 +458,7 @@ async fn memory_forget_batch_has_one_privacy_transition_and_rejects_old_request(
             .unwrap();
     }
     let ctx = ToolContext {
+        context_id: None,
         source_received_at: chrono::Utc::now(),
         source_privacy_epoch: Some(memory.write_snapshot(user_id).await.unwrap().privacy_epoch),
         source_event_id: None,

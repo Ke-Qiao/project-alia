@@ -8,7 +8,7 @@ use crate::channels::dialogue_control_tool::EndContinuousDialogueTool;
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderKind, MemorySection, ServerConfig};
+use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderKind, ServerConfig};
 use crate::event::EventBus;
 use crate::providers::adapter::{
     CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, MemoryBackend, PersonaProvider,
@@ -21,7 +21,7 @@ use crate::providers::insights::NoopInsights;
 #[cfg(feature = "insights")]
 use crate::providers::insights::ScheduledInsights;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::providers::memory::{AliaMemory, NoopMemory};
+use crate::providers::memory::AliaMemory;
 use crate::providers::persona::TemplatePersona;
 use crate::providers::router::MultiLayerRouter;
 use crate::providers::sensor::SensorRegistry;
@@ -167,12 +167,9 @@ pub fn create_embedding(
     }
 }
 
-pub fn create_memory(config: &MemorySection) -> Box<dyn MemoryBackend> {
-    if !config.enabled {
-        tracing::info!("memory disabled by config");
-        return Box::new(NoopMemory);
-    }
-
+pub fn create_memory() -> Box<dyn MemoryBackend> {
+    // Policy controls model access; storage and erasure remain available so
+    // disabling recall cannot disable clear or prevent a later hot enable.
     tracing::info!("creating built-in memory system (AliaMemory)");
     Box::new(AliaMemory::new())
 }

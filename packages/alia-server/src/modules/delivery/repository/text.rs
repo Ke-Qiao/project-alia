@@ -43,7 +43,25 @@ impl DeliveryRepository {
             ));
         }
         let tx = self.db.begin().await?;
-        validate_delivery_source(&tx, permit.delivery_id).await?;
+        let response = validate_delivery_source(&tx, permit.delivery_id).await?;
+        if response.kind == "source_notice" {
+            let text = response
+                .content
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    DeliveryError::InvalidEvidence("notice has no fixed literal".into())
+                })?;
+            let start = usize::try_from(chunk.utf8_offset).unwrap_or(usize::MAX);
+            let end = start
+                .checked_add(chunk.text.len())
+                .ok_or_else(|| DeliveryError::InvalidEvidence("notice offset overflow".into()))?;
+            if text.get(start..end) != Some(chunk.text.as_str()) {
+                return Err(DeliveryError::Unauthorized(
+                    "notice chunk differs from its fixed literal".into(),
+                ));
+            }
+        }
         let old = permitted(&tx, permit).await?;
         let state = text_state(&old)?;
         if old.cancel_requested || state.end_offered {
@@ -85,7 +103,19 @@ impl DeliveryRepository {
         bytes: u64,
     ) -> DeliveryResult<()> {
         let tx = self.db.begin().await?;
-        validate_delivery_source(&tx, permit.delivery_id).await?;
+        let response = validate_delivery_source(&tx, permit.delivery_id).await?;
+        if response.kind == "source_notice"
+            && response
+                .content
+                .get("text")
+                .and_then(Value::as_str)
+                .map(|s| s.len() as u64)
+                != Some(bytes)
+        {
+            return Err(DeliveryError::Unauthorized(
+                "notice End differs from its complete fixed literal".into(),
+            ));
+        }
         let old = permitted(&tx, permit).await?;
         let state = text_state(&old)?;
         if old.cancel_requested
