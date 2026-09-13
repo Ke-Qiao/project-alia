@@ -1,6 +1,6 @@
 # 构建记录
 
-更新：2026-09-13。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
+更新：2026-09-14。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
 用户已授权开始构建，当前 Easy-Turn 只运行在 Server。当前记录是 P1、P2 与运行时基础改造的结果，首轮整体交付尚未完成。前端和 Embedded 通用适配仍按 [台账](deferred.md) 搁置。
 
@@ -18,7 +18,22 @@
 | `2f8797c` | Server 运行时所有权与故障回滚、Memory 原子批次与批量遗忘、数据库排序的可信 source epoch | 默认 workspace 561 项通过；真实 PTY 与 CPU 模型 4 项另跑通过；固定提交 Linux ARM64 Server 库和真实 PG 共 280 项通过，Embedded 默认完整链接通过 |
 | `ee9cbfd` | 规范 Response、逐句音频 Delivery、播放 v2、真实后端提交回执与生命周期监督 | macOS 默认 workspace 636 项通过；4 项真实 PTY/模型另跑通过；固定提交 Linux ARM64 Server + Embedded 库及 Server 集成共 542 项通过，Embedded 默认完整链接通过 |
 | `e63d40c` | TextDelivery 与签名 D3 身体动作，唯一发送、精确取消、部分提交与迟到事实 | macOS 默认 workspace 720 项通过，5 项 PTY/真实模型另跑通过；固定提交 Linux ARM64 642 个不同测试通过、5 项跳过，保留首次 Runtime 并行超时和同源串行复核记录 |
-| 本包 | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；两端无默认特性 all-targets 与 67 个变更 Rust 文件格式检查通过 |
+| `a33ec67` | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；Linux ARM64 固定提交与夹具修正候选的结果见平台记录 |
+| 本包 | Memory 实际向量身份、规范 revision 投影、可关闭后台重建与原子 profile 热切换 | macOS 默认 workspace 802 个不同测试通过、0 失败、5 项跳过；两端无默认特性 all-targets、28 个变更 Rust 文件格式检查通过；5 项真实 PTY/模型另跑通过 |
+
+## Memory 向量身份与后台重建（2026-09-14）
+
+向量投影现在绑定实际 provider、endpoint、模型、维度、输入摘要和规范 Memory revision。新增 `000009_memory_embedding_identity` 移除无可信请求身份的固定 1536 维表；规范内容仍可读取和管理。Memory 的向量检索独立于 Cache 开关。Inline 与后台 worker 共用有界并发，后台按规范记录扫描缺失投影，遵守当前政策和来源限制，关闭时取消并等待实际任务收尾。具体结构、预算与边界见 [Memory 向量设计](memory-embedding-design.md)。
+
+管理员热切换 embedding 配置时，完整不可变描述符与两项政策 pin 在同一事务内提交，之后发布 provider 与设置。真实 HTTP 回归覆盖 Cache 关闭、模型/endpoint/4→6 维切换、政策 UPDATE 故障的完整回滚，以及不重启立即 store/update/query。独立复核还推动 Context 在查询 embedding 之前验证原始输入和完整旧读集，三个测试在修复前均观察到一次不应发生的 provider 调用，修复后均为零。
+
+冻结源码的默认 workspace **802 个不同测试通过、0 失败、5 显式跳过**，按 target 排除内嵌子进程重复计数。完整日志 `/private/tmp/alia-memory-workspace-verified.log`；统计 `/private/tmp/alia-memory-verification-summary.json`；422 个源码/配置文件的 SHA-256 manifest `/private/tmp/alia-memory-final-source-manifest.json`，运行后未改变。Context 26、Cache/Insights 16、Memory 13、Memory embedding 13、Memory 隐私 24、Server runtime 38 和 Execution service 30 项均包含在整体结果中，不重复累计。两端无默认特性 all-targets 记录 `/private/tmp/alia-memory-no-default-verified.log`。
+
+首次完整运行只有迁移夹具仍期待旧向量表存在而失败，现改为验证新表存在且旧表移除，再跑全部 workspace 获得上述结果；首轮失败日志 `/private/tmp/alia-memory-workspace-final.log` 保留。5 项跳过随后全部另跑通过：3 项真实 PTY 生命周期，输出 `/private/tmp/alia-memory-pty-verified.log`；2 项真实 CPU Easy-Turn 与持续 gRPC，输出 `/private/tmp/alia-memory-model-verified.log`。直接 Backchannel 为 834 ms；gRPC Complete/Backchannel/Wait 为 524/340/397 ms，只是本次模型调用耗时。HTTP 热切换定向记录 `/private/tmp/alia-http-memory-profile-20260914-escalated.log`；请求前来源校验的 red/green 记录 `/private/tmp/alia-context-query-admission-red.log`、`/private/tmp/alia-context-query-admission-green.log`。
+
+本包同时修正两处 Linux ARM 验证夹具：Execution approval proxy 禁用 Nagle 并一次写出同一协议消息，Runtime 初始化期限测试先通过真实构建身份入口预热大型 debug binary 摘要。固定 `a33ec67` 仍保留 703 通过、4 失败、5 跳过的原始结果；仅含两项夹具修正的候选将受影响 67 个不同测试并行重跑全部通过，不能改写为固定提交全套已通过。候选没有包含本包新的 Memory 代码，见 [平台记录](platform-validation.md)。
+
+尚未合并的 Appraisal 包正在补足规范 Memory 的递归父根校验：已接受的派生 Memory 在父记录改版、变为私有或过期后，必须从 Context、独立检索和向量投影中排除。本包自身 revision/epoch/profile 检查不能替代该闭包。Appraisal/Relationship、Companion、真实硬件和长时混合负载仍属于首轮主线。
 
 ## ContextLease、派生缓存与持久政策（2026-09-13）
 
@@ -144,7 +159,7 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 
 1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
 2. D3 短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。TextDelivery/D3 固定提交的 Linux ARM64 复核已完成；唯一发送与软件提交不能代表硬件已完成。
-3. 接入 Appraisal/Relationship 的规范来源和失效重建、Companion 状态与主动表达。旧逐句 Expression 缓存没有 owner/context/epoch/TTL，须移除该旁路；这不属于本包规范 `llm_cache` 的覆盖范围。旧 Memory embedding 写回须升级到与请求描述绑定的身份；在此之前生成路径对不能证明身份的旧向量使用关键词检索。这些均是首轮未完成工作，不是用户明确延期。
+3. 接入 Appraisal/Relationship 的规范来源和失效重建、Companion 状态与主动表达。旧逐句 Expression 缓存没有 owner/context/epoch/TTL，须移除该旁路；这不属于规范 `llm_cache` 的覆盖范围。Memory 向量的实际请求身份已在本包实现，派生 Memory 的递归父根与关系域失效仍随 Appraisal 包补齐。这些均是首轮未完成工作，不是用户明确延期。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。

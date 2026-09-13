@@ -177,7 +177,7 @@ pub(super) async fn erase(
     for id in &erased {
         tx.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "DELETE FROM memory_embeddings_1536 WHERE memory_id=$1::uuid",
+            "DELETE FROM memory_embeddings WHERE memory_id=$1::uuid",
             [id.clone().into()],
         ))
         .await?;

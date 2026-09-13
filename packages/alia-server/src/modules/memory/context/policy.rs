@@ -28,7 +28,9 @@ pub struct ContextPolicy {
     pub capture_mode: MemoryCaptureMode,
     pub sensitive_filter_enabled: bool,
     pub paused_until: Option<DateTime<Utc>>,
-    pub active_embedding_profile: String,
+    /// The actual request profile approved for Memory's derived index. This
+    /// is populated from the provider preview, never a free-form model alias.
+    pub active_embedding_profile: Option<String>,
     pub retrieval_layers: Vec<String>,
     pub max_memory_chars: usize,
     pub max_memory_results: usize,
@@ -62,7 +64,7 @@ impl ContextPolicy {
             capture_mode: memory.capture_mode,
             sensitive_filter_enabled: memory.sensitive_filter_enabled,
             paused_until,
-            active_embedding_profile: memory.active_embedding_profile.clone(),
+            active_embedding_profile: None,
             retrieval_layers: crate::memory_policy::normalize_memory_layers(
                 memory.retrieval_layers.clone(),
             ),
@@ -86,6 +88,7 @@ impl ContextPolicy {
             crate::providers::adapter::EmbeddingProfile::from_server_config(config)?
                 .map(|profile| profile.id())
                 .transpose()?;
+        policy.active_embedding_profile = policy.cache_embedding_profile_id.clone();
         Ok(policy)
     }
     pub fn with_cache(mut self, cache: &CacheSection) -> ContextResult<Self> {
@@ -107,8 +110,9 @@ impl ContextPolicy {
             "invalid context policy bounds"
         );
         anyhow::ensure!(
-            !self.active_embedding_profile.is_empty()
-                && self.active_embedding_profile.len() <= 256
+            self.active_embedding_profile
+                .as_ref()
+                .is_none_or(|id| !id.is_empty() && id.len() <= 256)
                 && self
                     .cache_embedding_profile_id
                     .as_ref()
@@ -142,6 +146,9 @@ impl ContextPolicy {
                 self.reads_memory() && self.capture_mode != MemoryCaptureMode::None
             }
             ContextUse::MemoryMaintenance => self.reads_memory() && self.consolidation_enabled,
+            ContextUse::MemoryEmbedding => {
+                self.reads_memory() && self.active_embedding_profile.is_some()
+            }
             ContextUse::CacheWrite | ContextUse::CacheReview => {
                 self.cache_enabled && self.cache_exact_enabled
             }
@@ -227,7 +234,7 @@ impl ContextPolicyStore {
         expected_version: i64,
         next: ContextPolicy,
     ) -> ContextResult<PolicySnapshot> {
-        self.replace_inner(expected_version, next, None).await
+        self.replace_inner(expected_version, next, None, None).await
     }
     pub async fn replace_for_actor(
         &self,
@@ -235,7 +242,17 @@ impl ContextPolicyStore {
         next: ContextPolicy,
         actor: uuid::Uuid,
     ) -> ContextResult<PolicySnapshot> {
-        self.replace_inner(expected_version, next, Some(actor))
+        self.replace_inner(expected_version, next, Some(actor), None)
+            .await
+    }
+    pub(crate) async fn replace_for_actor_with_embedding(
+        &self,
+        expected_version: i64,
+        next: ContextPolicy,
+        actor: uuid::Uuid,
+        profile: Option<&crate::providers::adapter::EmbeddingProfile>,
+    ) -> ContextResult<PolicySnapshot> {
+        self.replace_inner(expected_version, next, Some(actor), profile)
             .await
     }
     async fn replace_inner(
@@ -243,6 +260,7 @@ impl ContextPolicyStore {
         expected_version: i64,
         next: ContextPolicy,
         actor: Option<uuid::Uuid>,
+        profile: Option<&crate::providers::adapter::EmbeddingProfile>,
     ) -> ContextResult<PolicySnapshot> {
         next.validate()?;
         let tx = self.db.begin().await?;
@@ -252,6 +270,17 @@ impl ContextPolicyStore {
         }
         if current.version != expected_version {
             return Err(ContextError::PolicyChanged.into());
+        }
+        if let Some(profile) = profile {
+            let id = profile.id()?;
+            anyhow::ensure!(
+                next.active_embedding_profile.as_deref() == Some(id.as_str())
+                    && next.cache_embedding_profile_id.as_deref() == Some(id.as_str()),
+                "embedding transition descriptor differs from policy pins"
+            );
+            // A new pin must be usable without restarting Memory or waiting for
+            // Cache to register the descriptor as an unrelated side effect.
+            crate::providers::embedding::profile_store::ensure_profile(&tx, profile).await?;
         }
         let version = if current.policy == next {
             current.version

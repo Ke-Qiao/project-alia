@@ -1216,6 +1216,10 @@ impl ApprovalAckProxy {
                         let release = release_task.clone();
                         connections.spawn(async move {
                             let server = TcpStream::connect(upstream).await.unwrap();
+                            // The proxy observes COMMIT acknowledgements; it must
+                            // not add Nagle/delayed-ACK stalls to every PG frame.
+                            client.set_nodelay(true).unwrap();
+                            server.set_nodelay(true).unwrap();
                             let (mut client_read, mut client_write) = client.into_split();
                             let (mut server_read, mut server_write) = server.into_split();
                             let upload = tokio::io::copy(&mut client_read, &mut server_write);
@@ -1236,8 +1240,10 @@ impl ApprovalAckProxy {
                                         if hold_ack { release.cancelled().await; }
                                         return Ok::<_, std::io::Error>(());
                                     }
-                                    client_write.write_all(&header).await?;
-                                    client_write.write_all(&body).await?;
+                                    let mut frame = Vec::with_capacity(header.len() + body.len());
+                                    frame.extend_from_slice(&header);
+                                    frame.extend_from_slice(&body);
+                                    client_write.write_all(&frame).await?;
                                 }
                             };
                             tokio::select! { _ = upload => {}, _ = download => {} }

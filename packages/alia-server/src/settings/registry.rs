@@ -814,8 +814,12 @@ impl SettingsRegistry {
             ),
             (
                 "core.policies.memory.active_embedding_profile",
-                json!(config.policies.memory.active_embedding_profile),
-                schema("Active Memory Embedding Profile", "string", false),
+                serde_json::Value::Null,
+                schema(
+                    "Active Memory Embedding Profile (read-only)",
+                    "string",
+                    false,
+                ),
             ),
             (
                 "core.policies.memory.graph_depth",

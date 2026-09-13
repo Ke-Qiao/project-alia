@@ -5,7 +5,6 @@ capture_timeout_sec = 3
 capture_min_confidence = 0.65
 capture_min_importance = 0.45
 sensitive_filter_enabled = true
-active_embedding_profile = "openai.text-embedding-3-small.1536.cosine.v1"
 graph_depth = 2
 consolidation_enabled = true
 paused_until = ""

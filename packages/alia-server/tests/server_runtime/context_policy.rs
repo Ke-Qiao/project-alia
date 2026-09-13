@@ -171,6 +171,11 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .current()
             .await
             .unwrap();
+        assert!(original.policy.active_embedding_profile.is_some());
+        assert_eq!(
+            original.policy.active_embedding_profile,
+            original.policy.cache_embedding_profile_id
+        );
         first.shutdown().await.unwrap();
 
         let model = "replacement-embedding-model";
@@ -188,6 +193,10 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
         assert_eq!(
             observed.policy.cache_embedding_profile_id,
             original.policy.cache_embedding_profile_id
+        );
+        assert_eq!(
+            observed.policy.active_embedding_profile,
+            original.policy.active_embedding_profile
         );
         let actual = state
             .modules
@@ -239,6 +248,14 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .await
             .unwrap();
         assert_eq!(invalid.status(), 400);
+        let forged_pin = client
+            .patch(&url)
+            .bearer_auth(&admin)
+            .json(&json!({"core.policies.memory.active_embedding_profile": actual}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(forged_pin.status(), 400);
         assert_eq!(
             state
                 .modules
@@ -266,7 +283,11 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .await
             .unwrap();
         assert_eq!(durable.version, original.version + 1);
-        assert_eq!(durable.policy.cache_embedding_profile_id, Some(actual));
+        assert_eq!(
+            durable.policy.cache_embedding_profile_id,
+            Some(actual.clone())
+        );
+        assert_eq!(durable.policy.active_embedding_profile, Some(actual));
 
         // Reproduce interruption after durable policy + desired settings were
         // published but before the provider acknowledged its runtime change.
@@ -283,6 +304,7 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .unwrap();
         let mut partial_policy = durable.policy;
         partial_policy.cache_embedding_profile_id = Some(intended.id().unwrap());
+        partial_policy.active_embedding_profile = partial_policy.cache_embedding_profile_id.clone();
         state
             .modules
             .context
@@ -342,6 +364,17 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .unwrap()
             .unwrap();
         assert_eq!(current.dimensions, 3072);
+        let current_policy = state
+            .modules
+            .context
+            .policy_store()
+            .current()
+            .await
+            .unwrap();
+        assert_eq!(
+            current_policy.policy.active_embedding_profile,
+            Some(current.id().unwrap())
+        );
         assert_eq!(
             state
                 .settings
@@ -368,6 +401,18 @@ async fn embedding_identity_changes_need_explicit_policy_commit_after_restart() 
             .unwrap()
             .unwrap();
         let restarted = f.builder().build().await.unwrap();
+        let restored = restarted
+            .state()
+            .modules
+            .context
+            .policy_store()
+            .current()
+            .await
+            .unwrap();
+        assert_eq!(
+            restored.policy.active_embedding_profile,
+            Some(current.id().unwrap())
+        );
         assert_eq!(
             restarted
                 .state()

@@ -41,6 +41,9 @@ mod body;
 #[path = "server_runtime/context_policy.rs"]
 mod context_policy;
 
+#[path = "server_runtime/embedding_profile.rs"]
+mod embedding_profile;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,
@@ -364,6 +367,18 @@ async fn required_tool_catalog_failure_prevents_ready_and_can_be_retried() {
 #[tokio::test]
 async fn cancelling_or_dropping_build_future_rolls_back_partial_init() {
     with_fixture(|f| async move {
+        // Measure cancellation after reaching the blocked module. The first
+        // real build identity hashes this debug test executable and belongs to
+        // fixture setup, not the five-second module admission assertion.
+        let identity_owner = alia_server::modules::execution::ExecutionService::new(
+            alia_server::modules::execution::repository::ExecutionRepository::new(f.db.clone()),
+            Arc::new(alia_server::tools::BuiltinToolRegistry::new()),
+            &f.config.policies.tools,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        drop(identity_owner);
         for drop_future in [true, false] {
             let mut state = ProbeState::new(Arc::default());
             Arc::get_mut(&mut state).unwrap().init_gate = Some(Arc::new(Semaphore::new(0)));

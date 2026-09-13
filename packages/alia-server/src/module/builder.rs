@@ -515,8 +515,9 @@ impl ServerBuilder {
         let actual_profile = embedding_arc
             .preview_profile_settings(&saved_settings)
             .await?;
-        policy_seed.cache_embedding_profile_id =
-            actual_profile.as_ref().map(|p| p.id()).transpose()?;
+        let actual_profile_id = actual_profile.as_ref().map(|p| p.id()).transpose()?;
+        policy_seed.cache_embedding_profile_id = actual_profile_id.clone();
+        policy_seed.active_embedding_profile = actual_profile_id.clone();
         let persisted_policy = startup_step(&self.cancel_token, "loading context policy", async {
             crate::modules::memory::context::ContextPolicyStore::new(db.clone())
                 .initialize_or_load(policy_seed)
@@ -525,11 +526,17 @@ impl ServerBuilder {
         .await?;
         embedding_arc.apply_settings(&saved_settings).await?;
         if persisted_policy.policy.cache_semantic_enabled
-            && persisted_policy.policy.cache_embedding_profile_id
-                != actual_profile.as_ref().map(|p| p.id()).transpose()?
+            && persisted_policy.policy.cache_embedding_profile_id != actual_profile_id
         {
             tracing::warn!(
                 "configured embedding profile differs from persistent policy; semantic cache remains unavailable until an explicit policy update"
+            );
+        }
+        if persisted_policy.policy.memory_enabled
+            && persisted_policy.policy.active_embedding_profile != actual_profile_id
+        {
+            tracing::warn!(
+                "configured embedding profile differs from persistent Memory policy; canonical keyword retrieval remains available until an explicit profile update"
             );
         }
         let policy_settings = crate::settings::context_policy::projection(&persisted_policy.policy);

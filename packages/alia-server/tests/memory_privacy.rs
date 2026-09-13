@@ -7,8 +7,9 @@ use alia_server::{
     providers::{
         MemoryBackend,
         adapter::{
-            EmbeddingAdapter, MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch,
-            MemoryWriteContext, RetrievalOpts,
+            EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, MemoryBatch, MemoryListOpts,
+            MemoryNode, MemoryPatch, MemoryWriteContext, ProfiledEmbeddings, RetrievalOpts,
+            embedding_text_digest,
         },
         memory::AliaMemory,
     },
@@ -1163,6 +1164,18 @@ async fn consolidation_of_weak_duplicates_does_not_depend_on_uuid_update_order()
     })
     .await;
 }
+fn held_profile() -> EmbeddingProfile {
+    EmbeddingProfile {
+        provider: "test".into(),
+        endpoint: "http://memory.test".into(),
+        model: "held-1536".into(),
+        revision: "test.v1".into(),
+        dimensions: 1536,
+        distance: "cosine".into(),
+        vector_type: "vector".into(),
+    }
+}
+
 impl HeldEmbedding {
     fn new() -> Self {
         Self {
@@ -1180,20 +1193,35 @@ impl ModuleLifecycle for HeldEmbedding {
 }
 #[async_trait]
 impl EmbeddingAdapter for HeldEmbedding {
-    async fn embed(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+    async fn embed(&self, _: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        anyhow::bail!("Memory must use profiled embedding")
+    }
+    async fn embed_profiled(&self, texts: &[String]) -> anyhow::Result<Option<ProfiledEmbeddings>> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         if call == 0 {
             self.started.add_permits(1);
             self.release.acquire().await?.forget();
         }
-        Ok(texts
-            .iter()
-            .map(|_| {
-                let mut vector = vec![0.0; 1536];
-                vector[0] = (call + 1) as f32;
-                vector
-            })
-            .collect())
+        Ok(Some(ProfiledEmbeddings {
+            profile: held_profile(),
+            vectors: texts
+                .iter()
+                .map(|text| {
+                    let mut values = vec![0.0; 1536];
+                    values[0] = (call + 1) as f32;
+                    EmbeddingVector {
+                        input_digest: embedding_text_digest(text),
+                        values,
+                    }
+                })
+                .collect(),
+        }))
+    }
+    async fn preview_profile_settings(
+        &self,
+        _: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Option<EmbeddingProfile>> {
+        Ok(Some(held_profile()))
     }
     fn dimension(&self) -> usize {
         1536
@@ -1217,7 +1245,7 @@ async fn embedding_returning_after_delete_cannot_restore_a_vector() {
         memory.delete(user, &id).await.unwrap();
         embedding.release.add_permits(1);
         store.await.unwrap().unwrap();
-        assert_eq!(database.count("memory_embeddings_1536").await, 0);
+        assert_eq!(database.count("memory_embeddings").await, 0);
         assert!(memory.get(user, &id).await.unwrap().is_none());
     })
     .await;
@@ -1254,7 +1282,7 @@ async fn older_embedding_cannot_overwrite_the_corrected_revision() {
             .db
             .query_one(Statement::from_string(
                 DatabaseBackend::Postgres,
-                "SELECT source_revision,embedding::text AS vector FROM memory_embeddings_1536",
+                "SELECT source_revision,embedding::text AS vector FROM memory_embeddings",
             ))
             .await
             .unwrap()

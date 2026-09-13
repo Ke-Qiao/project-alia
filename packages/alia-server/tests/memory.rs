@@ -1,6 +1,7 @@
 use alia_server::providers::MemoryBackend;
 use alia_server::providers::adapter::{
-    EmbeddingAdapter, MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts,
+    EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, MemoryListOpts, MemoryNode, MemoryPatch,
+    ProfiledEmbeddings, RetrievalOpts, embedding_text_digest,
 };
 use alia_server::providers::memory::NoopMemory;
 use alia_server::providers::memory::simple::AliaMemory;
@@ -539,11 +540,11 @@ async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph
             DatabaseBackend::Postgres,
             r#"
             SELECT COUNT(*)::bigint AS count
-            FROM memory_embeddings_1536
+            FROM memory_embeddings
             WHERE memory_id = $1::uuid
-              AND profile_id = 'openai.text-embedding-3-small.1536.cosine.v1'
+              AND profile_id = $2
             "#,
-            vec![motion_id.clone().into()],
+            vec![motion_id.clone().into(), deterministic_profile().id().unwrap().into()],
         ))
         .await
         .unwrap()
@@ -616,6 +617,18 @@ async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph
     }
 }
 
+fn deterministic_profile() -> EmbeddingProfile {
+    EmbeddingProfile {
+        provider: "test".into(),
+        endpoint: "http://memory.test".into(),
+        model: "deterministic-1536".into(),
+        revision: "test.v1".into(),
+        dimensions: 1536,
+        distance: "cosine".into(),
+        vector_type: "vector".into(),
+    }
+}
+
 struct DeterministicEmbedding1536;
 
 #[async_trait]
@@ -627,11 +640,28 @@ impl ModuleLifecycle for DeterministicEmbedding1536 {
 
 #[async_trait]
 impl EmbeddingAdapter for DeterministicEmbedding1536 {
-    async fn embed(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Ok(texts
-            .iter()
-            .map(|text| deterministic_vector(text))
-            .collect())
+    async fn embed(&self, _: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        anyhow::bail!("Memory must use profiled embedding")
+    }
+
+    async fn embed_profiled(&self, texts: &[String]) -> anyhow::Result<Option<ProfiledEmbeddings>> {
+        Ok(Some(ProfiledEmbeddings {
+            profile: deterministic_profile(),
+            vectors: texts
+                .iter()
+                .map(|text| EmbeddingVector {
+                    input_digest: embedding_text_digest(text),
+                    values: deterministic_vector(text),
+                })
+                .collect(),
+        }))
+    }
+
+    async fn preview_profile_settings(
+        &self,
+        _: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Option<EmbeddingProfile>> {
+        Ok(Some(deterministic_profile()))
     }
 
     fn dimension(&self) -> usize {

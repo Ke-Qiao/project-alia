@@ -120,6 +120,7 @@ async fn update_settings(
             .map(|p| p.id())
             .transpose()
             .map_err(|error| AppError::Validation(error.to_string()))?;
+        next.active_embedding_profile = next.cache_embedding_profile_id.clone();
     }
     let policy = if body.keys().any(|key| context_policy::owns(key)) || embedding_changed {
         tokio::time::timeout(
@@ -128,7 +129,16 @@ async fn update_settings(
                 .modules
                 .context
                 .policy_store()
-                .replace_for_actor(expected, next, auth.id),
+                .replace_for_actor_with_embedding(
+                    expected,
+                    next,
+                    auth.id,
+                    if embedding_changed {
+                        next_profile.as_ref()
+                    } else {
+                        None
+                    },
+                ),
         )
         .await
         .map_err(|_| {

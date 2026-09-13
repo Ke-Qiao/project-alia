@@ -339,12 +339,6 @@ impl PipelinePolicies {
             self.memory.sensitive_filter_enabled = value;
             applied.push("core.policies.memory.sensitive_filter_enabled".to_string());
         }
-        if let Some(value) =
-            string_setting(updates, "core.policies.memory.active_embedding_profile")
-        {
-            self.memory.active_embedding_profile = value;
-            applied.push("core.policies.memory.active_embedding_profile".to_string());
-        }
         if let Some(value) = u32_setting(updates, "core.policies.memory.graph_depth") {
             self.memory.graph_depth = value.clamp(1, 4);
             applied.push("core.policies.memory.graph_depth".to_string());

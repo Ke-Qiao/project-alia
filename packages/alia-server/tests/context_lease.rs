@@ -814,6 +814,7 @@ async fn timed_resume_is_one_persistent_cas_and_does_not_resign_old_work() {
 
 struct GateEmbedding {
     profile: EmbeddingProfile,
+    calls: std::sync::atomic::AtomicUsize,
     entered: tokio::sync::Notify,
     release: tokio::sync::Semaphore,
 }
@@ -829,6 +830,7 @@ impl EmbeddingAdapter for GateEmbedding {
         anyhow::bail!("unprofiled embedding must not be used by Context")
     }
     async fn embed_profiled(&self, texts: &[String]) -> anyhow::Result<Option<ProfiledEmbeddings>> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.entered.notify_one();
         self.release.acquire().await?.forget();
         Ok(Some(ProfiledEmbeddings {
@@ -841,6 +843,12 @@ impl EmbeddingAdapter for GateEmbedding {
                 })
                 .collect(),
         }))
+    }
+    async fn preview_profile_settings(
+        &self,
+        _: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> anyhow::Result<Option<EmbeddingProfile>> {
+        Ok(Some(self.profile.clone()))
     }
     fn dimension(&self) -> usize {
         1536
@@ -859,7 +867,7 @@ async fn gated_service(f: &Fixture) -> (ContextService, Arc<GateEmbedding>) {
     let id = profile.id().unwrap();
     f.db.execute(stmt("INSERT INTO embedding_profiles(id,provider,model,dimensions,distance,vector_type,request_descriptor) VALUES($1,$2,$3,1536,'cosine','vector',$4)",vec![id.clone().into(),profile.provider.clone().into(),profile.model.clone().into(),json!(profile).into()])).await.unwrap();
     let mut policy = f.service().policy_store().current().await.unwrap();
-    policy.policy.active_embedding_profile = id.clone();
+    policy.policy.active_embedding_profile = Some(id.clone());
     policy.policy.cache_embedding_profile_id = Some(id);
     f.service()
         .policy_store()
@@ -868,10 +876,86 @@ async fn gated_service(f: &Fixture) -> (ContextService, Arc<GateEmbedding>) {
         .unwrap();
     let adapter = Arc::new(GateEmbedding {
         profile,
+        calls: std::sync::atomic::AtomicUsize::new(0),
         entered: tokio::sync::Notify::new(),
         release: tokio::sync::Semaphore::new(0),
     });
     (ContextService::new(f.db.clone(), adapter.clone()), adapter)
+}
+
+#[tokio::test]
+async fn stale_source_cannot_send_query_embedding() {
+    with_db(|f| async move {
+        let (service, adapter) = gated_service(&f).await;
+        let source = f.source("query").await;
+        f.memory_backend().await.clear(f.owner).await.unwrap();
+        adapter.release.add_permits(1);
+        assert!(matches!(
+            service
+                .materialize(source, "query")
+                .await
+                .unwrap_err()
+                .downcast_ref::<ContextError>(),
+            Some(ContextError::Revoked(_))
+        ));
+        assert_eq!(adapter.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(f.count("context_leases").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn unpersisted_raw_query_cannot_send_query_embedding() {
+    with_db(|f| async move {
+        let (service, adapter) = gated_service(&f).await;
+        let source = f.source("persisted raw query").await;
+        adapter.release.add_permits(1);
+        assert!(
+            service
+                .materialize(source, "unpersisted replacement query")
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("persisted raw user message")
+        );
+        assert_eq!(adapter.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(f.count("context_leases").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn revoked_original_roots_cannot_send_query_embedding() {
+    with_db(|f| async move {
+        let (service, adapter) = gated_service(&f).await;
+        let memory = f.item("tea evidence").await;
+        // A valid original lease is produced with the same persistent policy;
+        // the no-op adapter uses canonical keyword retrieval for this setup.
+        let original = f
+            .service()
+            .materialize(f.source("tea").await, "tea")
+            .await
+            .unwrap();
+        assert!(original.lease().dependencies().iter().any(
+            |root| matches!(root, ContextEvidence::Memory { id, .. } if *id == memory)
+        ));
+        f.sql(&format!(
+            "UPDATE memory_items SET revision=revision+1,content='changed evidence' WHERE id='{memory}'"
+        ))
+        .await;
+        adapter.release.add_permits(1);
+        assert!(matches!(
+            service
+                .extend_memory(&original, "a tool query derived from old evidence")
+                .await
+                .unwrap_err()
+                .downcast_ref::<ContextError>(),
+            Some(ContextError::Revoked(_))
+        ));
+        assert_eq!(adapter.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(f.count("context_leases").await, 1);
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -1215,15 +1299,49 @@ async fn source_clock_skew_never_changes_capture_epoch_authority() {
 
 #[tokio::test]
 async fn profiled_embedding_reads_matching_memory_vector_in_the_context_snapshot() {
-    with_db(|f|async move {
-        let (service,adapter)=gated_service(&f).await;let memory=f.item("no lexical match").await;
-        let vector=format!("[{}]",vec!["1";1536].join(","));
-        f.db.execute(stmt("INSERT INTO memory_embeddings_1536(memory_id,profile_id,embedding,source_revision) VALUES($1,$2,$3::vector,1)",vec![memory.into(),adapter.profile.id().unwrap().into(),vector.into()])).await.unwrap();
-        let source=f.source("query").await;
-        let task=tokio::spawn(async move{service.materialize(source,"query").await});
-        tokio::time::timeout(Duration::from_secs(2),adapter.entered.notified()).await.unwrap();adapter.release.add_permits(1);
-        let context=task.await.unwrap().unwrap();
-        assert_eq!(context.memory().project_context[0].id,memory.to_string());
-        assert_eq!(context.memory().retrieval_trace[0].retrieval_path,"vector_hnsw");
-    }).await;
+    with_db(|f| async move {
+        let (service, adapter) = gated_service(&f).await;
+        let memory = alia_server::providers::memory::AliaMemory::new();
+        memory
+            .attach_runtime_for_test(
+                f.db.clone(),
+                Some(adapter.clone()),
+                MemorySection::default(),
+            )
+            .await
+            .unwrap();
+        // The canonical Memory write, not a test-only SQL insert, creates this vector.
+        adapter.release.add_permits(1);
+        let id = memory
+            .store(
+                f.owner,
+                alia_server::providers::adapter::MemoryNode::new(
+                    "core",
+                    "fact",
+                    "no lexical match",
+                    0.9,
+                )
+                .with_runtime_fields("semantic", "user", 0.9, 0.9, "internal"),
+            )
+            .await
+            .unwrap();
+        let current = service.policy_store().current().await.unwrap();
+        let mut policy = current.policy;
+        policy.cache_enabled = false;
+        policy.cache_embedding_profile_id = None;
+        service
+            .policy_store()
+            .replace(current.version, policy)
+            .await
+            .unwrap();
+        let source = f.source("query").await;
+        adapter.release.add_permits(1);
+        let context = service.materialize(source, "query").await.unwrap();
+        assert_eq!(context.memory().project_context[0].id, id);
+        assert_eq!(
+            context.memory().retrieval_trace[0].retrieval_path,
+            "profiled_vector"
+        );
+    })
+    .await;
 }

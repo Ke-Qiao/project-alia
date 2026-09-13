@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sea_orm::{ConnectionTrait, IsolationLevel, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, IsolationLevel, TransactionTrait};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -87,53 +87,27 @@ impl ContextService {
                 retrieval.layers = Some(layers);
             }
         }
-        // The policy/profile is fixed before embedding. No network work occurs
-        // under the snapshot or privacy lock, and a changed policy is not retried.
-        let vector = if reads_memory && self.embedding.name() != "noop_embedding" {
-            let profile = self
-                .db
-                .query_one(stmt(
-                    "SELECT dimensions,request_descriptor FROM embedding_profiles WHERE id=$1",
-                    vec![policy.policy.active_embedding_profile.clone().into()],
-                ))
+        // Admit the actual source and all original roots before disclosing a
+        // query to the provider. No network work holds these locks; the same
+        // authority is checked again in the materialization snapshot below.
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let tx = self.db.begin().await?;
+            tx.execute(stmt("SET LOCAL statement_timeout='2s'", vec![]))
                 .await?;
-            if profile.as_ref().is_some_and(|r| {
-                r.try_get::<i32>("", "dimensions").ok() == Some(1536)
-                    && r.try_get::<Option<Value>>("", "request_descriptor")
-                        .ok()
-                        .flatten()
-                        .is_some()
-            }) {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(2),
-                    self.embedding.embed_profiled(&[query.to_string()]),
-                )
-                .await
-                {
-                    Ok(Ok(Some(mut result)))
-                        if result.profile.id().ok().as_deref()
-                            == Some(policy.policy.active_embedding_profile.as_str())
-                            && policy.policy.cache_embedding_profile_id.as_ref()
-                                == Some(&policy.policy.active_embedding_profile)
-                            && profile.as_ref().and_then(|row| {
-                                row.try_get::<Option<Value>>("", "request_descriptor")
-                                    .ok()
-                                    .flatten()
-                            }) == serde_json::to_value(&result.profile).ok()
-                            && result.vectors.len() == 1
-                            && result.vectors[0].validate(&result.profile).is_ok()
-                            && result.vectors[0].input_digest == {
-                                use sha2::{Digest, Sha256};
-                                format!("{:x}", Sha256::digest(query.as_bytes()))
-                            } =>
-                    {
-                        Some(result.vectors.remove(0).values)
-                    }
-                    _ => None, // Explicit keyword retrieval still reads canonical rows.
-                }
-            } else {
-                None
-            }
+            validate_materialization_source(&tx, &source, query, original, policy.version).await?;
+            tx.commit().await?;
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .map_err(|_| ContextError::Unavailable("context query admission timed out".into()))??;
+        let vector = if reads_memory {
+            crate::providers::memory::simple::embedding::query_for_policy(
+                &self.db,
+                self.embedding.as_ref(),
+                &policy,
+                query,
+            )
+            .await?
         } else {
             None
         };
@@ -143,22 +117,8 @@ impl ContextService {
             .await?;
         tx.execute(stmt("SET LOCAL statement_timeout='2s'", vec![]))
             .await?;
-        lock_authority(&tx, &source, policy.version).await?;
-        let source_row = tx
-            .query_one(stmt(
-                "SELECT content,created_at FROM chat_messages WHERE id=$1",
-                vec![source.source_event_id.unwrap().into()],
-            ))
-            .await?
-            .ok_or_else(|| ContextError::Revoked("source message missing".into()))?;
-        let raw: String = source_row.try_get("", "content")?;
-        if original.is_none() {
-            anyhow::ensure!(
-                raw == query,
-                "initial generation must use the persisted raw user message"
-            );
-        }
-        let source_time: DateTime<Utc> = source_row.try_get("", "created_at")?;
+        let (raw, source_time) =
+            validate_materialization_source(&tx, &source, query, original, policy.version).await?;
         let mut lease = ContextLease {
             id: Uuid::new_v4(),
             purpose: ContextPurpose::Generation,
@@ -175,7 +135,6 @@ impl ContextService {
         };
         let mut history = Vec::new();
         if let Some(original) = original {
-            validate_binding(&tx, &original.lease.binding(), ContextUse::OutputAdmission).await?;
             merge(&mut lease.dependencies, &original.lease.dependencies)?;
             lease.valid_until = original.lease.valid_until;
             history = original.history.clone();
@@ -188,8 +147,8 @@ impl ContextService {
                 source.owner_id,
                 query,
                 retrieval.clone(),
-                &policy.policy.active_embedding_profile,
-                vector.as_deref(),
+                vector.as_ref(),
+                &policy.policy,
             )
             .await?;
             for mut node in candidates {
@@ -602,6 +561,32 @@ impl ContextService {
             .map_err(|_| ContextError::CommitUnknown { context_id: id })?;
         Ok((merged, completion))
     }
+}
+async fn validate_materialization_source(
+    tx: &DatabaseTransaction,
+    source: &ContextSource,
+    query: &str,
+    original: Option<&GenerationContext>,
+    policy_version: i64,
+) -> ContextResult<(String, DateTime<Utc>)> {
+    lock_authority(tx, source, policy_version).await?;
+    let source_row = tx
+        .query_one(stmt(
+            "SELECT content,created_at FROM chat_messages WHERE id=$1",
+            vec![source.source_event_id.into()],
+        ))
+        .await?
+        .ok_or_else(|| ContextError::Revoked("source message missing".into()))?;
+    let raw: String = source_row.try_get("", "content")?;
+    if let Some(original) = original {
+        validate_binding(tx, &original.lease.binding(), ContextUse::OutputAdmission).await?;
+    } else {
+        anyhow::ensure!(
+            raw == query,
+            "initial generation must use the persisted raw user message"
+        );
+    }
+    Ok((raw, source_row.try_get("", "created_at")?))
 }
 fn materialized_payload(context: &GenerationContext) -> Value {
     json!({"source_text":context.source_text,"memory":context.memory,"prior_memory":context.prior_memory,"history":context.history.iter().map(|m|json!({"id":m.id,"role":m.message.role,"content":m.message.content})).collect::<Vec<_>>(),"memory_prompt":context.memory_prompt,"extensions":context.extensions})

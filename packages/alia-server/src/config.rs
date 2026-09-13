@@ -1772,6 +1772,7 @@ impl Default for ConversationSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MemorySection {
     pub enabled: bool,
     #[serde(default)]
@@ -1784,8 +1785,6 @@ pub struct MemorySection {
     pub capture_min_importance: f32,
     #[serde(default = "default_memory_sensitive_filter_enabled")]
     pub sensitive_filter_enabled: bool,
-    #[serde(default = "default_memory_active_embedding_profile")]
-    pub active_embedding_profile: String,
     #[serde(default = "default_memory_graph_depth")]
     pub graph_depth: u32,
     #[serde(default = "default_memory_consolidation_enabled")]
@@ -1813,7 +1812,6 @@ impl Default for MemorySection {
             capture_min_confidence: default_memory_capture_min_confidence(),
             capture_min_importance: default_memory_capture_min_importance(),
             sensitive_filter_enabled: default_memory_sensitive_filter_enabled(),
-            active_embedding_profile: default_memory_active_embedding_profile(),
             graph_depth: default_memory_graph_depth(),
             consolidation_enabled: default_memory_consolidation_enabled(),
             paused_until: None,
@@ -1855,10 +1853,6 @@ fn default_memory_capture_min_importance() -> f32 {
 
 fn default_memory_sensitive_filter_enabled() -> bool {
     true
-}
-
-pub fn default_memory_active_embedding_profile() -> String {
-    "openai.text-embedding-3-small.1536.cosine.v1".to_string()
 }
 
 fn default_memory_graph_depth() -> u32 {

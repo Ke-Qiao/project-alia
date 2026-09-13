@@ -4,6 +4,8 @@
 //! - `OpenAiEmbedding`: OpenAI embedding models
 //! - `NoopEmbedding`: No-op placeholder
 
+pub(crate) mod profile_store;
+
 #[cfg(feature = "embed-openai")]
 pub mod openai;
 

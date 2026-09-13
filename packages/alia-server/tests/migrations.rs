@@ -260,7 +260,8 @@ async fn bundled_schema_installs_with_pgvector_and_restarts_without_changes() {
     );
     assert_eq!(first.applied, MIGRATIONS.len());
     assert!(database.table_exists("memory_items").await);
-    assert!(database.table_exists("memory_embeddings_1536").await);
+    assert!(database.table_exists("memory_embeddings").await);
+    assert!(!database.table_exists("memory_embeddings_1536").await);
     assert!(database.table_exists("plugin_storage_records").await);
     let repeated = migrations::run(&database.db).await.unwrap();
     assert_eq!(repeated.applied, 0);

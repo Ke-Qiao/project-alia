@@ -17,9 +17,13 @@ use super::privacy;
 #[path = "context_read.rs"]
 mod context_read;
 pub(crate) use context_read::{context_node, retrieve_context_nodes};
+#[path = "embedding.rs"]
+pub(crate) mod embedding;
+#[path = "embedding_worker.rs"]
+mod embedding_worker;
 use uuid::Uuid;
 
-use crate::config::{MemorySection, default_memory_active_embedding_profile};
+use crate::config::MemorySection;
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     EmbeddingAdapter, GraphFragment, GraphSnippet, MemoryBackend, MemoryBatch, MemoryBatchResult,
@@ -29,7 +33,6 @@ use crate::providers::adapter::{
 };
 
 const DEFAULT_TENANT_ID: Uuid = Uuid::nil();
-const EMBEDDING_PROFILE_1536: &str = "openai.text-embedding-3-small.1536.cosine.v1";
 
 async fn validate_nodes_policy(
     tx: &sea_orm::DatabaseTransaction,
@@ -84,7 +87,6 @@ type UserMemories = HashMap<Uuid, Vec<MemoryNode>>;
 
 #[derive(Debug, Clone)]
 struct MemoryRuntimeConfig {
-    active_embedding_profile: String,
     graph_depth: u32,
     consolidation_enabled: bool,
 }
@@ -92,7 +94,6 @@ struct MemoryRuntimeConfig {
 impl Default for MemoryRuntimeConfig {
     fn default() -> Self {
         Self {
-            active_embedding_profile: default_memory_active_embedding_profile(),
             graph_depth: 2,
             consolidation_enabled: true,
         }
@@ -104,7 +105,7 @@ struct RuntimeDiagnostics {
     persistence: String,
     embedding: String,
     embedding_probe: String,
-    active_embedding_profile: String,
+    active_embedding_profile: Option<String>,
     embedding_dimension: Option<usize>,
     retrieval: String,
     last_error: Option<String>,
@@ -116,7 +117,7 @@ impl Default for RuntimeDiagnostics {
             persistence: "memory".to_string(),
             embedding: "unavailable".to_string(),
             embedding_probe: "not_checked".to_string(),
-            active_embedding_profile: EMBEDDING_PROFILE_1536.to_string(),
+            active_embedding_profile: None,
             embedding_dimension: None,
             retrieval: "keyword_overlap".to_string(),
             last_error: None,
@@ -134,6 +135,8 @@ pub struct AliaMemory {
     embedding: Arc<RwLock<Option<Arc<dyn EmbeddingAdapter>>>>,
     config: Arc<RwLock<MemoryRuntimeConfig>>,
     diagnostics: Arc<RwLock<RuntimeDiagnostics>>,
+    projection: Arc<embedding_worker::ProjectionRuntime>,
+    cancel_token: RwLock<tokio_util::sync::CancellationToken>,
 }
 
 impl AliaMemory {
@@ -147,6 +150,8 @@ impl AliaMemory {
             embedding: Arc::new(RwLock::new(None)),
             config: Arc::new(RwLock::new(MemoryRuntimeConfig::default())),
             diagnostics: Arc::new(RwLock::new(RuntimeDiagnostics::default())),
+            projection: Arc::new(embedding_worker::ProjectionRuntime::default()),
+            cancel_token: RwLock::new(tokio_util::sync::CancellationToken::new()),
         }
     }
 
@@ -159,15 +164,17 @@ impl AliaMemory {
         embedding: Option<Arc<dyn EmbeddingAdapter>>,
         config: MemorySection,
     ) -> anyhow::Result<()> {
+        let mut policy = crate::modules::memory::context::ContextPolicy::from_config(
+            &config,
+            &crate::config::ConversationSection::default(),
+        )?;
+        policy.active_embedding_profile =
+            Self::register_actual_profile(&db, embedding.as_deref()).await?;
         crate::modules::memory::context::ContextPolicyStore::new(db.clone())
-            .initialize_or_load(crate::modules::memory::context::ContextPolicy::from_config(
-                &config,
-                &crate::config::ConversationSection::default(),
-            )?)
+            .initialize_or_load(policy)
             .await?;
         *self.config.write().await = Self::from_config(&config);
         *self.embedding.write().await = embedding;
-        Self::ensure_profile(&db).await?;
         *self.db.write().await = Some(db);
         {
             let mut diagnostics = self.diagnostics.write().await;
@@ -179,7 +186,6 @@ impl AliaMemory {
 
     fn from_config(config: &MemorySection) -> MemoryRuntimeConfig {
         MemoryRuntimeConfig {
-            active_embedding_profile: config.active_embedding_profile.clone(),
             graph_depth: config.graph_depth.max(1),
             consolidation_enabled: config.consolidation_enabled,
         }
@@ -503,9 +509,13 @@ impl AliaMemory {
                 }
             }
             validate_nodes_policy(&tx, context, &projected).await?;
+            let mut projections = Vec::with_capacity(projected.len());
+            for node in &projected {
+                projections.push(Self::prepare_embedding_work(&tx, context, node).await?);
+            }
             tx.commit().await?;
-            for node in projected {
-                self.write_embedding_if_available(&db, context, &node).await;
+            for work in projections {
+                self.write_embedding(&db, work).await;
             }
             return Ok(result);
         }
@@ -559,107 +569,65 @@ impl AliaMemory {
         self.embedding.read().await.clone()
     }
 
-    async fn active_profile(&self) -> String {
-        self.config.read().await.active_embedding_profile.clone()
-    }
-
-    async fn should_use_1536_embedding(&self) -> bool {
-        self.active_profile().await == EMBEDDING_PROFILE_1536
-            && self
-                .embedding()
-                .await
-                .is_some_and(|embedding| embedding.dimension() == 1536)
+    async fn register_actual_profile(
+        db: &DatabaseConnection,
+        adapter: Option<&dyn EmbeddingAdapter>,
+    ) -> anyhow::Result<Option<String>> {
+        let Some(adapter) = adapter else {
+            return Ok(None);
+        };
+        let Some(profile) = adapter.preview_profile_settings(&BTreeMap::new()).await? else {
+            return Ok(None);
+        };
+        let tx = db.begin().await?;
+        let id = crate::providers::embedding::profile_store::ensure_profile(&tx, &profile).await?;
+        tx.commit().await?;
+        Ok(Some(id))
     }
 
     async fn refresh_embedding_health(&self) {
-        let profile = self.active_profile().await;
-        let embedding = self.embedding().await;
-        let mut diagnostics = self.diagnostics.write().await;
-        diagnostics.active_embedding_profile = profile.clone();
-        diagnostics.embedding_dimension = embedding.as_ref().map(|embedding| embedding.dimension());
-        match embedding {
-            None => {
-                diagnostics.embedding = "unavailable".to_string();
-                diagnostics.retrieval = "keyword_overlap".to_string();
-                diagnostics.embedding_probe = "no_embedding_adapter".to_string();
-            }
-            Some(embedding)
-                if profile == EMBEDDING_PROFILE_1536 && embedding.dimension() == 1536 =>
+        let pin = if let Some(db) = self.db().await {
+            match tokio::time::timeout(
+                embedding::DB_BUDGET,
+                crate::modules::memory::context::ContextPolicyStore::new(db).current(),
+            )
+            .await
             {
-                diagnostics.embedding = "available".to_string();
-                diagnostics.embedding_probe = "dimension_matches_active_profile".to_string();
-                if diagnostics.persistence == "postgres" {
-                    diagnostics.retrieval = "hybrid_vector_graph_policy".to_string();
-                }
+                Ok(Ok(policy)) => policy.policy.active_embedding_profile,
+                _ => None,
             }
-            Some(embedding) => {
-                diagnostics.embedding = "unsupported_profile_or_dimension".to_string();
-                diagnostics.retrieval = "keyword_overlap".to_string();
-                diagnostics.embedding_probe = format!(
-                    "active_profile={profile}, adapter_dimension={}",
-                    embedding.dimension()
-                );
-            }
+        } else {
+            None
+        };
+        let actual = if let Some(adapter) = self.embedding().await {
+            tokio::time::timeout(
+                embedding::DB_BUDGET,
+                adapter.preview_profile_settings(&BTreeMap::new()),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .flatten()
+        } else {
+            None
+        };
+        let mut diagnostics = self.diagnostics.write().await;
+        diagnostics.active_embedding_profile = pin.clone();
+        diagnostics.embedding_dimension = actual.as_ref().map(|profile| profile.dimensions);
+        if pin.is_some() && actual.as_ref().and_then(|profile| profile.id().ok()) == pin {
+            diagnostics.embedding = "available".into();
+            diagnostics.embedding_probe = "actual_profile_matches_persistent_pin".into();
+            diagnostics.retrieval = "profiled_vector_or_keyword".into();
+        } else {
+            diagnostics.embedding = "unavailable".into();
+            diagnostics.embedding_probe = "no_matching_verified_profile".into();
+            diagnostics.retrieval = "keyword_overlap".into();
         }
     }
 
     async fn mark_degraded(&self, reason: impl Into<String>) {
         let mut diagnostics = self.diagnostics.write().await;
         diagnostics.last_error = Some(reason.into());
-    }
-
-    async fn ensure_profile(db: &DatabaseConnection) -> anyhow::Result<()> {
-        db.execute(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            INSERT INTO embedding_profiles
-                (id, provider, model, dimensions, distance, vector_type)
-            VALUES
-                ($1, 'openai', 'text-embedding-3-small', 1536, 'cosine', 'vector(1536)')
-            ON CONFLICT (id) DO NOTHING
-            "#,
-            vec![EMBEDDING_PROFILE_1536.into()],
-        ))
-        .await?;
-        for (id, provider, model, dimensions, distance, vector_type) in [
-            (
-                "openai.text-embedding-3-large.3072.cosine.v1",
-                "openai",
-                "text-embedding-3-large",
-                3072,
-                "cosine",
-                "vector(3072)",
-            ),
-            (
-                "generic.embedding.1024.cosine.v1",
-                "generic",
-                "embedding-1024",
-                1024,
-                "cosine",
-                "vector(1024)",
-            ),
-        ] {
-            db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                INSERT INTO embedding_profiles
-                    (id, provider, model, dimensions, distance, vector_type)
-                VALUES
-                    ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (id) DO NOTHING
-                "#,
-                vec![
-                    id.into(),
-                    provider.into(),
-                    model.into(),
-                    dimensions.into(),
-                    distance.into(),
-                    vector_type.into(),
-                ],
-            ))
-            .await?;
-        }
-        Ok(())
     }
 
     async fn update_in_db(
@@ -691,7 +659,7 @@ impl AliaMemory {
         );
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "DELETE FROM memory_embeddings_1536 WHERE memory_id=$1::uuid",
+            "DELETE FROM memory_embeddings WHERE memory_id=$1::uuid",
             [node_id.to_string().into()],
         ))
         .await?;
@@ -1042,48 +1010,47 @@ impl AliaMemory {
         Ok(())
     }
 
-    async fn write_embedding_if_available(
-        &self,
-        db: &DatabaseConnection,
+    async fn prepare_embedding_work(
+        tx: &sea_orm::DatabaseTransaction,
         context: &MemoryWriteContext,
         node: &MemoryNode,
+    ) -> anyhow::Result<Option<embedding::MemoryEmbeddingWork>> {
+        embedding::prepare(
+            tx,
+            embedding::WorkSeed {
+                owner: context.user_id,
+                id: Uuid::parse_str(
+                    node.id
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("memory id missing"))?,
+                )?,
+                revision: node.revision,
+                epoch: context.privacy_epoch,
+                policy_version: context
+                    .policy_version
+                    .ok_or_else(|| anyhow::anyhow!("memory policy missing"))?,
+            },
+        )
+        .await
+    }
+
+    async fn write_embedding(
+        &self,
+        db: &DatabaseConnection,
+        work: Option<embedding::MemoryEmbeddingWork>,
     ) {
-        if !memory_live(node) || !self.should_use_1536_embedding().await {
-            return;
-        }
-        let Some(embedding) = self.embedding().await else {
-            return;
-        };
-        let profile = self.active_profile().await;
-        // No database or privacy lock is held while awaiting external inference.
-        let result: anyhow::Result<()> = async {
-            let vectors=embedding.embed(&[node.content.clone()]).await?;
-            let vector=vectors.first().filter(|v|v.len()==1536).ok_or_else(||anyhow::anyhow!("embedding dimension mismatch"))?;
-            anyhow::ensure!(vector.iter().all(|v|v.is_finite()),"embedding contains nonfinite values");
-            let tx=db.begin().await?;
-            // The stored item revision, not the old extractor's source snapshot,
-            // identifies this projection. The epoch still invalidates deletion.
-            let current=privacy::lock_user(&tx,context.user_id).await?;
-            anyhow::ensure!(current.privacy_epoch==context.privacy_epoch,"late embedding rejected after privacy change");
-            let id=node.id.as_ref().ok_or_else(||anyhow::anyhow!("memory id missing"))?;
-            let updated=tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-                "INSERT INTO memory_embeddings_1536(memory_id,profile_id,embedding,source_revision) SELECT id,$2,$3::vector,revision FROM memory_items WHERE id=$1::uuid AND user_id=$4 AND tenant_id=$5 AND revision=$6 AND status='active' AND (expires_at IS NULL OR expires_at>clock_timestamp()) ON CONFLICT(memory_id,profile_id) DO UPDATE SET embedding=EXCLUDED.embedding,source_revision=EXCLUDED.source_revision,created_at=clock_timestamp()",
-                vec![id.clone().into(),profile.into(),vector_literal(vector).into(),context.user_id.into(),DEFAULT_TENANT_ID.into(),node.revision.into()])).await?;
-            anyhow::ensure!(updated.rows_affected()==1,"late embedding rejected after memory revision change");
-            tx.commit().await?;
-            Ok(())
-        }.await;
-        let mut diagnostics = self.diagnostics.write().await;
-        match result {
-            Ok(()) => {
-                diagnostics.embedding = "available".into();
-                diagnostics.retrieval = "hybrid_vector_graph_policy".into();
-            }
-            Err(error) => {
-                diagnostics.embedding = "write_failed".into();
-                diagnostics.retrieval = "keyword_overlap".into();
-                diagnostics.last_error = Some(error.to_string());
-            }
+        if let Some(work) = work
+            && let Some(adapter) = self.embedding().await
+        {
+            self.projection
+                .execute(
+                    db,
+                    adapter.as_ref(),
+                    &self.diagnostics,
+                    &work,
+                    embedding::INLINE_BUDGET,
+                )
+                .await;
         }
     }
 
@@ -1306,22 +1273,71 @@ impl AliaMemory {
         query: &str,
         opts: RetrievalOpts,
     ) -> anyhow::Result<Vec<MemoryNode>> {
-        let profile = self.active_profile().await;
-        let vector = if self.should_use_1536_embedding().await {
-            if let Some(embedding) = self.embedding().await {
-                embedding
-                    .embed(&[query.to_string()])
-                    .await
-                    .ok()
-                    .and_then(|mut vectors| (!vectors.is_empty()).then(|| vectors.remove(0)))
-                    .filter(|vector| vector.len() == 1536 && vector.iter().all(|v| v.is_finite()))
-            } else {
-                None
-            }
+        use crate::modules::memory::context::{ContextPolicyStore, ContextService, ContextUse};
+        let policy = tokio::time::timeout(
+            embedding::DB_BUDGET,
+            ContextPolicyStore::new(db.clone()).current(),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Memory retrieval policy timed out"))??;
+        if !policy.policy.reads_memory() {
+            return Ok(Vec::new());
+        }
+        let opts = context_read::narrow_opts(&policy.policy, opts);
+        if opts.max_results == Some(0) || opts.layers.as_ref().is_some_and(Vec::is_empty) {
+            return Ok(Vec::new());
+        }
+        let original_epoch = tokio::time::timeout(embedding::DB_BUDGET, async {
+            let tx = db.begin().await?;
+            tx.execute(embedding::sql("SET LOCAL statement_timeout='2s'", vec![]))
+                .await?;
+            ContextService::policy_in_transaction(
+                &tx,
+                Some(policy.version),
+                ContextUse::ManualMemoryWrite,
+            )
+            .await?;
+            let epoch = privacy::lock_user(&tx, user_id).await?.privacy_epoch;
+            tx.commit().await?;
+            Ok::<_, anyhow::Error>(epoch)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Memory retrieval admission timed out"))??;
+        let query_vector = if let Some(adapter) = self.embedding().await {
+            embedding::query_for_policy(db, adapter.as_ref(), &policy, query).await?
         } else {
             None
         };
-        retrieve_context_nodes(db, user_id, query, opts, &profile, vector.as_deref()).await
+        tokio::time::timeout(embedding::DB_BUDGET, async {
+            let tx = db
+                .begin_with_config(Some(sea_orm::IsolationLevel::RepeatableRead), None)
+                .await?;
+            tx.execute(embedding::sql("SET LOCAL statement_timeout='2s'", vec![]))
+                .await?;
+            ContextService::policy_in_transaction(
+                &tx,
+                Some(policy.version),
+                ContextUse::ManualMemoryWrite,
+            )
+            .await?;
+            anyhow::ensure!(
+                privacy::lock_user(&tx, user_id).await?.privacy_epoch == original_epoch,
+                "Memory retrieval source epoch changed"
+            );
+            let nodes = retrieve_context_nodes(
+                &tx,
+                user_id,
+                query,
+                opts,
+                query_vector.as_ref(),
+                &policy.policy,
+            )
+            .await?;
+            tx.commit().await?;
+            Ok(nodes)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Memory retrieval timed out"))?
     }
 
     async fn graph_from_db(
@@ -1461,18 +1477,39 @@ impl ModuleLifecycle for AliaMemory {
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+        let mut policy =
+            crate::modules::memory::context::ContextPolicy::from_server_config(&ctx.config)?;
+        policy.active_embedding_profile =
+            Self::register_actual_profile(&ctx.db, ctx.embedding.as_deref()).await?;
         crate::modules::memory::context::ContextPolicyStore::new(ctx.db.clone())
-            .initialize_or_load(
-                crate::modules::memory::context::ContextPolicy::from_server_config(&ctx.config)?,
-            )
+            .initialize_or_load(policy)
             .await?;
         *self.config.write().await = Self::from_config(&ctx.config.policies.memory);
         *self.embedding.write().await = ctx.embedding.clone();
         *self.db.write().await = Some(ctx.db.clone());
-        Self::ensure_profile(&ctx.db).await?;
+        *self.cancel_token.write().await = ctx.cancel_token.clone();
         self.diagnostics.write().await.persistence = "postgres".to_string();
         self.refresh_embedding_health().await;
         Ok(())
+    }
+
+    async fn start(&self) -> anyhow::Result<()> {
+        let Some(db) = self.db().await else {
+            return Ok(());
+        };
+        let parent = self.cancel_token.read().await.clone();
+        self.projection
+            .start(
+                db,
+                self.embedding.clone(),
+                self.diagnostics.clone(),
+                &parent,
+            )
+            .await
+    }
+
+    async fn stop(&self) -> anyhow::Result<()> {
+        self.projection.stop().await
     }
 
     async fn health_check(&self) -> ModuleHealth {
@@ -1492,13 +1529,6 @@ impl ModuleLifecycle for AliaMemory {
     ) -> anyhow::Result<Vec<String>> {
         let mut applied = Vec::new();
         let mut config = self.config.write().await;
-        if let Some(value) = updates
-            .get("core.policies.memory.active_embedding_profile")
-            .and_then(Value::as_str)
-        {
-            config.active_embedding_profile = value.to_string();
-            applied.push("core.policies.memory.active_embedding_profile".to_string());
-        }
         if let Some(value) = updates
             .get("core.policies.memory.graph_depth")
             .and_then(Value::as_u64)
@@ -1704,9 +1734,9 @@ impl MemoryBackend for AliaMemory {
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("stored memory missing"))?;
             validate_nodes_policy(&tx, context, std::slice::from_ref(&stored)).await?;
+            let work = Self::prepare_embedding_work(&tx, context, &stored).await?;
             tx.commit().await?;
-            self.write_embedding_if_available(&db, context, &stored)
-                .await;
+            self.write_embedding(&db, work).await;
             return Ok(id);
         }
         let _guard = self.memory_write.lock().await;
@@ -1843,9 +1873,9 @@ impl MemoryBackend for AliaMemory {
                 tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO memory_sources(memory_id,source_id,source_revision) VALUES($1::uuid,$2::uuid,$3) ON CONFLICT(memory_id,source_id) DO UPDATE SET source_revision=EXCLUDED.source_revision",vec![node_id.to_string().into(),source.clone().into(),(*revision).into()])).await?;
             }
             validate_nodes_policy(&tx, context, std::slice::from_ref(&stored)).await?;
+            let work = Self::prepare_embedding_work(&tx, context, &stored).await?;
             tx.commit().await?;
-            self.write_embedding_if_available(&db, context, &stored)
-                .await;
+            self.write_embedding(&db, work).await;
             return Ok(());
         }
         let _guard = self.memory_write.lock().await;

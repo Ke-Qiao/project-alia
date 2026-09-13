@@ -164,7 +164,6 @@ fn memory_config() -> MemorySection {
         capture_min_confidence: 0.65,
         capture_min_importance: 0.45,
         sensitive_filter_enabled: true,
-        active_embedding_profile: "openai.text-embedding-3-small.1536.cosine.v1".to_string(),
         graph_depth: 2,
         consolidation_enabled: true,
         paused_until: None,

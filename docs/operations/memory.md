@@ -10,7 +10,7 @@ completed turn / runtime event
   -> Memory Extractor
   -> Memory Policy
   -> canonical memory_items
-  -> memory_embeddings_1536
+  -> memory_embeddings (profile + canonical revision + input digest)
   -> memory_nodes / memory_edges
   -> MemoryContextPack
 ```
@@ -19,19 +19,41 @@ completed turn / runtime event
 
 The production path uses PostgreSQL plus pgvector:
 
-- `embedding_profiles` stores embedding-space metadata.
+- `embedding_profiles` stores immutable descriptors of the actual embedding
+  request: provider, endpoint, model, dimensions, distance, and vector type.
 - `memory_items` is the canonical memory table.
-- `memory_embeddings_1536` stores vectors for the active 1536-dimension profile.
+- `memory_embeddings` stores projections with their canonical revision, exact
+  input digest, policy version, privacy epoch, and actual profile identity.
 - `memory_nodes` and `memory_edges` project lightweight graph context.
 
-The default embedding profile is
-`openai.text-embedding-3-small.1536.cosine.v1`. The 1536 dimension is isolated
-to the profile and side table so future 1024 or 3072 profiles do not require
-changing the canonical memory model.
+There is no handwritten profile alias or fixed-dimension Memory table. The
+configured adapter previews its actual request descriptor; the persistent
+Context policy pins that descriptor's digest. A missing or mismatched pin uses
+keyword retrieval. A startup configuration change cannot silently replace the
+database policy; explicitly applying the embedding provider settings performs
+the policy transition. The displayed Memory profile is read-only. Cache and
+Memory use the same descriptor format but own separate projections and policy
+gates; Memory retrieval does not require Cache to be enabled.
 
 If embeddings are unavailable, memory writes still succeed. Retrieval degrades
 to keyword/metadata matching and `/api/v1/memories/capabilities` reports a
 degraded embedding probe.
+
+Projection work is prepared in the canonical write transaction. It keeps that
+revision, input digest, policy version, privacy epoch, and expected descriptor
+through inference, and checks them both before the request and in the result
+transaction. Updating a Memory row removes its old vectors in the same
+transaction. A delayed result cannot overwrite a new revision, recreate a
+deleted record, or acquire a new policy identity by retrying.
+
+One owned worker rebuilds missing projections from canonical records in keyset
+batches of 16. Failed rows do not block later rows; another sweep retries them.
+Inline and background work share two inference permits. Interactive inference
+has a two-second budget, background inference 30 seconds, and database phases
+two seconds. Shutdown cancels requests and waits for the owned worker and all
+permits before releasing dependencies. Sensitive and private-runtime records
+are excluded from external embedding. See the [projection contract](../refactor/memory-embedding-design.md)
+for the validation boundary and test evidence.
 
 ## Capture Modes
 
@@ -53,16 +75,15 @@ enabled = true
 capture_mode = "llm_selected"
 sensitive_filter_enabled = true
 capture_min_importance = 0.45
-active_embedding_profile = "openai.text-embedding-3-small.1536.cosine.v1"
 graph_depth = 2
 consolidation_enabled = true
 paused_until = ""
 retrieval_layers = ["core", "preference", "relationship", "project", "boundary"]
 max_injected_memory_chars = 1200
 
-[modules]
-# Optional. Omit to fall back to minor_llm.
-# memory_capture_llm = "gemini"
+[llm.roles]
+# Optional. Omit to fall back to the minor role.
+# memory_capture = "my-configured-model"
 ```
 
 Sensitive chat-derived memories are blocked before storage. Credentials,

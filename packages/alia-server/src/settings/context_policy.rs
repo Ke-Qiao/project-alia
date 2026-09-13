@@ -81,6 +81,10 @@ pub fn patched(
     current: &ContextPolicy,
     updates: &BTreeMap<String, Value>,
 ) -> anyhow::Result<ContextPolicy> {
+    anyhow::ensure!(
+        !updates.contains_key("core.policies.memory.active_embedding_profile"),
+        "active Memory embedding profile is read-only; update the embedding model, dimensions or endpoint instead"
+    );
     let mut value = serde_json::to_value(current)?;
     for (setting, field) in FIELDS {
         if let Some(next) = updates.get(*setting) {

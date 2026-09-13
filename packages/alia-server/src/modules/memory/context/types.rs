@@ -60,6 +60,7 @@ pub enum ContextUse {
     AiMemoryWrite,
     ManualMemoryWrite,
     MemoryMaintenance,
+    MemoryEmbedding,
     CacheWrite,
     CacheReuse,
     CacheReview,

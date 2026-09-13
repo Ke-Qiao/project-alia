@@ -1,6 +1,48 @@
 # 隔离平台验证
 
-更新：2026-09-13。最新验证覆盖 TextDelivery / D3 固定提交 `e63d40ccac69cfb0162921e2b535737fd6c5ecec`；下方保留 D1/D2 和更早历史结果。各轮均使用固定 `git archive`，不把正在修改的工作区当作已验证源码。
+更新：2026-09-14。最新验证覆盖 Context 固定提交 `a33ec67f9e4a0916ceac68fed4c4dc4f476f98bd`，并在独立的仅测试夹具修正副本复核 4 项失败。固定提交与候选的结果分别记录；下方保留 TextDelivery / D3、D1/D2 和更早历史结果。不把正在修改的工作区当作已验证源码。
+
+## Context：固定提交 a33ec67 与夹具修正复核
+
+从 `a33ec67f9e4a0916ceac68fed4c4dc4f476f98bd` 导出 594 个文件到 `/private/tmp/alia-platform-a33ec67f.5n5idovv/source`，只读挂载执行。源码在完整矩阵、串行复核与只读诊断前后完全一致。目标仍为 Debian 12 / Rust 1.95.0 / `aarch64-unknown-linux-gnu`，使用独立 COW 缓存；测试数据库是新建 PostgreSQL 17.10 / pgvector 容器、独立网络与 tmpfs，无宿主发布端口。
+
+| 输入 | 实际值 |
+| --- | --- |
+| 官方 Rust 镜像 | `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1` |
+| ARM64 image ID | `sha256:7cf1e580ef5539f03b58560753e8ab84c8c360960d99dff714004aa98f203977` |
+| Cargo.lock SHA256 | `0736653b5c57a936dc71d2b18a82b927536acb7bb8c49341f845717c87fde2a2` |
+| 源码清单 SHA256 | `bbbc73a7a4c021716a7add70b40d12f2ba9569cf0bc5ebe0b0d6bc4e1dc9b41c` |
+| 源码 archive SHA256 | `dab580a93fa5b08159e1f4ecd709b74c8f1915ca1bc2207de588f86c27429936` |
+
+| 固定提交的验证范围 | 实际结果 | 墙钟耗时 |
+| --- | --- | --- |
+| Core | 20 passed | 0.68 s |
+| Server 默认 all-targets check | exit 0 | 18.07 s |
+| Server 默认库测试 | 218 passed / 3 ignored | 57.28 s |
+| 全部 41 个 Server 集成 targets | 357 passed / 4 failed / 2 ignored | 205.18 s |
+| Embedded 默认完整 build/link | exit 0 | 9.82 s |
+| Embedded 默认库测试 | 108 passed | 32.39 s |
+
+原提交共 **703 unique passed、4 failed、5 ignored**，库内子进程重复项不加计。三项 Execution 失败为 `lost_approval_commit_ack_keeps_session_cancellation_ownership`、`approval_commit_ack_timeout_keeps_session_cancellation_ownership`、`dropped_submit_after_approval_commit_keeps_session_cancellation_ownership`；均在等待故障注入代理确认第二个 COMMIT 的 3 秒门槛处失败。Runtime 的 `cancelling_or_dropping_build_future_rolls_back_partial_init` 在等待测试模块 initialized 的 5 秒门槛处失败。四项同源单独/串行复核仍然失败，不能将其解释为只发生于并行争用。
+
+只读 PG statement timing 与 backtrace 诊断表明，Runtime 已结束迁移和工具登记，随后首次 `ExecutionService::new` 需要对实际 debug 测试二进制计算构建身份；该开销进入了本应等待指定模块的测试门槛。Execution 的 SQL 本身较快，但代理两端未启用 TCP_NODELAY，且每个回复帧的 header/body 分成两次小写入；代理连接查询间隔中位数约 44 ms，与 Nagle/延迟 ACK 放大相符。保留具体时间与推断边界于 `evidence/diagnosis.md`。
+
+随后另建 `/private/tmp/alia-platform-a33-fixture.a5ecbj__/source`，仅应用两测试文件的修正：代理两端启用 TCP_NODELAY 并一次写完整帧；取消测试在开始等待模块前，通过真实 `ExecutionService::new` 预热真实二进制身份。没有伪造身份，没有更改生产代码、3 秒 COMMIT 观察期限或 5 秒取消/模块观察期限。594 个文件中其余 592 个及 Cargo.lock 与原归档完全一致。
+
+| 候选证据 | 实际值 |
+| --- | --- |
+| 夹具补丁 SHA256 | `2254c86c1260d22b17c3f6beb9b87caafd14e79bb08d35a600d64b9e89eaf83d` |
+| 候选源码清单 SHA256 | `f9f9bc10558de421d64a289915a756d6090005c57f76f3cdb9aa7a07831eee8d` |
+| 原四项定向 | 4 passed；不再加计到下列总数 |
+| 完整 Execution / Runtime | 30 / 37 passed，0 failed，0 ignored |
+| 并行条件 | 两进程于 2026-09-13 16:19:10 UTC 同时开始，各自保留默认内部并行 |
+| Execution / Runtime 耗时 | 32.17 s / 60.86 s |
+
+候选合计 **67 unique passed**，源码前后摘要相同。它证明这两处夹具修正在本轮环境解决上述失败；它不是对固定 `a33ec67` 重新给出全绿结果，也没有覆盖正在开发的 Memory 向量或 Appraisal 代码。正式主线采用相同夹具修正，格式整理不改变行为。
+
+两轮各自的两个容器和一个网络均按其 ID/任务标签清理完毕，临时 PG 数据随 tmpfs 移除。没有修改用户 5433 数据库、任务常用 32768 数据库或其他容器。源码、独立缓存与 evidence 保留。完整入口为 `/private/tmp/alia-platform-a33ec67f.5n5idovv/evidence/REPORT.md`；各轮的 `result-summary.json` / `candidate-result-summary.json` 保存逐阶段命令、时间、退出码、哈希和清理证据。
+
+默认 native features 与 Sherpa 链接保留，没有设置 DOCS_RS 或用 no-default 替代。5 项 ignored 为 3 项真实 PTY、2 项真实 Easy-Turn/gRPC，Linux 本轮未执行。没有真实 Pi、声卡/AEC、双讲、物理动作反馈、实际 LLM/TTS 或 24 小时负载证据。
 
 ## TextDelivery / D3：固定提交 e63d40c
 

@@ -1,6 +1,6 @@
 # ContextLease 与派生上下文撤销契约
 
-状态：2026-09-13，本包已实现 Context、Cache、Pipeline、Execution 和输出接纳的来源校验，并通过 macOS 默认 workspace 785 项整体回归；5 项 PTY/真实模型另外运行通过。本文替代 2026-09-08 的只读设计，区分已落地契约、定向证据和未完成主线。**Memory 旧 embedding 写回身份、Appraisal/Relationship 和 Companion 尚未完成，不能据本包宣称全链清除已经完成。**这些工作不属于用户指定的延期范围。
+状态：2026-09-14，`a33ec67` 已实现 Context、Cache、Pipeline、Execution 和输出接纳的来源校验。后续 Memory 向量身份包通过 macOS 默认 workspace 802 项整体回归，详细证据见[构建记录](progress.md)。本文替代 2026-09-08 的只读设计，区分已落地契约、定向证据和未完成主线。**派生 Memory 的递归父根、Appraisal/Relationship 和 Companion 尚未全部合并，不能据本包宣称全链清除已经完成。**这些工作不属于用户指定的延期范围。
 
 ## Context 的身份、用途与实际读集
 
@@ -17,7 +17,7 @@
 
 证据来自规范 SQL 行：`Memory(id, revision)`、`UserMessage(id, session, epoch, content_digest)`、`DerivedMessage(id, response_id, context_id, content_digest)`、`Graph(edge_id, projection_digest)`、`Cache(id, revision, context_id, scope, query_digest, content_digest)` 和 `Execution(effect_id, intent_digest, completion_digest)`。图证据同时合并支撑投影的规范 Memory 根；显示三元组或模型声称的 evidence IDs 不能替代来源。
 
-初始物化在短的 repeatable-read 事务中完成 Memory、图和模型可用历史的一致读取。查询向量在事务外计算，回来后仍核对原政策。没有可信匹配向量时可明确走规范关键词检索；规范表缺失、SQL 失败或来源变化不能被包装为“没有记忆”的成功结果。
+初始物化在短的 repeatable-read 事务中完成 Memory、图和模型可用历史的一致读取。查询向量请求之前先在有界事务中验证持久原文、账户、epoch；扩展已有 Context 时还验证全部原始根。向量在事务外计算，回来后仍核对原政策。没有可信匹配向量时可明确走规范关键词检索；规范表缺失、SQL 失败或来源变化不能被包装为“没有记忆”的成功结果。
 
 硬上限为物化内容 128 KiB、证据 JSON 64 KiB、256 个证据引用、64 条历史、12 个 Memory 结果和 24 条图候选；实际政策可以进一步收紧。正文选择、裁剪与根集建立一起完成：不进入模型的完整历史不加入根集，已采用的 Memory 片段仍携带其完整规范 revision 依赖。超限时跳过完整候选或拒绝物化，不能只丢祖先凭据。Insights 使用捕获接口返回的完整有界内容，不再在登记来源后截掉提示尾部。
 
@@ -87,7 +87,7 @@ Insights 的提取、反思、习惯检测使用 `Automatic`，要求持久 `cap
 
 | 主线 | 当前边界与下一步 |
 | --- | --- |
-| Memory 旧 embedding 写回身份 | `simple.rs::write_embedding_if_available` 仍走旧 `embed()` 和 legacy profile 选择；已有 revision/epoch 校验不能证明请求的模型/profile 一致。新 Context 的向量入口已要求可信匹配描述，否则使用规范关键词读取。旧写回仍需迁移为随请求返回的 profile 身份及事务 CAS，并覆盖设置变化、晚返回和重启。 |
+| Memory 派生父根 | 实际请求描述符、动态维度、双向版本校验和有界后台重建已实现，见[Memory 向量设计](memory-embedding-design.md)。已提交子 Memory 对父 revision/private/expiry 和关系域根的完整闭包，仍在 Appraisal 包接入 Context、独立检索和投影；自身 revision 检查不能替代递归来源校验。 |
 | Appraisal/Relationship | 主提示当前未注入没有 lease 的关系摘要，但真实 `memory recall → appraisal → affect/relationship` 路径仍存在。入队、落库、投影和表达使用尚未统一接入 context/revision 撤销；需要从有效证据重建投影，防止旧队列和累加状态重新引入遗忘内容，审计理由也不能复制已清除正文。 |
 | Companion | 尚无完整 Observation/Interpretation/InitiativeCandidate 闭环。后续复用 Context 根集、用途、政策和实际投递前 gate，不新建另一套时钟，也不把该主线列为延期或完成。 |
 | 跨路径完整撤销验收 | Context/Cache/Execution/输出的定向证明不能覆盖上述未迁移路径。完成它们后仍需多 Server、丢通知、模型/向量/投影队列等待、clear/forget/暂停/恢复与物理取消组合回归。 |
@@ -104,7 +104,7 @@ Insights 的提取、反思、习惯检测使用 `Automatic`，要求持久 `cap
 | Context | 23 项通过，覆盖规范来源/根集、政策撤权、历史/Cache/Execution 合并与专用用途等边界 |
 | Cache 与 Insights | 16 项真实 PostgreSQL 测试通过，覆盖 owner/scope、替换与同键重建、审核及向量晚返回、clear、缺表无 public 回退、Automatic/Maintenance 与长正文实际读集，以及清理跳过并发刷新、保留新 revision 和 256 条硬上限 |
 | Insights / Embedding 截止时间 | Insights 单元组 12 项通过，其中虚拟时间测试验证挂起 embedding 后释放 phase 名额、保留已确认的 Cache 批准并允许后续 phase 完成；Embedding 单元组 5 项通过，其中真实 HTTP 测试验证响应正文停滞会触发总截止时间，随后请求恢复 |
-| Execution / Memory | Execution 定向 30 项、Memory 定向 24 项通过；不能据此宣称 legacy Memory 向量身份已迁移 |
+| Execution / Memory | Execution service 30、Memory 13、Memory embedding 13、Memory 隐私 24 项通过；请求身份已迁移，递归父根的待合并范围见上表 |
 | 输出 | 新增 SourceNotice 固定文本、禁止 history/Body 升权，以及政策撤权后禁止新 offer、保留音频晚事实等定向测试已通过 |
 | HTTP Settings | 4 项相关回归已随 Runtime 组通过，包含持久 CAS、重复 PATCH 恢复、profile 发布/重启、关闭 Memory 后的真实后端及清除 |
 
