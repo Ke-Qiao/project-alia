@@ -12,6 +12,7 @@ use uuid::Uuid;
 use super::types::*;
 use crate::modules::memory::context::{ContextBinding, ContextError, ContextService, ContextUse};
 mod text;
+pub mod control;
 
 const RESPONSE: &str = "SELECT to_jsonb(r) || jsonb_build_object('key', jsonb_build_object('user_id',r.user_id,'request_id',r.request_id,'output_key',r.output_key)) AS record FROM delivery_responses r ";
 const DELIVERY: &str = "SELECT to_jsonb(d) || jsonb_build_object('text', CASE WHEN d.media_kind='text' THEN jsonb_build_object('identity',d.text_identity,'offered_utf8_bytes',d.text_offered_utf8_bytes,'offered_chunks',d.text_offered_chunks,'end_offered',d.text_end_offered,'progress',d.text_progress) ELSE NULL END) AS record FROM deliveries d ";
