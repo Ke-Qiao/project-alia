@@ -2,6 +2,7 @@ use super::*;
 use alia_core::delivery::{SubmissionBoundary, VoiceScope};
 use std::sync::mpsc;
 use std::thread;
+mod control;
 
 fn identified(
     sender: &PlaybackSender,
@@ -581,6 +582,7 @@ fn finite_block(input: Vec<i16>, rate: u32, generation: u64) -> AudioBlock {
         generation,
         submission: None,
         end: true,
+        reservation: None,
     }
 }
 

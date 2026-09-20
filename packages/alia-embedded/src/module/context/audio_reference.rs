@@ -15,6 +15,10 @@ const REFERENCE_BLOCK_CAPACITY: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReferenceContent {
+    /// Actual zeros written while preserving unsubmitted media behind a hold.
+    HeldSilence,
+    /// At least part of this actual buffer was intentionally held silence.
+    MixedHeld,
     /// Includes real zero-valued media and software mute after volume processing.
     Media,
     /// CPAL actually received a zero-filled callback buffer at this boundary.

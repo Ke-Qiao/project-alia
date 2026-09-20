@@ -4,15 +4,34 @@
 //! a local barrier: callers must still reject late network frames from old turns.
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use crate::module::playback_session::{AudioSubmission, SubmissionWrite};
-use alia_core::delivery::{ObservationEnd, PlaybackIdentity, SubmissionBackend};
+use crate::module::playback_session::{
+    AudioSubmission, OutputBlocked, PlaybackControl, SubmissionWrite,
+};
+use alia_core::delivery::{ObservationEnd, PlaybackIdentity, SubmissionBackend, VoiceScope};
+use alia_core::playback_control::{ControlCommand, ControlPhase, ControlReceipt, RetiredReason};
 use anyhow::{Context, Result, bail, ensure};
 
 mod resampler;
+const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_PAYLOAD_BYTES: usize = 1024 * 1024;
+const MAX_RENDERED_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Debug)]
+struct PcmReservation {
+    bytes: usize,
+    used: Arc<AtomicUsize>,
+    changed: Arc<Condvar>,
+}
+impl Drop for PcmReservation {
+    fn drop(&mut self) {
+        self.used.fetch_sub(self.bytes, Ordering::AcqRel);
+        self.changed.notify_all();
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct AudioBlock {
@@ -22,6 +41,7 @@ pub(super) struct AudioBlock {
     pub generation: u64,
     submission: Option<Arc<AudioSubmission>>,
     end: bool,
+    reservation: Option<Arc<PcmReservation>>,
 }
 
 impl AudioBlock {
@@ -104,16 +124,30 @@ struct State {
     input: Option<PlaybackIdentity>,
     submissions: HashMap<PlaybackIdentity, Weak<AudioSubmission>>,
     backend: Option<SubmissionBackend>,
+    control: Option<Arc<PlaybackControl>>,
+    control_stopped: bool,
+    legacy_used: bool,
 }
 
 struct Shared {
     state: Mutex<State>,
-    changed: Condvar,
+    changed: Arc<Condvar>,
     generation: Arc<AtomicU64>,
     capacity: usize,
+    source_bytes: Arc<AtomicUsize>,
 }
 
 impl Shared {
+    /// Media/control admission owns the mutex, so reservations cannot race
+    /// other producers. The final slice wakes producers after conversion/drop.
+    fn reserve_pcm(&self, bytes: usize) -> Arc<PcmReservation> {
+        self.source_bytes.fetch_add(bytes, Ordering::AcqRel);
+        Arc::new(PcmReservation {
+            bytes,
+            used: self.source_bytes.clone(),
+            changed: self.changed.clone(),
+        })
+    }
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
     }
@@ -140,6 +174,17 @@ impl Shared {
             state.stop_pending = true;
             state.closed |= close;
             state.input = None;
+            if let Some(control) = state.control.take() {
+                control.retire(match &outcome {
+                    ObservationEnd::Unknown { .. } | ObservationEnd::Failed { .. } => {
+                        RetiredReason::BackendChanged
+                    }
+                    _ if close => RetiredReason::Closed,
+                    _ => RetiredReason::Cancelled,
+                });
+            }
+            state.control_stopped = false;
+            state.legacy_used = false;
             for submission in state.submissions.values().filter_map(Weak::upgrade) {
                 submission.terminate(outcome.clone());
             }
@@ -189,10 +234,14 @@ pub(super) fn channel_with_generation(
             input: None,
             submissions: HashMap::new(),
             backend: None,
+            control: None,
+            control_stopped: false,
+            legacy_used: false,
         }),
-        changed: Condvar::new(),
+        changed: Arc::new(Condvar::new()),
         generation,
         capacity: capacity.max(1),
+        source_bytes: Arc::new(AtomicUsize::new(0)),
     });
     (
         PlaybackSender(Arc::new(Producer(shared.clone()))),
@@ -212,23 +261,23 @@ impl PlaybackSender {
             bail!("playback sample rate must be positive");
         }
         let shared = &self.0.0;
-        let block = AudioBlock {
-            pcm: pcm.into(),
-            range: 0..pcm.len(),
-            sample_rate,
-            generation,
-            submission: None,
-            end: true,
-        };
+        let bytes = std::mem::size_of_val(pcm);
+        ensure!(bytes <= MAX_PAYLOAD_BYTES, "PCM payload exceeds 1 MiB");
         let mut state = shared.lock();
+        ensure!(
+            state.control.is_none(),
+            "identityless media cannot enter a controlled voice scope"
+        );
         while !state.closed
             && shared.generation.load(Ordering::Acquire) == generation
-            && state.media.len() == shared.capacity
+            && (state.media.len() == shared.capacity
+                || shared.source_bytes.load(Ordering::Acquire) + bytes > MAX_SOURCE_BYTES)
         {
             state = shared
                 .changed
-                .wait(state)
-                .unwrap_or_else(|error| error.into_inner());
+                .wait_timeout(state, Duration::from_millis(2))
+                .unwrap_or_else(|error| error.into_inner())
+                .0;
         }
         if state.closed {
             bail!("playback runtime is closed");
@@ -236,7 +285,20 @@ impl PlaybackSender {
         if shared.generation.load(Ordering::Acquire) != generation {
             return Ok(false);
         }
-        state.media.push_back(block);
+        ensure!(
+            state.control.is_none(),
+            "identityless media cannot enter a controlled voice scope"
+        );
+        state.media.push_back(AudioBlock {
+            pcm: pcm.into(),
+            range: 0..pcm.len(),
+            sample_rate,
+            generation,
+            submission: None,
+            end: true,
+            reservation: Some(shared.reserve_pcm(bytes)),
+        });
+        state.legacy_used = true;
         drop(state);
         shared.changed.notify_all();
         Ok(true)
@@ -273,12 +335,88 @@ impl PlaybackSender {
             .backend
             .clone()
             .context("playback backend is not ready")?;
-        let submission = AudioSubmission::new(identity, generation, rate, backend)?;
+        let control = Self::scope_control(&mut state, identity.scope, generation)?;
+        ensure!(
+            control.snapshot().phase != ControlPhase::Retired,
+            "playback control scope is retired"
+        );
+        let submission =
+            AudioSubmission::with_control(identity, generation, rate, backend, Some(control))?;
         state
             .submissions
             .insert(identity, Arc::downgrade(&submission));
         state.input = Some(identity);
         Ok(submission)
+    }
+
+    fn scope_control(
+        state: &mut State,
+        scope: VoiceScope,
+        generation: u64,
+    ) -> Result<Arc<PlaybackControl>> {
+        ensure!(
+            !state.legacy_used,
+            "generation already admitted identityless media; reserve a new generation before scoped playback"
+        );
+        if let Some(control) = &state.control {
+            ensure!(
+                control.scope == scope && control.generation == generation,
+                "another scope owns native playback"
+            );
+            return Ok(control.clone());
+        }
+        let control = PlaybackControl::new(
+            scope,
+            generation,
+            state
+                .backend
+                .clone()
+                .context("playback backend is not ready")?,
+        )?;
+        state.control = Some(control.clone());
+        Ok(control)
+    }
+    pub fn playback_control(
+        &self,
+        scope: VoiceScope,
+        generation: u64,
+    ) -> Result<Arc<PlaybackControl>> {
+        let shared = &self.0.0;
+        let mut state = shared.lock();
+        ensure!(
+            !state.closed && shared.generation.load(Ordering::Acquire) == generation,
+            "original playback owner is gone"
+        );
+        let control = Self::scope_control(&mut state, scope, generation)?;
+        drop(state);
+        shared.changed.notify_all();
+        Ok(control)
+    }
+    pub fn apply_control(
+        &self,
+        owner: &Arc<PlaybackControl>,
+        command: &ControlCommand,
+    ) -> Result<ControlReceipt> {
+        let shared = &self.0.0;
+        let state = shared.lock();
+        // An original owner's immutable receipt outlives native admission.
+        // This path neither installs that owner nor dispatches a new command.
+        if let Some(receipt) = owner.recorded_receipt(command) {
+            return Ok(receipt);
+        }
+        ensure!(
+            !state.closed
+                && shared.generation.load(Ordering::Acquire) == owner.generation
+                && state
+                    .control
+                    .as_ref()
+                    .is_some_and(|c| Arc::ptr_eq(c, owner)),
+            "original playback control owner is gone"
+        );
+        let receipt = owner.apply(command);
+        drop(state);
+        shared.changed.notify_all();
+        Ok(receipt)
     }
 
     pub fn submit(
@@ -289,24 +427,20 @@ impl PlaybackSender {
         end: bool,
     ) -> Result<bool> {
         let shared = &self.0.0;
-        let block = AudioBlock {
-            pcm: pcm.into(),
-            range: 0..pcm.len(),
-            sample_rate: submission.source_sample_rate,
-            generation: submission.generation,
-            submission: Some(submission.clone()),
-            end,
-        };
+        let bytes = std::mem::size_of_val(pcm);
+        ensure!(bytes <= MAX_PAYLOAD_BYTES, "PCM payload exceeds 1 MiB");
         let mut state = shared.lock();
         while !state.closed
             && submission.is_live()
             && shared.generation.load(Ordering::Acquire) == submission.generation
-            && state.media.len() == shared.capacity
+            && (state.media.len() == shared.capacity
+                || shared.source_bytes.load(Ordering::Acquire) + bytes > MAX_SOURCE_BYTES)
         {
             state = shared
                 .changed
-                .wait(state)
-                .unwrap_or_else(|e| e.into_inner());
+                .wait_timeout(state, Duration::from_millis(2))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
         if state.closed
             || !submission.is_live()
@@ -324,7 +458,15 @@ impl PlaybackSender {
         } else {
             submission.accept(offset, pcm.len() as u64)?;
         }
-        state.media.push_back(block);
+        state.media.push_back(AudioBlock {
+            pcm: pcm.into(),
+            range: 0..pcm.len(),
+            sample_rate: submission.source_sample_rate,
+            generation: submission.generation,
+            submission: Some(submission.clone()),
+            end,
+            reservation: Some(shared.reserve_pcm(bytes)),
+        });
         drop(state);
         shared.changed.notify_all();
         Ok(true)
@@ -413,6 +555,29 @@ impl PlaybackReceiver {
             state.stop_pending = false;
             return Some(PlaybackAction::Stop);
         }
+        if let Some(control) = &state.control {
+            match control.snapshot().phase {
+                ControlPhase::Retired => {
+                    // Keep the closed control tombstone and generation. Later
+                    // Start in this scope must not reserve a fresh native owner.
+                    for submission in state.submissions.values().filter_map(Weak::upgrade) {
+                        submission.terminate(ObservationEnd::Cancelled {
+                            reason: "playback hold retired or expired".into(),
+                        });
+                    }
+                    state.input = None;
+                    let stop = !state.control_stopped;
+                    state.control_stopped = true;
+                    let retired = std::mem::take(&mut state.media);
+                    drop(state);
+                    self.0.changed.notify_all();
+                    drop(retired);
+                    return stop.then_some(PlaybackAction::Stop);
+                }
+                ControlPhase::Pausing | ControlPhase::Held => return None,
+                ControlPhase::Running => {}
+            }
+        }
         // Bound worker conversion work without making a whole WAV submission
         // wait for its playback duration. Control can interrupt between blocks.
         let mut retired = None;
@@ -430,6 +595,7 @@ impl PlaybackReceiver {
                     generation: queued.generation,
                     submission: queued.submission.clone(),
                     end: queued.end && end == queued.pcm.len(),
+                    reservation: queued.reservation.clone(),
                 };
                 queued.range.start = end;
                 block
@@ -453,20 +619,37 @@ impl PlaybackReceiver {
     }
 
     fn wait(&self, accept_media: bool, idle: bool) {
+        self.wait_before(accept_media, idle, || {});
+    }
+    fn wait_before(&self, accept_media: bool, idle: bool, before_wait: impl FnOnce()) {
         let state = self.0.lock();
-        let waiting = |state: &mut State| {
-            !state.closed && !state.stop_pending && (!accept_media || state.media.is_empty())
+        let held = state.control.as_ref().is_some_and(|c| c.is_held());
+        let control_key = |state: &State| {
+            state
+                .control
+                .as_ref()
+                .map(|c| (Arc::as_ptr(c), c.is_held(), c.is_retired()))
         };
-        if idle {
+        let before = control_key(&state);
+        let uncontrolled = state.control.is_none();
+        let waiting = |state: &mut State| {
+            !state.closed
+                && !state.stop_pending
+                && control_key(state) == before
+                && (held || !accept_media || state.media.is_empty())
+        };
+        before_wait();
+        if idle && uncontrolled {
             drop(self.0.changed.wait_while(state, waiting));
         } else {
             // Device consumption has no portable stdlib wake handle. Control and
-            // new media wake this wait immediately; only device progress polls.
-            drop(
-                self.0
-                    .changed
-                    .wait_timeout_while(state, Duration::from_millis(2), waiting),
-            );
+            // new media wake this wait immediately. An idle scope also checks
+            // capture retirement, which does not take the media admission lock.
+            drop(self.0.changed.wait_timeout_while(
+                state,
+                Duration::from_millis(if idle && !held { 20 } else { 2 }),
+                waiting,
+            ));
         }
     }
 }
@@ -486,6 +669,7 @@ impl Drop for PlaybackReceiver {
 
 /// The same control loop drives both callback audio and nonblocking ALSA writes.
 pub(super) trait PlaybackSink {
+    fn set_control(&mut self, _control: Option<Arc<PlaybackControl>>) {}
     fn buffered_ms(&self) -> u64;
     fn enqueue(&mut self, block: AudioBlock) -> Result<()>;
     fn stop(&mut self) -> Result<()>;
@@ -499,6 +683,7 @@ pub(super) fn run(
 ) -> Result<()> {
     let result = (|| {
         loop {
+            sink.set_control(receiver.0.lock().control.clone());
             let buffered_ms = sink.buffered_ms();
             match receiver.take(buffered_ms < target_buffer_ms.max(1)) {
                 Some(PlaybackAction::Shutdown) => return Ok(()),
@@ -534,6 +719,15 @@ pub(super) struct PlaybackBuffer {
     // PCM buffer allocation/deallocation is required on the realtime callback.
     retired: VecDeque<RenderedBlock>,
     current: Arc<AtomicU64>,
+    control: Option<Arc<PlaybackControl>>,
+    held_channels: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SampleContent {
+    Media,
+    Held,
+    ZeroFill,
 }
 
 const MAX_RENDERED_BLOCKS: usize = 512;
@@ -544,11 +738,23 @@ impl PlaybackBuffer {
             blocks: VecDeque::with_capacity(MAX_RENDERED_BLOCKS),
             retired: VecDeque::with_capacity(MAX_RENDERED_BLOCKS),
             current,
+            control: None,
+            held_channels: 0,
         }
     }
 
     pub fn is_current(&self, generation: u64) -> bool {
         generation == self.current.load(Ordering::Acquire)
+    }
+    pub fn set_control(&mut self, control: Option<Arc<PlaybackControl>>) {
+        self.control = control;
+    }
+    pub fn is_held(&self) -> bool {
+        self.control.as_ref().is_some_and(|c| c.is_held())
+    }
+    #[cfg(target_os = "linux")]
+    pub fn has_control(&self) -> bool {
+        self.control.is_some()
     }
 
     fn valid(&self, block: &RenderedBlock) -> bool {
@@ -572,6 +778,9 @@ impl PlaybackBuffer {
         if block.samples.is_empty() {
             return Ok(true);
         }
+        if let Some(control) = block.submission.as_ref().and_then(|s| s.control()) {
+            self.control = Some(control.clone());
+        }
         ensure!(
             block.channels > 0 && block.samples.len() % block.channels == 0,
             "incomplete rendered frame"
@@ -579,6 +788,15 @@ impl PlaybackBuffer {
         ensure!(
             self.blocks.len() < MAX_RENDERED_BLOCKS,
             "rendered playback queue capacity exceeded"
+        );
+        ensure!(
+            self.blocks
+                .iter()
+                .map(|b| std::mem::size_of_val(b.samples.as_slice()))
+                .sum::<usize>()
+                .checked_add(std::mem::size_of_val(block.samples.as_slice()))
+                .is_some_and(|bytes| bytes <= MAX_RENDERED_BYTES),
+            "rendered playback exceeds 2 MiB retention budget"
         );
         self.blocks.push_back(block);
         Ok(true)
@@ -600,6 +818,7 @@ impl PlaybackBuffer {
     pub fn clear(&mut self) {
         self.blocks.clear();
         self.retired.clear();
+        self.held_channels = 0;
     }
 
     fn discard_invalid(&mut self) {
@@ -613,19 +832,45 @@ impl PlaybackBuffer {
         }
     }
 
-    pub fn write_next(&mut self, write: impl FnOnce(i16)) -> bool {
+    pub fn write_next(&mut self, write: impl FnOnce(i16)) -> SampleContent {
+        self.write_next_with(write, AudioSubmission::try_begin_output)
+    }
+    fn write_next_with(
+        &mut self,
+        write: impl FnOnce(i16),
+        mut acquire: impl FnMut(
+            &Arc<AudioSubmission>,
+        ) -> std::result::Result<SubmissionWrite, OutputBlocked>,
+    ) -> SampleContent {
+        if self.held_channels > 0 {
+            self.held_channels -= 1;
+            write(0);
+            return SampleContent::Held;
+        }
         loop {
             self.discard_invalid();
             let Some(block) = self.blocks.front_mut() else {
                 write(0);
-                return false;
+                return if self.is_held() {
+                    SampleContent::Held
+                } else {
+                    SampleContent::ZeroFill
+                };
             };
             if block.cursor % block.channels == 0 {
                 if let Some(submission) = &block.submission {
-                    let Some(lease) = submission.begin_output() else {
-                        self.retired
-                            .push_back(self.blocks.pop_front().expect("front checked"));
-                        continue;
+                    let lease = match acquire(submission) {
+                        Ok(lease) => lease,
+                        Err(OutputBlocked::Held) => {
+                            self.held_channels = block.channels - 1;
+                            write(0);
+                            return SampleContent::Held;
+                        }
+                        Err(OutputBlocked::Retired) => {
+                            self.retired
+                                .push_back(self.blocks.pop_front().expect("front checked"));
+                            continue;
+                        }
                     };
                     block.output_write = Some(lease);
                 }
@@ -643,7 +888,7 @@ impl PlaybackBuffer {
                 self.retired
                     .push_back(self.blocks.pop_front().expect("front checked"));
             }
-            return true;
+            return SampleContent::Media;
         }
     }
 
@@ -662,8 +907,9 @@ impl PlaybackBuffer {
             return (Vec::new(), None);
         };
         let lease = if let Some(submission) = &block.submission {
-            let Some(lease) = submission.begin_output() else {
-                return (Vec::new(), None);
+            let lease = match submission.try_begin_output() {
+                Ok(lease) => lease,
+                Err(OutputBlocked::Held | OutputBlocked::Retired) => return (Vec::new(), None),
             };
             Some(lease)
         } else {

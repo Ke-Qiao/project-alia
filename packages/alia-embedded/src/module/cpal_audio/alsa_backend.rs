@@ -2,6 +2,7 @@ use super::super::context::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe
 use super::clock::AlsaTimeOrigin;
 use super::*;
 use alia_core::audio_clock::*;
+use anyhow::ensure;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AlsaCaptureSampleFormat {
@@ -347,6 +348,12 @@ struct AlsaPlaybackSink {
 }
 
 impl PlaybackSink for AlsaPlaybackSink {
+    fn set_control(
+        &mut self,
+        control: Option<Arc<super::super::playback_session::PlaybackControl>>,
+    ) {
+        self.buffer.set_control(control);
+    }
     fn buffered_ms(&self) -> u64 {
         playback_buffered_ms(
             self.buffer.len(),
@@ -387,7 +394,7 @@ impl PlaybackSink for AlsaPlaybackSink {
     }
 
     fn pump(&mut self) -> Result<()> {
-        if self.buffer.len() != 0 {
+        if self.buffer.len() != 0 || self.buffer.is_held() {
             write_alsa_chunk(
                 &self.runtime.pcm,
                 &mut self.buffer,
@@ -509,13 +516,22 @@ fn write_alsa_chunk(
     timestamps_enabled: bool,
 ) -> Result<()> {
     let channels = channels.max(1);
-    let available_frames = buffer.len() / channels;
+    let held_silence = buffer.is_held();
+    let available_frames = if held_silence {
+        chunk_frames.clamp(1, 4096)
+    } else {
+        buffer.len() / channels
+    };
     if available_frames == 0 {
         return Ok(());
     }
 
     let frames_to_write = available_frames.min(chunk_frames.max(1));
-    let (chunk, output_write) = buffer.alsa_chunk(frames_to_write);
+    let (chunk, output_write) = if held_silence {
+        (vec![0; frames_to_write * channels], None)
+    } else {
+        buffer.alsa_chunk(frames_to_write)
+    };
     if chunk.is_empty() {
         return Ok(());
     }
@@ -526,24 +542,46 @@ fn write_alsa_chunk(
 
     match io.writei(&chunk) {
         Ok(written_frames) => {
+            ensure!(
+                written_frames <= chunk.len() / channels,
+                "ALSA accepted beyond the offered output buffer"
+            );
             let reading = read_clock(pcm, time_origin, &clock.probe, timestamps_enabled);
-            playback::confirm_alsa_write(
-                buffer,
-                &chunk,
-                written_frames,
-                output_write,
-                clock,
-                reading,
-            )?;
+            if held_silence {
+                super::clock::record_samples(
+                    clock,
+                    &chunk[..written_frames * channels],
+                    reading,
+                    SubmissionBoundary::AlsaWriteAccepted,
+                    super::super::context::ReferenceContent::HeldSilence,
+                );
+            } else {
+                playback::confirm_alsa_write(
+                    buffer,
+                    &chunk,
+                    written_frames,
+                    output_write,
+                    clock,
+                    reading,
+                )?;
+            }
             start_accepted_playback(pcm, written_frames, &clock.probe)
         }
         Err(error) if matches!(error.errno(), libc::EAGAIN | libc::EINTR) => Ok(()),
         Err(error) if error.errno() == libc::EPIPE => {
             clock.probe.mark(AudioDiscontinuity::Underrun);
+            ensure!(
+                !buffer.has_control(),
+                "native underrun lost controlled playback continuity"
+            );
             pcm.prepare().context("recovering ALSA playback underrun")
         }
         Err(error) if error.errno() == libc::ESTRPIPE => {
             clock.probe.mark(AudioDiscontinuity::Suspended);
+            ensure!(
+                !buffer.has_control(),
+                "native suspend lost controlled playback continuity"
+            );
             match pcm.resume() {
                 Ok(()) => Ok(()),
                 Err(error) if error.errno() == libc::EAGAIN => Ok(()),
@@ -678,6 +716,143 @@ fn capture_error_reason(errno: i32) -> AudioDiscontinuity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn alsa_null_software_hold_keeps_media_and_records_only_actual_silence_until_resume() {
+        use alia_core::delivery::VoiceScope;
+        use alia_core::playback_control::*;
+        let config = AudioConfig {
+            playback_sample_rate: 16000,
+            playback_channels: 1,
+            ..Default::default()
+        };
+        // This is a real capability query; stage 1 deliberately uses its
+        // software gate regardless of null's reported native-pause capability.
+        let capabilities = create_alsa_playback_runtime(&config, "null").unwrap();
+        eprintln!(
+            "ALSA software null can_pause={}; tested mode=SoftwareGate",
+            capabilities.pcm.hw_params_current().unwrap().can_pause()
+        );
+        drop(capabilities);
+        let (sender, receiver) = playback::channel(8);
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+        let bus = AudioBus::new(2).reference();
+        let reference = bus.clone();
+        let task = std::thread::spawn(move || {
+            run_alsa_playback_thread(
+                config,
+                receiver,
+                ready_tx,
+                "null",
+                AudioVolumeState::new(Default::default()),
+                reference,
+            )
+        });
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        let generation = sender.begin().unwrap();
+        let scope = VoiceScope {
+            device_boot_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            generation_epoch: 1,
+        };
+        let s = sender
+            .open_submission(
+                PlaybackIdentity {
+                    scope,
+                    playback_id: uuid::Uuid::new_v4(),
+                    playback_sequence: 1,
+                },
+                16000,
+                generation,
+            )
+            .unwrap();
+        let control = sender.playback_control(scope, generation).unwrap();
+        control.observe_capture(7, true).unwrap();
+        let hold = ControlCommand {
+            scope,
+            hold_id: uuid::Uuid::new_v4(),
+            command_id: uuid::Uuid::new_v4(),
+            sequence: 1,
+            action: ControlAction::Pause {
+                reason: HoldReason::AcousticCandidate,
+                through_sequence: 7,
+                budget_ms: 3000,
+            },
+        };
+        assert_eq!(
+            sender
+                .apply_control(&control, &hold)
+                .unwrap()
+                .snapshot
+                .phase,
+            ControlPhase::Held
+        );
+        sender.submit(&s, 0, &[4000; 160], false).unwrap();
+        sender.submit(&s, 160, &[], true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut zero_frames = 0;
+        while Instant::now() < deadline && zero_frames == 0 {
+            if let Some(block) = bus.try_read() {
+                if block.content == crate::module::context::ReferenceContent::HeldSilence
+                    && block.sample_count > 0
+                {
+                    assert!(
+                        block.samples[..block.sample_count]
+                            .iter()
+                            .all(|v| *v == 0.0)
+                    );
+                    zero_frames += block.timing.frames;
+                }
+            } else {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+        assert!(zero_frames > 0, "real null writes must expose held silence");
+        assert_eq!(s.snapshot(1).submitted_source_frames, Some(0));
+        while bus.try_read().is_some() {}
+        let resume = ControlCommand {
+            command_id: uuid::Uuid::new_v4(),
+            sequence: 2,
+            action: ControlAction::Resume {
+                authorization: ResumeAuthorization {
+                    kind: ResumeKind::FreshBackchannel,
+                    detection_id: uuid::Uuid::new_v4(),
+                    through_sequence: 7,
+                },
+            },
+            ..hold
+        };
+        sender.apply_control(&control, &resume).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while s.snapshot(2).observation_end.is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(s.snapshot(3).submitted_source_frames, Some(160));
+        assert_eq!(
+            s.snapshot(3).observation_end,
+            Some(alia_core::delivery::ObservationEnd::SubmissionFinished)
+        );
+        let mut media_frames = 0;
+        while let Some(block) = bus.try_read() {
+            if block.content == crate::module::context::ReferenceContent::Media {
+                media_frames += block.timing.frames;
+            }
+        }
+        assert!(media_frames <= 160);
+        if media_frames < 160 {
+            assert!(
+                bus.snapshot(AudioDirection::Playback).unwrap().lost_blocks > 0,
+                "missing reference must have explicit loss evidence"
+            );
+        }
+        sender.shutdown();
+        task.join().unwrap().unwrap();
+        assert!(bus.snapshot(AudioDirection::Playback).unwrap().closed);
+    }
 
     // ALSA's explicit software null PCM performs real libasound calls without
     // requiring a sound card. It cannot validate DAC timing or acoustic output.

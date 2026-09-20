@@ -295,6 +295,14 @@ pub(super) struct CpalPlaybackSink {
 }
 
 impl PlaybackSink for CpalPlaybackSink {
+    fn set_control(
+        &mut self,
+        control: Option<Arc<super::super::playback_session::PlaybackControl>>,
+    ) {
+        if let Ok(mut buffer) = self.buffer.lock() {
+            buffer.set_control(control);
+        }
+    }
     fn buffered_ms(&self) -> u64 {
         let buffer = self
             .buffer
@@ -466,11 +474,14 @@ pub(super) fn fill_output_buffer<T: FromI16Sample + NativeReferenceSample>(
         return;
     }
     let mut media = 0;
+    let mut held = 0;
     match buffer.try_lock() {
         Ok(mut buffer) => {
             for output in data.iter_mut() {
-                if buffer.write_next(|sample| *output = T::from_i16_sample(sample)) {
-                    media += 1;
+                match buffer.write_next(|sample| *output = T::from_i16_sample(sample)) {
+                    super::playback::SampleContent::Media => media += 1,
+                    super::playback::SampleContent::Held => held += 1,
+                    super::playback::SampleContent::ZeroFill => {}
                 }
             }
         }
@@ -483,7 +494,11 @@ pub(super) fn fill_output_buffer<T: FromI16Sample + NativeReferenceSample>(
             }
         }
     }
-    let content = if media == 0 {
+    let content = if held == data.len() && held != 0 {
+        ReferenceContent::HeldSilence
+    } else if held != 0 {
+        ReferenceContent::MixedHeld
+    } else if media == 0 {
         ReferenceContent::ZeroFill
     } else if media == data.len() {
         ReferenceContent::Media

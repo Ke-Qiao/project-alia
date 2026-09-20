@@ -288,6 +288,20 @@ impl ModuleLifecycle for CpalAudioPlayback {
 }
 
 impl AudioPlaybackBackend for CpalAudioPlayback {
+    fn playback_control(
+        &self,
+        scope: &alia_core::delivery::VoiceScope,
+        generation: u64,
+    ) -> Result<Arc<super::playback_session::PlaybackControl>> {
+        self.active_sender()?.playback_control(*scope, generation)
+    }
+    fn apply_playback_control(
+        &self,
+        owner: &Arc<super::playback_session::PlaybackControl>,
+        command: &alia_core::playback_control::ControlCommand,
+    ) -> Result<alia_core::playback_control::ControlReceipt> {
+        self.active_sender()?.apply_control(owner, command)
+    }
     fn reference_bus(&self) -> Option<AudioReferenceBus> {
         self.reference.clone()
     }
