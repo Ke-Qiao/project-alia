@@ -135,11 +135,11 @@ impl ContextService {
             if memory.revision != revision {
                 return Err(ContextError::Revoked("capture memory revision changed".into()).into());
             }
-            merge(
-                &mut lease.dependencies,
-                &[ContextEvidence::Memory { id, revision }],
-            )?;
-            lease.valid_until = earliest(lease.valid_until, memory.expires_at);
+            let (roots, until) =
+                super::memory_appraisal::memory_source_roots(&tx, snapshot.user_id, id, revision)
+                    .await?;
+            merge(&mut lease.dependencies, &roots)?;
+            lease.valid_until = earliest(lease.valid_until, until);
             memories.push(memory);
         }
         if lease.dependencies.is_empty() {

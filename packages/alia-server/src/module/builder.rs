@@ -510,6 +510,8 @@ impl ServerBuilder {
             &initial_policies.conversation,
         )?
         .with_cache(&initial_policies.cache)?;
+        policy_seed.appraisal =
+            crate::modules::memory::context::AppraisalPolicy::from_config(&self.config);
         // Profile identity and settings parsing share the provider's actual
         // request snapshot. No embedding request is needed during this step.
         let actual_profile = embedding_arc

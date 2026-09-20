@@ -3,8 +3,9 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration as StdDuration;
 
 use crate::config::{
-    DialoguePolicyResourceSection, ExpressionPolicySection, ExpressionStyleSection,
-    RegulationPolicySection, SentenceExpressionLlmPolicySection, ServerConfig,
+    AffectPolicySection, DialoguePolicyResourceSection, ExpressionPolicySection,
+    ExpressionStyleSection, RegulationPolicySection, SentenceExpressionLlmPolicySection,
+    ServerConfig,
 };
 use crate::providers::adapter::{MemoryRecallEvent, TtsCapabilities};
 use chrono::{DateTime, Duration, Utc};
@@ -12,31 +13,31 @@ use sea_orm::DatabaseConnection;
 
 use super::abi::{ExternalExpressionPlugin, load_external_expression_plugins};
 use super::affect::{
-    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectStore, AffectUserInput,
-    AppraisalEvent, AppraisalScope, AppraisalSource, AppraisalTarget,
+    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectUserInput, AppraisalEvent,
+    AppraisalScope, AppraisalSource, AppraisalTarget,
 };
 use super::appraisal::{
     AppraisalContext, AppraisalEnginePlugin, RuleBasedAppraisalEngine,
     TextClassifierAppraisalEngine,
 };
 use super::extension::{
-    AffectReducerContext, AffectReducerPlugin, ExpressionExtensionRegistry,
-    ExpressionPlannerPlugin, ExpressionPlanningContext, ExpressionSafetyPolicyPlugin,
-    safety_modification, validate_expression_plan,
+    AffectReducerPlugin, ExpressionExtensionRegistry, ExpressionPlannerPlugin,
+    ExpressionPlanningContext, ExpressionSafetyPolicyPlugin, safety_modification,
+    validate_expression_plan,
 };
 use super::regulation::regulate_expression;
 use super::types::{
     AffectSnapshot, ExpressionCapabilitySnapshot, ExpressionInput, ExpressionIntent,
     ExpressionPlan, ExpressionPriority, ExpressionSafetyClass, ExpressionTimelineAction,
-    ExpressiveStance, FallbackPolicy, ProsodyControls, RelationshipClearResult,
-    RelationshipProfile, RelationshipPruneResult, SpeechExpression,
+    ExpressiveStance, FallbackPolicy, ProsodyControls, SpeechExpression,
 };
 
 #[derive(Debug)]
 pub struct ExpressionRuntime {
     policy: ExpressionPolicySection,
     regulation: RegulationPolicySection,
-    affect: AffectStore,
+    preview_affect: AffectPolicySection,
+    writer: super::provenance::AppraisalWriter,
     styles: BTreeMap<String, ExpressionStyleSection>,
     dialogue_policy: DialoguePolicyResourceSection,
     extensions: ExpressionExtensionRegistry,
@@ -54,7 +55,8 @@ impl ExpressionRuntime {
         let runtime = Self {
             policy: config.policies.expression.clone(),
             regulation: config.policies.regulation.clone(),
-            affect: AffectStore::new(config.policies.affect.clone()),
+            preview_affect: config.policies.affect.clone(),
+            writer: super::provenance::AppraisalWriter::default(),
             styles: config.profiles.expression_styles.clone(),
             dialogue_policy: config.resources.dialogue_policy.clone(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -93,191 +95,248 @@ impl ExpressionRuntime {
     }
 
     pub async fn attach_db(&self, db: DatabaseConnection) -> anyhow::Result<()> {
-        self.affect.attach_db(db).await
+        self.writer.start(db).await
     }
 
     pub async fn shutdown(&self) -> anyhow::Result<()> {
-        self.affect.shutdown_persistence().await
+        self.writer.shutdown().await
     }
 
     pub fn dialogue_policy(&self) -> &DialoguePolicyResourceSection {
         &self.dialogue_policy
     }
 
-    pub async fn observe_user_input(&self, input: AffectUserInput<'_>) -> AffectObservation {
-        let now = Utc::now();
-        let ctx = AppraisalContext {
-            channel_id: input.channel_id,
-            user_id: input.user_id,
-            user_text: input.user_text,
-            now,
-            policy: self.affect.policy(),
-        };
-        let rule_engine = RuleBasedAppraisalEngine;
-        let mut appraisals = match rule_engine.appraise_user_input(&ctx).await {
-            Ok(appraisals) => appraisals,
-            Err(error) => {
-                tracing::warn!(
-                    error = ?error,
-                    "built-in rule appraisal engine failed; continuing with plugin appraisals"
-                );
-                Vec::new()
-            }
-        };
-        appraisals.extend(
-            self.extensions
-                .appraise_user_input(&ctx, self.external_plugin_timeout())
-                .await,
-        );
-
-        let mut observation = self.affect.observe_user_appraisals(input, appraisals);
-        self.extensions
-            .apply_reducers(
-                &AffectReducerContext {
-                    channel_id: input.channel_id,
-                    user_id: input.user_id,
-                    route: None,
-                },
-                &mut observation.snapshot,
-                self.external_plugin_timeout(),
-            )
-            .await;
-        observation
+    /// Legacy unbound observations cannot mutate canonical state.
+    pub async fn observe_user_input(&self, _input: AffectUserInput<'_>) -> AffectObservation {
+        self.rejected_unbound_observation()
     }
-
     pub async fn observe_assistant_response(
         &self,
-        input: AffectAssistantResponse<'_>,
+        _input: AffectAssistantResponse<'_>,
     ) -> AffectObservation {
-        let mut observation = self.affect.observe_assistant_response(input);
-        self.extensions
-            .apply_reducers(
-                &AffectReducerContext {
-                    channel_id: input.channel_id,
-                    user_id: input.user_id,
-                    route: Some(input.route),
-                },
-                &mut observation.snapshot,
-                self.external_plugin_timeout(),
-            )
-            .await;
-        observation
+        self.rejected_unbound_observation()
     }
-
     pub async fn observe_memory_recall(
         &self,
-        channel_id: &str,
-        user_id: &str,
-        recall_events: &[MemoryRecallEvent],
+        _channel_id: &str,
+        _user_id: &str,
+        _events: &[MemoryRecallEvent],
     ) -> AffectObservation {
-        if recall_events.is_empty() {
-            return AffectObservation {
-                snapshot: self.affect_snapshot(channel_id, user_id).await,
-                appraisals: Vec::new(),
-                active_event_count: 0,
-                persistence_error: None,
-            };
+        self.rejected_unbound_observation()
+    }
+    fn rejected_unbound_observation(&self) -> AffectObservation {
+        AffectObservation {
+            snapshot: super::affect::baseline_snapshot(&self.preview_affect),
+            appraisals: Vec::new(),
+            active_event_count: 0,
+            persistence_error: Some(
+                "canonical AppraisalInput is required; nothing was admitted".into(),
+            ),
         }
+    }
+    /// A source-free preview contains no personal state. Production planning
+    /// uses plan_with_context and its immutable, SQL-validated projection.
+    pub async fn affect_snapshot(&self, _channel_id: &str, _user_id: &str) -> AffectSnapshot {
+        super::affect::baseline_snapshot(&self.preview_affect)
+    }
+    pub async fn observe_context_user(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        generation: &crate::modules::memory::context::GenerationContext,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        let input = context.prepare_user_appraisal(generation).await?;
+        self.interpret_user_appraisal(input).await
+    }
 
-        let now = Utc::now();
-        let appraisals = recall_events
+    pub(crate) async fn interpret_user_appraisal(
+        &self,
+        input: crate::modules::memory::context::AppraisalInput,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        use crate::modules::memory::context::APPRAISAL_INTERPRETER_VERSION;
+        anyhow::ensure!(
+            input.policy().interpreter_version == APPRAISAL_INTERPRETER_VERSION,
+            "appraisal interpreter version unavailable"
+        );
+        let owner = input.binding().owner_id.to_string();
+        let ctx = AppraisalContext {
+            channel_id: &input.lease.source().channel_id,
+            user_id: &owner,
+            user_text: input.text(),
+            now: input.effective_at(),
+            policy: &input.policy().affect,
+        };
+        let mut drafts = RuleBasedAppraisalEngine.appraise_user_input(&ctx).await?;
+        let classifier = TextClassifierAppraisalEngine::new(input.policy().lexicons.clone());
+        drafts.extend(classifier.appraise_user_input(&ctx).await?);
+        let extensions = tokio::time::timeout(
+            StdDuration::from_millis(input.policy().interpretation_timeout_ms),
+            self.extensions.appraise_verified_user_input(
+                &ctx,
+                &input.policy().approved_interpreters,
+                self.external_plugin_timeout(),
+            ),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("appraisal interpretation deadline exceeded"))??;
+        drafts.extend(extensions);
+        self.writer.submit(input, drafts).await
+    }
+
+    pub async fn rebuild_relationship(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        owner: uuid::Uuid,
+        operation_id: uuid::Uuid,
+        after: Option<uuid::Uuid>,
+        limit: u16,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalRebuildPage> {
+        use crate::modules::memory::context::ContextError;
+        tokio::time::timeout(StdDuration::from_secs(30), async {
+            let initial = context
+                .begin_rebuild(owner, operation_id, after, limit)
+                .await?;
+            if initial.pending == 0 {
+                return Ok(initial);
+            }
+            for _ in 0..limit {
+                let Some(input) = context.claim_rebuild(owner, operation_id).await? else {
+                    break;
+                };
+                let claim = input.rebuild.clone().expect("claimed rebuild input");
+                match Box::pin(self.interpret_user_appraisal(input)).await {
+                    Ok(_) => (),
+                    Err(error)
+                        if error
+                            .downcast_ref::<ContextError>()
+                            .is_some_and(|e| matches!(e, ContextError::Revoked(_))) =>
+                    {
+                        context.skip_rebuild_claim(&claim).await?
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            context
+                .begin_rebuild(owner, operation_id, after, limit)
+                .await
+        })
+        .await
+        .map_err(|_| ContextError::CommitUnknownOperation { operation_id })?
+    }
+
+    pub async fn submit_appraisal(
+        &self,
+        input: crate::modules::memory::context::AppraisalInput,
+        drafts: Vec<AppraisalEvent>,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        self.writer.submit(input, drafts).await
+    }
+
+    pub async fn observe_context_recall(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        generation: &crate::modules::memory::context::GenerationContext,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        let input = context.prepare_recall_appraisal(generation).await?;
+        let drafts = input
+            .recalls()
             .iter()
-            .map(|event| {
-                let frustration_risk = event
-                    .affect_hint
+            .enumerate()
+            .map(|(index, recall)| {
+                let hint = &recall.affect_hint;
+                let frustration = hint
                     .frustration_risk_delta
                     .unwrap_or_default()
                     .clamp(-0.04, 0.04);
                 AppraisalEvent::new(
-                    "memory_recall",
+                    format!("memory_recall_{index}"),
                     AppraisalSource::Runtime,
                     AppraisalTarget::Dialogue,
-                    event.confidence,
+                    recall.confidence,
                     AppraisalScope::User,
-                    now,
-                    self.affect.policy(),
+                    input.effective_at(),
+                    &input.policy().affect,
                     AffectDeltas {
-                        valence: event
-                            .affect_hint
-                            .valence_delta
-                            .unwrap_or_default()
-                            .clamp(-0.05, 0.05),
-                        arousal: event
-                            .affect_hint
-                            .arousal_delta
-                            .unwrap_or_default()
-                            .clamp(-0.04, 0.04),
-                        calmness: (-frustration_risk).clamp(-0.04, 0.04),
-                        engagement: event
-                            .affect_hint
-                            .engagement_delta
-                            .unwrap_or_default()
-                            .clamp(-0.08, 0.08),
-                        trust: event
-                            .affect_hint
-                            .trust_delta
-                            .unwrap_or_default()
-                            .clamp(-0.02, 0.02),
+                        valence: hint.valence_delta.unwrap_or_default().clamp(-0.05, 0.05),
+                        arousal: hint.arousal_delta.unwrap_or_default().clamp(-0.04, 0.04),
+                        calmness: -frustration,
+                        engagement: hint.engagement_delta.unwrap_or_default().clamp(-0.08, 0.08),
+                        trust: hint.trust_delta.unwrap_or_default().clamp(-0.02, 0.02),
                         ..AffectDeltas::default()
                     },
-                    format!(
-                        "Memory recall bias from {} memory {}",
-                        event.memory_kind, event.memory_id
-                    ),
+                    "memory_recall",
                 )
             })
-            .collect::<Vec<_>>();
-        let input = AffectUserInput {
-            channel_id,
-            user_id,
-            user_text: "",
-        };
-        let mut observation = self.affect.observe_user_appraisals(input, appraisals);
-        self.extensions
-            .apply_reducers(
-                &AffectReducerContext {
-                    channel_id,
-                    user_id,
-                    route: None,
-                },
-                &mut observation.snapshot,
-                self.external_plugin_timeout(),
-            )
-            .await;
-        observation
+            .collect();
+        self.writer.submit(input, drafts).await
     }
 
-    pub async fn affect_snapshot(&self, channel_id: &str, user_id: &str) -> AffectSnapshot {
-        self.affect_snapshot_with_route(channel_id, user_id, None)
-            .await
-    }
-
-    pub fn relationship_profile(&self, user_id: &str) -> RelationshipProfile {
-        self.affect.relationship_profile(user_id)
-    }
-
-    pub async fn clear_relationship_data(
+    pub async fn observe_committed_response(
         &self,
-        user_id: &str,
-    ) -> anyhow::Result<RelationshipClearResult> {
-        self.affect.clear_relationship_data(user_id).await
+        context: &crate::modules::memory::context::ContextService,
+        binding: &crate::modules::memory::context::ContextBinding,
+        response_id: uuid::Uuid,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        let input = context
+            .prepare_committed_response_appraisal(binding, response_id)
+            .await?;
+        let owner = binding.owner_id.to_string();
+        let drafts = super::affect::appraise_assistant_response(
+            AffectAssistantResponse {
+                channel_id: &input.lease.source().channel_id,
+                user_id: &owner,
+                response_text: input.text(),
+                route: "response_committed",
+                used_tools: false,
+                response_was_fallback: false,
+            },
+            input.effective_at(),
+            &input.policy().affect,
+        );
+        self.writer.submit(input, drafts).await
     }
 
-    pub fn prune_relationship_profiles(&self) -> RelationshipPruneResult {
-        self.affect.prune_relationship_profiles()
+    pub async fn observe_execution_completion(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        binding: &crate::modules::memory::context::ContextBinding,
+        effect_id: uuid::Uuid,
+    ) -> anyhow::Result<crate::modules::memory::context::AppraisalReceipt> {
+        let input = context
+            .prepare_execution_appraisal(binding, effect_id)
+            .await?;
+        // Status is a canonical fact, not evidence of user satisfaction. Keep
+        // the interpretation neutral until a versioned policy defines more.
+        let event = AppraisalEvent::new(
+            format!("execution_{}", input.text()),
+            AppraisalSource::Runtime,
+            AppraisalTarget::Runtime,
+            1.0,
+            AppraisalScope::Turn,
+            input.effective_at(),
+            &input.policy().affect,
+            AffectDeltas::default(),
+            "execution_terminal",
+        );
+        self.writer.submit(input, vec![event]).await
     }
 
     pub fn register_affect_reducer(
         &self,
-        plugin: Arc<dyn AffectReducerPlugin>,
+        _plugin: Arc<dyn AffectReducerPlugin>,
     ) -> anyhow::Result<()> {
-        self.extensions.register_reducer(plugin)
+        anyhow::bail!(
+            "mutable affect reducers must migrate to a versioned canonical appraisal interpreter"
+        )
     }
 
     pub fn register_external_plugin(
         &self,
         plugin: Arc<dyn ExternalExpressionPlugin>,
     ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !plugin.manifest().capabilities.affect_reducer,
+            "external snapshot reducers are not a canonical interpreter"
+        );
         self.extensions.register_external_plugin(plugin)
     }
 
@@ -327,13 +386,57 @@ impl ExpressionRuntime {
     }
 
     pub async fn plan(&self, input: ExpressionInput) -> ExpressionPlan {
+        self.plan_with_snapshot(
+            input,
+            super::affect::baseline_snapshot(&self.preview_affect),
+        )
+        .await
+    }
+
+    pub async fn plan_with_context(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        generation: &crate::modules::memory::context::GenerationContext,
+        mut input: ExpressionInput,
+    ) -> anyhow::Result<ExpressionPlan> {
+        use crate::modules::memory::context::ContextUse;
+        let binding = generation.lease().binding();
+        context
+            .validate(&binding, ContextUse::OutputAdmission)
+            .await?;
+        anyhow::ensure!(
+            input.user_id == binding.owner_id.to_string()
+                && input.channel_id == generation.source().channel_id,
+            "expression changed original identity"
+        );
+        let projection = generation
+            .affect()
+            .ok_or_else(|| anyhow::anyhow!("expression has no frozen affect projection"))?;
+        let affect = projection.snapshot();
+        input.user_state = super::types::ExpressionUserState {
+            frustration: ((-affect.affect.valence).max(0.0)
+                + (affect.affect.arousal - 0.55).max(0.0) * 0.5)
+                .clamp(0.0, 1.0),
+            engagement: affect.social.engagement.clamp(0.0, 1.0),
+        };
+        input.memory_context = Some(generation.all_materialized_memory());
+        let plan = self
+            .plan_with_snapshot(input, projection.snapshot().clone())
+            .await;
+        context
+            .validate(&binding, ContextUse::OutputAdmission)
+            .await?;
+        Ok(plan)
+    }
+
+    async fn plan_with_snapshot(
+        &self,
+        input: ExpressionInput,
+        affect: AffectSnapshot,
+    ) -> ExpressionPlan {
         if !self.policy.enabled {
             return self.disabled_plan();
         }
-
-        let affect = self
-            .affect_snapshot_with_route(&input.channel_id, &input.user_id, input.route.as_deref())
-            .await;
         let mut intent = self.plan_intent(&input, &affect);
         self.extensions
             .apply_intent_planners(&input, &affect, &mut intent, self.external_plugin_timeout())
@@ -621,6 +724,23 @@ impl ExpressionRuntime {
             .await
     }
 
+    pub async fn speech_for_context(
+        &self,
+        context: &crate::modules::memory::context::ContextService,
+        generation: &crate::modules::memory::context::GenerationContext,
+        mut input: ExpressionInput,
+        sentence: bool,
+    ) -> anyhow::Result<SpeechExpression> {
+        if sentence {
+            apply_sentence_speech_overrides(&mut input);
+        }
+        Ok(self
+            .plan_with_context(context, generation, input)
+            .await?
+            .speech
+            .unwrap_or_else(|| self.default_speech()))
+    }
+
     pub async fn speech_for_expression_input(&self, input: ExpressionInput) -> SpeechExpression {
         self.plan(input)
             .await
@@ -727,27 +847,6 @@ impl ExpressionRuntime {
 
     fn external_plugin_timeout(&self) -> StdDuration {
         StdDuration::from_millis(self.policy.external_plugin_timeout_ms.max(1))
-    }
-
-    async fn affect_snapshot_with_route(
-        &self,
-        channel_id: &str,
-        user_id: &str,
-        route: Option<&str>,
-    ) -> AffectSnapshot {
-        let mut snapshot = self.affect.snapshot(channel_id, user_id);
-        self.extensions
-            .apply_reducers(
-                &AffectReducerContext {
-                    channel_id,
-                    user_id,
-                    route,
-                },
-                &mut snapshot,
-                self.external_plugin_timeout(),
-            )
-            .await;
-        snapshot
     }
 }
 
@@ -1597,6 +1696,7 @@ fn risk_rank(safety_class: ExpressionSafetyClass) -> u8 {
 mod tests {
     use super::*;
     use crate::config::{AffectPolicySection, ExpressionStyleSection};
+    use crate::expression::AffectReducerContext;
     use crate::expression::{
         AffectDeltas, AppraisalDecay, AppraisalDecayKind, AppraisalEvent, AppraisalScope,
         AppraisalSource, AppraisalTarget, ExpressionActionCapability, ExpressionAdapterState,
@@ -1620,9 +1720,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -1651,9 +1752,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -1661,45 +1763,45 @@ mod tests {
             orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
-        for _ in 0..3 {
-            runtime
-                .observe_user_input(AffectUserInput {
-                    channel_id: "cli",
-                    user_id: "user",
-                    user_text: "thank you, awesome",
-                })
-                .await;
-            runtime
-                .observe_assistant_response(AffectAssistantResponse {
-                    channel_id: "cli",
-                    user_id: "user",
-                    response_text: "Great, I am happy I could help.",
-                    route: "minor_llm",
-                    used_tools: false,
-                    response_was_fallback: false,
-                })
-                .await;
-        }
+        let now = Utc::now();
+        let events = (0..3)
+            .flat_map(|_| {
+                super::super::appraisal::rule_based_user_appraisals(
+                    "thank you, awesome",
+                    now,
+                    &runtime.preview_affect,
+                )
+            })
+            .collect();
+        let (affect, _) = super::super::affect::reduce_validated_events(
+            uuid::Uuid::nil(),
+            events,
+            &runtime.preview_affect,
+            now,
+        );
 
         let plan = runtime
-            .plan(ExpressionInput {
-                response_text: "Okay.".to_string(),
-                route: Some("minor_llm".to_string()),
-                channel_id: "cli".to_string(),
-                user_id: "user".to_string(),
-                dialogue_act: "respond".to_string(),
-                content_tone: "neutral".to_string(),
-                user_state: Default::default(),
-                device_context: Default::default(),
-                safety_context: Default::default(),
-                conversation_context: Default::default(),
-                constraints: Default::default(),
-                memory_context: None,
-                voice_output: true,
-                hardware_control: false,
-                tts_capabilities: None,
-                expression_capabilities: None,
-            })
+            .plan_with_snapshot(
+                ExpressionInput {
+                    response_text: "Okay.".to_string(),
+                    route: Some("minor_llm".to_string()),
+                    channel_id: "cli".to_string(),
+                    user_id: "user".to_string(),
+                    dialogue_act: "respond".to_string(),
+                    content_tone: "neutral".to_string(),
+                    user_state: Default::default(),
+                    device_context: Default::default(),
+                    safety_context: Default::default(),
+                    conversation_context: Default::default(),
+                    constraints: Default::default(),
+                    memory_context: None,
+                    voice_output: true,
+                    hardware_control: false,
+                    tts_capabilities: None,
+                    expression_capabilities: None,
+                },
+                affect,
+            )
             .await;
 
         assert_eq!(plan.style, "cheerful");
@@ -1714,9 +1816,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -1724,35 +1827,45 @@ mod tests {
             orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
 
-        for _ in 0..4 {
-            runtime
-                .observe_user_input(AffectUserInput {
-                    channel_id: "cli",
-                    user_id: "user",
-                    user_text: "incorrect, you got it wrong",
-                })
-                .await;
-        }
+        let now = Utc::now();
+        let events = (0..4)
+            .flat_map(|_| {
+                super::super::appraisal::rule_based_user_appraisals(
+                    "incorrect, you got it wrong",
+                    now,
+                    &runtime.preview_affect,
+                )
+            })
+            .collect();
+        let (affect, _) = super::super::affect::reduce_validated_events(
+            uuid::Uuid::nil(),
+            events,
+            &runtime.preview_affect,
+            now,
+        );
 
         let plan = runtime
-            .plan(ExpressionInput {
-                response_text: "I understand, let us look at it again.".to_string(),
-                route: Some("minor_llm".to_string()),
-                channel_id: "cli".to_string(),
-                user_id: "user".to_string(),
-                dialogue_act: "respond".to_string(),
-                content_tone: "neutral".to_string(),
-                user_state: Default::default(),
-                device_context: Default::default(),
-                safety_context: Default::default(),
-                conversation_context: Default::default(),
-                constraints: Default::default(),
-                memory_context: None,
-                voice_output: true,
-                hardware_control: true,
-                tts_capabilities: None,
-                expression_capabilities: None,
-            })
+            .plan_with_snapshot(
+                ExpressionInput {
+                    response_text: "I understand, let us look at it again.".to_string(),
+                    route: Some("minor_llm".to_string()),
+                    channel_id: "cli".to_string(),
+                    user_id: "user".to_string(),
+                    dialogue_act: "respond".to_string(),
+                    content_tone: "neutral".to_string(),
+                    user_state: Default::default(),
+                    device_context: Default::default(),
+                    safety_context: Default::default(),
+                    conversation_context: Default::default(),
+                    constraints: Default::default(),
+                    memory_context: None,
+                    voice_output: true,
+                    hardware_control: true,
+                    tts_capabilities: None,
+                    expression_capabilities: None,
+                },
+                affect,
+            )
             .await;
 
         assert!(
@@ -1769,7 +1882,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registered_reducer_can_contribute_to_expression_state() {
+    async fn unversioned_snapshot_reducer_is_rejected_before_registration() {
         struct WarmReducer;
 
         impl AffectReducerPlugin for WarmReducer {
@@ -1795,55 +1908,36 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
             safety_state: ExpressionSafetyRuntimeState::default(),
             orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
         };
-        runtime
-            .register_affect_reducer(Arc::new(WarmReducer))
-            .unwrap();
-
-        let plan = runtime
-            .plan(ExpressionInput {
-                response_text: "Okay.".to_string(),
-                route: Some("minor_llm".to_string()),
-                channel_id: "cli".to_string(),
-                user_id: "user".to_string(),
-                dialogue_act: "respond".to_string(),
-                content_tone: "neutral".to_string(),
-                user_state: Default::default(),
-                device_context: Default::default(),
-                safety_context: Default::default(),
-                conversation_context: Default::default(),
-                constraints: Default::default(),
-                memory_context: None,
-                voice_output: true,
-                hardware_control: false,
-                tts_capabilities: None,
-                expression_capabilities: None,
-            })
-            .await;
-
-        assert_eq!(plan.style, "cheerful");
-        assert_eq!(
-            runtime.extension_summary().reducers,
-            vec!["test_warm_reducer".to_string()]
+        assert!(
+            runtime
+                .register_affect_reducer(Arc::new(WarmReducer))
+                .is_err()
         );
+        assert!(runtime.extension_summary().reducers.is_empty());
     }
 
     #[tokio::test]
-    async fn registered_appraisal_engine_can_contribute_events() {
+    async fn appraisal_engine_requires_persisted_implementation_approval() {
         struct ClassifierEngine;
 
         #[async_trait]
         impl AppraisalEnginePlugin for ClassifierEngine {
             fn name(&self) -> &str {
                 "test_classifier_appraisal"
+            }
+
+            fn provenance_pin(&self) -> Option<String> {
+                Some("1".repeat(64))
             }
 
             async fn appraise_user_input(
@@ -1869,9 +1963,10 @@ mod tests {
         }
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles: BTreeMap::new(),
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -1882,23 +1977,37 @@ mod tests {
             .register_appraisal_engine(Arc::new(ClassifierEngine))
             .unwrap();
 
-        let observation = runtime
+        let ctx = AppraisalContext {
+            channel_id: "cli",
+            user_id: "user",
+            user_text: "normal sentence",
+            now: Utc::now(),
+            policy: &runtime.preview_affect,
+        };
+        assert!(
+            runtime
+                .extensions
+                .appraise_verified_user_input(&ctx, &BTreeMap::new(), StdDuration::from_millis(20))
+                .await
+                .is_err()
+        );
+        let approved = BTreeMap::from([("test_classifier_appraisal".into(), "1".repeat(64))]);
+        let drafts = runtime
+            .extensions
+            .appraise_verified_user_input(&ctx, &approved, StdDuration::from_millis(20))
+            .await
+            .unwrap();
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].kind, "classifier_warm_signal");
+        let unbound = runtime
             .observe_user_input(AffectUserInput {
                 channel_id: "cli",
                 user_id: "user",
-                user_text: "just a normal sentence",
+                user_text: "normal sentence",
             })
             .await;
-
-        assert!(
-            observation
-                .appraisals
-                .iter()
-                .any(|event| event.kind == "classifier_warm_signal")
-        );
-        assert!(
-            observation.snapshot.affect.valence > AffectPolicySection::default().baseline_valence
-        );
+        assert!(unbound.persistence_error.is_some());
+        assert!(unbound.appraisals.is_empty());
         assert_eq!(
             runtime.extension_summary().appraisal_engines,
             vec!["test_classifier_appraisal".to_string()]
@@ -1915,6 +2024,10 @@ mod tests {
         impl ExternalExpressionPlugin for AbiPlugin {
             fn manifest(&self) -> &ExpressionPluginManifest {
                 &self.manifest
+            }
+
+            fn provenance_pin(&self) -> Option<String> {
+                Some("2".repeat(64))
             }
 
             async fn call(
@@ -1961,9 +2074,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -1992,25 +2106,29 @@ mod tests {
             }))
             .unwrap();
 
-        let observation = runtime
-            .observe_user_input(AffectUserInput {
-                channel_id: "cli",
-                user_id: "user",
-                user_text: "just a normal sentence",
-            })
-            .await;
+        let ctx = AppraisalContext {
+            channel_id: "cli",
+            user_id: "user",
+            user_text: "normal sentence",
+            now: Utc::now(),
+            policy: &runtime.preview_affect,
+        };
+        let approved = BTreeMap::from([("test_external_expression".into(), "2".repeat(64))]);
+        let drafts = runtime
+            .extensions
+            .appraise_verified_user_input(&ctx, &approved, StdDuration::from_millis(20))
+            .await
+            .unwrap();
         let plan = runtime
             .plan(test_expression_input("I will handle this gently."))
             .await;
 
         assert!(
-            observation
-                .appraisals
+            drafts
                 .iter()
                 .any(|event| event.kind == "external_warm_signal")
         );
-        let external_event = observation
-            .appraisals
+        let external_event = drafts
             .iter()
             .find(|event| event.kind == "external_warm_signal")
             .expect("external plugin appraisal should be present");
@@ -2041,6 +2159,10 @@ mod tests {
                 &self.manifest
             }
 
+            fn provenance_pin(&self) -> Option<String> {
+                Some("3".repeat(64))
+            }
+
             async fn call(
                 &self,
                 _request: ExpressionPluginRequest,
@@ -2066,12 +2188,13 @@ mod tests {
         }
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection {
                 external_plugin_timeout_ms: 1,
                 ..ExpressionPolicySection::default()
             },
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles: BTreeMap::new(),
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -2099,19 +2222,23 @@ mod tests {
             }))
             .unwrap();
 
-        let observation = runtime
-            .observe_user_input(AffectUserInput {
-                channel_id: "cli",
-                user_id: "user",
-                user_text: "just a normal sentence",
-            })
+        let ctx = AppraisalContext {
+            channel_id: "cli",
+            user_id: "user",
+            user_text: "normal sentence",
+            now: Utc::now(),
+            policy: &runtime.preview_affect,
+        };
+        let approved = BTreeMap::from([("slow_external_expression".into(), "3".repeat(64))]);
+        let result = runtime
+            .extensions
+            .appraise_verified_user_input(&ctx, &approved, StdDuration::from_millis(1))
             .await;
-
-        assert!(
-            !observation
-                .appraisals
-                .iter()
-                .any(|event| event.kind == "too_late")
+        assert!(result.is_err());
+        let snapshot = runtime.affect_snapshot("cli", "user").await;
+        assert_eq!(
+            snapshot.affect.valence,
+            runtime.preview_affect.baseline_valence
         );
     }
 
@@ -2122,9 +2249,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -2193,9 +2321,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -2235,9 +2364,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -2294,9 +2424,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),
@@ -2369,9 +2500,10 @@ mod tests {
         styles.insert("neutral".to_string(), ExpressionStyleSection::default());
 
         let runtime = ExpressionRuntime {
+            writer: crate::expression::provenance::AppraisalWriter::default(),
             policy: ExpressionPolicySection::default(),
             regulation: RegulationPolicySection::default(),
-            affect: AffectStore::new(AffectPolicySection::default()),
+            preview_affect: AffectPolicySection::default(),
             styles,
             dialogue_policy: DialoguePolicyResourceSection::default(),
             extensions: ExpressionExtensionRegistry::default(),

@@ -15,6 +15,8 @@ use crate::config::{
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ContextPolicy {
+    #[serde(default)]
+    pub appraisal: super::AppraisalPolicy,
     pub cache_enabled: bool,
     pub cache_exact_enabled: bool,
     pub cache_semantic_enabled: bool,
@@ -49,6 +51,7 @@ impl ContextPolicy {
             .map(|s| DateTime::parse_from_rfc3339(s).map(|t| t.with_timezone(&Utc)))
             .transpose()?;
         let value = Self {
+            appraisal: super::AppraisalPolicy::default(),
             cache_enabled: true,
             cache_exact_enabled: true,
             cache_semantic_enabled: false,
@@ -86,6 +89,8 @@ impl ContextPolicy {
             crate::providers::adapter::EmbeddingProfile::from_server_config(config)?
                 .map(|profile| profile.id())
                 .transpose()?;
+        policy.appraisal = super::AppraisalPolicy::from_config(config);
+        policy.validate()?;
         Ok(policy)
     }
     pub fn with_cache(mut self, cache: &CacheSection) -> ContextResult<Self> {
@@ -99,6 +104,7 @@ impl ContextPolicy {
         Ok(self)
     }
     pub fn validate(&self) -> ContextResult<()> {
+        self.appraisal.validate()?;
         anyhow::ensure!(
             (256..=12_000).contains(&self.max_memory_chars)
                 && (1..=super::MAX_MEMORY_RESULTS).contains(&self.max_memory_results)
@@ -135,6 +141,8 @@ impl ContextPolicy {
     }
     pub(crate) fn allows(&self, purpose: ContextUse) -> bool {
         match purpose {
+            ContextUse::AppraisalWrite => self.appraisal.affect.enabled,
+            ContextUse::AffectRead | ContextUse::AppraisalMaintenance => true,
             ContextUse::AutomaticMemoryWrite => {
                 self.reads_memory() && self.capture_mode == MemoryCaptureMode::LlmSelected
             }
@@ -200,6 +208,24 @@ impl ContextPolicyStore {
         seed.validate()?;
         let value = serde_json::to_value(&seed)?;
         self.db.execute(stmt("INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING", vec![value.clone().into(),digest(&value)?.into()])).await?;
+        // One explicit upgrade of the old typed policy representation. Validate
+        // its original digest before adding the newly introduced policy domain.
+        let tx = self.db.begin().await?;
+        let row = tx.query_one(stmt("SELECT version,policy,policy_digest FROM context_policy WHERE singleton FOR UPDATE",vec![])).await?.ok_or_else(||ContextError::Unavailable("context policy missing".into()))?;
+        let stored: serde_json::Value = row.try_get("", "policy")?;
+        if stored.get("appraisal").is_none() {
+            let mut upgraded: ContextPolicy = serde_json::from_value(stored)?;
+            let mut legacy = serde_json::to_value(&upgraded)?;
+            legacy.as_object_mut().unwrap().remove("appraisal");
+            anyhow::ensure!(
+                digest(&legacy)? == row.try_get::<String>("", "policy_digest")?,
+                "legacy context policy digest mismatch"
+            );
+            upgraded.appraisal = seed.appraisal;
+            upgraded.validate()?;
+            write(&tx, row.try_get("", "version")?, &upgraded).await?;
+        }
+        tx.commit().await?;
         self.current().await
     }
     pub async fn current(&self) -> ContextResult<PolicySnapshot> {

@@ -48,6 +48,18 @@ async fn validate_nodes_policy(
     )
     .await?
     .policy;
+    for node in nodes {
+        let id = node
+            .id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("stored memory identity missing"))?;
+        crate::modules::memory::context::memory_appraisal::bind_memory_roots(
+            tx,
+            context,
+            Uuid::parse_str(id)?,
+        )
+        .await?;
+    }
     if context.origin == MemoryWriteOrigin::Manual {
         return Ok(());
     }
@@ -671,6 +683,12 @@ impl AliaMemory {
         require_live_superseder: bool,
         source_event_ids: &[Uuid],
     ) -> anyhow::Result<MemoryNode> {
+        crate::modules::memory::context::memory_appraisal::validate_memory_message_sources(
+            db,
+            user_id,
+            Uuid::parse_str(node_id)?,
+        )
+        .await?;
         let expected = patch
             .expected_revision
             .ok_or_else(|| anyhow::anyhow!("memory update requires expected revision"))?;
@@ -907,6 +925,10 @@ impl AliaMemory {
         existing: Uuid,
         incoming: &MemoryNode,
     ) -> anyhow::Result<()> {
+        crate::modules::memory::context::memory_appraisal::validate_memory_message_sources(
+            db, user_id, existing,
+        )
+        .await?;
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -921,6 +943,9 @@ impl AliaMemory {
                     true
                 ),
                 metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb,
+                source_event_ids = ARRAY(SELECT DISTINCT v FROM unnest(
+                    source_event_ids || ARRAY(SELECT jsonb_array_elements_text($8::jsonb)::uuid)
+                ) AS ids(v)),
                 revision = revision + 1, updated_at = NOW()
             WHERE id = $1::uuid AND user_id = $6::uuid AND tenant_id = $7::uuid AND status = 'active'
             "#,
@@ -937,6 +962,7 @@ impl AliaMemory {
                 .into(),
                 user_id.into(),
                 DEFAULT_TENANT_ID.into(),
+                serde_json::json!(incoming.source_event_ids).into(),
             ],
         ))
         .await?;
@@ -1057,6 +1083,10 @@ impl AliaMemory {
         let profile = self.active_profile().await;
         // No database or privacy lock is held while awaiting external inference.
         let result: anyhow::Result<()> = async {
+            let memory_id=Uuid::parse_str(node.id.as_deref().ok_or_else(||anyhow::anyhow!("memory id missing"))?)?;
+            let preflight=db.begin().await?;
+            crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(&preflight,context.user_id,memory_id,node.revision).await?;
+            preflight.commit().await?;
             let vectors=embedding.embed(&[node.content.clone()]).await?;
             let vector=vectors.first().filter(|v|v.len()==1536).ok_or_else(||anyhow::anyhow!("embedding dimension mismatch"))?;
             anyhow::ensure!(vector.iter().all(|v|v.is_finite()),"embedding contains nonfinite values");
@@ -1066,6 +1096,7 @@ impl AliaMemory {
             let current=privacy::lock_user(&tx,context.user_id).await?;
             anyhow::ensure!(current.privacy_epoch==context.privacy_epoch,"late embedding rejected after privacy change");
             let id=node.id.as_ref().ok_or_else(||anyhow::anyhow!("memory id missing"))?;
+            crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(&tx,context.user_id,memory_id,node.revision).await?;
             let updated=tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
                 "INSERT INTO memory_embeddings_1536(memory_id,profile_id,embedding,source_revision) SELECT id,$2,$3::vector,revision FROM memory_items WHERE id=$1::uuid AND user_id=$4 AND tenant_id=$5 AND revision=$6 AND status='active' AND (expires_at IS NULL OR expires_at>clock_timestamp()) ON CONFLICT(memory_id,profile_id) DO UPDATE SET embedding=EXCLUDED.embedding,source_revision=EXCLUDED.source_revision,created_at=clock_timestamp()",
                 vec![id.clone().into(),profile.into(),vector_literal(vector).into(),context.user_id.into(),DEFAULT_TENANT_ID.into(),node.revision.into()])).await?;
@@ -1321,7 +1352,25 @@ impl AliaMemory {
         } else {
             None
         };
-        retrieve_context_nodes(db, user_id, query, opts, &profile, vector.as_deref()).await
+        let tx = db.begin().await?;
+        privacy::lock_user(&tx, user_id).await?;
+        let candidates =
+            retrieve_context_nodes(&tx, user_id, query, opts, &profile, vector.as_deref()).await?;
+        let mut nodes = Vec::new();
+        for node in candidates {
+            let id = Uuid::parse_str(
+                node.id
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("memory identity missing"))?,
+            )?;
+            match crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(&tx,user_id,id,node.revision).await {
+                Ok(())=>nodes.push(node),
+                Err(error) if error.downcast_ref::<crate::modules::memory::context::ContextError>().is_some_and(|e|matches!(e,crate::modules::memory::context::ContextError::Revoked(_)|crate::modules::memory::context::ContextError::PolicyChanged|crate::modules::memory::context::ContextError::BoundsExceeded))=>continue,
+                Err(error)=>return Err(error),
+            }
+        }
+        tx.commit().await?;
+        Ok(nodes)
     }
 
     async fn graph_from_db(
@@ -1330,83 +1379,77 @@ impl AliaMemory {
         user_id: Uuid,
         opts: MemoryListOpts,
     ) -> anyhow::Result<GraphFragment> {
-        let depth = self.config.read().await.graph_depth.clamp(1, 4) as i32;
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                WITH RECURSIVE graph_walk AS (
-                    SELECT n.id, n.label, n.node_type, ARRAY[n.id] AS path, 0 AS depth
-                    FROM memory_nodes n
-                    WHERE n.tenant_id = $1::uuid
-                      AND n.user_id = $2::uuid
-                      AND n.node_type = 'user'
-                    UNION ALL
-                    SELECT next_node.id, next_node.label, next_node.node_type,
-                           graph_walk.path || next_node.id,
-                           graph_walk.depth + 1
-                    FROM graph_walk
-                    JOIN memory_live_edges e ON e.src_node_id = graph_walk.id
-                    JOIN memory_nodes next_node ON next_node.id = e.dst_node_id
-                    WHERE graph_walk.depth < $3
-                      AND NOT next_node.id = ANY(graph_walk.path)
-                      AND e.tenant_id = $1::uuid
-                      AND e.user_id = $2::uuid
-                      AND (e.valid_to IS NULL OR e.valid_to > NOW())
-                )
-                SELECT DISTINCT id::text, label, node_type
-                FROM graph_walk
-                WHERE depth > 0
-                LIMIT $4
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                    depth.into(),
-                    opts.max_results.unwrap_or(100).clamp(1, 500).into(),
-                ],
-            ))
-            .await?;
-        let nodes = rows
-            .into_iter()
-            .map(|row| {
-                let id: String = row.try_get("", "id")?;
-                let node_type: String = row.try_get("", "node_type")?;
-                let content: String = row.try_get("", "label")?;
-                Ok(MemoryNode::new("graph", node_type, content, 0.5)
-                    .with_runtime_fields("semantic", "user", 0.6, 0.5, "internal")
-                    .with_metadata(serde_json::json!({ "graph_node_id": id })))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        use crate::modules::memory::context::memory_appraisal::validated_graph_projection;
+        use crate::modules::memory::context::{ContextError, ContextService, ContextUse};
 
-        let edge_rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                SELECT src_node_id::text, dst_node_id::text, relation, weight
-                FROM memory_live_edges
-                WHERE tenant_id = $1::uuid AND user_id = $2::uuid
-                ORDER BY created_at DESC
-                LIMIT $3
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                    opts.max_results.unwrap_or(100).clamp(1, 500).into(),
-                ],
-            ))
-            .await?;
-        let edges = edge_rows
+        let tx = db.begin().await?;
+        let policy =
+            ContextService::policy_in_transaction(&tx, None, ContextUse::AffectRead).await?;
+        privacy::lock_user(&tx, user_id).await?;
+        let limit = opts.max_results.unwrap_or(100).clamp(1, 500) as usize;
+        let roots=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT id FROM memory_nodes WHERE tenant_id=$1 AND user_id=$2 AND node_type='user' ORDER BY id LIMIT $3",
+            vec![DEFAULT_TENANT_ID.into(),user_id.into(),(limit as i64).into()])).await?;
+        let mut frontier = roots
             .into_iter()
-            .map(|row| {
-                Ok(MemoryEdge {
-                    source_id: row.try_get("", "src_node_id")?,
-                    target_id: row.try_get("", "dst_node_id")?,
-                    relation_type: row.try_get("", "relation")?,
-                    weight: row.try_get("", "weight")?,
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .map(|row| row.try_get::<Uuid>("", "id"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut visited = frontier.iter().copied().collect::<HashSet<_>>();
+        let mut examined = Vec::<Uuid>::new();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        // The total candidate budget includes rejected edges. No unbounded SQL
+        // walk runs before validation, and a revoked edge cannot extend a path.
+        for _ in 0..policy.policy.graph_depth {
+            if frontier.is_empty() || examined.len() == limit {
+                break;
+            }
+            let rows=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "SELECT id FROM memory_live_edges WHERE tenant_id=$1 AND user_id=$2 AND src_node_id=ANY(ARRAY(SELECT jsonb_array_elements_text($3)::uuid)) AND NOT(id=ANY(ARRAY(SELECT jsonb_array_elements_text($4)::uuid))) ORDER BY confidence DESC,created_at DESC,id LIMIT $5",
+                vec![DEFAULT_TENANT_ID.into(),user_id.into(),serde_json::json!(frontier).into(),serde_json::json!(examined).into(),((limit-examined.len()) as i64).into()])).await?;
+            frontier.clear();
+            for row in rows {
+                let id: Uuid = row.try_get("", "id")?;
+                examined.push(id);
+                let projection = match validated_graph_projection(&tx, user_id, id).await {
+                    Ok(Some(projection)) => projection,
+                    Ok(None) => continue,
+                    Err(error)
+                        if error.downcast_ref::<ContextError>().is_some_and(|e| {
+                            matches!(
+                                e,
+                                ContextError::Revoked(_)
+                                    | ContextError::PolicyChanged
+                                    | ContextError::BoundsExceeded
+                            )
+                        }) =>
+                    {
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                let source: Uuid = serde_json::from_value(projection["source_id"].clone())?;
+                let target: Uuid = serde_json::from_value(projection["target_id"].clone())?;
+                edges.push(MemoryEdge {
+                    source_id: source.to_string(),
+                    target_id: target.to_string(),
+                    relation_type: serde_json::from_value(projection["relation"].clone())?,
+                    weight: serde_json::from_value(projection["weight"].clone())?,
+                });
+                if visited.insert(target) {
+                    frontier.push(target);
+                    let content: String = serde_json::from_value(projection["target"].clone())?;
+                    let node_type: String =
+                        serde_json::from_value(projection["target_type"].clone())?;
+                    nodes.push(
+                        MemoryNode::new("graph", node_type, content, 0.5)
+                            .with_runtime_fields("semantic", "user", 0.6, 0.5, "internal")
+                            .with_metadata(serde_json::json!({"graph_node_id":target})),
+                    );
+                }
+            }
+        }
+        tx.commit().await?;
         Ok(GraphFragment { nodes, edges })
     }
 
@@ -1415,36 +1458,45 @@ impl AliaMemory {
         db: &DatabaseConnection,
         user_id: Uuid,
     ) -> anyhow::Result<Vec<GraphSnippet>> {
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                SELECT src.label AS source, e.relation, dst.label AS target, e.confidence
-                FROM memory_live_edges e
-                JOIN memory_nodes src ON src.id = e.src_node_id
-                JOIN memory_nodes dst ON dst.id = e.dst_node_id
-                WHERE e.tenant_id = $1::uuid
-                  AND e.user_id = $2::uuid
-                  AND (e.valid_to IS NULL OR e.valid_to > NOW())
-                ORDER BY e.confidence DESC, e.created_at DESC
-                LIMIT 24
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                ],
-            ))
-            .await?;
-        rows.into_iter()
-            .map(|row| {
-                Ok(GraphSnippet {
-                    source: row.try_get("", "source")?,
-                    relation: row.try_get("", "relation")?,
-                    target: row.try_get("", "target")?,
-                    confidence: row.try_get("", "confidence")?,
-                })
-            })
-            .collect()
+        let tx = db.begin().await?;
+        privacy::lock_user(&tx, user_id).await?;
+        let rows=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,"SELECT id FROM memory_live_edges WHERE user_id=$1 AND tenant_id=$2 ORDER BY confidence DESC,created_at DESC,id LIMIT 24",vec![user_id.into(),DEFAULT_TENANT_ID.into()])).await?;
+        let mut snippets = Vec::new();
+        for row in rows {
+            let result =
+                crate::modules::memory::context::memory_appraisal::validated_graph_projection(
+                    &tx,
+                    user_id,
+                    row.try_get("", "id")?,
+                )
+                .await;
+            match result {
+                Ok(Some(projection)) => snippets.push(GraphSnippet {
+                    source: projection["source"].as_str().unwrap_or_default().into(),
+                    relation: projection["relation"].as_str().unwrap_or_default().into(),
+                    target: projection["target"].as_str().unwrap_or_default().into(),
+                    confidence: projection["confidence"].as_f64().unwrap_or_default() as f32,
+                }),
+                Ok(None) => (),
+                Err(error)
+                    if error
+                        .downcast_ref::<crate::modules::memory::context::ContextError>()
+                        .is_some_and(|e| {
+                            matches!(
+                                e,
+                                crate::modules::memory::context::ContextError::Revoked(_)
+                                    | crate::modules::memory::context::ContextError::PolicyChanged
+                                    | crate::modules::memory::context::ContextError::BoundsExceeded
+                            )
+                        }) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        tx.commit().await?;
+        Ok(snippets)
     }
 }
 

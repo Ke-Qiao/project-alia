@@ -28,6 +28,12 @@ pub enum ContextError {
     BoundsExceeded,
     #[error("context commit acknowledgement is unknown: {context_id}")]
     CommitUnknown { context_id: Uuid },
+    #[error("relationship operation commit acknowledgement is unknown: {operation_id}")]
+    CommitUnknownOperation { operation_id: Uuid },
+    #[error("relationship epoch changed; expected {expected}, actual {actual}")]
+    RelationshipConflict { expected: i64, actual: i64 },
+    #[error("relationship operation identity changed intent: {operation_id}")]
+    RelationshipOperationConflict { operation_id: Uuid },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -65,6 +71,9 @@ pub enum ContextUse {
     CacheReview,
     CacheEmbedding,
     Execution,
+    AppraisalWrite,
+    AffectRead,
+    AppraisalMaintenance,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,6 +83,7 @@ pub enum ContextPurpose {
     SourceNotice,
     MemoryCapture,
     MemoryMaintenance,
+    AppraisalRebuild,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,6 +106,11 @@ impl SourceNotice {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ContextEvidence {
+    MemorySourceMessage {
+        id: Uuid,
+        source_privacy_epoch: i64,
+        content_digest: String,
+    },
     Memory {
         id: Uuid,
         revision: i64,
@@ -129,6 +144,18 @@ pub enum ContextEvidence {
         intent_digest: String,
         completion_digest: String,
     },
+    Relationship {
+        epoch: i64,
+    },
+    Appraisal {
+        id: Uuid,
+        revision: i64,
+        result_digest: String,
+    },
+    AffectProjection {
+        id: Uuid,
+        content_digest: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -148,6 +175,9 @@ impl ContextLease {
             ContextPurpose::SourceNotice => usage == ContextUse::OutputAdmission,
             ContextPurpose::MemoryCapture => usage == ContextUse::AutomaticMemoryWrite,
             ContextPurpose::MemoryMaintenance => usage == ContextUse::MemoryMaintenance,
+            ContextPurpose::AppraisalRebuild => {
+                matches!(usage, ContextUse::AppraisalWrite | ContextUse::AffectRead)
+            }
         }
     }
     pub fn id(&self) -> Uuid {
@@ -274,6 +304,7 @@ pub struct GenerationContext {
     pub(super) prior_memory: Vec<MemoryContextPack>,
     pub(super) history: Vec<ContextHistoryMessage>,
     pub(super) memory_prompt: String,
+    pub(super) affect: Option<std::sync::Arc<super::AffectProjection>>,
 }
 
 #[derive(Clone, Debug)]
@@ -294,6 +325,9 @@ impl CapturedMemoryContext {
     }
 }
 impl GenerationContext {
+    pub fn affect(&self) -> Option<&super::AffectProjection> {
+        self.affect.as_deref()
+    }
     pub fn policy(&self) -> &super::ContextPolicy {
         &self.policy
     }

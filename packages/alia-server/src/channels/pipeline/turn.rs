@@ -24,6 +24,7 @@ pub(super) struct VoiceTurn {
     pub(super) received_at: chrono::DateTime<chrono::Utc>,
     /// Required for production inbound sources; synthetic turns start unstamped.
     pub(super) source_privacy_epoch: Option<i64>,
+    pub(super) source_relationship_epoch: Option<i64>,
     /// Committed user source shared by every tool and output task of this turn.
     pub(super) source_event_id: Arc<std::sync::OnceLock<Uuid>>,
     /// Actual model inputs may grow through tools until response preparation.
@@ -38,6 +39,9 @@ pub(super) struct VoiceTurn {
 
 #[derive(Debug, Default)]
 pub(super) struct TurnContext {
+    pub(super) affect_dirty: bool,
+    pub(super) user_appraised: bool,
+    pub(super) recall_digest: Option<String>,
     pub(super) generation: Option<GenerationContext>,
     pub(super) notice: Option<ContextLease>,
     pub(super) frozen: bool,
@@ -118,6 +122,7 @@ impl VoiceTurnRegistry {
             output_channel: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
+            source_relationship_epoch: None,
             source_event_id: Arc::default(),
             context: Arc::default(),
             key: key.clone(),
@@ -205,6 +210,7 @@ impl VoiceTurn {
             generation: None,
             notice: Some(lease),
             frozen: false,
+            ..Default::default()
         }));
         notice
     }
@@ -216,6 +222,7 @@ impl VoiceTurn {
             output_channel: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
+            source_relationship_epoch: None,
             source_event_id: Arc::default(),
             context: Arc::default(),
             token,

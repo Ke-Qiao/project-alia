@@ -20,6 +20,11 @@ pub(crate) fn digest(value: &Value) -> ContextResult<String> {
                 Value::Object(sorted.into_iter().collect())
             }
             Value::Array(values) => Value::Array(values.iter().map(canonical).collect()),
+            // PostgreSQL JSONB has no signed zero. Keep typed floating-point
+            // values stable when a policy or projection is read back from SQL.
+            Value::Number(number) if number.is_f64() && number.as_f64() == Some(0.0) => {
+                json!(0.0)
+            }
             other => other.clone(),
         }
     }
@@ -74,6 +79,9 @@ pub(crate) async fn lock_authority(
     if row.try_get::<i64>("", "privacy_epoch")? != source.source_privacy_epoch {
         return Err(revoked("original privacy epoch changed"));
     }
+    // Relationship clear takes this authority before touching derived evidence.
+    // Keep the same order even if this particular lease has a baseline profile.
+    crate::modules::memory::source::lock_relationship_epoch(tx, source.owner_id).await?;
     if let Some(session) = source.conversation_id {
         if tx.query_one(stmt("SELECT id FROM chat_sessions WHERE id=$1 AND creator_id=$2 AND channel_id=$3 FOR SHARE",vec![session.into(),source.owner_id.to_string().into(),source.channel_id.clone().into()])).await?.is_none() {
             return Err(revoked("source conversation is unavailable for owner/channel"));
@@ -169,7 +177,7 @@ pub(crate) async fn validate_lease(
         return Err(revoked("current policy disallows this derived use"));
     }
     ensure_live(tx, lease.valid_until).await?;
-    validate_evidence(tx, &lease).await?;
+    Box::pin(validate_evidence(tx, &lease)).await?;
     Ok(ValidatedContext {
         lease,
         policy: policy.policy,
@@ -227,6 +235,10 @@ fn evidence_key(value: &ContextEvidence) -> (u8, Uuid) {
         ContextEvidence::Graph { edge_id, .. } => (3, *edge_id),
         ContextEvidence::Cache { id, .. } => (4, *id),
         ContextEvidence::Execution { effect_id, .. } => (5, *effect_id),
+        ContextEvidence::Relationship { .. } => (6, uuid::Uuid::nil()),
+        ContextEvidence::Appraisal { id, .. } => (7, *id),
+        ContextEvidence::AffectProjection { id, .. } => (8, *id),
+        ContextEvidence::MemorySourceMessage { id, .. } => (9, *id),
     }
 }
 
@@ -239,47 +251,164 @@ pub(crate) async fn validate_evidence(
     for reference in &refs {
         let owner = lease.source.owner_id;
         match reference {
-            ContextEvidence::Memory{id,revision} => {
+            ContextEvidence::Relationship { epoch } => {
+                if super::appraisal::relationship_epoch(tx, owner).await? != *epoch {
+                    return Err(revoked("relationship projection was cleared"));
+                }
+            }
+            ContextEvidence::Appraisal {
+                id,
+                revision,
+                result_digest,
+            } => {
+                Box::pin(super::appraisal::validate_record_reference(
+                    tx,
+                    lease,
+                    *id,
+                    *revision,
+                    result_digest,
+                ))
+                .await?;
+            }
+            ContextEvidence::AffectProjection { id, content_digest } => {
+                Box::pin(super::appraisal::validate_projection_reference(
+                    tx,
+                    lease,
+                    *id,
+                    content_digest,
+                ))
+                .await?;
+            }
+            ContextEvidence::Memory { id, revision } => {
                 if tx.query_one(stmt("SELECT id FROM memory_items WHERE id=$1 AND user_id=$2 AND tenant_id=$3 AND revision=$4 AND status='active' AND NOT sensitive AND visibility<>'private_runtime' AND (expires_at IS NULL OR expires_at>clock_timestamp()) FOR SHARE",vec![(*id).into(),owner.into(),Uuid::nil().into(),(*revision).into()])).await?.is_none() { return Err(revoked("memory revision is unavailable")); }
-            },
-            ContextEvidence::UserMessage{id,session_id,source_privacy_epoch,content_digest} => {
+                let (parents, _) =
+                    Box::pin(super::memory_appraisal::direct_roots(tx, owner, *id)).await?;
+                if !parents.iter().all(|root| lease.dependencies.contains(root)) {
+                    return Err(revoked("memory evidence omitted canonical ancestors"));
+                }
+            }
+            ContextEvidence::MemorySourceMessage {
+                id,
+                source_privacy_epoch,
+                content_digest,
+            } => {
+                let row=tx.query_one(stmt("SELECT m.content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND s.creator_id=$2 AND m.user_id=$2 AND m.role='user' AND m.source_privacy_epoch=$3 AND m.source_received_at IS NOT NULL FOR SHARE OF m",vec![(*id).into(),owner.to_string().into(),(*source_privacy_epoch).into()])).await?.ok_or_else(||revoked("committed memory source fact changed"))?;
+                if digest(&json!(row.try_get::<String>("", "content")?))? != *content_digest {
+                    return Err(revoked("committed memory source content changed"));
+                }
+            }
+            ContextEvidence::UserMessage {
+                id,
+                session_id,
+                source_privacy_epoch,
+                content_digest,
+            } => {
                 let row=tx.query_one(stmt("SELECT m.content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND m.session_id=$2 AND s.creator_id=$3 AND m.user_id=$3 AND m.role='user' AND m.source_privacy_epoch=$4 AND m.source_received_at IS NOT NULL FOR SHARE OF m",vec![(*id).into(),(*session_id).into(),owner.to_string().into(),(*source_privacy_epoch).into()])).await?.ok_or_else(||revoked("user history source is missing"))?;
-                if *source_privacy_epoch!=lease.source.source_privacy_epoch || digest(&json!(row.try_get::<String>("", "content")?))? != *content_digest { return Err(revoked("user history source changed")); }
-            },
-            ContextEvidence::DerivedMessage{id,response_id,context_id,content_digest} => {
+                if *source_privacy_epoch != lease.source.source_privacy_epoch
+                    || digest(&json!(row.try_get::<String>("", "content")?))? != *content_digest
+                {
+                    return Err(revoked("user history source changed"));
+                }
+            }
+            ContextEvidence::DerivedMessage {
+                id,
+                response_id,
+                context_id,
+                content_digest,
+            } => {
                 let row=tx.query_one(stmt("SELECT m.content,r.final_content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id JOIN delivery_responses r ON r.assistant_message_id=m.id WHERE m.id=$1 AND r.response_id=$2 AND r.context_id=$3 AND r.user_id=$4 AND s.creator_id=$5 AND r.conversation_id=m.session_id AND r.status='committed' AND m.role='assistant' FOR SHARE OF m",vec![(*id).into(),(*response_id).into(),(*context_id).into(),owner.into(),owner.to_string().into()])).await?.ok_or_else(||revoked("derived history source is unavailable"))?;
-                let content:String=row.try_get("", "content")?;
-                if digest(&json!(content))? != *content_digest || row.try_get::<Value>("", "final_content")?.get("text").and_then(Value::as_str)!=Some(content.as_str()) { return Err(revoked("derived history content changed")); }
-                validate_parent_header(tx,lease,*context_id).await?;
-            },
-            ContextEvidence::Graph{edge_id,projection_digest} => {
-                let (projection,_,_)=graph_projection(tx,owner,*edge_id).await?.ok_or_else(||revoked("graph evidence disappeared"))?;
-                if digest(&projection)?!=*projection_digest { return Err(revoked("graph projection changed")); }
-            },
-            ContextEvidence::Cache{id,revision,context_id,scope,query_digest,content_digest} => {
-                let cache=cache_projection(tx,owner,*id).await?.ok_or_else(||revoked("cache evidence disappeared"))?;
-                if cache.revision!=*revision || cache.context_id!=*context_id || cache.scope!=*scope || cache.query_digest!=*query_digest || cache.content_digest!=*content_digest { return Err(revoked("cache version changed")); }
-                validate_parent_header(tx,lease,*context_id).await?;
-            },
-            ContextEvidence::Execution{effect_id,intent_digest,completion_digest} => {
-                let projection=execution_projection(tx,owner,*effect_id).await?.ok_or_else(||revoked("execution result is unavailable"))?;
-                if projection["intent_digest"].as_str()!=Some(intent_digest.as_str()) || digest(&projection)?!=*completion_digest { return Err(revoked("execution evidence changed")); }
-                let parent=projection["context_id"].as_str().and_then(|value|Uuid::parse_str(value).ok()).ok_or_else(||revoked("execution source context missing"))?;
-                validate_parent_header(tx,lease,parent).await?;
-            },
+                let content: String = row.try_get("", "content")?;
+                if digest(&json!(content))? != *content_digest
+                    || row
+                        .try_get::<Value>("", "final_content")?
+                        .get("text")
+                        .and_then(Value::as_str)
+                        != Some(content.as_str())
+                {
+                    return Err(revoked("derived history content changed"));
+                }
+                validate_parent_header(tx, lease, *context_id).await?;
+            }
+            ContextEvidence::Graph {
+                edge_id,
+                projection_digest,
+            } => {
+                let (projection, _, _) = graph_projection(tx, owner, *edge_id)
+                    .await?
+                    .ok_or_else(|| revoked("graph evidence disappeared"))?;
+                if digest(&projection)? != *projection_digest {
+                    return Err(revoked("graph projection changed"));
+                }
+            }
+            ContextEvidence::Cache {
+                id,
+                revision,
+                context_id,
+                scope,
+                query_digest,
+                content_digest,
+            } => {
+                let cache = cache_projection(tx, owner, *id)
+                    .await?
+                    .ok_or_else(|| revoked("cache evidence disappeared"))?;
+                if cache.revision != *revision
+                    || cache.context_id != *context_id
+                    || cache.scope != *scope
+                    || cache.query_digest != *query_digest
+                    || cache.content_digest != *content_digest
+                {
+                    return Err(revoked("cache version changed"));
+                }
+                validate_parent_header(tx, lease, *context_id).await?;
+            }
+            ContextEvidence::Execution {
+                effect_id,
+                intent_digest,
+                completion_digest,
+            } => {
+                let projection = execution_projection(tx, owner, *effect_id)
+                    .await?
+                    .ok_or_else(|| revoked("execution result is unavailable"))?;
+                if projection["intent_digest"].as_str() != Some(intent_digest.as_str())
+                    || digest(&projection)? != *completion_digest
+                {
+                    return Err(revoked("execution evidence changed"));
+                }
+                let parent = projection["context_id"]
+                    .as_str()
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .ok_or_else(|| revoked("execution source context missing"))?;
+                validate_parent_header(tx, lease, parent).await?;
+            }
         }
     }
     Ok(())
 }
-async fn validate_parent_header(
+pub(crate) async fn validate_parent_header(
     tx: &DatabaseTransaction,
     current: &ContextLease,
     id: Uuid,
 ) -> ContextResult<()> {
+    validate_parent_header_inner(tx, current, id, false).await
+}
+pub(crate) async fn validate_appraisal_parent_header(
+    tx: &DatabaseTransaction,
+    current: &ContextLease,
+    id: Uuid,
+) -> ContextResult<()> {
+    validate_parent_header_inner(tx, current, id, true).await
+}
+async fn validate_parent_header_inner(
+    tx: &DatabaseTransaction,
+    current: &ContextLease,
+    id: Uuid,
+    appraisal: bool,
+) -> ContextResult<()> {
     let parent = load(tx, current.source.owner_id, id).await?;
     if parent.policy_version != current.policy_version
         || parent.source.source_privacy_epoch != current.source.source_privacy_epoch
-        || parent.purpose != ContextPurpose::Generation
+        || !(parent.purpose == ContextPurpose::Generation
+            || (appraisal && parent.purpose == ContextPurpose::AppraisalRebuild))
     {
         return Err(revoked("derived context policy or epoch changed"));
     }
@@ -351,7 +480,7 @@ pub(crate) async fn graph_projection(
     owner: Uuid,
     edge: Uuid,
 ) -> ContextResult<Option<(Value, Vec<ContextEvidence>, Option<DateTime<Utc>>)>> {
-    let row=tx.query_one(stmt("SELECT e.id,e.evidence_memory_id,e.source_revision,e.valid_to,src.id AS src_id,src.label AS source,src.properties AS src_properties,dst.id AS dst_id,dst.label AS target,dst.properties AS dst_properties,e.relation,e.confidence,m.expires_at FROM memory_live_edges e JOIN memory_nodes src ON src.id=e.src_node_id AND src.user_id=e.user_id AND src.tenant_id=e.tenant_id JOIN memory_nodes dst ON dst.id=e.dst_node_id AND dst.user_id=e.user_id AND dst.tenant_id=e.tenant_id JOIN memory_items m ON m.id=e.evidence_memory_id WHERE e.id=$1 AND e.user_id=$2 AND e.tenant_id=$3",vec![edge.into(),owner.into(),Uuid::nil().into()])).await?;
+    let row=tx.query_one(stmt("SELECT e.id,e.evidence_memory_id,e.source_revision,e.valid_to,src.id AS src_id,src.label AS source,src.node_type AS source_type,src.properties AS src_properties,dst.id AS dst_id,dst.label AS target,dst.node_type AS target_type,dst.properties AS dst_properties,e.relation,e.weight,e.confidence,m.expires_at FROM memory_live_edges e JOIN memory_nodes src ON src.id=e.src_node_id AND src.user_id=e.user_id AND src.tenant_id=e.tenant_id JOIN memory_nodes dst ON dst.id=e.dst_node_id AND dst.user_id=e.user_id AND dst.tenant_id=e.tenant_id JOIN memory_items m ON m.id=e.evidence_memory_id WHERE e.id=$1 AND e.user_id=$2 AND e.tenant_id=$3",vec![edge.into(),owner.into(),Uuid::nil().into()])).await?;
     let Some(row) = row else {
         return Ok(None);
     };
@@ -376,7 +505,18 @@ pub(crate) async fn graph_projection(
             expiry = earliest(expiry, memory.try_get("", "expires_at")?);
         }
     }
-    let projection = json!({"edge_id":edge,"source_id":row.try_get::<Uuid>("", "src_id")?,"target_id":row.try_get::<Uuid>("", "dst_id")?,"source":row.try_get::<String>("", "source")?,"target":row.try_get::<String>("", "target")?,"relation":row.try_get::<String>("", "relation")?,"confidence":row.try_get::<f32>("", "confidence")?,"source_memory":src.get("memory_id"),"target_memory":dst.get("memory_id"),"roots":roots,"valid_to":row.try_get::<Option<DateTime<Utc>>>("", "valid_to")?});
+    let originals = roots.clone();
+    for root in originals {
+        if let ContextEvidence::Memory { id, revision } = root {
+            let (expanded, until) = Box::pin(super::memory_appraisal::memory_source_roots(
+                tx, owner, id, revision,
+            ))
+            .await?;
+            merge(&mut roots, &expanded)?;
+            expiry = earliest(expiry, until);
+        }
+    }
+    let projection = json!({"edge_id":edge,"source_id":row.try_get::<Uuid>("", "src_id")?,"target_id":row.try_get::<Uuid>("", "dst_id")?,"source":row.try_get::<String>("", "source")?,"target":row.try_get::<String>("", "target")?,"source_type":row.try_get::<String>("", "source_type")?,"target_type":row.try_get::<String>("", "target_type")?,"relation":row.try_get::<String>("", "relation")?,"weight":row.try_get::<f32>("", "weight")?,"confidence":row.try_get::<f32>("", "confidence")?,"source_memory":src.get("memory_id"),"target_memory":dst.get("memory_id"),"roots":roots,"valid_to":row.try_get::<Option<DateTime<Utc>>>("", "valid_to")?});
     Ok(Some((projection, roots, expiry)))
 }
 /// Bound each expansion and the whole walk. A small root set must not launch

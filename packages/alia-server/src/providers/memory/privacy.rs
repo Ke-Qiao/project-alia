@@ -39,9 +39,12 @@ pub(super) async fn lock_user(
     .await?;
     let row = tx.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "SELECT privacy_epoch,source_cutoff_at,clock_timestamp() AS observed_at FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE", [user.into()])).await?.ok_or_else(|| anyhow::anyhow!("memory privacy state missing"))?;
+    let relationship_epoch =
+        crate::modules::memory::source::lock_relationship_epoch(tx, user).await?;
     Ok(MemoryWriteContext {
         user_id: user,
         privacy_epoch: row.try_get("", "privacy_epoch")?,
+        relationship_epoch: Some(relationship_epoch),
         policy_version: Some(policy.version),
         context_id: None,
         origin: MemoryWriteOrigin::Manual,
@@ -205,6 +208,7 @@ pub(super) async fn erase(
 
 pub(super) fn initial_context(user: Uuid) -> MemoryWriteContext {
     MemoryWriteContext {
+        relationship_epoch: None,
         user_id: user,
         privacy_epoch: 0,
         policy_version: None,

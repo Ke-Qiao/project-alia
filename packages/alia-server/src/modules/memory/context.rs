@@ -1,6 +1,17 @@
 //! PostgreSQL-owned, immutable provenance for actual materialized model inputs.
 //! No adapter snapshot or in-memory fixture can manufacture a persistent lease.
 mod capture;
+mod rebuild;
+mod relationship;
+pub use rebuild::AppraisalRebuildPage;
+pub use relationship::RelationshipClearReceipt;
+pub(crate) mod appraisal;
+mod appraisal_policy;
+pub(crate) mod memory_appraisal;
+pub use appraisal::{AffectProjection, AppraisalFact, AppraisalInput, AppraisalReceipt};
+pub use appraisal_policy::{
+    AFFECT_REDUCER_VERSION, APPRAISAL_INTERPRETER_VERSION, AppraisalPolicy,
+};
 mod materialize;
 pub mod policy;
 mod repository;
@@ -39,7 +50,7 @@ impl ContextService {
         binding: &ContextBinding,
         purpose: ContextUse,
     ) -> ContextResult<ValidatedContext> {
-        repository::validate_binding(tx, binding, purpose).await
+        Box::pin(repository::validate_binding(tx, binding, purpose)).await
     }
     /// Recheck a frozen binding before a new model phase. Writes must use the
     /// transaction variant so validation and their side effect commit together.
@@ -63,7 +74,7 @@ impl ContextService {
         id: uuid::Uuid,
         purpose: ContextUse,
     ) -> ContextResult<ValidatedContext> {
-        repository::validate_lease(tx, owner, id, purpose).await
+        Box::pin(repository::validate_lease(tx, owner, id, purpose)).await
     }
 }
 

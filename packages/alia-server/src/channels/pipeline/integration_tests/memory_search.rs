@@ -66,6 +66,7 @@ async fn search_turn(fixture: &Fixture) -> VoiceTurn {
     let mut turn = VoiceTurn::request(CancellationToken::new());
     turn.output_channel = Some(fixture.output.clone());
     turn.source_privacy_epoch = Some(41);
+    turn.source_relationship_epoch = Some(0);
     ensure_turn_context(
         &fixture.modules,
         &turn,
@@ -172,6 +173,11 @@ async fn successful_memory_search_reads_canonical_sql_with_limits_and_retains_pr
         );
         let canonical = &first.output["execution"];
         assert_eq!(canonical["status"], "succeeded");
+        let effect_id=Uuid::parse_str(canonical["effect_id"].as_str().unwrap()).unwrap();
+        let prepared=fixture.modules.context.prepare_execution_appraisal(&initial.lease().binding(),effect_id).await.unwrap();
+        assert_eq!(prepared.text(),"succeeded");
+        assert!(first_material.lease().dependencies().iter().any(|root|
+            matches!(root,crate::modules::memory::context::ContextEvidence::Appraisal{id,..} if *id==prepared.id())));
         assert!(!canonical["completion"].to_string().contains("Blueberry"));
         assert_eq!(
             canonical["completion"]["receipt"]["output"],
@@ -282,6 +288,30 @@ async fn memory_search_confirmation_exposes_only_pending_execution_fact() {
 }
 
 #[tokio::test]
+async fn terminal_execution_appraisal_rejects_foreign_source_and_late_fact_change() {
+    with_search_fixture(|fixture,tools|async move {
+        let turn=search_turn(&fixture).await;
+        let original=turn.generation_context().await.unwrap();
+        let result=invoke_search(&fixture,&turn,&tools,"0:0",json!({"query":"empty"})).await.unwrap();
+        let id=Uuid::parse_str(result.output["execution"]["effect_id"].as_str().unwrap()).unwrap();
+        let input=fixture.modules.context.prepare_execution_appraisal(&original.lease().binding(),id).await.unwrap();
+        let first=fixture.modules.expression.observe_execution_completion(&fixture.modules.context,&original.lease().binding(),id).await.unwrap();
+        let replay=fixture.modules.expression.observe_execution_completion(&fixture.modules.context,&original.lease().binding(),id).await.unwrap();
+        assert_eq!(first.appraisal_id,replay.appraisal_id);
+        let projected=turn.generation_context().await.unwrap();
+        let other=search_turn(&fixture).await;
+        assert!(fixture.modules.context.prepare_execution_appraisal(&other.context_binding().await.unwrap(),id).await.is_err());
+        fixture.conversation.db.as_ref().unwrap().execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE execution_effects SET completion=jsonb_build_object('status','succeeded','receipt',jsonb_build_object('changed',true)) WHERE effect_id=$1",
+            [id.into()],
+        )).await.unwrap();
+        assert!(fixture.modules.expression.submit_appraisal(input,vec![]).await.is_err());
+        assert!(fixture.modules.context.validate(&projected.lease().binding(),ContextUse::OutputAdmission).await.is_err());
+    }).await;
+}
+
+#[tokio::test]
 async fn response_freeze_prevents_even_authorized_memory_search_dispatch() {
     with_search_fixture(|fixture, tools| async move {
         let turn = search_turn(&fixture).await;
@@ -296,13 +326,14 @@ async fn response_freeze_prevents_even_authorized_memory_search_dispatch() {
         )
         .await
         .unwrap();
+        let frozen = turn.context_binding().await.unwrap();
         let result =
             invoke_search(&fixture, &turn, &tools, "0:0", json!({"query":"Blueberry"})).await;
         assert!(result.unwrap_err().to_string().contains("frozen"));
         assert_eq!(effect_count(&fixture).await, 0);
         assert_eq!(
             turn.context_binding().await.unwrap().context_id,
-            initial.lease().id()
+            frozen.context_id
         );
     })
     .await;

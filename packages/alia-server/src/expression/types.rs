@@ -70,6 +70,8 @@ pub struct AffectSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelationshipProfile {
+    #[serde(default)]
+    pub relationship_epoch: i64,
     pub user_id: String,
     pub trust: f32,
     pub familiarity: f32,

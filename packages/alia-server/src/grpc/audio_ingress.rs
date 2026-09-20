@@ -18,6 +18,7 @@ const CHANNEL_ID_METADATA: &str = "x-alia-channel-id";
 pub(crate) struct AdmittedSource {
     pub user_id: uuid::Uuid,
     pub privacy_epoch: i64,
+    pub relationship_epoch: i64,
     channel: Arc<dyn ChannelAdapter>,
 }
 
@@ -59,10 +60,11 @@ impl ServerAudioIngressService {
             .await
             .ok_or_else(|| Status::failed_precondition("channel is no longer available"))?;
         let user_id = verified_owner(channel.as_ref()).await?;
-        let privacy_epoch = source_epoch(channel.as_ref()).await?;
+        let epochs = source_epochs(channel.as_ref()).await?;
         Ok(AdmittedSource {
             user_id,
-            privacy_epoch,
+            privacy_epoch: epochs.privacy_epoch,
+            relationship_epoch: epochs.relationship_epoch,
             channel,
         })
     }
@@ -83,9 +85,15 @@ impl ServerAudioIngressService {
         if verified_owner(channel.as_ref()).await? != source.user_id {
             return Err(Status::permission_denied("source account changed"));
         }
-        if source_epoch(channel.as_ref()).await? != source.privacy_epoch {
+        let current = source_epochs(channel.as_ref()).await?;
+        if current.privacy_epoch != source.privacy_epoch {
             return Err(Status::permission_denied(
                 "source privacy epoch changed; open a new source",
+            ));
+        }
+        if current.relationship_epoch != source.relationship_epoch {
+            return Err(Status::permission_denied(
+                "source relationship epoch changed; open a new source",
             ));
         }
         Ok(())
@@ -176,10 +184,12 @@ async fn verified_owner(channel: &dyn ChannelAdapter) -> Result<uuid::Uuid, Stat
     Ok(verified)
 }
 
-async fn source_epoch(channel: &dyn ChannelAdapter) -> Result<i64, Status> {
+async fn source_epochs(
+    channel: &dyn ChannelAdapter,
+) -> Result<crate::modules::memory::source::SourceEpochs, Status> {
     let epoch = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        channel.authenticated_source_epoch(),
+        channel.authenticated_source_epochs(),
     )
     .await
     .map_err(|_| Status::unavailable("source admission deadline"))?
@@ -187,8 +197,13 @@ async fn source_epoch(channel: &dyn ChannelAdapter) -> Result<i64, Status> {
         tracing::warn!(channel_id = channel.channel_id(), %error, "source admission failed");
         Status::unavailable("source admission failed")
     })?;
-    if epoch < 0 {
+    if epoch.privacy_epoch < 0 {
         return Err(Status::failed_precondition("invalid source privacy epoch"));
+    }
+    if epoch.relationship_epoch < 0 {
+        return Err(Status::failed_precondition(
+            "invalid source relationship epoch",
+        ));
     }
     Ok(epoch)
 }
@@ -261,6 +276,7 @@ impl ServerAudioIngress for ServerAudioIngressService {
                 user_id: source.user_id.to_string(),
                 source_received_at,
                 source_privacy_epoch: source.privacy_epoch,
+                source_relationship_epoch: source.relationship_epoch,
                 audio: AudioPayload {
                     data: audio.as_bytes().to_vec(),
                     sample_rate: 16_000,

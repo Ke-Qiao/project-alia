@@ -53,8 +53,14 @@ impl ModuleLifecycle for TestChannel {
 
 #[async_trait]
 impl ChannelAdapter for TestChannel {
-    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
-        Ok(0) // Explicit test authority; this smoke does not exercise a database.
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<alia_server::modules::memory::source::SourceEpochs> {
+        // Explicit test authority; this smoke does not exercise a database.
+        Ok(alia_server::modules::memory::source::SourceEpochs {
+            privacy_epoch: 0,
+            relationship_epoch: 0,
+        })
     }
 
     async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {

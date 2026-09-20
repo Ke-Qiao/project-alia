@@ -9,14 +9,14 @@ use super::abi::{
     ExpressionPluginRequest, ExpressionPluginResponse, ExternalExpressionPlugin,
     external_draft_to_appraisal,
 };
-use super::affect::{AppraisalEvent, filter_appraisals};
+use super::affect::AppraisalEvent;
 use super::appraisal::{AppraisalContext, AppraisalEnginePlugin};
 use super::types::{
     AffectSnapshot, ExpressionInput, ExpressionIntent, ExpressionPlan,
     ExpressionSafetyModification, ExpressiveStance,
 };
 
-/// Context passed to reducer plugins when a runtime snapshot is assembled.
+/// Legacy reducer shape retained so registration can report a clear migration error.
 pub struct AffectReducerContext<'a> {
     pub channel_id: &'a str,
     pub user_id: &'a str,
@@ -30,7 +30,7 @@ pub struct ExpressionPlanningContext<'a> {
     pub stance: &'a ExpressiveStance,
 }
 
-/// Extension point for components that want to contribute affect/social state.
+/// Legacy interface: runtime/registry registration rejects mutable reducers.
 ///
 /// Reducers should only adjust the provided snapshot. They must not execute
 /// hardware actions or call LLMs; expensive interpretation belongs before this
@@ -84,7 +84,6 @@ pub struct ExpressionExtensionSummary {
 pub struct ExpressionExtensionRegistry {
     external_plugins: RwLock<BTreeMap<String, Arc<dyn ExternalExpressionPlugin>>>,
     appraisal_engines: RwLock<BTreeMap<String, Arc<dyn AppraisalEnginePlugin>>>,
-    reducers: RwLock<BTreeMap<String, Arc<dyn AffectReducerPlugin>>>,
     planners: RwLock<BTreeMap<String, Arc<dyn ExpressionPlannerPlugin>>>,
     safety_policies: RwLock<BTreeMap<String, Arc<dyn ExpressionSafetyPolicyPlugin>>>,
 }
@@ -148,25 +147,16 @@ impl ExpressionExtensionRegistry {
         engines.remove(name).is_some()
     }
 
-    pub fn register_reducer(&self, plugin: Arc<dyn AffectReducerPlugin>) -> anyhow::Result<()> {
-        let name = normalized_name(plugin.name())?;
-        let mut reducers = self
-            .reducers
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if reducers.contains_key(&name) {
-            anyhow::bail!("expression reducer '{name}' is already registered");
-        }
-        reducers.insert(name, plugin);
-        Ok(())
+    /// Legacy snapshot mutation is closed. Draft interpreters must carry an
+    /// implementation pin and pass the canonical Appraisal input/write gates.
+    pub fn register_reducer(&self, _plugin: Arc<dyn AffectReducerPlugin>) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "mutable affect reducers must migrate to versioned canonical appraisal drafts"
+        )
     }
 
-    pub fn unregister_reducer(&self, name: &str) -> bool {
-        let mut reducers = self
-            .reducers
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        reducers.remove(name).is_some()
+    pub fn unregister_reducer(&self, _name: &str) -> bool {
+        false
     }
 
     pub fn register_planner(&self, plugin: Arc<dyn ExpressionPlannerPlugin>) -> anyhow::Result<()> {
@@ -218,109 +208,97 @@ impl ExpressionExtensionRegistry {
         ExpressionExtensionSummary {
             external_plugins: keys(&self.external_plugins),
             appraisal_engines: keys(&self.appraisal_engines),
-            reducers: keys(&self.reducers),
+            reducers: Vec::new(),
             planners: keys(&self.planners),
             safety_policies: keys(&self.safety_policies),
         }
     }
 
-    pub(crate) async fn appraise_user_input(
+    pub(crate) async fn appraise_verified_user_input(
         &self,
         ctx: &AppraisalContext<'_>,
+        approved: &BTreeMap<String, String>,
         external_timeout: Duration,
-    ) -> Vec<AppraisalEvent> {
+    ) -> anyhow::Result<Vec<AppraisalEvent>> {
         let mut events = Vec::new();
         for engine in values(&self.appraisal_engines) {
-            match engine.appraise_user_input(ctx).await {
-                Ok(mut appraisals) => events.append(&mut appraisals),
-                Err(error) => tracing::warn!(
-                    plugin = engine.name(),
-                    error = ?error,
-                    "appraisal engine failed; keeping other appraisal events"
-                ),
+            // This builtin is reconstructed from the persistent policy by the
+            // runtime; never use the registration's possibly stale lexicons.
+            if engine.name() == "text_classifier_appraisal" {
+                continue;
             }
+            let pin = engine.provenance_pin().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "appraisal engine {} has no implementation pin",
+                    engine.name()
+                )
+            })?;
+            anyhow::ensure!(
+                approved.get(engine.name()) == Some(&pin),
+                "appraisal engine is not approved by persistent policy"
+            );
+            let drafts = engine.appraise_user_input(ctx).await?;
+            anyhow::ensure!(
+                engine.provenance_pin().as_ref() == Some(&pin),
+                "appraisal engine changed during interpretation"
+            );
+            anyhow::ensure!(
+                events.len() + drafts.len() <= 64,
+                "appraisal engine exceeded event budget"
+            );
+            events.extend(drafts);
         }
         for plugin in values(&self.external_plugins) {
+            anyhow::ensure!(
+                !plugin.manifest().capabilities.affect_reducer,
+                "external snapshot replacement is not a canonical reducer"
+            );
             if !plugin.manifest().capabilities.appraisal_engine {
                 continue;
             }
-            let response = call_external_plugin(
+            let pin = plugin.provenance_pin().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "external appraisal engine {} has no implementation pin",
+                    plugin.name()
+                )
+            })?;
+            anyhow::ensure!(
+                approved.get(plugin.name()) == Some(&pin),
+                "external appraisal engine is not approved by persistent policy"
+            );
+            anyhow::ensure!(
+                plugin.manifest().cancel_on_timeout && !plugin.manifest().trace_stderr,
+                "private appraisal requires supervised cancellation and no raw stderr trace"
+            );
+            let result = call_external_plugin(
                 &plugin,
                 ExpressionPluginRequest::AppraiseUserInput {
                     context: ctx.into(),
                 },
                 external_timeout,
             )
-            .await;
-            match response {
-                Ok(ExpressionPluginResponse::AppraisalEvents { events: drafts }) => {
+            .await?;
+            anyhow::ensure!(
+                plugin.provenance_pin().as_ref() == Some(&pin),
+                "external appraisal engine changed during interpretation"
+            );
+            match result {
+                ExpressionPluginResponse::AppraisalEvents { events: drafts } => {
+                    anyhow::ensure!(
+                        events.len() + drafts.len() <= 64,
+                        "external appraisal exceeded event budget"
+                    );
                     events.extend(
                         drafts
                             .into_iter()
                             .map(|draft| external_draft_to_appraisal(draft, ctx.now, ctx.policy)),
                     );
                 }
-                Ok(ExpressionPluginResponse::Noop) => {}
-                Ok(other) => tracing::warn!(
-                    plugin = plugin.name(),
-                    response = ?other,
-                    "external appraisal plugin returned unexpected response"
-                ),
-                Err(error) => tracing::warn!(
-                    plugin = plugin.name(),
-                    error = ?error,
-                    "external appraisal plugin failed; keeping other appraisal events"
-                ),
+                ExpressionPluginResponse::Noop => (),
+                _ => anyhow::bail!("external appraisal returned an invalid response kind"),
             }
         }
-        filter_appraisals(events, ctx.policy)
-    }
-
-    pub(crate) async fn apply_reducers(
-        &self,
-        ctx: &AffectReducerContext<'_>,
-        snapshot: &mut AffectSnapshot,
-        external_timeout: Duration,
-    ) {
-        for reducer in values(&self.reducers) {
-            if let Err(error) = reducer.reduce(ctx, snapshot) {
-                tracing::warn!(
-                    plugin = reducer.name(),
-                    error = ?error,
-                    "expression reducer failed; keeping built-in affect snapshot"
-                );
-            }
-        }
-        for plugin in values(&self.external_plugins) {
-            if !plugin.manifest().capabilities.affect_reducer {
-                continue;
-            }
-            let response = call_external_plugin(
-                &plugin,
-                ExpressionPluginRequest::ReduceAffect {
-                    context: ctx.into(),
-                    snapshot: snapshot.clone(),
-                },
-                external_timeout,
-            )
-            .await;
-            match response {
-                Ok(ExpressionPluginResponse::AffectSnapshot { snapshot: reduced }) => {
-                    *snapshot = reduced
-                }
-                Ok(ExpressionPluginResponse::Noop) => {}
-                Ok(other) => tracing::warn!(
-                    plugin = plugin.name(),
-                    response = ?other,
-                    "external affect reducer returned unexpected response"
-                ),
-                Err(error) => tracing::warn!(
-                    plugin = plugin.name(),
-                    error = ?error,
-                    "external affect reducer failed; keeping current affect snapshot"
-                ),
-            }
-        }
+        Ok(events)
     }
 
     pub(crate) async fn apply_intent_planners(

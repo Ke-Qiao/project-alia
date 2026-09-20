@@ -25,6 +25,11 @@ pub struct AppraisalContext<'a> {
 #[async_trait]
 pub trait AppraisalEnginePlugin: Send + Sync {
     fn name(&self) -> &str;
+    /// Pin the actual implementation and private configuration. Unversioned
+    /// extensions may be used in isolated evaluations, never canonical writes.
+    fn provenance_pin(&self) -> Option<String> {
+        None
+    }
 
     async fn appraise_user_input(
         &self,

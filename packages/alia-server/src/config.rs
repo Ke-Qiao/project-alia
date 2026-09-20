@@ -849,7 +849,7 @@ impl Default for RegulationPolicySection {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, PartialEq)]
 pub struct AffectPolicySection {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -1260,7 +1260,7 @@ pub struct ResourcesSection {
     pub dialogue_policy: DialoguePolicyResourceSection,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, serde::Serialize, PartialEq)]
 pub struct AppraisalLexiconSection {
     #[serde(default)]
     pub metadata: LexiconMetadataSection,
@@ -1278,7 +1278,7 @@ pub struct AppraisalLexiconSection {
     pub minimal_expression: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, serde::Serialize, PartialEq)]
 pub struct LexiconMetadataSection {
     #[serde(default)]
     pub source_name: Option<String>,

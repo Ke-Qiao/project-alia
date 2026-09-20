@@ -41,6 +41,12 @@ mod body;
 #[path = "server_runtime/context_policy.rs"]
 mod context_policy;
 
+#[path = "server_runtime/relationship_api.rs"]
+mod relationship_api;
+
+#[path = "server_runtime/relationship_rebuild.rs"]
+mod relationship_rebuild;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,

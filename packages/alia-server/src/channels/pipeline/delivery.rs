@@ -25,6 +25,7 @@ pub(super) async fn prepare_response(
     if let Some(id) = turn.response_id.get() {
         return Ok(*id);
     }
+    Box::pin(super::project_turn_affect(modules, &mut state)).await?;
     let lease = state.lease()?.clone();
     let source = lease.source();
     anyhow::ensure!(

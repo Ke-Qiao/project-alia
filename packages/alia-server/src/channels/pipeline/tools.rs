@@ -1174,6 +1174,20 @@ pub(super) async fn execute_pipeline_tool_call(
     );
     let status = canonical.get("status").and_then(serde_json::Value::as_str);
     let success = status == Some("succeeded");
+    if original.policy().appraisal.affect.enabled
+        && matches!(
+            status,
+            Some("succeeded" | "failed" | "unknown" | "cancelled")
+        )
+    {
+        Box::pin(modules.expression.observe_execution_completion(
+            &modules.context,
+            &original.lease().binding(),
+            effect_id,
+        ))
+        .await?;
+        state.affect_dirty = true;
+    }
     if success && call.tool_name == "memory_search" && tool.source == "builtin" {
         anyhow::ensure!(
             canonical["completion"]["status"] == "succeeded"
@@ -1197,6 +1211,7 @@ pub(super) async fn execute_pipeline_tool_call(
             display: None,
         };
         state.generation = Some(extended);
+        Box::pin(super::project_turn_affect(modules, &mut state)).await?;
         return Ok(result);
     }
     let display = match status {
@@ -1210,6 +1225,7 @@ pub(super) async fn execute_pipeline_tool_call(
         _ => "Execution outcome is unknown; inspect its record before any retry.",
     };
     state.generation = Some(extended);
+    Box::pin(super::project_turn_affect(modules, &mut state)).await?;
     Ok(ToolResult {
         call_id: call.id.clone(),
         success,

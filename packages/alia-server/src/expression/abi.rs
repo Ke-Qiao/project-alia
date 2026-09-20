@@ -25,6 +25,9 @@ pub const EXPRESSION_PLUGIN_ABI_VERSION: u32 = 1;
 #[async_trait]
 pub trait ExternalExpressionPlugin: Send + Sync {
     fn manifest(&self) -> &ExpressionPluginManifest;
+    fn provenance_pin(&self) -> Option<String> {
+        None
+    }
 
     async fn call(
         &self,
