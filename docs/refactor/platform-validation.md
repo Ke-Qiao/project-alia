@@ -1,6 +1,37 @@
 # 隔离平台验证
 
-更新：2026-09-20。最新定向平台验证覆盖音频参考包 `5467e8b` 的固定构建输入；下方分别保留 Context 固定提交、夹具修正候选与更早历史结果。不把正在修改的工作区当作已验证源码。
+更新：2026-09-20。最新完整 Server 平台验证覆盖 Appraisal 主分支整合的冻结输入；音频参考包 `5467e8b`、Context 固定提交、夹具修正候选与更早历史结果分别保留。不把正在修改的工作区当作已验证源码。
+
+## Appraisal 整合：macOS 与 Linux ARM64
+
+最终提交候选共 584 个构建输入，SHA-256 manifest 为 `208f11edb3ba7c75e7b3e7acd1042ff002e0c7d150f092d7b495d746c3394cc3`；Cargo.lock 仍为 `0736653b5c57a936dc71d2b18a82b927536acb7bb8c49341f845717c87fde2a2`。Linux 在独立只读快照、私有 target 和固定 ARM64 Rust 镜像中执行，源码与锁文件验证后无漂移。镜像 digest 为 `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1`，实际平台为 Rust 1.95.0 / Debian / `aarch64-unknown-linux-gnu`，原生 protobuf 3.21.12。真实 PostgreSQL 17.10 使用本任务隔离库，未访问用户 `alia-postgres`。
+
+| 最终 Linux 候选检查 | 实际结果 |
+| --- | --- |
+| Server 默认所有目标编译 | exit 0 |
+| Server 无默认特性所有目标编译 | exit 0 |
+| 默认全部测试二进制构建/链接，构建并发 `-j2` | exit 0 |
+| 默认 Server 库测试 | 216 通过、3 显式跳过 |
+| 全部 45 个 Server 集成目标 | 421 通过、2 显式跳过 |
+
+最终默认测试命令退出 0，约 172 秒，共 **637 个不同测试通过、0 失败、5 跳过**；库中子进程重复项不增加计数。测试运行使用默认并发，没有调整业务或测试期限。5 项需要真实 PTY/模型的测试在 macOS 单独执行通过，未把它们记成 Linux 已执行。
+
+macOS 完整 workspace 候选 `7c1c2e8048e6539ccc555480d3753ba6e0694642043e77acf55f9c6af3c2f9a6` 取得 859 通过、0 失败、5 跳过，之后另跑 PTY 3 项和实际 CPU 模型 2 项通过。最终候选仅将一个 Pipeline 测试夹具的真实构建身份初始化移出行为计时，受影响的默认 Server lib 216/216 重新通过；66 个变更 Rust 文件格式检查和两端无默认特性 all-targets 检查通过。各个 manifest、源码差异和运行后校验分别保存，不将不同候选拼成同一次整包运行。macOS 原始证据为 `run/validation-20260920/appraisal-integration/`。
+
+Linux 原始候选和诊断均保留于 `run/validation-20260920/appraisal-linux/`：
+
+| 候选 | 默认完整测试结果与原因 |
+| --- | --- |
+| `b8a69cf8…` | 632 通过、4 失败、5 跳过。Context 两项为 PostgreSQL 共享锁容量不足；一项 panic 生命周期测试被额外开启的 backtrace 符号化拖过断言窗口；一项 Pipeline 夹具将首次实际 executable 摘要准备计入 15 秒期限 |
+| `01c134af…` | 仅含清除接口原操作身份修复；默认/无默认 check 和全测试二进制构建通过，没有运行 PG 测试 |
+| `7c1c2e80…` | 636 通过、1 失败、5 跳过。Context 夹具并发预算修复后 26/26 通过；去掉额外 backtrace 后生命周期通过；Pipeline 初始身份准备仍可独立复现超时 |
+| `208f11ed…` | 637 通过、0 失败、5 跳过；全部默认 Server 目标运行完成 |
+
+首次编译还曾由默认高并发触发两次 cgroup OOM kill，发生在测试运行之前；原 exit 101 与内存事件保留。随后仅将构建/链接并发设为 `-j2`，测试本身仍默认并发。Context 夹具将完整 schema 从创建到清理限制为 4 个并行，用例内部 SQL 竞争及 45 秒期限未变。
+
+Pipeline 诊断在同一 ELF、无 backtrace、独占测试数据库时仍失败。`/proc` 中实际 executable 读取位置连续约 14.2 秒从 3,342,336 增至 413,597,696 字节，文件共 415,129,944 字节；对应现有 `ExecutionService::new → build_digest` 的真实 SHA-256 初始化。最终修正使用同一真实入口完成夹具准备，没有伪造构建身份或延长 15 秒行为期限。最终测试无新 schema/连接残留；此前本任务失败留下的已确认 schema 单独清理，不改其他基线测试数据。全部候选容器按任务身份清理，源快照和证据保留。
+
+以上覆盖已实现的 Server 来源、投影、执行与投递契约，不证明可恢复暂停的网络启用、Pi 音频呈现、AEC、实际机构到位或跨架构模型性能。
 
 ## 音频参考包：macOS 与 Linux ARM64
 

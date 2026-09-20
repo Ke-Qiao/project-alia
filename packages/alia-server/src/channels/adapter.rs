@@ -168,6 +168,7 @@ pub enum ChannelEvent {
         source_received_at: DateTime<Utc>,
         /// Database-ordered privacy version captured at trusted source admission.
         source_privacy_epoch: i64,
+        source_relationship_epoch: i64,
     },
     AudioInput {
         channel_id: String,
@@ -177,6 +178,7 @@ pub enum ChannelEvent {
         source_received_at: DateTime<Utc>,
         /// Immutable across media buffering, transcription and pipeline queues.
         source_privacy_epoch: i64,
+        source_relationship_epoch: i64,
     },
     InterruptActiveTurn {
         channel_id: String,
@@ -231,7 +233,9 @@ pub trait ChannelAdapter: ModuleLifecycle {
     /// Production adapters must validate the active account under the same
     /// database ordering as erasure. Never derive this value from device input
     /// or capture it again when dispatching an already admitted source.
-    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
         anyhow::bail!("channel does not provide trusted source admission")
     }
 

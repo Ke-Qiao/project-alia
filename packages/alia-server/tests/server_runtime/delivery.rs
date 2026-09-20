@@ -36,9 +36,10 @@ pub(super) async fn draft(
         .create_session("delivery-test", &owner.to_string())
         .await
         .unwrap();
-    let epoch = alia_server::modules::memory::source::capture_source_epoch(&state.db, owner)
+    let admission = alia_server::modules::memory::source::capture_source_epochs(&state.db, owner)
         .await
         .unwrap();
+    let epoch = admission.privacy_epoch;
     let received = chrono::Utc::now();
     let source = state
         .modules
@@ -49,6 +50,7 @@ pub(super) async fn draft(
             ChatMessage::new("user", "请回应"),
             received,
             epoch,
+            admission.relationship_epoch,
         )
         .await
         .unwrap();

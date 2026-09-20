@@ -530,7 +530,14 @@ async fn batch_update_keeps_old_conversation_sources_and_adds_new_verified_sourc
         let stored = memory.get(user, &id).await.unwrap().unwrap();
         assert_eq!(stored.revision, 2);
         assert_eq!(stored.source_event_ids.len(), 2);
-        for id in events { assert!(stored.source_event_ids.contains(&id)); }
+        for id in &events { assert!(stored.source_event_ids.contains(id)); }
+        let mut fresh=memory.write_snapshot(user).await.unwrap();
+        fresh.source_event_ids.push(events[1]);
+        let mut new_fact=node("new independent fact from the current source");
+        new_fact.source_event_ids.push(events[0]);
+        let created=memory.apply_batch_guarded(&fresh,MemoryBatch{creates:vec![new_fact],..Default::default()}).await.unwrap();
+        let created=memory.get(user,&created.created_ids[0]).await.unwrap().unwrap();
+        assert_eq!(created.source_event_ids,vec![events[1]],"batch creates must pin their actual direct context sources, not caller-supplied historical messages");
     }).await;
 }
 
@@ -1127,6 +1134,19 @@ async fn deterministic_consolidation_commits_functional_batch_and_tracks_promote
             .id
             .clone()
             .unwrap();
+        let keeper = active.iter().find(|node| node.content == "The user works on Memory Runtime.").unwrap().id.clone().unwrap();
+        let recalled = memory.retrieve(user,"Memory Runtime concise engineering answers",RetrievalOpts {max_results:Some(20),min_similarity:Some(0.0),layers:None}).await.unwrap();
+        let keeper_live = recalled.iter().any(|node| node.id.as_deref()==Some(keeper.as_str()));
+        let promoted_live = recalled.iter().any(|node| node.id.as_deref()==Some(promoted.as_str()));
+        assert!(keeper_live && promoted_live,"maintenance outputs must pass canonical roots: keeper={keeper_live}, promoted={promoted_live}");
+        let kept = memory.get(user,&keeper).await.unwrap().unwrap();
+        assert_eq!(kept.revision,1,"dedup must preserve the keeper's original fact");
+        assert_eq!(kept.confidence,0.8);
+        assert_eq!(memory.get(user,&episode).await.unwrap().unwrap().revision,1);
+        let guidance_revision=memory.get(user,&affective).await.unwrap().unwrap().revision;
+        let repeated=memory.consolidate_user(user).await.unwrap();
+        assert_eq!((repeated.deduplicated,repeated.promoted,repeated.demoted,repeated.transformed_affective_guidance),(0,0,0,0));
+        assert_eq!(memory.get(user,&affective).await.unwrap().unwrap().revision,guidance_revision);
         memory.delete(user, &episode).await.unwrap();
         assert!(memory.get(user, &promoted).await.unwrap().is_none());
         assert!(
@@ -1135,6 +1155,383 @@ async fn deterministic_consolidation_commits_functional_batch_and_tracks_promote
         );
     })
     .await;
+}
+
+#[tokio::test]
+async fn promotion_inherits_old_message_fact_and_deleted_output_never_reappears() {
+    with_database(|database|async move {
+        let memory=database.memory(None).await;
+        let user=database.user().await;
+        let session=Uuid::new_v4();
+        let source=Uuid::new_v4();
+        let mut original=memory.write_snapshot(user).await.unwrap();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'promotion-source',$2)",
+            vec![session.into(),user.to_string().into()])).await.unwrap();
+        database.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user','I prefer concise engineering answers.',clock_timestamp(),$4,$5)",
+            vec![source.into(),session.into(),user.to_string().into(),original.privacy_epoch.into(),original.relationship_epoch.into()])).await.unwrap();
+        original.source_event_ids.push(source);
+        let episode=memory.store_guarded(&original,MemoryNode::new("episodic","event","User prefers concise engineering answers.",0.8).with_runtime_fields("episodic","user",0.8,0.7,"internal")).await.unwrap();
+        let unrelated=memory.store(user,node("unrelated erasable fact")).await.unwrap();
+        memory.delete(user,&unrelated).await.unwrap();
+        assert!(memory.write_snapshot(user).await.unwrap().privacy_epoch>original.privacy_epoch);
+        assert_eq!(memory.consolidate_user(user).await.unwrap().promoted,1);
+        let promoted=memory.retrieve(user,"concise engineering",RetrievalOpts::default()).await.unwrap().into_iter().find(|node|node.kind=="preference").unwrap();
+        assert!(promoted.source_event_ids.is_empty(),"parent's historical raw messages must not be re-pinned as this new interpretation's direct source");
+        let id=promoted.id.unwrap();
+        let links:i64=database.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT count(*) AS n FROM memory_sources WHERE memory_id=$1::uuid AND source_id=$2::uuid AND source_revision=1",vec![id.clone().into(),episode.clone().into()])).await.unwrap().unwrap().try_get("","n").unwrap();
+        assert_eq!(links,1);
+        assert_eq!(memory.get(user,&episode).await.unwrap().unwrap().source_event_ids,vec![source]);
+        memory.delete(user,&id).await.unwrap();
+        let restarted=database.memory(None).await;
+        for _ in 0..2 {
+            assert_eq!(restarted.consolidate_user(user).await.unwrap().promoted,0);
+            assert!(restarted.retrieve(user,"concise engineering",RetrievalOpts::default()).await.unwrap().iter().all(|node|node.kind!="preference"));
+        }
+        let erased=database.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT status,content FROM memory_items WHERE id=$1::uuid",vec![id.into()])).await.unwrap().unwrap();
+        assert_eq!(erased.try_get::<String>("","status").unwrap(),"deleted");
+        assert_eq!(erased.try_get::<String>("","content").unwrap(),"");
+        assert_eq!(restarted.get(user,&episode).await.unwrap().unwrap().status,"active");
+    }).await;
+}
+
+#[tokio::test]
+async fn concurrent_maintenance_publishes_one_stable_promotion() {
+    with_database(|database| async move {
+        let first = database.memory(None).await;
+        let second = database.memory(None).await;
+        let user = database.user().await;
+        first
+            .store(
+                user,
+                MemoryNode::new(
+                    "episodic",
+                    "event",
+                    "User prefers direct engineering examples.",
+                    0.8,
+                )
+                .with_runtime_fields("episodic", "user", 0.8, 0.7, "internal"),
+            )
+            .await
+            .unwrap();
+        let (left, right) =
+            tokio::join!(first.consolidate_user(user), second.consolidate_user(user));
+        assert_eq!(left.unwrap().promoted + right.unwrap().promoted, 1);
+        let active = first
+            .retrieve(
+                user,
+                "direct engineering examples",
+                RetrievalOpts::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            active
+                .iter()
+                .filter(|node| node.kind == "preference")
+                .count(),
+            1
+        );
+        assert_eq!(second.consolidate_user(user).await.unwrap().promoted, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn maintenance_skips_revoked_or_private_candidates_and_obeys_durable_policy() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = database.user().await;
+        let parent = memory
+            .store(user, node("original parent fact"))
+            .await
+            .unwrap();
+        let context = selected_context(&memory, user, &[&parent]).await;
+        let candidate = || {
+            MemoryNode::new(
+                "episodic",
+                "event",
+                "User prefers stale copied evidence.",
+                0.8,
+            )
+            .with_runtime_fields("episodic", "user", 0.8, 0.7, "internal")
+        };
+        let invalid = memory.store_guarded(&context, candidate()).await.unwrap();
+        memory
+            .update(
+                user,
+                &parent,
+                MemoryPatch {
+                    expected_revision: Some(1),
+                    content: Some("corrected parent fact".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let mut private = candidate();
+        private.visibility = "private_runtime".into();
+        memory.store(user, private).await.unwrap();
+        memory
+            .store(
+                user,
+                MemoryNode::new(
+                    "episodic",
+                    "event",
+                    "User prefers current precise examples.",
+                    0.8,
+                )
+                .with_runtime_fields("episodic", "user", 0.8, 0.7, "internal"),
+            )
+            .await
+            .unwrap();
+        let result = memory.consolidate_user(user).await.unwrap();
+        assert_eq!(
+            result.scanned, 2,
+            "revoked/private originals cannot enter the maintenance read set"
+        );
+        assert_eq!(result.promoted, 1);
+        let recalled = memory
+            .retrieve(
+                user,
+                "precise examples stale evidence",
+                RetrievalOpts {
+                    max_results: Some(20),
+                    min_similarity: Some(0.0),
+                    layers: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            recalled
+                .iter()
+                .all(|node| node.id.as_deref() != Some(invalid.as_str()))
+        );
+        assert_eq!(
+            recalled
+                .iter()
+                .filter(|node| node.kind == "preference")
+                .count(),
+            1
+        );
+        let policies =
+            alia_server::modules::memory::context::ContextPolicyStore::new(database.db.clone());
+        let current = policies.current().await.unwrap();
+        let mut next = current.policy;
+        next.consolidation_enabled = false;
+        policies.replace(current.version, next).await.unwrap();
+        assert!(memory.consolidate_user(user).await.is_err());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn dedup_keeps_the_canonical_ancestor_of_a_stronger_duplicate() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = database.user().await;
+        let mut fact = node("Canonical shared engineering fact");
+        fact.confidence = 0.7;
+        let parent = memory.store(user, fact.clone()).await.unwrap();
+        let context = selected_context(&memory, user, &[&parent]).await;
+        fact.confidence = 0.95;
+        let child = memory.store_guarded(&context, fact).await.unwrap();
+        assert_eq!(memory.consolidate_user(user).await.unwrap().deduplicated, 1);
+        let recalled = memory
+            .retrieve(
+                user,
+                "Canonical shared engineering fact",
+                RetrievalOpts::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            recalled.len(),
+            1,
+            "dedup must retain the fact supporting its selected output"
+        );
+        assert_eq!(recalled[0].id.as_deref(), Some(parent.as_str()));
+        assert_eq!(recalled[0].revision, 1);
+        assert_eq!(
+            memory.get(user, &child).await.unwrap().unwrap().status,
+            "superseded"
+        );
+        assert_eq!(memory.consolidate_user(user).await.unwrap().deduplicated, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn dedup_selects_a_live_keeper_from_the_complete_three_candidate_group() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let content = "Canonical shared engineering fact";
+        let fact = |importance, confidence| {
+            MemoryNode::new("core", "fact", content, importance)
+                .with_runtime_fields("semantic", "user", confidence, 0.5, "internal")
+        };
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let user = database.user().await;
+            let mut importance = [0.0; 3];
+            for (rank, candidate) in order.iter().enumerate() {
+                importance[*candidate] = [0.9, 0.8, 0.7][rank];
+            }
+            // These confidence gaps preserve quality A < B < C under every
+            // importance ordering; the first case is the exact original red.
+            let ancestor = memory.store(user, fact(importance[0], 0.4)).await.unwrap();
+            let independent = memory.store(user, fact(importance[1], 0.7)).await.unwrap();
+            let context = selected_context(&memory, user, &[&ancestor]).await;
+            let derived = memory
+                .store_guarded(&context, fact(importance[2], 1.0))
+                .await
+                .unwrap();
+            let ids = [&ancestor, &independent, &derived];
+            let ordered = memory.list(user, MemoryListOpts::default()).await.unwrap();
+            assert_eq!(
+                ordered
+                    .iter()
+                    .map(|node| node.id.as_ref().unwrap())
+                    .collect::<Vec<_>>(),
+                order.iter().map(|index| ids[*index]).collect::<Vec<_>>(),
+                "the SQL scan must exercise the requested candidate order"
+            );
+
+            let result = memory.consolidate_user(user).await.unwrap();
+            let recalled = memory
+                .retrieve(user, content, RetrievalOpts::default())
+                .await
+                .unwrap();
+            assert_eq!(
+                recalled.len(),
+                1,
+                "the selected output must still have live canonical roots for order {order:?}"
+            );
+            assert_eq!(recalled[0].id.as_deref(), Some(independent.as_str()));
+            assert_eq!(recalled[0].revision, 1);
+            assert_eq!(result.deduplicated, 2);
+            assert_eq!(memory.consolidate_user(user).await.unwrap().deduplicated, 0);
+            assert_eq!(
+                memory
+                    .retrieve(user, content, RetrievalOpts::default())
+                    .await
+                    .unwrap()[0]
+                    .id
+                    .as_deref(),
+                Some(independent.as_str())
+            );
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn consolidation_keeps_ancestors_needed_by_another_duplicate_group() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = database.user().await;
+        let fact = |content: &str, confidence| {
+            MemoryNode::new("core", "fact", content, 0.8)
+                .with_runtime_fields("semantic", "user", confidence, 0.7, "internal")
+        };
+        let ancestor = memory
+            .store(user, fact("Original engineering source", 0.4))
+            .await
+            .unwrap();
+        let independent = memory
+            .store(user, fact("Original engineering source", 0.9))
+            .await
+            .unwrap();
+        let context = selected_context(&memory, user, &[&ancestor]).await;
+        let keeper = memory
+            .store_guarded(&context, fact("Derived engineering guidance", 0.95))
+            .await
+            .unwrap();
+        let duplicate = memory
+            .store(user, fact("Derived engineering guidance", 0.4))
+            .await
+            .unwrap();
+
+        for expected in [1, 0] {
+            let result = memory.consolidate_user(user).await.unwrap();
+            assert_eq!(
+                result.deduplicated, expected,
+                "retain the lower scoring source when another group's keeper needs it"
+            );
+            let recalled = memory
+                .retrieve(
+                    user,
+                    "engineering",
+                    RetrievalOpts {
+                        max_results: Some(20),
+                        min_similarity: Some(0.0),
+                        layers: None,
+                    },
+                )
+                .await
+                .unwrap();
+            for id in [&ancestor, &independent, &keeper] {
+                assert!(
+                    recalled.iter().any(|node| node.id.as_ref() == Some(id)),
+                    "required fact {id} must remain retrievable"
+                );
+                assert_eq!(memory.get(user, id).await.unwrap().unwrap().revision, 1);
+            }
+            assert_eq!(
+                memory.get(user, &duplicate).await.unwrap().unwrap().status,
+                "superseded"
+            );
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn consolidation_preserves_complete_ancestor_revisions_for_new_promotions() {
+    with_database(|database| async move {
+        let memory = database.memory(None).await;
+        let user = database.user().await;
+        let policies = alia_server::modules::memory::context::ContextPolicyStore::new(database.db.clone());
+        let current = policies.current().await.unwrap();
+        let mut policy = current.policy;
+        policy.retrieval_layers.extend(["reflection".into(),"episodic".into()]);
+        policies.replace(current.version,policy).await.unwrap();
+        let mut weak = node("Engineering feedback source");
+        weak.confidence = 0.2;
+        let ancestor = memory.store(user,weak).await.unwrap();
+        let context = selected_context(&memory,user,&[&ancestor]).await;
+        let affective = memory.store_guarded(&context,
+            MemoryNode::new("reflection","insight","The user was frustrated when engineering answers stayed abstract.",0.8)
+                .with_runtime_fields("affective_pattern","user",0.8,0.7,"internal")
+        ).await.unwrap();
+        let context = selected_context(&memory,user,&[&affective]).await;
+        let episode = memory.store_guarded(&context,
+            MemoryNode::new("episodic","event","User prefers concrete engineering examples.",0.8)
+                .with_runtime_fields("episodic","user",0.8,0.7,"internal")
+        ).await.unwrap();
+
+        for expected in [1,0] {
+            let result = memory.consolidate_user(user).await.unwrap();
+            assert_eq!(result.promoted,expected);
+            assert_eq!((result.demoted,result.transformed_affective_guidance),(0,0),"planned retirement and content revision must both yield to the output's full ancestry");
+            let recalled = memory.retrieve(user,"engineering",RetrievalOpts {max_results:Some(20),min_similarity:Some(0.0),layers:None}).await.unwrap();
+            assert_eq!(recalled.iter().filter(|node|node.kind=="preference").count(),1);
+            for id in [&ancestor,&affective,&episode] {
+                assert!(recalled.iter().any(|node|node.id.as_ref()==Some(id)),"preserved ancestor {id} must pass canonical roots");
+                assert_eq!(memory.get(user,id).await.unwrap().unwrap().revision,1);
+            }
+        }
+    }).await;
 }
 
 #[tokio::test]

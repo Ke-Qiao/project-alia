@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -38,10 +36,6 @@ use super::error_notice::PipelineErrorStage;
 
 const TTS_SENTENCE_MAX_CHARS: usize = 80;
 const TTS_SENTENCE_GAP_MS: u32 = 80;
-const SENTENCE_EXPRESSION_CACHE_CAPACITY: usize = 512;
-
-static SENTENCE_EXPRESSION_CACHE: OnceLock<Mutex<HashMap<String, SpeechExpression>>> =
-    OnceLock::new();
 
 #[derive(Clone)]
 pub(super) struct TtsTraceContext {
@@ -84,6 +78,7 @@ impl TtsTraceContext {
 
 #[derive(Debug, Clone)]
 pub(super) struct SentenceSpeechContext {
+    pub generation: crate::modules::memory::context::GenerationContext,
     pub route: Option<String>,
     pub channel_id: String,
     pub user_id: String,
@@ -187,10 +182,16 @@ pub(super) async fn deliver_tts_audio_inner(
         return TtsDeliveryOutcome::Skipped;
     }
 
-    let resolved_speech = if let (Some(input), Some(speech)) = (expression_input, speech) {
-        Some(
-            resolve_sentence_speech(
+    let resolved_speech =
+        if let (Some(input), Some(speech), Some(turn)) = (expression_input, speech, turn) {
+            let generation = match turn.generation_context().await {
+                Ok(value) => value,
+                Err(_) => return TtsDeliveryOutcome::Failed(PipelineErrorStage::Tts),
+            };
+            match resolve_sentence_speech(
                 modules.expression.clone(),
+                &modules.context,
+                &generation,
                 modules.sentence_expression_llm.clone(),
                 input.clone(),
                 speech.clone(),
@@ -199,11 +200,17 @@ pub(super) async fn deliver_tts_audio_inner(
                 channel_id,
                 user_id,
             )
-            .await,
-        )
-    } else {
-        speech.cloned()
-    };
+            .await
+            {
+                Ok(speech) => Some(speech),
+                Err(error) => {
+                    tracing::debug!(error=%error,"sentence expression authority revoked");
+                    return TtsDeliveryOutcome::Failed(PipelineErrorStage::Tts);
+                }
+            }
+        } else {
+            speech.cloned()
+        };
 
     if channel.capabilities().audio_streaming {
         debug_component_text(
@@ -449,11 +456,22 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<(String, bool)> {
+    let frozen = turn
+        .ok_or_else(|| anyhow::anyhow!("sentence stream has no admitted turn"))?
+        .context_binding()
+        .await?;
+    anyhow::ensure!(
+        speech_context
+            .as_ref()
+            .is_some_and(|speech| speech.generation.lease().id() == frozen.context_id),
+        "sentence stream changed frozen context"
+    );
     let (sentence_tx, sentence_rx) = mpsc::channel::<String>(4);
     let (audio_tx, mut audio_rx) = mpsc::channel::<SentenceAudio>(2);
     let audio_started = Arc::new(AtomicBool::new(false));
     let tts_cancel_token = turn.map(|turn| turn.token.clone());
     let tts_worker = stream_tts_sentences(
+        modules.context.clone(),
         modules.tts.clone(),
         modules.expression.clone(),
         modules.sentence_expression_llm.clone(),
@@ -577,6 +595,8 @@ struct SentenceProsodyDelta {
 
 async fn resolve_sentence_speech(
     expression: Arc<crate::expression::ExpressionRuntime>,
+    context: &crate::modules::memory::context::ContextService,
+    generation: &crate::modules::memory::context::GenerationContext,
     sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     input: ExpressionInput,
     baseline: SpeechExpression,
@@ -584,106 +604,138 @@ async fn resolve_sentence_speech(
     debug_output: bool,
     channel_id: &str,
     user_id: &str,
-) -> SpeechExpression {
-    let policy = expression.sentence_llm_policy();
-    let Some(llm) = sentence_expression_llm else {
-        debug_sentence_expression_decision(
-            debug_output,
-            channel_id,
-            user_id,
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "unavailable",
-        );
-        record_sentence_expression_trace(
-            trace_context.as_ref(),
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "unavailable",
+) -> anyhow::Result<SpeechExpression> {
+    context
+        .validate(
+            &generation.lease().binding(),
+            crate::modules::memory::context::ContextUse::OutputAdmission,
         )
-        .await;
-        return baseline;
-    };
-    if !policy.enabled || policy.timeout_ms == 0 {
-        debug_sentence_expression_decision(
-            debug_output,
-            channel_id,
-            user_id,
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "disabled",
-        );
-        record_sentence_expression_trace(
-            trace_context.as_ref(),
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "disabled",
-        )
-        .await;
-        return baseline;
-    }
+        .await?;
+    let result: anyhow::Result<SpeechExpression> = async {
+        let policy = expression.sentence_llm_policy();
+        let Some(llm) = sentence_expression_llm else {
+            debug_sentence_expression_decision(
+                debug_output,
+                channel_id,
+                user_id,
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "unavailable",
+            );
+            record_sentence_expression_trace(
+                trace_context.as_ref(),
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "unavailable",
+            )
+            .await;
+            return Ok(baseline);
+        };
+        if !policy.enabled || policy.timeout_ms == 0 {
+            debug_sentence_expression_decision(
+                debug_output,
+                channel_id,
+                user_id,
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "disabled",
+            );
+            record_sentence_expression_trace(
+                trace_context.as_ref(),
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "disabled",
+            )
+            .await;
+            return Ok(baseline);
+        }
 
-    let cache_key = policy
-        .cache_enabled
-        .then(|| sentence_expression_cache_key(&input, &baseline));
-    if let Some(key) = cache_key.as_ref()
-        && let Some(cached) = sentence_expression_cache_get(key)
-    {
-        debug_sentence_expression_decision(
-            debug_output,
-            channel_id,
-            user_id,
-            &input,
-            &baseline,
-            None,
-            &cached,
-            "cache_hit",
-        );
-        record_sentence_expression_trace(
-            trace_context.as_ref(),
-            &input,
-            &baseline,
-            None,
-            &cached,
-            "cache_hit",
-        )
-        .await;
-        return cached;
-    }
+        let Some(patch) =
+            sentence_expression_llm_patch(llm.as_ref(), &policy, &input, &baseline).await
+        else {
+            debug_sentence_expression_decision(
+                debug_output,
+                channel_id,
+                user_id,
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "fallback",
+            );
+            record_sentence_expression_trace(
+                trace_context.as_ref(),
+                &input,
+                &baseline,
+                None,
+                &baseline,
+                "fallback",
+            )
+            .await;
+            return Ok(baseline);
+        };
 
-    let Some(patch) = sentence_expression_llm_patch(llm.as_ref(), &policy, &input, &baseline).await
-    else {
-        debug_sentence_expression_decision(
-            debug_output,
-            channel_id,
-            user_id,
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "fallback",
-        );
-        record_sentence_expression_trace(
-            trace_context.as_ref(),
-            &input,
-            &baseline,
-            None,
-            &baseline,
-            "fallback",
-        )
-        .await;
-        return baseline;
-    };
+        if patch.confidence < policy.min_confidence.clamp(0.0, 1.0) {
+            debug_sentence_expression_decision(
+                debug_output,
+                channel_id,
+                user_id,
+                &input,
+                &baseline,
+                Some(&patch),
+                &baseline,
+                "rejected_low_confidence",
+            );
+            record_sentence_expression_trace(
+                trace_context.as_ref(),
+                &input,
+                &baseline,
+                Some(&patch),
+                &baseline,
+                "rejected_low_confidence",
+            )
+            .await;
+            return Ok(baseline);
+        }
 
-    if patch.confidence < policy.min_confidence.clamp(0.0, 1.0) {
+        let mut patched_input = input.clone();
+        if let Some(dialogue_act) = normalize_dialogue_act(patch.dialogue_act.as_deref()) {
+            patched_input.dialogue_act = dialogue_act;
+        }
+        if let Some(content_tone) = normalize_content_tone(patch.content_tone.as_deref()) {
+            patched_input.content_tone = content_tone;
+        }
+        if let Some(intensity) = patch.intensity {
+            let capped = sentence_intensity_cap(&input, intensity);
+            patched_input.constraints.max_intensity = Some(
+                patched_input
+                    .constraints
+                    .max_intensity
+                    .unwrap_or(1.0)
+                    .min(capped),
+            );
+        }
+
+        let mut final_speech = expression
+            .speech_for_context(context, generation, patched_input, true)
+            .await?;
+        if let Some(style) = normalize_style(patch.style.as_deref())
+            && style_override_allowed(&style, &input, &baseline, &patch)
+        {
+            final_speech.style = style;
+        }
+        if let Some(delta) = patch.prosody_delta {
+            apply_sentence_prosody_delta(&mut final_speech, delta, &input);
+        }
+
         debug_sentence_expression_decision(
             debug_output,
             channel_id,
@@ -691,172 +743,68 @@ async fn resolve_sentence_speech(
             &input,
             &baseline,
             Some(&patch),
-            &baseline,
-            "rejected_low_confidence",
+            &final_speech,
+            "applied",
         );
+
         record_sentence_expression_trace(
             trace_context.as_ref(),
             &input,
             &baseline,
             Some(&patch),
-            &baseline,
-            "rejected_low_confidence",
+            &final_speech,
+            "applied",
         )
         .await;
-        return baseline;
-    }
 
-    let mut patched_input = input.clone();
-    if let Some(dialogue_act) = normalize_dialogue_act(patch.dialogue_act.as_deref()) {
-        patched_input.dialogue_act = dialogue_act;
+        Ok(final_speech)
     }
-    if let Some(content_tone) = normalize_content_tone(patch.content_tone.as_deref()) {
-        patched_input.content_tone = content_tone;
-    }
-    if let Some(intensity) = patch.intensity {
-        let capped = sentence_intensity_cap(&input, intensity);
-        patched_input.constraints.max_intensity = Some(
-            patched_input
-                .constraints
-                .max_intensity
-                .unwrap_or(1.0)
-                .min(capped),
-        );
-    }
-
-    let mut final_speech = expression.speech_for_expression_input(patched_input).await;
-    if let Some(style) = normalize_style(patch.style.as_deref())
-        && style_override_allowed(&style, &input, &baseline, &patch)
-    {
-        final_speech.style = style;
-    }
-    if let Some(delta) = patch.prosody_delta {
-        apply_sentence_prosody_delta(&mut final_speech, delta, &input);
-    }
-
-    debug_sentence_expression_decision(
-        debug_output,
-        channel_id,
-        user_id,
-        &input,
-        &baseline,
-        Some(&patch),
-        &final_speech,
-        "applied",
-    );
-
-    record_sentence_expression_trace(
-        trace_context.as_ref(),
-        &input,
-        &baseline,
-        Some(&patch),
-        &final_speech,
-        "applied",
-    )
     .await;
-
-    if let Some(key) = cache_key {
-        sentence_expression_cache_put(key, final_speech.clone());
-    }
-
-    final_speech
-}
-
-fn sentence_expression_cache_get(key: &str) -> Option<SpeechExpression> {
-    let cache = SENTENCE_EXPRESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    cache
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .get(key)
-        .cloned()
-}
-
-fn sentence_expression_cache_put(key: String, speech: SpeechExpression) {
-    let cache = SENTENCE_EXPRESSION_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut cache = cache
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if cache.len() >= SENTENCE_EXPRESSION_CACHE_CAPACITY
-        && let Some(first_key) = cache.keys().next().cloned()
-    {
-        cache.remove(&first_key);
-    }
-    cache.insert(key, speech);
-}
-
-fn sentence_expression_cache_key(input: &ExpressionInput, baseline: &SpeechExpression) -> String {
-    serde_json::json!({
-        "sentence": &input.response_text,
-        "route": &input.route,
-        "dialogue_act": &input.dialogue_act,
-        "content_tone": &input.content_tone,
-        "baseline_style": &baseline.style,
-        "baseline_intensity": (baseline.intensity * 100.0).round() as i32,
-        "active_task_serious": input.safety_context.active_task_serious,
-        "minimal_expression": input.safety_context.minimal_expression,
-        "night_mode": input.safety_context.night_mode,
-        "allow_playful": input.constraints.allow_playful,
-        "require_clarity": input.constraints.require_clarity,
-        "prefer_minimal": input.constraints.prefer_minimal,
-        "frustration": (input.user_state.frustration * 100.0).round() as i32,
-    })
-    .to_string()
+    context
+        .validate(
+            &generation.lease().binding(),
+            crate::modules::memory::context::ContextUse::OutputAdmission,
+        )
+        .await?;
+    result
 }
 
 fn debug_sentence_expression_decision(
     debug_output: bool,
     channel_id: &str,
     user_id: &str,
-    input: &ExpressionInput,
-    baseline: &SpeechExpression,
-    patch: Option<&SentenceExpressionLlmPatch>,
-    final_speech: &SpeechExpression,
+    _input: &ExpressionInput,
+    _baseline: &SpeechExpression,
+    _patch: Option<&SentenceExpressionLlmPatch>,
+    _final_speech: &SpeechExpression,
     decision: &str,
 ) {
     debug_component_json(
         debug_output,
         "expression",
         "sentence_llm",
-        &json!({
-            "sentence": input.response_text,
-            "route": input.route,
-            "dialogue_act": input.dialogue_act,
-            "content_tone": input.content_tone,
-            "baseline": baseline,
-            "patch": patch,
-            "final": final_speech,
-            "decision": decision,
-        }),
+        &json!({"decision":decision}),
         Some((channel_id, user_id)),
     );
 }
-
 async fn record_sentence_expression_trace(
     trace_context: Option<&TtsTraceContext>,
-    input: &ExpressionInput,
-    baseline: &SpeechExpression,
-    patch: Option<&SentenceExpressionLlmPatch>,
-    final_speech: &SpeechExpression,
+    _input: &ExpressionInput,
+    _baseline: &SpeechExpression,
+    _patch: Option<&SentenceExpressionLlmPatch>,
+    _final_speech: &SpeechExpression,
     decision: &str,
 ) {
-    let Some(trace_context) = trace_context else {
-        return;
-    };
-    trace_context
-        .record(
-            "sentence_expression_llm",
-            "expression",
-            Some(format!("Sentence expression LLM {decision}")),
-            json!({
-                "sentence": input.response_text,
-                "route": input.route,
-                "baseline": baseline,
-                "patch": patch,
-                "final": final_speech,
-                "decision": decision,
-            }),
-        )
-        .await;
+    if let Some(trace) = trace_context {
+        trace
+            .record(
+                "sentence_expression_checked",
+                "provenance",
+                None,
+                json!({"decision":decision}),
+            )
+            .await;
+    }
 }
 
 async fn sentence_expression_llm_patch(
@@ -1103,6 +1051,7 @@ struct SentenceAudio {
 }
 
 async fn stream_tts_sentences(
+    context: Arc<crate::modules::memory::context::ContextService>,
     tts: Arc<dyn TtsAdapter>,
     expression: Arc<crate::expression::ExpressionRuntime>,
     sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
@@ -1141,35 +1090,22 @@ async fn stream_tts_sentences(
             sentence,
             Some((&channel_id, &user_id)),
         );
-        let expression_input = speech_context
+        let speech_context = speech_context
             .as_ref()
-            .map(|context| context.input_for_sentence(sentence))
-            .unwrap_or_else(|| ExpressionInput {
-                response_text: sentence.to_string(),
-                route: None,
-                channel_id: channel_id.clone(),
-                user_id: user_id.clone(),
-                dialogue_act: "respond".to_string(),
-                content_tone: "neutral".to_string(),
-                user_state: Default::default(),
-                device_context: Default::default(),
-                safety_context: Default::default(),
-                conversation_context: ExpressionConversationContext {
-                    turn_kind: "streaming_sentence_tts".to_string(),
-                    ..Default::default()
-                },
-                constraints: Default::default(),
-                memory_context: None,
-                voice_output: true,
-                hardware_control: false,
-                tts_capabilities: None,
-                expression_capabilities: None,
-            });
+            .ok_or_else(|| anyhow::anyhow!("sentence synthesis has no frozen generation"))?;
+        let expression_input = speech_context.input_for_sentence(sentence);
         let baseline_speech = expression
-            .speech_for_sentence(expression_input.clone())
-            .await;
+            .speech_for_context(
+                &context,
+                &speech_context.generation,
+                expression_input.clone(),
+                true,
+            )
+            .await?;
         let speech = resolve_sentence_speech(
             expression.clone(),
+            &context,
+            &speech_context.generation,
             sentence_expression_llm.clone(),
             expression_input,
             baseline_speech,
@@ -1178,7 +1114,7 @@ async fn stream_tts_sentences(
             &channel_id,
             &user_id,
         )
-        .await;
+        .await?;
         let request = TtsRequest::with_speech(sentence, &speech);
         let adjustments = tts.provider_adjustments(&request).await;
         if !adjustments.is_empty() {

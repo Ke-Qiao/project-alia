@@ -245,7 +245,9 @@ impl ModuleLifecycle for CliChannel {
 
 #[async_trait]
 impl ChannelAdapter for CliChannel {
-    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
         admit_console_source(self.account_database.as_ref(), self.owner_user_id).await
     }
 
@@ -500,13 +502,13 @@ fn run_console(
                         // below admits this source; the earlier timestamp is audit
                         // data. There is no application input queue before this
                         // point, and published lines must never be re-stamped.
-                        let source_privacy_epoch = runtime.block_on(async {
+                        let source_epochs = runtime.block_on(async {
                             tokio::select! {
                                 _ = cancel.cancelled() => Err(anyhow::anyhow!("CLI stopped")),
                                 result = admit_console_source(account_database, owner_user_id.and_then(|id| id.parse().ok())) => result,
                             }
                         });
-                        let source_privacy_epoch = match source_privacy_epoch {
+                        let source_epochs = match source_epochs {
                             Ok(epoch) => epoch,
                             Err(error) => {
                                 print_text(
@@ -538,7 +540,8 @@ fn run_console(
                                 user_id: owner_user_id.expect("checked above").to_owned(),
                                 text,
                                 source_received_at,
-                                source_privacy_epoch,
+                                source_privacy_epoch: source_epochs.privacy_epoch,
+                                source_relationship_epoch: source_epochs.relationship_epoch,
                             }));
                             print_text(&mut out, "thinking…")?;
                         }
@@ -574,12 +577,12 @@ fn native_stdout() -> io::Result<std::fs::File> {
 async fn admit_console_source(
     db: Option<&sea_orm::DatabaseConnection>,
     owner: Option<uuid::Uuid>,
-) -> anyhow::Result<i64> {
+) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
     let db = db.context("CLI account database unavailable")?;
     let owner = owner
         .filter(|id| !id.is_nil())
         .context("CLI owner is not configured")?;
-    crate::modules::memory::source::capture_source_epoch(db, owner).await
+    crate::modules::memory::source::capture_source_epochs(db, owner).await
 }
 
 async fn session_command(

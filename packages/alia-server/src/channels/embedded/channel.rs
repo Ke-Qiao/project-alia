@@ -1028,7 +1028,9 @@ impl ChannelAdapter for EmbeddedChannel {
         )
         .await
     }
-    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
         let db = self
             .account_database
             .as_ref()
@@ -1036,7 +1038,7 @@ impl ChannelAdapter for EmbeddedChannel {
         let owner = self
             .owner_user_id()
             .context("channel owner is not configured")?;
-        crate::modules::memory::source::capture_source_epoch(db, owner).await
+        crate::modules::memory::source::capture_source_epochs(db, owner).await
     }
 
     async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {

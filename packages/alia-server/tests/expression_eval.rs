@@ -2,9 +2,9 @@ use std::path::Path;
 
 use alia_server::config::ServerConfig;
 use alia_server::expression::{
-    AffectUserInput, ExpressionActionCapability, ExpressionAdapterState,
-    ExpressionCapabilitySnapshot, ExpressionInput, ExpressionRuntime, appraisal_regression_cases,
-    planner_regression_cases,
+    AppraisalContext, AppraisalEnginePlugin, ExpressionActionCapability, ExpressionAdapterState,
+    ExpressionCapabilitySnapshot, ExpressionInput, ExpressionRuntime, RuleBasedAppraisalEngine,
+    TextClassifierAppraisalEngine, appraisal_regression_cases, planner_regression_cases,
 };
 use alia_server::providers::adapter::{
     MemoryAffectHint, MemoryContextPack, MemoryRecallEvent, MemorySnippet, TtsCapabilities,
@@ -13,27 +13,29 @@ use std::collections::BTreeMap;
 
 #[tokio::test]
 async fn appraisal_regression_cases_hold() {
-    let runtime = test_runtime();
-
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config = ServerConfig::load(&workspace.join("config/server.example.toml")).unwrap();
+    let classifier = TextClassifierAppraisalEngine::new(config.resources.appraisal_lexicons);
     for case in appraisal_regression_cases() {
-        let observation = runtime
-            .observe_user_input(AffectUserInput {
-                channel_id: case.name,
-                user_id: "eval_user",
-                user_text: case.user_text,
-            })
-            .await;
+        let context = AppraisalContext {
+            channel_id: case.name,
+            user_id: "eval_user",
+            user_text: case.user_text,
+            now: chrono::Utc::now(),
+            policy: &config.policies.affect,
+        };
+        let mut drafts = RuleBasedAppraisalEngine
+            .appraise_user_input(&context)
+            .await
+            .unwrap();
+        drafts.extend(classifier.appraise_user_input(&context).await.unwrap());
         for expected in case.expected_event_kinds {
             assert!(
-                observation
-                    .appraisals
-                    .iter()
-                    .any(|event| event.kind == *expected),
+                drafts.iter().any(|event| event.kind == *expected),
                 "case '{}' missed expected appraisal '{}'; got {:?}",
                 case.name,
                 expected,
-                observation
-                    .appraisals
+                drafts
                     .iter()
                     .map(|event| event.kind.as_str())
                     .collect::<Vec<_>>()
@@ -260,7 +262,7 @@ async fn planner_uses_memory_boundaries_to_reduce_motion_intensity() {
 }
 
 #[tokio::test]
-async fn memory_recall_biases_affect_only_through_limited_appraisal_events() {
+async fn unbound_memory_recall_cannot_change_affect() {
     let runtime = test_runtime();
     let before = runtime.affect_snapshot("cli", "memory_user").await;
     let observation = runtime
@@ -286,13 +288,10 @@ async fn memory_recall_biases_affect_only_through_limited_appraisal_events() {
         )
         .await;
 
-    assert_eq!(observation.appraisals.len(), 1);
-    assert_eq!(observation.appraisals[0].kind, "memory_recall");
-    assert!(observation.appraisals[0].deltas.valence <= 0.05);
-    assert!(observation.appraisals[0].deltas.trust <= 0.02);
-    assert!(observation.appraisals[0].deltas.engagement <= 0.08);
-    assert!(observation.snapshot.affect.valence - before.affect.valence <= 0.05);
-    assert!(observation.snapshot.social.trust - before.social.trust <= 0.02);
+    assert!(observation.appraisals.is_empty());
+    assert!(observation.persistence_error.is_some());
+    assert_eq!(observation.snapshot.affect.valence, before.affect.valence);
+    assert_eq!(observation.snapshot.social.trust, before.social.trust);
 }
 
 fn test_runtime() -> ExpressionRuntime {

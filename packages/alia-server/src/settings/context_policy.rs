@@ -75,6 +75,9 @@ const FIELDS: &[(&str, &str)] = &[
 
 pub fn owns(key: &str) -> bool {
     FIELDS.iter().any(|(setting, _)| *setting == key)
+        || key.starts_with("core.policies.affect.")
+        || key.starts_with("core.policies.appraisal.")
+        || key == "core.resources.appraisal_lexicons"
 }
 
 pub fn patched(
@@ -96,6 +99,23 @@ pub fn patched(
                 };
         }
     }
+    for (key, next) in updates {
+        if let Some(field) = key.strip_prefix("core.policies.affect.") {
+            anyhow::ensure!(
+                value["appraisal"]["affect"].get(field).is_some(),
+                "unknown affect policy setting: {key}"
+            );
+            value["appraisal"]["affect"][field] = next.clone();
+        } else if let Some(field) = key.strip_prefix("core.policies.appraisal.") {
+            anyhow::ensure!(
+                matches!(field, "interpretation_timeout_ms" | "approved_interpreters"),
+                "unknown or read-only appraisal policy setting: {key}"
+            );
+            value["appraisal"][field] = next.clone();
+        } else if key == "core.resources.appraisal_lexicons" {
+            value["appraisal"]["lexicons"] = next.clone();
+        }
+    }
     let next: ContextPolicy =
         serde_json::from_value(value).context("invalid context policy setting type")?;
     next.validate()?;
@@ -104,10 +124,32 @@ pub fn patched(
 
 pub fn projection(policy: &ContextPolicy) -> BTreeMap<String, Value> {
     let value = serde_json::to_value(policy).expect("validated context policy is serializable");
-    FIELDS
+    let mut result: BTreeMap<_, _> = FIELDS
         .iter()
         .map(|(setting, field)| ((*setting).to_owned(), value[*field].clone()))
-        .collect()
+        .collect();
+    for (field, value) in value["appraisal"]["affect"]
+        .as_object()
+        .expect("affect policy is an object")
+    {
+        result.insert(format!("core.policies.affect.{field}"), value.clone());
+    }
+    for field in [
+        "interpreter_version",
+        "reducer_version",
+        "interpretation_timeout_ms",
+        "approved_interpreters",
+    ] {
+        result.insert(
+            format!("core.policies.appraisal.{field}"),
+            value["appraisal"][field].clone(),
+        );
+    }
+    result.insert(
+        "core.resources.appraisal_lexicons".into(),
+        value["appraisal"]["lexicons"].clone(),
+    );
+    result
 }
 
 #[cfg(test)]

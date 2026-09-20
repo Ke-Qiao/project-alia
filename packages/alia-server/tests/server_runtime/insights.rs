@@ -143,16 +143,18 @@ async fn extraction_uses_current_source_epoch_without_comparing_server_and_datab
         let foreign_owner = user(&state).await;
         let conversation = &state.modules.conversation;
         let session = conversation.create_session("insights-source", &owner.to_string()).await.unwrap();
-        let before = alia_server::modules::memory::source::capture_source_epoch(&state.db, owner).await.unwrap();
+        let before_admission = alia_server::modules::memory::source::capture_source_epochs(&state.db, owner).await.unwrap();
+        let before = before_admission.privacy_epoch;
         let fast = chrono::Utc::now() + chrono::Duration::hours(1);
         let slow = chrono::Utc::now() - chrono::Duration::hours(1);
-        conversation.append_sourced_message(owner, session, ChatMessage::new("user", "OLD_BEFORE_CLEAR"), fast, before).await.unwrap();
+        conversation.append_sourced_message(owner, session, ChatMessage::new("user", "OLD_BEFORE_CLEAR"), fast, before, before_admission.relationship_epoch).await.unwrap();
         state.modules.memory.clear(owner).await.unwrap();
-        conversation.append_sourced_message(owner, session, ChatMessage::new("user", "OLD_LATE_PERSISTED"), fast, before).await.unwrap();
-        let current = alia_server::modules::memory::source::capture_source_epoch(&state.db, owner).await.unwrap();
+        conversation.append_sourced_message(owner, session, ChatMessage::new("user", "OLD_LATE_PERSISTED"), fast, before, before_admission.relationship_epoch).await.unwrap();
+        let current_admission = alia_server::modules::memory::source::capture_source_epochs(&state.db, owner).await.unwrap();
+        let current = current_admission.privacy_epoch;
         assert_eq!(current, before + 1);
         for (text, received) in [("CURRENT_FAST_CLOCK", fast), ("CURRENT_SLOW_CLOCK", slow)] {
-            conversation.append_sourced_message(owner, session, ChatMessage::new("user", text), received, current).await.unwrap();
+            conversation.append_sourced_message(owner, session, ChatMessage::new("user", text), received, current, current_admission.relationship_epoch).await.unwrap();
         }
         // This deliberate NULL-epoch fixture has a valid timestamp and owner, so
         // the test isolates missing admission provenance from other predicates.
@@ -162,8 +164,9 @@ async fn extraction_uses_current_source_epoch_without_comparing_server_and_datab
         )).await.unwrap();
         conversation.append_message(session, ChatMessage::new("assistant", "ASSISTANT_DERIVED_HISTORY")).await.unwrap();
         let foreign_session = conversation.create_session("insights-source", &foreign_owner.to_string()).await.unwrap();
-        let foreign_epoch = alia_server::modules::memory::source::capture_source_epoch(&state.db, foreign_owner).await.unwrap();
-        conversation.append_sourced_message(foreign_owner, foreign_session, ChatMessage::new("user", "FOREIGN_OWNER_SOURCE"), fast, foreign_epoch).await.unwrap();
+        let foreign_epoch_admission = alia_server::modules::memory::source::capture_source_epochs(&state.db, foreign_owner).await.unwrap();
+        let foreign_epoch = foreign_epoch_admission.privacy_epoch;
+        conversation.append_sourced_message(foreign_owner, foreign_session, ChatMessage::new("user", "FOREIGN_OWNER_SOURCE"), fast, foreign_epoch, foreign_epoch_admission.relationship_epoch).await.unwrap();
 
         state.modules.insights.trigger(owner, InsightPhase::Extraction).await.unwrap();
         assert_eq!(llm.calls.load(Ordering::SeqCst), 1);

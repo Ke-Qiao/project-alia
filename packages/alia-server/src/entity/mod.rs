@@ -5,7 +5,6 @@
 pub mod chat_message;
 pub mod chat_session;
 pub mod conversation_event;
-pub mod expression_appraisal_event;
 pub mod insight_log;
 pub mod llm_cache;
 pub mod persona;

@@ -187,14 +187,25 @@ impl ContextService {
                 if node.content.trim().is_empty() {
                     continue;
                 }
-                merge(
-                    &mut lease.dependencies,
-                    &[ContextEvidence::Memory {
+                let mut candidate = lease.clone();
+                let expanded = async {
+                    let (roots, until) = super::memory_appraisal::memory_source_roots(
+                        &tx,
+                        source.owner_id,
                         id,
-                        revision: node.revision,
-                    }],
-                )?;
-                lease.valid_until = earliest(lease.valid_until, node.expires_at);
+                        node.revision,
+                    )
+                    .await?;
+                    merge(&mut candidate.dependencies, &roots)?;
+                    candidate.valid_until = earliest(candidate.valid_until, until);
+                    validate_evidence(&tx, &candidate).await
+                }
+                .await;
+                match expanded {
+                    Ok(()) => lease = candidate,
+                    Err(error) if super::appraisal::is_revoked(&error) => continue,
+                    Err(error) => return Err(error),
+                }
                 nodes.push(node);
                 remaining = policy.policy.max_memory_chars.saturating_sub(
                     render_memory(&memory_context_pack_from_nodes(nodes.clone(), vec![]))
@@ -212,9 +223,12 @@ impl ContextService {
             let edges =
                 graph_candidates(&tx, source.owner_id, &roots, policy.policy.graph_depth).await?;
             for edge in edges {
-                let Some((projection, roots, expires)) =
-                    graph_projection(&tx, source.owner_id, edge).await?
-                else {
+                let projected = match graph_projection(&tx, source.owner_id, edge).await {
+                    Ok(value) => value,
+                    Err(error) if super::appraisal::is_revoked(&error) => continue,
+                    Err(error) => return Err(error),
+                };
+                let Some((projection, roots, expires)) = projected else {
                     continue;
                 };
                 if let Some(layers) = &retrieval.layers {
@@ -259,8 +273,21 @@ impl ContextService {
                     edge_id: edge,
                     projection_digest: digest(&projection)?,
                 });
-                merge(&mut lease.dependencies, &refs)?;
-                lease.valid_until = earliest(lease.valid_until, expires);
+                // Validate the complete candidate against this original source
+                // before adding its roots. A revoked optional graph result must
+                // not poison an otherwise valid new generation.
+                let mut candidate = lease.clone();
+                let admitted = async {
+                    merge(&mut candidate.dependencies, &refs)?;
+                    candidate.valid_until = earliest(candidate.valid_until, expires);
+                    validate_evidence(&tx, &candidate).await
+                }
+                .await;
+                match admitted {
+                    Ok(()) => lease = candidate,
+                    Err(error) if super::appraisal::is_revoked(&error) => continue,
+                    Err(error) => return Err(error),
+                }
                 graph.push(snippet);
             }
         }
@@ -360,6 +387,7 @@ impl ContextService {
             }),
             history,
             memory_prompt,
+            affect: original.and_then(|context| context.affect.clone()),
         };
         if original.is_some() {
             material.extensions.push(json!({"memory_query":query,"max_results":retrieval.max_results,"min_similarity":retrieval.min_similarity,"layers":retrieval.layers}));
@@ -588,7 +616,7 @@ async fn validate_materialization_source(
     }
     Ok((raw, source_row.try_get("", "created_at")?))
 }
-fn materialized_payload(context: &GenerationContext) -> Value {
+pub(super) fn materialized_payload(context: &GenerationContext) -> Value {
     json!({"source_text":context.source_text,"memory":context.memory,"prior_memory":context.prior_memory,"history":context.history.iter().map(|m|json!({"id":m.id,"role":m.message.role,"content":m.message.content})).collect::<Vec<_>>(),"memory_prompt":context.memory_prompt,"extensions":context.extensions})
 }
 fn render_memory(pack: &crate::providers::adapter::MemoryContextPack) -> String {

@@ -6,6 +6,7 @@ fn owned_turn(fixture: &Fixture, epoch: i64) -> VoiceTurn {
     let mut turn = VoiceTurn::request(CancellationToken::new());
     turn.output_channel = Some(fixture.output.clone());
     turn.source_privacy_epoch = Some(epoch);
+    turn.source_relationship_epoch = Some(0);
     turn
 }
 
@@ -53,7 +54,15 @@ async fn corrected_transcript_keeps_the_single_persisted_raw_source_and_lease() 
         assert_eq!(fixture.started.try_recv().unwrap(), "turn on the light");
         let state = turn.context.lock().await;
         assert!(state.frozen);
-        assert_eq!(state.lease().unwrap().id(), initial.lease().id());
+        assert_eq!(state.lease().unwrap().source(), initial.source());
+        assert!(
+            initial.lease().dependencies().iter().all(|root| state
+                .lease()
+                .unwrap()
+                .dependencies()
+                .contains(root))
+        );
+        assert!(state.generation.as_ref().unwrap().affect().is_some());
         drop(state);
         let messages = fixture.conversation.messages.lock().unwrap();
         let users: Vec<_> = messages

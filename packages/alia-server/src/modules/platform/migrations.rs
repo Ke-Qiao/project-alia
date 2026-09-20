@@ -61,6 +61,9 @@ pub const MIGRATIONS: &[Migration<'static>] = &[
     migration!("m20260913_000007_context_lease.sql"),
     migration!("m20260913_000008_cache_context.sql"),
     migration!("m20260913_000009_memory_embedding_identity.sql"),
+    migration!("m20260913_000010_appraisal_provenance.sql"),
+    migration!("m20260914_000011_appraisal_rebuild.sql"),
+    migration!("m20260920_000012_appraisal_memory_erasure.sql"),
 ];
 
 pub async fn run(db: &DatabaseConnection) -> anyhow::Result<MigrationReport> {

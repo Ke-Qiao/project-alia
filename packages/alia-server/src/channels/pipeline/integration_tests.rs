@@ -21,6 +21,7 @@ struct Conversation {
     events: Mutex<Vec<ConversationEventEntry>>,
     source_times: Mutex<Vec<chrono::DateTime<chrono::Utc>>>,
     source_epochs: Mutex<Vec<i64>>,
+    source_relationship_epochs: Mutex<Vec<i64>>,
     db: Option<sea_orm::DatabaseConnection>,
     fail_session: AtomicBool,
     fail_user: AtomicBool,
@@ -85,6 +86,7 @@ impl ConversationBackend for Conversation {
         message: ChatMessage,
         received_at: chrono::DateTime<chrono::Utc>,
         source_privacy_epoch: i64,
+        source_relationship_epoch: i64,
     ) -> anyhow::Result<Uuid> {
         anyhow::ensure!(
             !self.fail_user.load(Ordering::SeqCst),
@@ -94,7 +96,7 @@ impl ConversationBackend for Conversation {
         let source = Uuid::new_v4();
         if let Some(db) = &self.db {
             use sea_orm::ConnectionTrait;
-            db.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user',$4,$5,$6)",vec![source.into(),session.into(),owner.to_string().into(),message.content.clone().into(),received_at.into(),source_privacy_epoch.into()])).await?;
+            db.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user',$4,$5,$6,$7)",vec![source.into(),session.into(),owner.to_string().into(),message.content.clone().into(),received_at.into(),source_privacy_epoch.into(),source_relationship_epoch.into()])).await?;
         }
         self.append_message(session, message).await?;
         self.source_times.lock().unwrap().push(received_at);
@@ -102,6 +104,10 @@ impl ConversationBackend for Conversation {
             .lock()
             .unwrap()
             .push(source_privacy_epoch);
+        self.source_relationship_epochs
+            .lock()
+            .unwrap()
+            .push(source_relationship_epoch);
         Ok(source)
     }
     async fn commit_response(
@@ -404,6 +410,7 @@ fn input(text: &str) -> RecognizedVoiceInput {
     RecognizedVoiceInput {
         source_received_at: chrono::Utc::now() - chrono::Duration::hours(1),
         source_privacy_epoch: 41,
+        source_relationship_epoch: 0,
         channel_id: "test".into(),
         user_id: text.into(),
         transcript: text.into(),
@@ -511,6 +518,7 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
     let user = Uuid::new_v4().to_string();
     let mut turn = VoiceTurn::request(CancellationToken::new());
     turn.source_privacy_epoch = Some(0);
+    turn.source_relationship_epoch = Some(0);
     let result = process_text(
         "Remember this new preference",
         &user,
@@ -585,6 +593,16 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
                 .as_slice(),
             &[41],
             "queued speech must keep its admitted source epoch"
+        );
+        assert_eq!(
+            fixture
+                .conversation
+                .source_relationship_epochs
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &[0],
+            "queued speech must preserve its relationship admission through generation"
         );
         let messages = fixture.conversation.messages.lock().unwrap();
         assert_eq!(
@@ -734,6 +752,7 @@ where
         crate::modules::delivery::repository::DeliveryRepository::new(db.clone()),
         &CancellationToken::new(),
     );
+    let appraisal_writer = std::sync::OnceLock::new();
     let result = std::panic::AssertUnwindSafe(Box::pin(async {
     crate::modules::platform::migrations::run(&db)
         .await
@@ -747,6 +766,11 @@ where
     ))
     .await
     .unwrap();
+    // Inputs below carry an already-admitted stamp, so perform the same
+    // durable dual-domain admission before concurrent Context snapshots start.
+    let admitted=crate::modules::memory::source::capture_source_epochs(&db,owner).await.unwrap();
+    assert_eq!(admitted.privacy_epoch,41);
+    assert_eq!(admitted.relationship_epoch,0);
     let mut fixture = Fixture::new(false).await;
     fixture.conversation = Arc::new(Conversation {
         db: Some(db.clone()),
@@ -766,6 +790,8 @@ where
     let modules = Arc::get_mut(&mut fixture.modules).unwrap();
     modules.delivery = delivery.clone();
     modules.conversation = fixture.conversation.clone();
+    modules.expression.attach_db(db.clone()).await.unwrap();
+    appraisal_writer.set(modules.expression.clone()).unwrap();
     modules.context = Arc::new(crate::modules::memory::context::ContextService::new(
         db.clone(),
         modules.embedding.clone(),
@@ -783,10 +809,25 @@ where
         )
         .await
         .unwrap();
+        // Initializing the real tool host hashes this debug executable once.
+        // Complete that fixture setup before timing pipeline behavior; on
+        // Linux ARM the artifact read alone can consume the 15-second budget.
+        let identity_owner = crate::modules::execution::ExecutionService::new(
+            crate::modules::execution::repository::ExecutionRepository::new(db.clone()),
+            Arc::new(crate::tools::BuiltinToolRegistry::new()),
+            &fixture.policy.tools,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        drop(identity_owner);
         tokio::time::timeout(std::time::Duration::from_secs(15), Box::pin(test(fixture))).await
     }))
     .catch_unwind()
     .await;
+    if let Some(writer) = appraisal_writer.get() {
+        writer.shutdown().await.unwrap();
+    }
     delivery.shutdown().await.unwrap();
     db.close().await.unwrap();
     admin

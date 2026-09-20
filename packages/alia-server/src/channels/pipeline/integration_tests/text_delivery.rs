@@ -41,6 +41,7 @@ async fn respond(f: &Fixture) {
             text: "Say a reply".into(),
             source_received_at: chrono::Utc::now() - chrono::Duration::hours(2),
             source_privacy_epoch: 41,
+            source_relationship_epoch: 0,
         },
         &f.modules,
         &f.channels,

@@ -51,6 +51,18 @@ async fn validate_nodes_policy(
     )
     .await?
     .policy;
+    for node in nodes {
+        let id = node
+            .id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("stored memory identity missing"))?;
+        crate::modules::memory::context::memory_appraisal::bind_memory_roots(
+            tx,
+            context,
+            Uuid::parse_str(id)?,
+        )
+        .await?;
+    }
     if context.origin == MemoryWriteOrigin::Manual {
         return Ok(());
     }
@@ -366,13 +378,120 @@ impl AliaMemory {
         self.erase_in_memory(user_id, &ids).await
     }
 
+    async fn consolidation_snapshot(
+        &self,
+        user_id: Uuid,
+    ) -> anyhow::Result<(
+        MemoryWriteContext,
+        Vec<MemoryNode>,
+        HashMap<String, HashSet<String>>,
+    )> {
+        use crate::modules::memory::context::{ContextError, ContextEvidence, memory_appraisal};
+        use crate::providers::adapter::MemoryWriteOrigin;
+
+        let mut context = self.write_snapshot(user_id).await?;
+        context.origin = MemoryWriteOrigin::Maintenance;
+        let candidates = self
+            .list(
+                user_id,
+                MemoryListOpts {
+                    max_results: Some(128),
+                    layers: None,
+                },
+            )
+            .await?;
+        let mut memories = Vec::new();
+        let mut ancestors = HashMap::new();
+        if let Some(db) = self.db().await {
+            let tx = db.begin().await?;
+            privacy::validate(&tx, &context).await?;
+            for node in candidates.into_iter().filter(|node| {
+                memory_live(node) && !node.sensitive && node.visibility != "private_runtime"
+            }) {
+                let id = Uuid::parse_str(
+                    node.id
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("maintenance source has no identity"))?,
+                )?;
+                match memory_appraisal::validate_memory_roots_in_transaction(
+                    &tx,
+                    user_id,
+                    id,
+                    node.revision,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        let (roots, _) =
+                            memory_appraisal::memory_source_roots(&tx, user_id, id, node.revision)
+                                .await?;
+                        ancestors.insert(
+                            id.to_string(),
+                            roots
+                                .into_iter()
+                                .filter_map(|root| match root {
+                                    ContextEvidence::Memory { id, .. } => Some(id.to_string()),
+                                    _ => None,
+                                })
+                                .collect(),
+                        );
+                        memories.push(node);
+                    }
+                    Err(error)
+                        if error.downcast_ref::<ContextError>().is_some_and(|error| {
+                            matches!(
+                                error,
+                                ContextError::Revoked(_) | ContextError::BoundsExceeded
+                            )
+                        }) =>
+                    {
+                        ()
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            tx.commit().await?;
+        } else {
+            anyhow::ensure!(
+                self.config.read().await.consolidation_enabled,
+                "memory maintenance is disabled"
+            );
+            memories.extend(candidates.into_iter().filter(|node| {
+                memory_live(node) && !node.sensitive && node.visibility != "private_runtime"
+            }));
+            let sources = self.memory_sources.read().await;
+            for node in &memories {
+                let id = node.id.as_ref().expect("stored memory identity");
+                let mut roots = HashSet::new();
+                let mut pending = vec![id.clone()];
+                while let Some(source) = pending.pop() {
+                    if !roots.insert(source.clone()) {
+                        continue;
+                    }
+                    anyhow::ensure!(roots.len() <= 256, "memory maintenance roots exceed bounds");
+                    if let Some(parents) = sources.get(&(user_id, source)) {
+                        pending.extend(parents.iter().map(|(id, _)| id.clone()));
+                    }
+                }
+                ancestors.insert(id.clone(), roots);
+            }
+        }
+        // A retired or invalid candidate never becomes part of the next batch's
+        // live input set. Each selected revision is rechecked before mutation.
+        context.source_memories = memories
+            .iter()
+            .filter_map(|node| node.id.clone().map(|id| (id, node.revision)))
+            .collect();
+        Ok((context, memories, ancestors))
+    }
+
     async fn commit_consolidation(
         &self,
         context: &MemoryWriteContext,
         originals: &[MemoryNode],
         mut patches: BTreeMap<String, MemoryPatch>,
         created: Vec<(MemoryNode, Vec<(String, i64)>)>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<MemoryBatchResult> {
         let mut dependencies = HashMap::<String, Vec<(String, i64)>>::new();
         for (id, patch) in &mut patches {
             let original = originals
@@ -398,8 +517,7 @@ impl AliaMemory {
             }
         }
         self.commit_memory_batch(context, patches, created, dependencies)
-            .await?;
-        Ok(())
+            .await
     }
 
     async fn commit_memory_batch(
@@ -409,6 +527,8 @@ impl AliaMemory {
         mut created: Vec<(MemoryNode, Vec<(String, i64)>)>,
         mut dependencies: HashMap<String, Vec<(String, i64)>>,
     ) -> anyhow::Result<MemoryBatchResult> {
+        let maintenance =
+            context.origin == crate::providers::adapter::MemoryWriteOrigin::Maintenance;
         let mut changed_ids = patches.keys().cloned().collect::<HashSet<_>>();
         let mut created_ids = Vec::new();
         for (node, sources) in &mut created {
@@ -434,6 +554,9 @@ impl AliaMemory {
                     .all(|source| context.source_memories.contains(source)),
                 "batch provenance must come from the original snapshot"
             );
+            // Historical messages are inherited through canonical parent roots.
+            // Only this batch's directly verified messages can acquire new pins.
+            node.source_event_ids = context.source_event_ids.clone();
             node.id = Some(id.clone());
             created_ids.push(id);
         }
@@ -473,7 +596,7 @@ impl AliaMemory {
                 "batch update provenance is outside its original snapshot"
             );
         }
-        let result = MemoryBatchResult {
+        let mut result = MemoryBatchResult {
             updated: patches.len(),
             created_ids,
         };
@@ -482,8 +605,29 @@ impl AliaMemory {
             // One immutable input snapshot and one commit: our own first update
             // cannot invalidate a later operation in this deterministic batch.
             privacy::validate(&tx, context).await?;
+            if maintenance {
+                for (id, revision) in &context.source_memories {
+                    crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(&tx,context.user_id,Uuid::parse_str(id)?,*revision).await?;
+                }
+            }
             let mut projected = Vec::new();
             for (node, sources) in created {
+                if maintenance
+                    && self
+                        .get_from_db(
+                            &tx,
+                            context.user_id,
+                            node.id.as_deref().expect("planned identity"),
+                        )
+                        .await?
+                        .is_some()
+                {
+                    // The stable transform identity remains reserved even after
+                    // soft deletion. Concurrent/repeated maintenance cannot
+                    // publish it twice or recreate its erased output.
+                    result.created_ids.retain(|id| Some(id) != node.id.as_ref());
+                    continue;
+                }
                 let id = self.store_in_db(&tx, context.user_id, node, false).await?;
                 dependencies.entry(id.clone()).or_default().extend(sources);
                 projected.push(self.get_from_db(&tx, context.user_id, &id).await?.unwrap());
@@ -528,6 +672,10 @@ impl AliaMemory {
                 .id
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("planned memory lacks id"))?;
+            if maintenance && working.iter().any(|node| node.id.as_ref() == Some(&id)) {
+                result.created_ids.retain(|created| created != &id);
+                continue;
+            }
             anyhow::ensure!(
                 !memories
                     .values()
@@ -639,6 +787,12 @@ impl AliaMemory {
         require_live_superseder: bool,
         source_event_ids: &[Uuid],
     ) -> anyhow::Result<MemoryNode> {
+        crate::modules::memory::context::memory_appraisal::validate_memory_message_sources(
+            db,
+            user_id,
+            Uuid::parse_str(node_id)?,
+        )
+        .await?;
         let expected = patch
             .expected_revision
             .ok_or_else(|| anyhow::anyhow!("memory update requires expected revision"))?;
@@ -875,6 +1029,10 @@ impl AliaMemory {
         existing: Uuid,
         incoming: &MemoryNode,
     ) -> anyhow::Result<()> {
+        crate::modules::memory::context::memory_appraisal::validate_memory_message_sources(
+            db, user_id, existing,
+        )
+        .await?;
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -889,6 +1047,9 @@ impl AliaMemory {
                     true
                 ),
                 metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb,
+                source_event_ids = ARRAY(SELECT DISTINCT v FROM unnest(
+                    source_event_ids || ARRAY(SELECT jsonb_array_elements_text($8::jsonb)::uuid)
+                ) AS ids(v)),
                 revision = revision + 1, updated_at = NOW()
             WHERE id = $1::uuid AND user_id = $6::uuid AND tenant_id = $7::uuid AND status = 'active'
             "#,
@@ -905,6 +1066,7 @@ impl AliaMemory {
                 .into(),
                 user_id.into(),
                 DEFAULT_TENANT_ID.into(),
+                serde_json::json!(incoming.source_event_ids).into(),
             ],
         ))
         .await?;
@@ -1324,7 +1486,7 @@ impl AliaMemory {
                 privacy::lock_user(&tx, user_id).await?.privacy_epoch == original_epoch,
                 "Memory retrieval source epoch changed"
             );
-            let nodes = retrieve_context_nodes(
+            let candidates = retrieve_context_nodes(
                 &tx,
                 user_id,
                 query,
@@ -1333,6 +1495,19 @@ impl AliaMemory {
                 &policy.policy,
             )
             .await?;
+            let mut nodes = Vec::new();
+            for node in candidates {
+                let id = Uuid::parse_str(
+                    node.id
+                        .as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("memory identity missing"))?,
+                )?;
+                match crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(&tx,user_id,id,node.revision).await {
+                    Ok(())=>nodes.push(node),
+                    Err(error) if error.downcast_ref::<crate::modules::memory::context::ContextError>().is_some_and(|e|matches!(e,crate::modules::memory::context::ContextError::Revoked(_)|crate::modules::memory::context::ContextError::PolicyChanged|crate::modules::memory::context::ContextError::BoundsExceeded))=>continue,
+                    Err(error)=>return Err(error),
+                }
+            }
             tx.commit().await?;
             Ok(nodes)
         })
@@ -1346,83 +1521,77 @@ impl AliaMemory {
         user_id: Uuid,
         opts: MemoryListOpts,
     ) -> anyhow::Result<GraphFragment> {
-        let depth = self.config.read().await.graph_depth.clamp(1, 4) as i32;
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                WITH RECURSIVE graph_walk AS (
-                    SELECT n.id, n.label, n.node_type, ARRAY[n.id] AS path, 0 AS depth
-                    FROM memory_nodes n
-                    WHERE n.tenant_id = $1::uuid
-                      AND n.user_id = $2::uuid
-                      AND n.node_type = 'user'
-                    UNION ALL
-                    SELECT next_node.id, next_node.label, next_node.node_type,
-                           graph_walk.path || next_node.id,
-                           graph_walk.depth + 1
-                    FROM graph_walk
-                    JOIN memory_live_edges e ON e.src_node_id = graph_walk.id
-                    JOIN memory_nodes next_node ON next_node.id = e.dst_node_id
-                    WHERE graph_walk.depth < $3
-                      AND NOT next_node.id = ANY(graph_walk.path)
-                      AND e.tenant_id = $1::uuid
-                      AND e.user_id = $2::uuid
-                      AND (e.valid_to IS NULL OR e.valid_to > NOW())
-                )
-                SELECT DISTINCT id::text, label, node_type
-                FROM graph_walk
-                WHERE depth > 0
-                LIMIT $4
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                    depth.into(),
-                    opts.max_results.unwrap_or(100).clamp(1, 500).into(),
-                ],
-            ))
-            .await?;
-        let nodes = rows
-            .into_iter()
-            .map(|row| {
-                let id: String = row.try_get("", "id")?;
-                let node_type: String = row.try_get("", "node_type")?;
-                let content: String = row.try_get("", "label")?;
-                Ok(MemoryNode::new("graph", node_type, content, 0.5)
-                    .with_runtime_fields("semantic", "user", 0.6, 0.5, "internal")
-                    .with_metadata(serde_json::json!({ "graph_node_id": id })))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        use crate::modules::memory::context::memory_appraisal::validated_graph_projection;
+        use crate::modules::memory::context::{ContextError, ContextService, ContextUse};
 
-        let edge_rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                SELECT src_node_id::text, dst_node_id::text, relation, weight
-                FROM memory_live_edges
-                WHERE tenant_id = $1::uuid AND user_id = $2::uuid
-                ORDER BY created_at DESC
-                LIMIT $3
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                    opts.max_results.unwrap_or(100).clamp(1, 500).into(),
-                ],
-            ))
-            .await?;
-        let edges = edge_rows
+        let tx = db.begin().await?;
+        let policy =
+            ContextService::policy_in_transaction(&tx, None, ContextUse::AffectRead).await?;
+        privacy::lock_user(&tx, user_id).await?;
+        let limit = opts.max_results.unwrap_or(100).clamp(1, 500) as usize;
+        let roots=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT id FROM memory_nodes WHERE tenant_id=$1 AND user_id=$2 AND node_type='user' ORDER BY id LIMIT $3",
+            vec![DEFAULT_TENANT_ID.into(),user_id.into(),(limit as i64).into()])).await?;
+        let mut frontier = roots
             .into_iter()
-            .map(|row| {
-                Ok(MemoryEdge {
-                    source_id: row.try_get("", "src_node_id")?,
-                    target_id: row.try_get("", "dst_node_id")?,
-                    relation_type: row.try_get("", "relation")?,
-                    weight: row.try_get("", "weight")?,
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .map(|row| row.try_get::<Uuid>("", "id"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut visited = frontier.iter().copied().collect::<HashSet<_>>();
+        let mut examined = Vec::<Uuid>::new();
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        // The total candidate budget includes rejected edges. No unbounded SQL
+        // walk runs before validation, and a revoked edge cannot extend a path.
+        for _ in 0..policy.policy.graph_depth {
+            if frontier.is_empty() || examined.len() == limit {
+                break;
+            }
+            let rows=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "SELECT id FROM memory_live_edges WHERE tenant_id=$1 AND user_id=$2 AND src_node_id=ANY(ARRAY(SELECT jsonb_array_elements_text($3)::uuid)) AND NOT(id=ANY(ARRAY(SELECT jsonb_array_elements_text($4)::uuid))) ORDER BY confidence DESC,created_at DESC,id LIMIT $5",
+                vec![DEFAULT_TENANT_ID.into(),user_id.into(),serde_json::json!(frontier).into(),serde_json::json!(examined).into(),((limit-examined.len()) as i64).into()])).await?;
+            frontier.clear();
+            for row in rows {
+                let id: Uuid = row.try_get("", "id")?;
+                examined.push(id);
+                let projection = match validated_graph_projection(&tx, user_id, id).await {
+                    Ok(Some(projection)) => projection,
+                    Ok(None) => continue,
+                    Err(error)
+                        if error.downcast_ref::<ContextError>().is_some_and(|e| {
+                            matches!(
+                                e,
+                                ContextError::Revoked(_)
+                                    | ContextError::PolicyChanged
+                                    | ContextError::BoundsExceeded
+                            )
+                        }) =>
+                    {
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                let source: Uuid = serde_json::from_value(projection["source_id"].clone())?;
+                let target: Uuid = serde_json::from_value(projection["target_id"].clone())?;
+                edges.push(MemoryEdge {
+                    source_id: source.to_string(),
+                    target_id: target.to_string(),
+                    relation_type: serde_json::from_value(projection["relation"].clone())?,
+                    weight: serde_json::from_value(projection["weight"].clone())?,
+                });
+                if visited.insert(target) {
+                    frontier.push(target);
+                    let content: String = serde_json::from_value(projection["target"].clone())?;
+                    let node_type: String =
+                        serde_json::from_value(projection["target_type"].clone())?;
+                    nodes.push(
+                        MemoryNode::new("graph", node_type, content, 0.5)
+                            .with_runtime_fields("semantic", "user", 0.6, 0.5, "internal")
+                            .with_metadata(serde_json::json!({"graph_node_id":target})),
+                    );
+                }
+            }
+        }
+        tx.commit().await?;
         Ok(GraphFragment { nodes, edges })
     }
 
@@ -1431,36 +1600,45 @@ impl AliaMemory {
         db: &DatabaseConnection,
         user_id: Uuid,
     ) -> anyhow::Result<Vec<GraphSnippet>> {
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                SELECT src.label AS source, e.relation, dst.label AS target, e.confidence
-                FROM memory_live_edges e
-                JOIN memory_nodes src ON src.id = e.src_node_id
-                JOIN memory_nodes dst ON dst.id = e.dst_node_id
-                WHERE e.tenant_id = $1::uuid
-                  AND e.user_id = $2::uuid
-                  AND (e.valid_to IS NULL OR e.valid_to > NOW())
-                ORDER BY e.confidence DESC, e.created_at DESC
-                LIMIT 24
-                "#,
-                vec![
-                    DEFAULT_TENANT_ID.to_string().into(),
-                    user_id.to_string().into(),
-                ],
-            ))
-            .await?;
-        rows.into_iter()
-            .map(|row| {
-                Ok(GraphSnippet {
-                    source: row.try_get("", "source")?,
-                    relation: row.try_get("", "relation")?,
-                    target: row.try_get("", "target")?,
-                    confidence: row.try_get("", "confidence")?,
-                })
-            })
-            .collect()
+        let tx = db.begin().await?;
+        privacy::lock_user(&tx, user_id).await?;
+        let rows=tx.query_all(Statement::from_sql_and_values(DatabaseBackend::Postgres,"SELECT id FROM memory_live_edges WHERE user_id=$1 AND tenant_id=$2 ORDER BY confidence DESC,created_at DESC,id LIMIT 24",vec![user_id.into(),DEFAULT_TENANT_ID.into()])).await?;
+        let mut snippets = Vec::new();
+        for row in rows {
+            let result =
+                crate::modules::memory::context::memory_appraisal::validated_graph_projection(
+                    &tx,
+                    user_id,
+                    row.try_get("", "id")?,
+                )
+                .await;
+            match result {
+                Ok(Some(projection)) => snippets.push(GraphSnippet {
+                    source: projection["source"].as_str().unwrap_or_default().into(),
+                    relation: projection["relation"].as_str().unwrap_or_default().into(),
+                    target: projection["target"].as_str().unwrap_or_default().into(),
+                    confidence: projection["confidence"].as_f64().unwrap_or_default() as f32,
+                }),
+                Ok(None) => (),
+                Err(error)
+                    if error
+                        .downcast_ref::<crate::modules::memory::context::ContextError>()
+                        .is_some_and(|e| {
+                            matches!(
+                                e,
+                                crate::modules::memory::context::ContextError::Revoked(_)
+                                    | crate::modules::memory::context::ContextError::PolicyChanged
+                                    | crate::modules::memory::context::ContextError::BoundsExceeded
+                            )
+                        }) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        tx.commit().await?;
+        Ok(snippets)
     }
 }
 
@@ -2043,85 +2221,71 @@ impl MemoryBackend for AliaMemory {
     }
 
     async fn consolidate_user(&self, user_id: Uuid) -> anyhow::Result<MemoryConsolidationResult> {
-        let mut context = self.write_snapshot(user_id).await?;
-        let memories = self
-            .list(
-                user_id,
-                MemoryListOpts {
-                    max_results: Some(10_000),
-                    layers: None,
-                },
-            )
-            .await?;
-        context.source_memories = memories
-            .iter()
-            .filter_map(|node| node.id.clone().map(|id| (id, node.revision)))
-            .collect();
+        let (context, memories, ancestors) = self.consolidation_snapshot(user_id).await?;
         let mut patches = BTreeMap::<String, MemoryPatch>::new();
         let mut created = Vec::<(MemoryNode, Vec<(String, i64)>)>::new();
         let mut result = MemoryConsolidationResult {
             scanned: memories.len(),
             ..MemoryConsolidationResult::default()
         };
+        let mut deduplicated = HashSet::new();
+        let mut superseded = HashSet::new();
+        let mut contradicted = HashSet::new();
+        let mut demoted = HashSet::new();
+        let mut transformed = HashSet::new();
 
-        let mut by_merge_key: HashMap<(String, String), MemoryNode> = HashMap::new();
+        let mut by_merge_key = BTreeMap::<(String, String), Vec<&MemoryNode>>::new();
         for memory in memories.iter().filter(|memory| memory.status == "active") {
-            let Some(id) = memory.id.clone() else {
-                continue;
-            };
             if matches!(
                 memory.kind.as_str(),
                 "preference" | "boundary" | "project" | "semantic"
             ) {
                 let key = (memory.kind.clone(), memory_merge_key(&memory.content));
-                if let Some(existing) = by_merge_key.get(&key) {
-                    let Some(existing_id) = existing.id.clone() else {
-                        continue;
-                    };
-                    let (keeper, duplicate) = if memory_quality(memory) > memory_quality(existing) {
-                        (memory, existing)
-                    } else {
-                        (existing, memory)
-                    };
-                    let Some(keeper_id) = keeper.id.clone() else {
-                        continue;
-                    };
-                    let Some(duplicate_id) = duplicate.id.clone() else {
-                        continue;
-                    };
-                    queue_patch(
-                        &mut patches,
-                        &keeper_id,
-                        MemoryPatch {
-                            metadata: Some(consolidation_metadata(
-                                keeper,
-                                duplicate,
-                                "deduplicated_and_reinforced",
-                            )),
-                            confidence: Some((keeper.confidence + 0.05).min(1.0)),
-                            salience: Some(keeper.salience.max(duplicate.salience)),
-                            importance: Some(keeper.importance.max(duplicate.importance)),
-                            ..MemoryPatch::default()
-                        },
-                    );
-                    queue_patch(
-                        &mut patches,
-                        &duplicate_id,
-                        MemoryPatch {
-                            status: Some("superseded".to_string()),
-                            superseded_by: Some(keeper_id.clone()),
-                            ..MemoryPatch::default()
-                        },
-                    );
-                    if id == keeper_id {
-                        by_merge_key.insert(key, keeper.clone());
-                    } else if existing_id == keeper_id {
-                        by_merge_key.insert(key, existing.clone());
-                    }
-                    result.deduplicated += 1;
-                } else {
-                    by_merge_key.insert(key, memory.clone());
+                by_merge_key.entry(key).or_default().push(memory);
+            }
+        }
+        for group in by_merge_key.values().filter(|group| group.len() > 1) {
+            let group_ids = group
+                .iter()
+                .filter_map(|memory| memory.id.as_ref())
+                .collect::<HashSet<_>>();
+            // Choose from the complete group before retiring anything. A
+            // derived candidate cannot displace a canonical fact it needs,
+            // including one that lost an earlier comparison to a third item.
+            let keeper = group
+                .iter()
+                .filter(|memory| {
+                    let id = memory.id.as_ref().expect("stored memory identity");
+                    let roots = ancestors.get(id).expect("validated memory ancestors");
+                    !group_ids
+                        .iter()
+                        .any(|other| *other != id && roots.contains(*other))
+                })
+                .max_by(|left, right| {
+                    memory_quality(left)
+                        .total_cmp(&memory_quality(right))
+                        .then_with(|| left.id.cmp(&right.id))
+                });
+            let Some(keeper_id) = keeper.and_then(|memory| memory.id.as_ref()) else {
+                continue;
+            };
+            for duplicate in group {
+                let duplicate_id = duplicate.id.as_ref().expect("stored memory identity");
+                if duplicate_id == keeper_id {
+                    continue;
                 }
+                // The keeper's fact and confidence stay unchanged; retiring
+                // a duplicate does not turn it into new evidence.
+                queue_patch(
+                    &mut patches,
+                    duplicate_id,
+                    MemoryPatch {
+                        status: Some("superseded".to_string()),
+                        superseded_by: Some(keeper_id.clone()),
+                        ..MemoryPatch::default()
+                    },
+                );
+                deduplicated.insert(duplicate_id.clone());
             }
         }
 
@@ -2160,20 +2324,10 @@ impl MemoryBackend for AliaMemory {
                 "summary": "Episode promoted to preference because it contains stable user-preference language.",
                 "evidence_memory_ids": [episode_id],
             });
-            let promoted_id = Uuid::new_v4().to_string();
-            promoted.id = Some(promoted_id.clone());
-            promoted.source_event_ids = episode.source_event_ids.clone();
+            promoted.id = Some(promotion_id(user_id, &episode_id, episode.revision));
             created.push((promoted, vec![(episode_id.clone(), episode.revision)]));
-            queue_patch(
-                &mut patches,
-                &episode_id,
-                MemoryPatch {
-                    status: Some("superseded".to_string()),
-                    superseded_by: Some(promoted_id),
-                    ..MemoryPatch::default()
-                },
-            );
-            result.promoted += 1;
+            // The interpretation depends on this active episode revision. A
+            // promotion cannot simultaneously retire or rewrite its own fact.
         }
 
         let active_preferences = memories
@@ -2192,7 +2346,6 @@ impl MemoryBackend for AliaMemory {
                     continue;
                 }
                 if preference_is_dislike(&left.content) != preference_is_dislike(&right.content) {
-                    result.contradictions += 1;
                     if memory_quality(left) >= memory_quality(right) {
                         queue_patch(
                             &mut patches,
@@ -2208,7 +2361,8 @@ impl MemoryBackend for AliaMemory {
                                 ..MemoryPatch::default()
                             },
                         );
-                        result.superseded += 1;
+                        superseded.insert(right_id.clone());
+                        contradicted.insert(right_id.clone());
                     } else {
                         queue_patch(
                             &mut patches,
@@ -2224,7 +2378,8 @@ impl MemoryBackend for AliaMemory {
                                 ..MemoryPatch::default()
                             },
                         );
-                        result.superseded += 1;
+                        superseded.insert(left_id.clone());
+                        contradicted.insert(left_id.clone());
                     }
                 } else if preference_supersedes(&left.content, &right.content) {
                     queue_patch(
@@ -2236,7 +2391,7 @@ impl MemoryBackend for AliaMemory {
                             ..MemoryPatch::default()
                         },
                     );
-                    result.superseded += 1;
+                    superseded.insert(right_id.clone());
                 } else if preference_supersedes(&right.content, &left.content) {
                     queue_patch(
                         &mut patches,
@@ -2247,7 +2402,7 @@ impl MemoryBackend for AliaMemory {
                             ..MemoryPatch::default()
                         },
                     );
-                    result.superseded += 1;
+                    superseded.insert(left_id.clone());
                 }
             }
         }
@@ -2272,11 +2427,18 @@ impl MemoryBackend for AliaMemory {
                         ..MemoryPatch::default()
                     },
                 );
-                result.demoted += 1;
+                demoted.insert(id.clone());
                 continue;
             }
 
-            if memory.kind == "affective_pattern" && is_negative_affective_memory(&memory.content) {
+            if memory.kind == "affective_pattern"
+                && is_negative_affective_memory(&memory.content)
+                && !memory
+                    .content
+                    .trim()
+                    .to_ascii_lowercase()
+                    .starts_with("constructive guidance:")
+            {
                 queue_patch(
                     &mut patches,
                     &id,
@@ -2290,12 +2452,119 @@ impl MemoryBackend for AliaMemory {
                         ..MemoryPatch::default()
                     },
                 );
-                result.transformed_affective_guidance += 1;
+                transformed.insert(id.clone());
             }
         }
 
-        self.commit_consolidation(&context, &memories, patches, created)
+        if !created.is_empty() {
+            let existing = if let Some(db) = self.db().await {
+                let ids = created
+                    .iter()
+                    .filter_map(|(node, _)| node.id.clone())
+                    .collect::<Vec<_>>();
+                db.query_all(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "SELECT id::text FROM memory_items WHERE tenant_id=$1::uuid AND user_id=$2::uuid AND id::text=ANY($3::text[])",
+                    vec![DEFAULT_TENANT_ID.to_string().into(),user_id.to_string().into(),ids.into()],
+                )).await?.into_iter().map(|row|row.try_get::<String>("","id")).collect::<Result<HashSet<_>,_>>()?
+            } else {
+                self.memories
+                    .read()
+                    .await
+                    .get(&user_id)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|node| node.id.clone())
+                    .collect()
+            };
+            // An existing output, including its tombstone, is not a new
+            // interpretation requiring extra source protection. Commit checks
+            // the same stable identity again under the owner lock.
+            created.retain(|(node, _)| {
+                !existing.contains(node.id.as_ref().expect("planned identity"))
+            });
+        }
+
+        // Every retained fact and new interpretation must keep its complete
+        // ancestor revisions live. Dropping a retirement can retain another
+        // ancestor, so converge monotonically over at most 128 queued patches.
+        loop {
+            let mut protected = HashSet::new();
+            for memory in &memories {
+                let id = memory.id.as_ref().expect("stored memory identity");
+                if patches
+                    .get(id)
+                    .and_then(|patch| patch.status.as_deref())
+                    .is_some_and(|status| status != "active")
+                {
+                    continue;
+                }
+                protected.extend(
+                    ancestors
+                        .get(id)
+                        .expect("validated memory ancestors")
+                        .iter()
+                        .filter(|ancestor| *ancestor != id)
+                        .cloned(),
+                );
+            }
+            for (_, parents) in &created {
+                for (parent, _) in parents {
+                    protected.extend(
+                        ancestors
+                            .get(parent)
+                            .expect("validated promotion ancestors")
+                            .iter()
+                            .cloned(),
+                    );
+                }
+            }
+            let before = patches.len();
+            patches.retain(|id, _| !protected.contains(id));
+            if patches.len() == before {
+                break;
+            }
+        }
+        result.deduplicated = deduplicated
+            .iter()
+            .filter(|id| {
+                patches
+                    .get(*id)
+                    .and_then(|patch| patch.status.as_deref())
+                    .is_some_and(|status| status == "superseded" || status == "rejected")
+            })
+            .count();
+        result.superseded = superseded
+            .iter()
+            .filter(|id| {
+                patches.get(*id).and_then(|patch| patch.status.as_deref()) == Some("superseded")
+            })
+            .count();
+        result.contradictions = contradicted
+            .iter()
+            .filter(|id| {
+                patches.get(*id).and_then(|patch| patch.status.as_deref()) == Some("superseded")
+            })
+            .count();
+        result.demoted = demoted
+            .iter()
+            .filter(|id| {
+                patches.get(*id).and_then(|patch| patch.status.as_deref()) == Some("rejected")
+            })
+            .count();
+        result.transformed_affective_guidance = transformed
+            .iter()
+            .filter(|id| {
+                patches
+                    .get(*id)
+                    .is_some_and(|patch| patch.content.is_some())
+            })
+            .count();
+
+        let committed = self
+            .commit_consolidation(&context, &memories, patches, created)
             .await?;
+        result.promoted = committed.created_ids.len();
         Ok(result)
     }
 
@@ -2362,6 +2631,18 @@ fn memory_live(node: &MemoryNode) -> bool {
         && node
             .expires_at
             .is_none_or(|expiry| expiry > chrono::Utc::now())
+}
+
+fn promotion_id(owner: Uuid, episode: &str, revision: i64) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(format!(
+        "alia.memory.promotion.v1:{owner}:{episode}:{revision}:preference"
+    ));
+    let mut bytes = [0; 16];
+    bytes.copy_from_slice(&hash[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes).to_string()
 }
 
 fn queue_patch(patches: &mut BTreeMap<String, MemoryPatch>, id: &str, incoming: MemoryPatch) {

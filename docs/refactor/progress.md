@@ -21,6 +21,23 @@
 | `a33ec67` | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；Linux ARM64 固定提交与夹具修正候选的结果见平台记录 |
 | `759985f` | Memory 实际向量身份、规范 revision 投影、可关闭后台重建与原子 profile 热切换 | macOS 默认 workspace 802 个不同测试通过、0 失败、5 项跳过；两端无默认特性 all-targets、28 个变更 Rust 文件格式检查通过；5 项真实 PTY/模型另跑通过 |
 | `5467e8b`，整合 `9de8c74` | 实际后端播放参考、独立采集/播放时钟、有界交接与可见缺口/关闭统计 | macOS 默认特性实际链接及库测试 124 项；Linux ARM64 无默认特性 all-targets 与 130 项库测试通过，13 个变更 Rust 文件格式检查通过 |
+| `b4987a8` 与本次主分支整合 | 规范 Appraisal/Relationship、独立关系版本、显式重建、完整 Memory 来源校验与隐私擦除传播 | 冻结主分支 macOS 默认 workspace 859 个不同测试通过，5 项真实 PTY/模型另跑通过；完整记录见下节 |
+
+## Appraisal / Relationship 与 Memory 来源整合（2026-09-20）
+
+用户消息在原接纳位置固定 privacy/relationship 两个版本，实际召回、规范 Response 提交及 Execution 终态作为 Appraisal 的输入。判断保留解释器、政策、原始时间、规范根和有效期；冻结前的 Affect 投影进入同一 Context，之后的事实只影响后续规划。旧 RAM 关系 profile、无来源 writer、全局句子缓存与私人 Expression trace 已移除。关系查看、清除及有界显式重建使用真实数据库权限、CAS 和原操作回执，见[实施契约](appraisal-provenance-design.md)和[操作手册](../operations/relationship.md)。
+
+Memory 在独立检索、Context、图遍历及向量 provider 调用前后检查完整父根；原消息摘要不可重新补证。维护提升保留原始 episode，稳定转换 ID 阻止重复与软删除后复活，去重不会删掉最终保留结果所需的祖先。隐私删除在同一事务擦除规范正文、向量、图和全部派生后代，直接推进 SQL 隐私版本也走同一闭包。新增 `000010`、`000011`、`000012`，未重写之前已提交的迁移。
+
+完整 workspace 候选共 584 个冻结构建输入，清单 SHA-256 为 `7c1c2e8048e6539ccc555480d3753ba6e0694642043e77acf55f9c6af3c2f9a6`。macOS 默认 `cargo test --workspace --locked --offline --no-fail-fast` **859 个不同测试通过、0 失败、5 显式跳过**，172.63 秒，运行后源码无漂移；生命周期测试内部的子进程重复项不再累计。默认 Embedded 测试实际链接已校验的 Sherpa 原生归档。
+
+5 项跳过已单独完成：真实 PTY 3 项；真实 CPU Easy-Turn 与持续 gRPC 2 项。最终直接 Backchannel 为 1335 ms，gRPC Complete/Backchannel/Wait 为 542/335/398 ms；首次候选直接 CPU 调用曾为 **12611 ms**，保留原记录，不能用后续暖调用掩盖首个慢调用。这些是模型功能及本次调用时间，未证明端到端声学延迟达标，也未启用新的可恢复 WAIT。
+
+证据统一保存在主仓库 `run/validation-20260920/appraisal-integration/`：`source-manifest-verified.json`、`workspace-verified.log`、`workspace-verified-summary.json`、`pty-verified-result.json` 与 `model-live-verified.log`。前两轮失败完整保留：第一轮 857 通过、1 失败、5 跳过，暴露 SQL 错误先于 HTTP timeout 时清除响应丢失原操作身份，补确定性 red/green 后修复；第二轮 853 通过、6 失败、5 跳过，均为测试完整 schema 并发创建/销毁耗尽 PostgreSQL 默认共享锁容量。Context 夹具现在从建立到清理最多并行 4 个；用例内部的真实并发和原 45 秒期限未变。最终全量重新运行通过，不合并失败轮次的计数冒充成功。
+
+Linux ARM 复核进一步证实，Pipeline 夹具的首次真实 executable 身份计算占用了 15 秒行为期限：415,129,944 字节的 debug ELF 连续读取约 14.2 秒。最终仅将真实 `ExecutionService::new` 初始化移到夹具计时前，没有伪造身份、改生产逻辑或延长期限。此最终提交候选仍为 584 文件，清单 `source-manifest-release.json` 的 SHA-256 为 `208f11edb3ba7c75e7b3e7acd1042ff002e0c7d150f092d7b495d746c3394cc3`，相对前一清单只有该测试文件不同。受影响的 macOS 默认 Server lib 216/216 已重新通过，3 项 PTY 显式跳过；66 个变更 Rust 文件格式检查通过。这是完整 workspace 成功之后的测试夹具增量复核，不能改称前一日志运行过修改后的测试文件。
+
+Linux ARM 最终候选默认 Server **637 个不同测试通过、0 失败、5 跳过**，全部 45 个集成目标执行完毕，默认及无默认特性所有目标检查通过；原始失败和修复依据见[平台记录](platform-validation.md)。可恢复暂停的本地 Stage 1 已单独提交为 `213d5ed`，Server/Proto 纵向接入仍未启用；Companion、实际 AEC/漂移映射、Pi 与执行器验收和混合长时负载继续属于首轮主线。
 
 ## 播放参考与音频时钟（2026-09-20）
 
@@ -28,7 +45,7 @@ CPAL 参考来自最终原生格式回调缓冲区，包含实际增益、转换
 
 本包的 macOS 默认特性测试实际链接 Sherpa 原生库，124 项通过；无默认特性检查与同一库测试也通过。冻结后参考流/关闭专项 7 项再验证通过。Linux ARM64 无默认特性全目标检查及 130 项库测试通过，包含 6 项 ALSA 原生调用及明确注入的错误边界测试。只读构建输入的 597 文件清单摘要为 `503f32ba40b55419ac5f7bc320b6900d85bd19071d6e426426018d99a2ee8d53`，逐文件哈希与实际命令结果保存在 `run/recovery-20260920/audio/FINAL.json` 及其验证目录。以上是本包定向证据，不能替代整合后的完整 workspace 或树莓派声学验收。
 
-恢复工作也已完成：中断后临时目录中的两个未提交工作树源码不完整，现从本任务实际成功的文件修改记录恢复；仍存活的 Appraisal 测试与恢复结果逐字节一致。开发工作树与后续证据改存主仓库忽略的 `run/worktrees/`、`run/recovery-20260920/`，并重新执行验证。历史记录中的 `/private/tmp` 路径仅代表当时的证据位置，不能假定文件仍存在；平台记录说明了可恢复摘要与不可恢复完整原件的区别。Appraisal/Relationship 和 Memory 来源闭包正在完成最后回归与整合，未提前记为已交付。
+恢复工作也已完成：中断后临时目录中的两个未提交工作树源码不完整，现从本任务实际成功的文件修改记录恢复；仍存活的 Appraisal 测试与恢复结果逐字节一致。开发工作树与后续证据改存主仓库忽略的 `run/worktrees/`、`run/recovery-20260920/`，并重新执行验证。历史记录中的 `/private/tmp` 路径仅代表当时的证据位置，不能假定文件仍存在；平台记录说明了可恢复摘要与不可恢复完整原件的区别。Appraisal/Relationship 后续整合的当前验收在本文件上节记录，不沿用音频恢复时的未完成状态。
 
 ## Memory 向量身份与后台重建（2026-09-14）
 

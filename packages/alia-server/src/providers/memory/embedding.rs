@@ -120,6 +120,32 @@ pub(crate) async fn query_for_policy(
     Ok(Some(ProfiledMemoryQuery { profile, vector }))
 }
 
+async fn roots_current(tx: &DatabaseTransaction, seed: &WorkSeed) -> anyhow::Result<bool> {
+    match crate::modules::memory::context::memory_appraisal::validate_memory_roots_in_transaction(
+        tx,
+        seed.owner,
+        seed.id,
+        seed.revision,
+    )
+    .await
+    {
+        Ok(()) => Ok(true),
+        Err(error)
+            if error.downcast_ref::<ContextError>().is_some_and(|error| {
+                matches!(
+                    error,
+                    ContextError::Revoked(_)
+                        | ContextError::PolicyChanged
+                        | ContextError::BoundsExceeded
+                )
+            }) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub(super) async fn prepare(
     tx: &DatabaseTransaction,
     seed: WorkSeed,
@@ -142,6 +168,9 @@ pub(super) async fn prepare(
         current.privacy_epoch == seed.epoch,
         "Memory projection epoch changed"
     );
+    if !roots_current(tx, &seed).await? {
+        return Ok(None);
+    }
     let Some(row) = tx.query_one(sql(
         "SELECT content,sensitive,visibility FROM memory_items WHERE id=$1 AND user_id=$2 AND tenant_id=$3 AND revision=$4 AND status='active' AND (expires_at IS NULL OR expires_at>clock_timestamp()) FOR SHARE",
         vec![seed.id.into(),seed.owner.into(),DEFAULT_TENANT_ID.into(),seed.revision.into()],
@@ -191,6 +220,11 @@ async fn valid(tx: &DatabaseTransaction, work: &MemoryEmbeddingWork) -> anyhow::
     }
     let current = privacy::lock_user(tx, work.seed.owner).await?;
     if current.privacy_epoch != work.seed.epoch {
+        return Ok(false);
+    }
+    // Both provider admission and commit call this gate. A new worker or an
+    // unchanged child revision cannot renew a changed ancestor's authority.
+    if !roots_current(tx, &work.seed).await? {
         return Ok(false);
     }
     let Some(row) = tx.query_one(sql(

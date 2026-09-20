@@ -1314,6 +1314,9 @@ pub enum MemoryWriteOrigin {
 pub struct MemoryWriteContext {
     pub user_id: Uuid,
     pub privacy_epoch: i64,
+    /// Independent relationship authority captured alongside privacy. Pure
+    /// in-memory fixtures and legacy snapshots have no persistent authority.
+    pub relationship_epoch: Option<i64>,
     /// Persisted policy captured before reading or deriving a write. In-memory
     /// fixtures have no authority to create a database policy snapshot.
     pub policy_version: Option<i64>,
@@ -2037,6 +2040,7 @@ pub trait ConversationBackend: ModuleLifecycle {
         _message: ChatMessage,
         _received_at: chrono::DateTime<chrono::Utc>,
         _source_privacy_epoch: i64,
+        _source_relationship_epoch: i64,
     ) -> anyhow::Result<Uuid> {
         anyhow::bail!("conversation backend does not support durable input provenance")
     }

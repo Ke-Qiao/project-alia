@@ -413,6 +413,7 @@ where
     let source = credentials.auth.admit_source(&lease.channel).await?;
     let owner_user_id = source.user_id;
     let source_privacy_epoch = source.privacy_epoch;
+    let source_relationship_epoch = source.relationship_epoch;
     credentials.source = Some(source);
     // A channel can be replaced between the initial handshake authentication
     // and admission. Verify the credential and pinned source together before
@@ -518,6 +519,7 @@ where
                             source_received_at: window.source_received_at()
                                 .ok_or_else(|| Status::internal("complete utterance has no receiver timestamp"))?.into(),
                             source_privacy_epoch,
+                            source_relationship_epoch,
                         }).map_err(|_| Status::resource_exhausted("voice processing capacity reached"))?;
                         drop(owner);
                         window.finish_utterance();
@@ -603,6 +605,7 @@ mod tests {
     struct AuthChannel {
         revoked: std::sync::atomic::AtomicBool,
         privacy_epoch: std::sync::atomic::AtomicI64,
+        relationship_epoch: std::sync::atomic::AtomicI64,
         required_token: std::sync::Mutex<Option<String>>,
         checked: std::sync::Mutex<Vec<String>>,
         fences: std::sync::Mutex<Vec<(VoiceScope, bool)>>,
@@ -612,6 +615,7 @@ mod tests {
             Self {
                 revoked: false.into(),
                 privacy_epoch: 7.into(),
+                relationship_epoch: 11.into(),
                 required_token: Default::default(),
                 checked: Default::default(),
                 fences: Default::default(),
@@ -625,8 +629,15 @@ mod tests {
     }
     #[async_trait::async_trait]
     impl crate::channels::adapter::ChannelAdapter for AuthChannel {
-        async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
-            Ok(self.privacy_epoch.load(std::sync::atomic::Ordering::SeqCst))
+        async fn authenticated_source_epochs(
+            &self,
+        ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
+            Ok(crate::modules::memory::source::SourceEpochs {
+                privacy_epoch: self.privacy_epoch.load(std::sync::atomic::Ordering::SeqCst),
+                relationship_epoch: self
+                    .relationship_epoch
+                    .load(std::sync::atomic::Ordering::SeqCst),
+            })
         }
 
         async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
@@ -849,6 +860,7 @@ mod tests {
         let first = h.input.recv().await.unwrap();
         assert_eq!(first.transcript, "sample");
         assert_eq!(first.source_privacy_epoch, 7);
+        assert_eq!(first.source_relationship_epoch, 11);
         h.speech().await;
         h.call().await.answer(TurnState::Backchannel);
         assert_eq!(h.event().await.generation_epoch, 2);
@@ -885,6 +897,7 @@ mod tests {
         assert!(input.source_received_at >= received_after);
         assert!(input.source_received_at <= received_before);
         assert_eq!(input.source_privacy_epoch, 7);
+        assert_eq!(input.source_relationship_epoch, 11);
         h.finish().await;
     }
 
@@ -929,18 +942,31 @@ mod tests {
         assert!(input.source_received_at >= received_after);
         assert!(input.source_received_at <= received_before);
         assert_eq!(input.source_privacy_epoch, 7);
+        assert_eq!(input.source_relationship_epoch, 11);
         h.finish().await;
     }
 
     #[tokio::test]
     async fn privacy_change_during_detection_retires_session_and_new_session_gets_new_epoch() {
+        changed_epoch_during_detection_retires_session(true).await;
+    }
+
+    #[tokio::test]
+    async fn relationship_change_during_detection_retires_session_and_new_session_gets_new_epoch() {
+        changed_epoch_during_detection_retires_session(false).await;
+    }
+
+    async fn changed_epoch_during_detection_retires_session(privacy: bool) {
         let mut old = Harness::new().await;
         old.speech().await;
         let call = old.call().await;
         let channel = old.channel.clone();
-        channel
-            .privacy_epoch
-            .store(8, std::sync::atomic::Ordering::SeqCst);
+        let (changed, domain, epoch) = if privacy {
+            (&channel.privacy_epoch, "privacy", 8)
+        } else {
+            (&channel.relationship_epoch, "relationship", 12)
+        };
+        changed.store(epoch, std::sync::atomic::Ordering::SeqCst);
         call.answer(TurnState::Complete);
         let error = tokio::time::timeout(Duration::from_secs(2), old.task)
             .await
@@ -948,7 +974,7 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert_eq!(error.code(), tonic::Code::PermissionDenied);
-        assert!(error.message().contains("privacy epoch changed"));
+        assert!(error.message().contains(&format!("{domain} epoch changed")));
         assert!(old.input.try_recv().is_err());
         assert!(channel.fences.lock().unwrap().last().unwrap().1);
 
@@ -956,7 +982,12 @@ mod tests {
         fresh.speech().await;
         fresh.call().await.answer(TurnState::Complete);
         fresh.event().await;
-        assert_eq!(fresh.input.recv().await.unwrap().source_privacy_epoch, 8);
+        let input = fresh.input.recv().await.unwrap();
+        assert_eq!(input.source_privacy_epoch, if privacy { 8 } else { 7 });
+        assert_eq!(
+            input.source_relationship_epoch,
+            if privacy { 11 } else { 12 }
+        );
         fresh.finish().await;
     }
 

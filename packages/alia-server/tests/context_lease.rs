@@ -167,6 +167,12 @@ where
     F: FnOnce(Fixture) -> Fut,
     Fut: Future<Output = ()>,
 {
+    // Each fixture owns a full schema. Concurrent migration and DROP CASCADE
+    // otherwise exhaust PostgreSQL's shared relation-lock table. This budget
+    // covers setup through cleanup; each test's own transactions still compete
+    // normally, and waiting for a fixture slot is outside its body deadline.
+    static FIXTURE_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+    let _fixture_slot = FIXTURE_SLOTS.acquire().await.unwrap();
     let f = Fixture::new().await;
     let result = AssertUnwindSafe(tokio::time::timeout(
         Duration::from_secs(45),

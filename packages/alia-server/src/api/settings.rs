@@ -188,12 +188,13 @@ async fn update_settings(
             .get(key)
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        let requires = state
-            .settings
-            .get_entry(key)
-            .await
-            .and_then(|entry| entry.schema)
-            .is_some_and(|schema| schema.requires_restart);
+        let requires = !context_policy::owns(key)
+            && state
+                .settings
+                .get_entry(key)
+                .await
+                .and_then(|entry| entry.schema)
+                .is_some_and(|schema| schema.requires_restart);
         if requires {
             requires_restart.push(key.clone());
         } else {
@@ -202,7 +203,13 @@ async fn update_settings(
     }
 
     let mut module_reports = Vec::new();
-    let mut applied = Vec::new();
+    // These fields already govern every new Context/Appraisal from committed
+    // SQL policy. A legacy registry restart label cannot postpone that gate.
+    let mut applied = hot_updates
+        .keys()
+        .filter(|key| context_policy::owns(key))
+        .cloned()
+        .collect::<Vec<_>>();
     let mut errors = Vec::new();
     if !hot_updates.is_empty() {
         module_reports = state.modules.apply_settings(&hot_updates).await;

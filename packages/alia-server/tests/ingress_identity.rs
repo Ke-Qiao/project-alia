@@ -34,6 +34,7 @@ struct Device {
     account_disabled: AtomicBool,
     checks: AtomicUsize,
     privacy_epoch: AtomicI64,
+    relationship_epoch: AtomicI64,
     source_admissions: AtomicUsize,
     pause_next_auth: AtomicBool,
     resume_auth: tokio::sync::Semaphore,
@@ -45,10 +46,15 @@ impl ModuleLifecycle for Device {
 }
 #[async_trait]
 impl ChannelAdapter for Device {
-    async fn authenticated_source_epoch(&self) -> anyhow::Result<i64> {
-        let epoch = self.privacy_epoch.load(Ordering::SeqCst);
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<alia_server::modules::memory::source::SourceEpochs> {
+        let epochs = alia_server::modules::memory::source::SourceEpochs {
+            privacy_epoch: self.privacy_epoch.load(Ordering::SeqCst),
+            relationship_epoch: self.relationship_epoch.load(Ordering::SeqCst),
+        };
         self.source_admissions.fetch_add(1, Ordering::SeqCst);
-        Ok(epoch)
+        Ok(epochs)
     }
 
     fn channel_type(&self) -> &'static str {
@@ -112,6 +118,7 @@ impl Fixture {
             account_disabled: false.into(),
             checks: 0.into(),
             privacy_epoch: 0.into(),
+            relationship_epoch: 0.into(),
             source_admissions: 0.into(),
             pause_next_auth: false.into(),
             resume_auth: tokio::sync::Semaphore::new(0),
@@ -335,6 +342,15 @@ async fn upload_source_time_precedes_auth_wait_and_ignores_device_clock() {
 
 #[tokio::test]
 async fn privacy_change_after_admission_before_media_rejects_old_upload() {
+    changed_epoch_rejects_old_upload(true).await;
+}
+
+#[tokio::test]
+async fn relationship_change_after_admission_before_media_rejects_old_upload() {
+    changed_epoch_rejects_old_upload(false).await;
+}
+
+async fn changed_epoch_rejects_old_upload(privacy: bool) {
     let mut f = Fixture::new(Some(OWNER)).await;
     let (tx, rx) = mpsc::channel(2);
     let mut client = f.client.clone();
@@ -352,7 +368,12 @@ async fn privacy_change_after_admission_before_media_rejects_old_upload() {
     .unwrap();
     // No application media was read before admission. Media sent after a clear
     // still belongs to the already admitted request, not to a fresh source.
-    f.device.privacy_epoch.store(1, Ordering::SeqCst);
+    let (changed, domain) = if privacy {
+        (&f.device.privacy_epoch, "privacy")
+    } else {
+        (&f.device.relationship_epoch, "relationship")
+    };
+    changed.store(1, Ordering::SeqCst);
     tx.send(frame()).await.unwrap();
     drop(tx);
     let error = tokio::time::timeout(Duration::from_secs(2), upload)
@@ -361,7 +382,7 @@ async fn privacy_change_after_admission_before_media_rejects_old_upload() {
         .unwrap()
         .unwrap_err();
     assert_eq!(error.code(), tonic::Code::PermissionDenied);
-    assert!(error.message().contains("privacy epoch changed"));
+    assert!(error.message().contains(&format!("{domain} epoch changed")));
     assert!(f.events.try_recv().is_err());
 
     f.client
@@ -370,12 +391,14 @@ async fn privacy_change_after_admission_before_media_rejects_old_upload() {
         .unwrap();
     let ServerEvent::ChannelInput(ChannelEvent::AudioInput {
         source_privacy_epoch,
+        source_relationship_epoch,
         ..
     }) = f.events.recv().await.unwrap()
     else {
         panic!("expected fresh audio source")
     };
-    assert_eq!(source_privacy_epoch, 1);
+    assert_eq!(source_privacy_epoch, i64::from(privacy));
+    assert_eq!(source_relationship_epoch, i64::from(!privacy));
     f.shutdown().await;
 }
 
@@ -383,18 +406,22 @@ async fn privacy_change_after_admission_before_media_rejects_old_upload() {
 async fn published_source_keeps_admitted_epoch_while_queued() {
     let mut f = Fixture::new(Some(OWNER)).await;
     f.device.privacy_epoch.store(12, Ordering::SeqCst);
+    f.device.relationship_epoch.store(21, Ordering::SeqCst);
     f.client
         .upload_captured_audio(request(tokio_stream::iter([frame()])))
         .await
         .unwrap();
     f.device.privacy_epoch.store(13, Ordering::SeqCst);
+    f.device.relationship_epoch.store(22, Ordering::SeqCst);
     let ServerEvent::ChannelInput(ChannelEvent::AudioInput {
         source_privacy_epoch,
+        source_relationship_epoch,
         ..
     }) = f.events.recv().await.unwrap()
     else {
         panic!("expected queued audio source")
     };
     assert_eq!(source_privacy_epoch, 12);
+    assert_eq!(source_relationship_epoch, 21);
     f.shutdown().await;
 }

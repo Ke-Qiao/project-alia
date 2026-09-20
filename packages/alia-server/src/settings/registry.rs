@@ -1210,6 +1210,52 @@ impl SettingsRegistry {
                 },
             );
         }
+        // These values are only startup seeds. ServerBuilder replaces this
+        // projection with the committed policy before any interpretation runs.
+        let appraisal = crate::modules::memory::context::AppraisalPolicy::from_config(config);
+        let value = serde_json::to_value(&appraisal).expect("appraisal policy is serializable");
+        for (field, value) in value["affect"].as_object().expect("affect is an object") {
+            let key = format!("core.policies.affect.{field}");
+            let value_type = if value.is_boolean() { "bool" } else { "number" };
+            inner
+                .entries
+                .entry(key)
+                .and_modify(|entry| {
+                    if let Some(schema) = &mut entry.schema {
+                        schema.requires_restart = false;
+                    }
+                })
+                .or_insert_with(|| SettingEntry {
+                    value: value.clone(),
+                    schema: Some(schema(field, value_type, false)),
+                });
+        }
+        for (field, value_type) in [
+            ("interpreter_version", "string"),
+            ("reducer_version", "string"),
+            ("interpretation_timeout_ms", "number"),
+            ("approved_interpreters", "object"),
+        ] {
+            let label = if field.ends_with("_version") {
+                format!("{field} (read-only)")
+            } else {
+                field.to_owned()
+            };
+            inner.entries.insert(
+                format!("core.policies.appraisal.{field}"),
+                SettingEntry {
+                    value: value[field].clone(),
+                    schema: Some(schema(&label, value_type, false)),
+                },
+            );
+        }
+        inner.entries.insert(
+            "core.resources.appraisal_lexicons".into(),
+            SettingEntry {
+                value: value["lexicons"].clone(),
+                schema: Some(schema("Appraisal Lexicons", "object", false)),
+            },
+        );
     }
 }
 

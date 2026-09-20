@@ -1,9 +1,9 @@
 //! Embodied expression runtime.
 //!
-//! The runtime interprets raw input through appraisal engines, keeps
-//! appraisal/relationship state, regulates it into an expressed stance, and
-//! exposes extension hooks for Rust components/plugins to contribute appraisal
-//! engines, reducers, planners, and safety policies.
+//! Interpretation consumes canonical Context inputs. A supervised writer
+//! commits versioned appraisal records before publishing receipts; projections
+//! replay only validated records. The runtime holds no private relationship
+//! cache. Source-free planning is a preview and grants no output authority.
 
 pub mod abi;
 pub mod affect;
@@ -11,6 +11,7 @@ pub mod appraisal;
 pub mod eval;
 pub mod extension;
 pub mod orchestrator;
+mod provenance;
 pub mod regulation;
 pub mod runtime;
 pub mod trace;
@@ -22,9 +23,9 @@ pub use abi::{
     ExternalAppraisalContext, ExternalAppraisalEventDraft, ExternalExpressionPlugin,
 };
 pub use affect::{
-    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectStore, AffectUserInput,
-    AppraisalDecay, AppraisalDecayKind, AppraisalEvent, AppraisalEvidence, AppraisalScope,
-    AppraisalSource, AppraisalTarget,
+    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectUserInput, AppraisalDecay,
+    AppraisalDecayKind, AppraisalEvent, AppraisalEvidence, AppraisalScope, AppraisalSource,
+    AppraisalTarget,
 };
 pub use appraisal::{
     AppraisalContext, AppraisalEnginePlugin, RuleBasedAppraisalEngine,

@@ -44,6 +44,12 @@ mod context_policy;
 #[path = "server_runtime/embedding_profile.rs"]
 mod embedding_profile;
 
+#[path = "server_runtime/relationship_api.rs"]
+mod relationship_api;
+
+#[path = "server_runtime/relationship_rebuild.rs"]
+mod relationship_rebuild;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,

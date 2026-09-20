@@ -35,7 +35,7 @@ use crate::providers::adapter::{
     AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
     ConversationEventEntry, DEFAULT_ASSISTANT_NAME, DEFAULT_CACHE_SCOPE, LlmAdapter,
     MemoryContextPack, RouteDecision, RouterInput, SemanticCacheCandidate, ToolDefinition,
-    TtsRequest, sanitize_assistant_name,
+    sanitize_assistant_name,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{
@@ -60,8 +60,8 @@ use crate::expression::orchestrator::{
     execute_expression_plan_phase_with_response, negotiate_expression_capabilities,
 };
 use crate::expression::{
-    AffectAssistantResponse, AffectUserInput, ExpressionDeviceContext, ExpressionInput,
-    ExpressionPlan, ExpressionSafetyContext, ExpressionUserState,
+    ExpressionDeviceContext, ExpressionInput, ExpressionPlan, ExpressionSafetyContext,
+    ExpressionUserState,
 };
 use crate::modules::interaction::voice_input::RecognizedVoiceInput;
 use debug::*;
@@ -669,6 +669,7 @@ async fn process_event(
             text,
             source_received_at,
             source_privacy_epoch,
+            source_relationship_epoch,
         } => {
             debug_component_text(
                 debug_output,
@@ -687,6 +688,7 @@ async fn process_event(
             turn.output_channel = Some(channel.clone());
             turn.received_at = source_received_at;
             turn.source_privacy_epoch = Some(source_privacy_epoch);
+            turn.source_relationship_epoch = Some(source_relationship_epoch);
             let result = match process_text(
                 &text,
                 &user_id,
@@ -854,6 +856,7 @@ async fn process_event(
             audio,
             source_received_at,
             source_privacy_epoch,
+            source_relationship_epoch,
         } => {
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
             let target = ChannelTarget {
@@ -873,6 +876,7 @@ async fn process_event(
             turn.output_channel = Some(channel.clone());
             turn.received_at = source_received_at;
             turn.source_privacy_epoch = Some(source_privacy_epoch);
+            turn.source_relationship_epoch = Some(source_relationship_epoch);
             debug_component_audio(
                 debug_output,
                 "stt",
@@ -1170,8 +1174,11 @@ async fn ensure_turn_context(
     let epoch = turn
         .source_privacy_epoch
         .ok_or_else(|| anyhow::anyhow!("input has no trusted source privacy epoch"))?;
+    let relationship_epoch = turn
+        .source_relationship_epoch
+        .ok_or_else(|| anyhow::anyhow!("input has no trusted source relationship epoch"))?;
     anyhow::ensure!(
-        epoch >= 0 && !turn.token.is_cancelled(),
+        epoch >= 0 && relationship_epoch >= 0 && !turn.token.is_cancelled(),
         "input is no longer admitted"
     );
     let session_id = modules
@@ -1189,6 +1196,7 @@ async fn ensure_turn_context(
                     ChatMessage::new("user", raw_text),
                     turn.received_at,
                     epoch,
+                    relationship_epoch,
                 )
                 .await?;
             turn.source_event_id
@@ -1375,15 +1383,7 @@ fn process_text<'a>(
                 .await;
         }
         match cancellable_stage(turn, "observe_user_affect_for_turn", async {
-            Ok(observe_user_affect_for_turn(
-                modules,
-                &mut trace,
-                channel_id,
-                user_id,
-                text,
-                debug_output,
-            )
-            .await)
+            observe_user_affect_for_turn(modules, admitted_turn).await
         })
         .await?
         {
@@ -1458,25 +1458,6 @@ fn process_text<'a>(
                         )
                         .await;
                     }
-                    match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
-                        Ok(observe_assistant_affect_for_turn(
-                            modules,
-                            &mut trace,
-                            channel_id,
-                            user_id,
-                            &response_text,
-                            "cache",
-                            false,
-                            false,
-                            debug_output,
-                        )
-                        .await)
-                    })
-                    .await?
-                    {
-                        Some(value) => value,
-                        None => return Ok(TextResult::interrupted()),
-                    };
                     trace
                         .record(
                             modules,
@@ -1508,15 +1489,10 @@ fn process_text<'a>(
                                 text,
                                 prior_message_count,
                                 memory_context_used,
-                                Some(
-                                    admitted_turn
-                                        .generation_context()
-                                        .await?
-                                        .all_materialized_memory(),
-                                ),
+                                admitted_turn.generation_context().await?,
                                 debug_output,
                             )
-                            .await)
+                            .await?)
                         })
                         .await?
                         {
@@ -1642,25 +1618,6 @@ fn process_text<'a>(
                     )
                     .await;
                 }
-                match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
-                    Ok(observe_assistant_affect_for_turn(
-                        modules,
-                        &mut trace,
-                        channel_id,
-                        user_id,
-                        &response_text,
-                        "cache",
-                        false,
-                        false,
-                        debug_output,
-                    )
-                    .await)
-                })
-                .await?
-                {
-                    Some(value) => value,
-                    None => return Ok(TextResult::interrupted()),
-                };
                 trace
                     .record(
                         modules,
@@ -1694,15 +1651,10 @@ fn process_text<'a>(
                             text,
                             prior_message_count,
                             memory_context_used,
-                            Some(
-                                admitted_turn
-                                    .generation_context()
-                                    .await?
-                                    .all_materialized_memory(),
-                            ),
+                            admitted_turn.generation_context().await?,
                             debug_output,
                         )
-                        .await)
+                        .await?)
                     })
                     .await?
                     {
@@ -1904,6 +1856,7 @@ fn process_text<'a>(
                     match cancellable_stage(turn, "build_sentence_speech_context", async {
                         Ok(build_sentence_speech_context(
                             modules,
+                            admitted_turn,
                             channel,
                             channel_id,
                             user_id,
@@ -1922,7 +1875,7 @@ fn process_text<'a>(
                                     channel,
                                 ),
                         )
-                        .await)
+                        .await?)
                     })
                     .await?
                     {
@@ -1988,6 +1941,7 @@ fn process_text<'a>(
                     match cancellable_stage(turn, "build_sentence_speech_context", async {
                         Ok(build_sentence_speech_context(
                             modules,
+                            admitted_turn,
                             channel,
                             channel_id,
                             user_id,
@@ -2006,7 +1960,7 @@ fn process_text<'a>(
                                     channel,
                                 ),
                         )
-                        .await)
+                        .await?)
                     })
                     .await?
                     {
@@ -2085,6 +2039,7 @@ fn process_text<'a>(
                         match cancellable_stage(turn, "build_sentence_speech_context", async {
                             Ok(build_sentence_speech_context(
                                 modules,
+                                admitted_turn,
                                 channel,
                                 channel_id,
                                 user_id,
@@ -2103,7 +2058,7 @@ fn process_text<'a>(
                                         channel,
                                     ),
                             )
-                            .await)
+                            .await?)
                         })
                         .await?
                         {
@@ -2165,6 +2120,7 @@ fn process_text<'a>(
                     match cancellable_stage(turn, "build_sentence_speech_context", async {
                         Ok(build_sentence_speech_context(
                             modules,
+                            admitted_turn,
                             channel,
                             channel_id,
                             user_id,
@@ -2183,7 +2139,7 @@ fn process_text<'a>(
                                     channel,
                                 ),
                         )
-                        .await)
+                        .await?)
                     })
                     .await?
                     {
@@ -2352,25 +2308,6 @@ fn process_text<'a>(
             )
             .await;
         }
-        match cancellable_stage(turn, "observe_assistant_affect_for_turn", async {
-            Ok(observe_assistant_affect_for_turn(
-                modules,
-                &mut trace,
-                channel_id,
-                user_id,
-                &response,
-                route_for_cache,
-                used_tools,
-                response_was_fallback,
-                debug_output,
-            )
-            .await)
-        })
-        .await?
-        {
-            Some(value) => value,
-            None => return Ok(TextResult::interrupted()),
-        };
         trace
             .record(
                 modules,
@@ -2403,15 +2340,10 @@ fn process_text<'a>(
                     text,
                     prior_message_count,
                     memory_context_used,
-                    Some(
-                        admitted_turn
-                            .generation_context()
-                            .await?
-                            .all_materialized_memory(),
-                    ),
+                    admitted_turn.generation_context().await?,
                     debug_output,
                 )
-                .await)
+                .await?)
             })
             .await?
             {
@@ -2433,97 +2365,76 @@ fn process_text<'a>(
     })
 }
 
-async fn observe_user_affect_for_turn(
+/// Keep the turn lock through interpretation commit and projection creation.
+/// Cancellation can lose an acknowledgement; it cannot replace the source.
+async fn project_turn_affect(
     modules: &ModuleRegistry,
-    trace: &mut AgentTrace,
-    channel_id: &str,
-    user_id: &str,
-    user_text: &str,
-    debug_output: bool,
-) {
-    let observation = modules
-        .expression
-        .observe_user_input(AffectUserInput {
-            channel_id,
-            user_id,
-            user_text,
-        })
-        .await;
-    let payload = serde_json::json!({
-        "affect": observation.snapshot.affect,
-        "social": observation.snapshot.social,
-        "resource": observation.snapshot.resource,
-        "dominant_causes": observation.snapshot.dominant_causes,
-        "appraisals": observation.appraisals,
-        "active_event_count": observation.active_event_count,
-    });
-    debug_component_json(
-        debug_output,
-        "affect",
-        "user_input",
-        &payload,
-        Some((channel_id, user_id)),
-    );
-    trace
-        .record(
-            modules,
-            "affect_user_input",
-            "affect",
-            Some("User input adjusted affect state".to_string()),
-            payload,
-        )
-        .await;
+    state: &mut turn::TurnContext,
+) -> anyhow::Result<()> {
+    if state.frozen {
+        return Ok(());
+    }
+    let Some(original) = state.generation.as_ref().cloned() else {
+        return Ok(());
+    };
+    let mut changed = original.affect().is_none() || state.affect_dirty;
+    if original.policy().appraisal.affect.enabled {
+        if !state.user_appraised {
+            if let Err(error) = Box::pin(
+                modules
+                    .expression
+                    .observe_context_user(&modules.context, &original),
+            )
+            .await
+            {
+                if !error
+                    .downcast_ref::<crate::modules::memory::context::ContextError>()
+                    .is_some_and(|e| {
+                        matches!(e, crate::modules::memory::context::ContextError::Revoked(_))
+                    })
+                {
+                    return Err(error);
+                }
+            }
+            state.user_appraised = true;
+            changed = true;
+        }
+        let recalls = original.all_materialized_memory().recall_events;
+        let digest = crate::modules::memory::context::evidence_digest(&serde_json::json!(recalls))?;
+        if !recalls.is_empty() && state.recall_digest.as_ref() != Some(&digest) {
+            if let Err(error) = Box::pin(
+                modules
+                    .expression
+                    .observe_context_recall(&modules.context, &original),
+            )
+            .await
+            {
+                if !error
+                    .downcast_ref::<crate::modules::memory::context::ContextError>()
+                    .is_some_and(|e| {
+                        matches!(e, crate::modules::memory::context::ContextError::Revoked(_))
+                    })
+                {
+                    return Err(error);
+                }
+            }
+            state.recall_digest = Some(digest);
+            changed = true;
+        }
+    }
+    if changed {
+        state.generation = Some(Box::pin(modules.context.extend_affect(&original)).await?);
+        state.affect_dirty = false;
+    }
+    Ok(())
 }
 
-async fn observe_assistant_affect_for_turn(
+async fn observe_user_affect_for_turn(
     modules: &ModuleRegistry,
-    trace: &mut AgentTrace,
-    channel_id: &str,
-    user_id: &str,
-    response: &str,
-    route: &str,
-    used_tools: bool,
-    response_was_fallback: bool,
-    debug_output: bool,
-) {
-    let observation = modules
-        .expression
-        .observe_assistant_response(AffectAssistantResponse {
-            channel_id,
-            user_id,
-            response_text: response,
-            route,
-            used_tools,
-            response_was_fallback,
-        })
-        .await;
-    let payload = serde_json::json!({
-        "affect": observation.snapshot.affect,
-        "social": observation.snapshot.social,
-        "resource": observation.snapshot.resource,
-        "dominant_causes": observation.snapshot.dominant_causes,
-        "appraisals": observation.appraisals,
-        "active_event_count": observation.active_event_count,
-        "route": route,
-        "used_tools": used_tools,
-        "response_was_fallback": response_was_fallback,
-    });
-    debug_component_json(
-        debug_output,
-        "affect",
-        "assistant_response",
-        &payload,
-        Some((channel_id, user_id)),
-    );
-    trace
-        .record(
-            modules,
-            "affect_state",
-            "affect",
-            Some("Assistant response adjusted affect state".to_string()),
-            payload,
-        )
-        .await;
+    turn: &VoiceTurn,
+) -> anyhow::Result<()> {
+    let mut state = turn.context.lock().await;
+    Box::pin(project_turn_affect(modules, &mut state)).await
 }
 
 async fn plan_expression_for_response(
@@ -2540,59 +2451,20 @@ async fn plan_expression_for_response(
     user_text: &str,
     prior_message_count: usize,
     memory_context_used: bool,
-    memory_context: Option<MemoryContextPack>,
+    generation: crate::modules::memory::context::GenerationContext,
     debug_output: bool,
-) -> PlannedExpression {
+) -> anyhow::Result<PlannedExpression> {
     let capabilities = channel.capabilities();
     let expression_capabilities = if capabilities.hardware_control {
         Some(negotiate_expression_capabilities(channel).await)
     } else {
         None
     };
-    if let Some(memory_context) = &memory_context
-        && !memory_context.recall_events.is_empty()
-    {
-        let observation = modules
-            .expression
-            .observe_memory_recall(channel_id, user_id, &memory_context.recall_events)
-            .await;
-        debug_component_json(
-            debug_output,
-            "affect",
-            "memory_recall",
-            &serde_json::json!({
-                "recall_events": &memory_context.recall_events,
-                "affect": observation.snapshot.affect,
-                "social": observation.snapshot.social,
-                "resource": observation.snapshot.resource,
-                "dominant_causes": observation.snapshot.dominant_causes,
-                "appraisals": &observation.appraisals,
-                "active_event_count": observation.active_event_count,
-            }),
-            Some((channel_id, user_id)),
-        );
-        trace
-            .record(
-                modules,
-                "memory_recall_affect",
-                "affect",
-                Some("Memory recall softly biased affect state".to_string()),
-                serde_json::json!({
-                    "recall_events": &memory_context.recall_events,
-                    "affect": observation.snapshot.affect,
-                    "social": observation.snapshot.social,
-                    "resource": observation.snapshot.resource,
-                    "dominant_causes": observation.snapshot.dominant_causes,
-                    "appraisals": observation.appraisals,
-                    "active_event_count": observation.active_event_count,
-                }),
-            )
-            .await;
-    }
-    let affect = modules
-        .expression
-        .affect_snapshot(channel_id, user_id)
-        .await;
+    let memory_context = Some(generation.all_materialized_memory());
+    let affect = generation
+        .affect()
+        .ok_or_else(|| anyhow::anyhow!("expression has no frozen affect projection"))?
+        .snapshot();
     let dialogue_policy_input = DialoguePolicyInput {
         route,
         used_tools,
@@ -2640,89 +2512,18 @@ async fn plan_expression_for_response(
         tts_capabilities: tts_capabilities.clone(),
         expression_capabilities: expression_capabilities.clone(),
     };
-    let plan = modules.expression.plan(expression_input.clone()).await;
-    debug_component_json(
-        debug_output,
-        "expression",
-        "plan",
-        &serde_json::json!({
-            "plan_id": plan.id,
-            "intent": &plan.intent,
-            "social_function": &plan.social_function,
-            "style": &plan.style,
-            "intensity": plan.intensity,
-            "priority": plan.priority,
-            "safety_class": plan.safety_class,
-            "timeline_actions": plan.timeline.len(),
-            "route": route,
-            "dialogue_act": &dialogue_act,
-            "content_tone": &content_tone,
-            "conversation_context": &conversation_context,
-            "constraints": &constraints,
-            "user_state": &user_state,
-            "safety_context": &safety_context,
-            "affect": affect.affect,
-            "social": affect.social,
-            "resource": affect.resource,
-            "dominant_causes": affect.dominant_causes,
-            "expression_capabilities": &expression_capabilities,
-        }),
-        Some((channel_id, user_id)),
-    );
-    trace
-        .record(
-            modules,
-            "expression_plan",
-            "expression",
-            Some(plan.intent.clone()),
-            serde_json::json!({
-                "plan_id": plan.id,
-                "intent": plan.intent,
-                "social_function": plan.social_function,
-                "style": plan.style,
-                "intensity": plan.intensity,
-                "stance": plan.stance,
-                "input": &expression_input,
-                "plan": plan,
-                "timeline_actions": plan.timeline.len(),
-                "route": route,
-                "dialogue_act": dialogue_act,
-                "content_tone": content_tone,
-                "conversation_context": conversation_context,
-                "constraints": constraints,
-                "user_state": user_state,
-                "device_context": device_context,
-                "safety_context": safety_context,
-                "tts_capabilities": tts_capabilities,
-                "affect": affect.affect,
-                "social": affect.social,
-                "resource": affect.resource,
-                "dominant_causes": affect.dominant_causes,
-                "expression_capabilities": expression_capabilities,
-            }),
-        )
-        .await;
-    if let Some(speech) = plan.speech.as_ref() {
-        let request = TtsRequest::with_speech(response, speech);
-        let adjustments = modules.tts.provider_adjustments(&request).await;
-        trace
-            .record(
-                modules,
-                "tts_provider_adjustments",
-                "tts",
-                Some("TTS provider expression adjustments".to_string()),
-                serde_json::json!({
-                    "plan_id": plan.id,
-                    "request": request,
-                    "adjustments": adjustments,
-                }),
-            )
-            .await;
-    }
-    PlannedExpression {
+    let plan = Box::pin(modules.expression.plan_with_context(
+        &modules.context,
+        &generation,
+        expression_input.clone(),
+    ))
+    .await?;
+    let _ = (trace, debug_output);
+    tracing::debug!(plan_id=%plan.id,context_id=%generation.lease().id(),"expression planned from frozen context");
+    Ok(PlannedExpression {
         plan,
         input: expression_input,
-    }
+    })
 }
 
 fn expression_user_state_from_affect(
@@ -3177,6 +2978,7 @@ fn allow_streaming_for_tools(
 #[allow(clippy::too_many_arguments)]
 async fn build_sentence_speech_context(
     modules: &ModuleRegistry,
+    turn: &VoiceTurn,
     channel: &dyn ChannelAdapter,
     channel_id: &str,
     user_id: &str,
@@ -3187,17 +2989,19 @@ async fn build_sentence_speech_context(
     user_text: &str,
     prior_message_count: usize,
     memory_context_used: bool,
-    memory_context: Option<MemoryContextPack>,
+    _memory_context: Option<MemoryContextPack>,
     enabled: bool,
-) -> Option<SentenceSpeechContext> {
+) -> anyhow::Result<Option<SentenceSpeechContext>> {
     if !enabled || !channel.capabilities().voice_output {
-        return None;
+        return Ok(None);
     }
 
-    let affect = modules
-        .expression
-        .affect_snapshot(channel_id, user_id)
-        .await;
+    observe_user_affect_for_turn(modules, turn).await?;
+    let generation = turn.generation_context().await?;
+    let affect = generation
+        .affect()
+        .ok_or_else(|| anyhow::anyhow!("sentence context has no affect projection"))?
+        .snapshot();
     let dialogue_policy_input = DialoguePolicyInput {
         route,
         used_tools,
@@ -3215,7 +3019,7 @@ async fn build_sentence_speech_context(
         dialogue_policy.conversation_context(&dialogue_policy_input, prior_message_count);
     let constraints = dialogue_policy.constraints();
     let content_tone = dialogue_policy.content_tone.clone();
-    Some(SentenceSpeechContext {
+    Ok(Some(SentenceSpeechContext {
         route: Some(route.to_string()),
         channel_id: channel_id.to_string(),
         user_id: user_id.to_string(),
@@ -3226,9 +3030,10 @@ async fn build_sentence_speech_context(
         safety_context: expression_safety_context(&capabilities, &content_tone, None),
         conversation_context,
         constraints,
-        memory_context,
+        memory_context: Some(generation.all_materialized_memory()),
+        generation,
         tts_capabilities: Some(modules.tts.tts_capabilities().await),
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3821,6 +3626,16 @@ async fn persist_text_interaction(
         tracing::error!(error = %error, session_id = %pending.session_id,
             "assistant response could not be persisted; interaction remains incomplete and memory capture is suppressed");
         return;
+    }
+
+    if let Err(error) = Box::pin(modules.expression.observe_committed_response(
+        &modules.context,
+        &pending.context,
+        pending.response_id,
+    ))
+    .await
+    {
+        tracing::debug!(response_id=%pending.response_id,error=%error,"committed response appraisal was not admitted");
     }
 
     if let Some(entry) = cache_entry_for_pending(&pending) {

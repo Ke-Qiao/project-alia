@@ -15,6 +15,7 @@ pub struct RecognizedVoiceInput {
     pub source_received_at: DateTime<Utc>,
     /// Privacy version admitted before this session accepted any audio.
     pub source_privacy_epoch: i64,
+    pub source_relationship_epoch: i64,
     pub session_id: Uuid,
     pub device_boot_id: Uuid,
     pub generation_epoch: u64,
