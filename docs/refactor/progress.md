@@ -1,6 +1,6 @@
 # 构建记录
 
-更新：2026-09-14。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
+更新：2026-09-20。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
 用户已授权开始构建，当前 Easy-Turn 只运行在 Server。当前记录是 P1、P2 与运行时基础改造的结果，首轮整体交付尚未完成。前端和 Embedded 通用适配仍按 [台账](deferred.md) 搁置。
 
@@ -19,7 +19,16 @@
 | `ee9cbfd` | 规范 Response、逐句音频 Delivery、播放 v2、真实后端提交回执与生命周期监督 | macOS 默认 workspace 636 项通过；4 项真实 PTY/模型另跑通过；固定提交 Linux ARM64 Server + Embedded 库及 Server 集成共 542 项通过，Embedded 默认完整链接通过 |
 | `e63d40c` | TextDelivery 与签名 D3 身体动作，唯一发送、精确取消、部分提交与迟到事实 | macOS 默认 workspace 720 项通过，5 项 PTY/真实模型另跑通过；固定提交 Linux ARM64 642 个不同测试通过、5 项跳过，保留首次 Runtime 并行超时和同源串行复核记录 |
 | `a33ec67` | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；Linux ARM64 固定提交与夹具修正候选的结果见平台记录 |
-| 本包 | Memory 实际向量身份、规范 revision 投影、可关闭后台重建与原子 profile 热切换 | macOS 默认 workspace 802 个不同测试通过、0 失败、5 项跳过；两端无默认特性 all-targets、28 个变更 Rust 文件格式检查通过；5 项真实 PTY/模型另跑通过 |
+| `759985f` | Memory 实际向量身份、规范 revision 投影、可关闭后台重建与原子 profile 热切换 | macOS 默认 workspace 802 个不同测试通过、0 失败、5 项跳过；两端无默认特性 all-targets、28 个变更 Rust 文件格式检查通过；5 项真实 PTY/模型另跑通过 |
+| `5467e8b`，整合 `9de8c74` | 实际后端播放参考、独立采集/播放时钟、有界交接与可见缺口/关闭统计 | macOS 默认特性实际链接及库测试 124 项；Linux ARM64 无默认特性 all-targets 与 130 项库测试通过，13 个变更 Rust 文件格式检查通过 |
+
+## 播放参考与音频时钟（2026-09-20）
+
+CPAL 参考来自最终原生格式回调缓冲区，包含实际增益、转换、量化和填零；ALSA 只记录 `writei` 实际接纳的完整帧前缀。采集与播放保留独立时钟和流身份，缺口、回退、部分写、重开及最终丢失都有明确表示。播放参考交接采用预分配有界队列和不等待的锁尝试，既有采集转换/broadcast 路径的锁与分配仍需后续处理。设计和接口边界见[音频参考契约](audio-reference-clock-design.md)。
+
+本包的 macOS 默认特性测试实际链接 Sherpa 原生库，124 项通过；无默认特性检查与同一库测试也通过。冻结后参考流/关闭专项 7 项再验证通过。Linux ARM64 无默认特性全目标检查及 130 项库测试通过，包含 6 项 ALSA 原生调用及明确注入的错误边界测试。只读构建输入的 597 文件清单摘要为 `503f32ba40b55419ac5f7bc320b6900d85bd19071d6e426426018d99a2ee8d53`，逐文件哈希与实际命令结果保存在 `run/recovery-20260920/audio/FINAL.json` 及其验证目录。以上是本包定向证据，不能替代整合后的完整 workspace 或树莓派声学验收。
+
+恢复工作也已完成：中断后临时目录中的两个未提交工作树源码不完整，现从本任务实际成功的文件修改记录恢复；仍存活的 Appraisal 测试与恢复结果逐字节一致。开发工作树与后续证据改存主仓库忽略的 `run/worktrees/`、`run/recovery-20260920/`，并重新执行验证。历史记录中的 `/private/tmp` 路径仅代表当时的证据位置，不能假定文件仍存在；平台记录说明了可恢复摘要与不可恢复完整原件的区别。Appraisal/Relationship 和 Memory 来源闭包正在完成最后回归与整合，未提前记为已交付。
 
 ## Memory 向量身份与后台重建（2026-09-14）
 
@@ -157,7 +166,7 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 
 这些项目仍属于首轮范围，不能归入用户要求的延期项：
 
-1. AEC、实际播放参考时钟、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。当前 WAIT 明确停止当前回答，尚不能从实际播放游标恢复。
+1. AEC、采集/播放时钟映射与漂移测量、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。实际后端参考流与独立时钟已在 `5467e8b` 提供；当前 WAIT 仍停止当前回答，尚不能从实际播放游标恢复。
 2. D3 短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。TextDelivery/D3 固定提交的 Linux ARM64 复核已完成；唯一发送与软件提交不能代表硬件已完成。
 3. 接入 Appraisal/Relationship 的规范来源和失效重建、Companion 状态与主动表达。旧逐句 Expression 缓存没有 owner/context/epoch/TTL，须移除该旁路；这不属于规范 `llm_cache` 的覆盖范围。Memory 向量的实际请求身份已在本包实现，派生 Memory 的递归父根与关系域失效仍随 Appraisal 包补齐。这些均是首轮未完成工作，不是用户明确延期。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。

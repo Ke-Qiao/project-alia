@@ -1,8 +1,8 @@
 # Project Alia 首轮重构计划
 
-更新：2026-09-14。
+更新：2026-09-20。
 
-状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时、音频/Text Delivery、签名 D3、ContextLease、派生缓存和持久政策已提交。Memory 实际向量身份与有界重建通过 macOS 整体验证，证据见 [构建记录](progress.md)。正在构建 Appraisal/Relationship 来源与失效重建、派生 Memory 递归根，以及硬件播放参考流/音频时钟；之后继续 Companion、可恢复暂停与真实硬件验收。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
+状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时、音频/Text Delivery、签名 D3、ContextLease、派生缓存和持久政策已提交。Memory 实际向量身份与有界重建通过 macOS 整体验证；实际后端播放参考与独立音频时钟已提交，并通过 macOS/Linux ARM 定向验证，证据见[构建记录](progress.md)。正在完成 Appraisal/Relationship 来源与失效重建、派生 Memory 递归根；之后继续 Companion、AEC、可恢复暂停与真实硬件验收。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
 
 ## 1. 决策来源与已确认范围
 
