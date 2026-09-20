@@ -501,16 +501,20 @@ impl EmbeddedBuilder {
             )
             .await?;
         }
-        let motion_revocation = motion.clone();
-        binding_manager.install_output_revocation(Arc::new(move || {
-            if let Err(error) = motion_revocation.revoke_control("device binding changed") {
-                tracing::error!(%error, "body binding revocation failed; control state is unknown");
-            }
-        }))?;
         let playback_session = Arc::new(PlaybackSession::with_output_fence(
             audio_playback.clone(),
             motion.clone(),
         ));
+        let motion_revocation = motion.clone();
+        let playback_revocation = playback_session.clone();
+        binding_manager.install_output_revocation(Arc::new(move || {
+            if let Err(error) = playback_revocation.revoke_all() {
+                tracing::error!(%error, "playback binding revocation failed; native quiescence is unknown");
+            }
+            if let Err(error) = motion_revocation.revoke_control("device binding changed") {
+                tracing::error!(%error, "body binding revocation failed; control state is unknown");
+            }
+        }))?;
         cleanup.add(playback_session.clone());
         let speech_pipeline = init!(Box::new(SpeechPipeline::new(
             ctx.audio_bus.clone(),

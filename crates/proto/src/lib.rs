@@ -3,12 +3,14 @@ pub mod audio {
 }
 
 pub mod voice {
-    tonic::include_proto!("alia.voice.v1");
+    tonic::include_proto!("alia.voice.v2");
 }
 
 pub mod playback {
-    tonic::include_proto!("alia.playback.v2");
+    tonic::include_proto!("alia.playback.v3");
 }
+
+pub mod output_control;
 
 pub mod binding {
     tonic::include_proto!("alia.binding");

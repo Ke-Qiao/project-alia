@@ -16,9 +16,9 @@ impl VoiceScope {
     }
 }
 
-/// Protocol version 2 retains observations after input End. Both peers must
-/// acknowledge this version before audio is sent; v1 acceptance is insufficient.
-pub const PLAYBACK_CONTRACT_VERSION: u32 = 2;
+/// Version 3 requires prior canonical output registration and independent
+/// reversible control. Both peers must acknowledge it before sending media.
+pub const PLAYBACK_CONTRACT_VERSION: u32 = 3;
 
 /// Allocated before external I/O and never replaced during retry or cancellation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

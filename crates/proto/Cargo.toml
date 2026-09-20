@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 prost.workspace = true
 tonic.workspace = true
+alia-core.workspace = true
+uuid.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
