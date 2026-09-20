@@ -99,6 +99,7 @@ pub(super) async fn cancel_exact(
 pub(super) async fn push(
     mut client: PlaybackClient<Channel>,
     identity: PlaybackIdentity,
+    binding: alia_core::output_control::OutputBinding,
     audio: AudioPayloadStream,
     auth: tonic::metadata::MetadataMap,
     observer: Arc<dyn PlaybackObserver>,
@@ -106,6 +107,10 @@ pub(super) async fn push(
     idle: Duration,
 ) -> Result<AudioDeliveryReport> {
     ensure!(identity.is_valid(), "invalid voice playback identity");
+    ensure!(
+        binding.is_valid() && binding.scope == identity.scope,
+        "playback differs from canonical output"
+    );
     let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
     let cancel_client = client.clone();
     let cancel_auth = auth.clone();
@@ -119,6 +124,7 @@ pub(super) async fn push(
         audio,
         tx,
         identity,
+        binding,
         offered.clone(),
         observer.clone(),
         ack_rx,
@@ -306,6 +312,7 @@ async fn produce(
     mut audio: AudioPayloadStream,
     tx: mpsc::Sender<proto::PlaybackFrame>,
     identity: PlaybackIdentity,
+    binding: alia_core::output_control::OutputBinding,
     offered: Arc<AtomicU64>,
     observer: Arc<dyn PlaybackObserver>,
     handshake: oneshot::Receiver<()>,
@@ -332,6 +339,7 @@ async fn produce(
             observer.start(sample_rate, 1).await?;
             tx.send(frame(playback_frame::Payload::Start(
                 proto::PlaybackStart {
+                    output_binding: Some(alia_proto::output_control::encode_binding(binding)),
                     contract_version: PLAYBACK_CONTRACT_VERSION,
                     sample_rate_hz: sample_rate,
                     channels: 1,
