@@ -334,6 +334,7 @@ async fn received(rx: &mut mpsc::Receiver<Seen>) -> Seen {
 
 fn publish(bus: &AudioBus, value: i16, offset: u64) {
     bus.publish(AudioFrame {
+        timing: None,
         pcm: vec![value; 320],
         sample_rate: SAMPLE_RATE,
         timestamp_us: offset * 1_000_000 / SAMPLE_RATE as u64,
@@ -640,6 +641,7 @@ async fn binding_changes_close_idle_session_and_completed_playback_tail() {
 fn rejects_format_changes_clock_gaps_and_untrusted_server_identity() {
     let mut clock = CaptureClock::default();
     let mut frame = AudioFrame {
+        timing: None,
         pcm: vec![0; 320],
         sample_rate: SAMPLE_RATE,
         timestamp_us: 0,

@@ -16,8 +16,8 @@ pub struct WakeWordEvent {
 
 /// Wake word detection engine (slot: `wakeword`).
 ///
-/// Real-time requirement: `detect()` is synchronous and must complete in < 5ms
-/// since it runs in the audio capture callback path.
+/// `detect()` runs on the speech consumer worker. Native audio callbacks only
+/// publish PCM and evidence; model inference must never run inside a callback.
 pub trait WakeWordEngine: ModuleLifecycle {
     /// Feed PCM frames, returns detection event if wake word is found.
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent>;
@@ -112,6 +112,11 @@ pub trait AudioCaptureBackend: ModuleLifecycle {
 
 /// Audio playback backend (slot: `audio_playback`).
 pub trait AudioPlaybackBackend: ModuleLifecycle {
+    /// Local bounded reference evidence; absent means this backend cannot expose
+    /// a playback reference. Consumption must run outside native audio callbacks.
+    fn reference_bus(&self) -> Option<super::context::AudioReferenceBus> {
+        None
+    }
     fn open_submission(
         &self,
         _identity: alia_core::delivery::PlaybackIdentity,

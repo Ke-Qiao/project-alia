@@ -9,12 +9,27 @@ fn identified(
     sequence: u64,
     generation: u64,
 ) -> Arc<AudioSubmission> {
-    receiver.set_backend(SubmissionBackend {
-        instance_id: uuid::Uuid::from_u128(10),
-        boundary: SubmissionBoundary::CpalCallbackBuffer,
-        output_sample_rate_hz: 16000,
-        output_channels: 2,
-    });
+    identified_at(
+        sender,
+        receiver,
+        sequence,
+        generation,
+        SubmissionBackend {
+            instance_id: uuid::Uuid::from_u128(10),
+            boundary: SubmissionBoundary::CpalCallbackBuffer,
+            output_sample_rate_hz: 16000,
+            output_channels: 2,
+        },
+    )
+}
+fn identified_at(
+    sender: &PlaybackSender,
+    receiver: &PlaybackReceiver,
+    sequence: u64,
+    generation: u64,
+    backend: SubmissionBackend,
+) -> Arc<AudioSubmission> {
+    receiver.set_backend(backend);
     sender
         .open_submission(
             PlaybackIdentity {
@@ -524,4 +539,292 @@ fn cancel_waits_for_actual_partial_alsa_result_and_failed_write_settles_zero() {
             "no new native write after cancellation"
         );
     }
+}
+
+fn reference_clock(
+    rate: u32,
+    channels: u16,
+) -> (
+    crate::module::context::AudioReferenceBus,
+    crate::module::context::AudioStreamClock,
+) {
+    use alia_core::audio_clock::*;
+    let bus = crate::module::context::AudioBus::new(2).reference();
+    let clock = bus.open_stream(
+        AudioDirection::Playback,
+        AudioFormat {
+            sample_rate_hz: rate,
+            channels,
+        },
+    );
+    clock.probe.activate();
+    bus.try_read();
+    (bus, clock)
+}
+fn reference_data(
+    bus: &crate::module::context::AudioReferenceBus,
+) -> Vec<crate::module::context::AudioReferenceBlock> {
+    let mut out = vec![];
+    while let Some(block) = bus.try_read() {
+        if block.sample_count > 0 {
+            out.push(block);
+        }
+    }
+    out
+}
+fn finite_block(input: Vec<i16>, rate: u32, generation: u64) -> AudioBlock {
+    let len = input.len();
+    AudioBlock {
+        pcm: input.into(),
+        range: 0..len,
+        sample_rate: rate,
+        generation,
+        submission: None,
+        end: true,
+    }
+}
+
+#[test]
+fn reference_matches_post_resample_gain_and_native_i8_quantization() {
+    use super::super::cpal_backend::fill_output_buffer;
+    use crate::module::context::ReferenceContent;
+    use crate::module::volume::apply_gain_in_place;
+    let input: Vec<i16> = (0..64)
+        .map(|n| ((n as f64 * 0.2).sin() * 20000.0) as i16)
+        .collect();
+    let mut rendered = Renderer::default()
+        .render(finite_block(input, 16000, 1), 48000, 2)
+        .unwrap();
+    apply_gain_in_place(&mut rendered.samples, 0.25);
+    let expected: Vec<i8> = rendered
+        .samples
+        .iter()
+        .map(|sample| (sample >> 8) as i8)
+        .collect();
+    assert_eq!(expected.len(), 64 * 3 * 2);
+    let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+    buffer.append_rendered(rendered).unwrap();
+    let buffer = Mutex::new(buffer);
+    let (bus, mut clock) = reference_clock(48000, 2);
+    let reading = clock.probe.unknown_clock();
+    let mut output = vec![0_i8; expected.len()];
+    fill_output_buffer(&mut output, &buffer, &mut clock, reading);
+    assert_eq!(output, expected);
+    let packets = reference_data(&bus);
+    let reference: Vec<f64> = packets
+        .iter()
+        .flat_map(|p| p.samples[..p.sample_count].iter().copied())
+        .collect();
+    assert_eq!(
+        reference,
+        output
+            .iter()
+            .map(|&s| f64::from(s) / 128.0)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(packets[0].content, ReferenceContent::Media);
+    assert_eq!(packets[0].timing.frames, 192);
+    assert_eq!(
+        packets[0].boundary,
+        Some(SubmissionBoundary::CpalCallbackBuffer)
+    );
+}
+
+#[test]
+fn native_float_reference_preserves_the_actual_written_float_values() {
+    use super::super::cpal_backend::fill_output_buffer;
+    let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+    buffer.append(1, vec![-32768, -12345, 0, 12345, 32767]);
+    let (bus, mut clock) = reference_clock(16000, 1);
+    let reading = clock.probe.unknown_clock();
+    let mut actual = [0_f32; 5];
+    fill_output_buffer(&mut actual, &Mutex::new(buffer), &mut clock, reading);
+    let packets = reference_data(&bus);
+    assert_eq!(&packets[0].samples[..5], &actual.map(f64::from));
+    assert_ne!(
+        packets[0].samples[1],
+        -12345.0 / 32768.0,
+        "reference was taken before native float conversion"
+    );
+}
+
+#[test]
+fn software_mute_and_callback_zero_fill_are_actual_samples_with_distinct_content() {
+    use super::super::cpal_backend::fill_output_buffer;
+    use crate::module::context::ReferenceContent;
+    use crate::module::volume::apply_gain_in_place;
+    let mut rendered = Renderer::default()
+        .render(finite_block(vec![20000; 4], 16000, 1), 16000, 2)
+        .unwrap();
+    apply_gain_in_place(&mut rendered.samples, 0.0);
+    let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+    buffer.append_rendered(rendered).unwrap();
+    let buffer = Mutex::new(buffer);
+    let (bus, mut clock) = reference_clock(16000, 2);
+    for _ in 0..2 {
+        let reading = clock.probe.unknown_clock();
+        let mut actual = [1_i16; 8];
+        fill_output_buffer(&mut actual, &buffer, &mut clock, reading);
+        assert_eq!(actual, [0; 8]);
+    }
+    let packets = reference_data(&bus);
+    assert_eq!(packets.len(), 2);
+    assert_eq!(packets[0].content, ReferenceContent::Media);
+    assert_eq!(packets[1].content, ReferenceContent::ZeroFill);
+    assert_eq!(packets[1].timing.start_frame, 4);
+    assert!(
+        packets
+            .iter()
+            .all(|p| p.samples[..p.sample_count].iter().all(|&v| v == 0.0))
+    );
+}
+
+#[test]
+fn callback_contention_writes_and_references_silence_without_consuming_media() {
+    use super::super::cpal_backend::fill_output_buffer;
+    use alia_core::audio_clock::{AudioDirection, AudioDiscontinuity};
+    let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+    buffer.append(1, vec![1200; 4]);
+    let buffer = Mutex::new(buffer);
+    let (bus, mut clock) = reference_clock(16000, 1);
+    let lock = buffer.lock().unwrap();
+    let reading = clock.probe.unknown_clock();
+    let mut output = [1_i16; 4];
+    fill_output_buffer(&mut output, &buffer, &mut clock, reading);
+    assert_eq!(output, [0; 4]);
+    assert_eq!(lock.len(), 4);
+    drop(lock);
+    let state = bus.snapshot(AudioDirection::Playback).unwrap();
+    assert_eq!(
+        state.last_fault,
+        Some(AudioDiscontinuity::CallbackBufferUnavailable)
+    );
+    let reading = clock.probe.unknown_clock();
+    fill_output_buffer(&mut output, &buffer, &mut clock, reading);
+    assert_eq!(output, [1200; 4]);
+    let packets = reference_data(&bus);
+    assert_eq!(packets[0].samples[..4], [0.0; 4]);
+    assert_eq!(packets[1].timing.start_frame, 4);
+}
+
+#[test]
+fn unaligned_callback_never_leaves_a_partially_submitted_media_frame() {
+    use super::super::cpal_backend::fill_output_buffer;
+    let (sender, receiver) = channel(4);
+    let generation = sender.begin().unwrap();
+    let submission = identified(&sender, &receiver, 1, generation);
+    sender.submit(&submission, 0, &[1, 2], false).unwrap();
+    sender.submit(&submission, 2, &[], true).unwrap();
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    let buffer = Mutex::new(buffer);
+    let (bus, mut clock) = reference_clock(16000, 2);
+    let reading = clock.probe.unknown_clock();
+    let mut output = [1_i16; 3];
+    fill_output_buffer(&mut output, &buffer, &mut clock, reading);
+    assert_eq!(output, [0; 3]);
+    assert!(submission.output_quiescent());
+    assert_eq!(submission.snapshot(1).submitted_source_frames, Some(0));
+    let packets = reference_data(&bus);
+    assert_eq!(packets[0].sample_count, 2);
+}
+
+#[test]
+fn alsa_reference_contains_only_accepted_prefix_even_after_cancel_or_missing_timestamp() {
+    use alia_core::audio_clock::AudioTimeQuality;
+    for accepted in [0, 1, 2] {
+        let (sender, receiver) = channel(4);
+        let generation = sender.begin().unwrap();
+        let (bus, mut clock) = reference_clock(16000, 2);
+        let submission = identified_at(
+            &sender,
+            &receiver,
+            1,
+            generation,
+            SubmissionBackend {
+                instance_id: clock.probe.stream_id(),
+                boundary: SubmissionBoundary::AlsaWriteAccepted,
+                output_sample_rate_hz: 16000,
+                output_channels: 2,
+            },
+        );
+        sender
+            .submit(&submission, 0, &[1100, 1200, 1300], false)
+            .unwrap();
+        sender.submit(&submission, 3, &[], true).unwrap();
+        let mut buffer = PlaybackBuffer::new(receiver.generation());
+        render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+        let (chunk, lease) = buffer.alsa_chunk(3);
+        sender.cancel_submission(&submission, "native write is already in flight");
+        assert_eq!(submission.snapshot(1).observation_end, None);
+        let mut origin = super::super::clock::AlsaTimeOrigin::default();
+        let reading = origin.read(&clock.probe, None, None);
+        confirm_alsa_write(&mut buffer, &chunk, accepted, lease, &mut clock, reading).unwrap();
+        let packets = reference_data(&bus);
+        if accepted == 0 {
+            assert!(packets.is_empty());
+        } else {
+            assert_eq!(packets.len(), 1);
+            assert_eq!(packets[0].timing.frames, accepted as u64);
+            assert_eq!(
+                packets[0].timing.stream.stream_id,
+                submission.backend.instance_id
+            );
+            assert_eq!(packets[0].timing.clock.quality, AudioTimeQuality::Unknown);
+            assert_eq!(
+                packets[0].boundary,
+                Some(SubmissionBoundary::AlsaWriteAccepted)
+            );
+            assert_eq!(
+                &packets[0].samples[..accepted * 2],
+                &chunk[..accepted * 2]
+                    .iter()
+                    .map(|&x| f64::from(x) / 32768.0)
+                    .collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(
+            submission.snapshot(2).submitted_source_frames,
+            Some(accepted as u64)
+        );
+        assert!(submission.output_quiescent());
+        assert!(buffer.alsa_chunk(3).0.is_empty());
+    }
+}
+
+#[test]
+fn reference_blocks_are_frame_aligned_bounded_and_keep_native_clock_offsets() {
+    use super::super::clock::record_samples;
+    use crate::module::context::{REFERENCE_BLOCK_SAMPLES, ReferenceContent};
+    use alia_core::audio_clock::*;
+    let (bus, mut clock) = reference_clock(48000, 3);
+    let samples = vec![1200_i16; 3600];
+    let reading = AudioClockReading {
+        clock_id: clock.probe.stream_id(),
+        callback_ns: Some(0),
+        sample_ns: Some(1000),
+        queued_frames: None,
+        quality: AudioTimeQuality::BackendEstimate,
+    };
+    record_samples(
+        &mut clock,
+        &samples,
+        reading,
+        SubmissionBoundary::AlsaWriteAccepted,
+        ReferenceContent::Media,
+    );
+    let packets = reference_data(&bus);
+    assert!(packets.len() > 1);
+    let mut cursor = 0;
+    for packet in packets {
+        assert!(packet.sample_count <= REFERENCE_BLOCK_SAMPLES);
+        assert_eq!(packet.sample_count % 3, 0);
+        assert_eq!(packet.timing.start_frame, cursor);
+        assert_eq!(
+            packet.timing.clock.sample_ns,
+            Some(1000 + (cursor * 1_000_000_000 / 48000) as i64)
+        );
+        cursor += packet.timing.frames;
+    }
+    assert_eq!(cursor, 1200);
 }

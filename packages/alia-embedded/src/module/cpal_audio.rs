@@ -23,13 +23,14 @@ use tracing::{debug, error, info, warn};
 use crate::config::AlsaCaptureS32Alignment;
 use crate::config::{AudioBackend, AudioConfig};
 
-use super::context::{AudioBus, AudioFrame};
+use super::context::{AudioBus, AudioFrame, AudioReferenceBus};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::traits::{AudioCaptureBackend, AudioPlaybackBackend};
 use super::volume::{AudioVolumeState, apply_gain_in_place};
 
 #[cfg(target_os = "linux")]
 mod alsa_backend;
+mod clock;
 mod cpal_backend;
 mod playback;
 
@@ -168,6 +169,7 @@ pub struct CpalAudioPlayback {
     volume: AudioVolumeState,
     runtime: Mutex<Option<PlaybackRuntime>>,
     generation: Arc<AtomicU64>,
+    reference: Option<AudioReferenceBus>,
 }
 
 struct PlaybackRuntime {
@@ -182,6 +184,7 @@ impl CpalAudioPlayback {
             volume,
             runtime: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(0)),
+            reference: None,
         }
     }
 
@@ -196,6 +199,10 @@ impl CpalAudioPlayback {
     }
 
     fn start_stream(&self) -> Result<PlaybackSender> {
+        let reference = self
+            .reference
+            .clone()
+            .context("playback audio clock is not initialized")?;
         let mut runtime = lock_mutex(&self.runtime, "playback runtime")?;
         if let Some(current) = runtime.as_ref()
             && !current.thread.is_finished()
@@ -218,7 +225,7 @@ impl CpalAudioPlayback {
         let handle = thread::Builder::new()
             .name("alia-cpal-playback".to_string())
             .spawn(move || {
-                let result = run_playback_thread(config, receiver, ready_tx, volume);
+                let result = run_playback_thread(config, receiver, ready_tx, volume, reference);
                 if let Err(error) = result {
                     error!(%error, "cpal playback thread stopped with error");
                 }
@@ -250,6 +257,11 @@ impl ModuleLifecycle for CpalAudioPlayback {
         "cpal_audio_playback"
     }
 
+    async fn init(&mut self, ctx: &super::context::ModuleContext) -> Result<()> {
+        self.reference = Some(ctx.audio_bus.reference());
+        Ok(())
+    }
+
     async fn start(&self) -> Result<()> {
         self.start_stream().map(|_| ())
     }
@@ -276,6 +288,9 @@ impl ModuleLifecycle for CpalAudioPlayback {
 }
 
 impl AudioPlaybackBackend for CpalAudioPlayback {
+    fn reference_bus(&self) -> Option<AudioReferenceBus> {
+        self.reference.clone()
+    }
     fn open_submission(
         &self,
         identity: PlaybackIdentity,
@@ -395,13 +410,6 @@ pub enum ResolvedAudioBackend {
     Alsa,
 }
 
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AlsaCaptureSampleFormat {
-    S16,
-    S32,
-}
-
 fn playback_target_buffer_ms(config: &AudioConfig) -> u64 {
     u64::from(
         config
@@ -447,7 +455,7 @@ fn run_capture_thread(
     ) {
         #[cfg(target_os = "linux")]
         if let Some(alsa_device) = resolved_alsa_capture_device(&config) {
-            return run_alsa_capture_thread(
+            return alsa_backend::run_alsa_capture_thread(
                 config,
                 bus,
                 control_rx,
@@ -501,236 +509,12 @@ fn run_capture_thread(
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-fn run_alsa_capture_thread(
-    config: AudioConfig,
-    bus: AudioBus,
-    control_rx: mpsc::Receiver<()>,
-    ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
-    alsa_device: &str,
-    volume: AudioVolumeState,
-) -> Result<()> {
-    let started = start_alsa_capture_runtime(&config, alsa_device);
-    let (pcm, input_sample_rate, input_channels, chunk_frames, sample_format) = match started {
-        Ok(started) => {
-            let _ = ready_tx.send(Ok(()));
-            started
-        }
-        Err(error) => {
-            let message = error.to_string();
-            let _ = ready_tx.send(Err(message));
-            return Err(error);
-        }
-    };
-
-    let target_channels = config.capture_channels.max(1) as usize;
-    let target_sample_rate = config.capture_sample_rate.max(1);
-    let mut converter = CaptureConverter::new(
-        input_channels,
-        input_sample_rate,
-        target_channels,
-        target_sample_rate,
-    );
-    let mut emitted_frames = 0_u64;
-    let mut level_peak = 0_u64;
-    let mut silence_warned = false;
-    let mut clipping_warned = false;
-    let mut detected_s32_shift = None;
-    let sample_count = chunk_frames.saturating_mul(input_channels.max(1));
-    let mut raw_buffer_i16 = vec![0_i16; sample_count];
-    let mut raw_buffer_i32 = vec![0_i32; sample_count];
-
-    loop {
-        if control_rx.try_recv().is_ok() {
-            break;
-        }
-
-        let ready = pcm
-            .wait(Some(100))
-            .context("waiting for ALSA capture data")?;
-        if !ready {
-            continue;
-        }
-
-        let (frames_read, captured_pcm) = match sample_format {
-            AlsaCaptureSampleFormat::S16 => {
-                let io = pcm.io_i16().context("opening ALSA i16 capture IO")?;
-                match io.readi(&mut raw_buffer_i16) {
-                    Ok(frames) => {
-                        let samples_read = frames.saturating_mul(input_channels);
-                        (frames, converter.convert(&raw_buffer_i16[..samples_read]))
-                    }
-                    Err(error) if error.errno() == libc::EAGAIN => continue,
-                    Err(error) => {
-                        pcm.try_recover(error, true)
-                            .context("recovering ALSA capture stream")?;
-                        continue;
-                    }
-                }
-            }
-            AlsaCaptureSampleFormat::S32 => {
-                let io = pcm.io_i32().context("opening ALSA i32 capture IO")?;
-                match io.readi(&mut raw_buffer_i32) {
-                    Ok(frames) => {
-                        let samples_read = frames.saturating_mul(input_channels);
-                        let raw = &raw_buffer_i32[..samples_read];
-                        let shift = match detected_s32_shift {
-                            Some(shift) => shift,
-                            None => {
-                                let shift = detect_alsa_s32_capture_shift(raw);
-                                if let Some(shift) = shift {
-                                    detected_s32_shift = Some(shift);
-                                }
-                                shift.unwrap_or(16)
-                            }
-                        };
-                        if detected_s32_shift == Some(shift) && emitted_frames == 0 {
-                            info!(
-                                alsa_device,
-                                s32_shift = shift,
-                                "detected ALSA S32 capture bit alignment"
-                            );
-                        }
-                        let converted: Vec<i16> = raw
-                            .iter()
-                            .copied()
-                            .map(|sample| i32_sample_to_i16_with_shift(sample, shift))
-                            .collect();
-                        (frames, converter.convert(&converted))
-                    }
-                    Err(error) if error.errno() == libc::EAGAIN => continue,
-                    Err(error) => {
-                        pcm.try_recover(error, true)
-                            .context("recovering ALSA capture stream")?;
-                        continue;
-                    }
-                }
-            }
-        };
-
-        let samples_read = frames_read.saturating_mul(input_channels);
-        if samples_read == 0 {
-            continue;
-        }
-
-        let mut pcm = captured_pcm;
-        if pcm.is_empty() {
-            continue;
-        }
-        apply_gain_in_place(&mut pcm, volume.capture_volume());
-
-        let frames = (pcm.len() / target_channels.max(1)) as u64;
-        let start_frame = emitted_frames;
-        emitted_frames = emitted_frames.saturating_add(frames);
-        let peak = pcm
-            .iter()
-            .map(|sample| sample.unsigned_abs() as u64)
-            .max()
-            .unwrap_or(0);
-        level_peak = level_peak.max(peak);
-        if peak >= 32_760 && !clipping_warned {
-            clipping_warned = true;
-            warn!(
-                peak,
-                "microphone input is clipping; lower capture_volume or adjust alsa_capture_s32_alignment"
-            );
-        }
-        if emitted_frames >= target_sample_rate as u64 * 5 && !silence_warned {
-            silence_warned = true;
-            if level_peak < 256 {
-                warn!(
-                    peak = level_peak,
-                    "microphone input appears silent; check ALSA capture source and selected input device"
-                );
-            } else {
-                debug!(peak = level_peak, "microphone input level observed");
-            }
-        }
-
-        bus.publish(AudioFrame {
-            pcm,
-            sample_rate: target_sample_rate,
-            timestamp_us: start_frame.saturating_mul(1_000_000) / target_sample_rate as u64,
-        });
-    }
-
-    let _ = pcm.drop();
-    info!("stopped ALSA audio capture");
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn start_alsa_capture_runtime(
-    config: &AudioConfig,
-    alsa_device: &str,
-) -> Result<(AlsaPcm, u32, usize, usize, AlsaCaptureSampleFormat)> {
-    let pcm = AlsaPcm::new(alsa_device, AlsaDirection::Capture, true)
-        .with_context(|| format!("opening ALSA capture PCM '{alsa_device}'"))?;
-    let requested_channels = u32::from(config.capture_channels.max(1));
-    let requested_rate = config.capture_sample_rate.max(1);
-    let (actual_channels, actual_sample_rate, sample_format) = {
-        let hwp = AlsaHwParams::any(&pcm).context("reading ALSA capture hardware params")?;
-        hwp.set_access(AlsaAccess::RWInterleaved)
-            .context("setting ALSA capture interleaved access")?;
-        let sample_format = preferred_alsa_capture_format(&hwp);
-        hwp.set_format(alsa_capture_format(sample_format))
-            .context("setting ALSA capture sample format")?;
-        let _ = hwp.set_rate_resample(true);
-
-        let actual_channels = hwp
-            .set_channels_near(requested_channels)
-            .context("setting ALSA capture channels")?;
-        let actual_sample_rate = hwp
-            .set_rate_near(requested_rate, AlsaValueOr::Nearest)
-            .context("setting ALSA capture sample rate")?;
-
-        let requested_period_frames =
-            buffer_frames_for_ms(actual_sample_rate, config.opus_frame_ms.max(10));
-        let _ =
-            hwp.set_period_size_near(requested_period_frames as AlsaFrames, AlsaValueOr::Nearest);
-        let requested_buffer_frames = requested_period_frames.saturating_mul(4);
-        let _ = hwp.set_buffer_size_near(requested_buffer_frames as AlsaFrames);
-
-        pcm.hw_params(&hwp)
-            .context("applying ALSA capture hardware params")?;
-        (actual_channels, actual_sample_rate, sample_format)
-    };
-
-    let chunk_frames = {
-        let hw_params = pcm
-            .hw_params_current()
-            .context("reading ALSA capture params")?;
-        hw_params
-            .get_period_size()
-            .context("reading ALSA capture period size")?
-            .max(1) as usize
-    };
-
-    pcm.prepare().context("preparing ALSA capture stream")?;
-    pcm.start().context("starting ALSA capture stream")?;
-    info!(
-        alsa_device,
-        ?sample_format,
-        input_sample_rate = actual_sample_rate,
-        input_channels = actual_channels,
-        target_sample_rate = config.capture_sample_rate,
-        target_channels = config.capture_channels,
-        "started ALSA audio capture"
-    );
-    Ok((
-        pcm,
-        actual_sample_rate,
-        actual_channels as usize,
-        chunk_frames,
-        sample_format,
-    ))
-}
-
 fn run_playback_thread(
     config: AudioConfig,
     receiver: PlaybackReceiver,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     volume: AudioVolumeState,
+    reference: AudioReferenceBus,
 ) -> Result<()> {
     if matches!(
         resolved_playback_backend(&config),
@@ -744,6 +528,7 @@ fn run_playback_thread(
                 ready_tx,
                 &alsa_device,
                 volume,
+                reference,
             );
         }
         #[cfg(not(target_os = "linux"))]
@@ -760,6 +545,7 @@ fn run_playback_thread(
         receiver.generation(),
         volume.clone(),
         receiver.device_failed(),
+        reference.clone(),
     );
     let mut sink = match started {
         Ok(sink) => sink,
@@ -774,6 +560,7 @@ fn run_playback_thread(
                     ready_tx,
                     &alsa_device,
                     volume,
+                    reference,
                 );
             }
             let _ = ready_tx.send(Err(error.to_string()));
@@ -925,6 +712,11 @@ impl CaptureConverter {
         }
     }
 
+    fn reset(&mut self) {
+        self.last_sample = None;
+        self.phase = 0.0;
+    }
+
     fn convert<T: Copy + ToI16Sample>(&mut self, input: &[T]) -> Vec<i16> {
         if input.is_empty() {
             return Vec::new();
@@ -975,75 +767,6 @@ impl CaptureConverter {
     }
 }
 
-fn build_input_stream<T>(
-    device: &Device,
-    config: &StreamConfig,
-    converter: Arc<Mutex<CaptureConverter>>,
-    bus: AudioBus,
-    emitted_frames: Arc<AtomicU64>,
-    err_fn: impl Fn(cpal::StreamError) + Send + 'static,
-) -> Result<Stream>
-where
-    T: Copy + ToI16Sample + cpal::SizedSample + Send + 'static,
-{
-    let sample_rate = {
-        let converter = lock_mutex(&converter, "capture converter")?;
-        converter.target_sample_rate
-    };
-    let channels = {
-        let converter = lock_mutex(&converter, "capture converter")?;
-        converter.target_channels
-    };
-    let level_peak = Arc::new(AtomicU64::new(0));
-    let silence_warned = Arc::new(AtomicBool::new(false));
-    device
-        .build_input_stream(
-            config,
-            move |data: &[T], _| {
-                let pcm = match converter.lock() {
-                    Ok(mut converter) => converter.convert(data),
-                    Err(error) => {
-                        warn!(%error, "capture converter lock poisoned");
-                        return;
-                    }
-                };
-                if pcm.is_empty() {
-                    return;
-                }
-                let frames = (pcm.len() / channels.max(1)) as u64;
-                let start_frame = emitted_frames.fetch_add(frames, Ordering::Relaxed);
-                let peak = pcm
-                    .iter()
-                    .map(|sample| sample.unsigned_abs() as u64)
-                    .max()
-                    .unwrap_or(0);
-                level_peak.fetch_max(peak, Ordering::Relaxed);
-                let end_frame = start_frame.saturating_add(frames);
-                if end_frame >= sample_rate as u64 * 5
-                    && !silence_warned.swap(true, Ordering::Relaxed)
-                {
-                    let peak = level_peak.load(Ordering::Relaxed);
-                    if peak < 256 {
-                        warn!(
-                            peak,
-                            "microphone input appears silent; check macOS microphone permission and selected input device"
-                        );
-                    } else {
-                        debug!(peak, "microphone input level observed");
-                    }
-                }
-                bus.publish(AudioFrame {
-                    pcm,
-                    sample_rate,
-                    timestamp_us: start_frame.saturating_mul(1_000_000) / sample_rate as u64,
-                });
-            },
-            err_fn,
-            None,
-        )
-        .context("building cpal input stream")
-}
-
 pub fn resolved_capture_backend(config: &AudioConfig) -> ResolvedAudioBackend {
     resolve_backend(config.capture_backend, &config.capture_device)
 }
@@ -1079,23 +802,6 @@ fn resolve_backend(configured: AudioBackend, device: &str) -> ResolvedAudioBacke
                 ResolvedAudioBackend::Cpal
             }
         }
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn preferred_alsa_capture_format(hwp: &AlsaHwParams<'_>) -> AlsaCaptureSampleFormat {
-    if hwp.test_format(AlsaFormat::s32()).is_ok() {
-        AlsaCaptureSampleFormat::S32
-    } else {
-        AlsaCaptureSampleFormat::S16
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn alsa_capture_format(sample_format: AlsaCaptureSampleFormat) -> AlsaFormat {
-    match sample_format {
-        AlsaCaptureSampleFormat::S16 => AlsaFormat::s16(),
-        AlsaCaptureSampleFormat::S32 => AlsaFormat::s32(),
     }
 }
 

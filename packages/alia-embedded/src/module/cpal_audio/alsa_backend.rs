@@ -1,4 +1,7 @@
+use super::super::context::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe};
+use super::clock::AlsaTimeOrigin;
 use super::*;
+use alia_core::audio_clock::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AlsaCaptureSampleFormat {
@@ -11,6 +14,12 @@ struct AlsaPlaybackRuntime {
     output_sample_rate: u32,
     output_channels: usize,
     chunk_frames: usize,
+    timestamps_enabled: bool,
+}
+
+struct AlsaCaptureOwner {
+    pcm: AlsaPcm,
+    _clock_owner: AudioStreamOwner,
 }
 
 pub(super) fn run_alsa_capture_thread(
@@ -42,6 +51,22 @@ pub(super) fn run_alsa_capture_thread(
         target_channels,
         target_sample_rate,
     );
+    let mut clock = bus.reference().open_stream(
+        AudioDirection::Capture,
+        AudioFormat {
+            sample_rate_hz: input_sample_rate,
+            channels: input_channels as u16,
+        },
+    );
+    let owner = AlsaCaptureOwner {
+        pcm,
+        _clock_owner: AudioStreamOwner(clock.probe.clone()),
+    };
+    let pcm = &owner.pcm;
+    owner._clock_owner.0.activate();
+    let timestamps_enabled = enable_timestamps(pcm);
+    let mut time_origin = AlsaTimeOrigin::default();
+    let mut continuity = clock.probe.continuity();
     let mut emitted_frames = 0_u64;
     let mut level_peak = 0_u64;
     let mut silence_warned = false;
@@ -56,31 +81,43 @@ pub(super) fn run_alsa_capture_thread(
             break;
         }
 
-        let ready = pcm
-            .wait(Some(100))
-            .context("waiting for ALSA capture data")?;
+        let ready = handle_capture_wait(pcm, &mut converter, &clock.probe, pcm.wait(Some(100)))?;
         if !ready {
             continue;
         }
 
-        let (frames_read, captured_pcm) = match sample_format {
+        let reading = read_clock(pcm, &mut time_origin, &clock.probe, timestamps_enabled);
+        let (frames_read, captured_pcm, native) = match sample_format {
             AlsaCaptureSampleFormat::S16 => {
-                let io = pcm.io_i16().context("opening ALSA i16 capture IO")?;
+                let io = pcm
+                    .io_i16()
+                    .inspect_err(|_| clock.probe.mark(AudioDiscontinuity::BackendError))
+                    .context("opening ALSA i16 capture IO")?;
                 match io.readi(&mut raw_buffer_i16) {
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
-                        (frames, converter.convert(&raw_buffer_i16[..samples_read]))
+                        let native = clock.observe(frames as u64, reading);
+                        if native.continuity != continuity {
+                            converter.reset();
+                            continuity = native.continuity;
+                        }
+                        (
+                            frames,
+                            converter.convert(&raw_buffer_i16[..samples_read]),
+                            native,
+                        )
                     }
-                    Err(error) if error.errno() == libc::EAGAIN => continue,
                     Err(error) => {
-                        pcm.try_recover(error, true)
-                            .context("recovering ALSA capture stream")?;
+                        recover_capture_error(pcm, &mut converter, &clock.probe, error)?;
                         continue;
                     }
                 }
             }
             AlsaCaptureSampleFormat::S32 => {
-                let io = pcm.io_i32().context("opening ALSA i32 capture IO")?;
+                let io = pcm
+                    .io_i32()
+                    .inspect_err(|_| clock.probe.mark(AudioDiscontinuity::BackendError))
+                    .context("opening ALSA i32 capture IO")?;
                 match io.readi(&mut raw_buffer_i32) {
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
@@ -107,12 +144,15 @@ pub(super) fn run_alsa_capture_thread(
                             .copied()
                             .map(|sample| i32_sample_to_i16_with_shift(sample, shift))
                             .collect();
-                        (frames, converter.convert(&converted))
+                        let native = clock.observe(frames as u64, reading);
+                        if native.continuity != continuity {
+                            converter.reset();
+                            continuity = native.continuity;
+                        }
+                        (frames, converter.convert(&converted), native)
                     }
-                    Err(error) if error.errno() == libc::EAGAIN => continue,
                     Err(error) => {
-                        pcm.try_recover(error, true)
-                            .context("recovering ALSA capture stream")?;
+                        recover_capture_error(pcm, &mut converter, &clock.probe, error)?;
                         continue;
                     }
                 }
@@ -162,12 +202,26 @@ pub(super) fn run_alsa_capture_thread(
             pcm,
             sample_rate: target_sample_rate,
             timestamp_us: start_frame.saturating_mul(1_000_000) / target_sample_rate as u64,
+            timing: Some(CaptureTiming {
+                native,
+                converted_format: AudioFormat {
+                    sample_rate_hz: target_sample_rate,
+                    channels: target_channels as u16,
+                },
+                converted_start_frame: start_frame,
+                converted_frames: frames,
+                resampled: input_sample_rate != target_sample_rate,
+            }),
         });
     }
 
-    let _ = pcm.drop();
+    let stopped = pcm
+        .drop()
+        .inspect_err(|_| clock.probe.mark(AudioDiscontinuity::BackendError))
+        .context("stopping ALSA capture");
+    drop(owner);
     info!("stopped ALSA audio capture");
-    Ok(())
+    stopped
 }
 
 fn start_alsa_capture_runtime(
@@ -242,6 +296,7 @@ pub(super) fn run_alsa_playback_thread(
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
     alsa_device: &str,
     volume: AudioVolumeState,
+    reference: AudioReferenceBus,
 ) -> Result<()> {
     let runtime = match create_alsa_playback_runtime(&config, alsa_device) {
         Ok(runtime) => runtime,
@@ -251,13 +306,23 @@ pub(super) fn run_alsa_playback_thread(
         }
     };
     let target_buffer_ms = playback_target_buffer_ms(&config);
+    let clock = reference.open_stream(
+        AudioDirection::Playback,
+        AudioFormat {
+            sample_rate_hz: runtime.output_sample_rate,
+            channels: runtime.output_channels as u16,
+        },
+    );
     receiver.set_backend(SubmissionBackend {
-        instance_id: uuid::Uuid::new_v4(),
+        instance_id: clock.probe.stream_id(),
         boundary: SubmissionBoundary::AlsaWriteAccepted,
         output_sample_rate_hz: runtime.output_sample_rate,
         output_channels: runtime.output_channels as u32,
     });
     let mut sink = AlsaPlaybackSink {
+        _clock_owner: AudioStreamOwner(clock.probe.clone()),
+        clock,
+        time_origin: AlsaTimeOrigin::default(),
         runtime,
         buffer: PlaybackBuffer::new(receiver.generation()),
         renderer: Renderer::default(),
@@ -273,6 +338,9 @@ pub(super) fn run_alsa_playback_thread(
 
 struct AlsaPlaybackSink {
     runtime: AlsaPlaybackRuntime,
+    _clock_owner: AudioStreamOwner,
+    clock: AudioStreamClock,
+    time_origin: AlsaTimeOrigin,
     buffer: PlaybackBuffer,
     renderer: Renderer,
     volume: AudioVolumeState,
@@ -302,12 +370,18 @@ impl PlaybackSink for AlsaPlaybackSink {
     }
 
     fn stop(&mut self) -> Result<()> {
+        self.clock.probe.mark(AudioDiscontinuity::Cancelled);
         self.renderer.clear();
         self.buffer.clear();
-        self.runtime.pcm.drop().context("stopping ALSA playback")?;
+        self.runtime
+            .pcm
+            .drop()
+            .inspect_err(|_| self.clock.probe.mark(AudioDiscontinuity::BackendError))
+            .context("stopping ALSA playback")?;
         self.runtime
             .pcm
             .prepare()
+            .inspect_err(|_| self.clock.probe.mark(AudioDiscontinuity::BackendError))
             .context("preparing ALSA after stop")?;
         Ok(())
     }
@@ -319,6 +393,9 @@ impl PlaybackSink for AlsaPlaybackSink {
                 &mut self.buffer,
                 self.runtime.output_channels,
                 self.runtime.chunk_frames,
+                &mut self.clock,
+                &mut self.time_origin,
+                self.runtime.timestamps_enabled,
             )?;
         }
         Ok(())
@@ -348,8 +425,10 @@ fn create_alsa_playback_runtime(
         channels = output_channels,
         "started ALSA audio playback fallback"
     );
+    let timestamps_enabled = enable_timestamps(&pcm);
     Ok(AlsaPlaybackRuntime {
         pcm,
+        timestamps_enabled,
         output_sample_rate: actual_sample_rate,
         output_channels,
         chunk_frames,
@@ -425,6 +504,9 @@ fn write_alsa_chunk(
     buffer: &mut PlaybackBuffer,
     channels: usize,
     chunk_frames: usize,
+    clock: &mut AudioStreamClock,
+    time_origin: &mut AlsaTimeOrigin,
+    timestamps_enabled: bool,
 ) -> Result<()> {
     let channels = channels.max(1);
     let available_frames = buffer.len() / channels;
@@ -437,29 +519,93 @@ fn write_alsa_chunk(
     if chunk.is_empty() {
         return Ok(());
     }
-    let io = pcm.io_i16().context("opening ALSA i16 playback IO")?;
+    let io = pcm
+        .io_i16()
+        .inspect_err(|_| clock.probe.mark(AudioDiscontinuity::BackendError))
+        .context("opening ALSA i16 playback IO")?;
 
     match io.writei(&chunk) {
         Ok(written_frames) => {
-            buffer.alsa_submitted(written_frames);
-            if let Some(lease) = output_write {
-                lease.finish(written_frames as u64);
-            }
-            if pcm.state() != AlsaState::Running {
-                let _ = pcm.start();
-            }
-            Ok(())
+            let reading = read_clock(pcm, time_origin, &clock.probe, timestamps_enabled);
+            playback::confirm_alsa_write(
+                buffer,
+                &chunk,
+                written_frames,
+                output_write,
+                clock,
+                reading,
+            )?;
+            start_accepted_playback(pcm, written_frames, &clock.probe)
         }
         Err(error) if matches!(error.errno(), libc::EAGAIN | libc::EINTR) => Ok(()),
         Err(error) if error.errno() == libc::EPIPE => {
+            clock.probe.mark(AudioDiscontinuity::Underrun);
             pcm.prepare().context("recovering ALSA playback underrun")
         }
-        Err(error) if error.errno() == libc::ESTRPIPE => match pcm.resume() {
-            Ok(()) => Ok(()),
-            Err(error) if error.errno() == libc::EAGAIN => Ok(()),
-            Err(_) => pcm.prepare().context("recovering suspended ALSA playback"),
-        },
-        Err(error) => Err(error).context("writing ALSA playback audio"),
+        Err(error) if error.errno() == libc::ESTRPIPE => {
+            clock.probe.mark(AudioDiscontinuity::Suspended);
+            match pcm.resume() {
+                Ok(()) => Ok(()),
+                Err(error) if error.errno() == libc::EAGAIN => Ok(()),
+                Err(_) => pcm.prepare().context("recovering suspended ALSA playback"),
+            }
+        }
+        Err(error) => {
+            clock.probe.mark(AudioDiscontinuity::BackendError);
+            Err(error).context("writing ALSA playback audio")
+        }
+    }
+}
+
+fn start_accepted_playback(
+    pcm: &AlsaPcm,
+    written_frames: usize,
+    probe: &AudioStreamProbe,
+) -> Result<()> {
+    if written_frames > 0 && pcm.state() != AlsaState::Running {
+        pcm.start()
+            .inspect_err(|_| probe.mark(AudioDiscontinuity::BackendError))
+            .context("starting ALSA after accepted playback write")?;
+    }
+    Ok(())
+}
+
+fn handle_capture_wait(
+    pcm: &AlsaPcm,
+    converter: &mut CaptureConverter,
+    probe: &AudioStreamProbe,
+    waited: alsa::Result<bool>,
+) -> Result<bool> {
+    match waited {
+        Ok(ready) => Ok(ready),
+        Err(error) => {
+            recover_capture_error(pcm, converter, probe, error)?;
+            Ok(false)
+        }
+    }
+}
+
+fn recover_capture_error(
+    pcm: &AlsaPcm,
+    converter: &mut CaptureConverter,
+    probe: &AudioStreamProbe,
+    error: alsa::Error,
+) -> Result<()> {
+    if matches!(error.errno(), libc::EAGAIN | libc::EINTR) {
+        return Ok(());
+    }
+    probe.mark(capture_error_reason(error.errno()));
+    converter.reset();
+    if matches!(error.errno(), libc::EPIPE | libc::ESTRPIPE) {
+        // Treat the unknown native tail as a gap and restart capture once. The
+        // libasound recover helper can loop forever while suspend returns
+        // EAGAIN, which would prevent this owner's stop and join from finishing.
+        pcm.prepare()
+            .and_then(|()| pcm.start())
+            .inspect_err(|_| probe.mark(AudioDiscontinuity::BackendError))
+            .context("restarting ALSA capture after a discontinuity")
+    } else {
+        Err(error).context("ALSA capture backend failed")
     }
 }
 
@@ -483,5 +629,332 @@ fn alsa_capture_format(sample_format: AlsaCaptureSampleFormat) -> AlsaFormat {
     match sample_format {
         AlsaCaptureSampleFormat::S16 => AlsaFormat::s16(),
         AlsaCaptureSampleFormat::S32 => AlsaFormat::s32(),
+    }
+}
+
+// Failure here only downgrades timing: it never discards a successful write's
+// accepted prefix. Timestamp configuration is explicit, never wall-clock guessed.
+fn enable_timestamps(pcm: &AlsaPcm) -> bool {
+    (|| -> Result<()> {
+        let swp = pcm.sw_params_current()?;
+        swp.set_tstamp_mode(true)?;
+        swp.set_tstamp_type(alsa::pcm::TstampType::Monotonic)?;
+        pcm.sw_params(&swp)?;
+        Ok(())
+    })()
+    .is_ok()
+}
+fn read_clock(
+    pcm: &AlsaPcm,
+    origin: &mut AlsaTimeOrigin,
+    probe: &AudioStreamProbe,
+    enabled: bool,
+) -> AudioClockReading {
+    if !enabled {
+        return probe.unknown_clock();
+    }
+    let Ok(status) = pcm.status() else {
+        return probe.unknown_clock();
+    };
+    let stamp = status.get_htstamp();
+    let timestamp = if stamp.tv_sec >= 0
+        && (0..1_000_000_000).contains(&stamp.tv_nsec)
+        && (stamp.tv_sec != 0 || stamp.tv_nsec != 0)
+    {
+        Some(i128::from(stamp.tv_sec) * 1_000_000_000 + i128::from(stamp.tv_nsec))
+    } else {
+        None
+    };
+    origin.read(probe, timestamp, Some(status.get_delay()))
+}
+fn capture_error_reason(errno: i32) -> AudioDiscontinuity {
+    match errno {
+        libc::EPIPE => AudioDiscontinuity::Overrun,
+        libc::ESTRPIPE => AudioDiscontinuity::Suspended,
+        _ => AudioDiscontinuity::BackendError,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ALSA's explicit software null PCM performs real libasound calls without
+    // requiring a sound card. It cannot validate DAC timing or acoustic output.
+    #[test]
+    fn alsa_null_write_records_the_real_accepted_samples_when_clock_is_unavailable() {
+        let config = AudioConfig {
+            playback_channels: 1,
+            ..Default::default()
+        };
+        let runtime = create_alsa_playback_runtime(&config, "null").unwrap();
+        let bus = AudioBus::new(2).reference();
+        let mut clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: runtime.output_sample_rate,
+                channels: runtime.output_channels as u16,
+            },
+        );
+        let owner = AudioStreamOwner(clock.probe.clone());
+        clock.probe.activate();
+        bus.try_read();
+        let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+        buffer.append(1, vec![1234; 64]);
+        write_alsa_chunk(
+            &runtime.pcm,
+            &mut buffer,
+            1,
+            64,
+            &mut clock,
+            &mut AlsaTimeOrigin::default(),
+            false,
+        )
+        .unwrap();
+        let block = bus
+            .try_read()
+            .expect("successful native null write must be observable");
+        assert_eq!(block.boundary, Some(SubmissionBoundary::AlsaWriteAccepted));
+        assert_eq!(block.timing.frames, 64);
+        assert_eq!(block.sample_count, 64);
+        assert_eq!(block.timing.clock.quality, AudioTimeQuality::Unknown);
+        assert_eq!(&block.samples[..64], &[1234.0 / 32768.0; 64]);
+        assert_eq!(buffer.len(), 0);
+        drop(runtime);
+        drop(owner);
+        assert!(!bus.snapshot(AudioDirection::Playback).unwrap().running);
+    }
+
+    #[test]
+    fn alsa_failed_native_write_never_creates_a_reference_prefix() {
+        let config = AudioConfig {
+            playback_channels: 1,
+            ..Default::default()
+        };
+        let runtime = create_alsa_playback_runtime(&config, "null").unwrap();
+        let bus = AudioBus::new(2).reference();
+        let mut clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: runtime.output_sample_rate,
+                channels: 1,
+            },
+        );
+        clock.probe.activate();
+        bus.try_read();
+        let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+        buffer.append(1, vec![1234; 64]);
+        runtime.pcm.drop().unwrap();
+        assert!(
+            write_alsa_chunk(
+                &runtime.pcm,
+                &mut buffer,
+                1,
+                64,
+                &mut clock,
+                &mut AlsaTimeOrigin::default(),
+                true
+            )
+            .is_err()
+        );
+        while let Some(block) = bus.try_read() {
+            assert_eq!(block.sample_count, 0);
+        }
+        let state = bus.snapshot(AudioDirection::Playback).unwrap();
+        assert_eq!(state.cursor, 0);
+        assert_eq!(state.last_fault, Some(AudioDiscontinuity::BackendError));
+        assert_eq!(buffer.len(), 64);
+    }
+
+    #[test]
+    fn native_start_failure_keeps_the_already_accepted_prefix_and_final_fault() {
+        let runtime = create_alsa_playback_runtime(
+            &AudioConfig {
+                playback_channels: 1,
+                ..Default::default()
+            },
+            "null",
+        )
+        .unwrap();
+        let bus = AudioBus::new(2).reference();
+        let mut clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: runtime.output_sample_rate,
+                channels: 1,
+            },
+        );
+        let owner = AudioStreamOwner(clock.probe.clone());
+        clock.probe.activate();
+        bus.try_read();
+        let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
+        buffer.append(1, vec![2345; 64]);
+        let (chunk, lease) = buffer.alsa_chunk(64);
+        let accepted = runtime.pcm.io_i16().unwrap().writei(&chunk).unwrap();
+        assert_eq!(accepted, 64);
+        let unknown = clock.probe.unknown_clock();
+        playback::confirm_alsa_write(&mut buffer, &chunk, accepted, lease, &mut clock, unknown)
+            .unwrap();
+        // A native state change after acceptance forces the production start
+        // helper to fail; the successful write remains a separate known fact.
+        runtime.pcm.drop().unwrap();
+        assert!(start_accepted_playback(&runtime.pcm, accepted, &clock.probe).is_err());
+        clock.probe.mark(AudioDiscontinuity::Cancelled);
+        drop(runtime);
+        drop(owner);
+        let prefix = bus.try_read().unwrap();
+        assert_eq!(prefix.boundary, Some(SubmissionBoundary::AlsaWriteAccepted));
+        assert_eq!(prefix.sample_count, accepted);
+        assert_eq!(&prefix.samples[..accepted], &[2345.0 / 32768.0; 64]);
+        assert_eq!(buffer.len(), 0);
+        let state = bus.snapshot(AudioDirection::Playback).unwrap();
+        assert!(state.closed);
+        assert_eq!(state.cursor, accepted as u64);
+        assert_eq!(state.last_fault, Some(AudioDiscontinuity::BackendError));
+    }
+
+    #[test]
+    fn capture_wait_failure_keeps_backend_fault_through_native_close() {
+        let (pcm, rate, channels, _, _) =
+            start_alsa_capture_runtime(&AudioConfig::default(), "null").unwrap();
+        let bus = AudioBus::new(2).reference();
+        let clock = bus.open_stream(
+            AudioDirection::Capture,
+            AudioFormat {
+                sample_rate_hz: rate,
+                channels: channels as u16,
+            },
+        );
+        let owner = AlsaCaptureOwner {
+            pcm,
+            _clock_owner: AudioStreamOwner(clock.probe.clone()),
+        };
+        clock.probe.activate();
+        owner.pcm.drop().unwrap();
+        let mut converter = CaptureConverter::new(channels, rate, 1, 16000);
+        // null PCM readiness does not reproduce real device disconnection.
+        // Inject the wait result at the production error gate, then close the
+        // real native owner. No physical wait-failure claim is made here.
+        assert!(
+            handle_capture_wait(
+                &owner.pcm,
+                &mut converter,
+                &clock.probe,
+                Err(alsa::Error::new("snd_pcm_wait", libc::ENODEV)),
+            )
+            .is_err()
+        );
+        drop(owner);
+        let state = bus.snapshot(AudioDirection::Capture).unwrap();
+        assert!(state.closed);
+        assert_eq!(state.cursor, 0);
+        assert_eq!(state.last_fault, Some(AudioDiscontinuity::BackendError));
+    }
+
+    #[test]
+    fn wait_and_read_discontinuities_restart_native_capture_without_old_converter_tail() {
+        for function in ["snd_pcm_wait", "snd_pcm_readi"] {
+            for errno in [libc::EPIPE, libc::ESTRPIPE] {
+                let (pcm, rate, channels, _, _) =
+                    start_alsa_capture_runtime(&AudioConfig::default(), "null").unwrap();
+                let bus = AudioBus::new(2).reference();
+                let clock = bus.open_stream(
+                    AudioDirection::Capture,
+                    AudioFormat {
+                        sample_rate_hz: rate,
+                        channels: channels as u16,
+                    },
+                );
+                let owner = AlsaCaptureOwner {
+                    pcm,
+                    _clock_owner: AudioStreamOwner(clock.probe.clone()),
+                };
+                clock.probe.activate();
+                let mut converter = CaptureConverter::new(1, 48000, 1, 16000);
+                converter.convert(&[-20000_i16; 17]);
+                owner.pcm.drop().unwrap();
+                // The error identity is injected. prepare/start themselves use
+                // the real software PCM; this does not simulate hardware xrun.
+                recover_capture_error(
+                    &owner.pcm,
+                    &mut converter,
+                    &clock.probe,
+                    alsa::Error::new(function, errno),
+                )
+                .unwrap();
+                assert_eq!(owner.pcm.state(), AlsaState::Running);
+                let next = converter.convert(&[20000_i16; 23]);
+                assert!(!next.is_empty() && next.iter().all(|&x| x == 20000));
+                let state = bus.snapshot(AudioDirection::Capture).unwrap();
+                assert_eq!(state.last_fault, Some(capture_error_reason(errno)));
+                assert_eq!(state.cursor, 0);
+                let continuity = state.continuity;
+                for retry in [libc::EAGAIN, libc::EINTR] {
+                    recover_capture_error(
+                        &owner.pcm,
+                        &mut converter,
+                        &clock.probe,
+                        alsa::Error::new(function, retry),
+                    )
+                    .unwrap();
+                    assert_eq!(clock.probe.continuity(), continuity);
+                }
+                drop(owner);
+                assert!(bus.snapshot(AudioDirection::Capture).unwrap().closed);
+            }
+        }
+    }
+
+    #[test]
+    fn null_capture_stop_joins_native_owner_and_preserves_independent_timing() {
+        let bus = AudioBus::new(8);
+        let reference = bus.reference();
+        let mut receiver = bus.subscribe();
+        let (control_tx, control_rx) = mpsc::channel();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            run_alsa_capture_thread(
+                AudioConfig::default(),
+                bus,
+                control_rx,
+                ready_tx,
+                "null",
+                AudioVolumeState::new(Default::default()),
+            )
+        });
+        let ready = ready_rx.recv_timeout(std::time::Duration::from_secs(2));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        let frame = loop {
+            match receiver.try_recv() {
+                Ok(frame) => break Some(frame),
+                // null PCM has no hardware pacing. Catch up immediately rather
+                // than sleeping after every lag and continuously falling behind.
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+                    if std::time::Instant::now() < deadline =>
+                {
+                    continue;
+                }
+                Err(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(1))
+                }
+                Err(_) => break None,
+            }
+        };
+        control_tx.send(()).unwrap();
+        let result = worker.join().unwrap();
+        ready.unwrap().unwrap();
+        result.unwrap();
+        let timing = frame
+            .expect("real null capture must publish a frame")
+            .timing
+            .unwrap();
+        assert_eq!(timing.native.stream.direction, AudioDirection::Capture);
+        assert_eq!(timing.native.clock.sample_ns, None);
+        assert!(timing.native.frames > 0 && timing.converted_frames > 0);
+        let state = reference.snapshot(AudioDirection::Capture).unwrap();
+        assert!(state.closed && !state.running);
+        assert_eq!(state.stream, timing.native.stream);
+        assert!(state.cursor >= timing.native.start_frame + timing.native.frames);
+        assert!(reference.snapshot(AudioDirection::Playback).is_none());
     }
 }
