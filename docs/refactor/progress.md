@@ -21,7 +21,15 @@
 | `a33ec67` | 不可变 ContextLease、实际读集、持久政策、Cache 审核与向量 CAS，派生写入及输出接纳校验 | macOS 默认 workspace 785 个不同测试通过、5 项跳过；5 项 PTY/真实模型另跑通过；Linux ARM64 固定提交与夹具修正候选的结果见平台记录 |
 | `759985f` | Memory 实际向量身份、规范 revision 投影、可关闭后台重建与原子 profile 热切换 | macOS 默认 workspace 802 个不同测试通过、0 失败、5 项跳过；两端无默认特性 all-targets、28 个变更 Rust 文件格式检查通过；5 项真实 PTY/模型另跑通过 |
 | `5467e8b`，整合 `9de8c74` | 实际后端播放参考、独立采集/播放时钟、有界交接与可见缺口/关闭统计 | macOS 默认特性实际链接及库测试 124 项；Linux ARM64 无默认特性 all-targets 与 130 项库测试通过，13 个变更 Rust 文件格式检查通过 |
-| `b4987a8` 与本次主分支整合 | 规范 Appraisal/Relationship、独立关系版本、显式重建、完整 Memory 来源校验与隐私擦除传播 | 冻结主分支 macOS 默认 workspace 859 个不同测试通过，5 项真实 PTY/模型另跑通过；完整记录见下节 |
+| `b4987a8`，整合 `8c3f545` | 规范 Appraisal/Relationship、独立关系版本、显式重建、完整 Memory 来源校验与隐私擦除传播 | 冻结主分支 macOS 默认 workspace 859 个不同测试通过，5 项真实 PTY/模型另跑通过；完整记录见下节 |
+
+## 可恢复暂停 Stage 1 整合（2026-09-20）
+
+本地基础提交 `213d5ed`，主分支整合 `e6ba75b`，为同一输出作用域增加可逆 SoftwareGate，保留原生播放流、重采样状态、块游标与尚未提交媒体。疑似插话与明确等待分别记录；新采集语音会阻止旧恢复决定，明确等待只接受明确继续。终结位不可重开，重复控制返回原命令结果与当前快照，已退休作用域也不把历史 Applied 伪造为未执行。单 payload、共享源 PCM 和渲染缓冲均在复制前检查字节预算。详见[Stage 1 实施记录](duplex-pause-stage1.md)。
+
+与 `8c3f545` 整合的 macOS 默认完整 workspace 验证为 **875 个不同测试通过、0 失败、5 显式跳过**，370.02 秒；其中 Core 25 项、Embedded lib 135 项、Server lib 216 项。测试使用真实任务 PostgreSQL 与实际 Sherpa 原生归档，未设置测试串行模式。587 个构建输入清单 SHA-256 为 `c97283aee880270634f7cedb58ced6ffbdc18d67e425e5aa6533817c7f29a6c1`，运行前后无漂移。两端无默认特性 all-targets 检查也通过，36.18 秒。证据位于 `run/validation-20260920/duplex-stage1-integration/`。5 项真实 PTY/模型在前一 Appraisal 包已另跑，本次完整回归仍明确跳过，没有将此前结果冒充本次重跑。
+
+Stage 1 只完成本地门和证据基础；当前网络 WAIT 仍永久取消。下一包接通 playback v3 / voice v2、原 Response 控制记录、持续采集屏障与生产背压，实施契约见[两类暂停设计](duplex-pause-design.md)。软件停止提交不等于声卡已排空、物理静音或 Presented；Pi 真机、AEC 和听感验收继续待做。
 
 ## Appraisal / Relationship 与 Memory 来源整合（2026-09-20）
 
@@ -185,7 +193,7 @@ ALIA_EASY_TURN_PCM_DIR="$PWD/run/easy-turn-stream-pcm" \
 
 1. AEC、采集/播放时钟映射与漂移测量、可恢复暂停、真实设备呈现回执、双讲与自然插话质量。实际后端参考流与独立时钟已在 `5467e8b` 提供；当前 WAIT 仍停止当前回答，尚不能从实际播放游标恢复。
 2. D3 短动作资产及真实呈现/位置证据，依据 [Delivery 设计](delivery-design.md) 实施。TextDelivery/D3 固定提交的 Linux ARM64 复核已完成；唯一发送与软件提交不能代表硬件已完成。
-3. 接入 Appraisal/Relationship 的规范来源和失效重建、Companion 状态与主动表达。旧逐句 Expression 缓存没有 owner/context/epoch/TTL，须移除该旁路；这不属于规范 `llm_cache` 的覆盖范围。Memory 向量的实际请求身份已在本包实现，派生 Memory 的递归父根与关系域失效仍随 Appraisal 包补齐。这些均是首轮未完成工作，不是用户明确延期。
+3. Companion 状态、可出错假设与受约束的主动表达，见[实施设计](companion-design.md)。Appraisal/Relationship 的规范来源、失效重建、完整派生 Memory 根和旧 Expression 缓存移除已在 `8c3f545` 完成；Companion 闭环仍属首轮未完成工作，不是用户明确延期。
 4. 其他 Server 平台、Pi 真机联调和至少 24 小时混合负载。Server 和 Embedded 已建立可调用运行时；未来新增 Delivery 等模块仍需纳入同一所有权及关闭契约。
 
 播放网络身份栅栏和持续会话凭证续期已在 `1ecb2ce` 实现。续期测试推进到虚拟 365 秒，同时用真实签名检查错误签名/身份/scope 和 301 秒旧 iat 被拒；绑定变更由设备立即及每 250 ms 复核，覆盖上传结束后队列尾部。真实设备长时会话仍需要单独验收。
