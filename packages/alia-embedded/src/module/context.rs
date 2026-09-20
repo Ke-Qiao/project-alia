@@ -7,6 +7,13 @@ use crate::config::EmbeddedConfig;
 use crate::module::sensor::SensorRegistry;
 use crate::storage::EmbeddedStore;
 
+mod audio_reference;
+pub use audio_reference::{
+    AudioReferenceBlock, AudioReferenceBus, AudioStreamSnapshot, REFERENCE_BLOCK_SAMPLES,
+    ReferenceContent,
+};
+pub(crate) use audio_reference::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe};
+
 /// Audio bus for zero-copy PCM distribution between modules.
 ///
 /// Uses a broadcast channel to fan-out audio frames to multiple consumers
@@ -14,6 +21,7 @@ use crate::storage::EmbeddedStore;
 #[derive(Clone)]
 pub struct AudioBus {
     tx: broadcast::Sender<AudioFrame>,
+    reference: AudioReferenceBus,
 }
 
 /// A single audio frame on the bus.
@@ -21,13 +29,27 @@ pub struct AudioBus {
 pub struct AudioFrame {
     pub pcm: Vec<i16>,
     pub sample_rate: u32,
+    /// Converted sample cursor only, not a wall clock or playback alignment.
     pub timestamp_us: u64,
+    /// None is explicitly unproven (e.g. injected test audio).
+    pub timing: Option<alia_core::audio_clock::CaptureTiming>,
 }
 
 impl AudioBus {
     pub fn new(capacity: usize) -> Self {
+        Self::with_boot(capacity, uuid::Uuid::new_v4())
+    }
+
+    pub fn with_boot(capacity: usize, boot_id: uuid::Uuid) -> Self {
         let (tx, _) = broadcast::channel(capacity);
-        Self { tx }
+        Self {
+            tx,
+            reference: AudioReferenceBus::new(boot_id),
+        }
+    }
+
+    pub fn reference(&self) -> AudioReferenceBus {
+        self.reference.clone()
     }
 
     pub fn publish(&self, frame: AudioFrame) {

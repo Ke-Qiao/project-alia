@@ -1,5 +1,6 @@
 //! Shared domain contracts. No database, transport, device or model runtime dependencies.
 
+pub mod audio_clock;
 pub mod body;
 pub mod capture;
 pub mod delivery;

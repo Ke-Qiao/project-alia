@@ -376,7 +376,7 @@ impl EmbeddedBuilder {
             config: config.clone(),
             state_store: state_store.clone(),
             event_bus: EventBus::new(256),
-            audio_bus: AudioBus::new(512),
+            audio_bus: AudioBus::with_boot(512, device_boot_id),
             cancel_token: self.cancel_token.clone(),
             sensors: sensors.clone(),
         };

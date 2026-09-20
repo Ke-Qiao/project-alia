@@ -613,12 +613,12 @@ impl PlaybackBuffer {
         }
     }
 
-    pub fn write_next(&mut self, write: impl FnOnce(i16)) {
+    pub fn write_next(&mut self, write: impl FnOnce(i16)) -> bool {
         loop {
             self.discard_invalid();
             let Some(block) = self.blocks.front_mut() else {
                 write(0);
-                return;
+                return false;
             };
             if block.cursor % block.channels == 0 {
                 if let Some(submission) = &block.submission {
@@ -643,7 +643,7 @@ impl PlaybackBuffer {
                 self.retired
                     .push_back(self.blocks.pop_front().expect("front checked"));
             }
-            return;
+            return true;
         }
     }
 
@@ -688,6 +688,36 @@ impl PlaybackBuffer {
             self.blocks.pop_front();
         }
     }
+}
+
+/// Only a successful native write's accepted prefix reaches this function.
+/// In-flight cancellation cannot erase that fact or include the unwritten suffix.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn confirm_alsa_write(
+    buffer: &mut PlaybackBuffer,
+    chunk: &[i16],
+    written_frames: usize,
+    lease: Option<SubmissionWrite>,
+    clock: &mut super::super::context::AudioStreamClock,
+    reading: alia_core::audio_clock::AudioClockReading,
+) -> Result<()> {
+    let channels = usize::from(clock.probe.format().channels);
+    ensure!(
+        written_frames <= chunk.len() / channels,
+        "ALSA accepted beyond the offered buffer"
+    );
+    buffer.alsa_submitted(written_frames);
+    super::clock::record_samples(
+        clock,
+        &chunk[..written_frames * channels],
+        reading,
+        alia_core::delivery::SubmissionBoundary::AlsaWriteAccepted,
+        super::super::context::ReferenceContent::Media,
+    );
+    if let Some(lease) = lease {
+        lease.finish(written_frames as u64);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
