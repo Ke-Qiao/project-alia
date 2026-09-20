@@ -1,0 +1,166 @@
+{
+  "checkpoint_version": 1,
+  "date": "2026-09-21",
+  "timezone": "Asia/Shanghai",
+  "status": "paused_at_user_request_quota",
+  "repository": "/Users/ke-qiao/Developer/project-alia",
+  "main_branch": "codex/architecture-refactor",
+  "original_baseline": "3530395bbbf75da3b44a47e402c3a1e969cac012",
+  "verified_production_commit": "e6ba75b34136f7ae3c23774594d7ccae9bc67f89",
+  "last_plan_commit": "b995098",
+  "counts": {
+    "tracked_work_packages": 6,
+    "merged_packages": 2,
+    "isolated_packages": 4,
+    "duplex_next_todos": 11,
+    "first_round_later_todos": 6,
+    "active_subagents": 0,
+    "active_build_test_execs": 0
+  },
+  "verified_workspace": {
+    "unique_passed": 875,
+    "failed": 0,
+    "ignored": 5,
+    "elapsed_seconds": 370.02,
+    "source_files": 587,
+    "manifest_sha256": "c97283aee880270634f7cedb58ced6ffbdc18d67e425e5aa6533817c7f29a6c1",
+    "source_drift": [],
+    "ignored_rerun_on_this_combination": false,
+    "no_default_all_targets_exit": 0,
+    "no_default_elapsed_seconds": 36.18
+  },
+  "work_packages": [
+    {
+      "id": "protocol",
+      "owner": "/root/body_endpoint",
+      "branch": "codex/duplex-control-protocol",
+      "commit": "2619a28fad25dd425d718f0ba9e50a7d55c2fe3b",
+      "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-control-protocol",
+      "status": "component_tests_passed_not_server_integrated",
+      "original_handoff": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-control-protocol/run/duplex-control-handoff/HANDOFF.md",
+      "archived_handoff": "docs/refactor/handoffs/2026-09-20/protocol.md",
+      "git_status_at_pause": [],
+      "active_agent_task": false,
+      "active_exec": false,
+      "source_commit_preserved": true,
+      "validation": {
+        "core_passed": 27,
+        "proto_passed": 3,
+        "embedded_default_lib_passed": 145,
+        "embedded_no_default_lib_passed": 145,
+        "all_targets_default_exit": 0,
+        "all_targets_no_default_exit": 0,
+        "server_integration_tested": false
+      }
+    },
+    {
+      "id": "ledger",
+      "owner": "/root/body_server",
+      "branch": "codex/duplex-control-ledger",
+      "commit": "76f5b040481d618f176fde7e8e5d5264c1cf470c",
+      "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-control-ledger",
+      "status": "compile_only_pg_tests_not_run",
+      "original_handoff": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-control-ledger/run/duplex-control-ledger-handoff/HANDOFF.md",
+      "archived_handoff": "docs/refactor/handoffs/2026-09-20/ledger.md",
+      "git_status_at_pause": [
+        " M Cargo.lock",
+        " M crates/alia-core/Cargo.toml",
+        " M crates/alia-core/src/delivery.rs",
+        " M crates/alia-core/src/lib.rs",
+        "?? crates/alia-core/src/output_control.rs",
+        "?? crates/alia-core/src/playback_control.rs"
+      ],
+      "active_agent_task": false,
+      "active_exec": false,
+      "source_commit_preserved": true,
+      "validation": {
+        "server_all_targets_core_overlay_exit": 0,
+        "pg_tests_compiled": 9,
+        "pg_tests_executed": 0,
+        "full_proto_overlay_exit": 101
+      }
+    },
+    {
+      "id": "media",
+      "owner": "/root/text_delivery",
+      "branch": "codex/duplex-media-budget",
+      "commit": "779f4f80617aeffee2148ee1bdb2c0a79bb42b7d",
+      "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget",
+      "status": "compile_failed_tests_not_run",
+      "original_handoff": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/run/duplex-media-handoff/HANDOFF.md",
+      "archived_handoff": "docs/refactor/handoffs/2026-09-20/media.md",
+      "git_status_at_pause": [],
+      "active_agent_task": false,
+      "active_exec": false,
+      "source_commit_preserved": true,
+      "validation": {
+        "all_targets_exit": 101,
+        "lib_compile_errors": 5,
+        "lib_test_compile_errors": 22,
+        "tests_executed": 0
+      }
+    },
+    {
+      "id": "runtime",
+      "owner": "/root",
+      "branch": "codex/duplex-runtime",
+      "commit": "e94f66eb6968706053cceab7c9d371c24f37e116",
+      "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-runtime",
+      "status": "unwired_not_compiled_tests_not_run",
+      "original_handoff": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-runtime/run/duplex-runtime-handoff/HANDOFF.md",
+      "archived_handoff": "docs/refactor/handoffs/2026-09-20/runtime.md",
+      "git_status_at_pause": [
+        " M Cargo.lock",
+        " M crates/alia-core/Cargo.toml",
+        " M crates/alia-core/src/delivery.rs",
+        " M crates/alia-core/src/lib.rs",
+        " M crates/alia-core/src/playback_control.rs",
+        " M crates/proto/Cargo.toml",
+        " M crates/proto/proto/playback.proto",
+        " M crates/proto/proto/voice_session.proto",
+        " M crates/proto/src/lib.rs",
+        "?? crates/alia-core/src/output_control.rs",
+        "?? crates/proto/src/output_control.rs"
+      ],
+      "active_agent_task": false,
+      "active_exec": false,
+      "source_commit_preserved": true,
+      "validation": {
+        "owned_files": 6,
+        "compiled": false,
+        "new_tests_executed": 0,
+        "format_exit": 0,
+        "diff_check_exit": 0
+      }
+    }
+  ],
+  "confirmed_pause_modes": [
+    "acoustic_candidate_may_resume_only_with_fresh_backchannel",
+    "explicit_wait_requires_explicit_continue"
+  ],
+  "unconfirmed_engineering_defaults": {
+    "explicit_hold_ms": 60000,
+    "hard_max_hold_ms": 120000,
+    "temporary_semantic_ms": 3000,
+    "always_bound_by_original_output_deadline": true
+  },
+  "next_action": "Read checkpoint and all four archived handoffs; inspect worktrees and overlays; start DU01 on isolated integration tree. Do not repeat planning or merge unverified WIP into main.",
+  "deferred_by_user": [
+    "web_ios_android",
+    "generic_embedded_platform_and_device_adaptation"
+  ],
+  "retained_resources": [
+    "task PostgreSQL alia-refactor-test-db on 32768",
+    "Easy-Turn model/cache and service installation",
+    "Cargo targets/Sherpa archive",
+    "all worktrees and raw validation evidence"
+  ],
+  "do_not_touch": [
+    "user alia-postgres on 5433",
+    "other HA/Astrbot containers",
+    "unidentified historical database schemas"
+  ],
+  "guide": "docs/refactor/resume-checkpoint-2026-09-20.md",
+  "work_batch_date": "2026-09-20",
+  "checkpoint_observed_at_utc": "2026-09-20T16:00:59Z"
+}
