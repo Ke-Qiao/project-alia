@@ -26,6 +26,7 @@ pub struct AudioSubmission {
     ended: AtomicBool,
     terminal: AtomicU8,
     reason: Mutex<String>,
+    control: Option<Arc<super::PlaybackControl>>,
 }
 
 impl AudioSubmission {
@@ -50,7 +51,22 @@ impl AudioSubmission {
         source_sample_rate: u32,
         backend: SubmissionBackend,
     ) -> Result<Arc<Self>> {
+        Self::with_control(identity, generation, source_sample_rate, backend, None)
+    }
+    pub(crate) fn with_control(
+        identity: PlaybackIdentity,
+        generation: u64,
+        source_sample_rate: u32,
+        backend: SubmissionBackend,
+        control: Option<Arc<super::PlaybackControl>>,
+    ) -> Result<Arc<Self>> {
         ensure!(identity.is_valid(), "invalid playback identity");
+        ensure!(
+            control.as_ref().is_none_or(|c| c.scope == identity.scope
+                && c.generation == generation
+                && c.backend == backend),
+            "submission does not belong to original control/native owner"
+        );
         ensure!(
             (8000..=192000).contains(&source_sample_rate),
             "invalid source sample rate"
@@ -73,6 +89,7 @@ impl AudioSubmission {
             ended: false.into(),
             terminal: LIVE.into(),
             reason: Mutex::new(String::new()),
+            control,
         }))
     }
 
@@ -84,6 +101,13 @@ impl AudioSubmission {
     }
     pub fn is_live(&self) -> bool {
         self.terminal.load(Ordering::Acquire) == LIVE
+            && self.control.as_ref().is_none_or(|c| !c.is_retired())
+    }
+    pub(crate) fn control(&self) -> Option<&Arc<super::PlaybackControl>> {
+        self.control.as_ref()
+    }
+    pub fn is_held(&self) -> bool {
+        self.control.as_ref().is_some_and(|c| c.is_held())
     }
 
     /// Caller holds the backend's media/control admission lock.
@@ -125,10 +149,21 @@ impl AudioSubmission {
     /// atomically closes admission; an acquired boundary must settle its actual
     /// result even if cancellation happens during the write.
     pub fn begin_output(self: &Arc<Self>) -> Option<SubmissionWrite> {
+        self.try_begin_output().ok()
+    }
+    /// Preserve the result of this exact atomic admission. A later read of the
+    /// hold bit cannot distinguish a retired owner from a concurrently resumed one.
+    pub fn try_begin_output(
+        self: &Arc<Self>,
+    ) -> std::result::Result<SubmissionWrite, super::OutputBlocked> {
+        let scope_write = match &self.control {
+            Some(control) => Some(control.enter()?),
+            None => None,
+        };
         let mut gate = self.output_gate.load(Ordering::Acquire);
         loop {
             if gate & OUTPUT_CLOSED != 0 || !self.is_live() {
-                return None;
+                return Err(super::OutputBlocked::Retired);
             }
             match self.output_gate.compare_exchange_weak(
                 gate,
@@ -137,9 +172,10 @@ impl AudioSubmission {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    return Some(SubmissionWrite {
+                    return Ok(SubmissionWrite {
                         submission: self.clone(),
                         finished: false,
+                        _scope_write: scope_write,
                     });
                 }
                 Err(current) => gate = current,
@@ -251,6 +287,7 @@ impl AudioSubmission {
 pub struct SubmissionWrite {
     submission: Arc<AudioSubmission>,
     finished: bool,
+    _scope_write: Option<super::control::ScopeWrite>,
 }
 impl SubmissionWrite {
     pub fn finish(mut self, output_frames: u64) {

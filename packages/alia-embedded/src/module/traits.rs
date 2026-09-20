@@ -112,6 +112,22 @@ pub trait AudioCaptureBackend: ModuleLifecycle {
 
 /// Audio playback backend (slot: `audio_playback`).
 pub trait AudioPlaybackBackend: ModuleLifecycle {
+    /// Returns the original native owner's scope gate. Unsupported backends
+    /// cannot acknowledge a reversible hold or manufacture a replacement owner.
+    fn playback_control(
+        &self,
+        _scope: &alia_core::delivery::VoiceScope,
+        _generation: u64,
+    ) -> Result<std::sync::Arc<super::playback_session::PlaybackControl>> {
+        anyhow::bail!("backend does not support reversible playback control")
+    }
+    fn apply_playback_control(
+        &self,
+        _owner: &std::sync::Arc<super::playback_session::PlaybackControl>,
+        _command: &alia_core::playback_control::ControlCommand,
+    ) -> Result<alia_core::playback_control::ControlReceipt> {
+        anyhow::bail!("backend does not support reversible playback control")
+    }
     /// Local bounded reference evidence; absent means this backend cannot expose
     /// a playback reference. Consumption must run outside native audio callbacks.
     fn reference_bus(&self) -> Option<super::context::AudioReferenceBus> {

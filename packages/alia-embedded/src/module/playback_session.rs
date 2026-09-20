@@ -6,7 +6,9 @@ use anyhow::{Context, Result, ensure};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
+mod control;
 mod submission;
+pub use control::{OutputBlocked, PlaybackControl, PlaybackControlEvidence};
 pub use submission::{AudioSubmission, SubmissionWrite};
 
 /// Other output owners follow the same locally activated voice epoch. Hooks
@@ -37,6 +39,7 @@ struct ActiveSession {
     generation: Option<u64>,
     input: Option<PlaybackIdentity>,
     observations: HashMap<PlaybackIdentity, PlaybackLease>,
+    control: Option<Arc<PlaybackControl>>,
 }
 pub struct PlaybackSession {
     backend: Arc<dyn AudioPlaybackBackend>,
@@ -130,6 +133,9 @@ impl PlaybackSession {
     }
     fn retire(&self, active: &mut ActiveSession, reason: &str) -> Result<()> {
         active.input = None;
+        if let Some(control) = active.control.take() {
+            control.retire(alia_core::playback_control::RetiredReason::Cancelled);
+        }
         let result = active
             .generation
             .take()
@@ -181,6 +187,7 @@ impl PlaybackSession {
             generation: None,
             input: None,
             observations: HashMap::new(),
+            control: None,
         });
         Ok(())
     }
@@ -269,6 +276,10 @@ impl PlaybackSession {
             let audio = self.retire(active, "new playback generation fence applied");
             body.and(audio)?;
         }
+        ensure!(
+            active.control.as_ref().is_none_or(|c| !c.is_retired()),
+            "playback control permanently retired this generation"
+        );
         active
             .observations
             .retain(|_, lease| lease.submission.is_live());
