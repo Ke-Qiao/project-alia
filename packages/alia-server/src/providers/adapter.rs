@@ -671,34 +671,36 @@ impl TtsRequest {
 
 #[async_trait]
 pub trait TtsAdapter: ModuleLifecycle {
-    /// Synthesize complete audio
-    async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>>;
-
-    /// Synthesize complete audio with expression metadata.
-    ///
-    /// This is the provider-neutral expression/TTS ABI. New TTS plugins should
-    /// implement this method and map `style`, `intensity`, `voice_profile`, and
-    /// `prosody` to their own native controls. The default implementation keeps
-    /// old/simple adapters working by ignoring expression metadata.
-    async fn synthesize_request(&self, request: &TtsRequest) -> anyhow::Result<Vec<u8>> {
-        self.synthesize(&request.text).await
-    }
-
-    /// Streaming synthesis
-    async fn synthesize_stream(
+    /// Providers must reserve before copying encoded media. No unbounded
+    /// Vec-returning fallback is part of this contract.
+    async fn synthesize_request(
         &self,
-        text: &str,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>>;
+        request: &TtsRequest,
+        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio>;
 
-    /// Streaming synthesis with expression metadata.
-    ///
-    /// Streaming adapters should preserve the same request semantics as
-    /// `synthesize_request`.
     async fn synthesize_stream_request(
         &self,
         request: &TtsRequest,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
-        self.synthesize_stream(&request.text).await
+        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream>;
+
+    async fn synthesize(
+        &self,
+        text: &str,
+        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+        self.synthesize_request(&TtsRequest::plain(text), budget)
+            .await
+    }
+
+    async fn synthesize_stream(
+        &self,
+        text: &str,
+        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+        self.synthesize_stream_request(&TtsRequest::plain(text), budget)
+            .await
     }
 
     /// Report provider-specific request degradations before synthesis.

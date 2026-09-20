@@ -14,7 +14,9 @@ use super::debug::{
     debug_component_text, log_channel_delivery_failure,
 };
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::{
+    AudioBuffer, AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget,
+};
 use crate::config::SentenceExpressionLlmPolicySection;
 use crate::event::{EventBus, ServerEvent};
 use crate::expression::orchestrator::{
@@ -29,6 +31,7 @@ use crate::providers::adapter::{
     ChatMessage, ConversationBackend, ConversationEventEntry, LlmAdapter, MemoryContextPack,
     TtsAdapter, TtsCapabilities, TtsRequest,
 };
+use crate::providers::tts::audio_budget::{MAX_PCM_PAYLOAD_BYTES, ResponseAudioBudget};
 use uuid::Uuid;
 
 use super::AgentTrace;
@@ -156,6 +159,24 @@ pub(super) async fn deliver_tts_audio(
     .unwrap_or(TtsDeliveryOutcome::Skipped)
 }
 
+pub(super) async fn prepare_audio_budget(
+    modules: &ModuleRegistry,
+    target: &ChannelTarget,
+    channel_id: &str,
+    turn: Option<&VoiceTurn>,
+) -> anyhow::Result<ResponseAudioBudget> {
+    let response_id = super::delivery::prepare_response(
+        modules,
+        turn,
+        channel_id,
+        &target.user_id,
+        None,
+        "speech",
+    )
+    .await?;
+    ResponseAudioBudget::for_response(response_id)
+}
+
 pub(super) async fn deliver_tts_audio_inner(
     modules: &ModuleRegistry,
     channel: &dyn ChannelAdapter,
@@ -181,6 +202,14 @@ pub(super) async fn deliver_tts_audio_inner(
         );
         return TtsDeliveryOutcome::Skipped;
     }
+
+    let budget = match prepare_audio_budget(modules, target, channel_id, turn).await {
+        Ok(budget) => budget,
+        Err(error) => {
+            tracing::warn!(error=%error, "TTS has no admitted Response budget");
+            return TtsDeliveryOutcome::Failed(PipelineErrorStage::Delivery);
+        }
+    };
 
     let resolved_speech =
         if let (Some(input), Some(speech), Some(turn)) = (expression_input, speech, turn) {
@@ -230,7 +259,9 @@ pub(super) async fn deliver_tts_audio_inner(
         match cancellable_stage(
             turn,
             "tts_stream_start",
-            modules.tts.synthesize_stream_request(&tts_request),
+            modules
+                .tts
+                .synthesize_stream_request(&tts_request, budget.clone()),
         )
         .await
         {
@@ -240,7 +271,7 @@ pub(super) async fn deliver_tts_audio_inner(
                 let audio_stream = tts_stream.map(move |chunk| {
                     chunk
                         .map(|data| AudioPayload {
-                            data,
+                            data: data.into_buffer(),
                             sample_rate: 24000,
                             channels: 1,
                             format: AudioFormat::Wav,
@@ -313,21 +344,26 @@ pub(super) async fn deliver_tts_audio_inner(
         .map(|speech| TtsRequest::with_speech(text, speech))
         .unwrap_or_else(|| TtsRequest::plain(text));
     trace_tts_provider_adjustments(modules, debug_output, channel_id, user_id, &tts_request).await;
-    let audio_bytes =
-        match cancellable_stage(turn, "tts", modules.tts.synthesize_request(&tts_request)).await {
-            Ok(Some(audio_bytes)) => audio_bytes,
-            Ok(None) => return TtsDeliveryOutcome::Skipped,
-            Err(error) => {
-                tracing::error!(
-                    channel_type = channel.channel_type(),
-                    channel_id = channel.channel_id(),
-                    error = %error,
-                    "TTS synthesis failed; keeping channel enabled"
-                );
-                tracing::debug!(error = ?error, "TTS synthesis failure details");
-                return TtsDeliveryOutcome::Failed(PipelineErrorStage::Tts);
-            }
-        };
+    let audio_bytes = match cancellable_stage(
+        turn,
+        "tts",
+        modules.tts.synthesize_request(&tts_request, budget.clone()),
+    )
+    .await
+    {
+        Ok(Some(audio_bytes)) => audio_bytes,
+        Ok(None) => return TtsDeliveryOutcome::Skipped,
+        Err(error) => {
+            tracing::error!(
+                channel_type = channel.channel_type(),
+                channel_id = channel.channel_id(),
+                error = %error,
+                "TTS synthesis failed; keeping channel enabled"
+            );
+            tracing::debug!(error = ?error, "TTS synthesis failure details");
+            return TtsDeliveryOutcome::Failed(PipelineErrorStage::Tts);
+        }
+    };
     if turn_is_interrupted(turn) {
         return TtsDeliveryOutcome::Skipped;
     }
@@ -340,7 +376,7 @@ pub(super) async fn deliver_tts_audio_inner(
     );
 
     let audio_out = AudioPayload {
-        data: audio_bytes,
+        data: audio_bytes.into_buffer(),
         sample_rate: 24000,
         channels: 1,
         format: AudioFormat::Wav,
@@ -466,6 +502,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
             .is_some_and(|speech| speech.generation.lease().id() == frozen.context_id),
         "sentence stream changed frozen context"
     );
+    let budget = prepare_audio_budget(modules, target, channel_id, turn).await?;
     let (sentence_tx, sentence_rx) = mpsc::channel::<String>(4);
     let (audio_tx, mut audio_rx) = mpsc::channel::<SentenceAudio>(2);
     let audio_started = Arc::new(AtomicBool::new(false));
@@ -473,6 +510,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     let tts_worker = stream_tts_sentences(
         modules.context.clone(),
         modules.tts.clone(),
+        budget,
         modules.expression.clone(),
         modules.sentence_expression_llm.clone(),
         sentence_rx,
@@ -1053,6 +1091,7 @@ struct SentenceAudio {
 async fn stream_tts_sentences(
     context: Arc<crate::modules::memory::context::ContextService>,
     tts: Arc<dyn TtsAdapter>,
+    budget: ResponseAudioBudget,
     expression: Arc<crate::expression::ExpressionRuntime>,
     sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     mut sentence_rx: mpsc::Receiver<String>,
@@ -1126,7 +1165,7 @@ async fn stream_tts_sentences(
                 Some((&channel_id, &user_id)),
             );
         }
-        let synth = tts.synthesize_request(&request);
+        let synth = tts.synthesize_request(&request, budget.clone());
         let audio_bytes = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
                 biased;
@@ -1147,7 +1186,7 @@ async fn stream_tts_sentences(
             }
         };
 
-        let payload = match tts_bytes_to_pcm_payload(audio_bytes) {
+        let payload = match tts_bytes_to_pcm_payload(audio_bytes.into_buffer()) {
             Ok(payload) => payload,
             Err(error) => {
                 return Err(error);
@@ -1159,7 +1198,7 @@ async fn stream_tts_sentences(
         }
 
         let silence =
-            pcm16_silence_payload(payload.sample_rate, payload.channels, TTS_SENTENCE_GAP_MS);
+            pcm16_silence_payload(payload.sample_rate, payload.channels, TTS_SENTENCE_GAP_MS)?;
         if audio_tx
             .send(SentenceAudio {
                 sentence: sentence.into(),
@@ -1177,10 +1216,10 @@ async fn stream_tts_sentences(
     Ok(())
 }
 
-pub fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> {
+pub fn tts_bytes_to_pcm_payload(bytes: AudioBuffer) -> anyhow::Result<AudioPayload> {
     if let Some((data, sample_rate, channels)) = pcm16_payload_from_wav(&bytes)? {
         return Ok(AudioPayload {
-            data,
+            data: bytes.slice(data),
             sample_rate,
             channels,
             format: AudioFormat::Pcm16,
@@ -1197,7 +1236,9 @@ pub fn tts_bytes_to_pcm_payload(bytes: Vec<u8>) -> anyhow::Result<AudioPayload> 
     })
 }
 
-fn pcm16_payload_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<u8>, u32, u16)>> {
+fn pcm16_payload_from_wav(
+    bytes: &[u8],
+) -> anyhow::Result<Option<(std::ops::Range<usize>, u32, u16)>> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Ok(None);
     }
@@ -1257,24 +1298,33 @@ fn pcm16_payload_from_wav(bytes: &[u8]) -> anyhow::Result<Option<(Vec<u8>, u32, 
         );
     }
 
-    let mut data = bytes[data_start..data_end].to_vec();
-    if data.len() % 2 != 0 {
-        data.pop();
-    }
-    Ok(Some((data, sample_rate, channels.max(1))))
+    let data_end = data_end - (data_end - data_start) % 2;
+    anyhow::ensure!(
+        data_end - data_start <= MAX_PCM_PAYLOAD_BYTES,
+        "PCM payload exceeds 2 MiB"
+    );
+    Ok(Some((data_start..data_end, sample_rate, channels.max(1))))
 }
 
-pub fn pcm16_silence_payload(sample_rate: u32, channels: u16, duration_ms: u32) -> AudioPayload {
+pub fn pcm16_silence_payload(
+    sample_rate: u32,
+    channels: u16,
+    duration_ms: u32,
+) -> anyhow::Result<AudioPayload> {
     let sample_count = sample_rate
         .saturating_mul(u32::from(channels.max(1)))
         .saturating_mul(duration_ms)
         .saturating_div(1_000) as usize;
-    AudioPayload {
-        data: vec![0u8; sample_count * 2],
+    let bytes = sample_count
+        .checked_mul(2)
+        .ok_or_else(|| anyhow::anyhow!("PCM silence size overflow"))?;
+    anyhow::ensure!(bytes <= MAX_PCM_PAYLOAD_BYTES, "PCM silence exceeds 2 MiB");
+    Ok(AudioPayload {
+        data: AudioBuffer::input(vec![0u8; bytes]),
         sample_rate,
         channels: channels.max(1),
         format: AudioFormat::Pcm16,
-    }
+    })
 }
 
 fn drain_speakable_segment(buffer: &mut String, final_flush: bool) -> Option<String> {

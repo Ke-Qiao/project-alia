@@ -116,14 +116,18 @@ impl ModuleLifecycle for NoopTts {
 
 #[async_trait]
 impl TtsAdapter for NoopTts {
-    async fn synthesize(&self, _text: &str) -> anyhow::Result<Vec<u8>> {
-        Ok(Vec::new())
-    }
-
-    async fn synthesize_stream(
+    async fn synthesize_request(
         &self,
-        _text: &str,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
+        _: &crate::providers::adapter::TtsRequest,
+        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+        budget.copy_from_slice(&[]).await
+    }
+    async fn synthesize_stream_request(
+        &self,
+        _: &crate::providers::adapter::TtsRequest,
+        _budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
         Ok(Box::pin(stream::empty()))
     }
 }

@@ -1,0 +1,46 @@
+[
+  {
+    "path": "packages/alia-server/src/api/voice.rs",
+    "sha256": "f52b753d885e0f86a6ef1ed2ba006d4b4ee975d96685ec09f9888557aceeda00"
+  },
+  {
+    "path": "packages/alia-server/src/channels/adapter.rs",
+    "sha256": "56153a6643078ac2f33472c21964d5b5909c40735d2440d88cde0363be532c1b"
+  },
+  {
+    "path": "packages/alia-server/src/channels/pipeline.rs",
+    "sha256": "bd81f699a38903eb849cf7f7e2330f7715deb69e5f5de967e0b32c8f6264bbc8"
+  },
+  {
+    "path": "packages/alia-server/src/channels/pipeline/error_notice.rs",
+    "sha256": "84945bccdb065cd55b15c1a52cd345baf9745d0513696930d9e07829640a8677"
+  },
+  {
+    "path": "packages/alia-server/src/channels/pipeline/streaming.rs",
+    "sha256": "585c264ed7802ef3fc6cc3e4dacb23ab85d3cb3ce8bc2b842c57e0f476ae2551"
+  },
+  {
+    "path": "packages/alia-server/src/providers/adapter.rs",
+    "sha256": "131a50ed802dea7db7e1e478a3c4f3ce38300d852380158f561f19b9173e483c"
+  },
+  {
+    "path": "packages/alia-server/src/providers/llm/mod.rs",
+    "sha256": "f6fbcf9c7c6cc20f25a4d9ec884959aafb95943f99a2529ec9810db7d6fc17cb"
+  },
+  {
+    "path": "packages/alia-server/src/providers/tts/audio_budget.rs",
+    "sha256": "579df762400f19373a56199ae46937224dab5120b9c10955876dfa37793502ea"
+  },
+  {
+    "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+    "sha256": "6c9de2f032c060dddbc42d0b9c0f6707ac8b8861df783fc88efae7e82e2c08fb"
+  },
+  {
+    "path": "packages/alia-server/src/providers/tts/http_body.rs",
+    "sha256": "39c41c3ce046d1e799fa2ef47caae043f23dfd485d0f5b83821d6e9ff4c1fb04"
+  },
+  {
+    "path": "packages/alia-server/src/providers/tts/mod.rs",
+    "sha256": "70408036289cde980b0c5e5db1b3eb4fac1831a90dc12f530b67113eacea821c"
+  }
+]

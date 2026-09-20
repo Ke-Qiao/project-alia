@@ -265,7 +265,13 @@ async fn voice_chat(
         let audio_bytes = state
             .modules
             .tts
-            .synthesize(&response_text)
+            .synthesize(
+                &response_text,
+                crate::providers::tts::audio_budget::ResponseAudioBudget::for_standalone_request(
+                    uuid::Uuid::new_v4(),
+                )
+                .map_err(|e| AppError::AiService(e.to_string()))?,
+            )
             .await
             .map_err(|e| AppError::AiService(format!("TTS failed: {e}")))?;
         if audio_bytes.is_empty() {
@@ -322,11 +328,17 @@ async fn synthesize(
     let audio = state
         .modules
         .tts
-        .synthesize(&req.text)
+        .synthesize(
+            &req.text,
+            crate::providers::tts::audio_budget::ResponseAudioBudget::for_standalone_request(
+                uuid::Uuid::new_v4(),
+            )
+            .map_err(|e| AppError::AiService(e.to_string()))?,
+        )
         .await
         .map_err(|e| AppError::AiService(format!("TTS failed: {e}")))?;
 
-    Ok(axum::body::Bytes::from(audio))
+    Ok(audio.into_bytes())
 }
 
 /// Provider-neutral STT/TTS ability declaration.

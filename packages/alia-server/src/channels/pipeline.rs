@@ -1070,10 +1070,10 @@ async fn process_event(
 
 fn prepare_audio_for_stt(audio: &AudioPayload) -> (Vec<u8>, AudioEncoding) {
     match audio.format {
-        AudioFormat::Opus => (audio.data.clone(), AudioEncoding::Opus),
-        AudioFormat::Wav => (audio.data.clone(), AudioEncoding::Wav),
+        AudioFormat::Opus => (audio.data.to_vec(), AudioEncoding::Opus),
+        AudioFormat::Wav => (audio.data.to_vec(), AudioEncoding::Wav),
         AudioFormat::Pcm16 if audio.sample_rate == 16_000 && audio.channels == 1 => {
-            (audio.data.clone(), AudioEncoding::Pcm16kMono)
+            (audio.data.to_vec(), AudioEncoding::Pcm16kMono)
         }
         AudioFormat::Pcm16 => (
             pcm16le_to_wav(&audio.data, audio.sample_rate, audio.channels),
