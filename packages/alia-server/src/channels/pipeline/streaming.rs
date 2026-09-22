@@ -572,25 +572,12 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         Some(sentence_tx),
     );
 
-    let (llm_result, audio_result, tts_result) =
-        futures::join!(llm_delivery, audio_delivery, tts_worker);
+    // An upstream/body/decoder failure is not successful EOF. End the local
+    // producer futures and propagate it; never start a second synthesis after
+    // an audio representation may already have been offered.
+    let (text, (), ()) = futures::try_join!(llm_delivery, audio_delivery, tts_worker)?;
     let audio_streamed = audio_started.load(Ordering::Relaxed);
-
-    if let Err(error) = audio_result {
-        tracing::warn!(
-            channel_type = channel.channel_type(),
-            channel_id = channel.channel_id(),
-            error = %error,
-            "sentence-level TTS audio delivery failed"
-        );
-        tracing::debug!(error = ?error, "sentence-level TTS audio delivery failure details");
-    }
-    if let Err(error) = tts_result {
-        tracing::warn!(error = %error, "sentence-level TTS worker failed");
-        tracing::debug!(error = ?error, "sentence-level TTS worker failure details");
-    }
-
-    Ok((llm_result?, audio_streamed))
+    Ok((text, audio_streamed))
 }
 
 #[derive(Debug, Clone, Deserialize)]

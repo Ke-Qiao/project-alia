@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-04e3e2536907c891)
+
+running 3 tests
+test channels::pipeline::streaming::tests::cheerful_override_needs_high_confidence_when_baseline_is_serious ... ok
+test channels::pipeline::streaming::tests::prosody_delta_respects_volume_and_night_caps ... ok
+test channels::pipeline::streaming::tests::parses_sentence_expression_patch_from_fenced_batch ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out; finished in 0.00s

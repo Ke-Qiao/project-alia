@@ -1,3 +1,4 @@
+use alia_server::channels::adapter::AudioBuffer;
 use alia_server::channels::adapter::AudioFormat;
 use alia_server::channels::pipeline::streaming::{pcm16_silence_payload, tts_bytes_to_pcm_payload};
 use alia_server::channels::pipeline::tools::parse_text_tool_calls;
@@ -344,17 +345,17 @@ fn decodes_tts_wav_to_pcm_payload() {
         .collect::<Vec<_>>();
     let wav = test_wav(&pcm, 16_000, 2);
 
-    let payload = tts_bytes_to_pcm_payload(wav).unwrap();
+    let payload = tts_bytes_to_pcm_payload(AudioBuffer::input(wav)).unwrap();
 
     assert_eq!(payload.format, AudioFormat::Pcm16);
     assert_eq!(payload.sample_rate, 16_000);
     assert_eq!(payload.channels, 2);
-    assert_eq!(payload.data, pcm);
+    assert_eq!(&*payload.data, &pcm);
 }
 
 #[test]
 fn builds_pcm_silence_gap() {
-    let payload = pcm16_silence_payload(16_000, 1, 80);
+    let payload = pcm16_silence_payload(16_000, 1, 80).unwrap();
     assert_eq!(payload.format, AudioFormat::Pcm16);
     assert_eq!(payload.data.len(), 16_000 * 80 / 1_000 * 2);
     assert!(payload.data.iter().all(|byte| *byte == 0));

@@ -1,4 +1,5 @@
 //! Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
+use alia_server::channels::adapter::AudioBuffer;
 mod delivery_support;
 use alia_core::delivery::{ObservationEnd, PlaybackIdentity, PlaybackProgress};
 use alia_server::channels::adapter::*;
@@ -204,7 +205,7 @@ fn request(response: Uuid, channel: Arc<Channel>, cancel: CancellationToken) -> 
         },
         channel,
         audio: Box::pin(futures::stream::iter([Ok(AudioPayload {
-            data: vec![0; 200],
+            data: AudioBuffer::input(vec![0; 200]),
             sample_rate: 24000,
             channels: 1,
             format: AudioFormat::Pcm16,

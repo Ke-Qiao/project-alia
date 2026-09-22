@@ -1,4 +1,32 @@
 use super::*;
+use crate::channels::adapter::AudioBuffer;
+
+#[test]
+fn decoder_copy_limits_include_an_incomplete_native_frame() {
+    use crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+    let payload = |data| AudioPayload {
+        data: AudioBuffer::input(data),
+        sample_rate: 24_000,
+        channels: 1,
+        format: AudioFormat::Pcm16,
+    };
+    let mut decoder = PcmDecoder::default();
+    assert!(decoder.push(payload(vec![1])).unwrap().is_empty());
+    let capacity = decoder.pending.capacity();
+    let error = decoder
+        .push(payload(vec![0; MAX_PCM_PAYLOAD_BYTES]))
+        .unwrap_err();
+    assert!(error.to_string().contains("decoder workspace exceeds"));
+    assert_eq!(decoder.pending, [1]);
+    assert_eq!(decoder.pending.capacity(), capacity);
+    let mut fresh = PcmDecoder::default();
+    assert!(
+        fresh
+            .push(payload(vec![0; MAX_PCM_PAYLOAD_BYTES + 1]))
+            .is_err()
+    );
+    assert_eq!(fresh.pending.capacity(), 0);
+}
 
 #[derive(Default)]
 struct TestObserver;
@@ -51,7 +79,7 @@ async fn fragmented_wav_preserves_original_scope_sequence_and_actual_rate() {
         .chunks(7)
         .map(|data| {
             Ok(AudioPayload {
-                data: data.to_vec(),
+                data: AudioBuffer::input(data.to_vec()),
                 sample_rate: 24000,
                 channels: 1,
                 format: AudioFormat::Wav,
@@ -111,7 +139,7 @@ fn decoder_rejects_truncation_and_format_changes_without_speaking_headers() {
         pcm.extend(
             decoder
                 .push(AudioPayload {
-                    data: vec![byte],
+                    data: AudioBuffer::input(vec![byte]),
                     sample_rate: 24000,
                     channels: 1,
                     format: AudioFormat::Wav,
@@ -125,7 +153,7 @@ fn decoder_rejects_truncation_and_format_changes_without_speaking_headers() {
     assert!(
         decoder
             .push(AudioPayload {
-                data: vec![0, 0],
+                data: AudioBuffer::input(vec![0, 0]),
                 sample_rate: 32000,
                 channels: 1,
                 format: AudioFormat::Pcm16
@@ -137,7 +165,7 @@ fn decoder_rejects_truncation_and_format_changes_without_speaking_headers() {
     bytes.pop();
     truncated
         .push(AudioPayload {
-            data: bytes,
+            data: AudioBuffer::input(bytes),
             sample_rate: 16000,
             channels: 1,
             format: AudioFormat::Wav,
@@ -235,7 +263,7 @@ async fn idle_receipt_timeout_cancels_and_joins_the_audio_producer() {
     let watched = dropped.clone();
     let audio = async_stream::stream! {
         let _dropped = SourceDropped(watched);
-        yield Ok(AudioPayload { data: vec![1, 0], sample_rate: 16000, channels: 1, format: AudioFormat::Pcm16 });
+        yield Ok(AudioPayload { data: AudioBuffer::input(vec![1, 0]), sample_rate: 16000, channels: 1, format: AudioFormat::Pcm16 });
         std::future::pending::<()>().await;
     };
     let scope = VoiceScope {
@@ -506,10 +534,12 @@ fn delivery_identity() -> PlaybackIdentity {
 }
 fn stereo_audio() -> AudioPayloadStream {
     Box::pin(futures::stream::iter([Ok(AudioPayload {
-        data: [1000_i16, 3000, -1000, 1000, 4000, 2000, -2000, -4000]
-            .into_iter()
-            .flat_map(i16::to_le_bytes)
-            .collect(),
+        data: AudioBuffer::input(
+            [1000_i16, 3000, -1000, 1000, 4000, 2000, -2000, -4000]
+                .into_iter()
+                .flat_map(i16::to_le_bytes)
+                .collect(),
+        ),
         sample_rate: 16000,
         channels: 2,
         format: AudioFormat::Pcm16,

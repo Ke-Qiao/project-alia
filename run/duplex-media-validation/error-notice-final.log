@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-04e3e2536907c891)
+
+running 4 tests
+test channels::pipeline::error_notice::tests::builds_english_notice_for_non_cjk_input ... ok
+test channels::pipeline::error_notice::tests::builds_chinese_notice_without_raw_error ... ok
+test channels::pipeline::error_notice::tests::cancelled_error_does_not_dispatch_direct_response_or_text ... ok
+test channels::pipeline::error_notice::tests::unadmitted_error_notice_never_starts_tts_or_side_effects ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 232 filtered out; finished in 0.00s

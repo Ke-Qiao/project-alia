@@ -1,0 +1,63 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+warning: unused import: `crate::providers::adapter::TtsAdapter`
+   --> packages/alia-server/src/channels/pipeline/error_notice.rs:532:9
+    |
+532 |     use crate::providers::adapter::TtsAdapter;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0753]: expected outer doc comment
+ --> packages/alia-server/tests/delivery_service.rs:2:1
+  |
+2 | //! Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3 | mod delivery_support;
+  | --------------------- the inner doc comment doesn't annotate this module
+  |
+help: to annotate the module, change the doc comment from inner to outer style
+  |
+2 - //! Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
+2 + /// Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
+  |
+
+error: an inner attribute is not permitted in this context
+ --> packages/alia-server/tests/embedded_channel.rs:2:1
+  |
+2 | #![cfg(feature = "channel-embedded")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3 |
+4 | use alia_server::channels::adapter::{AudioFormat, AudioPayload};
+  | ---------------------------------------------------------------- the inner attribute doesn't annotate this `use` import
+  |
+  = note: inner attributes, like `#![no_std]`, annotate the item enclosing them, and are usually found at the beginning of source files
+help: to annotate the `use` import, change the attribute from inner to outer style
+  |
+2 - #![cfg(feature = "channel-embedded")]
+2 + #[cfg(feature = "channel-embedded")]
+  |
+
+warning: unused import: `alia_server::channels::adapter::AudioBuffer`
+ --> packages/alia-server/tests/embedded_channel.rs:1:5
+  |
+1 | use alia_server::channels::adapter::AudioBuffer;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0308]: mismatched types
+  --> packages/alia-server/tests/embedded_channel.rs:12:15
+   |
+12 |         data: pcm16_to_le_bytes(&[100, 300, -200, -400]),
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `AudioBuffer`, found `Vec<u8>`
+   |
+   = note: expected struct `AudioBuffer`
+              found struct `Vec<u8>`
+
+For more information about this error, try `rustc --explain E0308`.
+warning: `alia-server` (test "embedded_channel") generated 1 warning
+error: could not compile `alia-server` (test "embedded_channel") due to 2 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+For more information about this error, try `rustc --explain E0753`.
+error: could not compile `alia-server` (test "delivery_service") due to 1 previous error
+warning: `alia-server` (lib test) generated 1 warning (run `cargo fix --lib -p alia-server --tests` to apply 1 suggestion)
