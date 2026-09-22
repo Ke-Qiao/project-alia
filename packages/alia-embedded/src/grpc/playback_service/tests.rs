@@ -1,8 +1,12 @@
 use super::*;
 use crate::module::lifecycle::ModuleLifecycle;
-use crate::module::playback_session::AudioSubmission;
+use crate::module::playback_session::{AudioSubmission, CaptureControlBarrier, PlaybackControl};
 use crate::module::traits::AudioPlaybackBackend;
 use crate::storage::EmbeddedStore;
+use alia_core::output_control::{
+    BoundControlCommand, BoundControlReceipt, OutputBinding, OutputRegistration,
+};
+use alia_core::playback_control::*;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
@@ -11,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 struct Device {
     state: Mutex<(u64, Vec<i16>)>,
+    control: Mutex<Option<Arc<PlaybackControl>>>,
+    backend: alia_core::delivery::SubmissionBackend,
     changed: Condvar,
     capacity: usize,
     submissions: Mutex<HashMap<PlaybackIdentity, Arc<AudioSubmission>>>,
@@ -26,13 +32,51 @@ impl ModuleLifecycle for Device {
     }
 }
 impl AudioPlaybackBackend for Device {
+    fn playback_control(
+        &self,
+        scope: &VoiceScope,
+        generation: u64,
+    ) -> anyhow::Result<Arc<PlaybackControl>> {
+        anyhow::ensure!(self.is_playback_current(generation), "native owner gone");
+        let mut control = self.control.lock().unwrap();
+        if let Some(control) = control.as_ref() {
+            anyhow::ensure!(
+                control.scope == *scope && control.generation == generation,
+                "scope changed"
+            );
+            return Ok(control.clone());
+        }
+        let created = PlaybackControl::new(*scope, generation, self.backend.clone())?;
+        *control = Some(created.clone());
+        Ok(created)
+    }
+    fn apply_playback_control(
+        &self,
+        control: &Arc<PlaybackControl>,
+        command: &ControlCommand,
+    ) -> anyhow::Result<ControlReceipt> {
+        anyhow::ensure!(
+            self.is_playback_current(control.generation),
+            "native owner gone"
+        );
+        let receipt = control.apply(command);
+        self.changed.notify_all();
+        Ok(receipt)
+    }
     fn open_submission(
         &self,
         identity: PlaybackIdentity,
         rate: u32,
         generation: u64,
     ) -> anyhow::Result<Arc<AudioSubmission>> {
-        let submission = AudioSubmission::test(identity, generation, rate);
+        let control = self.playback_control(&identity.scope, generation)?;
+        let submission = AudioSubmission::with_control(
+            identity,
+            generation,
+            rate,
+            self.backend.clone(),
+            Some(control),
+        )?;
         self.submissions
             .lock()
             .unwrap()
@@ -112,6 +156,9 @@ impl AudioPlaybackBackend for Device {
     fn begin_scoped_playback(&self) -> anyhow::Result<u64> {
         let mut state = self.state.lock().unwrap();
         state.0 += 1;
+        if let Some(control) = self.control.lock().unwrap().take() {
+            control.retire(RetiredReason::Cancelled);
+        }
         state.1.clear();
         self.queued.lock().unwrap().clear();
         self.changed.notify_all();
@@ -134,6 +181,9 @@ impl AudioPlaybackBackend for Device {
             return Ok(false);
         }
         state.0 += 1;
+        if let Some(control) = self.control.lock().unwrap().take() {
+            control.retire(RetiredReason::Cancelled);
+        }
         state.1.clear();
         self.queued.lock().unwrap().clear();
         self.changed.notify_all();
@@ -149,6 +199,17 @@ impl Device {
     fn submit_frames(&self, id: &str, frames: usize) {
         let mut state = self.state.lock().unwrap();
         let mut queued = self.queued.lock().unwrap();
+        let submission = self
+            .submissions
+            .lock()
+            .unwrap()
+            .values()
+            .find(|s| s.identity.playback_id.to_string() == id)
+            .unwrap()
+            .clone();
+        let write = submission
+            .try_begin_output()
+            .expect("simulated callback must respect the original gate");
         let mut remaining = frames;
         for (identity, pcm) in queued.iter_mut() {
             if identity.playback_id.to_string() == id {
@@ -162,12 +223,7 @@ impl Device {
             .iter()
             .flat_map(|(_, pcm)| pcm.iter().copied())
             .collect();
-        let submissions = self.submissions.lock().unwrap();
-        let submission = submissions
-            .values()
-            .find(|s| s.identity.playback_id.to_string() == id)
-            .unwrap();
-        submission.submitted_output(frames as u64);
+        write.finish(frames as u64);
         self.changed.notify_all();
     }
 }
@@ -175,6 +231,7 @@ impl Device {
 struct Fixture {
     client: proto::playback_client::PlaybackClient<tonic::transport::Channel>,
     scope: VoiceScope,
+    capture: CaptureControlBarrier,
     session: Arc<PlaybackSession>,
     device: Arc<Device>,
     binding: Arc<BindingManager>,
@@ -190,12 +247,36 @@ impl Fixture {
             .await
             .unwrap();
         let binding = Arc::new(BindingManager::new(store, 3, 60));
+        let key = ed25519_dalek::SigningKey::from_bytes(&[27; 32]);
+        let public = key.verifying_key().to_bytes();
+        let issued = alia_transport::current_unix_timestamp().unwrap();
+        let payload = alia_transport::bind_payload(
+            "server",
+            "server",
+            "http://localhost:1234",
+            &public,
+            issued,
+        );
         binding
-            .seed_dev_binding("server", "server", "http://localhost:1234")
+            .bind(
+                "server",
+                "server",
+                "http://localhost:1234",
+                &public,
+                &alia_transport::sign_payload(&key, &payload),
+                issued,
+            )
             .await
             .unwrap();
         let device = Arc::new(Device {
             state: Mutex::new((0, Vec::new())),
+            control: Mutex::new(None),
+            backend: alia_core::delivery::SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 16000,
+                output_channels: 1,
+            },
             changed: Condvar::new(),
             capacity,
             submissions: Mutex::new(HashMap::new()),
@@ -210,7 +291,17 @@ impl Fixture {
             session_id: Uuid::new_v4(),
             generation_epoch: 1,
         };
-        session.activate(&scope).unwrap();
+        let capture = CaptureControlBarrier::default();
+        session
+            .accept_capture(&capture, 0, true, || Ok(()))
+            .unwrap();
+        session
+            .activate_with_capture(&scope, capture.clone(), MAX_HOLD_MS)
+            .unwrap();
+        let revocation = session.clone();
+        binding
+            .install_output_revocation(Arc::new(move || revocation.revoke_all().unwrap()))
+            .unwrap();
         let service = proto::playback_server::PlaybackServer::new(PlaybackService::new(
             session.clone(),
             binding.clone(),
@@ -227,12 +318,20 @@ impl Fixture {
                 .await
                 .unwrap();
         });
-        let client = proto::playback_client::PlaybackClient::connect(endpoint)
+        let mut client = proto::playback_client::PlaybackClient::connect(endpoint)
+            .await
+            .unwrap();
+        client
+            .register_output(authenticated(proto::RegisterOutputRequest {
+                binding: Some(codec::encode_binding(output_binding(scope))),
+                contract_version: PLAYBACK_CONTRACT_VERSION,
+            }))
             .await
             .unwrap();
         Self {
             client,
             scope,
+            capture,
             session,
             device,
             binding,
@@ -242,6 +341,61 @@ impl Fixture {
         }
     }
 
+    async fn register(&mut self, scope: VoiceScope) -> OutputRegistration {
+        codec::decode_registration(
+            &self
+                .client
+                .register_output(authenticated(proto::RegisterOutputRequest {
+                    binding: Some(codec::encode_binding(output_binding(scope))),
+                    contract_version: PLAYBACK_CONTRACT_VERSION,
+                }))
+                .await
+                .unwrap()
+                .into_inner(),
+        )
+        .unwrap()
+    }
+    async fn command(&mut self, command: &BoundControlCommand) -> BoundControlReceipt {
+        codec::decode_control_receipt(
+            &self
+                .client
+                .control(authenticated(codec::encode_control_request(command)))
+                .await
+                .unwrap()
+                .into_inner(),
+            command,
+        )
+        .unwrap()
+    }
+    async fn observe(&mut self, command: &BoundControlCommand) -> BoundControlReceipt {
+        codec::decode_control_receipt(
+            &self
+                .client
+                .observe_control(authenticated(codec::encode_control_request(command)))
+                .await
+                .unwrap()
+                .into_inner(),
+            command,
+        )
+        .unwrap()
+    }
+    fn pause(&self, reason: HoldReason, budget_ms: u64) -> BoundControlCommand {
+        BoundControlCommand {
+            binding: output_binding(self.scope),
+            expected_backend: self.device.backend.clone(),
+            command: ControlCommand {
+                scope: self.scope,
+                hold_id: Uuid::new_v4(),
+                command_id: Uuid::new_v4(),
+                sequence: 1,
+                action: ControlAction::Pause {
+                    reason,
+                    through_sequence: 0,
+                    budget_ms,
+                },
+            },
+        }
+    }
     async fn finish(self) {
         self.session.stop().await.unwrap();
         drop(self.client);
@@ -254,10 +408,21 @@ impl Fixture {
 }
 
 fn authenticated<T>(body: T) -> Request<T> {
+    authenticated_for(body, Duration::from_secs(60))
+}
+fn authenticated_for<T>(body: T, ttl: Duration) -> Request<T> {
+    let key = ed25519_dalek::SigningKey::from_bytes(&[27; 32]);
+    let token = alia_transport::mint_auth_token(
+        &key,
+        "server",
+        alia_transport::EMBEDDED_CONTROL_SCOPE,
+        ttl,
+    )
+    .unwrap();
     let mut request = Request::new(body);
     request
         .metadata_mut()
-        .insert("authorization", "Bearer test-dev-binding".parse().unwrap());
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
     request
 }
 
@@ -265,8 +430,11 @@ fn frame(
     scope: VoiceScope,
     id: &str,
     playback_sequence: u64,
-    payload: playback_frame::Payload,
+    mut payload: playback_frame::Payload,
 ) -> proto::PlaybackFrame {
+    if let playback_frame::Payload::Start(start) = &mut payload {
+        start.output_binding = Some(codec::encode_binding(output_binding(scope)));
+    }
     proto::PlaybackFrame {
         scope: Some(encode_scope(scope)),
         playback_id: id.into(),
@@ -274,9 +442,18 @@ fn frame(
         payload: Some(payload),
     }
 }
+fn output_binding(scope: VoiceScope) -> OutputBinding {
+    OutputBinding {
+        scope,
+        response_id: scope.session_id,
+        context_id: scope.device_boot_id,
+        server_instance_id: Uuid::from_u128(901),
+    }
+}
 fn start() -> playback_frame::Payload {
     playback_frame::Payload::Start(proto::PlaybackStart {
-        contract_version: 2,
+        contract_version: PLAYBACK_CONTRACT_VERSION,
+        output_binding: None,
         sample_rate_hz: 16000,
         channels: 1,
         source: "tts".into(),
@@ -363,6 +540,7 @@ async fn grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoc
     drop(stream);
     drop(tx);
     let next_id = Uuid::new_v4().to_string();
+    f.register(newer).await;
     let frames = [
         frame(newer, &next_id, 2, start()),
         frame(newer, &next_id, 2, audio(0, 3)),
@@ -742,8 +920,8 @@ async fn revocation_while_waiting_for_start_cannot_advance_playback_epoch() {
         tonic::Code::FailedPrecondition
     );
     assert!(f.device.submissions.lock().unwrap().is_empty());
-    assert_eq!(f.device.state.lock().unwrap().0, 0);
-    assert_eq!(f.session.active_scope().unwrap(), Some(f.scope));
+    assert_eq!(f.device.state.lock().unwrap().0, 2);
+    assert_eq!(f.session.active_scope().unwrap(), None);
     drop(stream);
     f.finish().await;
 }
@@ -861,3 +1039,5 @@ async fn precise_fence_times_out_without_claiming_native_quiescence() {
     drop(stream);
     f.finish().await;
 }
+
+mod control;

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const MAX_CONTROL_COMMANDS: usize = 32;
-pub const MAX_HOLD_MS: u64 = 15_000;
+pub const MAX_HOLD_MS: u64 = 120_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HoldReason {
@@ -151,6 +151,25 @@ impl PlaybackControlState {
         if speech {
             self.speech = Some(sequence);
         }
+        Ok(())
+    }
+    /// Seed a newly created generation from the actual capture owner's retained
+    /// contiguous watermarks. It cannot replace an existing clock or command.
+    pub fn initialize_capture(
+        &mut self,
+        through_sequence: Option<u64>,
+        latest_speech_sequence: Option<u64>,
+    ) -> Result<(), ControlRejection> {
+        if self.capture.is_some()
+            || !self.commands.is_empty()
+            || self.retired.is_some()
+            || latest_speech_sequence
+                .is_some_and(|speech| through_sequence.is_none_or(|last| speech > last))
+        {
+            return Err(ControlRejection::StaleEvidence);
+        }
+        self.capture = through_sequence;
+        self.speech = latest_speech_sequence;
         Ok(())
     }
     pub fn retire(&mut self, reason: RetiredReason) {
@@ -519,6 +538,54 @@ mod tests {
         assert_eq!(
             stale.apply(&c, 3000, true).snapshot.retired,
             Some(RetiredReason::Expired)
+        );
+    }
+    #[test]
+    fn retained_capture_initialization_and_engineering_hold_limit_are_exact() {
+        let mut s = state();
+        assert!(s.initialize_capture(Some(100), Some(100)).is_err());
+        let mut fresh = PlaybackControlState::new(s.scope).unwrap();
+        assert!(fresh.initialize_capture(None, Some(1)).is_err());
+        fresh.initialize_capture(Some(20), Some(19)).unwrap();
+        let mut p = pause(&fresh, HoldReason::ExplicitWait);
+        p.action = ControlAction::Pause {
+            reason: HoldReason::ExplicitWait,
+            through_sequence: 18,
+            budget_ms: MAX_HOLD_MS,
+        };
+        assert_eq!(fresh.apply(&p, 0, true).outcome, CommandOutcome::Applied);
+        let mut r = resume(&p, ResumeKind::ExplicitContinue);
+        r.action = ControlAction::Resume {
+            authorization: ResumeAuthorization {
+                kind: ResumeKind::ExplicitContinue,
+                detection_id: Uuid::new_v4(),
+                through_sequence: 18,
+            },
+        };
+        assert_eq!(
+            fresh.apply(&r, 1, true).outcome,
+            CommandOutcome::Rejected(ControlRejection::StaleEvidence)
+        );
+        assert_eq!(
+            fresh.snapshot(MAX_HOLD_MS - 1, true).phase,
+            ControlPhase::Held
+        );
+        assert_eq!(
+            fresh.snapshot(MAX_HOLD_MS, true).retired,
+            Some(RetiredReason::Expired)
+        );
+        assert_eq!(fresh.recorded_outcome(&p), Some(CommandOutcome::Applied));
+        assert_eq!(
+            fresh.apply(&p, MAX_HOLD_MS + 1, true).snapshot.remaining_ms,
+            Some(0)
+        );
+        let mut over = pause(&s, HoldReason::ExplicitWait);
+        if let ControlAction::Pause { budget_ms, .. } = &mut over.action {
+            *budget_ms = MAX_HOLD_MS + 1;
+        }
+        assert_eq!(
+            s.apply(&over, 0, true).outcome,
+            CommandOutcome::Rejected(ControlRejection::Invalid)
         );
     }
 }

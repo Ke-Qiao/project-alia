@@ -6,9 +6,11 @@ use anyhow::{Context, Result, ensure};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
+mod capture;
 mod control;
 mod submission;
-pub use control::{OutputBlocked, PlaybackControl, PlaybackControlEvidence};
+pub use capture::CaptureControlBarrier;
+pub use control::{OutputBlocked, OutputControlError, PlaybackControl, PlaybackControlEvidence};
 pub use submission::{AudioSubmission, SubmissionWrite};
 
 /// Other output owners follow the same locally activated voice epoch. Hooks
@@ -40,6 +42,9 @@ struct ActiveSession {
     input: Option<PlaybackIdentity>,
     observations: HashMap<PlaybackIdentity, PlaybackLease>,
     control: Option<Arc<PlaybackControl>>,
+    registration: Option<alia_core::output_control::OutputRegistration>,
+    capture: Option<CaptureControlBarrier>,
+    maximum_hold_ms: u64,
 }
 pub struct PlaybackSession {
     backend: Arc<dyn AudioPlaybackBackend>,
@@ -133,6 +138,7 @@ impl PlaybackSession {
     }
     fn retire(&self, active: &mut ActiveSession, reason: &str) -> Result<()> {
         active.input = None;
+        active.registration = None;
         if let Some(control) = active.control.take() {
             control.retire(alia_core::playback_control::RetiredReason::Cancelled);
         }
@@ -155,22 +161,63 @@ impl PlaybackSession {
     }
     /// Only the local VoiceSession Ready hook may activate a session.
     pub fn activate(&self, scope: &VoiceScope) -> Result<()> {
+        self.activate_local(scope, None, alia_core::playback_control::MAX_HOLD_MS)
+    }
+    pub fn activate_with_capture(
+        &self,
+        scope: &VoiceScope,
+        capture: CaptureControlBarrier,
+        maximum_hold_ms: u64,
+    ) -> Result<()> {
+        self.activate_local(scope, Some(capture), maximum_hold_ms)
+    }
+    fn activate_local(
+        &self,
+        scope: &VoiceScope,
+        capture: Option<CaptureControlBarrier>,
+        maximum_hold_ms: u64,
+    ) -> Result<()> {
         let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
         ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
         ensure!(scope.is_valid(), "invalid playback voice scope");
+        ensure!(
+            (1..=alia_core::playback_control::MAX_HOLD_MS).contains(&maximum_hold_ms),
+            "invalid negotiated hold limit"
+        );
         let mut state = self.lock()?;
-        if let Some(active) = state.as_ref() {
+        if let Some(capture) = &capture {
+            capture.watermarks()?;
+        }
+        if let Some(active) = state.as_mut() {
             if same_session(&active.scope, scope) {
                 ensure!(
                     scope.generation_epoch >= active.scope.generation_epoch,
                     "Ready epoch regressed"
                 );
-                drop(state);
-                self.fence(scope, false)?;
+                ensure!(
+                    match (&active.capture, &capture) {
+                        (None, None) => true,
+                        (Some(old), Some(new)) => old.same_owner(new),
+                        _ => false,
+                    } && active.maximum_hold_ms == maximum_hold_ms,
+                    "Ready cannot replace the capture owner or capabilities"
+                );
+                if scope.generation_epoch > active.scope.generation_epoch {
+                    active.scope = *scope;
+                    let body = self
+                        .output_fence
+                        .as_ref()
+                        .map_or(Ok(()), |sink| sink.fence_voice(scope));
+                    let audio = self.retire(active, "local voice generation advanced");
+                    body.and(audio)?;
+                }
                 return Ok(());
             }
         }
         if let Some(mut old) = state.take() {
+            if let Some(capture) = &old.capture {
+                capture.mark_retired();
+            }
             let body = self
                 .output_fence
                 .as_ref()
@@ -188,7 +235,27 @@ impl PlaybackSession {
             input: None,
             observations: HashMap::new(),
             control: None,
+            registration: None,
+            capture,
+            maximum_hold_ms,
         });
+        Ok(())
+    }
+    /// Binding revocation retires the whole current owner under the same lock
+    /// used by Ready, registration, capture, and control admission.
+    pub fn revoke_all(&self) -> Result<()> {
+        let mut state = self.lock()?;
+        if let Some(mut retired) = state.take() {
+            if let Some(capture) = &retired.capture {
+                capture.mark_retired();
+            }
+            let body = self
+                .output_fence
+                .as_ref()
+                .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
+            let audio = self.retire(&mut retired, "device binding revoked");
+            body.and(audio)?;
+        }
         Ok(())
     }
     pub fn close(&self, scope: &VoiceScope) -> Result<bool> {
@@ -205,6 +272,9 @@ impl PlaybackSession {
         }
         if close_session {
             let mut retired = state.take().expect("checked above");
+            if let Some(capture) = &retired.capture {
+                capture.mark_retired();
+            }
             let body = self
                 .output_fence
                 .as_ref()
@@ -233,6 +303,31 @@ impl PlaybackSession {
         playback_sequence: u64,
         sample_rate: u32,
     ) -> Result<PlaybackLease> {
+        self.begin_local(scope, playback_id, playback_sequence, sample_rate, None)
+    }
+    pub fn begin_bound(
+        &self,
+        binding: &alia_core::output_control::OutputBinding,
+        playback_id: &str,
+        playback_sequence: u64,
+        sample_rate: u32,
+    ) -> Result<PlaybackLease> {
+        self.begin_local(
+            &binding.scope,
+            playback_id,
+            playback_sequence,
+            sample_rate,
+            Some(binding),
+        )
+    }
+    fn begin_local(
+        &self,
+        scope: &VoiceScope,
+        playback_id: &str,
+        playback_sequence: u64,
+        sample_rate: u32,
+        binding: Option<&alia_core::output_control::OutputBinding>,
+    ) -> Result<PlaybackLease> {
         let _gate = self.task_gate.lock().unwrap_or_else(|e| e.into_inner());
         ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
         let identity = PlaybackIdentity {
@@ -249,6 +344,20 @@ impl PlaybackSession {
         let active = state
             .as_mut()
             .context("no locally activated voice session")?;
+        match binding {
+            Some(binding) => ensure!(
+                active.scope == *scope
+                    && active
+                        .registration
+                        .as_ref()
+                        .is_some_and(|registered| registered.binding == *binding),
+                "Start does not match the pre-registered output"
+            ),
+            None => ensure!(
+                active.registration.is_none(),
+                "registered output requires its exact binding"
+            ),
+        }
         ensure!(
             same_session(&active.scope, scope),
             "playback session identity is stale"
@@ -289,7 +398,8 @@ impl PlaybackSession {
         );
         let generation = match active.generation {
             Some(g) if self.backend.is_playback_current(g) => g,
-            _ => self.backend.begin_scoped_playback()?,
+            _ if binding.is_none() => self.backend.begin_scoped_playback()?,
+            _ => anyhow::bail!("registered native playback owner is gone"),
         };
         active.generation = Some(generation);
         let submission = self
@@ -386,15 +496,19 @@ impl PlaybackSession {
         identity: &PlaybackIdentity,
         reason: &str,
     ) -> Result<PlaybackProgress> {
+        ensure!(
+            self.cancel_identity(identity, reason)?,
+            "precise playback cancellation was not applied"
+        );
+        self.observe_cancelled(identity).await
+    }
+    /// Observe the original identity after authenticated synchronous cancellation.
+    pub async fn observe_cancelled(&self, identity: &PlaybackIdentity) -> Result<PlaybackProgress> {
         let lease = self
             .lock()?
             .as_ref()
             .and_then(|active| active.observations.get(identity).cloned())
             .context("playback identity is no longer observable")?;
-        ensure!(
-            self.cancel_identity(identity, reason)?,
-            "precise playback cancellation was not applied"
-        );
         tokio::time::timeout(std::time::Duration::from_millis(1500), async {
             while !lease.submission.output_quiescent() {
                 tokio::time::sleep(std::time::Duration::from_millis(2)).await;

@@ -18,6 +18,8 @@ use tonic::{Request, Response, Status};
 struct LocalAudio {
     stops: AtomicU64,
     generation: AtomicU64,
+    captured: AtomicU64,
+    control: std::sync::Mutex<Option<Arc<crate::module::playback_session::PlaybackControl>>>,
 }
 
 #[tonic::async_trait]
@@ -27,6 +29,40 @@ impl ModuleLifecycle for LocalAudio {
     }
 }
 impl AudioPlaybackBackend for LocalAudio {
+    fn playback_control(
+        &self,
+        scope: &alia_core::delivery::VoiceScope,
+        generation: u64,
+    ) -> Result<Arc<crate::module::playback_session::PlaybackControl>> {
+        ensure!(self.is_playback_current(generation), "original owner gone");
+        let mut control = self.control.lock().unwrap();
+        if let Some(control) = control.as_ref() {
+            return Ok(control.clone());
+        }
+        let created = crate::module::playback_session::PlaybackControl::new(
+            *scope,
+            generation,
+            alia_core::delivery::SubmissionBackend {
+                instance_id: Uuid::from_u128(42),
+                boundary: alia_core::delivery::SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: SAMPLE_RATE,
+                output_channels: 1,
+            },
+        )?;
+        *control = Some(created.clone());
+        Ok(created)
+    }
+    fn apply_playback_control(
+        &self,
+        control: &Arc<crate::module::playback_session::PlaybackControl>,
+        command: &alia_core::playback_control::ControlCommand,
+    ) -> Result<alia_core::playback_control::ControlReceipt> {
+        ensure!(
+            self.is_playback_current(control.generation),
+            "original owner gone"
+        );
+        Ok(control.apply(command))
+    }
     fn open_submission(
         &self,
         identity: alia_core::delivery::PlaybackIdentity,
@@ -76,6 +112,9 @@ impl AudioPlaybackBackend for LocalAudio {
         Ok(())
     }
     fn begin_scoped_playback(&self) -> Result<u64> {
+        if let Some(control) = self.control.lock().unwrap().take() {
+            control.retire(alia_core::playback_control::RetiredReason::Cancelled);
+        }
         Ok(self.generation.fetch_add(1, Ordering::SeqCst) + 1)
     }
     fn play_if_current(&self, _: &[i16], _: u32, generation: u64) -> Result<bool> {
@@ -92,6 +131,9 @@ impl AudioPlaybackBackend for LocalAudio {
             )
             .is_ok()
         {
+            if let Some(control) = self.control.lock().unwrap().take() {
+                control.retire(alia_core::playback_control::RetiredReason::Cancelled);
+            }
             self.stops.fetch_add(1, Ordering::SeqCst);
             Ok(true)
         } else {
@@ -110,6 +152,7 @@ impl VoiceActivityEngine for LocalAudio {
         Ok(())
     }
     fn accept(&self, pcm: &[i16], _: u32) -> Result<VoiceActivityState> {
+        self.captured.fetch_add(1, Ordering::SeqCst);
         Ok(if pcm.iter().any(|sample| *sample != 0) {
             VoiceActivityState::Speech
         } else {
@@ -133,7 +176,9 @@ fn ready(boot: &str, session: &str) -> SessionEvent {
         session_id: session.into(),
         generation_epoch: 1,
         payload: Some(session_event::Payload::Ready(SessionReady {
-            protocol_version: 1,
+            protocol_version: VOICE_CONTRACT_VERSION,
+            software_hold: true,
+            max_hold_ms: MAX_HOLD_MS,
             sample_rate_hz: SAMPLE_RATE,
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
@@ -157,6 +202,11 @@ fn evidence(boot: &str, session: &str, sequence: u64, state: TurnState) -> Sessi
             state: state as i32,
             response_enqueued: state == TurnState::Complete,
             inference_ms: 1.0,
+            output_decision: if state == TurnState::Wait {
+                OutputDecision::Cancelled
+            } else {
+                OutputDecision::Unchanged
+            } as i32,
         })),
     }
 }
@@ -171,6 +221,7 @@ enum Seen {
 }
 
 struct FakeServer {
+    ready_gate: Option<Arc<tokio::sync::Semaphore>>,
     seen: mpsc::Sender<Seen>,
     public_key: Vec<u8>,
     subject: String,
@@ -208,7 +259,9 @@ impl VoiceSession for FakeServer {
         let Some(device_frame::Payload::Open(open)) = open.payload else {
             panic!("expected Open")
         };
-        assert_eq!(open.protocol_version, 1);
+        assert_eq!(open.protocol_version, VOICE_CONTRACT_VERSION);
+        assert!(open.software_hold);
+        assert_eq!(open.max_hold_ms, MAX_HOLD_MS);
         assert_eq!(open.channel_id, CHANNEL_ID);
         let session = Uuid::new_v4().to_string();
         let boot = open.device_boot_id;
@@ -222,7 +275,9 @@ impl VoiceSession for FakeServer {
             .await
             .unwrap();
         let seen = self.seen.clone();
+        let ready_gate = self.ready_gate.clone();
         let response = async_stream::stream! {
+            if let Some(gate) = ready_gate { let _permit = gate.acquire().await.unwrap(); }
             yield Ok(ready(&boot, &session));
             let mut sequence = 0;
             let mut offset = 0;
@@ -262,6 +317,12 @@ struct Harness {
 }
 
 async fn harness(audio_capacity: usize) -> Harness {
+    harness_with_ready_gate(audio_capacity, None).await
+}
+async fn harness_with_ready_gate(
+    audio_capacity: usize,
+    ready_gate: Option<Arc<tokio::sync::Semaphore>>,
+) -> Harness {
     let directory = tempfile::tempdir().unwrap();
     let keypair_path = directory.path().join("device.key");
     let keypair = crate::identity::ensure_device_keypair(&keypair_path).unwrap();
@@ -284,6 +345,7 @@ async fn harness(audio_capacity: usize) -> Harness {
         let incoming = async_stream::stream! { loop { yield listener.accept().await.map(|(stream, _)| stream); } };
         tonic::transport::Server::builder()
             .add_service(VoiceSessionServer::new(FakeServer {
+                ready_gate,
                 seen: seen_tx,
                 public_key,
                 subject,
@@ -419,7 +481,7 @@ async fn captures_during_playback_receives_all_turn_states_and_reconnects() {
     assert_eq!(
         local.stops.load(Ordering::SeqCst),
         1,
-        "only Wait stops playback"
+        "explicit Cancelled evidence fences playback"
     );
     // A failed stream ends its capture session, then a fresh wake reconnects.
     output
@@ -532,6 +594,8 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
         Ok(())
     });
     let mut session = Session {
+        playback: Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default()))),
+        capture: CaptureControlBarrier::default(),
         tx,
         cancel,
         task,
@@ -804,4 +868,311 @@ fn late_old_guard_close_cannot_close_replacement_playback_session() {
     assert!(!playback.enqueue(&lease, &[1]).unwrap());
     assert!(!playback.is_active());
     assert_eq!(local.stops.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn queued_capture_before_wire_ready_fences_resume_and_seeds_later_generation() {
+    use alia_core::output_control::{BoundControlCommand, OutputBinding};
+    use alia_core::playback_control::*;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let Harness {
+        runtime,
+        audio,
+        local,
+        mut seen,
+        shutdown,
+        server,
+        _directory,
+        ..
+    } = harness_with_ready_gate(16, Some(gate.clone())).await;
+    let cancel = runtime.cancel.clone();
+    let playback = runtime.playback_session.clone();
+    publish(&audio, 99, 0);
+    let task = tokio::spawn(runtime.run());
+    let Seen::Opened {
+        boot,
+        session,
+        output,
+        ..
+    } = received(&mut seen).await
+    else {
+        panic!("Open expected")
+    };
+    publish(&audio, 7, 320);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while local.captured.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        seen.try_recv().is_err(),
+        "capture cannot upload before Ready"
+    );
+    assert_eq!(playback.active_scope().unwrap(), None);
+    gate.add_permits(1);
+    for sequence in 0..2 {
+        let Seen::Audio(frame) = received(&mut seen).await else {
+            panic!("Audio expected")
+        };
+        assert_eq!(frame.sequence, sequence);
+        assert!(frame.speech_active);
+    }
+    let mut scope = VoiceScope {
+        device_boot_id: Uuid::parse_str(&boot).unwrap(),
+        session_id: Uuid::parse_str(&session).unwrap(),
+        generation_epoch: 1,
+    };
+    for epoch in 1..=2 {
+        scope.generation_epoch = epoch;
+        if epoch == 2 {
+            playback.fence(&scope, false).unwrap();
+        }
+        let binding = OutputBinding {
+            scope,
+            response_id: Uuid::new_v4(),
+            context_id: Uuid::new_v4(),
+            server_instance_id: Uuid::new_v4(),
+        };
+        let registered = playback.register_output(&binding).unwrap();
+        let pause = BoundControlCommand {
+            binding,
+            expected_backend: registered.backend,
+            command: ControlCommand {
+                scope,
+                hold_id: Uuid::new_v4(),
+                command_id: Uuid::new_v4(),
+                sequence: 1,
+                action: ControlAction::Pause {
+                    reason: HoldReason::AcousticCandidate,
+                    through_sequence: 0,
+                    budget_ms: 30_000,
+                },
+            },
+        };
+        assert_eq!(
+            playback
+                .apply_bound_control(&pause)
+                .unwrap()
+                .receipt
+                .snapshot
+                .phase,
+            ControlPhase::Held
+        );
+        let resume = BoundControlCommand {
+            command: ControlCommand {
+                command_id: Uuid::new_v4(),
+                sequence: 2,
+                action: ControlAction::Resume {
+                    authorization: ResumeAuthorization {
+                        kind: ResumeKind::FreshBackchannel,
+                        detection_id: Uuid::new_v4(),
+                        through_sequence: 0,
+                    },
+                },
+                ..pause.command.clone()
+            },
+            ..pause
+        };
+        assert_eq!(
+            playback
+                .apply_bound_control(&resume)
+                .unwrap()
+                .receipt
+                .outcome,
+            CommandOutcome::Rejected(ControlRejection::StaleEvidence)
+        );
+    }
+    cancel.cancel();
+    task.await.unwrap();
+    drop(output);
+    shutdown.cancel();
+    server.await.unwrap();
+}
+
+#[test]
+fn ready_rejects_previous_version_and_missing_or_excessive_hold_capability() {
+    let boot = Uuid::new_v4().to_string();
+    let session = Uuid::new_v4().to_string();
+    for invalid in 0..4 {
+        let playback = Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default())));
+        let mut event = ready(&boot, &session);
+        let Some(session_event::Payload::Ready(ref mut ready)) = event.payload else {
+            unreachable!()
+        };
+        match invalid {
+            0 => ready.protocol_version = 1,
+            1 => ready.software_hold = false,
+            2 => ready.max_hold_ms = 0,
+            _ => ready.max_hold_ms = MAX_HOLD_MS + 1,
+        }
+        assert!(
+            SessionGuard::new(boot.clone(), playback.clone())
+                .accept(event, 0)
+                .is_err()
+        );
+        assert_eq!(playback.active_scope().unwrap(), None);
+    }
+}
+
+#[test]
+fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_evidence() {
+    use alia_core::output_control::{BoundControlCommand, OutputBinding};
+    use alia_core::playback_control::*;
+    let boot = Uuid::new_v4().to_string();
+    let session = Uuid::new_v4().to_string();
+    let playback = Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default())));
+    let mut guard = SessionGuard::new(boot.clone(), playback.clone());
+    playback
+        .accept_capture(&guard.capture, 0, true, || Ok(()))
+        .unwrap();
+    guard.accept(ready(&boot, &session), 0).unwrap();
+    let scope = playback.active_scope().unwrap().unwrap();
+    let binding = OutputBinding {
+        scope,
+        response_id: Uuid::new_v4(),
+        context_id: Uuid::new_v4(),
+        server_instance_id: Uuid::new_v4(),
+    };
+    let registration = playback.register_output(&binding).unwrap();
+    let command = BoundControlCommand {
+        binding,
+        expected_backend: registration.backend,
+        command: ControlCommand {
+            scope,
+            hold_id: Uuid::new_v4(),
+            command_id: Uuid::new_v4(),
+            sequence: 1,
+            action: ControlAction::Pause {
+                reason: HoldReason::ExplicitWait,
+                through_sequence: 0,
+                budget_ms: 30_000,
+            },
+        },
+    };
+    playback.apply_bound_control(&command).unwrap();
+    for decision in [
+        OutputDecision::PauseRequested,
+        OutputDecision::ResumeRequested,
+        OutputDecision::Unchanged,
+    ] {
+        let mut event = evidence(&boot, &session, 0, TurnState::Wait);
+        event.generation_epoch = 1;
+        let Some(session_event::Payload::Evidence(ref mut value)) = event.payload else {
+            unreachable!()
+        };
+        value.output_decision = decision as i32;
+        guard.accept(event, 1).unwrap();
+        assert_eq!(
+            playback
+                .observe_bound_control(&command)
+                .unwrap()
+                .receipt
+                .snapshot
+                .phase,
+            ControlPhase::Held
+        );
+    }
+    guard
+        .accept(evidence(&boot, &session, 0, TurnState::Wait), 1)
+        .unwrap();
+    assert!(playback.observe_bound_control(&command).is_err());
+    assert_eq!(
+        playback.active_scope().unwrap().unwrap().generation_epoch,
+        3
+    );
+
+    for (state, decision, enqueue, epoch, valid) in [
+        (
+            TurnState::Complete,
+            OutputDecision::Unchanged,
+            true,
+            2,
+            true,
+        ),
+        (
+            TurnState::Complete,
+            OutputDecision::Unchanged,
+            true,
+            1,
+            false,
+        ),
+        (
+            TurnState::Complete,
+            OutputDecision::PauseRequested,
+            true,
+            2,
+            false,
+        ),
+        (TurnState::Wait, OutputDecision::Unchanged, true, 2, false),
+        (TurnState::Wait, OutputDecision::Unchanged, false, 1, true),
+        (
+            TurnState::Wait,
+            OutputDecision::PauseRequested,
+            false,
+            1,
+            true,
+        ),
+        (
+            TurnState::Backchannel,
+            OutputDecision::ResumeRequested,
+            false,
+            1,
+            true,
+        ),
+        (
+            TurnState::Wait,
+            OutputDecision::PauseRequested,
+            false,
+            2,
+            false,
+        ),
+        (
+            TurnState::Backchannel,
+            OutputDecision::ResumeRequested,
+            false,
+            2,
+            false,
+        ),
+        (TurnState::Wait, OutputDecision::Cancelled, false, 2, true),
+        (TurnState::Wait, OutputDecision::Cancelled, false, 1, false),
+        (
+            TurnState::Complete,
+            OutputDecision::Unchanged,
+            false,
+            2,
+            false,
+        ),
+        (
+            TurnState::Incomplete,
+            OutputDecision::Unspecified,
+            false,
+            1,
+            false,
+        ),
+        (
+            TurnState::Unspecified,
+            OutputDecision::Unchanged,
+            false,
+            1,
+            false,
+        ),
+    ] {
+        let playback = Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default())));
+        let mut guard = SessionGuard::new(boot.clone(), playback);
+        guard.accept(ready(&boot, &session), 0).unwrap();
+        let mut event = evidence(&boot, &session, 0, state);
+        event.generation_epoch = epoch;
+        let Some(session_event::Payload::Evidence(ref mut value)) = event.payload else {
+            unreachable!()
+        };
+        value.response_enqueued = enqueue;
+        value.output_decision = decision as i32;
+        assert_eq!(
+            guard.accept(event, 1).is_ok(),
+            valid,
+            "{state:?} {decision:?} enqueue={enqueue} epoch={epoch}"
+        );
+    }
 }

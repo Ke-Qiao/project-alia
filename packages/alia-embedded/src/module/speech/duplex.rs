@@ -7,9 +7,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use alia_core::delivery::VoiceScope;
+use alia_core::output_control::VOICE_CONTRACT_VERSION;
+use alia_core::playback_control::MAX_HOLD_MS;
 use alia_proto::voice::{
-    CaptureFrame, DeviceFrame, OpenSession, RefreshAuth, SessionEvent, TurnState, device_frame,
-    session_event, voice_session_client::VoiceSessionClient,
+    CaptureFrame, DeviceFrame, OpenSession, OutputDecision, RefreshAuth, SessionEvent, TurnState,
+    device_frame, session_event, voice_session_client::VoiceSessionClient,
 };
 use anyhow::{Context, Result, bail, ensure};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -19,7 +21,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::super::context::{AudioFrame, EventBus, ModuleEvent};
-use super::super::playback_session::PlaybackSession;
+use super::super::playback_session::{CaptureControlBarrier, PlaybackSession};
 use super::super::traits::{VoiceActivityEngine, VoiceActivityState, WakeWordEngine};
 use super::transport::{
     IngressAuth, attach_ingress_auth, ingress_auth, pcm16_to_le_bytes, voice_connection,
@@ -65,7 +67,9 @@ impl Runtime {
                     }
                 } => {
                     // The handle was joined by select; do not poll it again.
-                    session.take();
+                    if let Some(active) = session.take() {
+                        if let Err(error) = active.playback.retire_capture(&active.capture) { warn!(%error, "retiring completed capture failed"); }
+                    }
                     match result {
                         Ok(Ok(())) => info!("voice session ended; wake again to reconnect"),
                         Ok(Err(error)) => warn!(%error, "voice session failed; wake again to reconnect"),
@@ -164,6 +168,8 @@ impl Runtime {
         let keypair_path = self.keypair_path.clone();
         let boot_id = self.boot_id.clone();
         let playback = self.playback_session.clone();
+        let capture = CaptureControlBarrier::default();
+        let task_capture = capture.clone();
         let task_cancel = cancel.clone();
         let task = tokio::spawn(async move {
             let exchange = async {
@@ -191,7 +197,7 @@ impl Runtime {
                 tokio::select! {
                     biased;
                     result = binding_changed => result,
-                    result = exchange(endpoint, auth, boot_id, rx, playback, device_id, keypair_path) => result,
+                    result = exchange(endpoint, auth, boot_id, rx, playback, task_capture, device_id, keypair_path) => result,
                 }
             };
             let result = tokio::select! {
@@ -202,6 +208,8 @@ impl Runtime {
             result
         });
         Session {
+            playback: self.playback_session.clone(),
+            capture,
             tx,
             cancel,
             task,
@@ -212,6 +220,8 @@ impl Runtime {
 }
 
 struct Session {
+    playback: Arc<PlaybackSession>,
+    capture: CaptureControlBarrier,
     tx: mpsc::Sender<CaptureFrame>,
     cancel: CancellationToken,
     task: JoinHandle<Result<()>>,
@@ -233,14 +243,17 @@ impl Session {
             .sample_offset
             .checked_add(frame.pcm.len() as u64)
             .context("capture sample clock overflow")?;
-        self.tx
-            .try_send(CaptureFrame {
-                sequence: self.sequence,
-                sample_offset: self.sample_offset,
-                pcm_s16le: pcm16_to_le_bytes(&frame.pcm),
-                speech_active: frame.speech_active,
-            })
-            .context("voice upload queue full or disconnected; session cannot continue")?;
+        self.playback
+            .accept_capture(&self.capture, self.sequence, frame.speech_active, || {
+                self.tx
+                    .try_send(CaptureFrame {
+                        sequence: self.sequence,
+                        sample_offset: self.sample_offset,
+                        pcm_s16le: pcm16_to_le_bytes(&frame.pcm),
+                        speech_active: frame.speech_active,
+                    })
+                    .context("voice upload queue full or disconnected; session cannot continue")
+            })?;
         self.sequence = next_sequence;
         self.sample_offset = next_offset;
         Ok(())
@@ -249,6 +262,9 @@ impl Session {
 
 async fn end_session(session: &mut Option<Session>, events: &EventBus) {
     if let Some(session) = session.take() {
+        if let Err(error) = session.playback.retire_capture(&session.capture) {
+            warn!(%error, "retiring local capture failed");
+        }
         session.cancel.cancel();
         drop(session.tx);
         match session.task.await {
@@ -346,7 +362,8 @@ fn capture_stream(
 ) -> impl futures::Stream<Item = DeviceFrame> + Send {
     async_stream::stream! {
         yield DeviceFrame { payload: Some(device_frame::Payload::Open(OpenSession {
-            protocol_version: 1, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
+            protocol_version: VOICE_CONTRACT_VERSION, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
+            software_hold: true, max_hold_ms: MAX_HOLD_MS,
         })) };
         // Local playback admission must be activated before audio can cause a
         // response to race back over the separate playback RPC connection.
@@ -384,6 +401,7 @@ async fn exchange(
     boot_id: String,
     audio: mpsc::Receiver<CaptureFrame>,
     playback: Arc<PlaybackSession>,
+    capture: CaptureControlBarrier,
     device_id: String,
     keypair_path: PathBuf,
 ) -> Result<()> {
@@ -398,7 +416,7 @@ async fn exchange(
         move || ingress_auth(&device_id, &keypair_path),
         failed_tx,
     );
-    let mut guard = SessionGuard::new(boot_id, playback);
+    let mut guard = SessionGuard::with_capture(boot_id, playback, capture);
     let mut incoming = tokio::time::timeout(Duration::from_secs(5), async {
         let mut client = VoiceSessionClient::connect(endpoint)
             .await?
@@ -433,6 +451,7 @@ async fn exchange(
 
 struct SessionGuard {
     playback: Arc<PlaybackSession>,
+    capture: CaptureControlBarrier,
     boot_id: String,
     session_id: Option<String>,
     epoch: u64,
@@ -440,9 +459,18 @@ struct SessionGuard {
 }
 
 impl SessionGuard {
+    #[cfg(test)]
     fn new(boot_id: String, playback: Arc<PlaybackSession>) -> Self {
+        Self::with_capture(boot_id, playback, CaptureControlBarrier::default())
+    }
+    fn with_capture(
+        boot_id: String,
+        playback: Arc<PlaybackSession>,
+        capture: CaptureControlBarrier,
+    ) -> Self {
         Self {
             playback,
+            capture,
             boot_id,
             session_id: None,
             epoch: 0,
@@ -487,64 +515,73 @@ impl SessionGuard {
             );
             let state = TurnState::try_from(evidence.state).context("unknown server turn state")?;
             ensure!(
-                state == TurnState::Complete || !evidence.response_enqueued,
-                "non-complete evidence cannot enqueue a response"
+                state != TurnState::Unspecified,
+                "server turn state is unspecified"
             );
-            match state {
-                TurnState::Complete => {
-                    if evidence.response_enqueued {
-                        ensure!(
-                            event.generation_epoch > self.epoch,
-                            "Complete response must advance output epoch"
-                        );
+            let decision = OutputDecision::try_from(evidence.output_decision)
+                .context("unknown output decision")?;
+            let advances = event.generation_epoch > self.epoch;
+            if evidence.response_enqueued {
+                ensure!(
+                    state == TurnState::Complete
+                        && decision == OutputDecision::Unchanged
+                        && advances,
+                    "response admission requires Complete, Unchanged and a new generation"
+                );
+            } else {
+                match decision {
+                    OutputDecision::Cancelled => {
+                        ensure!(advances, "output cancellation must advance generation")
                     }
-                    info!(request_id = %evidence.request_id, response_enqueued = evidence.response_enqueued,
-                    "turn complete evidence received; response_enqueued means bounded ingress acceptance only")
+                    OutputDecision::Unchanged
+                    | OutputDecision::PauseRequested
+                    | OutputDecision::ResumeRequested => ensure!(
+                        !advances,
+                        "unchanged or reversible output request must retain generation"
+                    ),
+                    OutputDecision::Unspecified => bail!("output decision is unspecified"),
                 }
-                TurnState::Incomplete => debug!("turn incomplete; continuing capture"),
-                TurnState::Backchannel => {
-                    debug!("backchannel observed; keeping playback and capture running")
-                }
-                TurnState::Wait => {
-                    ensure!(
-                        event.generation_epoch > self.epoch,
-                        "Wait must invalidate the prior output epoch"
-                    );
-                    warn!(
-                        resume_policy = "not_implemented",
-                        "Wait stops playback; pause/resume is not implemented"
-                    );
-                }
-                TurnState::Unspecified => bail!("server turn state is unspecified"),
             }
-            self.playback
-                .fence(
-                    &VoiceScope {
-                        device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
-                        session_id: Uuid::parse_str(&event.session_id)?,
-                        generation_epoch: event.generation_epoch,
-                    },
-                    false,
-                )
-                .context("advancing local voice playback fence")?;
+            debug!(request_id = %evidence.request_id, ?state, ?decision, response_enqueued = evidence.response_enqueued,
+                "voice semantic evidence received; output decision is a request, not a native control receipt");
+            // Same-epoch evidence is never permission to release the native
+            // gate. Only independently authenticated Control can do that.
+            if advances {
+                self.playback
+                    .fence(
+                        &VoiceScope {
+                            device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
+                            session_id: Uuid::parse_str(&event.session_id)?,
+                            generation_epoch: event.generation_epoch,
+                        },
+                        false,
+                    )
+                    .context("advancing local voice playback fence")?;
+            }
             self.through_sequence = Some(evidence.through_sequence);
         } else {
             let Some(session_event::Payload::Ready(ready)) = event.payload else {
                 bail!("first voice event must be Ready")
             };
             ensure!(
-                ready.protocol_version == 1
+                ready.protocol_version == VOICE_CONTRACT_VERSION
+                    && ready.software_hold
+                    && (1..=MAX_HOLD_MS).contains(&ready.max_hold_ms)
                     && ready.sample_rate_hz == SAMPLE_RATE
                     && ready.channels == 1
                     && ready.max_frame_samples == MAX_FRAME_SAMPLES as u32,
                 "voice Ready format is incompatible"
             );
             self.playback
-                .activate(&VoiceScope {
-                    device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
-                    session_id: Uuid::parse_str(&event.session_id)?,
-                    generation_epoch: event.generation_epoch,
-                })
+                .activate_with_capture(
+                    &VoiceScope {
+                        device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
+                        session_id: Uuid::parse_str(&event.session_id)?,
+                        generation_epoch: event.generation_epoch,
+                    },
+                    self.capture.clone(),
+                    ready.max_hold_ms,
+                )
                 .context("activating local voice playback session")?;
             self.session_id = Some(event.session_id.clone());
             info!(session_id = %event.session_id, boot_id = %self.boot_id, "continuous voice session ready");
@@ -556,6 +593,9 @@ impl SessionGuard {
 
 impl Drop for SessionGuard {
     fn drop(&mut self) {
+        if let Err(error) = self.playback.retire_capture(&self.capture) {
+            warn!(%error, "retiring voice capture guard failed");
+        }
         let Some(session_id) = self.session_id.as_ref() else {
             return;
         };
