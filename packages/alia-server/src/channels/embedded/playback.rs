@@ -421,7 +421,20 @@ impl PcmDecoder {
             self.spec = Some(spec);
             self.header_done = true;
         }
-        self.pending.extend(payload.data);
+        // This is the explicit decoder workspace boundary. Its PCM output and
+        // protobuf queue have separate caps; the encoded lease ends only when
+        // the source AudioBuffer is dropped, never through an implicit clone.
+        const WORKSPACE_BYTES: usize = crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+        ensure!(
+            payload.data.len() <= WORKSPACE_BYTES,
+            "decoder input exceeds 2 MiB"
+        );
+        ensure!(
+            self.pending.len() <= WORKSPACE_BYTES - payload.data.len(),
+            "decoder workspace exceeds 2 MiB"
+        );
+        self.pending.try_reserve_exact(payload.data.len())?;
+        self.pending.extend_from_slice(&payload.data);
         if !self.header_done {
             let Some((offset, spec, declared)) = wav_header(&self.pending)? else {
                 ensure!(self.pending.len() <= 65536, "WAV header exceeds 64 KiB");

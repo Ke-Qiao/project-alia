@@ -1,0 +1,16 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.19s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-04e3e2536907c891)
+
+running 9 tests
+test channels::embedded::playback::tests::decoder_rejects_unimplemented_presentation_and_wrong_identity_or_contract ... ok
+test channels::embedded::playback::tests::fence_receipt_must_prove_matching_session_and_minimum_epoch ... ok
+test channels::embedded::playback::tests::decoder_copy_limits_include_an_incomplete_native_frame ... ok
+test channels::embedded::playback::tests::decoder_rejects_truncation_and_format_changes_without_speaking_headers ... ok
+test channels::embedded::playback::tests::fragmented_wav_preserves_original_scope_sequence_and_actual_rate ... ok
+test channels::embedded::playback::tests::durable_gates_precede_wire_and_end_continues_monotonic_submission_evidence ... ok
+test channels::embedded::playback::tests::precise_cancel_merges_final_prefix_and_bare_control_ack_is_unknown ... ok
+test channels::embedded::playback::tests::heartbeats_do_not_extend_delivery_deadline_and_exact_cancel_keeps_prefix ... ok
+test channels::embedded::playback::tests::idle_receipt_timeout_cancels_and_joins_the_audio_producer ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 227 filtered out; finished in 0.07s

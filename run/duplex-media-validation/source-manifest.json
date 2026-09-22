@@ -1,0 +1,28 @@
+{
+  "base": "8c3f5450fcedfe250cba7936de6fcdf8076c7040",
+  "parent": "779f4f80617aeffee2148ee1bdb2c0a79bb42b7d",
+  "files": {
+    "packages/alia-server/src/api/voice.rs": "f52b753d885e0f86a6ef1ed2ba006d4b4ee975d96685ec09f9888557aceeda00",
+    "packages/alia-server/src/channels/adapter.rs": "56153a6643078ac2f33472c21964d5b5909c40735d2440d88cde0363be532c1b",
+    "packages/alia-server/src/channels/embedded/audio.rs": "a73667e938ada18687aa80748d32f541a126e361362b57b9047c6cf8fc97d08d",
+    "packages/alia-server/src/channels/embedded/playback.rs": "ff22284724ee708a8847d89cb0edd5bcfcaba977d1e0cc3136badbdcc1331c6a",
+    "packages/alia-server/src/channels/embedded/playback/tests.rs": "ffd76874a36a4e5da8c49ec425802823d61712ae98f8b7db1838ea284eae0125",
+    "packages/alia-server/src/channels/pipeline.rs": "bd81f699a38903eb849cf7f7e2330f7715deb69e5f5de967e0b32c8f6264bbc8",
+    "packages/alia-server/src/channels/pipeline/error_notice.rs": "d97ad142d44159c52aad70c80e7e25b511af1f93dffe9c9b1fea38e86aa058e5",
+    "packages/alia-server/src/channels/pipeline/integration_tests.rs": "f0e114cbe197111b336482221f70887a94a5708f1488d1a2f8941e6539586a8a",
+    "packages/alia-server/src/channels/pipeline/streaming.rs": "c480613f94be22ab9aa08e908c974aeedcabd65221d3881bcc37b1bbead4a48f",
+    "packages/alia-server/src/grpc/audio_ingress.rs": "1b921de6ac2e269cf29472c0a653e7f1eea51694d8572434d37deecff5e6e7a9",
+    "packages/alia-server/src/providers/adapter.rs": "131a50ed802dea7db7e1e478a3c4f3ce38300d852380158f561f19b9173e483c",
+    "packages/alia-server/src/providers/llm/mod.rs": "f6fbcf9c7c6cc20f25a4d9ec884959aafb95943f99a2529ec9810db7d6fc17cb",
+    "packages/alia-server/src/providers/tts/audio_budget.rs": "3734dc558885e9d2bc9fdb58af4343d05e67ef596c608779dfb675ca3d31d8b5",
+    "packages/alia-server/src/providers/tts/audio_budget_tests.rs": "33c7b863d82a92a83ff868631e951c25cb9b01faed342e1cceef88c160449de0",
+    "packages/alia-server/src/providers/tts/gpt_sovits.rs": "b3c49be8c3000f7828be418aa196df8d2595ba788487e7e04b26d17d969390fb",
+    "packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs": "f1185631b16776c97855b1bc2ecab59593f47faec6f8517b832bc319909fdafd",
+    "packages/alia-server/src/providers/tts/http_body.rs": "39c41c3ce046d1e799fa2ef47caae043f23dfd485d0f5b83821d6e9ff4c1fb04",
+    "packages/alia-server/src/providers/tts/mod.rs": "70408036289cde980b0c5e5db1b3eb4fac1831a90dc12f530b67113eacea821c",
+    "packages/alia-server/tests/delivery_service.rs": "07010907041f016f7d3d6762137a994d149fded8e2fbd1526f121d1c6610250b",
+    "packages/alia-server/tests/embedded_channel.rs": "2a950da9a8197f7e7924875ca8b3bd39512e6db66f92efde98acbe52303b63a6",
+    "packages/alia-server/tests/pipeline.rs": "8d25f646351747088f33d89b1ffad95b811fffc534ae66022e5213e428f2b460"
+  },
+  "cargo_lock_sha256": "0736653b5c57a936dc71d2b18a82b927536acb7bb8c49341f845717c87fde2a2"
+}

@@ -1,0 +1,33 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 33.13s
+     Running tests/embedded_channel.rs (target/debug/deps/embedded_channel-b7618f7b9b7b0b85)
+
+running 3 tests
+test normalization_rejects_oversized_pcm_before_conversion ... ok
+test normalizes_stereo_pcm16_payload_to_mono ... ok
+test normalized_pcm_keeps_encoded_credit_until_the_last_derived_clone ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pipeline.rs (target/debug/deps/pipeline-bc4e3404f56622c1)
+
+running 17 tests
+test ignores_json_with_trailing_text ... ok
+test ignores_embedded_tool_call_examples ... ok
+test detects_minor_llm_escalation_marker ... ok
+test renders_runtime_context_prompt_outside_persona ... ok
+test pipeline_cache_entry_uses_default_lookup_scope ... ok
+test ignores_tool_call_without_schema ... ok
+test parses_text_tool_call_envelope ... ok
+test decodes_tts_wav_to_pcm_payload ... ok
+test parses_pseudo_function_text_tool_call ... ok
+test ignores_plain_assistant_text ... ok
+test ignores_envelope_with_user_facing_content ... ok
+test parses_pseudo_function_search_call ... ok
+test builds_pcm_silence_gap ... ok
+test ignores_text_tool_call_with_non_object_arguments ... ok
+test parses_fenced_text_tool_call_envelope ... ok
+test cache_policy_allows_safe_memory_independent_exact_entries ... ok
+test cache_policy_rejects_tool_memory_dynamic_and_legacy_entries ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

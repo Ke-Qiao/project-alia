@@ -259,3 +259,7 @@ impl Serialize for AudioBuffer {
 
 pub type TtsAudioStream =
     std::pin::Pin<Box<dyn futures::Stream<Item = Result<EncodedAudio>> + Send + 'static>>;
+
+#[cfg(test)]
+#[path = "audio_budget_tests.rs"]
+mod tests;

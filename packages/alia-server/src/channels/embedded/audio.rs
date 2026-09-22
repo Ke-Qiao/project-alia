@@ -6,6 +6,7 @@ use alia_proto::audio::AudioChunk;
 use alia_proto::audio::audio_stream_client::AudioStreamClient;
 
 use crate::channels::adapter::{AudioFormat, AudioPayload, AudioPayloadStream};
+use crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
 
 pub(super) const AUDIO_GRPC_CHUNK_BYTES: usize = 64 * 1024;
 pub(super) const AUDIO_STREAM_GRPC_CHUNK_BYTES: usize = 8 * 1024;
@@ -73,11 +74,15 @@ impl StreamingAudioChunker {
     }
 
     async fn push(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
-        self.pending.extend_from_slice(bytes);
-        while self.pending.len() >= self.max_bytes {
-            let tail = self.pending.split_off(self.max_bytes);
-            let chunk = std::mem::replace(&mut self.pending, tail);
-            self.send(chunk).await?;
+        for part in bytes.chunks(self.max_bytes) {
+            let split = part.len().min(self.max_bytes - self.pending.len());
+            self.pending.extend_from_slice(&part[..split]);
+            if self.pending.len() == self.max_bytes {
+                let chunk =
+                    std::mem::replace(&mut self.pending, Vec::with_capacity(self.max_bytes));
+                self.send(chunk).await?;
+            }
+            self.pending.extend_from_slice(&part[split..]);
         }
         Ok(())
     }
@@ -118,9 +123,23 @@ impl StreamingWavPcmDecoder {
             *self = Self::default();
         }
 
+        anyhow::ensure!(
+            bytes.len() <= MAX_PCM_PAYLOAD_BYTES,
+            "decoder input exceeds 2 MiB"
+        );
+        anyhow::ensure!(
+            self.header.len() <= MAX_PCM_PAYLOAD_BYTES - bytes.len(),
+            "decoder workspace exceeds 2 MiB"
+        );
+        anyhow::ensure!(
+            self.header.len() + bytes.len() + usize::from(self.pending_odd.is_some())
+                <= MAX_PCM_PAYLOAD_BYTES,
+            "decoder sample workspace exceeds 2 MiB"
+        );
         let mut pcm = if self.data_started {
             bytes.to_vec()
         } else {
+            self.header.try_reserve_exact(bytes.len())?;
             self.header.extend_from_slice(bytes);
             let Some(data_start) = wav_data_start(&self.header)? else {
                 return Ok(Vec::new());
@@ -184,11 +203,15 @@ pub(super) fn configure_audio_client(
 }
 
 pub fn normalize_embedded_playback_payload(audio: AudioPayload) -> anyhow::Result<AudioPayload> {
+    anyhow::ensure!(
+        audio.data.len() <= MAX_PCM_PAYLOAD_BYTES,
+        "decoder input exceeds 2 MiB"
+    );
     match audio.format {
         AudioFormat::Wav => {
             if let Some((pcm, sample_rate)) = pcm16_from_wav(&audio.data)? {
                 Ok(AudioPayload {
-                    data: pcm16_to_le_bytes(&pcm),
+                    data: audio.data.derived_pcm(pcm16_to_le_bytes(&pcm))?,
                     sample_rate,
                     channels: 1,
                     format: AudioFormat::Pcm16,
@@ -204,7 +227,7 @@ pub fn normalize_embedded_playback_payload(audio: AudioPayload) -> anyhow::Resul
             let pcm = pcm16le_bytes_to_samples(&audio.data)?;
             let mono = downmix_pcm16(&pcm, audio.channels as usize);
             Ok(AudioPayload {
-                data: pcm16_to_le_bytes(&mono),
+                data: audio.data.derived_pcm(pcm16_to_le_bytes(&mono))?,
                 channels: 1,
                 ..audio
             })

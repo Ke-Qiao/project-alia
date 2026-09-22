@@ -844,6 +844,15 @@ where
 
 #[tokio::test]
 async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response() {
+    run_sentence_budget_case(false).await;
+}
+
+#[tokio::test]
+async fn sentence_tts_failure_is_not_committed_as_success_or_replayed() {
+    run_sentence_budget_case(true).await;
+}
+
+async fn run_sentence_budget_case(fail_tts: bool) {
     struct Streaming;
     impl ModuleLifecycle for Streaming {
         fn name(&self) -> &'static str {
@@ -867,6 +876,10 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
     }
     struct Speech {
         calls: std::sync::atomic::AtomicUsize,
+        db: sea_orm::DatabaseConnection,
+        owners: Mutex<Vec<Uuid>>,
+        texts: Mutex<Vec<String>>,
+        fail: bool,
     }
     impl ModuleLifecycle for Speech {
         fn name(&self) -> &'static str {
@@ -875,20 +888,48 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
     }
     #[async_trait]
     impl crate::providers::adapter::TtsAdapter for Speech {
-        async fn synthesize(&self, _: &str) -> anyhow::Result<Vec<u8>> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(vec![0; 400])
-        }
-        async fn synthesize_stream(
+        async fn synthesize_request(
             &self,
-            _: &str,
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
-            panic!("sentence pipeline uses bounded pre-synthesis")
+            request: &crate::providers::adapter::TtsRequest,
+            budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            use sea_orm::ConnectionTrait;
+            let crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id) =
+                budget.owner()
+            else {
+                panic!("sentence TTS must use its real Response budget");
+            };
+            let row = self.db.query_one(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT context_id, source_event_id FROM delivery_responses WHERE response_id=$1",
+                [id.into()],
+            )).await?.expect("Response must be committed before starting TTS");
+            assert!(row.try_get::<Option<Uuid>>("", "context_id")?.is_some());
+            assert!(
+                row.try_get::<Option<Uuid>>("", "source_event_id")?
+                    .is_some()
+            );
+            self.owners.lock().unwrap().push(id);
+            self.texts.lock().unwrap().push(request.text.clone());
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            anyhow::ensure!(!self.fail, "injected bounded TTS failure");
+            budget.copy_from_slice(&[0; 400]).await
+        }
+        async fn synthesize_stream_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            unreachable!("fixture expects buffered synthesis")
         }
     }
     with_linked_fixture(|mut fixture| async move {
         let speech = Arc::new(Speech {
             calls: Default::default(),
+            db: fixture.conversation.db.as_ref().unwrap().clone(),
+            owners: Default::default(),
+            texts: Default::default(),
+            fail: fail_tts,
         });
         let llm = Arc::new(Streaming);
         let modules = Arc::get_mut(&mut fixture.modules).unwrap();
@@ -921,6 +962,22 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
             )
             .await
         });
+        if fail_tts {
+            task.await.unwrap().unwrap();
+            assert_eq!(*speech.texts.lock().unwrap(), [
+                "First sentence.".to_owned(),
+                crate::modules::memory::context::SourceNotice::ProcessingFailedEn.text().to_owned(),
+            ], "only the admitted fixed error notice may follow a failed sentence, never a full-response retry");
+            assert_eq!(speech.calls.load(Ordering::SeqCst), 2);
+            assert!(output.audio.lock().unwrap().is_empty());
+            let owners = speech.owners.lock().unwrap().clone();
+            assert_ne!(owners[0], owners[1], "error notice has its own canonical Response");
+            let id = owners[0];
+            let response = fixture.modules.delivery.get_response(Uuid::from_u128(42), id).await.unwrap();
+            assert_ne!(response.status, crate::modules::delivery::types::ResponseStatus::Committed);
+            assert!(response.final_content.is_none());
+            return;
+        }
         tokio::time::timeout(std::time::Duration::from_secs(3), async {
             while speech.calls.load(Ordering::SeqCst) < 2 {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -942,6 +999,9 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
             .unwrap()
             .unwrap();
         let id: Uuid = row.try_get("", "response_id").unwrap();
+        assert_eq!(*speech.owners.lock().unwrap(), [id, id]);
+        assert!(output.audio.lock().unwrap().iter().filter(|payload| payload.data.owner().is_some())
+            .all(|payload| payload.data.owner() == Some(crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id))));
         let records = fixture
             .modules
             .delivery

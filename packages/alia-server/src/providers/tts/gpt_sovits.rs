@@ -1071,8 +1071,12 @@ impl TtsAdapter for GptSovitsTts {
                     .map_err(|_| anyhow::anyhow!("GPT-SoVITS stream idle timeout after {}s", idle_timeout.as_secs()))?;
                 let Some(chunk) = chunk else { pitch.finish()?; break; };
                 let chunk = chunk?;
-                anyhow::ensure!(chunk.len() <= MAX_ENCODED_PAYLOAD_BYTES, "TTS stream payload exceeds 1 MiB");
-                anyhow::ensure!(chunk.len() <= MAX_TTS_STREAM_BYTES - total, "TTS stream exceeds 8 MiB cumulative bytes");
+                if chunk.len() > MAX_ENCODED_PAYLOAD_BYTES {
+                    Err(anyhow::anyhow!("TTS stream payload exceeds 1 MiB"))?;
+                }
+                if chunk.len() > MAX_TTS_STREAM_BYTES - total {
+                    Err(anyhow::anyhow!("TTS stream exceeds 8 MiB cumulative bytes"))?;
+                }
                 total += chunk.len();
                 let (used, header) = pitch.push(&chunk)?;
                 let header = match header {
@@ -1119,6 +1123,7 @@ impl TtsAdapter for GptSovitsTts {
 
 #[cfg(test)]
 mod tests {
+    mod http;
     use super::*;
     use crate::expression::ProsodyControls;
 
@@ -1241,7 +1246,7 @@ mod tests {
             sample_rate_pitch_fallback_enabled: true,
         };
 
-        apply_pitch_shift_to_wav(&mut wav, prosody);
+        apply_pitch_shift_to_wav(&mut wav, prosody).unwrap();
 
         assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 48_000);
         assert_eq!(u32::from_le_bytes(wav[28..32].try_into().unwrap()), 96_000);
@@ -1264,10 +1269,11 @@ mod tests {
         };
         let mut rewriter = StreamingWavPitchRewriter::new(prosody);
 
-        assert!(rewriter.push(wav[..12].to_vec()).is_empty());
-        let rewritten = rewriter.push(wav[12..].to_vec());
-
-        assert!(!rewritten.is_empty());
+        assert_eq!(rewriter.push(&wav[..12]).unwrap(), (12, None));
+        let (used, rewritten) = rewriter.push(&wav[12..]).unwrap();
+        assert_eq!(used, 24);
+        let rewritten = rewritten.unwrap();
+        rewriter.finish().unwrap();
         assert_eq!(
             u32::from_le_bytes(rewritten[24..28].try_into().unwrap()),
             48_000

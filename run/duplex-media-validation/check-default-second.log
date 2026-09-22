@@ -1,0 +1,14 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+error[E0425]: cannot find value `MAX_RESPONSE_ENCODED_BYTES` in this scope
+   --> packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs:113:56
+    |
+113 |                     assert!(budget.reserved_bytes() <= MAX_RESPONSE_ENCODED_BYTES);
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this constant
+    |
+  2 + use crate::providers::tts::audio_budget::MAX_RESPONSE_ENCODED_BYTES;
+    |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `alia-server` (lib test) due to 1 previous error

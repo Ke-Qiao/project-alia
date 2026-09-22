@@ -1,0 +1,87 @@
+[
+  {
+    "label": "check-default-final",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "alia-server",
+      "--all-targets",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "check-no-default-final",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "alia-server",
+      "--no-default-features",
+      "--all-targets",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "playback-final",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "channels::embedded::playback::tests",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "pipeline-unit-final",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--test",
+      "pipeline",
+      "--test",
+      "embedded_channel",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "error-notice-final",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "channels::pipeline::error_notice::tests",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "sentence-expression-final",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "channels::pipeline::streaming::tests",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0
+  }
+]
