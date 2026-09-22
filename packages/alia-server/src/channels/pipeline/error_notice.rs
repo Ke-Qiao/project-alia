@@ -419,12 +419,20 @@ async fn deliver_voice_error_notice(
         }),
         Some((channel_id, user_id)),
     );
+    let budget =
+        match super::streaming::prepare_audio_budget(modules, target, channel_id, turn).await {
+            Ok(budget) => budget,
+            Err(error) => {
+                tracing::warn!(error=%error, "error TTS has no admitted Response budget");
+                return PipelineErrorDelivery::Failed;
+            }
+        };
     let audio_bytes = match cancellable_stage(
         turn,
         "error_tts",
         modules
             .tts
-            .synthesize_request(&TtsRequest::plain(&notice.tts_text)),
+            .synthesize_request(&TtsRequest::plain(&notice.tts_text), budget),
     )
     .await
     {
@@ -451,7 +459,7 @@ async fn deliver_voice_error_notice(
     };
 
     let audio_out = AudioPayload {
-        data: audio_bytes,
+        data: audio_bytes.into_buffer(),
         sample_rate: 24000,
         channels: 1,
         format: AudioFormat::Wav,
