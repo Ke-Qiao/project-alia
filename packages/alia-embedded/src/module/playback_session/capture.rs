@@ -80,6 +80,28 @@ impl PlaybackSession {
         }
         result
     }
+    /// Close only the Session owned by this actual capture handle. Wire scope
+    /// equality alone cannot authorize cleanup after binding replacement.
+    pub fn close_capture(&self, capture: &CaptureControlBarrier) -> Result<bool> {
+        let mut state = self.lock()?;
+        capture.mark_retired();
+        if !state.as_ref().is_some_and(|active| {
+            active
+                .capture
+                .as_ref()
+                .is_some_and(|owner| owner.same_owner(capture))
+        }) {
+            return Ok(false);
+        }
+        let mut retired = state.take().expect("matching capture owner checked");
+        let body = self
+            .output_fence
+            .as_ref()
+            .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
+        let audio = self.retire(&mut retired, "voice capture owner closed");
+        body.and(audio)?;
+        Ok(true)
+    }
     pub fn retire_capture(&self, capture: &CaptureControlBarrier) -> Result<()> {
         let mut state = self.lock()?;
         capture.mark_retired();
