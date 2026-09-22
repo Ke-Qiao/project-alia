@@ -1,8 +1,8 @@
 # Project Alia 首轮重构计划
 
-更新：2026-09-21。
+更新：2026-09-22。
 
-执行状态：用户因额度要求暂停，三个 subagent 已结束并保存阶段提交。下次直接从[额度暂停检查点](resume-checkpoint-2026-09-20.md)继续；已确认范围和实施授权仍保留，当前不再启动新构建。
+执行状态：用户已恢复额度，要求从 DU01 完成暂停纵向整合并维护 checklist。四份交接及 Git 状态已核对，三个 subagent 已恢复分工；当前执行入口为[暂停整合 checklist](checklists/duplex-integration.md)，[额度检查点](resume-checkpoint-2026-09-20.md)保留历史暂停状态。
 
 状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时、音频/Text Delivery、签名 D3、ContextLease、派生缓存和持久政策已提交。Memory 实际向量身份、后端播放参考和独立时钟已验证；Appraisal/Relationship 来源、失效重建与派生 Memory 完整根已整合提交为 `8c3f545`，证据见[构建记录](progress.md)。可恢复暂停的 Core/Embedded Stage 1 已提交为 `213d5ed`，主分支整合为 `e6ba75b`；下一包接通新协议、原 Response 控制账本、语音决策和生产背压，之后继续 Companion、AEC 与真实硬件验收。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
 
