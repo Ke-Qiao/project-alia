@@ -12,9 +12,11 @@ PostgreSQL 定向验收；完整 Server/Embedded 可恢复播放仍由纵向整�
 原 Context、Server instance 和 native backend；登记允许早于首次 AudioDelivery。
 另一个 Response 占用同 scope 返回 typed `Conflict`，不能改签原绑定。
 
-登记截止时间固定为 Response 创建后 120 秒与已有 audio observation deadline 的
-较早值。新控制每次取得 Delivery 锁后还会读取后加入音频的真实观察期限；
+登记截止时间起始为 Response 创建后 120 秒与已有 audio observation deadline 的
+较早值。新控制每次取得 Delivery 锁后还会读取后加入音频的真实观察期限，并在同一
+事务中将 scope 截止时间仅向小收紧；Resume 释放 hold 后该硬期限仍保留。
 Pause/Confirm/Resume 的许可不能超过该期限，重试不延长原登记或原 hold。
+单个 hold 的 60 秒上限不缩短无额外音频期限的 120 秒 scope 上限。
 仍为 pending/sending/observing 的音频 owner 必须维持有效租约；其过期后拒绝新控制。
 已终结的 Submitted/Completed 前缀不要求续租，迟到规范媒体事实仍能记录。
 默认 hold 为 60 秒、硬上限 120 秒；这些数值仍是工程默认，并非用户确认的产品值。

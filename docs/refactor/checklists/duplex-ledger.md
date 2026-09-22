@@ -18,6 +18,8 @@
 - [x] Pause/ConfirmExplicitWait/Resume 分开，序号连续且最多 32；Confirm/Resume 不延长原 hold。
 - [x] 注册之后加入的 AudioDelivery 观察截止时间限制新控制许可；到期后拒绝新 Resume，
   既有规范媒体事实不变，登记重试不刷新原 lifetime。
+- [x] 后加入音频的硬期限在接纳事务中持久收紧 scope，成功 Resume 后仍保留；
+  单个 60 秒 hold 不压缩无额外音频期限的 120 秒 scope。
 - [x] 活跃 pending/sending/observing 的原 audio owner 租约到期时拒绝新控制；
   已提交终态不受过往 writer 租约阻断，原规范晚事实仍能记录。单项真实 red→green。
 - [x] 完整原 Context 根在新控制事务中验证；privacy/policy、真实 Appraisal/relationship 根、
@@ -51,6 +53,12 @@
   `pg-owner-lease-red.log`，0 pass / 1 fail，exit 101；原active owner失效问题真实复现。
 - [x] 完整目标同命令（不带单项filter）：`pg-final.log`，**13 pass / 0 fail / 0 ignored**，
   exit 0，测试体 3.94 秒，总耗时 15.07 秒。此前候选结果保留，不累计为最终统计。
+- [x] 纵向整合补充：`cargo test -p alia-server --test output_control
+  later_audio_deadline_limits_new_pause_and_resume_without_refreshing_binding -- --exact --nocapture`，
+  `pg-scope-deadline.log`，1 pass，exit 0，0.38 秒；随后完整 `--locked` 目标
+  `pg-scope-deadline-full.log`，13 pass / 0 fail / 0 ignored，exit 0，3.82 秒。
+  本次只收紧真实 scope 硬期限，保留原 hold 和命令身份；补充清单位于
+  `scope-deadline-result.json`，不覆盖首包的固定 manifest。
 - [x] 默认 `cargo check -p alia-server --all-targets --locked`：
   `check-final-default.log`，exit 0，24.76 秒。
 - [x] 无默认特性 `cargo check -p alia-server --all-targets --locked --no-default-features`：
