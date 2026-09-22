@@ -1,58 +1,57 @@
-# Output control ledger — WIP, 2026-09-20
+# 原输出的持久控制账本 — 2026-09-22
 
-This isolated package is based on `8c3f5450fcedfe250cba7936de6fcdf8076c7040`.
-It depends on the concurrent Core output-control contract; that temporary Core
-overlay is deliberately excluded from the ledger commit. Do not deploy or merge
-this package as a completed feature. Runtime control and transport integration
-remain owned by the parent task.
+账本工作树从 `76f5b04` 继续，原基线为 `8c3f545`。SQL 组件已完成真实
+PostgreSQL 定向验收；完整 Server/Embedded 可恢复播放仍由纵向整合包验收。
+文件名保留旧 WIP 路径，便于此前检查点和交接记录继续定位。
+详细条目与证据见 [账本 checklist](checklists/duplex-ledger.md)。
 
-The implementation adds migration `000013` and `delivery::repository::control`
-methods on the existing `DeliveryRepository`. A prepared canonical Response
-registers one immutable voice scope, Context, server instance and native backend.
-The registration deadline is fixed to the earlier of Response creation plus
-120 seconds and the observation deadlines of audio deliveries already present.
-Registration may precede the first audio reservation. The default hold is
-60 seconds and the Core contract caps it at 120 seconds.
+## 持久契约
 
-New Pause, explicit-wait confirmation and Resume intents pass the original
-Context validator before Response, control and Delivery locks. A positively
-acknowledged first transaction is the only source of a non-cloneable
-`ControlPermit`. Duplicate identity, lookup and recovery yield facts only.
-An uncertain commit reports the original binding and command ID; it never grants
-a new send. Process recovery retires only expired scopes and does not steal a
-different live instance's output.
+新增迁移 `000013` 和 `delivery::repository::control`，复用
+`DeliveryRepository`。规范 Response 已 prepare 后，才可登记唯一 voice scope、
+原 Context、Server instance 和 native backend；登记允许早于首次 AudioDelivery。
+另一个 Response 占用同 scope 返回 typed `Conflict`，不能改签原绑定。
 
-Two tables retain at most 32 commands and 65 receipt slots: each command's first
-and latest receipt plus the scope's latest receipt. Original outcomes are fixed;
-only higher observation sequences can advance the current snapshot. A late
-unknown command can acquire its original outcome without rewinding that
-snapshot. Repeated Observe does not append audit events. Locally retired scopes
-stay retired even when later device facts describe an earlier running output.
-Media progress in control receipts is evidence only and never changes canonical
-Delivery progress, assistant history or PCM dispatch.
+登记截止时间固定为 Response 创建后 120 秒与已有 audio observation deadline 的
+较早值。新控制每次取得 Delivery 锁后还会读取后加入音频的真实观察期限；
+Pause/Confirm/Resume 的许可不能超过该期限，重试不延长原登记或原 hold。
+仍为 pending/sending/observing 的音频 owner 必须维持有效租约；其过期后拒绝新控制。
+已终结的 Submitted/Completed 前缀不要求续租，迟到规范媒体事实仍能记录。
+默认 hold 为 60 秒、硬上限 120 秒；这些数值仍是工程默认，并非用户确认的产品值。
+运行时必须遵守 `ControlPermit.deadline_at()`，不能用较晚的 scope 登记上限替代它。
 
-Validation completed with the temporary Core-only overlay:
+所有新控制走原 Context 完整门，锁顺序为 policy → active account → privacy →
+relationship → canonical evidence → Response → control → Delivery。原政策、来源、
+Memory revision/private/expiry、关系来源根或 cancel/owner 失效均不能换用新 Context
+继续。只有首次事务明确提交成功才返回不可 Clone 的 `ControlPermit`。
+`Existing`、查询和 `CommitUnknown` 均只允许核对事实，不授权重发命令。
+网络工作不在 SQL 事务中执行。
 
-- `cargo check -p alia-server --all-targets --locked`: exit 0.
-- `cargo test -p alia-server --test output_control --no-run --locked`: exit 0;
-  the independent target contains 9 PostgreSQL tests, none executed yet.
-- `git diff --check`: exit 0.
+两张表每 scope 最多 32 条命令。每 command 保留 first/latest 回执，加 scope latest，
+最多 65 份。首次 outcome 固定，与设备当前 snapshot 分开；当前 snapshot 只接收更高
+observation sequence，且 command watermark 不得超过 SQL 中实际已接纳序号。
+迟到的 Unknown 命令仍可保存原 outcome，但不能覆盖更新的当前 snapshot。
+已淘汰的旧观察返回 `Stale`，不伪称已证明相等；普通 Observe 不追加审计事件。
 
-The initial full Core+Proto overlay check failed (exit 101) because Server
-transport fixtures and constructors have not adopted the concurrent protocol
-fields/methods. No production transport files were changed to hide that mismatch.
+取消、永久退休、设备晚事实不依赖旧 Context 仍有效。恢复仅退休真实已过期的 scope，
+不能把“非本 instance”视作死亡，也不接管旧 PCM。本地 Retired 不因迟到 Running
+事实复活。控制回执里的 media progress 只保存原事实，不改写规范 Delivery 进度、
+assistant history 或音频 dispatch。
 
-Before integration, run the 9 tests against the task's isolated PostgreSQL with
-random-schema cleanup. They cover concurrent admission, immutable binding,
-hold/capacity bounds, retained receipt semantics, actual SQL authority barriers,
-recovery, audit rollback and an actual PostgreSQL COMMIT acknowledgement drop.
-The complete command logs, source hashes, overlay files and handoff are preserved
-under `run/duplex-control-ledger-handoff/` in this worktree.
+## 验证边界
 
-Pending review must include audio observation deadlines created after initial
-registration (the current admission path does not yet reject a later Delivery
-deadline that has expired), and whether a device snapshot's command watermark
-must be bounded by the ledger's admitted sequence. The current Context/SQL
-locking and revocation tests are compiled assertions, not verified results.
-No PostgreSQL schema, task database or container was created or modified by this
-package's validation run.
+2026-09-22 原 9 项首跑为 7 通过、2 失败：关系用例缺少真实 Appraisal 来源根，反向
+policy 用例在制造竞争前错误地调用需取更新锁的 `current()`。两处夹具修正后原 9 项
+通过。新增的观察期限、watermark 和 scope 冲突 3 项均先在旧生产代码失败，再随
+对应生产修复通过。随后实际复现并修正了 active audio owner 租约过期仍可 Resume
+的问题；最终目标为 13 通过、0 失败、0 ignored，测试体 3.94 秒。
+
+验证包括真实 COMMIT ACK 丢失、原 hold/容量上限、审计失败整事务回滚，以及实际
+`AliaMemory.clear`、`ContextService.clear_relationship`、政策 CAS 和
+`DeliveryRepository.request_cancel` 与 Resume 的双事务锁屏障。每例随机 schema，
+隔离清理；不操作用户 5433、历史 schema 或其他容器。
+
+独立编译使用先前保留的 Core-only 临时覆盖，共 6 个路径；覆盖清单与哈希单独保存，
+不混入账本提交。完整新版 Proto 与运行时 owner 尚待主代理组合验证，不能把这里的
+SQL/静态检查当作两端端到端播放验收。日志与失败候选保存在工作树
+`run/validation-output-control-20260922/`。

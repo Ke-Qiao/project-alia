@@ -16,6 +16,16 @@ use alia_server::modules::delivery::{
     repository::{DeliveryRepository, control::*},
     types::*,
 };
+use alia_server::{
+    config::{MemorySection, ServerConfig},
+    expression::ExpressionRuntime,
+    module::ModuleLifecycle,
+    modules::memory::{
+        context::{ContextEvidence, ContextSource},
+        source::capture_source_epochs,
+    },
+    providers::{adapter::MemoryBackend, memory::AliaMemory},
+};
 use delivery_support::*;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait};
 use serde_json::{Value, json};
@@ -37,6 +47,12 @@ async fn registration(f: &Fixture) -> OutputRegistration {
     let scope = identity().scope;
     response.content["voice_scope"] = json!(scope);
     let response = f.repo().prepare(response).await.unwrap();
+    registration_for(response, scope)
+}
+fn registration_for(
+    response: ResponseRecord,
+    scope: alia_core::delivery::VoiceScope,
+) -> OutputRegistration {
     OutputRegistration {
         binding: OutputBinding {
             scope,
@@ -52,6 +68,80 @@ async fn registration(f: &Fixture) -> OutputRegistration {
         },
         maximum_hold_ms: DEFAULT_CONTROL_HOLD_MS,
     }
+}
+async fn relationship_registration(f: &Fixture) -> OutputRegistration {
+    let service = f.context();
+    let stamps = capture_source_epochs(&f.db, f.user).await.unwrap();
+    let session = Uuid::new_v4();
+    let event = Uuid::new_v4();
+    f.db.execute(sql(
+        "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'test-device',$2)",
+        vec![session.into(), f.user.to_string().into()],
+    ))
+    .await
+    .unwrap();
+    let source_time = f.db.query_one(sql("INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user','thank you answer source',clock_timestamp(),$4,$5) RETURNING source_received_at",vec![event.into(),session.into(),f.user.to_string().into(),stamps.privacy_epoch.into(),stamps.relationship_epoch.into()])).await.unwrap().unwrap().try_get("","source_received_at").unwrap();
+    let source = ContextSource {
+        owner_id: f.user,
+        request_id: Uuid::new_v4(),
+        channel_id: "test-device".into(),
+        conversation_id: Some(session),
+        source_event_id: Some(event),
+        source_received_at: source_time,
+        source_privacy_epoch: stamps.privacy_epoch,
+    };
+    let generation = service
+        .materialize(source.clone(), "thank you answer source")
+        .await
+        .unwrap();
+    let config = ServerConfig::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/server.example.toml"),
+    )
+    .unwrap();
+    let runtime = ExpressionRuntime::from_config(&config);
+    runtime.attach_db(f.db.clone()).await.unwrap();
+    let observed = runtime.observe_context_user(&service, &generation).await;
+    let shutdown = runtime.shutdown().await;
+    observed.unwrap();
+    shutdown.unwrap();
+    let projected = service.extend_affect(&generation).await.unwrap();
+    assert!(
+        projected
+            .lease()
+            .dependencies()
+            .iter()
+            .any(|root| matches!(root, ContextEvidence::Appraisal { .. })),
+        "relationship fixture must contain a canonical judgment"
+    );
+    assert!(
+        projected
+            .lease()
+            .dependencies()
+            .iter()
+            .any(|root| matches!(root, ContextEvidence::Relationship { .. })),
+        "relationship fixture must pin the relationship epoch"
+    );
+    let scope = identity().scope;
+    let response = f
+        .repo()
+        .prepare(NewResponse {
+            key: ResponseKey {
+                user_id: f.user,
+                request_id: source.request_id,
+                output_key: "answer".into(),
+            },
+            context_id: projected.lease().id(),
+            conversation_id: source.conversation_id,
+            source_event_id: source.source_event_id,
+            source_received_at: source.source_received_at,
+            source_privacy_epoch: Some(source.source_privacy_epoch),
+            channel_id: source.channel_id,
+            kind: "conversation".into(),
+            content: json!({"voice_scope":scope,"intent":"thank you answer source"}),
+        })
+        .await
+        .unwrap();
+    registration_for(response, scope)
 }
 fn pause(reg: &OutputRegistration, sequence: u64) -> BoundControlCommand {
     BoundControlCommand {
@@ -422,7 +512,11 @@ async fn resume_waits_for_committing_revocation_and_never_refreshes_original_con
         with_db(|f|async move {
             let root=Uuid::new_v4();
             f.db.execute(sql("INSERT INTO memory_items(id,tenant_id,user_id,kind,scope,memory_layer,node_type,content) VALUES($1,$2,$3,'semantic','user','core','fact','answer source')",vec![root.into(),Uuid::nil().into(),f.user.into()])).await.unwrap();
-            let (reg,pause)=held(&f).await;
+            let (reg,pause)=if kind=="relationship" {
+                let reg=relationship_registration(&f).await;
+                f.repo().register_control(f.user,reg.clone()).await.unwrap();
+                let pause=pause(&reg,1);admitted(&f,&pause).await;(reg,pause)
+            } else { held(&f).await };
             let roots:Value=f.db.query_one(sql("SELECT dependencies FROM context_leases WHERE context_id=$1",vec![reg.binding.context_id.into()])).await.unwrap().unwrap().try_get("","dependencies").unwrap();
             assert!(roots.to_string().contains(&root.to_string()),"fixture must pin the actual Memory root");
             let tx=f.db.begin().await.unwrap();
@@ -452,8 +546,19 @@ async fn resume_waits_for_committing_revocation_and_never_refreshes_original_con
 
 #[tokio::test]
 async fn resume_authority_locks_are_held_until_the_intent_commit() {
-    with_db(|f|async move {
-        let (reg,pause)=held(&f).await;
+    for kind in ["policy", "memory_clear", "relationship_clear", "cancel"] {
+        with_db(|f|async move {
+        let memory=Arc::new(AliaMemory::new());
+        memory.attach_runtime_for_test(f.db.clone(),None,MemorySection::default()).await.unwrap();
+        let (reg,pause)=if kind=="relationship_clear" {
+            let reg=relationship_registration(&f).await;
+            f.repo().register_control(f.user,reg.clone()).await.unwrap();
+            let pause=pause(&reg,1);admitted(&f,&pause).await;(reg,pause)
+        } else { held(&f).await };
+        // current() also takes an update lock for timed policy resume. Read it
+        // before the competing admission, and make a real policy change.
+        let service=f.context();let policy=service.policy_store();let mut current=policy.current().await.unwrap();
+        current.policy.max_history_messages+=1;
         let key=56781023i64;
         f.sql(&format!("CREATE FUNCTION hold_control_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN NEW; END $$; CREATE TRIGGER hold_control_insert BEFORE INSERT ON output_control_commands FOR EACH ROW EXECUTE FUNCTION hold_control_insert();")).await;
         let barrier=f.db.begin().await.unwrap();barrier.execute(sql("SELECT pg_advisory_xact_lock($1)",vec![key.into()])).await.unwrap();
@@ -461,14 +566,26 @@ async fn resume_authority_locks_are_held_until_the_intent_commit() {
         let repo=f.repo();let owner=f.user;let command=resume(&pause,2);let task=tokio::spawn(async move{repo.admit_control(owner,command.binding.server_instance_id,&command).await});
         wait_blocked_by(&f,barrier_pid).await;
         let resume_pid:i32=f.db.query_one(sql("SELECT pid FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) LIMIT 1",vec![barrier_pid.into()])).await.unwrap().unwrap().try_get("","pid").unwrap();
-        let service=f.context();let policy=service.policy_store();let current=policy.current().await.unwrap();
-        let revoke=tokio::spawn(async move{policy.replace(current.version,current.policy).await});
+        let clearing=memory.clone();let response_id=reg.binding.response_id;let cancel_repo=f.repo();
+        let revoke=tokio::spawn(async move{
+            match kind {
+                "policy"=>policy.replace(current.version,current.policy).await.map(|_|()),
+                "memory_clear"=>clearing.clear(owner).await.map(|_|()),
+                "relationship_clear"=>service.clear_relationship(owner,Uuid::new_v4(),0).await.map(|_|()),
+                _=>cancel_repo.request_cancel(owner,response_id,"cancel racing with Resume").await.map(|_|()).map_err(Into::into),
+            }
+        });
         wait_blocked_by(&f,resume_pid).await;
         barrier.commit().await.unwrap();
         assert!(matches!(task.await.unwrap().unwrap(),ControlAdmission::Fresh(_)));
         revoke.await.unwrap().unwrap();
+        memory.stop().await.unwrap();
         assert!(f.repo().admit_control(f.user,reg.binding.server_instance_id,&self::pause(&reg,3)).await.is_err());
+        // The earlier Resume was admitted before revocation. Its late real
+        // outcome can still be saved, but it creates no replacement authority.
+        f.repo().record_control(&observed(&pause,1,2,ControlPhase::Running)).await.unwrap();
     }).await;
+    }
 }
 
 #[tokio::test]
@@ -499,6 +616,129 @@ async fn control_intent_and_first_outcome_roll_back_with_their_audit() {
         assert!(f.repo().record_control(&observed(&command,1,1,ControlPhase::Held)).await.is_err());
         let view=f.repo().query_control(f.user,&reg.binding).await.unwrap();assert_eq!(view.commands[0].status,ControlCommandStatus::Unknown);assert!(view.commands[0].first_receipt.is_none());assert!(view.scope.latest_receipt.is_none());
     }).await;
+}
+
+#[tokio::test]
+async fn later_audio_deadline_limits_new_pause_and_resume_without_refreshing_binding() {
+    with_db(|f| async move {
+        let reg = registration(&f).await;
+        let registered = f.repo().register_control(f.user, reg.clone()).await.unwrap();
+        let delivery = f.repo().prepare_delivery(f.user,NewDelivery {
+            response_id:reg.binding.response_id,output_key:"late-audio:0".into(),content:json!({"text":"hello"}),
+            identity:Some(alia_core::delivery::PlaybackIdentity{scope:reg.binding.scope,..identity()}),owner_id:reg.binding.server_instance_id,
+        }).await.unwrap();
+        let dispatch = f.repo().dispatch(f.user,delivery.delivery_id,reg.binding.server_instance_id).await.unwrap().unwrap();
+        f.repo().start(&dispatch,24000,1).await.unwrap();
+        // Tighten the real persisted observation bound without sleeping or
+        // pretending that reservation and native observation are the same thing.
+        let audio_deadline:chrono::DateTime<chrono::Utc> = f.db.query_one(sql("UPDATE deliveries SET observation_deadline_at=clock_timestamp()+interval '20 seconds' WHERE delivery_id=$1 RETURNING observation_deadline_at",vec![delivery.delivery_id.into()])).await.unwrap().unwrap().try_get("","observation_deadline_at").unwrap();
+        let command = pause(&reg,1);
+        assert_eq!(admitted(&f,&command).await.deadline_at(),audio_deadline);
+        assert_eq!(admitted(&f,&resume(&command,2)).await.deadline_at(),audio_deadline);
+        f.sql(&format!("UPDATE deliveries SET observation_deadline_at=clock_timestamp()-interval '1 second' WHERE delivery_id='{}'",delivery.delivery_id)).await;
+        assert!(matches!(f.repo().admit_control(f.user,reg.binding.server_instance_id,&resume(&command,3)).await,Err(ControlLedgerError::Revoked(_))));
+        assert_eq!(f.repo().register_control(f.user,reg.clone()).await.unwrap().deadline_at,registered.deadline_at,"registration is immutable, not renewed by a retry");
+        let view=f.repo().query_control(f.user,&reg.binding).await.unwrap();
+        assert_eq!(view.commands.len(),2);
+        assert_eq!(f.repo().get(f.user,delivery.delivery_id).await.unwrap().status,DeliveryStatus::Sending,"control does not redispatch or change canonical media facts");
+    }).await;
+}
+
+#[tokio::test]
+async fn snapshot_cannot_claim_a_command_sequence_never_admitted_by_the_owner() {
+    with_db(|f| async move {
+        let (reg, command) = held(&f).await;
+        let ahead = observed(&command, 1, 2, ControlPhase::Held);
+        assert!(matches!(
+            f.repo().record_control(&ahead).await,
+            Err(ControlLedgerError::Invalid(_))
+        ));
+        let view = f.repo().query_control(f.user, &reg.binding).await.unwrap();
+        assert!(view.scope.latest_receipt.is_none());
+        assert!(view.commands[0].first_receipt.is_none());
+        f.repo()
+            .record_control(&observed(&command, 1, 1, ControlPhase::Held))
+            .await
+            .unwrap();
+        f.repo()
+            .retire_control(
+                f.user,
+                reg.binding.server_instance_id,
+                &reg.binding,
+                "owner stopped",
+            )
+            .await
+            .unwrap();
+        let mut late = observed(&command, 2, 1, ControlPhase::Held);
+        late.receipt.snapshot.remaining_ms = Some(29000);
+        assert_eq!(
+            f.repo().record_control(&late).await.unwrap().scope.status,
+            OutputControlStatus::Retired
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn expired_active_audio_owner_cannot_resume_but_late_submission_stays_recordable() {
+    with_db(|f| async move {
+        let (reg, pause) = held(&f).await;
+        let identity = alia_core::delivery::PlaybackIdentity { scope:reg.binding.scope,..identity() };
+        let audio = f.repo().prepare_delivery(f.user,NewDelivery {
+            response_id:reg.binding.response_id,output_key:"owner-lease:0".into(),content:json!({"text":"hello"}),identity:Some(identity),owner_id:reg.binding.server_instance_id,
+        }).await.unwrap();
+        let permit=f.repo().dispatch(f.user,audio.delivery_id,reg.binding.server_instance_id).await.unwrap().unwrap();
+        f.repo().start(&permit,24000,1).await.unwrap();f.repo().offered(&permit,4).await.unwrap();
+        f.sql(&format!("UPDATE deliveries SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE delivery_id='{}'",audio.delivery_id)).await;
+        let command=resume(&pause,2);
+        assert!(matches!(f.repo().admit_control(f.user,reg.binding.server_instance_id,&command).await,Err(ControlLedgerError::Revoked(_))));
+        assert_eq!(f.count("output_control_commands").await,1);
+        // Expiring an active writer's permission does not revoke real late facts,
+        // and a terminal submitted prefix is no longer a live writer lease.
+        let mut progress=receipt(identity,1,4);
+        progress.end_accepted=true;progress.submitted_source_frames=Some(4);
+        progress.backend=Some(reg.backend.clone());
+        progress.observation_end=Some(alia_core::delivery::ObservationEnd::SubmissionFinished);
+        assert_eq!(f.repo().progress(&permit,progress).await.unwrap().status,DeliveryStatus::Submitted);
+        admitted(&f,&command).await;
+    }).await;
+}
+
+#[tokio::test]
+async fn same_scope_with_another_canonical_response_returns_typed_conflict() {
+    with_db(|f| async move {
+        let reg = registration(&f).await;
+        f.repo()
+            .register_control(f.user, reg.clone())
+            .await
+            .unwrap();
+        let mut input = f.response().await;
+        input.content["voice_scope"] = json!(reg.binding.scope);
+        let response = f.repo().prepare(input).await.unwrap();
+        let other = OutputRegistration {
+            binding: OutputBinding {
+                response_id: response.response_id,
+                context_id: response.context_id.unwrap(),
+                ..reg.binding
+            },
+            ..reg.clone()
+        };
+        assert!(matches!(
+            f.repo().register_control(f.user, other).await,
+            Err(ControlLedgerError::Conflict)
+        ));
+        assert_eq!(f.count("output_control_scopes").await, 1);
+        assert_eq!(
+            f.repo()
+                .query_control(f.user, &reg.binding)
+                .await
+                .unwrap()
+                .scope
+                .registration,
+            reg
+        );
+    })
+    .await;
 }
 
 struct CommitAckProxy {

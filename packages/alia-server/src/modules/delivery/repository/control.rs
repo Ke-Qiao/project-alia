@@ -140,15 +140,15 @@ impl DeliveryRepository {
             let response = validate_response_source(&tx, owner, binding.response_id).await?;
             validate_response_binding(&response, &binding)?;
             let deliveries = scope_deliveries(&tx, &binding).await?;
-            validate_deliveries(&deliveries, &registration)?;
-            let mut deadline = response.created_at + chrono::Duration::milliseconds(MAX_HOLD_MS as i64);
-            for delivery in &deliveries {
-                if let Some(original) = delivery.observation_deadline_at { deadline = deadline.min(original); }
-            }
-            if deadline <= database_now(&tx).await? { return Err(revoked("original output lifetime expired")); }
+            let now = database_now(&tx).await?;
+            validate_deliveries(&deliveries, &registration, now)?;
+            let deadline = observation_deadline(&deliveries, response.created_at + chrono::Duration::milliseconds(MAX_HOLD_MS as i64));
+            if deadline <= now { return Err(revoked("original output lifetime expired")); }
             let digest = registration_digest(&registration)?;
             let inserted = tx.execute(stmt("INSERT INTO output_control_scopes(response_id,owner_id,device_boot_id,session_id,generation_epoch,registration,registration_digest,deadline_at) VALUES($1,$2,$3,$4,$5::text::numeric,$6,$7,$8) ON CONFLICT DO NOTHING", vec![binding.response_id.into(),owner.into(),binding.scope.device_boot_id.into(),binding.scope.session_id.into(),binding.scope.generation_epoch.to_string().into(),serde_json::to_value(&registration)?.into(),digest.into(),deadline.into()])).await?.rows_affected();
-            let old = required_scope(&tx, binding.response_id, true).await?;
+            // A different Response may already own this VoiceScope. The unique
+            // constraint serializes that race without rebinding its canonical row.
+            let old = scope_row(&tx, binding.response_id, true).await?.ok_or(ControlLedgerError::Conflict)?;
             same_registration(&old, owner, &registration)?;
             if inserted > 0 { audit(&tx, binding.response_id, None, "control_registered", json!({"registration":registration,"deadline_at":deadline})).await?; }
             tx.commit().await.map_err(|_| unknown(Some(binding), None))?;
@@ -190,22 +190,27 @@ impl DeliveryRepository {
                 tx.commit().await.map_err(|_| unknown(Some(binding), Some(command_id)))?;
                 return Ok(ControlAdmission::Existing(old));
             }
-            let now = database_now(&tx).await?;
-            if scope.status != OutputControlStatus::Active || scope.deadline_at <= now { return Err(revoked("original output retired or expired")); }
+            if scope.status != OutputControlStatus::Active { return Err(revoked("original output retired")); }
             if scope.last_command_sequence >= MAX_CONTROL_COMMANDS as u64 { return Err(ControlLedgerError::Capacity); }
             if command.command.sequence != scope.last_command_sequence + 1 { return Err(ControlLedgerError::Invalid("control sequence must be the next original sequence".into())); }
             let deliveries = scope_deliveries(&tx, &binding).await?;
-            validate_deliveries(&deliveries, &scope.registration)?;
+            // Registration can precede Start. Later real audio observations may
+            // shorten authority, but can never extend the registered lifetime.
+            // Sample the clock after acquiring Delivery locks, not before a wait.
+            let output_deadline = observation_deadline(&deliveries, scope.deadline_at);
+            let now = database_now(&tx).await?;
+            validate_deliveries(&deliveries, &scope.registration, now)?;
+            if output_deadline <= now { return Err(revoked("original audio observation lifetime expired")); }
             let originals = command_rows(&tx, binding.response_id).await?;
             let deadline = match command.command.action {
                 ControlAction::Pause { budget_ms, .. } => {
                     if budget_ms > scope.registration.maximum_hold_ms { return Err(ControlLedgerError::Invalid("hold exceeds original registration budget".into())); }
                     if originals.iter().any(|old| old.command.command.hold_id == command.command.hold_id) { return Err(ControlLedgerError::Conflict); }
-                    scope.deadline_at.min(now + chrono::Duration::milliseconds(budget_ms as i64))
+                    output_deadline.min(now + chrono::Duration::milliseconds(budget_ms as i64))
                 }
                 ControlAction::Resume { .. } | ControlAction::ConfirmExplicitWait { .. } => {
                     originals.iter().find(|old| old.command.command.hold_id == command.command.hold_id && matches!(old.command.command.action, ControlAction::Pause { .. }))
-                        .ok_or_else(|| revoked("hold has no original Pause intent"))?.deadline_at.min(scope.deadline_at)
+                        .ok_or_else(|| revoked("hold has no original Pause intent"))?.deadline_at.min(output_deadline)
                 }
             };
             if deadline <= now { return Err(revoked("original hold expired")); }
@@ -250,6 +255,9 @@ impl DeliveryRepository {
             receipt.validate(command).map_err(invalid)?;
             let tx = control_transaction(self).await?;
             let (scope, old) = lock_original_command(&tx,command).await?;
+            if receipt.receipt.snapshot.sequence > scope.last_command_sequence {
+                return Err(invalid("snapshot exceeds the original owner's admitted command watermark"));
+            }
             let records = command_rows(&tx,binding.response_id).await?;
             let retained = scope.latest_receipt.iter().chain(records.iter().flat_map(|r| r.first_receipt.iter().chain(r.latest_receipt.iter())));
             let mut duplicate = false;
@@ -537,12 +545,16 @@ async fn scope_deliveries(
 fn validate_deliveries(
     deliveries: &[DeliveryRecord],
     registration: &OutputRegistration,
+    now: DateTime<Utc>,
 ) -> ControlLedgerResult<()> {
     for delivery in deliveries {
         if delivery
             .identity
             .is_none_or(|identity| identity.scope != registration.binding.scope)
             || delivery.owner_id != registration.binding.server_instance_id
+            // An active media writer must still own its original lease. A
+            // terminal submitted prefix has facts, not a renewable writer lease.
+            || (!delivery.status.is_terminal() && delivery.lease_expires_at <= now)
             || delivery.cancel_requested
             || matches!(
                 delivery.status,
@@ -560,6 +572,12 @@ fn validate_deliveries(
         }
     }
     Ok(())
+}
+fn observation_deadline(deliveries: &[DeliveryRecord], original: DateTime<Utc>) -> DateTime<Utc> {
+    deliveries
+        .iter()
+        .filter_map(|delivery| delivery.observation_deadline_at)
+        .fold(original, DateTime::min)
 }
 async fn lock_original_command(
     tx: &DatabaseTransaction,
