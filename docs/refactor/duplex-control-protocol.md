@@ -34,3 +34,9 @@ voice v2 的 `TurnEvidence.output_decision` 区分 Unchanged、PauseRequested、
 完整命令、退出码、耗时在本工作树 `run/duplex-control-validation/results.json`，各目标日志同目录；详细恢复顺序、源码摘要、未完成事项在 `run/duplex-control-handoff/HANDOFF.md`。初期编译失败仅为新协议测试字段/语法接线，后续均已修复并保留原日志。最终整库测试之后仅对 Core `lib.rs` 的两个 `pub mod` 声明排序，另复跑 Core/Proto；测试前后 manifest 均保存。
 
 尚未执行本包的 Server 编译/集成、完整 workspace、Linux ARM64、真实声卡/Pi 5、AEC、声学连续性或 native pause 验收。必须由后续包把原 Response/Context 来源、政策/epoch 撤权、持久命令身份与原 Delivery dispatch owner 接通后，才能声明端到端恢复。
+
+## 2026-09-22：Ready / 原 Binding 竞争修复
+
+在 `2619a28` 基础上新增原 Binding 的进程内寿命身份；相同持久配置重载也使旧握手失效。Ready 与每条 Evidence 在 Binding 读锁内核验原身份并同步接纳，遵守 Binding → Session → backend；endpoint 取自同一原始快照，网络与密钥读取在锁外。旧连接退出只关闭自己实际拥有的 capture handle，不能凭相同 wire UUID 关闭新绑定下的 scope。协议版本与 wire 字段不变。
+
+签名绑定故障用例先取得 4 项真实 red，修复后 8 项定向用例通过，其中 3 项为实际 TCP/gRPC loopback，并有确定性同步接纳/撤权锁序验证。Embedded 默认与无默认库测试各 153/153 通过，两种 all-targets 检查通过；默认配置使用真实锁定 Sherpa archive。源码提交为 `7bea32152059cce68a2bde89dc79614713d183e8`。完整命令、摘要、结果与未完成边界见 [协议检查表](checklists/duplex-protocol.md)。此修复不构成 Server 纵向启用或硬件暂停验收。

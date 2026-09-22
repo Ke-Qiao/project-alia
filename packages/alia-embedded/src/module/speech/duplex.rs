@@ -26,7 +26,7 @@ use super::super::traits::{VoiceActivityEngine, VoiceActivityState, WakeWordEngi
 use super::transport::{
     IngressAuth, attach_ingress_auth, ingress_auth, pcm16_to_le_bytes, voice_connection,
 };
-use crate::binding::BindingManager;
+use crate::binding::{BindingData, BindingManager};
 use crate::config::SpeechConfig;
 
 const SAMPLE_RATE: u32 = 16000;
@@ -174,21 +174,17 @@ impl Runtime {
         let task = tokio::spawn(async move {
             let exchange = async {
                 let original = binding.status().await;
-                let (endpoint, auth) =
-                    voice_connection(&binding, &device_id, &keypair_path).await?;
+                let (endpoint, auth) = voice_connection(&original, &device_id, &keypair_path)?;
                 // Binding has no change subscription yet. Check immediately and
                 // every 250 ms without involving the real-time audio consumer.
                 let binding_changed = async {
                     let mut interval = tokio::time::interval(Duration::from_millis(250));
                     loop {
                         interval.tick().await;
-                        let current = binding.status().await;
-                        if !(current.state == crate::binding::BindingState::Bound
-                            && current.server_id == original.server_id
-                            && current.server_endpoint == original.server_endpoint
-                            && current.server_public_key == original.server_public_key
-                            && current.bound_since == original.bound_since
-                            && current.dev_skip_auth == original.dev_skip_auth)
+                        if binding
+                            .with_current_binding(&original, || Ok(()))
+                            .await
+                            .is_err()
                         {
                             break Err(anyhow::anyhow!("binding changed during voice session"));
                         }
@@ -197,7 +193,7 @@ impl Runtime {
                 tokio::select! {
                     biased;
                     result = binding_changed => result,
-                    result = exchange(endpoint, auth, boot_id, rx, playback, task_capture, device_id, keypair_path) => result,
+                    result = exchange(endpoint, auth, boot_id, rx, playback, task_capture, device_id, keypair_path, binding.clone(), original.clone()) => result,
                 }
             };
             let result = tokio::select! {
@@ -404,6 +400,8 @@ async fn exchange(
     capture: CaptureControlBarrier,
     device_id: String,
     keypair_path: PathBuf,
+    binding: Arc<BindingManager>,
+    original: BindingData,
 ) -> Result<()> {
     let sent = Arc::new(AtomicU64::new(0));
     let (ready_tx, ready_rx) = oneshot::channel();
@@ -429,7 +427,9 @@ async fn exchange(
             .message()
             .await?
             .context("voice stream ended before Ready")?;
-        guard.accept(first, sent.load(Ordering::Acquire))?;
+        guard
+            .accept_bound(&binding, &original, first, sent.load(Ordering::Acquire))
+            .await?;
         ready_tx
             .send(())
             .map_err(|_| anyhow::anyhow!("voice upload ended during Ready"))?;
@@ -439,7 +439,9 @@ async fn exchange(
     .context("voice handshake timed out")??;
     let receive = async {
         while let Some(event) = incoming.message().await? {
-            guard.accept(event, sent.load(Ordering::Acquire))?;
+            guard
+                .accept_bound(&binding, &original, event, sent.load(Ordering::Acquire))
+                .await?;
         }
         bail!("server closed continuous voice stream")
     };
@@ -478,6 +480,17 @@ impl SessionGuard {
         }
     }
 
+    async fn accept_bound(
+        &mut self,
+        binding: &BindingManager,
+        original: &BindingData,
+        event: SessionEvent,
+        sent: u64,
+    ) -> Result<()> {
+        binding
+            .with_current_binding(original, || self.accept(event, sent))
+            .await
+    }
     fn accept(&mut self, event: SessionEvent, sent: u64) -> Result<()> {
         ensure!(
             event.device_boot_id == self.boot_id,
@@ -593,24 +606,10 @@ impl SessionGuard {
 
 impl Drop for SessionGuard {
     fn drop(&mut self) {
-        if let Err(error) = self.playback.retire_capture(&self.capture) {
-            warn!(%error, "retiring voice capture guard failed");
-        }
-        let Some(session_id) = self.session_id.as_ref() else {
-            return;
-        };
-        // These UUIDs were validated before Ready was accepted. Only this exact
-        // local session is closed; a replacement's playback remains untouched.
-        if let (Ok(session_id), Ok(device_boot_id)) =
-            (Uuid::parse_str(session_id), Uuid::parse_str(&self.boot_id))
-        {
-            if let Err(error) = self.playback.close(&VoiceScope {
-                session_id,
-                device_boot_id,
-                generation_epoch: self.epoch,
-            }) {
-                warn!(%error, "closing local voice playback session failed");
-            }
+        // A replacement binding may reuse wire IDs. Only this actual capture
+        // owner may close its Session; stale guard cleanup cannot close another.
+        if let Err(error) = self.playback.close_capture(&self.capture) {
+            warn!(%error, "closing voice capture guard failed");
         }
     }
 }

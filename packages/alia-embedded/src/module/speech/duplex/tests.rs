@@ -1176,3 +1176,5 @@ fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_eviden
         );
     }
 }
+
+mod binding_admission;
