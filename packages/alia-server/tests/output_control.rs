@@ -634,13 +634,25 @@ async fn later_audio_deadline_limits_new_pause_and_resume_without_refreshing_bin
         let audio_deadline:chrono::DateTime<chrono::Utc> = f.db.query_one(sql("UPDATE deliveries SET observation_deadline_at=clock_timestamp()+interval '20 seconds' WHERE delivery_id=$1 RETURNING observation_deadline_at",vec![delivery.delivery_id.into()])).await.unwrap().unwrap().try_get("","observation_deadline_at").unwrap();
         let command = pause(&reg,1);
         assert_eq!(admitted(&f,&command).await.deadline_at(),audio_deadline);
+        assert_eq!(f.repo().query_control(f.user,&reg.binding).await.unwrap().scope.deadline_at,audio_deadline);
         assert_eq!(admitted(&f,&resume(&command,2)).await.deadline_at(),audio_deadline);
+        assert_eq!(f.repo().query_control(f.user,&reg.binding).await.unwrap().scope.deadline_at,audio_deadline,"Resume must not discard a later AudioDelivery's hard scope deadline");
         f.sql(&format!("UPDATE deliveries SET observation_deadline_at=clock_timestamp()-interval '1 second' WHERE delivery_id='{}'",delivery.delivery_id)).await;
         assert!(matches!(f.repo().admit_control(f.user,reg.binding.server_instance_id,&resume(&command,3)).await,Err(ControlLedgerError::Revoked(_))));
-        assert_eq!(f.repo().register_control(f.user,reg.clone()).await.unwrap().deadline_at,registered.deadline_at,"registration is immutable, not renewed by a retry");
+        assert_eq!(f.repo().register_control(f.user,reg.clone()).await.unwrap().deadline_at,audio_deadline,"registration retry cannot renew the shortened scope deadline");
         let view=f.repo().query_control(f.user,&reg.binding).await.unwrap();
+        assert_eq!(view.scope.registration,registered.registration,"deadline tightening cannot replace the canonical binding/backend");
         assert_eq!(view.commands.len(),2);
         assert_eq!(f.repo().get(f.user,delivery.delivery_id).await.unwrap().status,DeliveryStatus::Sending,"control does not redispatch or change canonical media facts");
+
+        // The hold's default sixty-second bound is not the global output bound.
+        let another=registration(&f).await;
+        let original=f.repo().register_control(f.user,another.clone()).await.unwrap();
+        let paused=pause(&another,1);
+        let hold_deadline=admitted(&f,&paused).await.deadline_at();
+        assert!(hold_deadline<original.deadline_at);
+        assert_eq!(admitted(&f,&resume(&paused,2)).await.deadline_at(),hold_deadline);
+        assert_eq!(f.repo().query_control(f.user,&another.binding).await.unwrap().scope.deadline_at,original.deadline_at,"removing a hold must retain the original 120-second scope lifetime");
     }).await;
 }
 

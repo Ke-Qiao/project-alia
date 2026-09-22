@@ -201,6 +201,10 @@ impl DeliveryRepository {
             let now = database_now(&tx).await?;
             validate_deliveries(&deliveries, &scope.registration, now)?;
             if output_deadline <= now { return Err(revoked("original audio observation lifetime expired")); }
+            // A later AudioDelivery can tighten the whole output's lifetime.
+            // Persist that bound separately from this hold, so a successful
+            // Resume cannot discard it when the local hold is released.
+            tx.execute(stmt("UPDATE output_control_scopes SET deadline_at=LEAST(deadline_at,$2),updated_at=clock_timestamp() WHERE response_id=$1 AND deadline_at>$2",vec![binding.response_id.into(),output_deadline.into()])).await?;
             let originals = command_rows(&tx, binding.response_id).await?;
             let deadline = match command.command.action {
                 ControlAction::Pause { budget_ms, .. } => {
