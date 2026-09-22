@@ -409,6 +409,30 @@ pub trait ChannelAdapter: ModuleLifecycle {
     }
 
     /// Best-effort channel control hook used by channels that can stop active playback.
+    /// Register a canonical Response before any playback Start. The peer must
+    /// retain this exact binding and report its actual native backend owner.
+    async fn register_output(
+        &self,
+        _binding: alia_core::output_control::OutputBinding,
+    ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
+        anyhow::bail!("channel does not support playback v3 output registration")
+    }
+
+    async fn control_output(
+        &self,
+        _command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        anyhow::bail!("channel does not support reversible output control")
+    }
+
+    /// Read the original command's result; this must never apply a command.
+    async fn observe_output_control(
+        &self,
+        _command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        anyhow::bail!("channel does not support output control observation")
+    }
+
     async fn stop_current_playback(
         &self,
         _target: &ChannelTarget,

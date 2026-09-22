@@ -64,12 +64,9 @@ impl TurnController {
         observation: &TurnObservation,
         current_revision: u64,
     ) -> Result<TurnDecision, EpochExhausted> {
-        if self.pending != Some((observation.id, current_revision))
-            || observation.id.generation_epoch != self.epoch
-        {
+        if !self.accept_evidence(observation, current_revision) {
             return Ok(TurnDecision::Stale);
         }
-        self.pending = None;
         Ok(match observation.state {
             TurnState::Complete if observation.transcript.trim().is_empty() => {
                 TurnDecision::ContinueListening
@@ -85,6 +82,19 @@ impl TurnController {
                 TurnDecision::Wait
             }
         })
+    }
+
+    /// Consume a fresh decision without replacing its generation. Reversible
+    /// output control interprets explicit pause/continue before deciding whether
+    /// a genuinely new response requires `invalidate`.
+    pub fn accept_evidence(&mut self, observation: &TurnObservation, revision: u64) -> bool {
+        if self.pending != Some((observation.id, revision))
+            || observation.id.generation_epoch != self.epoch
+        {
+            return false;
+        }
+        self.pending = None;
+        true
     }
 }
 

@@ -236,6 +236,11 @@ pub struct EmbeddedChannel {
     audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
     playback_client: Arc<RwLock<Option<PlaybackClient<Channel>>>>,
     playback_sequence: Arc<AtomicU64>,
+    output_bindings: Arc<
+        std::sync::Mutex<
+            HashMap<alia_core::delivery::VoiceScope, alia_core::output_control::OutputRegistration>,
+        >,
+    >,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
@@ -275,6 +280,7 @@ impl EmbeddedChannel {
             audio_client: Arc::new(RwLock::new(None)),
             playback_client: Arc::new(RwLock::new(None)),
             playback_sequence: Arc::new(AtomicU64::new(0)),
+            output_bindings: Arc::default(),
             plugin_client: Arc::new(RwLock::new(None)),
             binding_client: Arc::new(RwLock::new(None)),
             settings_client: Arc::new(RwLock::new(None)),
@@ -991,9 +997,17 @@ impl ChannelAdapter for EmbeddedChannel {
                 target.voice == Some(identity.scope),
                 "delivery target differs from reserved playback scope"
             );
+            let binding = self
+                .output_bindings
+                .lock()
+                .unwrap()
+                .get(&identity.scope)
+                .context("playback scope has no canonical registered output")?
+                .binding;
             return super::playback::push(
                 self.playback_client().await?,
                 identity,
+                binding,
                 audio,
                 self.auth_request(())?.metadata().clone(),
                 observer,
@@ -1239,6 +1253,16 @@ impl ChannelAdapter for EmbeddedChannel {
         close_session: bool,
         reason: &str,
     ) -> anyhow::Result<()> {
+        // Stop local admission before attempting the remote barrier; an unknown
+        // ACK must never permit a new Start on an obsolete binding.
+        self.output_bindings
+            .lock()
+            .unwrap()
+            .retain(|registered, _| {
+                registered.device_boot_id != scope.device_boot_id
+                    || registered.session_id != scope.session_id
+                    || (!close_session && registered.generation_epoch >= scope.generation_epoch)
+            });
         let mut client = self.playback_client().await?;
         let receipt = client
             .fence(self.auth_request(alia_proto::playback::FenceRequest {
@@ -1251,6 +1275,99 @@ impl ChannelAdapter for EmbeddedChannel {
             .await?
             .into_inner();
         super::playback::validate_fence_receipt(scope, close_session, &receipt)
+    }
+
+    async fn register_output(
+        &self,
+        binding: alia_core::output_control::OutputBinding,
+    ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
+        anyhow::ensure!(binding.is_valid(), "invalid canonical output binding");
+        {
+            let registrations = self.output_bindings.lock().unwrap();
+            if let Some(previous) = registrations.get(&binding.scope) {
+                anyhow::ensure!(
+                    previous.binding == binding,
+                    "output scope identity conflict"
+                );
+                return Ok(previous.clone());
+            }
+            anyhow::ensure!(
+                registrations.len() < 64,
+                "output registration capacity reached"
+            );
+        }
+        let mut client = self.playback_client().await?;
+        let receipt = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.register_output(self.auth_request(
+                alia_proto::playback::RegisterOutputRequest {
+                    binding: Some(alia_proto::output_control::encode_binding(binding)),
+                    contract_version: alia_core::delivery::PLAYBACK_CONTRACT_VERSION,
+                },
+            )?),
+        )
+        .await
+        .context("output registration deadline")??
+        .into_inner();
+        let registration = alia_proto::output_control::decode_registration(&receipt)?;
+        anyhow::ensure!(
+            registration.binding == binding,
+            "device changed canonical output binding"
+        );
+        let mut registrations = self.output_bindings.lock().unwrap();
+        if let Some(previous) = registrations.get(&binding.scope) {
+            anyhow::ensure!(
+                *previous == registration,
+                "registered output backend changed"
+            );
+        } else {
+            anyhow::ensure!(
+                registrations.len() < 64,
+                "output registration capacity reached"
+            );
+            registrations.insert(binding.scope, registration.clone());
+        }
+        Ok(registration)
+    }
+
+    async fn control_output(
+        &self,
+        command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        command.validate()?;
+        let mut client = self.playback_client().await?;
+        let receipt = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.control(
+                self.auth_request(alia_proto::output_control::encode_control_request(command))?,
+            ),
+        )
+        .await
+        .context("output control deadline; outcome unknown")??
+        .into_inner();
+        Ok(alia_proto::output_control::decode_control_receipt(
+            &receipt, command,
+        )?)
+    }
+
+    async fn observe_output_control(
+        &self,
+        command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        command.validate()?;
+        let mut client = self.playback_client().await?;
+        let receipt = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.observe_control(
+                self.auth_request(alia_proto::output_control::encode_control_request(command))?,
+            ),
+        )
+        .await
+        .context("output observation deadline; outcome unknown")??
+        .into_inner();
+        Ok(alia_proto::output_control::decode_control_receipt(
+            &receipt, command,
+        )?)
     }
 
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
