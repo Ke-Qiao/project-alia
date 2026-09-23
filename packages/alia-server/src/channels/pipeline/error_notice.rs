@@ -126,6 +126,22 @@ pub(super) async fn notify_pipeline_error(
             delivery: PipelineErrorDelivery::Cancelled,
         };
     }
+    if original_turn
+        .output
+        .as_ref()
+        .is_some_and(|output| output.output().response_id().is_some())
+    {
+        // A bound voice generation has exactly one Response/Context. A failure
+        // cancels that owner; a spoken replacement would need a new admitted
+        // generation, which this error path is not authorized to invent.
+        if let Ok(owner) = Uuid::parse_str(user_id) {
+            super::delivery::interrupt_response(modules, original_turn, owner).await;
+        }
+        return PipelineErrorNotification {
+            notice,
+            delivery: PipelineErrorDelivery::Failed,
+        };
+    }
     let notice_turn = async {
         let owner = Uuid::parse_str(user_id)?;
         super::delivery::interrupt_response(modules, original_turn, owner).await;

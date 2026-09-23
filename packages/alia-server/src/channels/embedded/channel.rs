@@ -226,6 +226,14 @@ fn parse_discovery_capabilities(properties: &HashMap<String, String>) -> Vec<Str
     capabilities
 }
 
+/// A pending registration retains its local admission identity. Fencing removes
+/// that identity, so a late RPC result cannot repopulate an obsolete scope.
+struct CachedOutput {
+    binding: alia_core::output_control::OutputBinding,
+    admission: Arc<()>,
+    registration: Option<alia_core::output_control::OutputRegistration>,
+}
+
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
 #[derive(Clone)]
 pub struct EmbeddedChannel {
@@ -236,11 +244,7 @@ pub struct EmbeddedChannel {
     audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
     playback_client: Arc<RwLock<Option<PlaybackClient<Channel>>>>,
     playback_sequence: Arc<AtomicU64>,
-    output_bindings: Arc<
-        std::sync::Mutex<
-            HashMap<alia_core::delivery::VoiceScope, alia_core::output_control::OutputRegistration>,
-        >,
-    >,
+    output_bindings: Arc<std::sync::Mutex<HashMap<alia_core::delivery::VoiceScope, CachedOutput>>>,
     plugin_client: Arc<RwLock<Option<PluginManagerClient<Channel>>>>,
     binding_client: Arc<RwLock<Option<DeviceBindingClient<Channel>>>>,
     settings_client: Arc<RwLock<Option<EmbeddedSettingsClient<Channel>>>>,
@@ -1002,6 +1006,7 @@ impl ChannelAdapter for EmbeddedChannel {
                 .lock()
                 .unwrap()
                 .get(&identity.scope)
+                .and_then(|cached| cached.registration.as_ref())
                 .context("playback scope has no canonical registered output")?
                 .binding;
             return super::playback::push(
@@ -1282,20 +1287,34 @@ impl ChannelAdapter for EmbeddedChannel {
         binding: alia_core::output_control::OutputBinding,
     ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
         anyhow::ensure!(binding.is_valid(), "invalid canonical output binding");
-        {
-            let registrations = self.output_bindings.lock().unwrap();
+        let admission = {
+            let mut registrations = self.output_bindings.lock().unwrap();
             if let Some(previous) = registrations.get(&binding.scope) {
                 anyhow::ensure!(
                     previous.binding == binding,
                     "output scope identity conflict"
                 );
-                return Ok(previous.clone());
+                if let Some(registration) = &previous.registration {
+                    return Ok(registration.clone());
+                }
+                previous.admission.clone()
+            } else {
+                anyhow::ensure!(
+                    registrations.len() < 64,
+                    "output registration capacity reached"
+                );
+                let admission = Arc::new(());
+                registrations.insert(
+                    binding.scope,
+                    CachedOutput {
+                        binding,
+                        admission: admission.clone(),
+                        registration: None,
+                    },
+                );
+                admission
             }
-            anyhow::ensure!(
-                registrations.len() < 64,
-                "output registration capacity reached"
-            );
-        }
+        };
         let mut client = self.playback_client().await?;
         let receipt = tokio::time::timeout(
             Duration::from_secs(2),
@@ -1315,17 +1334,20 @@ impl ChannelAdapter for EmbeddedChannel {
             "device changed canonical output binding"
         );
         let mut registrations = self.output_bindings.lock().unwrap();
-        if let Some(previous) = registrations.get(&binding.scope) {
+        let cached = registrations
+            .get_mut(&binding.scope)
+            .context("output registration was fenced before acknowledgement")?;
+        anyhow::ensure!(
+            Arc::ptr_eq(&cached.admission, &admission),
+            "original output registration was replaced"
+        );
+        if let Some(previous) = &cached.registration {
             anyhow::ensure!(
                 *previous == registration,
                 "registered output backend changed"
             );
         } else {
-            anyhow::ensure!(
-                registrations.len() < 64,
-                "output registration capacity reached"
-            );
-            registrations.insert(binding.scope, registration.clone());
+            cached.registration = Some(registration.clone());
         }
         Ok(registration)
     }

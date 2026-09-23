@@ -95,6 +95,7 @@ name = "alia-server"
 version = "0.1.0"
 dependencies = [
  "alia-core",
+ "alia-embedded",
  "alia-proto",
  "alia-transport",
  "anyhow",

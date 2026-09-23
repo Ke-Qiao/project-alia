@@ -43,7 +43,10 @@ pub enum OutputBlocked {
 }
 
 impl PlaybackControl {
-    pub(crate) fn new(
+    /// Create the gate owned by one native backend generation. Implementations
+    /// of AudioPlaybackBackend must retain and reuse this Arc for that scope;
+    /// creating a replacement does not authorize media from a retired owner.
+    pub fn new(
         scope: VoiceScope,
         generation: u64,
         backend: SubmissionBackend,
@@ -76,7 +79,9 @@ impl PlaybackControl {
             }
         }
     }
-    pub(crate) fn apply(&self, command: &ControlCommand) -> ControlReceipt {
+    /// Backend control entry after PlaybackSession has checked admission and
+    /// owner identity. It must operate on the retained native gate, never a copy.
+    pub fn apply(&self, command: &ControlCommand) -> ControlReceipt {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let now = self.now();
         let mut receipt = state.apply(command, now, self.quiescent());
@@ -129,7 +134,8 @@ impl PlaybackControl {
         self.synchronize(snapshot.phase);
         result.map_err(|e| anyhow::anyhow!("capture cannot authorize playback control: {e:?}"))
     }
-    pub(crate) fn retire(&self, reason: RetiredReason) {
+    /// Permanently fence this backend owner before discarding its queued media.
+    pub fn retire(&self, reason: RetiredReason) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         self.gate.fetch_or(CLOSED, Ordering::AcqRel);
         state.retire(reason);

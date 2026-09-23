@@ -522,6 +522,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
         channel_id.to_string(),
         user_id.to_string(),
         tts_cancel_token.clone(),
+        turn.and_then(|turn| turn.output.clone()),
     );
 
     let audio_delivery = async move {
@@ -1090,8 +1091,12 @@ async fn stream_tts_sentences(
     channel_id: String,
     user_id: String,
     cancel_token: Option<CancellationToken>,
+    output: Option<Arc<crate::modules::delivery::OutputProducer>>,
 ) -> anyhow::Result<()> {
     loop {
+        if let Some(output) = &output {
+            output.wait_open().await?;
+        }
         let sentence = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
                 biased;
@@ -1119,6 +1124,9 @@ async fn stream_tts_sentences(
         let speech_context = speech_context
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("sentence synthesis has no frozen generation"))?;
+        if let Some(output) = &output {
+            output.wait_open().await?;
+        }
         let expression_input = speech_context.input_for_sentence(sentence);
         let baseline_speech = expression
             .speech_for_context(
@@ -1152,6 +1160,9 @@ async fn stream_tts_sentences(
                 Some((&channel_id, &user_id)),
             );
         }
+        if let Some(output) = &output {
+            output.wait_open().await?;
+        }
         let synth = tts.synthesize_request(&request, budget.clone());
         let audio_bytes = if let Some(cancel_token) = cancel_token.as_ref() {
             tokio::select! {
@@ -1173,6 +1184,9 @@ async fn stream_tts_sentences(
             }
         };
 
+        if let Some(output) = &output {
+            output.wait_open().await?;
+        }
         let payload = match tts_bytes_to_pcm_payload(audio_bytes.into_buffer()) {
             Ok(payload) => payload,
             Err(error) => {
@@ -1416,6 +1430,7 @@ async fn stream_generated_text(
     let stream_channel = channel_id.to_owned();
     let stream_user = user_id.to_owned();
     let bus = event_bus.clone();
+    let output = turn.and_then(|turn| turn.output.clone());
     let text = async_stream::try_stream! {
         let mut pending = String::new();
         let mut sentence_buffer = String::new();
@@ -1424,6 +1439,7 @@ async fn stream_generated_text(
         let mut offset = 0;
         let mut ended = false;
         loop {
+            if let Some(output) = &output { output.wait_open().await?; }
             let next = if ended || pending.len() >= 512 {
                 None
             } else if pending.is_empty() {
@@ -1431,6 +1447,7 @@ async fn stream_generated_text(
             } else {
                 tokio::time::timeout(Duration::from_millis(40), tokens.next()).await.ok()
             };
+            if let Some(output) = &output { output.wait_open().await?; }
             let timed_flush = next.is_none();
             match next {
                 Some(Some(Ok(chunk))) => {

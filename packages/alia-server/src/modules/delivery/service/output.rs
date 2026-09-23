@@ -11,6 +11,7 @@ use alia_core::{
         MAX_CONTROL_COMMANDS, ResumeAuthorization,
     },
 };
+use anyhow::Context;
 use gate::{DEFAULT_HOLD, Gate, Hold};
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
@@ -35,6 +36,9 @@ struct Inner {
     changed: watch::Sender<u64>,
     wake: Notify,
     registration: std::sync::OnceLock<OutputRegistration>,
+    // Keep the original budget identity alive across sentence gaps and native
+    // tails, even when no encoded buffer happens to be retained at that instant.
+    audio_budget: std::sync::OnceLock<crate::providers::tts::audio_budget::ResponseAudioBudget>,
     sender: mpsc::Sender<Work>,
 }
 
@@ -68,6 +72,15 @@ impl OutputProducer {
     pub fn request_id(&self) -> Uuid {
         self.output.0.request_id
     }
+    pub fn scope(&self) -> VoiceScope {
+        self.output.0.scope
+    }
+    pub fn owner(&self) -> Uuid {
+        self.output.0.owner
+    }
+    pub fn channel(&self) -> Arc<dyn ChannelAdapter> {
+        self.output.0.channel.clone()
+    }
     pub async fn wait_open(&self) -> anyhow::Result<()> {
         self.output.wait_open().await
     }
@@ -81,6 +94,32 @@ impl OutputProducer {
 }
 
 impl VoiceOutput {
+    fn tighten_deadline(&self, deadline: chrono::DateTime<chrono::Utc>) {
+        let now = Instant::now();
+        let remaining = (deadline - chrono::Utc::now()).to_std().unwrap_or_default();
+        {
+            let mut gate = self.0.gate.lock().unwrap();
+            gate.deadline = gate.deadline.min(now + remaining);
+        }
+        self.signal();
+    }
+    fn tighten_hold_deadline(&self, hold_id: Uuid, deadline: chrono::DateTime<chrono::Utc>) {
+        let now = Instant::now();
+        let remaining = (deadline - chrono::Utc::now()).to_std().unwrap_or_default();
+        {
+            let mut gate = self.0.gate.lock().unwrap();
+            if let Some(hold) = gate.hold.as_mut().filter(|hold| hold.id == hold_id) {
+                hold.deadline = hold.deadline.min(now + remaining);
+            }
+        }
+        self.signal();
+    }
+    pub fn response_id(&self) -> Option<Uuid> {
+        self.0
+            .registration
+            .get()
+            .map(|registration| registration.binding.response_id)
+    }
     fn signal(&self) {
         self.0
             .changed
@@ -213,8 +252,8 @@ impl VoiceOutput {
             }
             tokio::select! { biased;
                 _ = self.0.cancel.cancelled() => anyhow::bail!("original output cancelled"),
-                _ = tokio::time::sleep_until(deadline) => { self.retire(); anyhow::bail!("original hold expired"); },
                 result = changed.changed() => { result.context("output gate owner ended")?; },
+                _ = tokio::time::sleep_until(deadline) => { self.retire(); anyhow::bail!("original hold expired"); },
             }
         }
     }
@@ -257,6 +296,11 @@ impl VoiceOutput {
     }
 }
 pub(super) struct MediaOwner(VoiceOutput);
+impl MediaOwner {
+    pub(super) fn output(&self) -> &VoiceOutput {
+        &self.0
+    }
+}
 impl Drop for MediaOwner {
     fn drop(&mut self) {
         self.0.0.gate.lock().unwrap().media_owners -= 1;
@@ -307,6 +351,7 @@ impl DeliveryService {
             changed,
             wake: Notify::new(),
             registration: std::sync::OnceLock::new(),
+            audio_budget: std::sync::OnceLock::new(),
             sender,
         }));
         self.output_sender
@@ -320,8 +365,26 @@ impl DeliveryService {
     }
 
     pub(super) async fn supervise_output(self: Arc<Self>, mut input: NewOutput) {
+        use futures::FutureExt;
         let output = input.output.clone();
-        let result = self.run_output(&output, &mut input.receiver).await;
+        let result = std::panic::AssertUnwindSafe(self.run_output(&output, &mut input.receiver))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|_| {
+                self.failures
+                    .lock()
+                    .unwrap()
+                    .push("output control owner panicked".into());
+                Err(anyhow::anyhow!("output control owner panicked"))
+            });
+        let finished = {
+            let gate = output.0.gate.lock().unwrap();
+            gate.producer_finished
+                && gate.media_owners == 0
+                && !gate.retired
+                && !output.0.cancel.is_cancelled()
+                && Instant::now() < gate.deadline()
+        };
         output.retire();
         // Cancellation needs no permission to use the old Context. It closes
         // this exact generation and preserves whatever evidence already exists.
@@ -329,36 +392,67 @@ impl DeliveryService {
             user_id: output.0.owner.to_string(),
             voice: Some(output.0.scope),
         };
-        if let Err(error) = tokio::time::timeout(
-            CANCEL_TIMEOUT,
-            output
+        // Native acknowledgement and durable local retirement are independent.
+        // A stuck native fence cannot hide a cancellation that is already known.
+        let persist_retirement = async {
+            if let Some(registration) = output.0.registration.get() {
+                if !finished {
+                    if let Err(error) = bounded(self.repository.request_cancel(
+                        output.0.owner,
+                        registration.binding.response_id,
+                        "original voice output cancelled or expired",
+                    ))
+                    .await
+                    {
+                        self.failures
+                            .lock()
+                            .unwrap()
+                            .push(format!("output response cancellation: {error}"));
+                    }
+                }
+                if let Err(error) = self
+                    .repository
+                    .retire_control(
+                        output.0.owner,
+                        self.instance_id,
+                        &registration.binding,
+                        "original voice output ended",
+                    )
+                    .await
+                {
+                    self.failures
+                        .lock()
+                        .unwrap()
+                        .push(format!("output control retirement: {error}"));
+                }
+            }
+        };
+        let fence_original = async {
+            let fence = output
                 .0
                 .channel
-                .stop_current_playback(&target, "original voice output ended"),
-        )
-        .await
-        .map_err(anyhow::Error::from)
-        .and_then(|result| result)
-        {
-            tracing::warn!(%error, scope=?output.0.scope, "voice output fence unconfirmed");
-        }
-        if let Some(registration) = output.0.registration.get() {
-            if let Err(error) = self
-                .repository
-                .retire_control(
-                    output.0.owner,
-                    self.instance_id,
-                    &registration.binding,
-                    "original voice output ended",
-                )
-                .await
-            {
+                .stop_current_playback(&target, "original voice output ended");
+            tokio::pin!(fence);
+            let fence_result = match tokio::time::timeout(CANCEL_TIMEOUT, &mut fence).await {
+                Ok(result) => result,
+                Err(_) => {
+                    self.failures
+                        .lock()
+                        .unwrap()
+                        .push(format!("output fence deadline: {:?}", output.0.scope));
+                    // The exact native operation still owns its channel and budget.
+                    // A shutdown timeout must not silently detach that ownership.
+                    fence.await
+                }
+            };
+            if let Err(error) = fence_result {
                 self.failures
                     .lock()
                     .unwrap()
-                    .push(format!("output control retirement: {error}"));
+                    .push(format!("output fence unconfirmed: {error:#}"));
             }
-        }
+        };
+        tokio::join!(persist_retirement, fence_original);
         self.outputs.lock().unwrap().remove(&output.0.scope);
         if let Err(error) = result {
             tracing::warn!(%error, scope=?output.0.scope, "original output retired");
@@ -383,8 +477,8 @@ impl DeliveryService {
                 tokio::select! { biased;
                     _ = self.stop.cancelled() => return Ok(()),
                     _ = output.0.cancel.cancelled() => return Ok(()),
-                    _ = tokio::time::sleep_until(deadline) => anyhow::bail!("original output deadline"),
                     _ = output.0.wake.notified() => continue,
+                    _ = tokio::time::sleep_until(deadline) => anyhow::bail!("original output deadline"),
                     work = receiver.recv() => work,
                 }
             };
@@ -394,7 +488,9 @@ impl DeliveryService {
             if output.0.registration.get().is_none() {
                 match work {
                     Work::Bind(response, reply) => {
-                        let result = self.bind_output(output, &response).await;
+                        let result = self
+                            .output_operation(output, self.bind_output(output, &response))
+                            .await;
                         if let Err(error) = result {
                             let _ = reply.send(Err(anyhow::anyhow!(error.to_string())));
                             return Err(error);
@@ -456,11 +552,28 @@ impl DeliveryService {
                 }
                 Ok::<_, anyhow::Error>(())
             };
+            self.output_operation(output, operation).await?;
+        }
+    }
+
+    /// Keep the same in-flight operation when a semantic confirmation removes
+    /// the temporary deadline. Hard hold/output deadlines never move forward.
+    async fn output_operation<T>(
+        &self,
+        output: &VoiceOutput,
+        operation: impl std::future::Future<Output = anyhow::Result<T>>,
+    ) -> anyhow::Result<T> {
+        tokio::pin!(operation);
+        let mut changed = output.0.changed.subscribe();
+        loop {
+            let deadline = output.0.gate.lock().unwrap().deadline();
+            anyhow::ensure!(output.is_alive(), "original output no longer active");
             tokio::select! { biased;
-                _ = self.stop.cancelled() => return Ok(()),
-                _ = output.0.cancel.cancelled() => return Ok(()),
-                _ = tokio::time::sleep_until(deadline) => anyhow::bail!("original hold deadline"),
-                result = operation => result?,
+                _ = self.stop.cancelled() => anyhow::bail!("server is shutting down"),
+                _ = output.0.cancel.cancelled() => anyhow::bail!("original output cancelled"),
+                result = changed.changed() => { result.context("output gate owner ended")?; },
+                _ = tokio::time::sleep_until(deadline) => anyhow::bail!("original output deadline"),
+                result = &mut operation => return result,
             }
         }
     }
@@ -506,6 +619,15 @@ impl DeliveryService {
             .registration
             .set(registration.clone())
             .map_err(|_| anyhow::anyhow!("output already registered"))?;
+        output
+            .0
+            .audio_budget
+            .set(
+                crate::providers::tts::audio_budget::ResponseAudioBudget::for_response(
+                    response.response_id,
+                )?,
+            )
+            .map_err(|_| anyhow::anyhow!("original audio budget already bound"))?;
         let durable = self
             .repository
             .register_control(output.0.owner, registration)
@@ -514,13 +636,9 @@ impl DeliveryService {
             durable.status == OutputControlStatus::Active,
             "original control owner retired"
         );
-        let remaining = (durable.deadline_at - chrono::Utc::now())
-            .to_std()
-            .unwrap_or_default();
-        let mut gate = output.0.gate.lock().unwrap();
-        gate.deadline = gate.deadline.min(Instant::now() + remaining);
+        output.tighten_deadline(durable.deadline_at);
         anyhow::ensure!(
-            gate.is_alive(Instant::now()),
+            output.is_alive(),
             "original output expired during registration"
         );
         Ok(())
@@ -555,6 +673,7 @@ impl DeliveryService {
             .await;
         let received = match admission {
             Ok(ControlAdmission::Fresh(permit)) => {
+                output.tighten_hold_deadline(hold_id, permit.deadline_at());
                 anyhow::ensure!(
                     permit.command() == &command && permit.deadline_at() > chrono::Utc::now(),
                     "original control permit expired"
@@ -563,7 +682,8 @@ impl DeliveryService {
             }
             // Existing or an unknown database commit never authorizes another
             // Control. Read only the original command; unavailable stays unknown.
-            Ok(ControlAdmission::Existing(_)) => {
+            Ok(ControlAdmission::Existing(existing)) => {
+                output.tighten_hold_deadline(hold_id, existing.deadline_at);
                 output.0.channel.observe_output_control(&command).await
             }
             Err(
@@ -595,8 +715,15 @@ impl DeliveryService {
     ) -> anyhow::Result<()> {
         receipt.validate(command)?;
         let recorded = self.repository.record_control(&receipt).await?;
+        // Store a late observation as a fact before checking permission to open
+        // the local gate. Newly admitted audio may shorten the original scope.
+        output.tighten_deadline(recorded.scope.deadline_at);
+        output.tighten_hold_deadline(command.command.hold_id, recorded.command.deadline_at);
         anyhow::ensure!(
-            recorded.scope.status == OutputControlStatus::Active,
+            recorded.scope.status == OutputControlStatus::Active
+                && recorded.scope.deadline_at > chrono::Utc::now()
+                && recorded.command.deadline_at > chrono::Utc::now()
+                && output.is_alive(),
             "original output retired while control was in flight"
         );
         let current = recorded

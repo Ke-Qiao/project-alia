@@ -116,6 +116,7 @@ pub(super) async fn push(
     let cancel_auth = auth.clone();
     let (tx, rx) = mpsc::channel(8);
     let (ack_tx, ack_rx) = oneshot::channel();
+    let (start_tx, start_rx) = oneshot::channel();
     let offered = Arc::new(AtomicU64::new(0));
     let end_offered = Arc::new(AtomicBool::new(false));
     let mut last: Option<PlaybackProgress> = None;
@@ -128,12 +129,16 @@ pub(super) async fn push(
         offered.clone(),
         observer.clone(),
         ack_rx,
+        start_tx,
         child.clone(),
         end_offered.clone(),
     ));
     let mut request = tonic::Request::new(tokio_stream::wrappers::ReceiverStream::new(rx));
     *request.metadata_mut() = auth;
     let receiving = async {
+        // A reversible hold may retain the first provider payload. Start the
+        // transport's handshake clock only once Start is actually available.
+        start_rx.await.context("playback ended before Start was prepared")?;
         let mut receipts = tokio::time::timeout(idle, client.push(request))
             .await
             .context("playback response handshake timeout")??
@@ -316,11 +321,13 @@ async fn produce(
     offered: Arc<AtomicU64>,
     observer: Arc<dyn PlaybackObserver>,
     handshake: oneshot::Receiver<()>,
+    start: oneshot::Sender<()>,
     cancel: CancellationToken,
     end_offered: Arc<AtomicBool>,
 ) -> Result<u64> {
     let mut decoder = PcmDecoder::default();
     let mut handshake = Some(handshake);
+    let mut start = Some(start);
     let mut sequence = 0_u64;
     let mut samples = 0_u64;
     let frame = |payload| proto::PlaybackFrame {
@@ -348,6 +355,7 @@ async fn produce(
             )))
             .await
             .context("playback Start stream closed")?;
+            let _ = start.take().context("playback Start already prepared")?.send(());
             ack.await
                 .context("playback handshake was not acknowledged")?;
         }

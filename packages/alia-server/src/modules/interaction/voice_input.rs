@@ -8,6 +8,9 @@ use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct RecognizedVoiceInput {
+    /// Fixed before entering the bounded pipeline queue.
+    pub request_id: Uuid,
+    pub output: Option<std::sync::Arc<crate::modules::delivery::OutputProducer>>,
     pub channel_id: String,
     pub user_id: String,
     pub transcript: String,

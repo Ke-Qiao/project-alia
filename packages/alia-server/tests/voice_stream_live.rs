@@ -1,22 +1,33 @@
-//! Opt-in gRPC -> production Rust detector -> real pinned Easy-Turn smoke.
-//! Only channel authentication/output are injected. This does not validate
-//! production device binding, a physical microphone, VAD, LLM/TTS, or playback.
+//! Opt-in gRPC -> production Rust detector -> pinned Easy-Turn, with real PG
+//! source/Context/Response/control admissions. Device auth and software output
+//! are explicit fixtures; no physical microphone, VAD, LLM/TTS or speaker claim.
 //!
 //! ALIA_EASY_TURN_PCM_DIR must be an absolute directory containing PCM16 mono
 //! 16 kHz conversions of the pinned official complete_real_1, backchannel_real_1,
 //! and wait_real_1 WAV samples. Conversion: alia_easy_turn.smoke.pcm16.
 #![cfg(all(feature = "channel-embedded", feature = "turn-easy"))]
+mod delivery_support;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use alia_core::delivery::VoiceScope;
+use alia_core::{
+    delivery::{SubmissionBackend, SubmissionBoundary},
+    output_control::{
+        BoundControlCommand, BoundControlReceipt, ControlMode, OutputBinding, OutputRegistration,
+        VOICE_CONTRACT_VERSION,
+    },
+    playback_control::{
+        ControlReceipt, HoldReason, MAX_HOLD_MS, PlaybackControlState, RetiredReason,
+    },
+};
 use alia_proto::voice::voice_session_client::VoiceSessionClient;
 use alia_proto::voice::voice_session_server::VoiceSessionServer;
 use alia_proto::voice::{
-    CaptureFrame, CloseSession, DeviceFrame, OpenSession, SessionEvent, TurnState, device_frame,
-    session_event,
+    CaptureFrame, CloseSession, DeviceFrame, OpenSession, OutputDecision, SessionEvent, TurnState,
+    device_frame, session_event,
 };
 use alia_server::adapters::easy_turn::{EasyTurnConfig, EasyTurnDetector};
 use alia_server::channels::ChannelRegistry;
@@ -28,7 +39,16 @@ use alia_server::grpc::audio_ingress::ServerAudioIngressService;
 use alia_server::grpc::voice_session::VoiceSessionService;
 use alia_server::module::lifecycle::ModuleLifecycle;
 use alia_server::modules::interaction::voice_input;
+use alia_server::modules::{
+    delivery::{
+        DeliveryService,
+        types::{NewResponse, ResponseKey},
+    },
+    memory::{context::ContextSource, source::capture_source_epochs},
+};
 use async_trait::async_trait;
+use delivery_support::{Fixture, with_db};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -42,6 +62,84 @@ const MODEL_REVISION: &str = "7d1f8b06776b575ac22e2fd4aa7913da2f4b8b98";
 
 struct TestChannel {
     fences: Arc<Mutex<Vec<(VoiceScope, bool)>>>,
+    owner: Uuid,
+    db: DatabaseConnection,
+    output: Mutex<LocalOutput>,
+}
+
+#[derive(Default)]
+struct LocalOutput {
+    through: Option<u64>,
+    speech: Option<u64>,
+    registered: Option<RegisteredOutput>,
+}
+struct RegisteredOutput {
+    registration: OutputRegistration,
+    control: PlaybackControlState,
+    started: std::time::Instant,
+    observation: u64,
+}
+impl TestChannel {
+    fn capture(&self, sequence: u64, speech: bool) {
+        let mut output = self.output.lock().unwrap();
+        assert!(
+            output
+                .through
+                .is_none_or(|previous| previous + 1 == sequence)
+        );
+        output.through = Some(sequence);
+        if speech {
+            output.speech = Some(sequence);
+        }
+        if let Some(registered) = &mut output.registered {
+            registered
+                .control
+                .observe_capture(sequence, speech)
+                .unwrap();
+        }
+    }
+    fn receipt(
+        &self,
+        command: BoundControlCommand,
+        apply: bool,
+    ) -> anyhow::Result<BoundControlReceipt> {
+        command.validate()?;
+        let mut output = self.output.lock().unwrap();
+        let registered = output
+            .registered
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("output not registered"))?;
+        anyhow::ensure!(
+            command.binding == registered.registration.binding
+                && command.expected_backend == registered.registration.backend,
+            "original output changed"
+        );
+        let elapsed = registered.started.elapsed().as_millis() as u64;
+        let receipt = if apply {
+            registered.control.apply(&command.command, elapsed, true)
+        } else {
+            let outcome = registered
+                .control
+                .recorded_outcome(&command.command)
+                .ok_or_else(|| anyhow::anyhow!("unknown command"))?;
+            ControlReceipt {
+                command_id: command.command.command_id,
+                outcome,
+                snapshot: registered.control.snapshot(elapsed, true),
+            }
+        };
+        registered.observation += 1;
+        Ok(BoundControlReceipt {
+            intent_digest: command.intent_digest(),
+            command,
+            observation_sequence: registered.observation,
+            backend: registered.registration.backend.clone(),
+            mode: ControlMode::SoftwareGate,
+            native_writes_quiescent: true,
+            receipt,
+            progress: vec![],
+        })
+    }
 }
 
 #[async_trait]
@@ -56,19 +154,28 @@ impl ChannelAdapter for TestChannel {
     async fn authenticated_source_epochs(
         &self,
     ) -> anyhow::Result<alia_server::modules::memory::source::SourceEpochs> {
-        // Explicit test authority; this smoke does not exercise a database.
-        Ok(alia_server::modules::memory::source::SourceEpochs {
-            privacy_epoch: 0,
-            relationship_epoch: 0,
-        })
+        capture_source_epochs(&self.db, self.owner).await
     }
 
     async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
-        Ok(Uuid::from_u128(7))
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT status FROM users WHERE id=$1",
+                vec![self.owner.into()],
+            ))
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("owner unavailable"))?;
+        anyhow::ensure!(
+            row.try_get::<String>("", "status")? == "active",
+            "owner inactive"
+        );
+        Ok(self.owner)
     }
 
     fn owner_user_id(&self) -> Option<Uuid> {
-        Some(Uuid::from_u128(7))
+        Some(self.owner)
     }
 
     fn channel_type(&self) -> &'static str {
@@ -87,8 +194,17 @@ impl ChannelAdapter for TestChannel {
         anyhow::bail!("live smoke must stop at recognized input")
     }
 
-    async fn stop_current_playback(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        panic!("live voice session must never use an unscoped stop")
+    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        let scope = target.voice.expect("stop must name the original scope");
+        let mut output = self.output.lock().unwrap();
+        if let Some(registered) = &mut output.registered {
+            anyhow::ensure!(
+                registered.registration.binding.scope == scope,
+                "wrong stop scope"
+            );
+            registered.control.retire(RetiredReason::Cancelled);
+        }
+        Ok(())
     }
 
     async fn fence_voice(
@@ -113,6 +229,51 @@ impl ChannelAdapter for TestChannel {
         );
         Ok(serde_json::json!({"ok": true}))
     }
+
+    async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
+        binding.validate()?;
+        let mut output = self.output.lock().unwrap();
+        if let Some(current) = &output.registered {
+            anyhow::ensure!(
+                current.registration.binding == binding,
+                "cannot replace original registration"
+            );
+            return Ok(current.registration.clone());
+        }
+        let registration = OutputRegistration {
+            binding,
+            backend: SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 48000,
+                output_channels: 2,
+            },
+            maximum_hold_ms: MAX_HOLD_MS,
+        };
+        let mut control = PlaybackControlState::new(binding.scope).unwrap();
+        control
+            .initialize_capture(output.through, output.speech)
+            .unwrap();
+        output.registered = Some(RegisteredOutput {
+            registration: registration.clone(),
+            control,
+            started: std::time::Instant::now(),
+            observation: 0,
+        });
+        Ok(registration)
+    }
+    async fn control_output(
+        &self,
+        command: &BoundControlCommand,
+    ) -> anyhow::Result<BoundControlReceipt> {
+        self.receipt(command.clone(), true)
+    }
+    async fn observe_output_control(
+        &self,
+        command: &BoundControlCommand,
+    ) -> anyhow::Result<BoundControlReceipt> {
+        self.receipt(command.clone(), false)
+    }
 }
 
 async fn event(stream: &mut Streaming<SessionEvent>) -> SessionEvent {
@@ -125,6 +286,7 @@ async fn event(stream: &mut Streaming<SessionEvent>) -> SessionEvent {
 
 async fn utterance(
     tx: &mpsc::Sender<DeviceFrame>,
+    device: &TestChannel,
     bytes: &[u8],
     sequence: &mut u64,
     sample_offset: &mut u64,
@@ -138,6 +300,7 @@ async fn utterance(
         .map(|pcm| (pcm, true))
         .chain(std::iter::repeat_n((silence.as_slice(), false), 7))
     {
+        device.capture(*sequence, speech_active);
         tx.send(DeviceFrame {
             payload: Some(device_frame::Payload::Audio(CaptureFrame {
                 sequence: *sequence,
@@ -154,8 +317,12 @@ async fn utterance(
 }
 
 #[tokio::test]
-#[ignore = "requires real Easy-Turn weights/service and absolute ALIA_EASY_TURN_PCM_DIR"]
-async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
+#[ignore = "requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL"]
+async fn official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait() {
+    with_db(|fixture| async move { official_audio(fixture).await }).await;
+}
+
+async fn official_audio(fixture: Fixture) {
     let pcm_dir =
         PathBuf::from(std::env::var("ALIA_EASY_TURN_PCM_DIR").expect("set fixture directory"));
     assert!(pcm_dir.is_absolute(), "fixture directory must be absolute");
@@ -194,21 +361,25 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
     );
     let channels = Arc::new(ChannelRegistry::new());
     let fences = Arc::new(Mutex::new(Vec::new()));
-    channels
-        .register(Arc::new(TestChannel {
-            fences: fences.clone(),
-        }))
-        .await
-        .unwrap();
+    let device = Arc::new(TestChannel {
+        fences: fences.clone(),
+        owner: fixture.user,
+        db: fixture.db.clone(),
+        output: Mutex::new(LocalOutput::default()),
+    });
+    channels.register(device.clone()).await.unwrap();
     let auth = ServerAudioIngressService::new(EventBus::new(8), channels.clone(), CHANNEL);
     let (input, mut recognized) = voice_input::channel();
     let shutdown = CancellationToken::new();
     let _cancel_on_drop = shutdown.clone().drop_guard();
+    let delivery = DeliveryService::new(fixture.repo(), &shutdown);
+    delivery.start().await.unwrap();
     let service = VoiceSessionService::new(
         auth,
-        channels,
         Some(detector),
         input,
+        delivery.clone(),
+        Duration::from_secs(60),
         shutdown.clone(),
         std::sync::Arc::new(alia_server::module::lifecycle::RuntimeTasks::default()),
     );
@@ -230,7 +401,9 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
     let boot = Uuid::new_v4();
     let open = DeviceFrame {
         payload: Some(device_frame::Payload::Open(OpenSession {
-            protocol_version: 1,
+            protocol_version: VOICE_CONTRACT_VERSION,
+            software_hold: true,
+            max_hold_ms: MAX_HOLD_MS,
             device_boot_id: boot.to_string(),
             channel_id: CHANNEL.into(),
         })),
@@ -240,6 +413,23 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
         .await
         .unwrap_err();
     assert_eq!(missing_auth.code(), tonic::Code::Unauthenticated);
+
+    let mut old_open = open.clone();
+    if let Some(device_frame::Payload::Open(open)) = old_open.payload.as_mut() {
+        open.protocol_version = 1;
+    }
+    let mut old_request = Request::new(tokio_stream::iter([old_open]));
+    old_request.metadata_mut().insert(
+        "authorization",
+        format!("Bearer {TEST_TOKEN}").parse().unwrap(),
+    );
+    old_request
+        .metadata_mut()
+        .insert("x-alia-channel-id", CHANNEL.parse().unwrap());
+    assert_eq!(
+        client.stream(old_request).await.unwrap_err().code(),
+        tonic::Code::FailedPrecondition
+    );
 
     let (tx, rx) = mpsc::channel(8);
     tx.send(open).await.unwrap();
@@ -253,16 +443,19 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
         .insert("x-alia-channel-id", CHANNEL.parse().unwrap());
     let mut responses = client.stream(request).await.unwrap().into_inner();
     let ready = event(&mut responses).await;
-    assert!(matches!(
-        ready.payload,
-        Some(session_event::Payload::Ready(_))
-    ));
+    let Some(session_event::Payload::Ready(capabilities)) = &ready.payload else {
+        panic!("expected v2 Ready");
+    };
+    assert_eq!(capabilities.protocol_version, VOICE_CONTRACT_VERSION);
+    assert!(capabilities.software_hold);
+    assert_eq!(capabilities.max_hold_ms, MAX_HOLD_MS);
     assert_eq!(ready.device_boot_id, boot.to_string());
     assert_eq!(ready.generation_epoch, 1);
     let session_id = Uuid::parse_str(&ready.session_id).unwrap();
     let mut sequence = 0;
     let mut sample_offset = 0;
-    let mut active_response = None;
+    let mut active_input: Option<voice_input::RecognizedVoiceInput> = None;
+    let mut response_id = None;
 
     for (name, expected, pcm_sha256) in [
         (
@@ -287,14 +480,11 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
             pcm_sha256,
             "{name}: wrong official PCM fixture"
         );
-        utterance(&tx, &pcm, &mut sequence, &mut sample_offset).await;
+        utterance(&tx, &device, &pcm, &mut sequence, &mut sample_offset).await;
         let result = event(&mut responses).await;
         assert_eq!(result.session_id, session_id.to_string());
         assert_eq!(result.device_boot_id, boot.to_string());
-        assert_eq!(
-            result.generation_epoch,
-            if expected == TurnState::Wait { 3 } else { 2 }
-        );
+        assert_eq!(result.generation_epoch, 2);
         let Some(session_event::Payload::Evidence(evidence)) = result.payload else {
             panic!("expected turn evidence");
         };
@@ -304,6 +494,15 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
         assert!(!Uuid::parse_str(&evidence.request_id).unwrap().is_nil());
         assert!(evidence.inference_ms.is_finite() && evidence.inference_ms > 0.0);
         assert_eq!(evidence.response_enqueued, expected == TurnState::Complete);
+        assert_eq!(
+            evidence.output_decision,
+            match expected {
+                TurnState::Complete => OutputDecision::Unchanged,
+                TurnState::Backchannel => OutputDecision::ResumeRequested,
+                TurnState::Wait => OutputDecision::PauseRequested,
+                _ => unreachable!(),
+            } as i32
+        );
         eprintln!(
             "real gRPC -> Easy-Turn {name}: {expected:?}, {} ms",
             evidence.inference_ms
@@ -314,17 +513,41 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
             assert_eq!(input.device_boot_id, boot);
             assert_eq!(input.generation_epoch, 2);
             assert_eq!(input.channel_id, CHANNEL);
-            assert_eq!(input.user_id, Uuid::from_u128(7).to_string());
+            assert_eq!(input.user_id, fixture.user.to_string());
             assert_eq!(input.transcript, evidence.transcript.trim());
-            active_response = Some(input.cancel);
+            let response = canonical_response(&fixture, &delivery, &input).await;
+            let producer = input.output.as_ref().unwrap();
+            producer.bind(response.clone()).await.unwrap();
+            assert_eq!(producer.request_id(), input.request_id);
+            assert_eq!(producer.output().response_id(), Some(response.response_id));
+            response_id = Some(response.response_id);
+            active_input = Some(input);
         } else {
             assert!(recognized.try_recv().is_err());
-            assert_eq!(
-                active_response.as_ref().unwrap().is_cancelled(),
-                expected == TurnState::Wait
-            );
+            let original = active_input.as_ref().unwrap();
+            assert!(!original.cancel.is_cancelled());
+            let producer = original.output.as_ref().unwrap();
+            assert_eq!(producer.output().response_id(), response_id);
+            if expected == TurnState::Backchannel {
+                tokio::time::timeout(Duration::from_secs(3), producer.wait_open())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(!producer.output().is_held());
+            } else {
+                assert_eq!(
+                    producer.output().hold_reason(),
+                    Some(HoldReason::ExplicitWait)
+                );
+            }
         }
     }
+    assert_eq!(fixture.count("responses").await, 1);
+    assert_eq!(
+        fixture.assistant_count().await,
+        0,
+        "no assistant commit or TTS was exercised"
+    );
     tx.send(DeviceFrame {
         payload: Some(device_frame::Payload::Close(CloseSession {})),
     })
@@ -339,7 +562,7 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
     );
     assert_eq!(
         *fences.lock().unwrap(),
-        [(2, false), (3, false), (1, true)].map(|(generation_epoch, closed)| {
+        [(2, false), (1, true)].map(|(generation_epoch, closed)| {
             (
                 VoiceScope {
                     device_boot_id: boot,
@@ -354,9 +577,58 @@ async fn official_audio_over_grpc_preserves_backchannel_and_cancels_on_wait() {
     drop(tx);
     drop(client);
     shutdown.cancel();
+    assert!(active_input.as_ref().unwrap().cancel.is_cancelled());
+    delivery.shutdown().await.unwrap();
     tokio::time::timeout(Duration::from_secs(2), server)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
+}
+
+async fn canonical_response(
+    fixture: &Fixture,
+    delivery: &Arc<DeliveryService>,
+    input: &voice_input::RecognizedVoiceInput,
+) -> alia_server::modules::delivery::types::ResponseRecord {
+    let session = Uuid::new_v4();
+    let event = Uuid::new_v4();
+    fixture
+        .db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,$2,$3)",
+            vec![
+                session.into(),
+                CHANNEL.into(),
+                fixture.user.to_string().into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    let source_time = fixture.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user',$4,$5,$6,$7) RETURNING source_received_at",
+        vec![event.into(), session.into(), fixture.user.to_string().into(), input.transcript.clone().into(), input.source_received_at.into(), input.source_privacy_epoch.into(), input.source_relationship_epoch.into()]))
+        .await.unwrap().unwrap().try_get("", "source_received_at").unwrap();
+    let source = ContextSource {
+        owner_id: fixture.user,
+        request_id: input.request_id,
+        channel_id: CHANNEL.into(),
+        conversation_id: Some(session),
+        source_event_id: Some(event),
+        source_received_at: source_time,
+        source_privacy_epoch: input.source_privacy_epoch,
+    };
+    let context = fixture
+        .context()
+        .materialize(source, &input.transcript)
+        .await
+        .unwrap();
+    delivery.prepare(NewResponse {
+        key: ResponseKey { user_id: fixture.user, request_id: input.request_id, output_key: "answer".into() },
+        context_id: context.lease().id(), conversation_id: Some(session), source_event_id: Some(event),
+        source_received_at: source_time, source_privacy_epoch: Some(input.source_privacy_epoch),
+        channel_id: CHANNEL.into(), kind: "conversation".into(),
+        content: serde_json::json!({"intent":input.transcript,"voice_scope":input.output.as_ref().unwrap().scope()}),
+    }).await.unwrap()
 }

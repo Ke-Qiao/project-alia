@@ -21,6 +21,7 @@ pub(super) struct VoiceTurn {
     pub(super) id: Uuid,
     pub(super) response_id: Arc<std::sync::OnceLock<Uuid>>,
     pub(super) output_channel: Option<Arc<dyn crate::channels::adapter::ChannelAdapter>>,
+    pub(super) output: Option<Arc<crate::modules::delivery::OutputProducer>>,
     pub(super) received_at: chrono::DateTime<chrono::Utc>,
     /// Required for production inbound sources; synthetic turns start unstamped.
     pub(super) source_privacy_epoch: Option<i64>,
@@ -120,6 +121,7 @@ impl VoiceTurnRegistry {
             id,
             response_id: Arc::default(),
             output_channel: None,
+            output: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_relationship_epoch: None,
@@ -220,6 +222,7 @@ impl VoiceTurn {
             id: Uuid::new_v4(),
             response_id: Arc::default(),
             output_channel: None,
+            output: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_relationship_epoch: None,
@@ -289,7 +292,14 @@ where
             );
             Ok(None)
         }
-        result = fut => result.map(Some),
+        result = async {
+            if let Some(output) = &turn.output { output.wait_open().await?; }
+            // A hold never drops and recreates an in-flight request. Retain its
+            // bounded result until the same original owner is allowed onward.
+            let result = fut.await?;
+            if let Some(output) = &turn.output { output.wait_open().await?; }
+            Ok::<_, anyhow::Error>(result)
+        } => result.map(Some),
     }
 }
 

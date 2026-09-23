@@ -6,6 +6,38 @@ use alia_server::config::{
 };
 
 #[test]
+fn duplex_hold_budget_defaults_and_explicit_bounds_are_checked_during_deserialization() {
+    use alia_server::config::PoliciesSection;
+    assert_eq!(PoliciesSection::default().duplex.hold_budget_ms, 60_000);
+    assert_eq!(
+        toml::from_str::<PoliciesSection>("")
+            .unwrap()
+            .duplex
+            .hold_budget_ms,
+        60_000
+    );
+    assert_eq!(
+        toml::from_str::<PoliciesSection>("[duplex]")
+            .unwrap()
+            .duplex
+            .hold_budget_ms,
+        60_000
+    );
+    for budget in [1, 3_000, 60_000, 120_000] {
+        let value =
+            toml::from_str::<PoliciesSection>(&format!("[duplex]\nhold_budget_ms = {budget}"))
+                .unwrap();
+        assert_eq!(value.duplex.hold_budget_ms, budget);
+    }
+    for invalid in ["0", "120001", "-1", "60000.5", "\"60000\""] {
+        assert!(
+            toml::from_str::<PoliciesSection>(&format!("[duplex]\nhold_budget_ms = {invalid}"))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn loads_config_fragments_recursively_in_sorted_order() {
     let root = std::env::temp_dir().join(format!(
         "alia-config-fragments-{}",

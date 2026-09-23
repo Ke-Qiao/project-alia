@@ -22,6 +22,10 @@ pub(crate) struct AdmittedSource {
     channel: Arc<dyn ChannelAdapter>,
 }
 
+impl AdmittedSource {
+    pub(crate) fn channel(&self) -> Arc<dyn ChannelAdapter> { self.channel.clone() }
+}
+
 #[derive(Clone)]
 pub struct ServerAudioIngressService {
     event_bus: EventBus,

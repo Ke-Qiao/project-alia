@@ -1,6 +1,17 @@
 use super::*;
 use crate::channels::adapter::AudioBuffer;
 
+// These transport-only tests inject the already-admitted binding. The paired
+// duplex_playback integration suite exercises its actual SQL/device registration.
+fn binding(scope: VoiceScope) -> alia_core::output_control::OutputBinding {
+    alia_core::output_control::OutputBinding {
+        scope,
+        response_id: uuid::Uuid::new_v4(),
+        context_id: uuid::Uuid::new_v4(),
+        server_instance_id: uuid::Uuid::new_v4(),
+    }
+}
+
 #[test]
 fn decoder_copy_limits_include_an_incomplete_native_frame() {
     use crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
@@ -94,9 +105,11 @@ async fn fragmented_wav_preserves_original_scope_sequence_and_actual_rate() {
         Box::pin(futures::stream::iter(payloads)),
         tx,
         identity,
+        binding(scope),
         Arc::new(AtomicU64::new(0)),
         Arc::new(TestObserver),
         ready,
+        oneshot::channel().0,
         CancellationToken::new(),
         Arc::new(AtomicBool::new(false)),
     ));
@@ -220,6 +233,31 @@ async fn idle_receipt_timeout_cancels_and_joins_the_audio_producer() {
     struct SilentDevice;
     #[tonic::async_trait]
     impl proto::playback_server::Playback for SilentDevice {
+        async fn register_output(
+            &self,
+            _: tonic::Request<proto::RegisterOutputRequest>,
+        ) -> Result<tonic::Response<proto::RegisterOutputReceipt>, tonic::Status> {
+            Err(tonic::Status::unimplemented(
+                "transport-only fixture does not admit outputs",
+            ))
+        }
+        async fn control(
+            &self,
+            _: tonic::Request<proto::ControlRequest>,
+        ) -> Result<tonic::Response<proto::ControlResponse>, tonic::Status> {
+            Err(tonic::Status::unimplemented(
+                "transport-only fixture does not control outputs",
+            ))
+        }
+        async fn observe_control(
+            &self,
+            _: tonic::Request<proto::ControlRequest>,
+        ) -> Result<tonic::Response<proto::ControlResponse>, tonic::Status> {
+            Err(tonic::Status::unimplemented(
+                "transport-only fixture has no control facts",
+            ))
+        }
+
         type PushStream =
             Pin<Box<dyn futures::Stream<Item = Result<proto::PlaybackReceipt, Status>> + Send>>;
         async fn push(
@@ -274,6 +312,7 @@ async fn idle_receipt_timeout_cancels_and_joins_the_audio_producer() {
     let report = push(
         client,
         identity(scope, 1),
+        binding(scope),
         Box::pin(audio),
         tonic::metadata::MetadataMap::new(),
         Arc::new(TestObserver),
@@ -360,6 +399,31 @@ struct EvidenceDevice {
 }
 #[tonic::async_trait]
 impl proto::playback_server::Playback for EvidenceDevice {
+    async fn register_output(
+        &self,
+        _: tonic::Request<proto::RegisterOutputRequest>,
+    ) -> Result<tonic::Response<proto::RegisterOutputReceipt>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "transport-only fixture does not admit outputs",
+        ))
+    }
+    async fn control(
+        &self,
+        _: tonic::Request<proto::ControlRequest>,
+    ) -> Result<tonic::Response<proto::ControlResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "transport-only fixture does not control outputs",
+        ))
+    }
+    async fn observe_control(
+        &self,
+        _: tonic::Request<proto::ControlRequest>,
+    ) -> Result<tonic::Response<proto::ControlResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "transport-only fixture has no control facts",
+        ))
+    }
+
     type PushStream = std::pin::Pin<
         Box<dyn futures::Stream<Item = Result<proto::PlaybackReceipt, tonic::Status>> + Send>,
     >;
@@ -374,6 +438,9 @@ impl proto::playback_server::Playback for EvidenceDevice {
         let stream = async_stream::stream! {
             let first = incoming.message().await.unwrap().unwrap();
             assert_eq!(*observer.format.lock().unwrap(), Some((16000, 1)));
+            let Some(playback_frame::Payload::Start(start)) = &first.payload else { panic!("expected Start"); };
+            let original = alia_proto::output_control::decode_binding(start.output_binding.as_ref().unwrap()).unwrap();
+            assert_eq!(Some(encode_scope(original.scope)), first.scope);
             wire.lock().unwrap().push(first.clone());
             let mut receipt = proto::PlaybackReceipt {
                 scope: first.scope.clone(), playback_id: first.playback_id.clone(), playback_sequence: first.playback_sequence,
@@ -560,6 +627,7 @@ async fn durable_gates_precede_wire_and_end_continues_monotonic_submission_evide
     let delivery = tokio::spawn(push(
         f.client.clone(),
         id,
+        binding(id.scope),
         stereo_audio(),
         Default::default(),
         observer.clone(),
@@ -650,6 +718,7 @@ async fn heartbeats_do_not_extend_delivery_deadline_and_exact_cancel_keeps_prefi
     let delivery = tokio::spawn(push(
         f.client.clone(),
         id,
+        binding(id.scope),
         stereo_audio(),
         Default::default(),
         observer.clone(),
@@ -745,6 +814,7 @@ async fn precise_cancel_merges_final_prefix_and_bare_control_ack_is_unknown() {
         let delivery = tokio::spawn(push(
             f.client.clone(),
             id,
+            binding(id.scope),
             stereo_audio(),
             Default::default(),
             observer.clone(),

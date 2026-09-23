@@ -1,10 +1,14 @@
 //! Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
 use alia_server::channels::adapter::AudioBuffer;
 mod delivery_support;
-use alia_core::delivery::{ObservationEnd, PlaybackIdentity, PlaybackProgress};
+use alia_core::delivery::{
+    ObservationEnd, PlaybackIdentity, PlaybackProgress, SubmissionBackend, SubmissionBoundary,
+    VoiceScope,
+};
+use alia_core::output_control::{OutputBinding, OutputRegistration};
 use alia_server::channels::adapter::*;
 use alia_server::module::ModuleLifecycle;
-use alia_server::modules::delivery::{AudioDelivery, DeliveryService, types::*};
+use alia_server::modules::delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*};
 use async_trait::async_trait;
 use delivery_support::*;
 use futures::StreamExt;
@@ -31,6 +35,8 @@ enum Behavior {
 }
 struct Channel {
     owner: Uuid,
+    scope: VoiceScope,
+    backend: SubmissionBackend,
     behavior: Behavior,
     entered: Semaphore,
     release: Semaphore,
@@ -66,6 +72,21 @@ impl ChannelAdapter for Channel {
         }
     }
     async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
+        assert_eq!(binding.scope, self.scope);
+        Ok(OutputRegistration {
+            binding,
+            backend: self.backend.clone(),
+            maximum_hold_ms: 60000,
+        })
+    }
+    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        assert_eq!(target.user_id, self.owner.to_string());
+        assert_eq!(target.voice, Some(self.scope));
+        // Scope retirement is a separate barrier. Preserve each test's original
+        // exact PlaybackIdentity checkpoint and its injected ACK failure.
         Ok(())
     }
     fn reserve_playback(
@@ -163,12 +184,7 @@ impl ChannelAdapter for Channel {
             progress.accepted_source_frames = 100;
             progress.end_accepted = true;
             progress.submitted_source_frames = Some(100);
-            progress.backend = Some(alia_core::delivery::SubmissionBackend {
-                instance_id: Uuid::new_v4(),
-                boundary: alia_core::delivery::SubmissionBoundary::CpalCallbackBuffer,
-                output_sample_rate_hz: 48000,
-                output_channels: 2,
-            });
+            progress.backend = Some(self.backend.clone());
             progress.observation_end = Some(ObservationEnd::SubmissionFinished);
             *self.last_progress.lock().unwrap() = Some(progress.clone());
             observer.progress(progress.clone()).await?;
@@ -183,6 +199,13 @@ impl ChannelAdapter for Channel {
 fn channel(f: &Fixture, behavior: Behavior) -> Arc<Channel> {
     Arc::new(Channel {
         owner: f.user,
+        scope: identity().scope,
+        backend: SubmissionBackend {
+            instance_id: Uuid::new_v4(),
+            boundary: SubmissionBoundary::CpalCallbackBuffer,
+            output_sample_rate_hz: 48000,
+            output_channels: 2,
+        },
         behavior,
         entered: Semaphore::new(0),
         release: Semaphore::new(0),
@@ -194,6 +217,27 @@ fn channel(f: &Fixture, behavior: Behavior) -> Arc<Channel> {
         db: f.db.clone(),
     })
 }
+async fn prepared_output(
+    service: &Arc<DeliveryService>,
+    f: &Fixture,
+    channel: &Arc<Channel>,
+) -> (ResponseRecord, Arc<OutputProducer>) {
+    let mut input = f.response().await;
+    input.content["voice_scope"] = json!(channel.scope);
+    let producer = service
+        .begin_voice_output(
+            f.user,
+            input.key.request_id,
+            channel.scope,
+            channel.clone(),
+            CancellationToken::new(),
+            None,
+        )
+        .unwrap();
+    let response = service.prepare(input).await.unwrap();
+    producer.bind(response.clone()).await.unwrap();
+    (response, producer)
+}
 fn request(response: Uuid, channel: Arc<Channel>, cancel: CancellationToken) -> AudioDelivery {
     AudioDelivery {
         response_id: response,
@@ -201,7 +245,7 @@ fn request(response: Uuid, channel: Arc<Channel>, cancel: CancellationToken) -> 
         content: json!({"text":"hello"}),
         target: ChannelTarget {
             user_id: channel.owner.to_string(),
-            voice: Some(identity().scope),
+            voice: Some(channel.scope),
         },
         channel,
         audio: Box::pin(futures::stream::iter([Ok(AudioPayload {
@@ -240,8 +284,8 @@ async fn dropping_caller_preserves_supervisor_and_shutdown_uses_exact_identity()
         let stop = CancellationToken::new();
         let service = DeliveryService::new(f.repo(), &stop);
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let input = request(
             response.response_id,
             channel.clone(),
@@ -280,8 +324,8 @@ async fn submitted_receipt_is_terminal_without_post_speech_evidence() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Submitted);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         channel.release.add_permits(1);
         let record = service
             .deliver_audio(request(
@@ -304,8 +348,8 @@ async fn lease_wait_does_not_pause_adapter_holding_source_transaction() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::SlowLease);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         channel.release.add_permits(1);
         let record = tokio::time::timeout(
             Duration::from_secs(8),
@@ -330,8 +374,8 @@ async fn unconfirmed_cancel_is_unknown_and_cannot_replay() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Unconfirmed);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let input = request(
             response.response_id,
             channel.clone(),
@@ -369,8 +413,8 @@ async fn local_transport_unknown_preserves_device_sequence_and_uses_independent_
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::LocalUnknown);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let record = tokio::time::timeout(
             Duration::from_secs(4),
             service.deliver_audio(request(
@@ -406,8 +450,8 @@ async fn old_epoch_heartbeat_cancels_original_playback_and_preserves_prefix() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let owner = service.clone();
         let id = response.response_id;
         let output = channel.clone();
@@ -443,8 +487,8 @@ async fn cancellation_timeout_persists_unknown_but_retains_actual_adapter_owner(
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::IgnoreCancel);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let owner = service.clone();
         let id = response.response_id;
         let output = channel.clone();
@@ -485,8 +529,8 @@ async fn closed_admission_and_already_cancelled_input_send_no_media() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         let record = service
@@ -514,7 +558,8 @@ async fn closed_admission_and_already_cancelled_input_send_no_media() {
 #[tokio::test]
 async fn failed_durable_offer_prevents_external_audio_and_preserves_zero_bound() {
     with_db(|f|async move{
- let service=DeliveryService::new(f.repo(),&CancellationToken::new());service.start().await.unwrap();let response=service.prepare(f.response().await).await.unwrap();let channel=channel(&f,Behavior::Accept);
+ let service=DeliveryService::new(f.repo(),&CancellationToken::new());service.start().await.unwrap();let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
  f.sql("CREATE FUNCTION fail_offer() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.kind='offered' THEN RAISE EXCEPTION 'injected offered audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_offer BEFORE INSERT ON delivery_events FOR EACH ROW EXECUTE FUNCTION fail_offer()").await;
  let record=service.deliver_audio(request(response.response_id,channel.clone(),CancellationToken::new())).await.unwrap();assert_eq!(channel.calls.load(Ordering::SeqCst),1);assert_eq!(channel.media.load(Ordering::SeqCst),0);assert_eq!(record.offered_frames,0);assert_eq!(record.accepted_frames,0);assert_eq!(record.presented_frames,None);assert!(record.status.is_terminal());service.shutdown().await.unwrap();
 }).await;
@@ -525,8 +570,8 @@ async fn completed_error_future_is_not_repolled_and_known_prefix_survives() {
     with_db(|f| async move {
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
-        let response = service.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::ImmediateError);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;
         let record = tokio::time::timeout(
             Duration::from_secs(3),
             service.deliver_audio(request(
@@ -558,8 +603,8 @@ async fn another_instance_cancels_observing_output_through_durable_control() {
         let b = DeliveryService::new(f.repo(), &CancellationToken::new());
         a.start().await.unwrap();
         b.start().await.unwrap();
-        let response = a.prepare(f.response().await).await.unwrap();
         let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&a, &f, &channel).await;
         let owner = a.clone();
         let id = response.response_id;
         let output = channel.clone();
@@ -589,6 +634,7 @@ async fn another_instance_cancels_observing_output_through_durable_control() {
 #[tokio::test]
 async fn recovered_unknown_lease_stops_the_returning_original_owner() {
     with_db(|f|async move{
- let service=DeliveryService::new(f.repo(),&CancellationToken::new());service.start().await.unwrap();let response=service.prepare(f.response().await).await.unwrap();let channel=channel(&f,Behavior::Accept);let owner=service.clone();let id=response.response_id;let output=channel.clone();let caller=tokio::spawn(async move{owner.deliver_audio(request(id,output,CancellationToken::new())).await});wait_entered(&channel).await;f.sql("UPDATE deliveries SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE status IN ('sending','observing')").await;assert_eq!(f.repo().recover_expired(1).await.unwrap(),1);let record=tokio::time::timeout(Duration::from_secs(7),caller).await.unwrap().unwrap().unwrap();assert_eq!(record.status,DeliveryStatus::Unknown);assert_eq!(record.accepted_frames,60);assert_eq!(channel.fences.lock().unwrap().as_slice(),&[record.identity.unwrap()]);service.shutdown().await.unwrap();
+ let service=DeliveryService::new(f.repo(),&CancellationToken::new());service.start().await.unwrap();let channel = channel(&f, Behavior::Accept);
+        let (response, _producer) = prepared_output(&service, &f, &channel).await;let owner=service.clone();let id=response.response_id;let output=channel.clone();let caller=tokio::spawn(async move{owner.deliver_audio(request(id,output,CancellationToken::new())).await});wait_entered(&channel).await;f.sql("UPDATE deliveries SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE status IN ('sending','observing')").await;assert_eq!(f.repo().recover_expired(1).await.unwrap(),1);let record=tokio::time::timeout(Duration::from_secs(7),caller).await.unwrap().unwrap().unwrap();assert_eq!(record.status,DeliveryStatus::Unknown);assert_eq!(record.accepted_frames,60);assert_eq!(channel.fences.lock().unwrap().as_slice(),&[record.identity.unwrap()]);service.shutdown().await.unwrap();
 }).await;
 }

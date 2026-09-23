@@ -75,6 +75,11 @@ pub(super) async fn prepare_response(
             "voice_scope":turn.voice_scope,"text":notice_text}),
         })
         .await?;
+    // Only the original live producer can register a network voice output.
+    // The prepared Response and its original frozen Context precede this I/O.
+    if let Some(output) = &turn.output {
+        output.bind(response.clone()).await?;
+    }
     if let Err(id) = turn.response_id.set(response.response_id) {
         anyhow::ensure!(
             turn.response_id.get() == Some(&id),

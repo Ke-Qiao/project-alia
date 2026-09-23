@@ -23,8 +23,10 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 mod media;
+mod output;
 pub use media::TextDelivery;
 use media::{DeliveryInput, MediaIdentity, MediaProgress, MediaReport};
+pub use output::{OutputProducer, VoiceOutput};
 
 const DB_TIMEOUT: Duration = Duration::from_secs(2);
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
@@ -42,6 +44,7 @@ pub struct AudioDelivery {
 }
 struct Command {
     input: DeliveryInput,
+    media_owner: Option<output::MediaOwner>,
     reply: oneshot::Sender<DeliveryResult<DeliveryRecord>>,
 }
 
@@ -54,6 +57,9 @@ pub struct DeliveryService {
     running: AtomicBool,
     sender: mpsc::Sender<Command>,
     receiver: Mutex<Option<mpsc::Receiver<Command>>>,
+    output_sender: mpsc::Sender<output::NewOutput>,
+    output_receiver: Mutex<Option<mpsc::Receiver<output::NewOutput>>>,
+    outputs: StdMutex<HashMap<alia_core::delivery::VoiceScope, VoiceOutput>>,
     task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
     /// Only reservation + durable admission are serialized. Media I/O never holds
     /// this gate. A per-key gate can replace it if measured admission needs demand it.
@@ -65,6 +71,7 @@ pub struct DeliveryService {
 impl DeliveryService {
     pub fn new(repository: DeliveryRepository, parent: &CancellationToken) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(MAX_SUPERVISORS);
+        let (output_sender, output_receiver) = mpsc::channel(MAX_SUPERVISORS);
         Arc::new(Self {
             repository,
             instance_id: Uuid::new_v4(),
@@ -74,6 +81,9 @@ impl DeliveryService {
             running: AtomicBool::new(false),
             sender,
             receiver: Mutex::new(Some(receiver)),
+            output_sender,
+            output_receiver: Mutex::new(Some(output_receiver)),
+            outputs: StdMutex::new(HashMap::new()),
             task: Mutex::new(None),
             admission: Mutex::new(()),
             active: StdMutex::new(HashMap::new()),
@@ -90,16 +100,23 @@ impl DeliveryService {
             return Ok(());
         }
         bounded(self.repository.recover_expired(256)).await?;
+        self.repository.recover_expired_controls(256).await?;
         let rx = self
             .receiver
             .lock()
             .await
             .take()
             .ok_or_else(|| anyhow::anyhow!("delivery cannot restart"))?;
+        let outputs = self
+            .output_receiver
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("output control cannot restart"))?;
         self.running.store(true, Ordering::Release);
         let service = self.clone();
         *task = Some(tokio::spawn(async move {
-            let result = service.clone().run(rx).await;
+            let result = service.clone().run(rx, outputs).await;
             service.running.store(false, Ordering::Release);
             result
         }));
@@ -115,6 +132,9 @@ impl DeliveryService {
     pub async fn shutdown(&self) -> anyhow::Result<()> {
         self.close_admission();
         self.stop.cancel();
+        for output in self.outputs.lock().unwrap().values() {
+            output.retire();
+        }
         for (_, cancel) in self.active.lock().unwrap().values() {
             cancel.cancel();
         }
@@ -190,6 +210,11 @@ impl DeliveryService {
         // Signal the original media owners even if the cancellation write is slow.
         // The owner check precedes this signal; knowing another response ID is insufficient.
         bounded(self.repository.response(owner, response)).await?;
+        for output in self.outputs.lock().unwrap().values() {
+            if output.response_id() == Some(response) {
+                output.retire();
+            }
+        }
         for (id, cancel) in self.active.lock().unwrap().values() {
             if *id == response {
                 cancel.cancel();
@@ -231,9 +256,27 @@ impl DeliveryService {
                     "delivery supervision has not started".into(),
                 ));
             }
+            // Queue ownership starts before the caller can drop its producer.
+            // A missing/retired output may still be an idempotent fact lookup;
+            // supervise checks that fact before requiring a live media owner.
+            let media_owner = if input.payload.medium() == DeliveryMedium::Audio {
+                input.target.voice.and_then(|scope| {
+                    self.outputs
+                        .lock()
+                        .unwrap()
+                        .get(&scope)
+                        .and_then(|output| output.retain_media(input.response_id).ok())
+                })
+            } else {
+                None
+            };
             let (reply, receive) = oneshot::channel();
             self.sender
-                .try_send(Command { input, reply })
+                .try_send(Command {
+                    input,
+                    media_owner,
+                    reply,
+                })
                 .map_err(|_| DeliveryError::CapacityExceeded)?;
             receive
         };
@@ -250,21 +293,35 @@ impl DeliveryService {
             Ok(())
         }
     }
-    async fn run(self: Arc<Self>, mut receiver: mpsc::Receiver<Command>) -> anyhow::Result<()> {
+    async fn run(
+        self: Arc<Self>,
+        mut receiver: mpsc::Receiver<Command>,
+        mut outputs: mpsc::Receiver<output::NewOutput>,
+    ) -> anyhow::Result<()> {
         let mut tasks = JoinSet::new();
+        let mut output_tasks = JoinSet::new();
         let mut recovery = tokio::time::interval(Duration::from_secs(5));
         recovery.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {biased;
              _=self.stop.cancelled()=>break,
              result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {self.failures.lock().unwrap().push(format!("delivery task panicked: {error}"));}},
-             command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input).await;let _=command.reply.send(result);});},None=>break},
-             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.failures.lock().unwrap().push(format!("delivery recovery: {error}"));self.stop.cancel();}},
+             result=output_tasks.join_next(),if !output_tasks.is_empty()=>{if let Some(Err(error))=result {self.failures.lock().unwrap().push(format!("output control task panicked: {error}"));self.stop.cancel();}},
+             next=outputs.recv(),if output_tasks.len()<MAX_SUPERVISORS=>match next{Some(input)=>{let service=self.clone();output_tasks.spawn(async move {service.supervise_output(input).await;});},None=>break},
+             command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input, command.media_owner).await;let _=command.reply.send(result);});},None=>break},
+             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.failures.lock().unwrap().push(format!("delivery recovery: {error}"));self.stop.cancel();} if let Err(error)=self.repository.recover_expired_controls(256).await{self.failures.lock().unwrap().push(format!("output control recovery: {error}"));self.stop.cancel();}},
             }
         }
         self.close_admission();
         self.stop.cancel();
         receiver.close();
+        outputs.close();
+        for output in self.outputs.lock().unwrap().values() {
+            output.retire();
+        }
+        while let Some(input) = outputs.recv().await {
+            self.clone().supervise_output(input).await;
+        }
         while let Some(command) = receiver.recv().await {
             let _ = command.reply.send(Err(DeliveryError::InvalidTransition(
                 "delivery stopped before admission".into(),
@@ -278,12 +335,21 @@ impl DeliveryService {
                     .push(format!("delivery join failed: {error}"));
             }
         }
+        while let Some(result) = output_tasks.join_next().await {
+            if let Err(error) = result {
+                self.failures
+                    .lock()
+                    .unwrap()
+                    .push(format!("output control join failed: {error}"));
+            }
+        }
         Ok(())
     }
-    async fn supervise(self: &Arc<Self>, input: DeliveryInput) -> DeliveryResult<DeliveryRecord> {
-        let owner = Uuid::parse_str(&input.target.user_id)
-            .map_err(|_| DeliveryError::Unauthorized("target has no linked account".into()))?;
-        let gate = tokio::select! {biased;_=self.stop.cancelled()=>return Err(DeliveryError::InvalidTransition("delivery stopped before reservation".into())),guard=self.admission.lock()=>guard};
+    async fn existing_delivery(
+        &self,
+        owner: Uuid,
+        input: &mut DeliveryInput,
+    ) -> DeliveryResult<Option<DeliveryRecord>> {
         let response = bounded(self.repository.response(owner, input.response_id)).await?;
         if input.channel.owner_user_id() != Some(owner)
             || input.channel.channel_id() != response.channel_id
@@ -307,6 +373,43 @@ impl DeliveryService {
                 return Err(DeliveryError::IdempotencyConflict);
             }
             // A retry sees the durable fact, never obtains another dispatch owner.
+            return Ok(Some(existing));
+        }
+        Ok(None)
+    }
+    async fn supervise(
+        self: &Arc<Self>,
+        mut input: DeliveryInput,
+        media_owner: Option<output::MediaOwner>,
+    ) -> DeliveryResult<DeliveryRecord> {
+        let owner = Uuid::parse_str(&input.target.user_id)
+            .map_err(|_| DeliveryError::Unauthorized("target has no linked account".into()))?;
+        if let Some(existing) = self.existing_delivery(owner, &mut input).await? {
+            return Ok(existing);
+        }
+        // Keep the queue's original owner through native tail completion. Never
+        // hold the admission mutex while waiting for a reversible hold.
+        let _media_owner = media_owner;
+        if input.payload.medium() == DeliveryMedium::Audio && input.target.voice.is_some() {
+            let output = _media_owner
+                .as_ref()
+                .ok_or_else(|| {
+                    DeliveryError::InvalidTransition(
+                        "voice output has no original producer owner".into(),
+                    )
+                })?
+                .output();
+            output
+                .wait_open()
+                .await
+                .map_err(|e| DeliveryError::InvalidTransition(e.to_string()))?;
+            input.payload = match input.payload {
+                media::Payload::Audio(stream) => media::Payload::Audio(output.gate_stream(stream)),
+                other => other,
+            };
+        }
+        let gate = tokio::select! {biased;_=self.stop.cancelled()=>return Err(DeliveryError::InvalidTransition("delivery stopped before reservation".into())),guard=self.admission.lock()=>guard};
+        if let Some(existing) = self.existing_delivery(owner, &mut input).await? {
             return Ok(existing);
         }
         self.ensure_open()?;
