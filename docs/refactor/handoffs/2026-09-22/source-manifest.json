@@ -1,0 +1,3021 @@
+{
+  "commit": "ae75a4ee92b1ea2e8c11a1d20c488ba62125d81f",
+  "selection": "all tracked regular files excluding docs/ and run/; checkpoint evidence only, not an accepted build",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "4d93649b7eea0a909033f050cd52324a3c3f4d6edc440ff29338edd4973eabe1",
+      "bytes": 521
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "845d709734b382d24baaec28bd9d69a524e92c4b41366184de02f0ef7a322dfc",
+      "bytes": 138277
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "28484da1cb21ab9fc5e8e1fa589f68ed4e3c632561a79c03782b95d088b3f8dc",
+      "bytes": 2304
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "486e759159a1dd28af71a32406354f626ab1cd490d9aac80e0ed39787104439c",
+      "bytes": 1065
+    },
+    {
+      "path": "Project_Alia_Architecture_Proposal_2026-09-07.md",
+      "sha256": "de604188613768dff6bbf6e87629c8f3f8e013de9d8c4b009b36ee1fe5063f5d",
+      "bytes": 41810
+    },
+    {
+      "path": "README.md",
+      "sha256": "e32a0d7473f891e6700a6667bcb656f37d6854ef759a18cf74a8c7decf7f0be5",
+      "bytes": 5012
+    },
+    {
+      "path": "config/direct_response.example/cancel/config.json",
+      "sha256": "49c6771027e469eb14028739eb8626f9fff58e03b6859846ca44e2a0c8aaeae3",
+      "bytes": 379
+    },
+    {
+      "path": "config/direct_response.example/error/config.json",
+      "sha256": "5cce72c4f11e7b9987d9daf98b9c75ba39c5322cce69e3074643cfa35da3befe",
+      "bytes": 167
+    },
+    {
+      "path": "config/direct_response.example/error/error.wav",
+      "sha256": "24e241024303d7da397d6a42b02fa9cba225d3ede34465d62d9698a5bd45549d",
+      "bytes": 10284
+    },
+    {
+      "path": "config/direct_response.example/fallback/config.json",
+      "sha256": "6bcc655ba6885fcbd7efa5705d429765da3ccb3fed057b154ff4d5d721967fb1",
+      "bytes": 68
+    },
+    {
+      "path": "config/direct_response.example/listening-continue/config.json",
+      "sha256": "c5e7a7703740579d15572625774e9db3000de6a3761af54cc6d8cacdd409400e",
+      "bytes": 88
+    },
+    {
+      "path": "config/direct_response.example/listening-start/config.json",
+      "sha256": "a62d181a2b5b4a4dac539729daafd43c887c342af4b0493b94e050e87f4d4c10",
+      "bytes": 82
+    },
+    {
+      "path": "config/direct_response.example/thinking/config.json",
+      "sha256": "7270a5100c3199675ac4e1ea2682e407eabca1edb9a08ac89542f8a22a494ee0",
+      "bytes": 176
+    },
+    {
+      "path": "config/direct_response.example/thinking/thinking.wav",
+      "sha256": "6e9184e6ec2f6fa8ac76d7076ee982855241fce7f0752824d1e7c5b6907c2f4c",
+      "bytes": 9004
+    },
+    {
+      "path": "config/direct_response.example/wakeword/config.json",
+      "sha256": "23fa1286deb32d9939710d03a699043b73a40f1efae3675581c84dec68059e94",
+      "bytes": 285
+    },
+    {
+      "path": "config/embedded.example.toml",
+      "sha256": "dadab1825399d93350db768ab5d8e1c371997daec65b6d4b00564a4c9ed9dd3c",
+      "bytes": 9140
+    },
+    {
+      "path": "config/server.example.d/README.md",
+      "sha256": "2533c4f8df479acd375da2cf771f32db543f96ec059bc18bf66acb86b60845fd",
+      "bytes": 1097
+    },
+    {
+      "path": "config/server.example.d/plugins/home_assistant.toml",
+      "sha256": "524ad3b99d94a7c62a4d856267d4bdbda15b9a9341f105fe83e2ca3ad36a744c",
+      "bytes": 342
+    },
+    {
+      "path": "config/server.example.d/policies/affect.toml",
+      "sha256": "e8b3c4f3d46a982bcf985f18290456e96079c807cff307bc2d914408ae476d1e",
+      "bytes": 1729
+    },
+    {
+      "path": "config/server.example.d/policies/cache.toml",
+      "sha256": "e77a477073044edd385b243893eb8bc20c8f6014ddda3bd658e40b7b7c5a2ff4",
+      "bytes": 173
+    },
+    {
+      "path": "config/server.example.d/policies/conversation.toml",
+      "sha256": "ab97343c656df21beff23d45d328fb02a2a1daece82306c8f559842e20934b6c",
+      "bytes": 76
+    },
+    {
+      "path": "config/server.example.d/policies/expression.toml",
+      "sha256": "f8125552e7918216a08002a9829e186b0a9c3930398f7776f54172564c37c987",
+      "bytes": 453
+    },
+    {
+      "path": "config/server.example.d/policies/insights.toml",
+      "sha256": "8f01e640022f0c4b3e5c9069879d1ed153e477e4742c80fe75be12ac9171249f",
+      "bytes": 3359
+    },
+    {
+      "path": "config/server.example.d/policies/memory.toml",
+      "sha256": "d1b50a80d7e5d4feaccdf6c4158be519752bcc4c89c8a4f347570880edcb5a54",
+      "bytes": 444
+    },
+    {
+      "path": "config/server.example.d/policies/regulation.toml",
+      "sha256": "6d72b0a52c8fa32906bb02e7ce2e8b2b7898e1771ec85ebcf3262b34cd47b790",
+      "bytes": 1192
+    },
+    {
+      "path": "config/server.example.d/policies/routing.toml",
+      "sha256": "a089ca472467e55fc0c22ca5d8629fe8bf5e37ab86af11fdab7da4f35a996124",
+      "bytes": 85
+    },
+    {
+      "path": "config/server.example.d/policies/rules.toml",
+      "sha256": "4c966db7c61d54d1dc913a1eb9b537de9c8d670e66b755b3c0c2a31cea5c67c8",
+      "bytes": 177
+    },
+    {
+      "path": "config/server.example.d/policies/scheduler.toml",
+      "sha256": "0f35a4c79fb02e2998625c74c55c434ff147f921d2dd2d4b6d132a570a37e19b",
+      "bytes": 347
+    },
+    {
+      "path": "config/server.example.d/policies/tools.toml",
+      "sha256": "5fab31237fc7faf969645fa3492a3e72e5a65496f9d3279692bf5153cb672ef1",
+      "bytes": 355
+    },
+    {
+      "path": "config/server.example.d/policies/transcript_correction.toml",
+      "sha256": "986dc9667991d0f97bbcd19cc4b57247e9486643c46c374eb776b02b775294d4",
+      "bytes": 399
+    },
+    {
+      "path": "config/server.example.d/profiles/expression_styles.toml",
+      "sha256": "690b9f534703e040f78683d578ff7af5f705702d567afd6057ec501086520324",
+      "bytes": 625
+    },
+    {
+      "path": "config/server.example.d/profiles/llm.toml",
+      "sha256": "0e994bde28c3cda746aa2c8f68bc985d090251b2f2b251b3f05b30caf3a4be63",
+      "bytes": 1191
+    },
+    {
+      "path": "config/server.example.d/profiles/voice.default.toml",
+      "sha256": "691c0f6630982fcc0c6041c0770ac5ff73a59cbc3f4e74c893afe360973eec27",
+      "bytes": 719
+    },
+    {
+      "path": "config/server.example.d/providers/anthropic.toml",
+      "sha256": "bfb4d32bff52b46d39f219f720c6616047ef63d56efd268c0c64fb2df6a5429e",
+      "bytes": 152
+    },
+    {
+      "path": "config/server.example.d/providers/easy_turn.toml",
+      "sha256": "33246230fe40385a414f19d4cccd6800ca5145835e64dbef4c54a9cf2969d982",
+      "bytes": 205
+    },
+    {
+      "path": "config/server.example.d/providers/gemini.toml",
+      "sha256": "b10369220cf49fe3c0c3e78caaa20181f5fe322e021c71bdd016077d15a8be36",
+      "bytes": 143
+    },
+    {
+      "path": "config/server.example.d/providers/gpt_sovits.toml",
+      "sha256": "278fa831eaf7d09da284c0ab4e7b8f6d64b5fa9a8c8b7310db2de8f6e3ca6012",
+      "bytes": 743
+    },
+    {
+      "path": "config/server.example.d/providers/openai.toml",
+      "sha256": "7c58bd098750970a1b98d6aec742bc624753a2acc9c9a4c275f219346c15f10e",
+      "bytes": 489
+    },
+    {
+      "path": "config/server.example.d/providers/whisper_cpp.toml",
+      "sha256": "b4016576dffc7a07a05440987a9eb39b837389a7d71c01b462fdcdef59c5b9e1",
+      "bytes": 179
+    },
+    {
+      "path": "config/server.example.d/resources/appraisal_lexicons/README.md",
+      "sha256": "1bfa88350a886d7369eea1c15aefefc132de6af7f93220eeebc2c3029d2e3f5f",
+      "bytes": 645
+    },
+    {
+      "path": "config/server.example.d/resources/appraisal_lexicons/en.toml",
+      "sha256": "efeed7321993ea4a5d4e536e06fff0a323e5b1c057952f261c85c041e4b67924",
+      "bytes": 728
+    },
+    {
+      "path": "config/server.example.d/resources/appraisal_lexicons/zh.toml",
+      "sha256": "c0a9b7d8f4dde19400712f18f97973b5f2356658adaf6c7f6a88a64c76461841",
+      "bytes": 830
+    },
+    {
+      "path": "config/server.example.d/resources/cache_policy.toml",
+      "sha256": "2911f42cedcb48d22fa4f38db4cdd47c11b9eaa7af366e3ee93c486b0c0e91a0",
+      "bytes": 951
+    },
+    {
+      "path": "config/server.example.d/resources/skills.toml",
+      "sha256": "b91be5a25fdb53898f5d35cda56384311ecaa403189e2d1600545d46356ba0e1",
+      "bytes": 497
+    },
+    {
+      "path": "config/server.example.toml",
+      "sha256": "a5e680dd522a522ed7369358f902d08f44a8084f483ba1ae4fdb723077d9e013",
+      "bytes": 3503
+    },
+    {
+      "path": "crates/alia-core/Cargo.toml",
+      "sha256": "f19e56a2c9ec7ac5758c22d8cd04ab46ba874d1d96056af510ff022947172e32",
+      "bytes": 217
+    },
+    {
+      "path": "crates/alia-core/src/audio_clock.rs",
+      "sha256": "c89d6162d1e131355fbf3c87292177c40167e307c0dc888553e954ad13033424",
+      "bytes": 3042
+    },
+    {
+      "path": "crates/alia-core/src/body.rs",
+      "sha256": "3930d6878a406d8ad3641b09708328567063ca6fdc63ab49b802ca7d38bc6128",
+      "bytes": 21586
+    },
+    {
+      "path": "crates/alia-core/src/capture.rs",
+      "sha256": "24efb51f03f2aa5a49e4d3cdadcf729aed9343d2a071050a247593a5cf735a0f",
+      "bytes": 11134
+    },
+    {
+      "path": "crates/alia-core/src/delivery.rs",
+      "sha256": "5aeedeb4da328fd7f410022b0dd1da88b5a19f847e9fa6864b145b0363a1d9cd",
+      "bytes": 11321
+    },
+    {
+      "path": "crates/alia-core/src/lib.rs",
+      "sha256": "51293e1ba6fd4e29bef90d57559d14d1b52bf630b4535f5510bffafcff024ed7",
+      "bytes": 264
+    },
+    {
+      "path": "crates/alia-core/src/output_control.rs",
+      "sha256": "3b6ab8c9b8c4ca95d1869208cd72fe6c9f282b3e8632994027225ccd585cb8c6",
+      "bytes": 10271
+    },
+    {
+      "path": "crates/alia-core/src/playback_control.rs",
+      "sha256": "a4ae0ea187b01f11d37fac3c67f3823ac2956a8401dab6bda4fadf7df5e7716d",
+      "bytes": 21491
+    },
+    {
+      "path": "crates/alia-core/src/text_delivery.rs",
+      "sha256": "e2526013e94cd542e52456e69e08a5872e31325b8c3aac1cf0b53563a77d5ff4",
+      "bytes": 5587
+    },
+    {
+      "path": "crates/alia-core/src/turn.rs",
+      "sha256": "d30156c53858f9748d0f587a04c44e8b36faae4133c55c9fb40254f5208bce07",
+      "bytes": 7894
+    },
+    {
+      "path": "crates/alia-core/src/voice.rs",
+      "sha256": "47898b844c534baa753abd7f6d487233011d3ea45bd8c91c58db0a4b8195e3e0",
+      "bytes": 6142
+    },
+    {
+      "path": "crates/proto/.gitignore",
+      "sha256": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
+      "bytes": 8
+    },
+    {
+      "path": "crates/proto/Cargo.toml",
+      "sha256": "370177d822a59f683c0b0cc4841926874155616742a5c8877f1ebf62b3da122c",
+      "bytes": 242
+    },
+    {
+      "path": "crates/proto/build.rs",
+      "sha256": "62af7ae55d3ad8a4e4891c40cb022d06a1d91ab23f49c7142371668afc379756",
+      "bytes": 599
+    },
+    {
+      "path": "crates/proto/proto/audio.proto",
+      "sha256": "872cc6ed8bcbfa841893bbce79699d68621f1f2439c075dc7a8e2bdd85b24b48",
+      "bytes": 2935
+    },
+    {
+      "path": "crates/proto/proto/binding.proto",
+      "sha256": "5c55be50554826f1da6316ac18a87796da1ba4a6b0a655a132bf6349057916cb",
+      "bytes": 1956
+    },
+    {
+      "path": "crates/proto/proto/body.proto",
+      "sha256": "439ec590d5049a0045566bcdc369f332d8718e4185d795548754a0844d834527",
+      "bytes": 440
+    },
+    {
+      "path": "crates/proto/proto/expression.proto",
+      "sha256": "6de24403e489187d0da44c314886dcd238c06b16201e53b13ef4b97357efee99",
+      "bytes": 710
+    },
+    {
+      "path": "crates/proto/proto/playback.proto",
+      "sha256": "b6c2681fdeb68fbf5d107d55987dc80e63234789bd3569b994969f54b8af6629",
+      "bytes": 7041
+    },
+    {
+      "path": "crates/proto/proto/plugin.proto",
+      "sha256": "7fe7a2caf762c3eae6b12a5fd604dd48b2b49cc43023a3570d719376d9925232",
+      "bytes": 2413
+    },
+    {
+      "path": "crates/proto/proto/sensor.proto",
+      "sha256": "07328184b72e34c2ea42e16dcc7b6b946b48316e171f79f6299e832a6a4decde",
+      "bytes": 1216
+    },
+    {
+      "path": "crates/proto/proto/settings.proto",
+      "sha256": "ccd9195950b56b4dbe336c6d66867481c30e0528bcaf7bc3e46374f65c0a4b0d",
+      "bytes": 1703
+    },
+    {
+      "path": "crates/proto/proto/voice_session.proto",
+      "sha256": "cc81bc9a5661111af98f8d147c70777fdf95a2652c9ea4d761d864e787f72645",
+      "bytes": 2518
+    },
+    {
+      "path": "crates/proto/src/lib.rs",
+      "sha256": "245175faadf13f27b06f22bbf5ae100d9744ccf30fdb7fdde489e1aac589f5de",
+      "bytes": 601
+    },
+    {
+      "path": "crates/proto/src/output_control.rs",
+      "sha256": "9947ba75f6edbb3d83f180f12edd186c7f4efed0166c74d18285a4319e4e1446",
+      "bytes": 26254
+    },
+    {
+      "path": "crates/transport/.gitignore",
+      "sha256": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
+      "bytes": 8
+    },
+    {
+      "path": "crates/transport/Cargo.toml",
+      "sha256": "0920367c8f7344ff21fc1638234b914e0984f507cc8324a89690f68520c4ad55",
+      "bytes": 402
+    },
+    {
+      "path": "crates/transport/src/connections.rs",
+      "sha256": "3f8492e7de09bf40a15e9fc3046efa8b85478d2cf30eba75aa0d494b22cb596b",
+      "bytes": 5935
+    },
+    {
+      "path": "crates/transport/src/lib.rs",
+      "sha256": "9b35baf2e7aa9a935399793a9e8eb17ac0bfa47d3ec42195eb8c53d5c392318d",
+      "bytes": 13474
+    },
+    {
+      "path": "crates/transport/tests/transport.rs",
+      "sha256": "321573ddf05c6adf2934ea7c8ea18cb491fbf6b18a4fa0d07389016d65ec7a88",
+      "bytes": 2269
+    },
+    {
+      "path": "docker-compose.yml",
+      "sha256": "2da2b54d6790cb2def5f4a38caeecb82d5f530070a3d079abe11d910779d5279",
+      "bytes": 385
+    },
+    {
+      "path": "docker/postgres/init/00_extensions.sql",
+      "sha256": "40473a735fd63e4d4b796d9befbf2d918a441a4dad70c60a548127729b905890",
+      "bytes": 80
+    },
+    {
+      "path": "mise.toml",
+      "sha256": "6bbc0546e22c688f29fecee258bff17f730e327df2f278eed09867275eefb58f",
+      "bytes": 496
+    },
+    {
+      "path": "package.json",
+      "sha256": "f89173ee3aed6a8fb426fd42b5fa68f0c4a85f48339f07bf3312c692f91bf6f4",
+      "bytes": 1035
+    },
+    {
+      "path": "packages/alia-embedded/.gitignore",
+      "sha256": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
+      "bytes": 8
+    },
+    {
+      "path": "packages/alia-embedded/Cargo.toml",
+      "sha256": "e0547b3a76e2f5a78f054ce8a38cfc51d2454c6a681713e03ee7c114db48d6bf",
+      "bytes": 1377
+    },
+    {
+      "path": "packages/alia-embedded/README.md",
+      "sha256": "e7b5cf72b2c3c9d60db8432783a2c2ea48335cfb77bef97e16fc0d4230d6930a",
+      "bytes": 6008
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/anim_data/neck.anim",
+      "sha256": "9959ec520b06031d86417ef9a2651165076ff943767ec53a14c7df1e7482ff4c",
+      "bytes": 208659
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/anim_data/neck2.anim",
+      "sha256": "2bae2963d4b0bfb14b5c104195bd68ecf45f82471c758501b7c97e56d8094135",
+      "bytes": 19998
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/controller/face_calibration_config.json",
+      "sha256": "f5f0b207f4d2df4839ff1cb533c389c81d4ec025c91dfd8ac16a7c572100ae01",
+      "bytes": 455
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/controller/neck_config.json",
+      "sha256": "c5a010abd331a76146e7131a749cf50e071e6d6009826176b84f714aa6018496",
+      "bytes": 3043
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/controller/neck_matrix_config.json",
+      "sha256": "62fb63d443a30bcd0d3f4d650174a72461696da19f9c6f38897dda4751afc048",
+      "bytes": 2672
+    },
+    {
+      "path": "packages/alia-embedded/assets/neck/controller/web_neck_config.json",
+      "sha256": "94f71cea7994b5e43d5f29318ae1918f98a25ef17fa0d0867b4346492af7b025",
+      "bytes": 801
+    },
+    {
+      "path": "packages/alia-embedded/docs/README.md",
+      "sha256": "c88235aa3b78f11d7ad7a143cc6e3767055bd7ae0c3bca78f46fb7e2e5ded271",
+      "bytes": 1487
+    },
+    {
+      "path": "packages/alia-embedded/docs/architecture.md",
+      "sha256": "a1755b5b68fa61c6f4f41f9dbb7631bafb73007c35e09f1a262fdd0c0e013f2d",
+      "bytes": 2869
+    },
+    {
+      "path": "packages/alia-embedded/docs/audio-and-voice.md",
+      "sha256": "9814f7fcad52d2593a6b37674911a85d94250aec5b759de16fbba297e6a576da",
+      "bytes": 4178
+    },
+    {
+      "path": "packages/alia-embedded/docs/configuration.md",
+      "sha256": "0aa792d09de97c0256ef79719b1d730e6d69dbc928c6f6e6dea51b814c89626c",
+      "bytes": 4653
+    },
+    {
+      "path": "packages/alia-embedded/docs/grpc-services.md",
+      "sha256": "2e7d54f0bdc13ee7d1610b7e8b0d5b29b09c0a40a0cb3599b1983c02b64c5191",
+      "bytes": 1832
+    },
+    {
+      "path": "packages/alia-embedded/docs/motion-assets.md",
+      "sha256": "5a971da57367a62d7c83f6208744ccd1e58805e30dc49d964e257c6adc9c131f",
+      "bytes": 2058
+    },
+    {
+      "path": "packages/alia-embedded/docs/sensors.md",
+      "sha256": "a65e543f953c361ebff7b38636798da61f4ed52a1ec67e18a51f81e4709303df",
+      "bytes": 3416
+    },
+    {
+      "path": "packages/alia-embedded/docs/vision-yunet.md",
+      "sha256": "020735209e0cef2c763101d2b9f469ab57bae8e5924d21c5a68310fdf52301af",
+      "bytes": 5173
+    },
+    {
+      "path": "packages/alia-embedded/src/binding/mod.rs",
+      "sha256": "d6f98fa59cc873d542f1a3f5a27e1c442c6be334f97420489276d6bcdf1c4aab",
+      "bytes": 94
+    },
+    {
+      "path": "packages/alia-embedded/src/binding/state.rs",
+      "sha256": "afa554a7a9b2ddce5211129d8b5b4620ea61d1dea2bbe0b6fc60db0673854d7e",
+      "bytes": 20570
+    },
+    {
+      "path": "packages/alia-embedded/src/config/mod.rs",
+      "sha256": "592859df45055f7e2aea5ab6bc77b80a3d02d042a1e9996e74d3b8f9381d308c",
+      "bytes": 6604
+    },
+    {
+      "path": "packages/alia-embedded/src/config/types.rs",
+      "sha256": "4b02d6e9c17190036c4f23e1aa00545661710ce0ad86886dfd98b7b8c13ceef4",
+      "bytes": 39970
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/audio_service.rs",
+      "sha256": "c3787c01dee74da829c4c3fe6605530ac3489e60aa4ac286ab55f317d4c639f7",
+      "bytes": 14422
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/auth.rs",
+      "sha256": "542d9800570f452f853a61f4b5d7424266ae8b0e71d96c60981fe870e6825c5d",
+      "bytes": 1464
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/binding_service.rs",
+      "sha256": "f2cb932738a4d05448e57d2ae61dbd29d15fe0ed23897e94aba240e836cd07cb",
+      "bytes": 6901
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/body_service.rs",
+      "sha256": "eeb9f706fb3a2fac12a8205a6b2bf86fb93d2a4ffc470df6e777bae3bd9bd26c",
+      "bytes": 12713
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/body_service/tests.rs",
+      "sha256": "42c87d430f71f303402455a9a81b6071f7c24608c6c43fb1debb10d64e727d1b",
+      "bytes": 22959
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/expression_service.rs",
+      "sha256": "05488709a3648af1b462e2bce7989bf67f2f5228811f2a5002e816ae908cc7ea",
+      "bytes": 2478
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/mod.rs",
+      "sha256": "20529e21e00820dff55ca411011cfd40a483641b08b3579cb483f8ac7648e584",
+      "bytes": 544
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/playback_service.rs",
+      "sha256": "626f72b0dae4faa2bb54f8ecd2f7d0d3c41da21d49afeaf8d6cca333e95e6e7e",
+      "bytes": 24697
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/playback_service/tests.rs",
+      "sha256": "cff2387e7f6baf7a42d3eed5db321a337f285c9f545c3f665f22e3314ba08c8e",
+      "bytes": 34341
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/playback_service/tests/control.rs",
+      "sha256": "db3efcb9c5b8d35b3db60fef8dd8a510e513ff719923feca57d9bf01adef7d31",
+      "bytes": 15096
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/plugin_service.rs",
+      "sha256": "721f7c97f8db0959fde3733a867b7b109ce0c3e4784e5bbaef2e1e9e03c49780",
+      "bytes": 8275
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/sensor_service.rs",
+      "sha256": "230c5613e32aadce62d051ee7fa33b413c2194b8967b9b7eb4610f8e077ac428",
+      "bytes": 4876
+    },
+    {
+      "path": "packages/alia-embedded/src/grpc/settings_service.rs",
+      "sha256": "e20c2d4f3285c0a3bbd72cb9f45fe80226040e52088eb1846265180523aedec1",
+      "bytes": 13485
+    },
+    {
+      "path": "packages/alia-embedded/src/identity.rs",
+      "sha256": "ad8fe05466b857e1ac369690323f353be42fd713808e02b6e314f5325db268c8",
+      "bytes": 2699
+    },
+    {
+      "path": "packages/alia-embedded/src/lib.rs",
+      "sha256": "71ea4e5983d34263f120f93bb0055ed2bc2ebdbfbb2f7aa6e1c8abefc38ec785",
+      "bytes": 188
+    },
+    {
+      "path": "packages/alia-embedded/src/main.rs",
+      "sha256": "ad606b1ec5f5457b10eeff097b85b77e1907604192408b16b90938f500130f59",
+      "bytes": 7612
+    },
+    {
+      "path": "packages/alia-embedded/src/module/audio_debug.rs",
+      "sha256": "1c442b6e68e3273f7ed40a3124a5ec905640e2de7220b9301a07b276e0143ecb",
+      "bytes": 7106
+    },
+    {
+      "path": "packages/alia-embedded/src/module/builder.rs",
+      "sha256": "164d31e45f4be7eb5245300dd8ea5fac974071daa1d40512cce655726d7d32f8",
+      "bytes": 23442
+    },
+    {
+      "path": "packages/alia-embedded/src/module/builder/transport.rs",
+      "sha256": "4b70e836825502527025f438ed79258302a304b2140bbd7b4c869abf593175b3",
+      "bytes": 831
+    },
+    {
+      "path": "packages/alia-embedded/src/module/context.rs",
+      "sha256": "8262fbc8abbdf610dd80c018496d78c296047878b125f1e0b510f377d5b41c05",
+      "bytes": 3180
+    },
+    {
+      "path": "packages/alia-embedded/src/module/context/audio_reference.rs",
+      "sha256": "cee78f3d4691f6eeb48f1dfc1e759dd0f45df7da6b7414505d17e78d3121df10",
+      "bytes": 20858
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio.rs",
+      "sha256": "f810e14f8dbeb9d9f9380743a7dc3da8e19c893380710155c4d84d2527b7b91a",
+      "bytes": 32070
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs",
+      "sha256": "95433a91ffe39d8bb0960cca9d7913b26d9280aff64d3dc25318831d843ffbee",
+      "bytes": 41905
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/clock.rs",
+      "sha256": "ea0900a591f3522e8253c184bb87578aa8817cc8f3a25046e0770e60023e4145",
+      "bytes": 6717
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs",
+      "sha256": "498c98142d9057deb797b28fea239cbd463b74c1cab7cc7fe828aaa86de19686",
+      "bytes": 17184
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/playback.rs",
+      "sha256": "5afcbe8f7e75a97041ab2314d5f25a518bb97c6df7a0b12ab4a79608d87fcca1",
+      "bytes": 32071
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/playback/resampler.rs",
+      "sha256": "9561df1de777583ebacbe0d8c4438a3d01269d464195e595c838244354662e9d",
+      "bytes": 10418
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/playback/tests.rs",
+      "sha256": "d0b4e484ef705cfb363f1ba092c052e58172ba1cfd4dad1be9564023e820e0bd",
+      "bytes": 29128
+    },
+    {
+      "path": "packages/alia-embedded/src/module/cpal_audio/playback/tests/control.rs",
+      "sha256": "7590557f81bf7eba0bd5a10970ad9ca5681a503157f0490becfb0e54fd6033c4",
+      "bytes": 25957
+    },
+    {
+      "path": "packages/alia-embedded/src/module/direct_response.rs",
+      "sha256": "fc72f1e67980d010bd3fd7d2c83407ec7e1577350fd096939a7876afa57678d3",
+      "bytes": 7502
+    },
+    {
+      "path": "packages/alia-embedded/src/module/direct_response_playback.rs",
+      "sha256": "c9e43c3c09821c84cfa7ff654034c0e98fb5697beddd2c701e3e8374186e8ced",
+      "bytes": 7165
+    },
+    {
+      "path": "packages/alia-embedded/src/module/discovery.rs",
+      "sha256": "6bce0430d17f1a66e5ef65841b287ce2084e41c02af24ec2298a446ab35b98a3",
+      "bytes": 29471
+    },
+    {
+      "path": "packages/alia-embedded/src/module/factory.rs",
+      "sha256": "7f3f84105f8814fe432fda2bad42b876cb29fec8c876e3d6f8ac9bcd5425a4f6",
+      "bytes": 6191
+    },
+    {
+      "path": "packages/alia-embedded/src/module/hmmd_mmwave.rs",
+      "sha256": "ecefb928ab32d372ba43ecc88d5308da16f8e350dfef72fce0052c2502dfbd72",
+      "bytes": 17223
+    },
+    {
+      "path": "packages/alia-embedded/src/module/lifecycle.rs",
+      "sha256": "eaf573028296824435e2eb30dadc85fe02e1b63b2915f44805836ac6b25e36c0",
+      "bytes": 8127
+    },
+    {
+      "path": "packages/alia-embedded/src/module/mod.rs",
+      "sha256": "420d13e118e8e6d1bb34b4b65378fbb8c6a602b405f14e7ca103f841eb85b6ae",
+      "bytes": 469
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/mod.rs",
+      "sha256": "5dfafc10449a684de8e5db83b9539d0f13aa9e90220533f59270eedc2f65c7c3",
+      "bytes": 169
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/neck_mapper.rs",
+      "sha256": "6b02c1c0713c89fdc5cfdd2df5378ffb3eab2cea868071b18679cf14f1fb16e0",
+      "bytes": 8113
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/plan.rs",
+      "sha256": "5d1ca4de5975c67acd801f3c11450bfc08651deb445d42f2534cb5b3a97dccc7",
+      "bytes": 15010
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/runtime.rs",
+      "sha256": "89fa6d58a41f6727175878e937afd94c488031784c55d512aedd6f695dadd138",
+      "bytes": 40939
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/runtime/tests.rs",
+      "sha256": "c45a2ac408aa02a531c077a8703c97f6392ed62dddb83c18e27e78d0b7a0e251",
+      "bytes": 40149
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/servo.rs",
+      "sha256": "3d36ee8b90d02656ce1528ec683e48cfbc15d0b62e8d27e9580fe37da386cc7c",
+      "bytes": 26163
+    },
+    {
+      "path": "packages/alia-embedded/src/module/motion/writer.rs",
+      "sha256": "fd8a68afffa74b6ef2e74a8dbd566a745b19b79386cd6a4305e91449d2df9451",
+      "bytes": 12923
+    },
+    {
+      "path": "packages/alia-embedded/src/module/noop.rs",
+      "sha256": "6f9d77456d76a92859e56a408d56a83ea2d53a6badd94078af37649e421cfc50",
+      "bytes": 6405
+    },
+    {
+      "path": "packages/alia-embedded/src/module/playback_session.rs",
+      "sha256": "3293a502409d55a9892e94e4e348826448a0deb93cd6eefd1c320c9c1818d5cf",
+      "bytes": 21162
+    },
+    {
+      "path": "packages/alia-embedded/src/module/playback_session/capture.rs",
+      "sha256": "4c2fa3c5cd73d1c207b2b4a349ab012532af8110b69cd66f324b9b35d625092c",
+      "bytes": 4421
+    },
+    {
+      "path": "packages/alia-embedded/src/module/playback_session/control.rs",
+      "sha256": "0354ba8614ae74ae8a2f36263dd5b0b26d7b9a3fc4aa5bc4c3e95178e7c36bde",
+      "bytes": 18211
+    },
+    {
+      "path": "packages/alia-embedded/src/module/playback_session/submission.rs",
+      "sha256": "8484674eee1206c972cfc77e098c54ef702adcb2dbe986373aa3d4d846fa8b93",
+      "bytes": 14229
+    },
+    {
+      "path": "packages/alia-embedded/src/module/playback_session/tests.rs",
+      "sha256": "bc9bae15c0b8c27ed3bfab89f975ef9e5941217aacb4ddede8e147097d63b7da",
+      "bytes": 8886
+    },
+    {
+      "path": "packages/alia-embedded/src/module/registry.rs",
+      "sha256": "69ff54d7b8507e3ae960516bc0d5e393442efedb4b7961db078264566573c146",
+      "bytes": 6678
+    },
+    {
+      "path": "packages/alia-embedded/src/module/sensor.rs",
+      "sha256": "7d6b0d9f4d95e753151a1385186c79f2f06aa8b2e2181dd1ca915f9934f7b73d",
+      "bytes": 6000
+    },
+    {
+      "path": "packages/alia-embedded/src/module/sherpa.rs",
+      "sha256": "5b6c2db2e4503ed80507ae55c5a4257413145069ebd2b5cbc74fd2b6172fd720",
+      "bytes": 14808
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech.rs",
+      "sha256": "c1dce9dd5a30ab742d92b63164f72728c2bc03a828e4bdd8caed49849c591243",
+      "bytes": 28552
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/capture.rs",
+      "sha256": "c81ddbd3c95c35ed0ad97d61dead8a56222837bfbbb831acb8a993adb5787b98",
+      "bytes": 5846
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/continuous.rs",
+      "sha256": "f31f2ff96fd263f8ade6982b81037d019a0bb6dd75165553c16ed9099cb99004",
+      "bytes": 3775
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/duplex.rs",
+      "sha256": "1fbe5443f64c61a232728d25bf5653957e8db14efc55aad0a72ca3ed503fab21",
+      "bytes": 24483
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/duplex/tests.rs",
+      "sha256": "3d357bb2d71f4b23123bab4b3f7298dbaa49354d30c4ee51e394b13e4ac7a959",
+      "bytes": 37915
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/duplex/tests/binding_admission.rs",
+      "sha256": "a9e84d45e8944959229c0b9f52683d22407ce3f6143e55c30605daafb5bb06aa",
+      "bytes": 12537
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/responses.rs",
+      "sha256": "8920d8fdfaf5db999ac89245559108a0ad62e77c921d3fb00ead2ce411b73651",
+      "bytes": 2359
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/thinking.rs",
+      "sha256": "81278d381634f7674c4f62b1173f74311d3abb5fa273cbadb44e0a02040dae3c",
+      "bytes": 4184
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/transport.rs",
+      "sha256": "6972f997685d003ccaad5796d807c8c2d5898a0dff09be9bed9d6ed2acf32be3",
+      "bytes": 8100
+    },
+    {
+      "path": "packages/alia-embedded/src/module/speech/utterance.rs",
+      "sha256": "4cd868dfe80ac3b13a3545f279acd37ab2d573108d5ee369d4a67408306aef35",
+      "bytes": 3879
+    },
+    {
+      "path": "packages/alia-embedded/src/module/traits.rs",
+      "sha256": "5815f4d87ce8f55b0b955abfb764610d6744edaa9baae2fa039fbc754f8003af",
+      "bytes": 11338
+    },
+    {
+      "path": "packages/alia-embedded/src/module/vision/mod.rs",
+      "sha256": "4c75eabae8ae85d8ae44557e59751353e1cf8f883a959988d233f5b1aaa6689a",
+      "bytes": 19285
+    },
+    {
+      "path": "packages/alia-embedded/src/module/vision_debug.rs",
+      "sha256": "8190c19f5caefcc32f7a5080c02c20bef739178cee127daf1db42b0a15375d64",
+      "bytes": 15974
+    },
+    {
+      "path": "packages/alia-embedded/src/module/volume.rs",
+      "sha256": "c8c58404650588c1c8c882124f01b0033696894055918278d04fd50cce649b17",
+      "bytes": 3279
+    },
+    {
+      "path": "packages/alia-embedded/src/plugin/manifest.rs",
+      "sha256": "192c757602274ff1d4358804ce60b534ba82d2bb57b7342cf8a26f85ae6aeff0",
+      "bytes": 3063
+    },
+    {
+      "path": "packages/alia-embedded/src/plugin/mod.rs",
+      "sha256": "ca12f5fd6fae5578022c4755fb7b34eb14da85b640edb8fc44ef82fe0d65127d",
+      "bytes": 78
+    },
+    {
+      "path": "packages/alia-embedded/src/plugin/registry.rs",
+      "sha256": "d96dbfce29dc41c0300e2e0b788a8e0df4f0596476245e3b7919344361db0485",
+      "bytes": 23484
+    },
+    {
+      "path": "packages/alia-embedded/src/settings.rs",
+      "sha256": "fcf452c7bf757a0bdd7e3684ed78247b0aeb502a2e9a9a0586fbab1c86b79a85",
+      "bytes": 3856
+    },
+    {
+      "path": "packages/alia-embedded/src/storage/mod.rs",
+      "sha256": "d638ae181e81a4d7f4ec1a6591fb69b1ab04a3f3144e8a56725d88b2021d5e7d",
+      "bytes": 29977
+    },
+    {
+      "path": "packages/alia-embedded/tests/audio.rs",
+      "sha256": "92afaad4b36b2c1f29712d82bc20cfefb3139394eaa28295b6f9b9abe46e0d7a",
+      "bytes": 3096
+    },
+    {
+      "path": "packages/alia-embedded/tests/binding.rs",
+      "sha256": "0e276573e53cec2353cb97a01518276d36455d8b1de7f84385f03bc89f1f9569",
+      "bytes": 858
+    },
+    {
+      "path": "packages/alia-embedded/tests/config.rs",
+      "sha256": "79b6a5f2e1535f0012d799cb0581c6e67bdddb44c61248bcf553f248f54f8e25",
+      "bytes": 6186
+    },
+    {
+      "path": "packages/alia-embedded/tests/direct_response.rs",
+      "sha256": "6d27407568224c6fe489dc220995919cee11cfec4e06ae9067e4d9c3969ac68b",
+      "bytes": 3783
+    },
+    {
+      "path": "packages/alia-embedded/tests/discovery.rs",
+      "sha256": "3ba291fe6749fab40d928a4868b6dff808768da28c077096a8520109ac16c454",
+      "bytes": 1180
+    },
+    {
+      "path": "packages/alia-embedded/tests/identity.rs",
+      "sha256": "e5e0140abef0c53ae4401c47245270b8884be6b80bddb8687088338c41f733d7",
+      "bytes": 394
+    },
+    {
+      "path": "packages/alia-embedded/tests/runtime.rs",
+      "sha256": "815d5bb737f099c9b5810c5342366a88d0784eac9355b75f4b4082138f4322a2",
+      "bytes": 19969
+    },
+    {
+      "path": "packages/alia-embedded/tests/sensors.rs",
+      "sha256": "372d1f8ab4ddfbe124d1241dc206371da840ef95f0af2b18eb73bb56c1e31ff8",
+      "bytes": 3482
+    },
+    {
+      "path": "packages/alia-embedded/tests/speech.rs",
+      "sha256": "4c30915a5949bf2c91a5041ae80682c93e7eadae4dd3c4ba4ad5ecf2fc42e292",
+      "bytes": 5959
+    },
+    {
+      "path": "packages/alia-embedded/tests/storage.rs",
+      "sha256": "1bf137c5c6d4ff7356d72b80ffa149454c23d252d4cfd19e7e441fe6cebab2ff",
+      "bytes": 11299
+    },
+    {
+      "path": "packages/alia-frontend/.gitignore",
+      "sha256": "63a3d75bbc8f577cd96a698fb46c5f837b8fbbdbf4669281094222bc077816d3",
+      "bytes": 645
+    },
+    {
+      "path": "packages/alia-frontend/.npmrc",
+      "sha256": "a4b404ee7ae2fcc2168f9335fbc700643168143408c76992e47f9728a984ba6f",
+      "bytes": 48
+    },
+    {
+      "path": "packages/alia-frontend/.prettierrc",
+      "sha256": "e6f2d4951cea7df2295e718a5cb2063d9e14ccf6ca2a79de468824a787a3be09",
+      "bytes": 195
+    },
+    {
+      "path": "packages/alia-frontend/README.md",
+      "sha256": "6c4ec77f0972283a2ad5cea35af83e1684fc0749effb6a6de31b0f53b94cb9b8",
+      "bytes": 4144
+    },
+    {
+      "path": "packages/alia-frontend/app.json",
+      "sha256": "71d601aa258083b438eb58e8c593464c2567ecc4088a6af3c0931f1b42cc831a",
+      "bytes": 1946
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/_layout.tsx",
+      "sha256": "96a0273f5724402061bc93ef0a70ccec5a9250f6e748ee8966e4be4d937e1e66",
+      "bytes": 235
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/connectors.tsx",
+      "sha256": "0a82e0cebe2620e3b1e87e35f039563ccef43fa4bdd68e852f0afe0468bd3c9b",
+      "bytes": 6689
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/expression.tsx",
+      "sha256": "1032461b66fbac8c3e866aa32bff7c56e7149257db82e9c935f242978afd84c6",
+      "bytes": 4860
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/memories.tsx",
+      "sha256": "5eca56dd452212397d8ddc8e393bc284dded78677b4e2a5b2054797c01790d5d",
+      "bytes": 10741
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/runtime.tsx",
+      "sha256": "d67cb2df58bda0a0f5294f3786abaf8b17b6fa60cdb1a2b99015910234656869",
+      "bytes": 12695
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/settings.tsx",
+      "sha256": "bbc917214466bedd302a8453ff658e2ff5d1133ca373374015ac726aa440b4fa",
+      "bytes": 2674
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/settings/[section].tsx",
+      "sha256": "a8f635ab15a9927f5e84dc9b72566a749051da84ff9251a6ce289981cd4cb55a",
+      "bytes": 20358
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/signals.tsx",
+      "sha256": "426edc9eca385f880c3f58395d6150143ddf9c56127f1a79432b1999d9454057",
+      "bytes": 2958
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/skills.tsx",
+      "sha256": "cd49606900d650e89bf219899c3dd6ab7cd469068dc1abb05e77f541db8e0095",
+      "bytes": 5345
+    },
+    {
+      "path": "packages/alia-frontend/app/(app)/tools.tsx",
+      "sha256": "c623c6459a71c107b9e7b7ab6c7e38fa2f4ad4376e99f54cc2f7dd375d2376be",
+      "bytes": 7556
+    },
+    {
+      "path": "packages/alia-frontend/app/(public)/connect.tsx",
+      "sha256": "b4706477dc59a40c10670d3e4c1a61dc7a80efe1916f085f619b7a2207d34e1b",
+      "bytes": 14318
+    },
+    {
+      "path": "packages/alia-frontend/app/(public)/login.tsx",
+      "sha256": "ad12d297027fdffd836bab53201d04fd9df5f2418bf2c05941dff12681235af8",
+      "bytes": 5732
+    },
+    {
+      "path": "packages/alia-frontend/app/(public)/setup.tsx",
+      "sha256": "de019045cc87e3a4e8506937f353b957da2452f9429198ce16996b6c96560689",
+      "bytes": 3914
+    },
+    {
+      "path": "packages/alia-frontend/app/+html.tsx",
+      "sha256": "9de03d883521a7850607950b726c0dfa2390e2c3af3215a38647ed8d4b3c8043",
+      "bytes": 1106
+    },
+    {
+      "path": "packages/alia-frontend/app/+not-found.tsx",
+      "sha256": "560e30e63bc47fb8638be35c8cbf813eb8c4417e0ae1910d42a6a7bf500ce2f8",
+      "bytes": 726
+    },
+    {
+      "path": "packages/alia-frontend/app/_layout.tsx",
+      "sha256": "4310a376e19f5f4d7b43822ede243dec0d6386cbc6fe91f4edde811a3a088d12",
+      "bytes": 1071
+    },
+    {
+      "path": "packages/alia-frontend/app/index.tsx",
+      "sha256": "15efa3cbe6fcccee9056697aa72b366ec4b5732f99cf444ad9db44a9a9d035d4",
+      "bytes": 1205
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/adaptive-icon.png",
+      "sha256": "6f308a42ac5cd5dea3c7cabf0fe8985c1f8c491817c3a240738d979643a3fa88",
+      "bytes": 21960
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/favicon.png",
+      "sha256": "692975d3060eb79c1bc53d4d4b1f10308176d25e04ecf1168ccc6b6b297dda70",
+      "bytes": 859
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/icon.png",
+      "sha256": "97f876fed8209b3d6a0e049dc3eb396a490d75c2b9eaec2c824fb9f55ad7a7b8",
+      "bytes": 32163
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/react-native-reusables-dark.png",
+      "sha256": "e2a6723ca57cd4d9b8c282e608c41993d095ccb0bfe6d4177c689b591e115043",
+      "bytes": 3339
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/react-native-reusables-light.png",
+      "sha256": "68f1c62caf4d0b817ad5f04c6a171f5ba30dc4f2238cd77a905bbf12169b2733",
+      "bytes": 3679
+    },
+    {
+      "path": "packages/alia-frontend/assets/images/splash.png",
+      "sha256": "eee47afc2763a3b7b6b5835d9523ce8454dd4f32ce71d55b8e2b3c3a878bf4d3",
+      "bytes": 21953
+    },
+    {
+      "path": "packages/alia-frontend/babel.config.js",
+      "sha256": "db9a8f7a68a7853d10ee4d4ee44fafe2918bfbebdc0dd9cba949af762f1df2cc",
+      "bytes": 110
+    },
+    {
+      "path": "packages/alia-frontend/components.json",
+      "sha256": "65958c7b1693914fedb7a335c105599b71130b62fd049a39e5a27c247aa9e22f",
+      "bytes": 447
+    },
+    {
+      "path": "packages/alia-frontend/components/app/app-shell.tsx",
+      "sha256": "d73bcd089601689c14d8d23da4d576da218286b7a1cdd33a4b3384f1ae6c737d",
+      "bytes": 10522
+    },
+    {
+      "path": "packages/alia-frontend/components/app/page.tsx",
+      "sha256": "bd0d1ee1b82432d03feb1d9ef71b3ae9e2f426218f7d5682325b4c31426c2cac",
+      "bytes": 3722
+    },
+    {
+      "path": "packages/alia-frontend/components/app/pending-embedded-card.tsx",
+      "sha256": "1d946df320e0ec0b5d7cab122006ce329644cc9680bec5c198f5c822a39bf920",
+      "bytes": 3350
+    },
+    {
+      "path": "packages/alia-frontend/components/app/theme-toggle.tsx",
+      "sha256": "4732a97329c2d271f709e3f85bcb23d9aaf1bf9cfbc83fc0a6c8e10bfb2be393",
+      "bytes": 668
+    },
+    {
+      "path": "packages/alia-frontend/components/data/empty-state.tsx",
+      "sha256": "e3ca02d3d9952e31c5eb252b52d49028dea3a74a370f3e8c82ca754aac9e820e",
+      "bytes": 1164
+    },
+    {
+      "path": "packages/alia-frontend/components/data/friendly-data.tsx",
+      "sha256": "5dc82a44dadd13fa3fabef7e3c79089b78a9e2a242d1da30ae70278f46f08049",
+      "bytes": 4019
+    },
+    {
+      "path": "packages/alia-frontend/components/data/metric-card.tsx",
+      "sha256": "c478cc4b1932bca1820f0c59873af843c196bf46e43995f639a9bf280cc08d55",
+      "bytes": 1004
+    },
+    {
+      "path": "packages/alia-frontend/components/data/status-badge.tsx",
+      "sha256": "6d047d3caf4735723bbb63bbf5621edccd7a47502886f76a275ba17e788556b6",
+      "bytes": 892
+    },
+    {
+      "path": "packages/alia-frontend/components/forms/field.tsx",
+      "sha256": "f65c243e622c165dd60df41d030d820de53ea987bb28b62a8272e6d43391e72c",
+      "bytes": 541
+    },
+    {
+      "path": "packages/alia-frontend/components/settings/settings-model.tsx",
+      "sha256": "213dd1ecff31e61982e77c987982c12368932694005a1b882253aed284c5693f",
+      "bytes": 7329
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/badge.tsx",
+      "sha256": "cf7c85362ca1162e60a0e01666583d325cbeba061e15f53b57a2b52fe646bbb4",
+      "bytes": 2247
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/button.tsx",
+      "sha256": "1ec86579a794b3ac54c2ab7a61d737713cec379dfb40ee9d72437e89104d6427",
+      "bytes": 3786
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/card.tsx",
+      "sha256": "a0e26ea03316540ab20c02e7b27895f602a807c30e893465a2780fc73fb8a364",
+      "bytes": 1746
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/icon.tsx",
+      "sha256": "3eaabbdddd48462c43439bfbc461cc382fd95048415119bf17eaa61d3dcfc8b7",
+      "bytes": 1735
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/input.tsx",
+      "sha256": "a1ee5d5791d9e417eb3ce6ba7b1940b40b22b517be4eebfdd8e8eef193741b6c",
+      "bytes": 1338
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/progress.tsx",
+      "sha256": "b5948d1f88623d2596d775b585a89a31a4c737a2a88aeb8b4de61eb6569ac212",
+      "bytes": 1986
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/separator.tsx",
+      "sha256": "815bd6ecc2fb2c2b8023302e5ac1e0df0f1e9d14685b5483f9a36bcd9bd182d7",
+      "bytes": 564
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/switch.tsx",
+      "sha256": "046de996e8aa6ac5e2cb177a8657e7e50a80d93e5967db9461db6bce2793dcab",
+      "bytes": 2818
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/text.tsx",
+      "sha256": "846436f6465343bf2150c19276a90401f787b443e47a7869e7aafdc834c1e151",
+      "bytes": 2569
+    },
+    {
+      "path": "packages/alia-frontend/components/ui/textarea.tsx",
+      "sha256": "241db49eb46f47c986582db1921231512aa377cfe5ddcc016a8be7f7ec4fc347",
+      "bytes": 1345
+    },
+    {
+      "path": "packages/alia-frontend/global.css",
+      "sha256": "45b2e8246ec3a748bf2b9de3f3d7ea642975d0fd2840de0fe06531f236f59a7c",
+      "bytes": 3303
+    },
+    {
+      "path": "packages/alia-frontend/lib/api/client.ts",
+      "sha256": "223d18407064097b1be090f4cc904d00ea55397de8f569d43ea799deb8461af3",
+      "bytes": 2266
+    },
+    {
+      "path": "packages/alia-frontend/lib/api/hooks.ts",
+      "sha256": "e8287e39b6f3780d746f630613f0868f53825404a1d3a3be94527a4ea07df325",
+      "bytes": 7064
+    },
+    {
+      "path": "packages/alia-frontend/lib/api/session-shape.ts",
+      "sha256": "3e2d410e94e45a009f6e02dc772cd330fff3c63bfb7470fa266b88b34250c047",
+      "bytes": 223
+    },
+    {
+      "path": "packages/alia-frontend/lib/api/types.ts",
+      "sha256": "e559ca59ca158b3b16c27566397c149126bfec5b5288db6864aaa1eb44319634",
+      "bytes": 5006
+    },
+    {
+      "path": "packages/alia-frontend/lib/discovery/hooks.ts",
+      "sha256": "a1476823163d7145c1b17d3f027e0a1ea032cb637f0b2336003f2a51e58804e7",
+      "bytes": 1384
+    },
+    {
+      "path": "packages/alia-frontend/lib/discovery/index.ts",
+      "sha256": "7036c7afe95092b4f7cc67d85a149c3f70a1faeec3e426d844da83311962bbd9",
+      "bytes": 2288
+    },
+    {
+      "path": "packages/alia-frontend/lib/discovery/types.ts",
+      "sha256": "38a62debf39bf6ccab904fe66fc693ebd8c910587211f1a15f35418a69c953e8",
+      "bytes": 1355
+    },
+    {
+      "path": "packages/alia-frontend/lib/i18n/index.ts",
+      "sha256": "d7fa9c75d3f945da25b3a5aad2aab96c2c3adb830e4d196a8af485b2ed43a4dc",
+      "bytes": 6311
+    },
+    {
+      "path": "packages/alia-frontend/lib/session/provider.tsx",
+      "sha256": "0451f2de991f1d31a8a448fdbb67d821c46b565d9845d98a309c36feb82bf8a7",
+      "bytes": 4120
+    },
+    {
+      "path": "packages/alia-frontend/lib/session/storage.ts",
+      "sha256": "065e5d9430f3e38fbc3e2403b811bb03b8b23c6f54fd9e46f617c161e3593180",
+      "bytes": 1070
+    },
+    {
+      "path": "packages/alia-frontend/lib/session/use-translation.ts",
+      "sha256": "839b360b841845df2052cc60cd1eb110434e6e3062e57d9edd621e7b84dfb6e3",
+      "bytes": 261
+    },
+    {
+      "path": "packages/alia-frontend/lib/theme.ts",
+      "sha256": "234c1b5847c24c6b3c4dfde88e56b3edf4f77ce6232060f9ee968b9d0c56e7b9",
+      "bytes": 2352
+    },
+    {
+      "path": "packages/alia-frontend/lib/utils.ts",
+      "sha256": "9304a861c8673bee09e0f12de31773abbde503b02e59dfd74763ddec2e37cf05",
+      "bytes": 169
+    },
+    {
+      "path": "packages/alia-frontend/metro.config.js",
+      "sha256": "f46f3bef04369cb4056f0a7898475942482fa632eae1631bdb377397e1beb4dd",
+      "bytes": 1022
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/.gitignore",
+      "sha256": "9bb32a9f0a087a6810522e59d29817eb3a19469215f0b39c310a3fe20f814b2a",
+      "bytes": 15
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/android/build.gradle",
+      "sha256": "6b9ad4c39c862725edef2ff08138b9dd7e7d18186d524b5573c6ccd0af990a8c",
+      "bytes": 221
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/android/src/main/AndroidManifest.xml",
+      "sha256": "4a8a0394bf75d94e494d55299aeb72e289a7c00b56ba1f943475b70b0726bcb0",
+      "bytes": 796
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/android/src/main/java/dev/alia/discovery/AliaDiscoveryModule.kt",
+      "sha256": "315b1cc6b2f9738e10c107d644d43ad27e9f4cc1e346d9d31f0ff75a77257d50",
+      "bytes": 19979
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/expo-module.config.json",
+      "sha256": "af006fcfaaa463808f8102dd94cf37362eb6b28d46f67bf434aa8a918d633cd2",
+      "bytes": 175
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/index.ts",
+      "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+      "bytes": 11
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/ios/AliaDiscovery.podspec",
+      "sha256": "d212419d98592eecd10c53774429598d4ca505ca36f21c1f49fa6eb4d90ca08b",
+      "bytes": 742
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/ios/AliaDiscoveryModule.swift",
+      "sha256": "067e8679ff1be88122be390adfa15c84e2c75ce0ad337e58260f4dde74f5bb7e",
+      "bytes": 15764
+    },
+    {
+      "path": "packages/alia-frontend/modules/alia-discovery/package.json",
+      "sha256": "d042ef1524a6c6cf27a43044ef18664f2c85c40e5aa15614dcc002b5d6151247",
+      "bytes": 94
+    },
+    {
+      "path": "packages/alia-frontend/package.json",
+      "sha256": "1b3ad835248e6e317172b02fd1a11e30e1f228bac2942512654f254652f7dd4a",
+      "bytes": 2757
+    },
+    {
+      "path": "packages/alia-frontend/pnpm-lock.yaml",
+      "sha256": "2460e99311284f824e45fe75ac5a397eaa1e5e1a59e92b2d22f120cf7a768f97",
+      "bytes": 370312
+    },
+    {
+      "path": "packages/alia-frontend/tsconfig.json",
+      "sha256": "773e3fe967044efc5c6dad8b0a0eb60c05100d94083d4ba1f9f9851489bb3051",
+      "bytes": 331
+    },
+    {
+      "path": "packages/alia-frontend/uniwind-types.d.ts",
+      "sha256": "32c94b4b1c2f576ff04d0ca02e0dfe5bc8e09de4ef6a9632f780d60513db87bd",
+      "bytes": 248
+    },
+    {
+      "path": "packages/alia-server/.gitignore",
+      "sha256": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
+      "bytes": 8
+    },
+    {
+      "path": "packages/alia-server/Cargo.lock",
+      "sha256": "03692a5468e1eba16158e660b7aa96ed10f12f31e5b8237939f55154ba3efcd5",
+      "bytes": 72725
+    },
+    {
+      "path": "packages/alia-server/Cargo.toml",
+      "sha256": "6a0f930cd1881678925ccf154dcfcfc2f9208f6c1e5192af2e02dd89be8679f2",
+      "bytes": 2415
+    },
+    {
+      "path": "packages/alia-server/README.md",
+      "sha256": "84c0f36f08338928543c7779ea7831643e344f5b05d22985bf55d182f347948a",
+      "bytes": 6779
+    },
+    {
+      "path": "packages/alia-server/docs/README.md",
+      "sha256": "3989a953ebe1ed329d7275d130c444188dae7c9b6ac0889bfb63158388e1fd86",
+      "bytes": 1348
+    },
+    {
+      "path": "packages/alia-server/docs/architecture.md",
+      "sha256": "0145fc983e248cb9cb8554a5cd69f3441cbc990033931bfe36d299b23770ccc6",
+      "bytes": 4222
+    },
+    {
+      "path": "packages/alia-server/docs/channels-and-sensors.md",
+      "sha256": "835beeaaa4c26cbbe282848eadf53f774619cf1e4ee76118f56c9fdea3bd817e",
+      "bytes": 5135
+    },
+    {
+      "path": "packages/alia-server/docs/configuration.md",
+      "sha256": "09437032c242dd7720d878af9cc06548276fe80a05ddb5940b025ffebbda6ade",
+      "bytes": 4655
+    },
+    {
+      "path": "packages/alia-server/docs/expression-runtime.md",
+      "sha256": "1c752742239e191ffbb40943095e75349c861071bffc3513927269f7a9a2f234",
+      "bytes": 19820
+    },
+    {
+      "path": "packages/alia-server/docs/plugin-storage.md",
+      "sha256": "c4e8435f6e5d5e7afcc7138a510942c729969e68e03afc15f24e4fca8e3ae899",
+      "bytes": 6489
+    },
+    {
+      "path": "packages/alia-server/docs/runtime-systems.md",
+      "sha256": "0ec2d805e79b3ab6c315dbdcaa3bae6dc3700a304d1705f949ac34f47e3ad432",
+      "bytes": 6200
+    },
+    {
+      "path": "packages/alia-server/examples/external_appraisal_plugin.manifest.toml",
+      "sha256": "29d29cddb27a9a4bb2f61173affab7af60792a1819801ba05638523087b0afe5",
+      "bytes": 409
+    },
+    {
+      "path": "packages/alia-server/examples/external_appraisal_plugin.py",
+      "sha256": "13027250d1399c36b0095b2f234fa549a4c7064abf8e43ad138a9c8937d6c068",
+      "bytes": 2897
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260507_000001_enable_pgvector.sql",
+      "sha256": "c726ee6fbd50b4dab08aaf76316e8e9332011ffe75ffaf7186bb14181dc35690",
+      "bytes": 118
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260507_000004_create_llm_cache.sql",
+      "sha256": "92a49a4e590f59c6d349eaba86c521bb81baa6e4cd24b7c8d04ecc29e047fd81",
+      "bytes": 1508
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260507_000005_create_skills_tools.sql",
+      "sha256": "535215487ee8f0bc5ffcd3186df0a89682e8358f9ee08f03277650ed653cef2b",
+      "bytes": 2927
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260508_000001_create_personas.sql",
+      "sha256": "3bb90d7cd82657999e6eaa5cb5febeb7ef3778d9aad30d9267b952894f26d5d4",
+      "bytes": 3636
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260509_000001_create_insight_logs.sql",
+      "sha256": "7f4bf64e7c4dc94e0ab363fd696005f6be392ad0c810345c06e1c4473d8879c4",
+      "bytes": 681
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260509_000002_create_sensors.sql",
+      "sha256": "7d71f586fcec9ed3a6f7622f98cf99293d514cce3e134b4fc9a6e7de03badea3",
+      "bytes": 1270
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260511_000001_create_chat_sessions.sql",
+      "sha256": "aedfc106deae4921a481143fe2eca70d256e848f5b07aff003f8718c8bb42ace",
+      "bytes": 1185
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260516_000001_normalize_skill_tools.sql",
+      "sha256": "323cc1789a245b361f5dde39a88e8c398a1ce64cbd767017369122878638409c",
+      "bytes": 722
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260516_000002_create_registry_artifacts.sql",
+      "sha256": "82c5c0c8a6d0a822f1f10f178540cd0b7dbc7537297ffd5b7b647fb4ce14b406",
+      "bytes": 3211
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260517_000001_add_tool_catalog_metadata.sql",
+      "sha256": "d67af7bbc7a03d5c36db3e5a9199ad9ad489ad9f6f448006bf1ef684a6e341b6",
+      "bytes": 389
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260518_000001_create_conversation_events.sql",
+      "sha256": "5f394de1499b0cb40d3af3305e313876c5b610eb0ff5133b5ae87d787417ce4d",
+      "bytes": 739
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260518_000002_create_automation.sql",
+      "sha256": "fbb15385618a900db398e35febecf755012eb5b947dd400cadc4c9524d3e46d7",
+      "bytes": 2096
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260518_000003_create_users_auth.sql",
+      "sha256": "fc48508dec8c4a71587fe5866675618e43bcdea31c22cafce534c388e830cc80",
+      "bytes": 2014
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260519_000001_create_expression_appraisal_events.sql",
+      "sha256": "dcef21215b28eed9fc20be7ef569be1f9b79300e32a58d213e9cb4c5a769cf99",
+      "bytes": 1055
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260520_000001_create_memory_runtime.sql",
+      "sha256": "6d2e0f5d804498ecc3c5fcff47e0071c80cc29ccef6867a06fa6eca94b86789e",
+      "bytes": 6774
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260522_000001_create_plugin_storage_records.sql",
+      "sha256": "375db52cdfa38a6db6a63c2a461cef72fa511b994b492d1e126a1a593b2e5626",
+      "bytes": 1488
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260908_000001_create_execution_ledger.sql",
+      "sha256": "ea3d418cb81a435ac684656bc72a97796775f3fdb66c543641573723cc2c9ed7",
+      "bytes": 3432
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260908_000002_memory_privacy.sql",
+      "sha256": "3ed53351906a88c3d18c1f452460070891dab7e53a5102bf9588b1484e9e1111",
+      "bytes": 2710
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260908_000003_source_privacy_epoch.sql",
+      "sha256": "d020ff6394789ed18c6f15ce854a51909c7ba7b9c8236a9eddfcdc0a1b185661",
+      "bytes": 613
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260908_000004_delivery.sql",
+      "sha256": "bbf9ba1eebcc611043a30325dccabe51c23c6149837f7109c7c784924b80b0e0",
+      "bytes": 3715
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260908_000005_text_delivery.sql",
+      "sha256": "c070bc6fc60b8c4c367b85a7eb671ad1b5a39c3b2c7d81150380bf52318acea2",
+      "bytes": 2798
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260913_000006_body_delivery.sql",
+      "sha256": "ccc891957d9ef6b05a669e80baadf313d2a528a5816a2f43d566b65cd50f152f",
+      "bytes": 1469
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260913_000007_context_lease.sql",
+      "sha256": "07108727655fee5a6948f67b8333ecddec85faf3a67334aac25b9592adbd6f55",
+      "bytes": 2303
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260913_000008_cache_context.sql",
+      "sha256": "1fac6fa5494c00e0fa0466fb8b90980c177d34698d75acd3f1bd5a2de22da987",
+      "bytes": 3529
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260913_000009_memory_embedding_identity.sql",
+      "sha256": "e6cd1d3cd38fe96a04e33328d38b6ec4dbc8fe81dadcc7a04f09d26e24bdcb8b",
+      "bytes": 1044
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260913_000010_appraisal_provenance.sql",
+      "sha256": "e5c9043ef8f2d11b26c9e36adbabfdf46b07af574be43b3f6d4b5ed6d2743170",
+      "bytes": 8103
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260914_000011_appraisal_rebuild.sql",
+      "sha256": "e546f39a0a53a8bc1a04111cb16dbfa73c6df9317c6a4c002346a380aa5f0145",
+      "bytes": 3385
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260920_000012_appraisal_memory_erasure.sql",
+      "sha256": "e0f09282f98abaa4285187ee32e4a7e56b475ce3a2f468c250d7042291cee226",
+      "bytes": 6253
+    },
+    {
+      "path": "packages/alia-server/migrations/m20260920_000013_output_control.sql",
+      "sha256": "a23aa44c48906d6a349fc094c49b6309b7a783ed95a4ac64a4d3064cc4fc6e2e",
+      "bytes": 2168
+    },
+    {
+      "path": "packages/alia-server/src/adapters/easy_turn.rs",
+      "sha256": "a216c5bba60ee071dabcbe2ef7cfb2235c1851f1ea618373e4ec1a567c90b83a",
+      "bytes": 14262
+    },
+    {
+      "path": "packages/alia-server/src/adapters/mod.rs",
+      "sha256": "ee6861a5d0efc825ef604106b05080758efffeda69b8390895eab0afd87f5b3b",
+      "bytes": 49
+    },
+    {
+      "path": "packages/alia-server/src/api/auth.rs",
+      "sha256": "99546590bcac850261b2a1d1095eb6c186624915801efeff64240c13bc5f7e0c",
+      "bytes": 10478
+    },
+    {
+      "path": "packages/alia-server/src/api/body_deliveries.rs",
+      "sha256": "83c2287af3868de89bff968ef82422418be73a82616898c7c11c2b684621bbae",
+      "bytes": 3761
+    },
+    {
+      "path": "packages/alia-server/src/api/channels.rs",
+      "sha256": "95a9de6a98d1cd2259577e2494cd46470c5d0a9eb0e350710a7c2c4688c6d716",
+      "bytes": 12656
+    },
+    {
+      "path": "packages/alia-server/src/api/conversations.rs",
+      "sha256": "108977b94724f9086077f35ef4a4c241b9dd7bb115e9dda04f8b1ab71aa6771d",
+      "bytes": 7520
+    },
+    {
+      "path": "packages/alia-server/src/api/deliveries.rs",
+      "sha256": "a4d0ddca262ed6bfecd1e2598d97989420465b0e551b516fd223158596bd83df",
+      "bytes": 11636
+    },
+    {
+      "path": "packages/alia-server/src/api/devices.rs",
+      "sha256": "cef7c4667144c7ac2e6dc7b5b124b4ff22284bef51278387a2cc77faf1aee94f",
+      "bytes": 9185
+    },
+    {
+      "path": "packages/alia-server/src/api/effects.rs",
+      "sha256": "f04b01abba0e99f806df69e7567fdf072639acc6ef5c69613a3709483fa8054b",
+      "bytes": 10308
+    },
+    {
+      "path": "packages/alia-server/src/api/expression.rs",
+      "sha256": "5f989d53ab3c5d7ae7f93c1a54d1d34ba07f373e924d6888e6d81580697f4a51",
+      "bytes": 7840
+    },
+    {
+      "path": "packages/alia-server/src/api/health.rs",
+      "sha256": "4a052e142264f2e7a2c22c76ec1f43136227f458f0959819cfadcfb8631bab57",
+      "bytes": 2071
+    },
+    {
+      "path": "packages/alia-server/src/api/insights.rs",
+      "sha256": "ff41448c83ac8f8be89920248434684725393065bd5d208a4c562c17080f2dfb",
+      "bytes": 6302
+    },
+    {
+      "path": "packages/alia-server/src/api/memories.rs",
+      "sha256": "9b551a6da747dc1a1769e4a69dd84152ab277e94d9ce33d0525d73633e68ce1e",
+      "bytes": 22099
+    },
+    {
+      "path": "packages/alia-server/src/api/mod.rs",
+      "sha256": "d40753aa57d124617dc768295f8585727808de942733a272d108b573cb3756a7",
+      "bytes": 1304
+    },
+    {
+      "path": "packages/alia-server/src/api/personas.rs",
+      "sha256": "5b2fccbc245b2513033a6c4b978d90f3b11ccd5aadc0bffce4ad1f3a76ceb93c",
+      "bytes": 14451
+    },
+    {
+      "path": "packages/alia-server/src/api/plugins.rs",
+      "sha256": "5fc531b1003e807aed8c64fe14f5ac355fea4ca7840d55dcdef3d327267c5c40",
+      "bytes": 5753
+    },
+    {
+      "path": "packages/alia-server/src/api/rules.rs",
+      "sha256": "3eba5129b607f9509830c4a252b1ac1fdf919e6eba9efaae42cd4b1ba11a685b",
+      "bytes": 4733
+    },
+    {
+      "path": "packages/alia-server/src/api/scheduler.rs",
+      "sha256": "4f69bfe1cf8bf77e1e7875c31ee1bc85f93725bde1421ca4e6984996fbcc0631",
+      "bytes": 7318
+    },
+    {
+      "path": "packages/alia-server/src/api/sensors.rs",
+      "sha256": "ffaeb0d203ab7f8d634f161c7f6afa81055fc40238d188346f737cdf8fd7f2fa",
+      "bytes": 8611
+    },
+    {
+      "path": "packages/alia-server/src/api/settings.rs",
+      "sha256": "6be15497c6f49c156e205f6aa97684e0663de550b1c56ccfb3f68d14734f06f6",
+      "bytes": 10262
+    },
+    {
+      "path": "packages/alia-server/src/api/skills.rs",
+      "sha256": "115bcb38fd1e0cb3c9891b0b2e51971fe51b0f769d561e8aa485fde0ee460b1b",
+      "bytes": 15041
+    },
+    {
+      "path": "packages/alia-server/src/api/tools.rs",
+      "sha256": "12940a69fca97161e04dca7c42e12fa4b48d9248966a5e94142f3dc0d07777e3",
+      "bytes": 5204
+    },
+    {
+      "path": "packages/alia-server/src/api/users.rs",
+      "sha256": "d4767778eb2265e17703fc8628d8f486f29ca07fd24aba472c031cc6d574c054",
+      "bytes": 7118
+    },
+    {
+      "path": "packages/alia-server/src/api/voice.rs",
+      "sha256": "f52b753d885e0f86a6ef1ed2ba006d4b4ee975d96685ec09f9888557aceeda00",
+      "bytes": 13189
+    },
+    {
+      "path": "packages/alia-server/src/auth/identity.rs",
+      "sha256": "feb8ba434b8b62e88eb7891f38a1bc1bb86fe6080e395b4d3fed2c79e632e365",
+      "bytes": 2586
+    },
+    {
+      "path": "packages/alia-server/src/auth/jwt.rs",
+      "sha256": "d43eccc1061e25a3e78b9ed699c26115b425021cdbb9b7a5627998fd01795cf9",
+      "bytes": 1433
+    },
+    {
+      "path": "packages/alia-server/src/auth/middleware.rs",
+      "sha256": "32e080d2f6056d92a2bfced972c6945c68ee4df21d48235f05453dfb3d053d92",
+      "bytes": 2499
+    },
+    {
+      "path": "packages/alia-server/src/auth/mod.rs",
+      "sha256": "a72a1db19f44f4dda6534109dbbd338e4a8cdaa4de5980c92a20f5f9ea172f33",
+      "bytes": 432
+    },
+    {
+      "path": "packages/alia-server/src/auth/password.rs",
+      "sha256": "c4e644568dfc586c205b20d341bb1720a3bb2676c5e906bfe09102225073d4a0",
+      "bytes": 1289
+    },
+    {
+      "path": "packages/alia-server/src/auth/user_identity.rs",
+      "sha256": "8f4f70d28ecf1dcab821abb98d82c6fc7a1e43ef1e7f4f5edc48bdfeb3df8907",
+      "bytes": 2290
+    },
+    {
+      "path": "packages/alia-server/src/bootstrap/mod.rs",
+      "sha256": "afa73417579d8b38f98cd30fa23b440522fd25c38e76c84965b0f315e429b663",
+      "bytes": 766
+    },
+    {
+      "path": "packages/alia-server/src/bootstrap/runtime.rs",
+      "sha256": "ee684ccd553f72c0098d0f820fce82fbb9bc4621889eaee5312698928577eaab",
+      "bytes": 14700
+    },
+    {
+      "path": "packages/alia-server/src/bootstrap/setup.rs",
+      "sha256": "8366ac5b8de67423e01ee76693008d025794d98585a9d5ba84c3f20c6b2070a2",
+      "bytes": 6668
+    },
+    {
+      "path": "packages/alia-server/src/channels/adapter.rs",
+      "sha256": "5fdec8f5cac4a4e51a695b44c7739998debd5fd5a6a0c5ce8f395d80163a4fe0",
+      "bytes": 17601
+    },
+    {
+      "path": "packages/alia-server/src/channels/cli.rs",
+      "sha256": "df7ee5ccf79b82ce8f8bdc574c32abbfc5441d7b33cdb301d575b4395a899a4a",
+      "bytes": 26048
+    },
+    {
+      "path": "packages/alia-server/src/channels/cli/text.rs",
+      "sha256": "86ee664087da253fa7580aa3bb49f2afd042fbdb7b95a6360d4cc7406b6751b1",
+      "bytes": 28741
+    },
+    {
+      "path": "packages/alia-server/src/channels/dialogue_control_tool.rs",
+      "sha256": "724a22c12140e45e74dd8c3841a84a175d4f346868889c45d41a2da6809d31de",
+      "bytes": 10668
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/audio.rs",
+      "sha256": "a73667e938ada18687aa80748d32f541a126e361362b57b9047c6cf8fc97d08d",
+      "bytes": 10405
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/auth.rs",
+      "sha256": "a09462132b53df6ea6ee2ff1919c26c56e67f784ae2da6f3491ee26bcb2ea17f",
+      "bytes": 693
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/body.rs",
+      "sha256": "94e95fd5e30d64708d4acdb9e957f7977a6e0923ef88947fcae2112fc575578d",
+      "bytes": 48031
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/body/tests.rs",
+      "sha256": "851b8f294ca6e83723eb9981175c02009f366ba1e7acd63e642183d90ddf7224",
+      "bytes": 39113
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/channel.rs",
+      "sha256": "1f445563c43c5b8477be180a65492afe29dbeab24632cabcb63dd99187cd281b",
+      "bytes": 84363
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/direct_response.rs",
+      "sha256": "604d071290b74344fdd705179c9d8315aa9d874333f21a39f9e6c0ee5b09239e",
+      "bytes": 3832
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/mod.rs",
+      "sha256": "1c30b11edd5a24b77d09708dbe3acab288909096b4bbbd1303d797d3f0c238f1",
+      "bytes": 426
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/playback.rs",
+      "sha256": "2984e5c8016d756c32134f36221d8733a3686876f550b282581ad0b67b437065",
+      "bytes": 21724
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/playback/tests.rs",
+      "sha256": "c913f5d56fcce681ca3f0d1fc6bc2be692714d2973b5c78e69c4b36bbfa2ca6d",
+      "bytes": 32166
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/sensor.rs",
+      "sha256": "97d9edd492a960eb10e6e0fff10e73862084b46ec76fcc71167693269fe1d595",
+      "bytes": 9930
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded/settings.rs",
+      "sha256": "f41266b928eb947925937b3fa63c1c654749a9c88a8eff425441a1e0001d42b5",
+      "bytes": 1565
+    },
+    {
+      "path": "packages/alia-server/src/channels/embedded_volume_tool.rs",
+      "sha256": "9457373a957180707b9e6e73f358554f9f3f6b46b334eb25cc68217e9519c10d",
+      "bytes": 8055
+    },
+    {
+      "path": "packages/alia-server/src/channels/mod.rs",
+      "sha256": "413d7c5f42b19615c1f1f7cb477e78b782bacbcff2cf15269bc187220f07822c",
+      "bytes": 439
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline.rs",
+      "sha256": "bd81f699a38903eb849cf7f7e2330f7715deb69e5f5de967e0b32c8f6264bbc8",
+      "bytes": 152684
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/debug.rs",
+      "sha256": "6c96805de23a47e2387e8d9b5251937d9fea2afe474c2b6f36ceebcc503bf25f",
+      "bytes": 12115
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/delivery.rs",
+      "sha256": "0d32ecc97d44462b7b3ccecff797643ae57a7eb3c5d77a4fc67bf6dba6f25454",
+      "bytes": 8425
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/dialogue_policy.rs",
+      "sha256": "1de34015a6ec8c40a6eed7e355405716b7064c01ecef62ed127f0f436be8f23d",
+      "bytes": 7568
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/error_notice.rs",
+      "sha256": "8a18b57a0d44546ff3cafe16dabdf7b911d0f40768b4b95b45d94d1f1e877dc5",
+      "bytes": 22524
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/integration_tests.rs",
+      "sha256": "8b1f8d6fbecb9c548a67aed4b42dfa53b535091c48b761c25020496de2f575bb",
+      "bytes": 45307
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/integration_tests/context.rs",
+      "sha256": "26ea22bb44cfcf7d1b21bbe770807e8c0a642ace315418631457366e45ea72ae",
+      "bytes": 7134
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/integration_tests/memory_search.rs",
+      "sha256": "7fcc0113dad4510cc63f3e97371cf0b1446d41b00ddc4060fb2d60f3133d7f12",
+      "bytes": 15448
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/integration_tests/text_delivery.rs",
+      "sha256": "1fb5917c6b749172c5cb683add9230de2096ae68cfb0b31ec4d1c835115bb4cc",
+      "bytes": 7703
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/memory_capture.rs",
+      "sha256": "3e309211ac71259f108cfcfaaa8713d989e4b6a1ecf23203ebd2f36c82d3f412",
+      "bytes": 22042
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/streaming.rs",
+      "sha256": "25321d5c7e67ac897ab14b6597ea76c62f1e30d02979d66691bcaaccb7fbe22a",
+      "bytes": 54286
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/supervision.rs",
+      "sha256": "8fe055b84ac70ae4c84143cbc9a06fe49379f0a0d7f7ff795e0a72d3a1c9364d",
+      "bytes": 4194
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/tools.rs",
+      "sha256": "accda22de8f45147b575a75764cc358358e1b868ae303cf41f598b3fbdaffebd",
+      "bytes": 57132
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/transcript_correction.rs",
+      "sha256": "910605351f9797ce1340c5a954eda4f59c2d7f51024a51e390334698fb3fa897",
+      "bytes": 25168
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/turn.rs",
+      "sha256": "6a8b647fd71a63c046fad813361873648b1b44d3aab9b5ce39d6b46deed3d056",
+      "bytes": 14383
+    },
+    {
+      "path": "packages/alia-server/src/channels/pipeline/voice.rs",
+      "sha256": "620d26012e8bee73db114e1069630a361b301e655e542c3842b6f4a227f05733",
+      "bytes": 9102
+    },
+    {
+      "path": "packages/alia-server/src/channels/registry.rs",
+      "sha256": "f2dd7ca2614c2dd5a7a72d9b3f5c4ed8df23aa6b13be84a6055c67800ae950f9",
+      "bytes": 16359
+    },
+    {
+      "path": "packages/alia-server/src/config.rs",
+      "sha256": "11dd29aa0301588788db837e4450f55fae2bf122299b8efd159be6e99a9057e0",
+      "bytes": 74973
+    },
+    {
+      "path": "packages/alia-server/src/discovery.rs",
+      "sha256": "9c683080410f5aea2f378c46842aa7f4a45a1fa9df39deb0b9f5c6372b6b78d7",
+      "bytes": 10823
+    },
+    {
+      "path": "packages/alia-server/src/entity/chat_message.rs",
+      "sha256": "9632f39487842a4deaa640dd0d3d6b55fa53be9c09042829a677cddaf6e049ce",
+      "bytes": 923
+    },
+    {
+      "path": "packages/alia-server/src/entity/chat_session.rs",
+      "sha256": "c3dae4cb037affc452d1d68002df9c31de9fc8bc248f7b1f348886d366d58163",
+      "bytes": 790
+    },
+    {
+      "path": "packages/alia-server/src/entity/conversation_event.rs",
+      "sha256": "cf448ee8d5ce2d8f3be165b0ed8d7bf54fa1225798f0857ee876acc5dd78058c",
+      "bytes": 1054
+    },
+    {
+      "path": "packages/alia-server/src/entity/insight_log.rs",
+      "sha256": "800f320519afaada64d106e967bcfa1086a3e832ce91187b4d9ead85225f4af9",
+      "bytes": 1139
+    },
+    {
+      "path": "packages/alia-server/src/entity/llm_cache.rs",
+      "sha256": "2b109d04f83a2c3659e318b683fe3df9145f5cae8d2b4c5966594cb4ac208a80",
+      "bytes": 1292
+    },
+    {
+      "path": "packages/alia-server/src/entity/mod.rs",
+      "sha256": "f20b52e41d7163b438a6e5589de043a7aecda21d350fef54e6cab355867080a5",
+      "bytes": 505
+    },
+    {
+      "path": "packages/alia-server/src/entity/persona.rs",
+      "sha256": "c1b3660417530b52928567eee3d7fedd8d8499689b846e5b72fd21fa39ddf539",
+      "bytes": 1581
+    },
+    {
+      "path": "packages/alia-server/src/entity/plugin_storage_record.rs",
+      "sha256": "4061b17d5ce3816a8cc8334ea223eb9f59ae5b8bad48b47dde2b8f5db607a28c",
+      "bytes": 1188
+    },
+    {
+      "path": "packages/alia-server/src/entity/refresh_token.rs",
+      "sha256": "9f478196e9aba448f235cdcb8a640de4e8802f9f87139340e1a7e1703cb72061",
+      "bytes": 990
+    },
+    {
+      "path": "packages/alia-server/src/entity/registry_artifact.rs",
+      "sha256": "57e7f05dd0bd7e7dc181a6b2e5859b5089624ff0c2b0274bdcf7debe28e1a720",
+      "bytes": 1180
+    },
+    {
+      "path": "packages/alia-server/src/entity/registry_dependency.rs",
+      "sha256": "360a51041ed8b19cf3782e883692728d95e94ac5a72c24c32b1a2cfb790e614c",
+      "bytes": 1078
+    },
+    {
+      "path": "packages/alia-server/src/entity/skill.rs",
+      "sha256": "8cdc8ac8c9ce2e5583a9da62726bf8e87e403c7ea7dd0792d1bf2654faec7d91",
+      "bytes": 1751
+    },
+    {
+      "path": "packages/alia-server/src/entity/skill_preferred_tool.rs",
+      "sha256": "374bbe31d16127c8509d559eb26125547b4aefb151a1deddc9b15b921faa49e2",
+      "bytes": 1412
+    },
+    {
+      "path": "packages/alia-server/src/entity/tool.rs",
+      "sha256": "bfb6c76df38cccb6035a76de17637755f31ddd33acbb65e41e9d992a91690059",
+      "bytes": 1600
+    },
+    {
+      "path": "packages/alia-server/src/entity/user.rs",
+      "sha256": "33f87e0919c7d8800baeb6a71c6085728656708848196eb2cd8280d6c761ff72",
+      "bytes": 1092
+    },
+    {
+      "path": "packages/alia-server/src/entity/user_active_persona.rs",
+      "sha256": "dc98ecc17d1ac2f10c308de5b65a7dc4876e047ad744a743f2a1450b3a7a8eb8",
+      "bytes": 899
+    },
+    {
+      "path": "packages/alia-server/src/entity/user_identity_link.rs",
+      "sha256": "4e2e91db28e723963cd86f54970f9bbe31df2aa8a3bff3c153a0a4e0b8227334",
+      "bytes": 1042
+    },
+    {
+      "path": "packages/alia-server/src/entity/user_persona_override.rs",
+      "sha256": "b198d0e31b426234f86e13b7fc0bca34e5272db922cffff85d4bba5cd1146914",
+      "bytes": 1371
+    },
+    {
+      "path": "packages/alia-server/src/error.rs",
+      "sha256": "7ee6777f3af48157f57a0f8ab095b04956c1a29c7bdc3cbce89adee36143b8d9",
+      "bytes": 3833
+    },
+    {
+      "path": "packages/alia-server/src/event.rs",
+      "sha256": "0f45a8f9a72b6ecc414b094411e0bd1d8b5be2de61950a72b6bb27f8f402338b",
+      "bytes": 3326
+    },
+    {
+      "path": "packages/alia-server/src/expression/abi.rs",
+      "sha256": "52d07bdf1feabe6be9d314e9e6aadf32e9affc7c5fc7f31f77940a223b80d0cf",
+      "bytes": 11275
+    },
+    {
+      "path": "packages/alia-server/src/expression/affect.rs",
+      "sha256": "c65fda0aaa49c5ea3707d5d8bfcb2819b0a11e68505d91b83196a005e7b8c802",
+      "bytes": 26818
+    },
+    {
+      "path": "packages/alia-server/src/expression/affect/tests.rs",
+      "sha256": "8dd9e84349b78607715c1f3f767d8c16f7ef109fdf139527fd04970fa2824cee",
+      "bytes": 8661
+    },
+    {
+      "path": "packages/alia-server/src/expression/appraisal.rs",
+      "sha256": "0a79c97cb502f114eee7ad4190b9bd53a23fe603f3931a998e5c51dcd0d50ee3",
+      "bytes": 12322
+    },
+    {
+      "path": "packages/alia-server/src/expression/eval.rs",
+      "sha256": "dc59168c1c94d0fdebdbc24fe4463fc9d9f217655f911d606d6a04803e9abfd4",
+      "bytes": 10130
+    },
+    {
+      "path": "packages/alia-server/src/expression/extension.rs",
+      "sha256": "5e2e3a672e73c7bd17f115ea00a7ea9bd29d8d5f0af5452499a88a621adc19ee",
+      "bytes": 18356
+    },
+    {
+      "path": "packages/alia-server/src/expression/mod.rs",
+      "sha256": "1f696f292fac65665bdaac55f6f8329c52fdcc2ceedade4dc92eef13920c85fe",
+      "bytes": 2565
+    },
+    {
+      "path": "packages/alia-server/src/expression/orchestrator.rs",
+      "sha256": "b14f29501ce997ed83f1777e2f6ec00ef6a4a2f2b4feea3b9094dedb72cec90e",
+      "bytes": 47955
+    },
+    {
+      "path": "packages/alia-server/src/expression/provenance.rs",
+      "sha256": "5bd9cf9989f246f1d61c0629a824fc93368fca510d29818b99d21eae2e3f5608",
+      "bytes": 6532
+    },
+    {
+      "path": "packages/alia-server/src/expression/regulation.rs",
+      "sha256": "9c5a711f5904f605cd41da5c3bc4570a08366519de35aa81dc38eacb9bae668b",
+      "bytes": 6610
+    },
+    {
+      "path": "packages/alia-server/src/expression/runtime.rs",
+      "sha256": "87e99932710e5ad40679ed8d9386098c9102d14bf61362b5040b74e886e6c1f9",
+      "bytes": 98241
+    },
+    {
+      "path": "packages/alia-server/src/expression/trace.rs",
+      "sha256": "8337c40e43f04fcce32354c529ac20cdf51a8e49106c95221dc5e614705553d3",
+      "bytes": 9666
+    },
+    {
+      "path": "packages/alia-server/src/expression/types.rs",
+      "sha256": "f89e4f5c50715bb6a9c5de454ba4c65329e35cf03df8d32e64f013ad132e4c3a",
+      "bytes": 21931
+    },
+    {
+      "path": "packages/alia-server/src/grpc/audio_ingress.rs",
+      "sha256": "0a7af643f60ade39a4ec3f9c3cf230e2f3c4cd3f6c6523636b9d3e02812e5b14",
+      "bytes": 13932
+    },
+    {
+      "path": "packages/alia-server/src/grpc/mod.rs",
+      "sha256": "71fa1b97e7d17b5723bb9f68335896c973fa65dab11c5d0e13403fc469f48746",
+      "bytes": 46
+    },
+    {
+      "path": "packages/alia-server/src/grpc/voice_session.rs",
+      "sha256": "7cfb8c49a7e46a994e508bee8ba5195fe4ac6f89eb7ec216021257bc02d0928c",
+      "bytes": 67296
+    },
+    {
+      "path": "packages/alia-server/src/lib.rs",
+      "sha256": "23e428dc5327efd193cae4075bffbbda9dfc095442a8dbd55bf338fe4f13e030",
+      "bytes": 491
+    },
+    {
+      "path": "packages/alia-server/src/main.rs",
+      "sha256": "30c2d138ecd41a3d55eeb10545def85d999c8add7a445ecdc0f40ff8c1829cb8",
+      "bytes": 3402
+    },
+    {
+      "path": "packages/alia-server/src/memory_policy.rs",
+      "sha256": "5c71d8cc486bc6169fa81fce34b13933416c26946688cd8fdc53b5a0c4052805",
+      "bytes": 9648
+    },
+    {
+      "path": "packages/alia-server/src/module/background.rs",
+      "sha256": "3d2b2a925b295a5b0246d98d87e08b9e5b9b7a395e1c8e637644e8b6b2071360",
+      "bytes": 5102
+    },
+    {
+      "path": "packages/alia-server/src/module/builder.rs",
+      "sha256": "b70096f873a73d19e2f3350a808941da1113f44a522f8d0bb09560f8d1a4a086",
+      "bytes": 39476
+    },
+    {
+      "path": "packages/alia-server/src/module/factory.rs",
+      "sha256": "d6ede3c37074ced867a3778bebaf114effe1075871179857bf5dfcb48db2ab83",
+      "bytes": 13189
+    },
+    {
+      "path": "packages/alia-server/src/module/lifecycle.rs",
+      "sha256": "c536f1d53bbd087bd600995aced5377c93a848fd5e649b62aaa2c4b795d0d50d",
+      "bytes": 21188
+    },
+    {
+      "path": "packages/alia-server/src/module/mod.rs",
+      "sha256": "bb939ac843054d5071c111384946f259525213b8b2d6ca712404277d20801787",
+      "bytes": 211
+    },
+    {
+      "path": "packages/alia-server/src/module/registry.rs",
+      "sha256": "287e03a54755be0811abc33baae48c2abed82a0e8e5502c70ff7ebca45af522d",
+      "bytes": 6955
+    },
+    {
+      "path": "packages/alia-server/src/modules/body_delivery.rs",
+      "sha256": "e5aa9749a72525c9d9ebe4491e4a447bab29c238e40b7a226701a6f34890a10c",
+      "bytes": 1441
+    },
+    {
+      "path": "packages/alia-server/src/modules/body_delivery/repository.rs",
+      "sha256": "2f7da92a65d70cb01e7ee4c6a9ee8918e60405bb1ac74aac05bcd0802081a168",
+      "bytes": 16395
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/mod.rs",
+      "sha256": "beb676caaa1f9d53aaf6d1c45b567db9d9befcae5a4dc156b2c4d6850b98e1aa",
+      "bytes": 218
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/repository.rs",
+      "sha256": "99725e37db56976709b59c0250980e8e7116ba7987c1040020f54fbb1ffe2788",
+      "bytes": 42247
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/repository/control.rs",
+      "sha256": "3eff2a8a399baec1cd98a6be8c58a62526d17864aefee537658223fefa33fd70",
+      "bytes": 29191
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/repository/text.rs",
+      "sha256": "ea0742ba2ba0e187e66a5c0322663f2db1a98fca018a4abca8bbfd4e2e324434",
+      "bytes": 9831
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service.rs",
+      "sha256": "3b74bb176ac85a2fd49fbdd1f98905dd6898d9243d1ce4ce6e3cf3ccb7e6240e",
+      "bytes": 33970
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service/media.rs",
+      "sha256": "fae4a2ab16a05dc41d86596aa11bb511fd51f0fa216bc1cb45c2af4dd8762b70",
+      "bytes": 4106
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service/output.rs",
+      "sha256": "5fefe1305bb48d1dc912e3d9ee2cca24b56c72c97d9384b55743ae76422d183a",
+      "bytes": 29719
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service/output/gate.rs",
+      "sha256": "96d14a8896e8c289bd58b75ebb73a91e8aa69aafaa1fd88944146658cf20bc86",
+      "bytes": 6320
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/types.rs",
+      "sha256": "b89139bd7bba346a36ca4e3b9af6aa9300a0ce7ee4f1ba6136a64b37ae9249ee",
+      "bytes": 6115
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/identity.rs",
+      "sha256": "9b223c8b00eda753f6cb37194731456292f7300ce7a7a28793a78ae6d9e97323",
+      "bytes": 1127
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/mod.rs",
+      "sha256": "3676845a873a534eaca98318ad054b4693d0d7f047349a8b003b251e27ea141c",
+      "bytes": 246
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/registry.rs",
+      "sha256": "143bc804932a826e455d0b3e3e11d2e72c50081876f66bc7f4f98b14e1bea6a9",
+      "bytes": 4240
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/repository.rs",
+      "sha256": "f23c40258bec485d4cadd91605e889a5d75c644223108aa58a330e2341f7b65d",
+      "bytes": 27662
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/service.rs",
+      "sha256": "76b4d0fd7a2106601041a98ea2906b6c37c531d40db396373626cf70a80d79bd",
+      "bytes": 23446
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/types.rs",
+      "sha256": "730384c49f1997485f124b31c678b3702b446e6abcf2fe8f723ada64608aafe3",
+      "bytes": 4941
+    },
+    {
+      "path": "packages/alia-server/src/modules/execution/worker.rs",
+      "sha256": "ad092f14c0cf4027d8b52b3375f25a99ab43cb36db7a83158ee6a9fb7c02cfc3",
+      "bytes": 10074
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/mod.rs",
+      "sha256": "542762e7748661cd4fa5d92e3b7902753692d17b108d9379436fa37ce71e83ef",
+      "bytes": 600
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/turn_detector.rs",
+      "sha256": "5a703dacb65c5e47a0b5044be5cd9277af9476ce51e274fd5485e0dd40bd2d29",
+      "bytes": 859
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/voice_input.rs",
+      "sha256": "a8d0c7a757c048db43df123fd1033b3b12921a53f2824ec7c8dd78b1dfb275c3",
+      "bytes": 1444
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context.rs",
+      "sha256": "0f49daa2c75539d79ab5eaf48d3fa103dd96cb2c8867f2ea11185138f78888e6",
+      "bytes": 3146
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/appraisal.rs",
+      "sha256": "c7f39c3c0b3c4166107ebe9e8055ba6f0207a491b31a4da8fb8b8f8b30f7629f",
+      "bytes": 38214
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/appraisal_policy.rs",
+      "sha256": "0223ab39319dcbc3af908b4e8d71b3c5eebd083158e3f284c2a7ebbcc73ff8a0",
+      "bytes": 4296
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/capture.rs",
+      "sha256": "68e43ef2d4f287b785b5e44483509b353434be93c3f347f386e12f4e3bf9bda4",
+      "bytes": 7382
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/materialize.rs",
+      "sha256": "1557cb8d905f3688073ec48a192cc9ac6681f694d04532e83d21482de4b9a1fd",
+      "bytes": 29300
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/memory_appraisal.rs",
+      "sha256": "c6ecb0f27cfed4b7623b03f08f50ef4b408aff1691282f8d4ed08ab754ea18dd",
+      "bytes": 15592
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/policy.rs",
+      "sha256": "e231c2be4e8efc9345e0aea452203aeb14c5f2e3a857ca9e564a20c862f61be0",
+      "bytes": 14649
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/rebuild.rs",
+      "sha256": "084400f35417872c622b81418965d0f813ccf5b95641df07f61be37bce6aed8e",
+      "bytes": 18008
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/rebuild/tests.rs",
+      "sha256": "5a49e79443e05ca74c0fea85a9527d5e27a61f064c3305aa6e85aebd4d7eee24",
+      "bytes": 16027
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/relationship.rs",
+      "sha256": "fd05780f36f4c1839104e55dc9b42f3b1b4824bc1625a028544f58f544d7b627",
+      "bytes": 10650
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/repository.rs",
+      "sha256": "c44d29fa3de62076cb34e2ec4b36ddc2ff31baa5d1da0b751b1b5c75c63fb7f8",
+      "bytes": 29027
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/context/types.rs",
+      "sha256": "ca2e7eb613e5a8ad648e08fca64536b4101707deeffcdaaafa7dedfff711b9e3",
+      "bytes": 13933
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/mod.rs",
+      "sha256": "dd8ffb7a37bbef656fc246467dfd5c43609ac4d0b5782db22b3764b6e660bac7",
+      "bytes": 33
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/source.rs",
+      "sha256": "4135d6071e15350d52230ef7b298a69c31facd66275c9ef6b149d8e1e127457a",
+      "bytes": 3447
+    },
+    {
+      "path": "packages/alia-server/src/modules/mod.rs",
+      "sha256": "c2e8c8bacc6e4172dc01ec99117aeedf9f0f4d51cd0f970d9e21685e5c53821e",
+      "bytes": 115
+    },
+    {
+      "path": "packages/alia-server/src/modules/platform/identity.rs",
+      "sha256": "eecb668edad38864ac94c3c85d1482ca52949fbec2e00dbe9a3509ecf4e66ab7",
+      "bytes": 907
+    },
+    {
+      "path": "packages/alia-server/src/modules/platform/migrations.rs",
+      "sha256": "d182b36b19d72d2c2b9162897ba501f5f355cbcb52ba6382c67856332eb4dc8f",
+      "bytes": 8728
+    },
+    {
+      "path": "packages/alia-server/src/modules/platform/mod.rs",
+      "sha256": "bf04ce17b6cfb166bbb3a31b63f51a0cf4ebc492e642afcfdffef1663ced9ee8",
+      "bytes": 108
+    },
+    {
+      "path": "packages/alia-server/src/oobe/bootstrap.rs",
+      "sha256": "2292ee6bd6949ad5f3e1eb407e2d97f00e3132df8cdd9b29670aebc9c93d11d8",
+      "bytes": 10391
+    },
+    {
+      "path": "packages/alia-server/src/oobe/mod.rs",
+      "sha256": "da380cbf15ea8b29ba8b6e68f24bf4604f6f77b2e36dc8af6c3b87b1ad0dd531",
+      "bytes": 365
+    },
+    {
+      "path": "packages/alia-server/src/oobe/routes.rs",
+      "sha256": "ddff5d12e72de5b89970b8c9dd8cc470e2c737ff644e6150e104fae34443b6f1",
+      "bytes": 4968
+    },
+    {
+      "path": "packages/alia-server/src/openapi.rs",
+      "sha256": "bc8e081686cc50467b14c6d52a1100ce79dcf139741efe4804d76ea6ead17e29",
+      "bytes": 7080
+    },
+    {
+      "path": "packages/alia-server/src/plugins/context.rs",
+      "sha256": "a81a163dd469b6c8bc89db1c0827b96d39d05599a3d9207a3d0b2883d5b6f725",
+      "bytes": 882
+    },
+    {
+      "path": "packages/alia-server/src/plugins/home_assistant.rs",
+      "sha256": "eee6d3fdf8ff15a973500b1b99dbcb9934e269ec16cf33a02e8b7552b8f52d0c",
+      "bytes": 27898
+    },
+    {
+      "path": "packages/alia-server/src/plugins/manifest.rs",
+      "sha256": "686a7fd089d30ffb23bd27604247a1b61670904f77142b7feb040de575b6997b",
+      "bytes": 4246
+    },
+    {
+      "path": "packages/alia-server/src/plugins/mod.rs",
+      "sha256": "2ddb1e7f2897d597d6fa34b469de06cc4b0d68b515849db728b2c8a8374fcb49",
+      "bytes": 484
+    },
+    {
+      "path": "packages/alia-server/src/plugins/storage.rs",
+      "sha256": "057d58d7dc4ef253129f562e623d3d38ab53a05a05d5b9b5d25e36456f0d91c5",
+      "bytes": 29920
+    },
+    {
+      "path": "packages/alia-server/src/providers/adapter.rs",
+      "sha256": "131a50ed802dea7db7e1e478a3c4f3ce38300d852380158f561f19b9173e483c",
+      "bytes": 82523
+    },
+    {
+      "path": "packages/alia-server/src/providers/cache/db.rs",
+      "sha256": "8cc7d988473453803aa8713369a01b0e0041af3cf0f5dc053fb7c7f0fce61416",
+      "bytes": 25905
+    },
+    {
+      "path": "packages/alia-server/src/providers/cache/mod.rs",
+      "sha256": "c87b3f90c92aa3b4035698be25d18604b966383a2c11cd9d1bc008bf39d86d70",
+      "bytes": 231
+    },
+    {
+      "path": "packages/alia-server/src/providers/conversation/database.rs",
+      "sha256": "16d23c359ba985e8725b6365e52aad90ff466ce9308a04d86ee215e0b4478965",
+      "bytes": 13384
+    },
+    {
+      "path": "packages/alia-server/src/providers/conversation/database/tests.rs",
+      "sha256": "ecf2f832c169cbe462d3af2b6e0b2589e2a78a4c150e0d6710046063dcaec2cb",
+      "bytes": 9671
+    },
+    {
+      "path": "packages/alia-server/src/providers/conversation/mod.rs",
+      "sha256": "14bf5b14bed2362670197adbbf2bb5f55c6542e6ccba2628a7f2ff89ed4cefe9",
+      "bytes": 66
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/mod.rs",
+      "sha256": "338db87601242acd32e98cdfe75d7bac36a7e236419c2d2b1f7fe2fc26d07700",
+      "bytes": 847
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/openai.rs",
+      "sha256": "042b81884e99514fcce411c9f7df8adcd995a80155407f002b0bcdeff7853c29",
+      "bytes": 22246
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/profile_store.rs",
+      "sha256": "efea9963561c43a52d85ca653c2e2feb4ff0df826da765796bce348d900bedc6",
+      "bytes": 1906
+    },
+    {
+      "path": "packages/alia-server/src/providers/insights/mod.rs",
+      "sha256": "a6b1fa5eee5a7dc6adf8a4954a0787b616895db100c233c2176ddb010c347636",
+      "bytes": 1144
+    },
+    {
+      "path": "packages/alia-server/src/providers/insights/scheduled.rs",
+      "sha256": "5dcdc0b3d24f8360176539a9d7e73c8ae35d57ce4b93bc2363665a9d5354ace1",
+      "bytes": 116462
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/anthropic.rs",
+      "sha256": "a97be8ee32d0508027b467a9aac4ee6770c236caa2c13baf83d7ac12165284ab",
+      "bytes": 25490
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/errors.rs",
+      "sha256": "257c56ce1b3f4dc4c8388dfd9c9fe550fd8c491d2f9a0dad612d6fdca1b7d35b",
+      "bytes": 3830
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/gemini.rs",
+      "sha256": "6d9a838d743e500fb480d419ee74db35516de18ccf6833dfd8a871d3a486de0d",
+      "bytes": 23964
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/mod.rs",
+      "sha256": "f6fbcf9c7c6cc20f25a4d9ec884959aafb95943f99a2529ec9810db7d6fc17cb",
+      "bytes": 3391
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/openai.rs",
+      "sha256": "db9fa5a93f939f32dfd7effa3ab3921b67b7c367e6612f14a0ca169cdbbdeeb4",
+      "bytes": 32065
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/streaming.rs",
+      "sha256": "f1695b1660db5d3c7878f2ff95659532a7ca5f5f0576928348f2f377ec621802",
+      "bytes": 2282
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/context_read.rs",
+      "sha256": "ac645736132d294df06814414c23eaf355a1ce2816ce8ebc34f5042bd1c367c0",
+      "bytes": 7606
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/embedding.rs",
+      "sha256": "51360e9cdd312f2fdf0d8f611c9fc27d3c678abe50ca05b8a4fdb3354a1f9875",
+      "bytes": 11802
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/embedding_worker.rs",
+      "sha256": "c3b7388ce564d9bdb877e33f8c9744daf48b501a18ec5793a372bb87430a54c8",
+      "bytes": 7590
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/mod.rs",
+      "sha256": "6321b691f67964ca5ec99d4aa6c64d4edd0136b214529818d1053228aaf2d1cb",
+      "bytes": 1834
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/privacy.rs",
+      "sha256": "37e7c85b67f659ccffccd197055dfe58fbdba96d81f1416d8e8b5811c61489b0",
+      "bytes": 8551
+    },
+    {
+      "path": "packages/alia-server/src/providers/memory/simple.rs",
+      "sha256": "325f7e11b27d33e0730dab849f40127d079dc7da60b878062807df0a39b694c8",
+      "bytes": 128300
+    },
+    {
+      "path": "packages/alia-server/src/providers/mod.rs",
+      "sha256": "352b5fe7811273837b200dd0afce1803ceeba7964a5a009ff54242a00231d09b",
+      "bytes": 257
+    },
+    {
+      "path": "packages/alia-server/src/providers/persona/mod.rs",
+      "sha256": "31a1def2e3c1ca5d73349a731795e144197f4b8b961107d27f2665814405b6e3",
+      "bytes": 329
+    },
+    {
+      "path": "packages/alia-server/src/providers/persona/template.rs",
+      "sha256": "a448391b750363de38210d048200a0e2408b1fe2d83d99b986b626c0b1412c11",
+      "bytes": 9845
+    },
+    {
+      "path": "packages/alia-server/src/providers/router/mod.rs",
+      "sha256": "779a066778fb3f85c150f1dbab9bf81f28f4b8ad728fd229728d38599d7c110f",
+      "bytes": 653
+    },
+    {
+      "path": "packages/alia-server/src/providers/router/multi_layer.rs",
+      "sha256": "895f86cdd07155cfe8cc7f285293f8f83a924e855ced843fa08268b417a7748f",
+      "bytes": 28276
+    },
+    {
+      "path": "packages/alia-server/src/providers/sensor/mod.rs",
+      "sha256": "b3cb94228ddb65c41f87510cd2b1fd95c0590ef2a06a71041ae4fb4d5973a39a",
+      "bytes": 689
+    },
+    {
+      "path": "packages/alia-server/src/providers/sensor/registry.rs",
+      "sha256": "419b5e2639c79da64b714bf090d18bee13033d89628e44b2afe9b65992d1aac9",
+      "bytes": 45830
+    },
+    {
+      "path": "packages/alia-server/src/providers/skills/builtin.rs",
+      "sha256": "bfdb8c15522cc5a5bb24d3a66b42de8d710eb42dd5513e08ecc8f72f783931f3",
+      "bytes": 36041
+    },
+    {
+      "path": "packages/alia-server/src/providers/skills/markdown.rs",
+      "sha256": "ddd199b5f4959a91e417759ca38a806c0af5c6394221a4cca08e4bae684f7315",
+      "bytes": 3999
+    },
+    {
+      "path": "packages/alia-server/src/providers/skills/mod.rs",
+      "sha256": "99a2f0db69d109927cb37abc45f3645394b1ea86322e19d538bf16c26847204c",
+      "bytes": 400
+    },
+    {
+      "path": "packages/alia-server/src/providers/stt/mod.rs",
+      "sha256": "b7fd4567409f2b2a6e3eee935ec0a58de57fd3f9b98491ff9d8fd492771fc57d",
+      "bytes": 398
+    },
+    {
+      "path": "packages/alia-server/src/providers/stt/whisper.rs",
+      "sha256": "530a7651f591a5221d8d4b5032d7a4e597d9510e5b4dd477e10a1ae4a57c91e3",
+      "bytes": 16952
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/audio_budget.rs",
+      "sha256": "3734dc558885e9d2bc9fdb58af4343d05e67ef596c608779dfb675ca3d31d8b5",
+      "bytes": 8053
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/audio_budget_tests.rs",
+      "sha256": "33c7b863d82a92a83ff868631e951c25cb9b01faed342e1cceef88c160449de0",
+      "bytes": 5629
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+      "sha256": "b3c49be8c3000f7828be418aa196df8d2595ba788487e7e04b26d17d969390fb",
+      "bytes": 49638
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits/tests/http.rs",
+      "sha256": "f1185631b16776c97855b1bc2ecab59593f47faec6f8517b832bc319909fdafd",
+      "bytes": 13424
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/http_body.rs",
+      "sha256": "39c41c3ce046d1e799fa2ef47caae043f23dfd485d0f5b83821d6e9ff4c1fb04",
+      "bytes": 1997
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/mod.rs",
+      "sha256": "70408036289cde980b0c5e5db1b3eb4fac1831a90dc12f530b67113eacea821c",
+      "bytes": 474
+    },
+    {
+      "path": "packages/alia-server/src/registry.rs",
+      "sha256": "d9f0c1deb701fbf33c1cc27fb9e72b5f1543b020783c93be0373fcd98be0e757",
+      "bytes": 14066
+    },
+    {
+      "path": "packages/alia-server/src/rules/engine.rs",
+      "sha256": "f47daef861b3a7695efd59aebacefc4c8958ed278b61eea634e17ef20fd62b99",
+      "bytes": 18016
+    },
+    {
+      "path": "packages/alia-server/src/rules/mod.rs",
+      "sha256": "52db1f08d6816af269f3b0e74ccbba5185082f3a9bbd3b2498392aeadc2fbe8b",
+      "bytes": 211
+    },
+    {
+      "path": "packages/alia-server/src/scheduler/action.rs",
+      "sha256": "fa762124570ad1d3fd8da12fc1da1f67328d14a263bfa039cba735ffa1cf237b",
+      "bytes": 7529
+    },
+    {
+      "path": "packages/alia-server/src/scheduler/condition.rs",
+      "sha256": "33af45665176f3dac5e8746f97699c651ae54c7c494c945f3ef2cfdfe4d99ee6",
+      "bytes": 8324
+    },
+    {
+      "path": "packages/alia-server/src/scheduler/cron.rs",
+      "sha256": "97d62ad004616ddf3b2a19339686e1d726c691e9de947ba80f1f7cb7c4ddfdaa",
+      "bytes": 39196
+    },
+    {
+      "path": "packages/alia-server/src/scheduler/evaluators.rs",
+      "sha256": "9d7cd5c0e951f94dd78808de97c41f7ac9541a9ea0cf1edbead86b41d925ca1e",
+      "bytes": 8558
+    },
+    {
+      "path": "packages/alia-server/src/scheduler/mod.rs",
+      "sha256": "57d645d09ec8b16b547bebe016a9792c6eaac45f16f5e6903c6fea3679026f45",
+      "bytes": 828
+    },
+    {
+      "path": "packages/alia-server/src/settings/context_policy.rs",
+      "sha256": "cf19e5d98b68d265c6b01e3eb553e9cb68854147480cdf29b3c0a2e32fb2fdc1",
+      "bytes": 6332
+    },
+    {
+      "path": "packages/alia-server/src/settings/mod.rs",
+      "sha256": "e4cdab7b6f9c7f4b2b9eae40fe131927324e1c3af22d9e957d8558ffcd8122e2",
+      "bytes": 420
+    },
+    {
+      "path": "packages/alia-server/src/settings/registry.rs",
+      "sha256": "76325030a0b09ade68a7611a5173f0bcb2f0b165507658bf79996064b5b331df",
+      "bytes": 53492
+    },
+    {
+      "path": "packages/alia-server/src/settings/values.rs",
+      "sha256": "fff3341c60dc086953e9d44f1b8d157c61c7f88b6a68925a4de396d926298d7f",
+      "bytes": 1910
+    },
+    {
+      "path": "packages/alia-server/src/state.rs",
+      "sha256": "db0365f712b4dc4de719ba1819f7e4adafbf38885da99ade750102ce4f1fee6b",
+      "bytes": 1637
+    },
+    {
+      "path": "packages/alia-server/src/tools/builtin.rs",
+      "sha256": "fbebe1e3bcb4e43dc1749ee1b57e2f18026eedea8f8c43bb08c7af72b04add32",
+      "bytes": 77172
+    },
+    {
+      "path": "packages/alia-server/src/tools/mod.rs",
+      "sha256": "9081d2475340adf997215f2dbcb1617eda192a560ea8b5068666cc65ab4d0258",
+      "bytes": 545
+    },
+    {
+      "path": "packages/alia-server/src/tools/sensor.rs",
+      "sha256": "d71530dc0764250d2bc24ef0e0554f3441b23fe9fabdedb5869e0412b45e4225",
+      "bytes": 8356
+    },
+    {
+      "path": "packages/alia-server/src/ws/handler.rs",
+      "sha256": "0207c0f6d1609e61315e06de1af702afd5bd0bb74921b4eda6cbe082fdfd4c1e",
+      "bytes": 6442
+    },
+    {
+      "path": "packages/alia-server/src/ws/mod.rs",
+      "sha256": "ec58e2891405ec2efda31a4a4de7803dba02ba1dd8cb12f0e9e45f6402c965c6",
+      "bytes": 47
+    },
+    {
+      "path": "packages/alia-server/tests/appraisal_provenance.rs",
+      "sha256": "894e0c7536383c7e385deecd23ea76d724ce47bc6b1a6d4dd40d4686de0aed84",
+      "bytes": 55161
+    },
+    {
+      "path": "packages/alia-server/tests/body_delivery.rs",
+      "sha256": "d0e40512b394ca49f0bedf9bd68bd72011f9ef165c1d2950a5bda19be8674bc4",
+      "bytes": 11643
+    },
+    {
+      "path": "packages/alia-server/tests/cache_context.rs",
+      "sha256": "b43f2cab96e4e09d96624295bb3a93120459c8db3169896b6a424af11c1d9967",
+      "bytes": 43622
+    },
+    {
+      "path": "packages/alia-server/tests/channel_registry.rs",
+      "sha256": "5b50193a1ccbdec0f4560e4f6397d897d4ca314df164b5f4c750718c65ccbab4",
+      "bytes": 2905
+    },
+    {
+      "path": "packages/alia-server/tests/config.rs",
+      "sha256": "fb4f3adc13e81c280ebc90d0054ed222bea035ba8bacb39daa39cbe65360d3af",
+      "bytes": 9703
+    },
+    {
+      "path": "packages/alia-server/tests/context_lease.rs",
+      "sha256": "a9319a89f746c665c61207c0b35ed0aa8af936759dab039a498c940c39ca139d",
+      "bytes": 55525
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_repository.rs",
+      "sha256": "6cafa326ced5f64d7aec57aaadc51786c544e7ed9c50158d093b3cb034af3d35",
+      "bytes": 27250
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_service.rs",
+      "sha256": "9af63693cf0741b81fe8ec71bf3f30734ca9a47704cdffa4632485e258fe5572",
+      "bytes": 24649
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_support/mod.rs",
+      "sha256": "2a14ee287113ace2efc30ac32755d980145322be42ea5ce86af9cc53edf339b2",
+      "bytes": 8999
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_text.rs",
+      "sha256": "e015409f9781de427caeac05670036a9ae65aedb85c9c31c1f3c57218e03e7fa",
+      "bytes": 13818
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_text_service.rs",
+      "sha256": "20a2a5585e8345e641fa68f7c9642970f0d194d4db09f0073bc5fd849d0abc76",
+      "bytes": 16140
+    },
+    {
+      "path": "packages/alia-server/tests/duplex_playback.rs",
+      "sha256": "9af791e7b061d094a7d5123c15e3ca93b71db93f5cc4ae74eecfd0ff70e14e14",
+      "bytes": 31208
+    },
+    {
+      "path": "packages/alia-server/tests/easy_turn_live.rs",
+      "sha256": "86d6162a659f0252d1b1cbfaf975b9a19d4ac3a72e53284eba3b69219773258e",
+      "bytes": 1671
+    },
+    {
+      "path": "packages/alia-server/tests/embedded_channel.rs",
+      "sha256": "2a950da9a8197f7e7924875ca8b3bd39512e6db66f92efde98acbe52303b63a6",
+      "bytes": 2228
+    },
+    {
+      "path": "packages/alia-server/tests/execution_repository.rs",
+      "sha256": "a9ad8072bc74bd42721653d5bf4a724f9b272a19b0c6468cc6e3a6688659bd38",
+      "bytes": 39531
+    },
+    {
+      "path": "packages/alia-server/tests/execution_service.rs",
+      "sha256": "a02e4c5cc32485eab2993bbabe446229c8fa8564f2e2397acf9a633ef98f4ba8",
+      "bytes": 59487
+    },
+    {
+      "path": "packages/alia-server/tests/expression_abi.rs",
+      "sha256": "7401e5216b11b038dddae3e7843b262b15e143456f0e8d8b4ab128ec7fda4241",
+      "bytes": 907
+    },
+    {
+      "path": "packages/alia-server/tests/expression_appraisal.rs",
+      "sha256": "ddc69209594a9895ca9af5aa954435066f69931613d0fcf3231bdaeedc22b325",
+      "bytes": 1824
+    },
+    {
+      "path": "packages/alia-server/tests/expression_eval.rs",
+      "sha256": "9d25bfd89d99805c725aeb0044f7f994e0edd0e2f863e1e48f3af0e6226f29f1",
+      "bytes": 11668
+    },
+    {
+      "path": "packages/alia-server/tests/expression_regulation.rs",
+      "sha256": "c498c301b466c34a798d4426b64f06d86fe0fe5de1ae168b18ffff80b565ec78",
+      "bytes": 1192
+    },
+    {
+      "path": "packages/alia-server/tests/expression_trace.rs",
+      "sha256": "3fe03d3dfef00fb58947e747bb66cbd11136a1c1cc26399db75103ffbeca1ae0",
+      "bytes": 5290
+    },
+    {
+      "path": "packages/alia-server/tests/ingress_identity.rs",
+      "sha256": "ef318d7b83507d0cb9f538f087c393c2a080238bb7fee19b8d24a752f81e320c",
+      "bytes": 14302
+    },
+    {
+      "path": "packages/alia-server/tests/llm.rs",
+      "sha256": "46892bd14dc360a4aba26402f50fb980f22ae59d48430127124f5e149b2bedf2",
+      "bytes": 492
+    },
+    {
+      "path": "packages/alia-server/tests/llm_providers.rs",
+      "sha256": "0054e008591d6c936ffb16da1c15ed57c9aa94d249479ebefa1fa8403f0eec1d",
+      "bytes": 3913
+    },
+    {
+      "path": "packages/alia-server/tests/memory.rs",
+      "sha256": "7191c3b37c32d0a6e5b3ea2fa862446acff383a634a35de59aa30db7ac797b4c",
+      "bytes": 21233
+    },
+    {
+      "path": "packages/alia-server/tests/memory_capture.rs",
+      "sha256": "9ff4db63a42a1243e25cfd8f04da941a6bf3a05bc6e4b959291bab64cbd84d44",
+      "bytes": 16012
+    },
+    {
+      "path": "packages/alia-server/tests/memory_embedding.rs",
+      "sha256": "1fc0ac8ea46d802bad7a02cef25f869543482de7113f8318464246a8cbad0d6f",
+      "bytes": 23512
+    },
+    {
+      "path": "packages/alia-server/tests/memory_embedding_provenance.rs",
+      "sha256": "b7cb85d5cd932ea34a16aef8a688a2bcebcbc6428bcda995921c9e99c289a897",
+      "bytes": 25785
+    },
+    {
+      "path": "packages/alia-server/tests/memory_message_pins.rs",
+      "sha256": "9925ced84fe8b93bd71429163e14fcedc1b575e8dc8fcf06ac6b49943036e902",
+      "bytes": 13625
+    },
+    {
+      "path": "packages/alia-server/tests/memory_privacy.rs",
+      "sha256": "b564495f2c8384775e5f50305e3da7ab19a79e511446359c33003b35b56281e6",
+      "bytes": 72293
+    },
+    {
+      "path": "packages/alia-server/tests/migrations.rs",
+      "sha256": "1c0dde13774078c4462f846c3e7b9f36ab15c236fafb8f4f1b23fcaa8614e6c9",
+      "bytes": 9460
+    },
+    {
+      "path": "packages/alia-server/tests/output_control.rs",
+      "sha256": "f0f2ce1cd55faca6782ee2d99c83e4e7312e47b3c9c1c3573c0116efb7d46b40",
+      "bytes": 40429
+    },
+    {
+      "path": "packages/alia-server/tests/output_lifecycle.rs",
+      "sha256": "bfe80533a2c76253a1eb6ecf5898a9a53b989d37246de91a207bf71073c7e263",
+      "bytes": 27495
+    },
+    {
+      "path": "packages/alia-server/tests/persona.rs",
+      "sha256": "56a0789e475fc42663e91419377cc68d73bb84f79e5f843341eceba429445f29",
+      "bytes": 607
+    },
+    {
+      "path": "packages/alia-server/tests/pipeline.rs",
+      "sha256": "8d25f646351747088f33d89b1ffad95b811fffc534ae66022e5213e428f2b460",
+      "bytes": 12606
+    },
+    {
+      "path": "packages/alia-server/tests/pipeline_tools.rs",
+      "sha256": "82827b01dc8e6099c5bb36f382c87d8e840db25e3976e6d006dc4f59c5a38957",
+      "bytes": 11632
+    },
+    {
+      "path": "packages/alia-server/tests/plugin_storage.rs",
+      "sha256": "ee7d241dc2036e4619f748e1866f335a0870ba304e46ac4449954184fbd61e9a",
+      "bytes": 7818
+    },
+    {
+      "path": "packages/alia-server/tests/provider_adapters.rs",
+      "sha256": "e952698dee23de0532b068d0fdb1cb4dd38a33091066be5351537e05d81d5798",
+      "bytes": 7002
+    },
+    {
+      "path": "packages/alia-server/tests/registry.rs",
+      "sha256": "8498f90c597c438c0d50ba1019200371305173da266ebcdc67968fac63a24cd6",
+      "bytes": 878
+    },
+    {
+      "path": "packages/alia-server/tests/router.rs",
+      "sha256": "c62a75ca04aca239495f103ccd2561ebed4b7f1abb1973c79f0bf7cfef0decb6",
+      "bytes": 5849
+    },
+    {
+      "path": "packages/alia-server/tests/rules.rs",
+      "sha256": "5368f803ed3b95e4570bd42738abb3ec833e70a1cada33315035e9cbc2fca635",
+      "bytes": 1648
+    },
+    {
+      "path": "packages/alia-server/tests/scheduler.rs",
+      "sha256": "8aca67d4af36ba7782e5421d510eaf27f967eb0957ae7ef81a711d25882f2f3e",
+      "bytes": 721
+    },
+    {
+      "path": "packages/alia-server/tests/sensors.rs",
+      "sha256": "3a4130232766c51c64c5b3a78f35e7266137ce044a5567a3dec9813b1c186e4f",
+      "bytes": 14060
+    },
+    {
+      "path": "packages/alia-server/tests/server_background.rs",
+      "sha256": "d37e16dcefa947ae87d356ae6b2315cb7521651e168471dd7a213067e2200231",
+      "bytes": 17927
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime.rs",
+      "sha256": "33f3a28d2494e0d819cbbd7594c94ad00dacad593d54c4a945b79a61d49752b6",
+      "bytes": 30832
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/body.rs",
+      "sha256": "ec117095c989e0101b82b105f33ddb48b26d5c25b1600e45e4c2382f7724d19a",
+      "bytes": 9080
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/context_policy.rs",
+      "sha256": "d849292ac0c8a84c7f78dd5a3d9325c53a6bb8e2a8bf4de7af45cd63460be6f9",
+      "bytes": 20723
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/delivery.rs",
+      "sha256": "7d73c88fc7b75226b4e44daa2c16e2ea33c492b512c8fc21778ff4c9eade7acc",
+      "bytes": 25184
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/embedding_profile.rs",
+      "sha256": "968322311bc04811cae9cea1fe6e0134bb8643865306acbf028c9e93816c00c3",
+      "bytes": 12872
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/expression.rs",
+      "sha256": "872b8481d515dd0ea9dc129daa9df31542cd411c94f4aca04af65e28925520be",
+      "bytes": 17981
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/insights.rs",
+      "sha256": "f74457ebf8673699a70795368d970cf706ac2947514c2fc091724409fc7145cd",
+      "bytes": 16405
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/relationship_api.rs",
+      "sha256": "7a39486cd1580099c78f8d6a472ab619df9edd623c0d9fa6d7de4999bc210f18",
+      "bytes": 19229
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/relationship_rebuild.rs",
+      "sha256": "ee95a3c8a1c314bf8878e476a7b9abf66d455185b0a7ce93cad01771d3466a80",
+      "bytes": 5735
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/source_epoch.rs",
+      "sha256": "415383bbfae516e3a8498499b81283377b4cfbe6c0801e8aa982500bebbea73d",
+      "bytes": 10206
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/websocket.rs",
+      "sha256": "7798f2b0f8c90810b7ed294024c473c45ee51ecdee9356ae7063aad120d6ffa8",
+      "bytes": 5950
+    },
+    {
+      "path": "packages/alia-server/tests/settings.rs",
+      "sha256": "5ba22dff917af771c33c25ebd9ca84101b5d3d2b8d68289bc65a2a7a4a21676f",
+      "bytes": 5833
+    },
+    {
+      "path": "packages/alia-server/tests/skills.rs",
+      "sha256": "2d013e365d1bfdfe7858d65e56b3f8bffd4a434fdf81e475463c7f91e0553ee3",
+      "bytes": 8467
+    },
+    {
+      "path": "packages/alia-server/tests/tools.rs",
+      "sha256": "42ca1a745a2d6026269e8b23c319713a477afa87da6783bdb71a60549d7e3202",
+      "bytes": 15699
+    },
+    {
+      "path": "packages/alia-server/tests/voice_stream_live.rs",
+      "sha256": "14e847747043cb9222524e6a4e152269ce78ddc5814f3d946a8442fa818f0ae9",
+      "bytes": 23427
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "bff858d9390dd53a08f25c8990f6b3d627dc90d90d58ff3e6ac02791d37a18c9",
+      "bytes": 372673
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "sha256": "725ad6973c87a7fdfaedeb79c0d1cec1f44ba644274d43216a2a713a17eaf260",
+      "bytes": 39
+    },
+    {
+      "path": "scripts/download-sherpa-models.sh",
+      "sha256": "d5f95c04b66a93e677c7b8f944b2478a31eb3ed17ddbccf4bda5b7572de55928",
+      "bytes": 5540
+    },
+    {
+      "path": "scripts/setup-embedded-vision-pi.sh",
+      "sha256": "266cfa8594d81ec5fe6bbf796e5854b1023ab7ff136d85a35646bfacf8f7af2c",
+      "bytes": 7880
+    },
+    {
+      "path": "scripts/setup-whisper-cpp-linux.sh",
+      "sha256": "af1422d878c77b23a5ee69527784493e2cf1fb06913f08fec837ed2af2e73874",
+      "bytes": 3670
+    },
+    {
+      "path": "scripts/setup-whisper-cpp-macos.sh",
+      "sha256": "3eb6f5a295699e089deca129c1d30e46d15409f6e8b81991dc2c6986a8400b79",
+      "bytes": 3256
+    },
+    {
+      "path": "scripts/setup-whisper-cpp-windows.ps1",
+      "sha256": "f9e3ba760f91d0b2d6fc1aa09d3996988c8625aea0d7d22d282709839b16d398",
+      "bytes": 3305
+    },
+    {
+      "path": "services/easy-turn/.gitignore",
+      "sha256": "4116d5997e02030e5bbae59d53c5ca373003312f110222d6f4b7c5e38e49a7df",
+      "bytes": 60
+    },
+    {
+      "path": "services/easy-turn/README.md",
+      "sha256": "7e917895c869ec3eed806909dfc6ac0888c6137f9679e4a701fd885e09360fb6",
+      "bytes": 11207
+    },
+    {
+      "path": "services/easy-turn/VALIDATION.md",
+      "sha256": "7a4bb2b3f30c986c954562b53a6c7b69c829ae7f66053fbcd64e929a75b82fa3",
+      "bytes": 4787
+    },
+    {
+      "path": "services/easy-turn/build-constraints.txt",
+      "sha256": "3b574fcca36baa90a2875f67c09963ef9076ef4f7cd226357ddce7f6bff7254c",
+      "bytes": 99
+    },
+    {
+      "path": "services/easy-turn/pyproject.toml",
+      "sha256": "8b7d80c458c170a531ed2678342e512a158c8346c59942fc9faad228b629f346",
+      "bytes": 854
+    },
+    {
+      "path": "services/easy-turn/requirements-macos.lock",
+      "sha256": "b78aadd5979de4f0a5d62929e5cd61b0ca680b4acf306361866d8839acca45c5",
+      "bytes": 113876
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/__init__.py",
+      "sha256": "01d85f2f09857328d6ccb36053462ee423336f4668247b17e6f145bcc57843bc",
+      "bytes": 84
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/__main__.py",
+      "sha256": "b4def5b7a17dbd8a8c5c99acd96dc3fb8944e83f5d3b534bb2112c44e1f7019b",
+      "bytes": 1462
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/app.py",
+      "sha256": "72d7378d267471fdf4a11f660c41efb2651bb2151c7790a4885cffe116f403c1",
+      "bytes": 7273
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/model.py",
+      "sha256": "17182e2830c1970193e452e42ebbfa12d893eec137f5127917280de9fa374efb",
+      "bytes": 9668
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/prepare.py",
+      "sha256": "ba67b52b9150df8d211b8388a07d4023c6d782adb590978d745cf3b6900ca1f2",
+      "bytes": 2196
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/provenance.py",
+      "sha256": "25c752eb39276fca60fc696d38296b5114710e1c11ecab58b16b8a8052d27ba5",
+      "bytes": 668
+    },
+    {
+      "path": "services/easy-turn/src/alia_easy_turn/smoke.py",
+      "sha256": "6768072696567bec621f3f4fcf65d72b84c7e089b0a994ed5bd1ef5c44e59ebd",
+      "bytes": 3763
+    },
+    {
+      "path": "services/easy-turn/tests/test_service.py",
+      "sha256": "03f6c240526bf9cae4df749edfc15cc75087167868b26c7cf2a9ea405beef047",
+      "bytes": 10235
+    },
+    {
+      "path": "skills/morning_greeting.md",
+      "sha256": "5d63b5e40aa39466e2900e92701b3105f1adab0fdd0f1de34615e4783d93e6bc",
+      "bytes": 495
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "checkpoint": "user-requested quota pause; no further implementation or test started",
+  "saved_at": "2026-09-22T07:44:00.351728+00:00",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "branch": "codex/duplex-integration",
+  "head_at_snapshot": "82167ddf8724ade6b203de2f9fbbe45459034178",
+  "state": "partial_uncommitted_not_accepted",
+  "committed_by_this_agent_in_shared_tree": false,
+  "owned_files": {
+    "packages/alia-server/src/grpc/voice_session.rs": "7cfb8c49a7e46a994e508bee8ba5195fe4ac6f89eb7ec216021257bc02d0928c",
+    "packages/alia-server/src/bootstrap/runtime.rs": "ee684ccd553f72c0098d0f820fce82fbb9bc4621889eaee5312698928577eaab",
+    "packages/alia-server/src/config.rs": "11dd29aa0301588788db837e4450f55fae2bf122299b8efd159be6e99a9057e0",
+    "packages/alia-server/tests/config.rs": "fb4f3adc13e81c280ebc90d0054ed222bea035ba8bacb39daa39cbe65360d3af",
+    "packages/alia-server/tests/voice_stream_live.rs": "14e847747043cb9222524e6a4e152269ce78ddc5814f3d946a8442fa818f0ae9",
+    "docs/refactor/checklists/duplex-voice.md": "d82b4763950525609276879f2ee294b5951a812dab877db1147f95d5fde0b2f2"
+  },
+  "owned_rust_manifest_sha256": "e457f46fe6043b1f7235acfaff9d041227da6159f1f69210e93269be8f232900",
+  "archive_sha256": "b7eb402c3a5d87f856f8bda222dfe9676cfd0bbd4069aed82f5b2816fd97c98b",
+  "environment": {
+    "CARGO_TARGET_DIR": "/Users/ke-qiao/Developer/project-alia/target"
+  },
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--lib",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "result": "production lib passed at that point; not final shared-source validation",
+      "log": "production-first.log",
+      "session": 74041
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--test",
+        "config",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "result": "4 passed, 0 failed, 0 ignored; includes budget defaults/bounds",
+      "log": "config.log",
+      "session": 30367
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--lib",
+        "grpc::voice_session::tests",
+        "--no-run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 101,
+      "result": "11 compile errors in then-old channels/embedded/playback/tests.rs; parent since migrated, this agent has not rerun",
+      "log": "actor-compile.log",
+      "session": 31920
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--test",
+        "voice_stream_live",
+        "--no-run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 101,
+      "result": "E0599: live fixture line 234 calls missing OutputBinding::validate; preserved at explicit pause",
+      "log": "live-compile.log",
+      "session": 4541
+    }
+  ],
+  "logs_sha256": {
+    "actor-compile.log": "5ea1529bcdf62fb5232193679c0c8444ddf5bd3b8e68794e53628839ad0b9fc4",
+    "config.log": "9be87c229ff409212f7cb48f5256430adc952e24355b91392177ae4df428e248",
+    "live-compile.log": "07243cb6bf8ba7f8ad456f3000174aaa0cbf0b2c88e3ce50ca90860559518a20",
+    "production-first.log": "9ab55a94ee08d48d9cf62f9ab7fe51a21c786122f64fc6b19cbeab6c52b79cf4"
+  },
+  "not_run": [
+    "voice actor PG tests",
+    "voice live real-model/PG test",
+    "final Server all-targets",
+    "final Server no-default checks",
+    "final shared workspace tests"
+  ],
+  "known_todos": [
+    "Fix OutputBinding::validate call using existing contract validation without weakening identity checks",
+    "Fix live fixture responses count to actual delivery_responses table",
+    "Recompile actor/live after parent playback v3 fixture changes",
+    "Run actor with real disposable PG schema, then real Easy-Turn live after coordinating PG window",
+    "Review actor fixture panic cleanup and timeout behavior before calling lifecycle accepted",
+    "Finish checklist from actual green evidence; parent commits integrated candidate, no child shared-tree git commit"
+  ],
+  "resources": {
+    "active_owned_exec": [],
+    "active_owned_pg_commands": [],
+    "created_pg_schemas": [],
+    "started_containers": [],
+    "existing_model_service": "http://127.0.0.1:8091 — parent-managed, not started or stopped by this agent",
+    "pcm_dir": "/Users/ke-qiao/Developer/project-alia/run/easy-turn-stream-pcm",
+    "pg_url_for_next_run": "postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final",
+    "pg_schemas_for_next_run": "random voice_actor_* for actor, delivery_test_* for live",
+    "network_permission": "require_escalated for loopback and PG; sandbox loopback failure is not service failure"
+  },
+  "completed_previous_A_commits": [
+    "7bea32152059cce68a2bde89dc79614713d183e8",
+    "7cc9a845a571c2ba8fc8ed1ce7712a391c7dce7d"
+  ]
+}

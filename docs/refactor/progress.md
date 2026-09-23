@@ -1,8 +1,16 @@
 # 构建记录
 
-更新：2026-09-22。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
+更新：2026-09-23。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
-**2026-09-22 已恢复执行。** 用户要求从 DU01 完成暂停纵向整合，并增加持续维护的 checklist。当前进度和验收勾选见[暂停整合 checklist](checklists/duplex-integration.md)；以下暂停记录及对应数字保留为历史基线，不能当作本轮新源码已验收。
+**2026-09-23 用户已恢复执行。** 暂停快照 `ae75a4e` 已保存；继续由三个subagent接续语音、生命周期和配对播放，Root先排查Pipeline栈溢出。以下暂停状态保留为历史，活动进度见总checklist。
+
+**2026-09-22 再次按用户要求暂停。** 本轮已完成隔离组合和三个原组件包的修复/验证，Server output owner、语义接线及生产背压已进入整合树。恢复入口为 [2026-09-22 完整检查点](resume-checkpoint-2026-09-22.md)，数字状态为 [resume-state-2026-09-22.json](resume-state-2026-09-22.json)，逐项完成条件见 [暂停整合 checklist](checklists/duplex-integration.md)。
+
+准确计数：DU01/DU02 已完成，**2/11**；其余 **9** 项仍开放。3 个原子组件包（协议/账本/媒体）已各自验证并合入隔离分支；真实PG运行时专项 **18 unique pass / 0 fail**，不重复累计单项复跑。最新Pipeline回归启动20项，只有3项明确完成，随后单个测试线程发生stack overflow/SIGABRT，未取得完整结果。新的Voice、5项配对gRPC、完整workspace/平台/真实模型验证尚待执行，不能记为已交付。
+
+当前主分支仅保存文档；生产代码仍以 `e6ba75b` 的875项通过为已验收历史基线。未验收新代码保存在 `codex/duplex-integration` 的明确WIP快照，准确SHA见最新机器状态。下一次先排查栈溢出，再完成DU03—DU11，不重新规划已确认范围。
+
+以下2026-09-21数字和未合入状态仅作当时的历史记录，现况以最新检查点为准。
 
 **2026-09-21 暂停记录。** 三个 subagent 当时均已结束，构建/测试 exec 已收集结束。恢复入口：[完整检查点与 17 项后续 Todo](resume-checkpoint-2026-09-20.md)，历史数字状态：[resume-state-2026-09-20.json](resume-state-2026-09-20.json)。文件名沿用 2026-09-20 工作批次，收口在北京时间 2026-09-21 完成。
 

@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-22",
+  "status": "paused_at_explicit_user_request",
+  "integration_branch": "codex/duplex-integration",
+  "pre_snapshot_head": "82167dd",
+  "du_checklist": {
+    "done": [
+      "DU01",
+      "DU02"
+    ],
+    "complete": 2,
+    "total": 11,
+    "remaining": 9
+  },
+  "latest_root_validation": {
+    "target": "channels::pipeline::integration_tests::",
+    "announced_tests": 20,
+    "explicit_passed_before_abort": 3,
+    "exit_code": 101,
+    "fatal": "stack overflow; SIGABRT",
+    "test": "text_delivery::a_large_provider_chunk_splits_only_at_utf8_boundaries_under_one_delivery",
+    "log": "run/validation-20260922/integration/pipeline-first.log",
+    "remaining_results": "unknown_due_to_abort"
+  },
+  "active_root_exec": [],
+  "next_action": "Fix measured pipeline stack overflow before new full validation; do not merely raise test stack to claim acceptance."
+}
