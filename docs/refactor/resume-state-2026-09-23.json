@@ -1,0 +1,85 @@
+{
+  "checkpoint_version": 3,
+  "work_batch_date": "2026-09-23",
+  "status": "paused_by_user_after_validation_before_merge",
+  "repository": "/Users/ke-qiao/Developer/project-alia",
+  "main_branch": "codex/architecture-refactor",
+  "integration_branch": "codex/duplex-integration",
+  "integration_worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "source_commit": "581068795fb1dbf5449ed9a0f0b73665c1797a7a",
+  "stack_fix_commit": "9c4f5b0d379166126d9dee0049dbcda1dddef01b",
+  "source_manifest": {
+    "path": "docs/refactor/handoffs/2026-09-23/source-manifest-v2.json",
+    "files": 605,
+    "sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+    "changed_from_v1_files": 2,
+    "unchanged_from_v1_files": 603
+  },
+  "counts": {
+    "du_complete": 10,
+    "du_total": 11,
+    "du_remaining": 1,
+    "later_first_round_complete": 0,
+    "later_first_round_total": 6,
+    "linux_v2_unique_passed": 325,
+    "linux_v2_failed": 0,
+    "macos_supplement_passed": 5,
+    "macos_supplement_failed": 0,
+    "macos_workspace_passed": 967,
+    "macos_workspace_failed": 0,
+    "macos_workspace_ignored": 5,
+    "macos_total_unique_executed": 972,
+    "active_subagents": 0,
+    "active_test_or_build_exec": 0
+  },
+  "validation": {
+    "macos_workspace": "967 passed / 0 failed / 5 ignored; the 5 separately executed and passed",
+    "macos_no_default_all_targets": "passed",
+    "rustfmt_changed_files": 27,
+    "pty": "3 passed; real tty",
+    "real_models": "2 passed; no cold start claim",
+    "linux_arm64": "325 passed; targeted matrix, not full Server suite"
+  },
+  "historical_v1": {
+    "passed": 964,
+    "failed": 3,
+    "ignored": 5,
+    "exit_code": 101,
+    "source_drift": [],
+    "failure_files": [
+      "packages/alia-embedded/src/module/speech/duplex/tests/binding_admission.rs",
+      "packages/alia-server/tests/server_runtime/delivery.rs"
+    ]
+  },
+  "handoffs": [
+    "docs/refactor/handoffs/2026-09-23/voice.md",
+    "docs/refactor/handoffs/2026-09-23/lifecycle.md",
+    "docs/refactor/handoffs/2026-09-23/playback.md",
+    "docs/refactor/handoffs/2026-09-23/runtime.md"
+  ],
+  "next_checklist": "docs/refactor/checklists/next-round.md",
+  "resources": {
+    "task_pg": "alia-refactor-test-db:32768",
+    "task_database": "alia_refactor_delivery_final",
+    "model": "127.0.0.1:8091",
+    "user_pg_5433_untouched": true,
+    "old_worktrees_and_overlays_preserved": true,
+    "task_pg_baseline_restored": true,
+    "other_test_db_clients": 0,
+    "owned_linux_validation_containers_removed": true
+  },
+  "deferred": [
+    "D01 Web",
+    "D02 iOS/Android",
+    "D03 generic Embedded adaptation"
+  ],
+  "hardware_acceptance": "pending H01-H05 and R02/R03/R05; software quiescence is not physical silence/Presented/AEC",
+  "next_action": "User requested quota pause. On explicit resume read checkpoint and four current HANDOFFs; use three agents, finish DU11 without repeating completed validation unless source changes, then R01. No implementation during pause.",
+  "verified_main_production_commit": "e6ba75b34136f7ae3c23774594d7ccae9bc67f89",
+  "main_head_before_checkpoint": "dc8db25",
+  "remaining_current_package": [
+    "DU11: inspect saved integration and documentation commits, merge into codex/architecture-refactor, verify identical 605 inputs, mark checklist complete"
+  ],
+  "resource_cleanup_complete": true,
+  "saved_integration_checkpoint_commit": "53adbde23257bbb38769c679a25bb930787e0571"
+}

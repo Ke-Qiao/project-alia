@@ -1,0 +1,12 @@
+{
+  "version": "V2",
+  "manifest": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration/run/validation-20260923/final-source-manifest-v2.json",
+  "sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+  "files": 605,
+  "changed_from_v1": [
+    "packages/alia-embedded/src/module/speech/duplex/tests/binding_admission.rs",
+    "packages/alia-server/tests/server_runtime/delivery.rs"
+  ],
+  "unchanged_from_v1": 603,
+  "snapshot": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration/run/validation-20260923/source-final-v2"
+}

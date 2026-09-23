@@ -1,6 +1,37 @@
 # 隔离平台验证
 
-更新：2026-09-20。最新完整 Server 平台验证覆盖 Appraisal 主分支整合的冻结输入；音频参考包 `5467e8b`、Context 固定提交、夹具修正候选与更早历史结果分别保留。不把正在修改的工作区当作已验证源码。
+更新：2026-09-23。当前暂停纵向整合的 V2 冻结输入已完成下列软件矩阵；下方 2026-09-20 及更早结果保留其原始范围。不能把不同源码候选的定向测试合并为一次整包结果。
+
+## 暂停纵向整合：V1 失败与 V2 验收
+
+V1 清单 `4e6eadd8d28aeda542e8de0e6dbfbc855cd60d0c83c8c7cdc910702cc6002166`、V2 清单 `1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4` 都包含 605 个构建输入。两者只差 Embedded `binding_admission.rs` 和 Server `tests/server_runtime/delivery.rs` 两份夹具，其余 603 项逐字节一致。清单、独立只读快照、原始命令和日志位于整合工作树 `run/validation-20260923/`，最终摘要归档到 [本轮交接](handoffs/2026-09-23/README.md)。
+
+V1 macOS 默认完整 workspace：**964 passed / 3 failed / 5 ignored**，exit 101，520.33 秒，前后无漂移。两项 Embedded 夹具试图重开已退休 epoch，被生产契约拒绝；一项 Runtime panic 夹具没有原 producer/bind，未进入 native 调用。修正保留生产规则和原故障断言，并增加重用旧身份明确拒绝、typed scope retirement 已结束后精确取消 panic 仍保留媒体 owner 的证明。定向绑定 8/8、完整 Runtime 43/43 通过，不另加到最终 workspace 数量。
+
+V1 Linux 的 Core27/Proto4、默认 Server 与两端 no-default all-targets、受影响 Server 目标链接通过；Embedded 完整无默认库为 163/2，复现同两项绑定失败。V1 日志与容器身份保留，容器已移除，没有用修正后的结果覆盖失败。
+
+| V2 检查 | 当前结果 |
+| --- | --- |
+| macOS 默认完整 workspace | 967 passed / 0 failed / 5 ignored，exit 0，203.85 秒 |
+| macOS 两端 no-default all-targets | exit 0，57.30 秒 |
+| macOS 变更 Rust 文件格式 | 27 文件，exit 0 |
+| macOS 三项真实 PTY | 3 passed / 0 failed；真实 tty、直接 stdout，0.34 秒 |
+| macOS 两项真实 Easy-Turn | 2 passed / 0 failed；Easy-Turn 0.59 秒、voice/gRPC/PG 1.71 秒 |
+| Linux ARM64 Core / Proto | 27 + 4 passed / 0 failed |
+| Linux ARM64 Server 默认与两端 no-default all-targets | exit 0，分别 6.66 / 4.17 秒 |
+| Linux ARM64 Embedded 无默认完整库 | 165 passed / 0 failed / 0 ignored，26.46 秒 |
+| Linux ARM64 受影响 Server 与真实 PG | Pipeline 21、Voice 23、输出/配对 42、Runtime 43，共 129 passed / 0 failed |
+
+macOS 使用 Rust 1.94.1，默认测试栈/并发，不设置 `RUST_MIN_STACK`、`RUST_TEST_THREADS` 或 `DOCS_RS`。默认 native features 实际链接 Sherpa v1.13.1 osx-arm64 归档，SHA256 `ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb`。构建并发限制为 2，不改变测试并发或行为期限。
+
+V2 Linux 总计 325 个不同测试通过、0 失败、0 ignored，未执行的其它 Server 测试不计入结果；不是 Linux 全 workspace 验收。
+
+Linux 使用固定镜像 `rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1`，实际 Rust 1.95.0 / Debian / aarch64；源码只读挂载，本轮使用独立缓存。只使用任务 PostgreSQL `alia-refactor-test-db:32768`，各 PG 阶段协调窗口；未操作用户 5433 数据库。ALSA 软件 null PCM 与软件 backend 不是 Pi 声卡或实际扬声器证据。
+
+两个 live 目标依次执行，fixture 模型期限保留 30 秒与 8 秒，未额外预热、未重启或清缓存，不宣称冷启动性能。真实 PTY 三项按单线程顺序执行以独占终端；其它常规测试并发未放宽。
+
+全部平台结果仍不代表真实 Pi、AEC、物理 Presented/静音、执行器位置或 24 小时负载验收。终端和实际模型的 5 个 ignored 用例只按其实际运行平台计数。
+
 
 ## Appraisal 整合：macOS 与 Linux ARM64
 

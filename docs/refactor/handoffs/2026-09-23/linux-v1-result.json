@@ -1,0 +1,103 @@
+{
+  "source_version": "V1",
+  "manifest_sha256": "4e6eadd8d28aeda542e8de0e6dbfbc855cd60d0c83c8c7cdc910702cc6002166",
+  "source_files": 605,
+  "source_after_non_pg_mismatches": [],
+  "platform": "linux/arm64",
+  "rust_min_stack": "unset",
+  "status": "non-PG stages completed; Embedded has two reproduced fixture/retirement-contract failures; waiting Root V2 snapshot and PG window",
+  "stages": [
+    {
+      "stage": "core-proto-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-core -p alia-proto --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:39:46Z",
+      "finished": "2026-09-23T08:39:59Z",
+      "wall_seconds": 13.0,
+      "counts": [
+        {
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "core-proto-tests.log"
+    },
+    {
+      "stage": "server-default-check",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo check -p alia-server --all-targets --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:39:59Z",
+      "finished": "2026-09-23T08:40:40Z",
+      "wall_seconds": 41.0,
+      "counts": [],
+      "log": "server-default-check.log"
+    },
+    {
+      "stage": "both-no-default-check",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo check -p alia-server -p alia-embedded --no-default-features --all-targets --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:40:40Z",
+      "finished": "2026-09-23T08:41:06Z",
+      "wall_seconds": 26.0,
+      "counts": [],
+      "log": "both-no-default-check.log"
+    },
+    {
+      "stage": "embedded-no-default-lib",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-embedded --no-default-features --lib --locked --offline -j2 -- --nocapture",
+      "exit_code": 101,
+      "started": "2026-09-23T08:41:06Z",
+      "finished": "2026-09-23T08:41:54Z",
+      "wall_seconds": 48.0,
+      "counts": [
+        {
+          "passed": 163,
+          "failed": 2,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "embedded-no-default-lib.log"
+    },
+    {
+      "stage": "server-changed-test-link",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --lib --test output_control --test output_lifecycle --test delivery_service --test duplex_playback --locked --offline -j2 --no-run",
+      "exit_code": 0,
+      "started": "2026-09-23T08:41:54Z",
+      "finished": "2026-09-23T08:43:54Z",
+      "wall_seconds": 120.0,
+      "counts": [],
+      "log": "server-changed-test-link.log"
+    }
+  ],
+  "container": "alia-duplex-linux-final-20260923-4e6eadd8",
+  "pg_accessed": false,
+  "container_removed": true,
+  "historical_cache_writes": false,
+  "active_exec_or_build": false
+}

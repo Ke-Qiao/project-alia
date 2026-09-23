@@ -1,0 +1,169 @@
+{
+  "saved_at": "2026-09-23T08:26:59.044862+00:00",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "branch": "codex/duplex-integration",
+  "restored_snapshot": "ae75a4ee92b1ea2e8c11a1d20c488ba62125d81f",
+  "state": "owned scoped verification complete; root final integrated validation still required",
+  "committed_by_this_agent": false,
+  "owned_files": {
+    "packages/alia-server/src/grpc/voice_session.rs": "88149647f1d34e49e8f707a6a36a7711fde6ba5457f302b4a829730be7a02824",
+    "packages/alia-server/src/bootstrap/runtime.rs": "ee684ccd553f72c0098d0f820fce82fbb9bc4621889eaee5312698928577eaab",
+    "packages/alia-server/src/config.rs": "11dd29aa0301588788db837e4450f55fae2bf122299b8efd159be6e99a9057e0",
+    "packages/alia-server/tests/config.rs": "fb4f3adc13e81c280ebc90d0054ed222bea035ba8bacb39daa39cbe65360d3af",
+    "packages/alia-server/tests/voice_stream_live.rs": "ee17e001956102a2ff2379507f5e9b218e898462178c264a8be3806c9e682922",
+    "docs/refactor/checklists/duplex-voice.md": "7e30675869e4f727dda760908283f8fd311a9d4c26a0e3dd8dfef26aadd879f6"
+  },
+  "owned_rust_manifest_sha256": "cdf2b72cc741b8a574b80671af6b78436ca3118cc8572b586f15cec736cef861",
+  "environment": {
+    "CARGO_TARGET_DIR": "/Users/ke-qiao/Developer/project-alia/target",
+    "ALIA_TEST_DATABASE_URL": "postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final",
+    "ALIA_EASY_TURN_URL": "http://127.0.0.1:8091",
+    "ALIA_EASY_TURN_PCM_DIR": "/Users/ke-qiao/Developer/project-alia/run/easy-turn-stream-pcm"
+  },
+  "commands": [
+    {
+      "kind": "no-run",
+      "command": "cargo test -p alia-server --lib grpc::voice_session::tests --no-run --offline --locked",
+      "exit": 0,
+      "log": "actor-compile-final.log",
+      "scope": "compile/link only; before real-clock/retirement refinements"
+    },
+    {
+      "kind": "no-run",
+      "command": "cargo test -p alia-server --test voice_stream_live --no-run --offline --locked",
+      "exit": 0,
+      "log": "live-compile-final.log",
+      "scope": "compile/link only; before retirement refinement"
+    },
+    {
+      "kind": "execute",
+      "command": "cargo test -p alia-server --test config --offline --locked",
+      "exit": 0,
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "log": "config.log"
+    },
+    {
+      "kind": "execute",
+      "command": "cargo test -p alia-server --lib grpc::voice_session::tests --offline --locked -- --nocapture",
+      "exit": 101,
+      "passed": 20,
+      "failed": 3,
+      "ignored": 0,
+      "seconds": 3.05,
+      "log": "actor-run.log",
+      "reason": "virtual tokio clock advanced across real periodic PG recovery deadlines; test cleanup restored baseline"
+    },
+    {
+      "kind": "execute",
+      "command": "cargo test -p alia-server --lib grpc::voice_session::tests --offline --locked -- --nocapture",
+      "exit": 0,
+      "passed": 23,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 3.26,
+      "log": "actor-real-clock.log",
+      "scope": "100ms real periodic revalidation in 3 fixtures; production recheck remains 30s; normal recovery and original-owner retirement"
+    },
+    {
+      "kind": "execute",
+      "command": "cargo test -p alia-server --test voice_stream_live --offline --locked -- --ignored --nocapture",
+      "exit": 101,
+      "passed": 0,
+      "failed": 1,
+      "ignored": 0,
+      "seconds": 8.36,
+      "log": "live-run.log",
+      "reason": "first Complete exceeded fixture detector 8000ms, before Response binding or pause assertions"
+    },
+    {
+      "kind": "execute",
+      "command": "cargo test -p alia-server --test voice_stream_live --offline --locked -- --ignored --nocapture",
+      "exit": 0,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 1.85,
+      "log": "live-repeat.log",
+      "scope": "unchanged 8000ms detector/3000ms temporary hold; real model/PG/gRPC with canonical bind and four Applied control receipts"
+    },
+    {
+      "kind": "check",
+      "command": "rustfmt --check --edition 2024 <five owned Rust paths>",
+      "exit": 0,
+      "log": "rustfmt-final.log"
+    },
+    {
+      "kind": "check",
+      "command": "git diff --check -- <six owned paths>",
+      "exit": 0,
+      "log": "diff-check-final.log"
+    }
+  ],
+  "final_scoped_unique_tests": {
+    "passed": 28,
+    "failed": 0,
+    "ignored": 0,
+    "components": {
+      "voice_actor": 23,
+      "config": 4,
+      "voice_stream_live": 1
+    }
+  },
+  "boundaries": [
+    "actor: 4 non-PG cases and 19 real-PG cases; canonical Response bind belongs to live smoke",
+    "real Easy-Turn revision 7d1f8b06776b575ac22e2fd4aa7913da2f4b8b98 CPU float32",
+    "live software fixture only: no physical mic/VAD/LLM/TTS/speaker or Pi playback claim",
+    "original 8s first-Complete model timeout remains recorded; cause only inferred, not proven",
+    "100ms refresh scheduling test does not prove real five-minute runtime"
+  ],
+  "live_inference_ms": {
+    "complete": 590.6563340686262,
+    "backchannel": 400.140417041257,
+    "wait": 453.08245811611414
+  },
+  "resources": {
+    "active_owned_exec": [],
+    "active_owned_db": [],
+    "created_schemas_remaining": [],
+    "baseline_schemas": [
+      "pipeline_delivery_12873bb2547946af85f998a91746a5a4",
+      "pipeline_delivery_5d85b6229c81441fb5e38a8000f7037f",
+      "pipeline_delivery_c7794da066664a34901bca6d85453375"
+    ],
+    "schema_after_matches_before": true,
+    "other_db_clients_after": 0,
+    "pg_window_transferred_to": "playback_resume"
+  },
+  "not_run_by_this_agent": [
+    "final shared workspace suite",
+    "final Server/Embedded no-default all-targets",
+    "paired embedded gRPC fixture",
+    "Pi physical/native playback acceptance"
+  ],
+  "evidence_sha256": {
+    "schemas-after-actor-first.txt": "f3b886f74fb84fd35b8389193399a1b55234f49ccddb184b82d41bc8c4929d2c",
+    "actor-real-clock.log": "e7ea5241cd61c600c16f3c1f7d960af32657bbfc29f75bacba2dfab03e3102d5",
+    "actor-compile.log": "ee907a35cc89984b266e62791c8bf0a408a6c5c68ea3c4da1d35dda2f35762ff",
+    "live-compile.log": "0a2b51254191852e9b65276acc89d60023fbe22c3c26ab564cc1000cbee2df2c",
+    "model-capabilities.json": "3f82a2b431e7427f78008fddc4d2dbf9c7140706ec1696df8da4d14eee40be98",
+    "actor-run.log": "a1516142d1d4d7154c680214186112863764f5fce60fe31ee66b1513b2ba391a",
+    "schemas-after-live-first.txt": "f3b886f74fb84fd35b8389193399a1b55234f49ccddb184b82d41bc8c4929d2c",
+    "rustfmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "live-run.log": "df3c7ab55ea9c5baeaa5c05575a01c30efd2c11b6367c67a1fd1e78666a6772d",
+    "live-compile-final.log": "b4d67caf1d26ed4321350272b88e55832c841da6f2db5b4c77d31a2f030cd787",
+    "schemas-before.txt": "f3b886f74fb84fd35b8389193399a1b55234f49ccddb184b82d41bc8c4929d2c",
+    "rustfmt-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actor-compile-cleanup.log": "3dce37427f510b2e05bc43d8862d64d9d07037662a5066d5e27cbf650c323ac2",
+    "schemas-after-live-final.txt": "f3b886f74fb84fd35b8389193399a1b55234f49ccddb184b82d41bc8c4929d2c",
+    "clients-after-live-final.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "model-health-after-diagnostic.json": "36b9c5b19dde9164c6573ffdbf17a6f5b8b9d3e915e3c4df542651219def2873",
+    "config.log": "bc603c2d581c86e91c926c20b9deea48a721d7d358614990f3701d2daa4e1f6d",
+    "diff-check-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "model-followup-diagnostics.json": "07923355a4c6197d5a62240bc14e93524c7334c1286515ab47571020e5209c3f",
+    "live-repeat.log": "c65d4ac292a2c3258695fb6dbf19daca07ba04c973d8e8a72b25360f7df152d0",
+    "actor-compile-final.log": "d4033326f5d71a727ed51dfa0a282959866b1ea53e1f75cf432d94b6a39c26e5",
+    "model-diagnostic.json": "22376c86682db4a5161748e37bed0e2dd26bc329060a448cae57e362c0f77a88"
+  }
+}

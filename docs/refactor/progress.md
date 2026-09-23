@@ -2,7 +2,16 @@
 
 更新：2026-09-23。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
-**2026-09-23 用户已恢复执行。** 暂停快照 `ae75a4e` 已保存；继续由三个subagent接续语音、生命周期和配对播放，Root先排查Pipeline栈溢出。以下暂停状态保留为历史，活动进度见总checklist。
+**2026-09-23 额度暂停：暂停纵向整合实现与完整软件验收完成，DU01—DU10 为 10/11，用户因额度明确要求暂停，文档已保存，正式合入留待下次 DU11。** 源码修复为 `5810687`，默认栈修复为 `9c4f5b0`。voice v2 / playback v3 已接通原 Response/Context、两类暂停、持久控制、生产背压与精确旧输出退休。完整入口为[本轮检查点](resume-checkpoint-2026-09-23.md)、[DU checklist](checklists/duplex-integration.md)及[四份交接与证据](handoffs/2026-09-23/README.md)。
+
+当前实现与本轮验收均指 `codex/duplex-integration`；主重构分支生产源码仍为 `e6ba75b`，待恢复后 DU11 合入。
+
+
+最终 V2 共 605 个输入，manifest `1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4`。macOS 完整 workspace **967 pass / 0 fail / 5 ignored**（203.85 秒）；5 个 ignored 已按真实 PTY 3 项、实际 Easy-Turn 2 项单独通过。Linux ARM64 约定矩阵 **325 unique pass / 0 fail**；两端 no-default all-targets 与 27 个变更 Rust 文件格式检查通过。各阶段输入无漂移。首次 V1 **964/3/5**、栈溢出、首次模型超时及其它红测均保留；只有两份旧测试夹具在 V1/V2 间变化，其余 603 项相同，不混算复跑次数。
+
+后续 R01—R06 细分为[六项 checklist](checklists/next-round.md)，目前 0/6 完成；前端与通用 Embedded 适配仍按[台账](deferred.md)搁置。软件暂停与退休不构成 Pi、声卡物理静音、AEC、执行器到位或长期负载验收。
+
+以下 2026-09-22 及更早的数字、主分支状态和下一步仅为当时记录，不表示当前状态。
 
 **2026-09-22 再次按用户要求暂停。** 本轮已完成隔离组合和三个原组件包的修复/验证，Server output owner、语义接线及生产背压已进入整合树。恢复入口为 [2026-09-22 完整检查点](resume-checkpoint-2026-09-22.md)，数字状态为 [resume-state-2026-09-22.json](resume-state-2026-09-22.json)，逐项完成条件见 [暂停整合 checklist](checklists/duplex-integration.md)。
 
@@ -43,7 +52,7 @@
 
 与 `8c3f545` 整合的 macOS 默认完整 workspace 验证为 **875 个不同测试通过、0 失败、5 显式跳过**，370.02 秒；其中 Core 25 项、Embedded lib 135 项、Server lib 216 项。测试使用真实任务 PostgreSQL 与实际 Sherpa 原生归档，未设置测试串行模式。587 个构建输入清单 SHA-256 为 `c97283aee880270634f7cedb58ced6ffbdc18d67e425e5aa6533817c7f29a6c1`，运行前后无漂移。两端无默认特性 all-targets 检查也通过，36.18 秒。证据位于 `run/validation-20260920/duplex-stage1-integration/`。5 项真实 PTY/模型在前一 Appraisal 包已另跑，本次完整回归仍明确跳过，没有将此前结果冒充本次重跑。
 
-Stage 1 只完成本地门和证据基础；当前网络 WAIT 仍永久取消。下一包接通 playback v3 / voice v2、原 Response 控制记录、持续采集屏障与生产背压，实施契约见[两类暂停设计](duplex-pause-design.md)。软件停止提交不等于声卡已排空、物理静音或 Presented；Pi 真机、AEC 和听感验收继续待做。
+Stage 1 当时只完成本地门和证据基础；该历史基线的网络 WAIT 仍永久取消。下一包接通 playback v3 / voice v2、原 Response 控制记录、持续采集屏障与生产背压，实施契约见[两类暂停设计](duplex-pause-design.md)。软件停止提交不等于声卡已排空、物理静音或 Presented；Pi 真机、AEC 和听感验收继续待做。
 
 ## Appraisal / Relationship 与 Memory 来源整合（2026-09-20）
 

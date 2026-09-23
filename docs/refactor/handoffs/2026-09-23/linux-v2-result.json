@@ -1,0 +1,217 @@
+{
+  "status": "passed",
+  "source_version": "V2",
+  "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+  "source_files": 605,
+  "source_after_mismatches": {
+    "snapshot": [],
+    "worktree_after_commit": []
+  },
+  "source_commit": "581068795fb1dbf5449ed9a0f0b73665c1797a7a",
+  "platform": "linux/arm64",
+  "image": "rust@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1",
+  "rust_min_stack": "unset",
+  "totals_unique": {
+    "passed": 325,
+    "failed": 0,
+    "ignored": 0
+  },
+  "stages": [
+    {
+      "stage": "core-proto-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-core -p alia-proto --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:54:23Z",
+      "finished": "2026-09-23T08:54:25Z",
+      "wall_seconds": 2.0,
+      "counts": [
+        {
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "core-proto-tests.log"
+    },
+    {
+      "stage": "server-default-check",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo check -p alia-server --all-targets --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:54:25Z",
+      "finished": "2026-09-23T08:54:32Z",
+      "wall_seconds": 7.0,
+      "counts": [],
+      "log": "server-default-check.log"
+    },
+    {
+      "stage": "both-no-default-check",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo check -p alia-server -p alia-embedded --no-default-features --all-targets --locked --offline -j2",
+      "exit_code": 0,
+      "started": "2026-09-23T08:54:32Z",
+      "finished": "2026-09-23T08:54:36Z",
+      "wall_seconds": 4.0,
+      "counts": [],
+      "log": "both-no-default-check.log"
+    },
+    {
+      "stage": "embedded-no-default-lib",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-embedded --no-default-features --lib --locked --offline -j2 -- --nocapture",
+      "exit_code": 0,
+      "started": "2026-09-23T08:54:36Z",
+      "finished": "2026-09-23T08:55:10Z",
+      "wall_seconds": 34.0,
+      "counts": [
+        {
+          "passed": 165,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "embedded-no-default-lib.log"
+    },
+    {
+      "stage": "server-changed-test-link",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --lib --test output_control --test output_lifecycle --test delivery_service --test duplex_playback --test server_runtime --locked --offline -j2 --no-run",
+      "exit_code": 0,
+      "started": "2026-09-23T08:55:10Z",
+      "finished": "2026-09-23T08:55:46Z",
+      "wall_seconds": 36.0,
+      "counts": [],
+      "log": "server-changed-test-link.log"
+    },
+    {
+      "stage": "server-pipeline-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --lib channels::pipeline::integration_tests:: --locked --offline -j2 -- --nocapture",
+      "exit_code": 0,
+      "started": "2026-09-23T08:56:39Z",
+      "finished": "2026-09-23T08:57:02Z",
+      "wall_seconds": 23.0,
+      "counts": [
+        {
+          "passed": 21,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 228
+        }
+      ],
+      "log": "server-pipeline-tests.log"
+    },
+    {
+      "stage": "server-voice-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --lib grpc::voice_session::tests:: --locked --offline -j2 -- --nocapture",
+      "exit_code": 0,
+      "started": "2026-09-23T08:57:02Z",
+      "finished": "2026-09-23T08:57:06Z",
+      "wall_seconds": 4.0,
+      "counts": [
+        {
+          "passed": 23,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 226
+        }
+      ],
+      "log": "server-voice-tests.log"
+    },
+    {
+      "stage": "server-output-paired-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --test output_control --test output_lifecycle --test delivery_service --test duplex_playback --locked --offline -j2 -- --nocapture",
+      "exit_code": 0,
+      "started": "2026-09-23T08:57:06Z",
+      "finished": "2026-09-23T08:57:36Z",
+      "wall_seconds": 30.0,
+      "counts": [
+        {
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        },
+        {
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "server-output-paired-tests.log"
+    },
+    {
+      "stage": "server-runtime-tests",
+      "command": "timeout --signal=TERM --kill-after=30s 1800 cargo test -p alia-server --test server_runtime --locked --offline -j2 -- --nocapture",
+      "exit_code": 0,
+      "started": "2026-09-23T08:57:36Z",
+      "finished": "2026-09-23T08:58:46Z",
+      "wall_seconds": 70.0,
+      "counts": [
+        {
+          "passed": 43,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 0
+        }
+      ],
+      "log": "server-runtime-tests.log"
+    }
+  ],
+  "binary_manifest": "tested-binaries.sha256",
+  "cleanup": {
+    "pg_schema_lists_identical": true,
+    "other_client_backends": 0,
+    "original_pipeline_baseline_schema_count": 3,
+    "explicit_drop_needed": false,
+    "pg_window_released_to": "Root macOS V2 workspace",
+    "container": "alia-duplex-linux-v2-20260923-1939a948",
+    "container_removal_in_progress": false,
+    "historical_caches_modified": false,
+    "private_cache_preserved": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration/run/validation-20260923/linux-final/cache",
+    "models_and_task_pg_preserved": true,
+    "container_removed": true,
+    "active_agent_exec_or_tests": false
+  },
+  "limitations": "Directed Linux ARM64 software verification: Server default all-targets, both no-default all-targets, Core/Proto, complete Embedded no-default lib and affected Server tests. This does not claim the entire Linux workspace, Embedded default Sherpa/vision features, physical Pi5 device audio, or acoustic presentation. V1 failures remain independently preserved."
+}

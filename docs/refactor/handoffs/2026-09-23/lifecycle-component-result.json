@@ -1,0 +1,23 @@
+{
+  "updated_at_utc": "2026-09-23T08:30:56.677445+00:00",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "checkpoint": "ae75a4ee92b1ea2e8c11a1d20c488ba62125d81f",
+  "owned_files": [
+    "packages/alia-server/tests/output_lifecycle.rs",
+    "packages/alia-server/tests/delivery_service.rs",
+    "packages/alia-server/src/channels/pipeline/error_notice.rs",
+    "packages/alia-server/src/channels/pipeline/integration_tests.rs"
+  ],
+  "owned_source_manifest": "owned-source.sha256",
+  "results": [
+    "../validation-20260923/lifecycle-result.json",
+    "../validation-20260923/retirement-lifecycle-result.json"
+  ],
+  "stack_evidence": "../validation-20260923/stack-analysis/README.md",
+  "active_exec": false,
+  "active_build": false,
+  "active_pg_window": false,
+  "next": "Root final source freeze and unified verification; B prepares Linux ARM64 read-only plan and must wait for frozen snapshot before execution",
+  "review": "No new concrete blocking issue found in bounded independent typed-retirement review; no new tests or source edits were made for this review.",
+  "owned_source_manifest_status": "Captured before Root final rustfmt of three fixture files; final source snapshot manifest supersedes this historical manifest."
+}

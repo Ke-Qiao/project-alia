@@ -1,0 +1,60 @@
+{
+  "status": "validated_paused_by_user_before_merge",
+  "source_commit": "581068795fb1dbf5449ed9a0f0b73665c1797a7a",
+  "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+  "build_inputs": 605,
+  "macos": {
+    "workspace": {
+      "passed": 967,
+      "failed": 0,
+      "ignored": 5,
+      "seconds": 203.85,
+      "exit_code": 0
+    },
+    "supplement": {
+      "pty_passed": 3,
+      "model_passed": 2,
+      "failed": 0
+    },
+    "total_unique_executed": 972,
+    "both_no_default_all_targets_exit": 0,
+    "rustfmt_changed_files": 27
+  },
+  "linux_arm64": {
+    "unique_passed": 325,
+    "failed": 0,
+    "ignored": 0,
+    "all_stages_exit": 0,
+    "full_linux_workspace_claim": false
+  },
+  "source_drift": [],
+  "historical_v1": {
+    "passed": 964,
+    "failed": 3,
+    "ignored": 5,
+    "exit": 101,
+    "kept": true
+  },
+  "resources": {
+    "test_db_baseline_restored": true,
+    "remaining_original_pipeline_schemas": 3,
+    "other_test_db_client_backends": 0,
+    "owned_linux_containers_removed": true,
+    "task_pg_and_model_preserved": true,
+    "old_worktrees_overlays_preserved": true,
+    "user_pg_5433_untouched": true
+  },
+  "broader_first_round_pending": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06"
+  ],
+  "physical_hardware_acceptance": false,
+  "du_completed": 10,
+  "du_total": 11,
+  "active_subagents": 0,
+  "active_build_or_test_exec": 0
+}

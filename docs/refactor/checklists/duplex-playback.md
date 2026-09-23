@@ -1,24 +1,40 @@
 # Duplex paired playback verification
 
-**2026-09-22 暂停检查点：用户因额度不足要求暂停。本子包保存未提交，5 项配对测试只完成编译和链接，尚未执行 PostgreSQL / gRPC 运行测试，不能称为通过。** 主任务应从此处继续，不能将已提交 C 包的 59 项结果计入这里。完整交接：`run/duplex-playback-handoff-20260922/HANDOFF.md` 与 `RESULT.json`。
+**2026-09-23：6 / 6 真实 PostgreSQL＋两端 gRPC 配对测试通过，0 fail / 0 ignored，exit 0。** 日志为 `run/duplex-paired-runtime-retirement.log`。它覆盖此子包的软件所有权与回执边界，不替代 Root 的最终 workspace 验收或 Mac / Pi 物理硬件验证。2026-09-22 的 0 执行暂停记录保留在 `run/duplex-playback-handoff-20260922/`；旧 C 媒体包的 59 项不计入本子包。
 
-此子包在 DU01 integration 工作树验证 Server 与 Embedded 的实际 gRPC 组合，不替换任一端的传输实现或控制状态机。上层使用真实 `DeliveryService` / `OutputProducer`、Context / Response 与 PostgreSQL 随机 schema；Server `EmbeddedChannel` 走真实初始化、签名认证和 Tonic client；Embedded 使用生产 `PlaybackService`、`PlaybackSession`、`PlaybackControl` 和 `AudioSubmission`。
+上层使用真实 `DeliveryService` / `OutputProducer`、Context / Response 与 PostgreSQL 随机 schema；Server `EmbeddedChannel` 走真实初始化、签名认证和 Tonic client；Embedded 使用生产 `PlaybackService`、`PlaybackSession`、`PlaybackControl` 和 `AudioSubmission`。唯一 native 替身为有界 PCM 队列，模拟 callback 必须通过原 `try_begin_output` 门再 `finish` 实际提交数量。
 
-- [x] **DP01 可注入 backend 契约**：公开 `PlaybackControl::{new, apply, retire}` 与 `AudioSubmission::with_control` 四个已有方法，并说明必须保留原 native generation 的控制 Arc。外部公开 `AudioPlaybackBackend` 因而能合法实现带控制门的 backend；没有新增测试旁路或 feature。
-- [x] **DP02 实际链接准备**：Server dev-dependency 引用 `alia-embedded`，`default-features=false`。Cargo.lock 仅增加这个已有 workspace 包的依赖边，无新外部依赖。`cargo check -p alia-server --test duplex_playback --locked --offline` exit 0；`cargo test -p alia-server --test duplex_playback --no-run --locked --offline` exit 0，已实际链接可执行文件但没有执行测试。日志分别为 `run/duplex-paired-check.log` 和 `run/duplex-paired-link.log`。
-- [ ] **DP03 首次 Start 前暂停**：Response 先绑定，ExplicitWait 期间媒体租约保留；超过实际 5 秒握手期限仍不创建 Push；fresh 明确继续后同一媒体只创建一次 Push，最终只有真实软件提交前缀。
-- [ ] **DP04 满队列控制**：native 软件队列以 Condvar 精确阻塞 enqueue；Hold 独立到达且阻止原输出门，恢复后逐样本验证原 PCM 顺序、scope 与单一 submission，没有重播。
-- [ ] **DP05 End 后尾部**：已接纳 End、未提交 tail 时暂停，保持超过 5 秒 media idle；原回执继续有效，恢复后提交原尾部，不生成 Presented。
-- [ ] **DP06 控制 ACK 丢失**：薄代理先执行真实服务命令，再返回 unavailable 丢弃 ACK；原 actor 通过真实 Observe 查询同一 command，并持久化回执，未获恢复许可前保持 Held。
-- [ ] **DP07 注册晚回执**：薄代理延迟真实 RegisterOutput 回复；Fence 在它返回前撤销 scope，晚 ACK 不能填回 Server 本地 cache，重试原绑定仍拒绝。
-- [ ] **DP08 运行与冻结**：实际 PostgreSQL + loopback 五项通过，记录 exit / 测试数 / 日志 / 源文件摘要，窗口归还后无活动测试 owner。
+- [x] **DP01 可注入 backend 契约**：公开四个已有方法 `PlaybackControl::{new, apply, retire}`、`AudioSubmission::with_control`，要求保留原 native generation 的控制 Arc；无测试旁路或新 feature。
+- [x] **DP02 实际链接与运行**：Server dev-dependency 使用已有 workspace 包 `alia-embedded`、`default-features=false`；无新外部依赖。恢复 check / no-run 均 exit 0，随后完成真实运行。
+- [x] **DP03 首次 Start 前暂停**：规范 Response 已绑定，ExplicitWait 期间原媒体租约保留 5.5 秒；生产 gate 位于 reservation 前，因此尚无 Delivery row 和 Push。fresh ExplicitContinue 后仅创建一次 Push，同一原媒体 Submitted 4 samples。
+- [x] **DP04 满队列控制**：1600 samples native 队列满时 Condvar 精确阻塞；独立 Hold 到达并关闭原软件输出门；恢复后 6400 samples 逐样本同序且仅一个 submission。
+- [x] **DP05 End 后尾部**：原 End 已接受而 tail 尚未提交；Hold 5.5 秒仍保留原回执及 PCM，恢复提交同一尾部，不生成 Presented。
+- [x] **DP06 控制 ACK 丢失**：真实服务执行后薄代理丢 ACK；原 actor 通过 Observe 恢复同一 command 回执并入账，明确恢复前仍 Held。
+- [x] **DP07 注册晚回执**：延迟原 RegisterOutput ACK，Fence 先撤销 scope；晚 ACK 不能回填旧本地 cache，原绑定不能复活；第一 ACK 未知时再次 Register 立即拒绝，原 waiter 仍保留。
+- [x] **DP08 运行与资源收尾**：6 项完整运行 exit 0；两个运行时和 listener 收尾后严格检查 Delivery shutdown Result，不吞 cleanup Err。PG 随机 schema 清完，仅原三个 baseline、其他 client backend 0，窗口已归还。
+- [x] **DP09 替换后旧 owner 清理**：旧 tail 尚未提交，新 session 已有规范 Output / native tail；精确 RetireOutput 返回原 binding / backend / identity 的 settled 软件事实。冲突退休请求先被拒绝且原 cache 仍可正常 Start；旧 DB control 已 Retired 后，新 scope 仍 Running，原新 PCM Submitted 4 samples。
+- [x] **DP10 精确退休协议与保留证据**：专用 `RetireOutput` 与 admission Fence 分开；区分显式 `NoNativeOwner` 与带原 backend/progress 的 `Settled`。4 项新设备 gRPC 回归和 native/body 失败收尾回归通过，Core/Proto 全集通过。
 
-唯一 native 替身是测试内有界 PCM 队列。入队和回执仍使用生产 `AudioSubmission`，模拟 callback 明确取得 `try_begin_output` 后才 `finish` 实际计数。它验证软件边界、原队列和取消所有权，**不验证声卡已播放、扬声器已静音、AEC 或声学效果**。
+`RetireOutputRequest` 包含 exact scope、可选 canonical binding 与可选 expected backend。已登记 owner 必须匹配 binding；ACK 未知也不重发 Register。只有本地已知且从未创建 native owner 的 scope 才可返回 NoNativeOwner，同时永久关闭该 epoch；unknown / evicted 是错误，不能当成零输出。第一次退休当前 scope 会同时停止原 body admission；已替换 / 已退休 scope 只查询原记录，不改变新 scope。
 
-测试路径为 `packages/alia-server/tests/duplex_playback.rs`，复用已有 `delivery_support` 的真实 Context/Response fixture，不用伪造 Response UUID 绕过准入。fixture 用私有 SQLite 绑定状态与临时签名密钥；只请求 loopback 端口。正常结束、断言 panic 和 body timeout 都释放阻塞条件，停止并 join 两端 owner，再关闭 listener；初始化错误也有 listener guard。PG schema 由现有 fixture 清理，不访问用户数据库或既有 schema。
+Embedded 保留原 registration / control / submissions 的 Arc。退休记录上限 64，只可回收已 quiescent 的记录；每个 live epoch 预留一个退休位置，全是未收尾 owner 时拒绝新 scope。整条 output 退休等待不设一个会丢弃原 owner 的 1500ms 截断，原写入收尾前不报成功；精确 playback cancellation 在替换后也查询同一原记录。RPC 入场及返回前重验 token，旧 scope 无须继续 active。native/body 失败保留首次错误，最终 shutdown 仍失败；运行时错误列表有 64 条上限。
 
-两条 5.5 秒等待专门验证超过实际媒体/握手期限的行为；状态竞态使用 semaphore/Condvar 屏障，不靠概率等待制造。其它状态查询有 3 秒上限，单 case body 上限 32 秒，外层数据库 fixture 上限 45 秒。
+| 验证 | 实际结果 | 日志 |
+| --- | --- | --- |
+| 原 5 项首次真实运行 | 1 pass / 4 fail，exit 101；保留红测 | `run/duplex-paired-runtime-initial.log` |
+| 第 6 项首次运行 | 0 pass / 1 fail，停在 native 准备；不是 replacement 本体复现 | `run/duplex-paired-replacement-initial.log` |
+| native 早退诊断 | `reserve playback: invalid playback reservation`；Root 修正 AtomicU64 fetch_update 返回旧值造成的首序号 0 | `run/duplex-paired-media-early-result.log` |
+| Embedded playback 相关组 | 72 pass / 0 fail / 0 ignored，57.20 秒；发生在最后错误上限收紧前 | `run/duplex-retirement-embedded-playback.log` |
+| 原 native/body 错误专项 | 1 pass / 0 fail；成功 close 不抹除既有失败 | `run/duplex-retirement-prior-failure.log` |
+| 最终 retirement 过滤组 | 8 pass / 0 fail / 0 ignored，4.27 秒；包含前述 4 项新 gRPC 与错误专项，不重复累加 | `run/duplex-retirement-embedded-final.log` |
+| Core＋Proto 全集 | 27＋4 pass / 0 fail / 0 ignored，exit 0 | `run/duplex-retirement-core-proto.log` |
+| 两端完整配对 6 项 | 6 pass / 0 fail / 0 ignored，13.42 秒，exit 0 | `run/duplex-paired-runtime-retirement.log` |
+| 最后 cache / pending Register 修复的受影响 2 项 | 分别 1 pass / 0 fail，0.44 / 0.36 秒，不新增 unique case | `run/duplex-paired-replacement-final.log`、`run/duplex-paired-registration-final.log` |
 
-当前允许源码边界：新 paired test、Server dev-dependency/Cargo.lock、四个 Embedded backend 方法的可见性/注释，以及本检查清单。Pipeline、Server 控制接线、原有测试夹具与其它生产修改由主任务负责。
+恢复时还修正了两个测试夹具问题：原夹具只检查 `shutdown_pending=false`，未检查 shutdown Err；首块前 Hold 原来等待生产 gate 之前不应存在的 Delivery row。native 屏障现与媒体 Future 竞速，提前返回会打印真实 Result，而不只显示超时。失败与修复日志均保留，未放松原 admission validator。
 
-下次还需要复核主任务指出的 session replacement 清理契约：旧 output actor 的 `stop_current_playback(oldscope)` 使用 non-close minimum-generation fence；端侧已替换为新 session 时，当前 `validate_fence_receipt` 的 same-session 要求将拒绝回复。只读代码路径支持这一风险判断，**尚无配对运行复现、未新增第六条测试、未放宽生产校验**。应先用此 fixture 验证旧 native owner 已退休且新 session 不受影响，再设计仅供旧 owner 清理使用的有类型退休证据；不能把“active 已换成新 session”当成全部旧 native writes 已收尾或声卡静音的证明，也不能放宽新会话准入的 fence。
+配对 fixture 使用临时签名密钥、私有 SQLite 和 loopback listener，复用已有真实 Context / Response 夹具。状态查询 3 秒上限，单 case body 32 秒，外层 PG fixture 45 秒；两次 5.5 秒专门验证实际期限，不用概率等待制造竞态。正常、panic、body timeout 都先释放队列，再 join 原 owner 与 listener。所有软件 Submitted / quiescence 事实均**不证明声卡已播放、扬声器已静音、Presented、AEC 或声学效果**。
+
+本轮经 Root 扩展的源码归属为 Core output_control、Proto playback/codec、Embedded PlaybackSession / PlaybackService及测试、新 paired test 和本清单；Server adapter / EmbeddedChannel / output actor 接线由 Root 负责。子包 manifest 与最终交接为 `run/duplex-playback-validation-20260923/`。独立 Server 接口复核若导致 Root 新增修复，将以最终冻结源码和 Root 的统一验收为准。
+
+独立 Server 接口复核另外发现首 Push ACK 不一定是全局 receipt sequence 1：独立 Control / Observe 可能先读取同一 submission 并消耗计数。该发现已交 Root，在现有真实 TCP 夹具做确定性首 ACK 2 红绿回归；原正数 / 单调性 / identity / accepted 0 / 未 End / 无 terminal 校验仍保留。它属于 Root 的最终统一源码验收。

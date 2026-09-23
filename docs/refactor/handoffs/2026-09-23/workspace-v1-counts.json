@@ -1,0 +1,507 @@
+{
+  "source": "V1",
+  "targets": [
+    {
+      "target": "Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_core-5f49abac7fb00475)",
+      "passed": 27,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_embedded-c856e999b4b5e82e)",
+      "passed": 156,
+      "failed": 2,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running unittests src/main.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_embedded-e9269a603becaa0e)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/audio.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/audio-eb7409833bf4d05e)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/binding.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/binding-d03b7a37f4a03956)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/config.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/config-d42653491a729c3b)",
+      "passed": 16,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/direct_response.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/direct_response-8c0afb472cd36856)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/discovery.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/discovery-76c26bf5006385f9)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/identity.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/identity-4248393d767c6ade)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/runtime.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/runtime-4da0d233d8763cd6)",
+      "passed": 10,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/sensors.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/sensors-bd5beeaeec29aa1d)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/speech.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/speech-1725b908997e2a02)",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/storage.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/storage-25ee3f33d114f61a)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_proto-4664ca3678960d60)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_server-6bf052810d6d199f)",
+      "passed": 246,
+      "failed": 0,
+      "ignored": 3,
+      "nested_summaries_excluded": 1
+    },
+    {
+      "target": "Running unittests src/main.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_server-b4434cf5a74ddb1b)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/appraisal_provenance.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/appraisal_provenance-cd8a861b241c6b50)",
+      "passed": 20,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/body_delivery.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/body_delivery-4a3a71b995b15f78)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/cache_context.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/cache_context-abed8e90db9a947b)",
+      "passed": 16,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/channel_registry.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/channel_registry-d7e0c880c5a8206f)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/config.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/config-c37d75e8e5a7abf2)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/context_lease.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/context_lease-e24170ebb4e04fcb)",
+      "passed": 26,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/delivery_repository.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/delivery_repository-fabe674e3e47a7c0)",
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/delivery_service.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/delivery_service-071c3cd58a467ca3)",
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/delivery_text.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/delivery_text-37c424eeff719e2f)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/delivery_text_service.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/delivery_text_service-0be0a07ecea88548)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/duplex_playback.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/duplex_playback-f8ee79984e360ef4)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/easy_turn_live.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/easy_turn_live-154ad414c733f6a1)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/embedded_channel.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/embedded_channel-a103b2b61887b9b7)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/execution_repository.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/execution_repository-5ee5546f14ad6ec4)",
+      "passed": 19,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/execution_service.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/execution_service-5ff39b319dcbf67e)",
+      "passed": 30,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/expression_abi.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/expression_abi-609f52979d59b81b)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/expression_appraisal.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/expression_appraisal-a5247d748ebd940b)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/expression_eval.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/expression_eval-23bb95878c262b84)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/expression_regulation.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/expression_regulation-bddaf521b1828c0e)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/expression_trace.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/expression_trace-f514cbd51a8812d1)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/ingress_identity.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/ingress_identity-27fbced5668d75fa)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/llm.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/llm-05eef8af6c684c80)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/llm_providers.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/llm_providers-eb528f7c479c5109)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory-32072543ce21cab1)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory_capture.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory_capture-2fa3bda742c38d56)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory_embedding.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory_embedding-7ca1ab4ecad86195)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory_embedding_provenance.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory_embedding_provenance-cab58a1b6ad8b449)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory_message_pins.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory_message_pins-7ba722f98e8edcf7)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/memory_privacy.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/memory_privacy-dda88322476c1319)",
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/migrations.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/migrations-15177c86b9bdfd08)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/output_control.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/output_control-f04c07ec4d510c1c)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/output_lifecycle.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/output_lifecycle-81f52581c9545c66)",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/persona.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/persona-cd3c338e5cf5cfc2)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/pipeline.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/pipeline-cdf4a980317d9029)",
+      "passed": 17,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/pipeline_tools.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/pipeline_tools-e2527c96ca7d823b)",
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/plugin_storage.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/plugin_storage-ef1e28300787739f)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/provider_adapters.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/provider_adapters-264a2ea62896b76a)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/registry.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/registry-d94fe222ad58b0fc)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/router.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/router-9070fbe31839c246)",
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/rules.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/rules-e3bff25089819acf)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/scheduler.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/scheduler-a9a2bbe69b19fea4)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/sensors.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/sensors-4af20d2620f09b4f)",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/server_background.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/server_background-f4b00fc1cfad6b5f)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/server_runtime.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/server_runtime-2ba9106fa13717a1)",
+      "passed": 42,
+      "failed": 1,
+      "ignored": 0,
+      "nested_summaries_excluded": 1
+    },
+    {
+      "target": "Running tests/settings.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/settings-e73fec3bd919062e)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/skills.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/skills-7185da82cc452926)",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/tools.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/tools-bcaa88eae52c39d1)",
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/voice_stream_live.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/voice_stream_live-08b957e06bddda4d)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_transport-e00dbc03963b3c38)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Running tests/transport.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/transport-7dca1abe9e34dd1b)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Doc-tests alia_core",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Doc-tests alia_embedded",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Doc-tests alia_proto",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Doc-tests alia_server",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    },
+    {
+      "target": "Doc-tests alia_transport",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "nested_summaries_excluded": 0
+    }
+  ],
+  "totals": {
+    "passed": 964,
+    "failed": 3,
+    "ignored": 5
+  }
+}
