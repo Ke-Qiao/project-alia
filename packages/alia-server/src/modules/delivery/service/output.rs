@@ -18,6 +18,28 @@ use tokio::time::Instant;
 
 const CAPACITY: usize = 64;
 
+/// A Bind owns cleanup as soon as it enters the local mailbox, before any peer
+/// acknowledgement. This is only a candidate until the database verifies it.
+#[derive(Clone, PartialEq, Eq)]
+struct ResponseCandidate {
+    response_id: Uuid,
+    key: ResponseKey,
+    context_id: Option<Uuid>,
+    channel_id: String,
+    intent_digest: String,
+}
+impl From<&ResponseRecord> for ResponseCandidate {
+    fn from(response: &ResponseRecord) -> Self {
+        Self {
+            response_id: response.response_id,
+            key: response.key.clone(),
+            context_id: response.context_id,
+            channel_id: response.channel_id.clone(),
+            intent_digest: response.intent_digest.clone(),
+        }
+    }
+}
+
 enum Work {
     Bind(ResponseRecord, oneshot::Sender<anyhow::Result<()>>),
     Action {
@@ -35,6 +57,7 @@ struct Inner {
     gate: StdMutex<Gate>,
     changed: watch::Sender<u64>,
     wake: Notify,
+    response: std::sync::OnceLock<ResponseCandidate>,
     registration: std::sync::OnceLock<OutputRegistration>,
     // Keep the original budget identity alive across sentence gaps and native
     // tails, even when no encoded buffer happens to be retained at that instant.
@@ -85,8 +108,37 @@ impl OutputProducer {
         self.output.wait_open().await
     }
     pub async fn bind(&self, response: ResponseRecord) -> anyhow::Result<()> {
+        let output = &self.output;
+        anyhow::ensure!(
+            response.key.user_id == output.0.owner
+                && response.key.request_id == output.0.request_id
+                && response.channel_id == output.0.channel.channel_id(),
+            "canonical Response differs from original producer"
+        );
         let (reply, receive) = oneshot::channel();
-        self.output.enqueue(Work::Bind(response, reply))?;
+        {
+            // Order candidate ownership against retirement. No await or I/O is
+            // allowed between accepting this identity and publishing Bind.
+            let gate = output.0.gate.lock().unwrap();
+            anyhow::ensure!(
+                gate.is_alive(Instant::now()) && !output.0.cancel.is_cancelled(),
+                "original output no longer accepts a Response"
+            );
+            let candidate = ResponseCandidate::from(&response);
+            if let Err(candidate) = output.0.response.set(candidate) {
+                anyhow::ensure!(
+                    output.0.response.get() == Some(&candidate),
+                    "original output binding changed"
+                );
+            }
+            let queued = output.0.sender.try_send(Work::Bind(response, reply));
+            drop(gate);
+            if queued.is_err() {
+                output.retire();
+                anyhow::bail!("original output control queue unavailable");
+            }
+        }
+        output.signal();
         receive
             .await
             .context("original output control owner ended")?
@@ -119,6 +171,9 @@ impl VoiceOutput {
             .registration
             .get()
             .map(|registration| registration.binding.response_id)
+    }
+    pub(super) fn owns_response(&self, response: &ResponseRecord) -> bool {
+        self.0.response.get() == Some(&ResponseCandidate::from(response))
     }
     fn signal(&self) {
         self.0
@@ -350,6 +405,7 @@ impl DeliveryService {
             gate: StdMutex::new(gate),
             changed,
             wake: Notify::new(),
+            response: std::sync::OnceLock::new(),
             registration: std::sync::OnceLock::new(),
             audio_budget: std::sync::OnceLock::new(),
             sender,
@@ -371,15 +427,13 @@ impl DeliveryService {
             .catch_unwind()
             .await
             .unwrap_or_else(|_| {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push("output control owner panicked".into());
+                self.record_failure("output control owner panicked".into());
                 Err(anyhow::anyhow!("output control owner panicked"))
             });
         let finished = {
             let gate = output.0.gate.lock().unwrap();
-            gate.producer_finished
+            result.is_ok()
+                && gate.producer_finished
                 && gate.media_owners == 0
                 && !gate.retired
                 && !output.0.cancel.is_cancelled()
@@ -388,28 +442,53 @@ impl DeliveryService {
         output.retire();
         // Cancellation needs no permission to use the old Context. It closes
         // this exact generation and preserves whatever evidence already exists.
-        let target = ChannelTarget {
-            user_id: output.0.owner.to_string(),
-            voice: Some(output.0.scope),
+        let retirement = alia_core::output_control::OutputRetirementRequest {
+            scope: output.0.scope,
+            binding: output.0.response.get().and_then(|response| {
+                response.context_id.map(|context_id| OutputBinding {
+                    scope: output.0.scope,
+                    response_id: response.response_id,
+                    context_id,
+                    server_instance_id: self.instance_id,
+                })
+            }),
+            expected_backend: output
+                .0
+                .registration
+                .get()
+                .map(|registration| registration.backend.clone()),
         };
         // Native acknowledgement and durable local retirement are independent.
         // A stuck native fence cannot hide a cancellation that is already known.
         let persist_retirement = async {
-            if let Some(registration) = output.0.registration.get() {
-                if !finished {
-                    if let Err(error) = bounded(self.repository.request_cancel(
-                        output.0.owner,
-                        registration.binding.response_id,
-                        "original voice output cancelled or expired",
-                    ))
-                    .await
-                    {
-                        self.failures
-                            .lock()
-                            .unwrap()
-                            .push(format!("output response cancellation: {error}"));
+            if !finished {
+                if let Some(candidate) = output.0.response.get() {
+                    let cancellation = async {
+                        // A caller-supplied clone is not authority to cancel a
+                        // different canonical request owned by the same account.
+                        let stored = bounded(
+                            self.repository
+                                .response(output.0.owner, candidate.response_id),
+                        )
+                        .await?;
+                        anyhow::ensure!(
+                            ResponseCandidate::from(&stored) == *candidate,
+                            "output cleanup candidate differs from canonical Response"
+                        );
+                        bounded(self.repository.request_cancel(
+                            output.0.owner,
+                            candidate.response_id,
+                            "original voice output cancelled or expired",
+                        ))
+                        .await?;
+                        Ok::<_, anyhow::Error>(())
+                    };
+                    if let Err(error) = cancellation.await {
+                        self.record_failure(format!("output response cancellation: {error}"));
                     }
                 }
+            }
+            if let Some(registration) = output.0.registration.get() {
                 if let Err(error) = self
                     .repository
                     .retire_control(
@@ -420,36 +499,28 @@ impl DeliveryService {
                     )
                     .await
                 {
-                    self.failures
-                        .lock()
-                        .unwrap()
-                        .push(format!("output control retirement: {error}"));
+                    self.record_failure(format!("output control retirement: {error}"));
                 }
             }
         };
         let fence_original = async {
-            let fence = output
-                .0
-                .channel
-                .stop_current_playback(&target, "original voice output ended");
+            let fence = output.0.channel.retire_voice_output(&retirement);
             tokio::pin!(fence);
             let fence_result = match tokio::time::timeout(CANCEL_TIMEOUT, &mut fence).await {
                 Ok(result) => result,
                 Err(_) => {
-                    self.failures
-                        .lock()
-                        .unwrap()
-                        .push(format!("output fence deadline: {:?}", output.0.scope));
+                    self.record_failure(format!("output fence deadline: {:?}", output.0.scope));
                     // The exact native operation still owns its channel and budget.
                     // A shutdown timeout must not silently detach that ownership.
                     fence.await
                 }
             };
+            let fence_result = fence_result.and_then(|receipt| {
+                receipt.validate(&retirement)?;
+                Ok(())
+            });
             if let Err(error) = fence_result {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("output fence unconfirmed: {error:#}"));
+                self.record_failure(format!("output fence unconfirmed: {error:#}"));
             }
         };
         tokio::join!(persist_retirement, fence_original);
@@ -595,7 +666,8 @@ impl DeliveryService {
         )
         .await?;
         anyhow::ensure!(
-            stored.intent_digest == response.intent_digest && !stored.cancel_requested,
+            ResponseCandidate::from(&stored) == ResponseCandidate::from(response)
+                && !stored.cancel_requested,
             "canonical Response changed or cancelled"
         );
         let binding = OutputBinding {

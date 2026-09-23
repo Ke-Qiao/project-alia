@@ -231,7 +231,12 @@ struct OutputChannel {
     streaming: bool,
     sequence: std::sync::atomic::AtomicU64,
     first_gate: Option<Arc<tokio::sync::Semaphore>>,
+    registration_entered: Option<Arc<tokio::sync::Semaphore>>,
+    registration_release: Option<Arc<tokio::sync::Semaphore>>,
     backend: std::sync::OnceLock<alia_core::delivery::SubmissionBackend>,
+    bindings: Mutex<
+        std::collections::HashMap<VoiceSessionScope, alia_core::output_control::OutputBinding>,
+    >,
     controls: Mutex<
         std::collections::HashMap<
             VoiceSessionScope,
@@ -274,6 +279,13 @@ impl ChannelAdapter for OutputChannel {
         &self,
         binding: alia_core::output_control::OutputBinding,
     ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
+        let original = *self
+            .bindings
+            .lock()
+            .unwrap()
+            .entry(binding.scope)
+            .or_insert(binding);
+        assert_eq!(original, binding);
         self.controls
             .lock()
             .unwrap()
@@ -281,6 +293,12 @@ impl ChannelAdapter for OutputChannel {
             .or_insert_with(|| {
                 alia_core::playback_control::PlaybackControlState::new(binding.scope).unwrap()
             });
+        if let Some(entered) = &self.registration_entered {
+            entered.add_permits(1);
+        }
+        if let Some(release) = &self.registration_release {
+            release.acquire().await?.forget();
+        }
         Ok(alia_core::output_control::OutputRegistration {
             binding,
             backend: self.backend(),
@@ -294,6 +312,45 @@ impl ChannelAdapter for OutputChannel {
             }
         }
         Ok(())
+    }
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        use alia_core::output_control::{OutputRetirementEvidence, OutputRetirementReceipt};
+        request.validate()?;
+        let binding = self.bindings.lock().unwrap().get(&request.scope).copied();
+        if let Some(binding) = binding {
+            assert_eq!(request.binding, Some(binding));
+        }
+        if let Some(expected) = &request.expected_backend {
+            assert_eq!(expected, &self.backend());
+        }
+        self.stop_current_playback(
+            &ChannelTarget {
+                user_id: self.owner.unwrap().to_string(),
+                voice: Some(request.scope),
+            },
+            "original pipeline model retired",
+        )
+        .await?;
+        // This software-only fixture has no native writes beyond its explicit
+        // scope gate. Media observations remain the deliver_audio facts.
+        let evidence = if binding.is_some() {
+            OutputRetirementEvidence::Settled {
+                backend: self.backend(),
+                progress: vec![],
+            }
+        } else {
+            OutputRetirementEvidence::NoNativeOwner
+        };
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence,
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
     }
     async fn control_output(
         &self,
@@ -502,6 +559,103 @@ fn attach_output(
             )
             .unwrap(),
     );
+}
+
+#[tokio::test]
+async fn prepared_voice_error_before_register_ack_keeps_original_context_and_response() {
+    struct UnexpectedTts;
+    impl ModuleLifecycle for UnexpectedTts {
+        fn name(&self) -> &'static str {
+            "unexpected-error-tts"
+        }
+    }
+    #[async_trait]
+    impl crate::providers::adapter::TtsAdapter for UnexpectedTts {
+        async fn synthesize_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            panic!("prepared voice error started a replacement TTS request");
+        }
+        async fn synthesize_stream_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            panic!("prepared voice error started a replacement TTS stream");
+        }
+    }
+    with_linked_fixture(|mut fixture| async move {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        Arc::get_mut(&mut fixture.modules).unwrap().tts = Arc::new(UnexpectedTts);
+        let entered = Arc::new(tokio::sync::Semaphore::new(0));
+        let channel = Arc::new(OutputChannel {
+            owner: Some(Uuid::from_u128(42)),
+            registration_entered: Some(entered.clone()),
+            registration_release: Some(Arc::new(tokio::sync::Semaphore::new(0))),
+            ..Default::default()
+        });
+        let user = Uuid::from_u128(42).to_string();
+        let mut turn = VoiceTurn::request(CancellationToken::new());
+        turn.output_channel = Some(channel.clone());
+        turn.source_privacy_epoch = Some(41);
+        turn.source_relationship_epoch = Some(0);
+        let scope = VoiceSessionScope {
+            session_id: Uuid::new_v4(),
+            device_boot_id: Uuid::new_v4(),
+            generation_epoch: 1,
+        };
+        turn.voice_scope = Some(scope);
+        turn.output = Some(fixture.modules.delivery.begin_voice_output(
+            Uuid::from_u128(42), turn.id, scope, channel.clone(), turn.token.clone(), None,
+        ).unwrap());
+        ensure_turn_context(&fixture.modules, &turn, "test", &user, "Read this answer")
+            .await.unwrap();
+        let mut prepare = Box::pin(delivery::prepare_response(
+            &fixture.modules, Some(&turn), "test", &user, None, "assistant_response",
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            tokio::select! {
+                result = prepare.as_mut() => panic!("prepare finished before Register barrier: {result:?}"),
+                permit = entered.acquire() => permit.unwrap().forget(),
+            }
+        }).await.unwrap();
+        let response_id = *turn.response_id.get().expect("prepare hid canonical ID behind Register ACK");
+        assert!(turn.output.as_ref().unwrap().output().response_id().is_none());
+        assert!(!turn.token.is_cancelled());
+        let original = fixture.modules.delivery.get_response(Uuid::from_u128(42), response_id).await.unwrap();
+        let db = fixture.conversation.db.as_ref().unwrap();
+        let context_count = || async {
+            db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+                "SELECT count(*) AS n FROM context_leases".to_owned()))
+                .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap()
+        };
+        let contexts_before = context_count().await;
+        // Exercise the actual error handler before the output actor's own
+        // cancellation becomes visible. An ACK failure and error notification
+        // may race with that cancellation on a multithreaded executor.
+        let error = anyhow::anyhow!("injected registration acknowledgement failure");
+        let target = ChannelTarget { user_id: user.clone(), voice: Some(scope) };
+        let (prepared, notified) = tokio::join!(prepare.as_mut(), notify_pipeline_error(
+            &fixture.modules, channel.as_ref(), &target, "test", &user,
+            PipelineErrorStage::Delivery, Some("Read this answer"), Some(&error),
+            false, true, Some(&turn),
+        ));
+        assert!(prepared.is_err());
+        assert_eq!(context_count().await, contexts_before, "prepared error materialized a replacement Context");
+        let responses = db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+            "SELECT count(*) AS n FROM delivery_responses".to_owned()))
+            .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap();
+        assert_eq!(responses, 1, "prepared error created a replacement Response");
+        let cancelled = fixture.modules.delivery.get_response(Uuid::from_u128(42), response_id).await.unwrap();
+        assert!(cancelled.cancel_requested);
+        assert_eq!(cancelled.context_id, original.context_id);
+        assert_eq!(cancelled.key.request_id, turn.id);
+        assert_eq!(notified.delivery, error_notice::PipelineErrorDelivery::Failed);
+        assert!(channel.texts.lock().unwrap().is_empty());
+        assert!(channel.audio.lock().unwrap().is_empty());
+    }).await;
 }
 
 #[tokio::test]

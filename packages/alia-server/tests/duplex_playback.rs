@@ -282,17 +282,29 @@ struct Wire {
     controls: Mutex<Vec<BoundControlCommand>>,
     observations: AtomicUsize,
     pushes: AtomicUsize,
+    registrations: Mutex<Vec<OutputRegistration>>,
 }
 #[derive(Clone)]
 struct Proxy(Arc<Wire>);
 #[tonic::async_trait]
 impl Playback for Proxy {
     type PushStream = <PlaybackService as Playback>::PushStream;
+    async fn retire_output(
+        &self,
+        request: Request<proto::RetireOutputRequest>,
+    ) -> std::result::Result<Response<proto::RetireOutputReceipt>, Status> {
+        self.0.inner.retire_output(request).await
+    }
     async fn register_output(
         &self,
         request: Request<proto::RegisterOutputRequest>,
     ) -> std::result::Result<Response<proto::RegisterOutputReceipt>, Status> {
         let result = self.0.inner.register_output(request).await?;
+        self.0
+            .registrations
+            .lock()
+            .unwrap()
+            .push(alia_proto::output_control::decode_registration(result.get_ref()).unwrap());
         if self.0.hold_registration.swap(false, Ordering::SeqCst) {
             self.0.registered.add_permits(1);
             self.0
@@ -461,6 +473,7 @@ impl Runtime {
             controls: Mutex::new(Vec::new()),
             observations: AtomicUsize::new(0),
             pushes: AtomicUsize::new(0),
+            registrations: Mutex::new(Vec::new()),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -560,9 +573,26 @@ impl Runtime {
         self.scene.channel.stop().await.unwrap();
         self.server.close().await;
         embedded.unwrap();
+        delivery.unwrap();
     }
 }
 impl Scene {
+    fn retirement(&self, response: &ResponseRecord) -> OutputRetirementRequest {
+        let registered = self
+            .wire
+            .registrations
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|registered| registered.binding.response_id == response.response_id)
+            .unwrap()
+            .clone();
+        OutputRetirementRequest {
+            scope: registered.binding.scope,
+            binding: Some(registered.binding),
+            expected_backend: Some(registered.backend),
+        }
+    }
     fn target(&self) -> ChannelTarget {
         ChannelTarget {
             user_id: self.f.user.to_string(),
@@ -678,6 +708,15 @@ async fn signal(semaphore: &Semaphore) {
         .unwrap()
         .forget();
 }
+async fn media_signal(
+    semaphore: &Semaphore,
+    delivery: &mut tokio::task::JoinHandle<DeliveryResult<DeliveryRecord>>,
+) {
+    tokio::select! {
+        () = signal(semaphore) => {},
+        result = delivery => panic!("media returned before the native checkpoint: {result:#?}"),
+    }
+}
 async fn with_scene<F, Fut>(capacity: usize, test: F)
 where
     F: FnOnce(Scene) -> Fut,
@@ -715,25 +754,25 @@ async fn held_before_first_start_survives_handshake_idle_and_resumes_one_origina
         let input = s.audio(&response, &[11, 22, 33, 44]).await;
         let budget = ResponseAudioBudget::for_response(response.response_id).unwrap();
         let service = s.service.clone();
-        let task = tokio::spawn(async move { service.deliver_audio(input).await });
-        eventually(|| async {
-            !s.service
-                .list_deliveries(s.f.user, response.response_id)
-                .await
-                .unwrap()
-                .is_empty()
-        })
-        .await;
+        let mut task = tokio::spawn(async move { service.deliver_audio(input).await });
         // Deliberately exceed the real five-second handshake budget. This tests
-        // elapsed time, not race scheduling: admission was observed above.
+        // elapsed time, not race scheduling. The original media future waits
+        // before reservation, so a held output must not need a Delivery row.
         tokio::time::sleep(Duration::from_millis(5500)).await;
         assert!(!task.is_finished());
         assert_eq!(s.wire.pushes.load(Ordering::SeqCst), 0);
         assert_eq!(budget.reserved_bytes(), 8);
         assert!(s.submission().is_none());
+        assert!(
+            s.service
+                .list_deliveries(s.f.user, response.response_id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         s.continue_output(&producer);
         s.command_count(&response, 2).await;
-        signal(&s.device.ended_event).await;
+        media_signal(&s.device.ended_event, &mut task).await;
         assert_eq!(s.drain(), [11, 22, 33, 44]);
         submitted(&task.await.unwrap().unwrap(), 4);
         assert_eq!(s.wire.pushes.load(Ordering::SeqCst), 1);
@@ -750,8 +789,8 @@ async fn held_full_native_queue_keeps_original_pcm_and_control_lane_available() 
         let pcm: Vec<i16> = (0..6400).map(|n| n as i16).collect();
         let input = s.audio(&response, &pcm).await;
         let service = s.service.clone();
-        let task = tokio::spawn(async move { service.deliver_audio(input).await });
-        signal(&s.device.blocked_event).await;
+        let mut task = tokio::spawn(async move { service.deliver_audio(input).await });
+        media_signal(&s.device.blocked_event, &mut task).await;
         let first = s.device.state.lock().unwrap().1.clone();
         assert_eq!(first, &pcm[..1600]);
         assert!(producer.output().explicit_wait(Uuid::new_v4(), 0).unwrap());
@@ -785,8 +824,8 @@ async fn held_after_end_preserves_unsubmitted_tail_beyond_media_idle() {
         let (producer, response) = s.output().await;
         let input = s.audio(&response, &[8, 7, 6, 5]).await;
         let service = s.service.clone();
-        let task = tokio::spawn(async move { service.deliver_audio(input).await });
-        signal(&s.device.ended_event).await;
+        let mut task = tokio::spawn(async move { service.deliver_audio(input).await });
+        media_signal(&s.device.ended_event, &mut task).await;
         let original = s.submission().unwrap();
         assert!(original.end_accepted());
         assert_eq!(original.snapshot(0).submitted_source_frames, Some(0));
@@ -850,6 +889,14 @@ async fn registration_reply_after_fence_never_repopulates_obsolete_channel_bindi
         let channel = s.channel.clone();
         let task = tokio::spawn(async move { channel.register_output(binding).await });
         signal(&s.wire.registered).await;
+        assert!(
+            s.channel.register_output(binding).await.is_err(),
+            "an unresolved Register ACK must not dispatch the intent again"
+        );
+        assert!(
+            !task.is_finished(),
+            "the original Register waiter was replaced"
+        );
         s.channel
             .stop_current_playback(
                 &s.target(),
@@ -867,6 +914,93 @@ async fn registration_reply_after_fence_never_repopulates_obsolete_channel_bindi
             "obsolete registration served from late-filled cache"
         );
         assert!(s.session.register_output(&binding).is_err());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up() {
+    with_scene(4096, |s| async move {
+        let (old_producer, old_response) = s.output().await;
+        let mut conflicting = s.retirement(&old_response);
+        conflicting.binding.as_mut().unwrap().context_id = Uuid::new_v4();
+        assert!(s.channel.retire_voice_output(&conflicting).await.is_err());
+        // Rejected retirement must not delete the valid original local cache:
+        // this original output must still reach its normal native Start/End.
+        let old_input = s.audio(&old_response, &[4, 3, 2, 1]).await;
+        let service = s.service.clone();
+        let mut old_delivery = tokio::spawn(async move { service.deliver_audio(old_input).await });
+        media_signal(&s.device.ended_event, &mut old_delivery).await;
+        let old_submission = s.submission().unwrap();
+        let old_control = s.device.control.lock().unwrap().clone().unwrap();
+
+        let next = Scene {
+            scope: VoiceScope {
+                session_id: Uuid::new_v4(),
+                ..s.scope
+            },
+            capture: CaptureControlBarrier::default(),
+            ..s.clone()
+        };
+        s.session
+            .accept_capture(&next.capture, 0, false, || Ok(()))
+            .unwrap();
+        s.session
+            .activate_with_capture(&next.scope, next.capture.clone(), MAX_HOLD_MS)
+            .unwrap();
+        let (new_producer, new_response) = next.output().await;
+        let new_input = next.audio(&new_response, &[9, 8, 7, 6]).await;
+        let service = s.service.clone();
+        let mut new_delivery = tokio::spawn(async move { service.deliver_audio(new_input).await });
+        media_signal(&s.device.ended_event, &mut new_delivery).await;
+
+        let retirement = s.retirement(&old_response);
+        let cleanup = s
+            .channel
+            .retire_voice_output(&retirement)
+            .await
+            .expect("retired original output must not fail cleanup or fence its replacement");
+        let OutputRetirementEvidence::Settled { backend, progress } = cleanup.evidence else {
+            panic!("original registered native owner lacks settled evidence");
+        };
+        assert_eq!(backend, old_submission.backend);
+        assert_eq!(progress.len(), 1);
+        assert_eq!(progress[0].identity, old_submission.identity);
+        assert_eq!(progress[0].submitted_source_frames, Some(0));
+        assert_eq!(progress[0].presented_source_frames, None);
+        assert_eq!(old_control.snapshot().phase, ControlPhase::Retired);
+        assert!(old_control.quiescent());
+        let final_old = old_submission.snapshot(0);
+        assert_eq!(final_old.submitted_source_frames, Some(0));
+        assert_eq!(final_old.presented_source_frames, None);
+        assert!(matches!(
+            final_old.observation_end,
+            Some(ObservationEnd::Cancelled { .. })
+        ));
+        assert_eq!(s.session.active_scope().unwrap(), Some(next.scope));
+        assert_eq!(s.device.state.lock().unwrap().1, [9, 8, 7, 6]);
+        assert_eq!(
+            old_delivery.await.unwrap().unwrap().status,
+            DeliveryStatus::Cancelled
+        );
+        drop(old_producer);
+        eventually(|| async {
+            s.f.repo()
+                .query_control(s.f.user, &retirement.binding.unwrap())
+                .await
+                .unwrap()
+                .scope
+                .status
+                == alia_server::modules::delivery::repository::control::OutputControlStatus::Retired
+        })
+        .await;
+        assert_eq!(
+            s.session.observe_control(&next.scope).unwrap().phase,
+            ControlPhase::Running
+        );
+        assert_eq!(next.drain(), [9, 8, 7, 6]);
+        submitted(&new_delivery.await.unwrap().unwrap(), 4);
+        drop(new_producer);
     })
     .await;
 }

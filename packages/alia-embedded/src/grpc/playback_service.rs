@@ -93,6 +93,24 @@ impl Playback for PlaybackService {
             .await?;
         Ok(Response::new(codec::encode_registration(&registered)))
     }
+    async fn retire_output(
+        &self,
+        request: Request<proto::RetireOutputRequest>,
+    ) -> Result<Response<proto::RetireOutputReceipt>, Status> {
+        let token = extract_bearer_token(request.metadata())?;
+        let request = codec::decode_retirement_request(request.get_ref())
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        self.admitted(&token, || self.session.retire_output(&request))
+            .await?;
+        let evidence = self
+            .session
+            .observe_output_retirement(&request)
+            .await
+            .map_err(control_error)?;
+        // Replacement is allowed; the authentication owner must still be valid.
+        self.admitted(&token, || Ok(())).await?;
+        Ok(Response::new(codec::encode_retirement_receipt(&evidence)))
+    }
     async fn control(
         &self,
         request: Request<proto::ControlRequest>,
@@ -196,10 +214,7 @@ impl Playback for PlaybackService {
                     .observe_cancelled(&identity)
                     .await
                     .map_err(internal)?;
-                self.admitted(&token, || {
-                    self.session.with_voice_admission(&scope, || Ok(()))
-                })
-                .await?;
+                self.admitted(&token, || Ok(())).await?;
                 final_progress = Some(receipt(&progress));
                 true
             }

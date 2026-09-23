@@ -138,7 +138,9 @@ pub(super) async fn push(
     let receiving = async {
         // A reversible hold may retain the first provider payload. Start the
         // transport's handshake clock only once Start is actually available.
-        start_rx.await.context("playback ended before Start was prepared")?;
+        start_rx
+            .await
+            .context("playback ended before Start was prepared")?;
         let mut receipts = tokio::time::timeout(idle, client.push(request))
             .await
             .context("playback response handshake timeout")??
@@ -156,12 +158,14 @@ pub(super) async fn push(
             );
             progress.validate(last.as_ref(), offered.load(Ordering::Acquire))?;
             if handshake.is_some() {
+                // Control and Push share the original submission's observation
+                // clock. A control snapshot can precede this first Push ACK;
+                // validate above enforces positive, monotonic receipt numbers.
                 ensure!(
-                    progress.receipt_sequence == 1
-                        && progress.accepted_source_frames == 0
+                    progress.accepted_source_frames == 0
                         && !progress.end_accepted
                         && progress.observation_end.is_none(),
-                    "invalid playback v2 handshake acknowledgement"
+                    "invalid playback v3 handshake acknowledgement"
                 );
             }
             observer.progress(progress.clone()).await?;
@@ -355,7 +359,10 @@ async fn produce(
             )))
             .await
             .context("playback Start stream closed")?;
-            let _ = start.take().context("playback Start already prepared")?.send(());
+            let _ = start
+                .take()
+                .context("playback Start already prepared")?
+                .send(());
             ack.await
                 .context("playback handshake was not acknowledged")?;
         }

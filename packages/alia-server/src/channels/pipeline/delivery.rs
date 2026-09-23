@@ -75,16 +75,18 @@ pub(super) async fn prepare_response(
             "voice_scope":turn.voice_scope,"text":notice_text}),
         })
         .await?;
-    // Only the original live producer can register a network voice output.
-    // The prepared Response and its original frozen Context precede this I/O.
-    if let Some(output) = &turn.output {
-        output.bind(response.clone()).await?;
-    }
+    // Cancellation owns the canonical Response even while device registration
+    // is pending. Never hide that identity behind a remote acknowledgement.
     if let Err(id) = turn.response_id.set(response.response_id) {
         anyhow::ensure!(
             turn.response_id.get() == Some(&id),
             "turn acquired different response identity"
         );
+    }
+    // Only the original live producer can register a network voice output.
+    // The prepared Response and its original frozen Context precede this I/O.
+    if let Some(output) = &turn.output {
+        output.bind(response.clone()).await?;
     }
     Ok(response.response_id)
 }

@@ -8,10 +8,19 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
 mod capture;
 mod control;
+mod retirement;
 mod submission;
 pub use capture::CaptureControlBarrier;
 pub use control::{OutputBlocked, OutputControlError, PlaybackControl, PlaybackControlEvidence};
 pub use submission::{AudioSubmission, SubmissionWrite};
+
+fn record_task_error(errors: &Mutex<Vec<String>>, error: String) {
+    tracing::warn!(%error, "playback owner failed");
+    let mut errors = errors.lock().unwrap_or_else(|e| e.into_inner());
+    if errors.len() < 64 && !errors.contains(&error) {
+        errors.push(error);
+    }
+}
 
 /// Other output owners follow the same locally activated voice epoch. Hooks
 /// must only update admission/cancellation; no I/O or waits under this gate.
@@ -45,6 +54,7 @@ struct ActiveSession {
     registration: Option<alia_core::output_control::OutputRegistration>,
     capture: Option<CaptureControlBarrier>,
     maximum_hold_ms: u64,
+    retired: bool,
 }
 pub struct PlaybackSession {
     backend: Arc<dyn AudioPlaybackBackend>,
@@ -54,6 +64,7 @@ pub struct PlaybackSession {
     task_gate: Mutex<()>,
     task_errors: Arc<Mutex<Vec<String>>>,
     output_fence: Option<Arc<dyn VoiceOutputFence>>,
+    retired: Mutex<std::collections::VecDeque<retirement::RetiredOutput>>,
 }
 impl PlaybackSession {
     pub fn new(backend: Arc<dyn AudioPlaybackBackend>) -> Self {
@@ -65,6 +76,7 @@ impl PlaybackSession {
             task_gate: Mutex::new(()),
             task_errors: Arc::default(),
             output_fence: None,
+            retired: Mutex::default(),
         }
     }
 
@@ -89,7 +101,9 @@ impl PlaybackSession {
         let state = self.lock()?;
         ensure!(
             !self.shutdown.is_cancelled()
-                && state.as_ref().is_some_and(|active| active.scope == *scope),
+                && state
+                    .as_ref()
+                    .is_some_and(|active| active.scope == *scope && !active.retired),
             "body voice scope is not locally current"
         );
         admit()
@@ -115,15 +129,12 @@ impl PlaybackSession {
                 .await
             {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => errors
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(error.to_string()),
+                Ok(Err(error)) => record_task_error(&errors, error.to_string()),
                 Err(_) => {
-                    errors
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .push("playback Push worker panicked; cleanup is unproven".into());
+                    record_task_error(
+                        &errors,
+                        "playback Push worker panicked; cleanup is unproven".into(),
+                    );
                     std::future::pending::<()>().await;
                 }
             }
@@ -137,16 +148,18 @@ impl PlaybackSession {
             .map_err(|_| anyhow::anyhow!("playback session lock poisoned"))
     }
     fn retire(&self, active: &mut ActiveSession, reason: &str) -> Result<()> {
+        if active.retired {
+            return Ok(());
+        }
+        active.retired = true;
         active.input = None;
-        active.registration = None;
-        if let Some(control) = active.control.take() {
+        if let Some(control) = active.control.as_ref() {
             control.retire(alia_core::playback_control::RetiredReason::Cancelled);
         }
         let result = active
             .generation
-            .take()
             .map_or(Ok(false), |g| self.backend.stop_if_current(g));
-        for (_, lease) in active.observations.drain() {
+        for lease in active.observations.values() {
             lease.submission.terminate(if result.is_ok() {
                 ObservationEnd::Cancelled {
                     reason: reason.into(),
@@ -157,7 +170,22 @@ impl PlaybackSession {
                 }
             });
         }
-        result.map(|_| ())
+        // Every live scope reserves one slot before native admission. Retired
+        // owners retain their original gates and observations until settled.
+        let mut retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());
+        debug_assert!(retired.len() < retirement::RETIRED_CAPACITY);
+        retired.push_back(retirement::RetiredOutput {
+            scope: active.scope,
+            registration: active.registration.take(),
+            control: active.control.take(),
+            generation: active.generation.take(),
+            observations: std::mem::take(&mut active.observations),
+            stop_error: result.as_ref().err().map(|error| error.to_string()),
+        });
+        drop(retired);
+        let result = result.map(|_| ());
+        self.remember_retirement_error(active.scope, "native", &result);
+        result
     }
     /// Only the local VoiceSession Ready hook may activate a session.
     pub fn activate(&self, scope: &VoiceScope) -> Result<()> {
@@ -185,6 +213,15 @@ impl PlaybackSession {
             "invalid negotiated hold limit"
         );
         let mut state = self.lock()?;
+        ensure!(
+            !self
+                .retired
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .any(|owner| owner.scope == *scope),
+            "Ready cannot reactivate a retained retired output epoch"
+        );
         if let Some(capture) = &capture {
             capture.watermarks()?;
         }
@@ -203,14 +240,21 @@ impl PlaybackSession {
                     "Ready cannot replace the capture owner or capabilities"
                 );
                 if scope.generation_epoch > active.scope.generation_epoch {
-                    active.scope = *scope;
                     let body = self
                         .output_fence
                         .as_ref()
                         .map_or(Ok(()), |sink| sink.fence_voice(scope));
                     let audio = self.retire(active, "local voice generation advanced");
+                    self.remember_retirement_error(active.scope, "body", &body);
+                    self.reserve_retirement_slot()?;
+                    active.scope = *scope;
+                    active.retired = false;
                     body.and(audio)?;
                 }
+                ensure!(
+                    !active.retired,
+                    "Ready cannot reopen a retired output epoch"
+                );
                 return Ok(());
             }
         }
@@ -223,8 +267,10 @@ impl PlaybackSession {
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&old.scope));
             let audio = self.retire(&mut old, "local voice session replaced");
+            self.remember_retirement_error(old.scope, "body", &body);
             body.and(audio)?;
         }
+        self.reserve_retirement_slot()?;
         if let Some(sink) = &self.output_fence {
             sink.activate_voice(scope)?;
         }
@@ -238,6 +284,7 @@ impl PlaybackSession {
             registration: None,
             capture,
             maximum_hold_ms,
+            retired: false,
         });
         Ok(())
     }
@@ -254,6 +301,7 @@ impl PlaybackSession {
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
             let audio = self.retire(&mut retired, "device binding revoked");
+            self.remember_retirement_error(retired.scope, "body", &body);
             body.and(audio)?;
         }
         Ok(())
@@ -280,6 +328,7 @@ impl PlaybackSession {
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
             let audio = self.retire(&mut retired, "matching voice session closed");
+            self.remember_retirement_error(retired.scope, "body", &body);
             body.and(audio)?;
             return Ok(true);
         }
@@ -287,12 +336,15 @@ impl PlaybackSession {
             return Ok(false);
         }
         // State is invalidated even when hardware stop fails.
-        active.scope.generation_epoch = minimum.generation_epoch;
         let body = self
             .output_fence
             .as_ref()
             .map_or(Ok(()), |sink| sink.fence_voice(minimum));
         let audio = self.retire(active, "voice generation fence applied");
+        self.remember_retirement_error(active.scope, "body", &body);
+        self.reserve_retirement_slot()?;
+        active.scope.generation_epoch = minimum.generation_epoch;
+        active.retired = false;
         body.and(audio)?;
         Ok(true)
     }
@@ -344,6 +396,10 @@ impl PlaybackSession {
         let active = state
             .as_mut()
             .context("no locally activated voice session")?;
+        ensure!(
+            !active.retired || scope.generation_epoch > active.scope.generation_epoch,
+            "playback output epoch is permanently retired"
+        );
         match binding {
             Some(binding) => ensure!(
                 active.scope == *scope
@@ -377,12 +433,15 @@ impl PlaybackSession {
         );
         active.highest_sequence = playback_sequence;
         if newer {
-            active.scope = *scope;
             let body = self
                 .output_fence
                 .as_ref()
                 .map_or(Ok(()), |sink| sink.fence_voice(scope));
             let audio = self.retire(active, "new playback generation fence applied");
+            self.remember_retirement_error(active.scope, "body", &body);
+            self.reserve_retirement_slot()?;
+            active.scope = *scope;
+            active.retired = false;
             body.and(audio)?;
         }
         ensure!(
@@ -463,14 +522,14 @@ impl PlaybackSession {
     }
     pub fn cancel_identity(&self, identity: &PlaybackIdentity, reason: &str) -> Result<bool> {
         let lease = {
-            let mut state = self.lock()?;
-            let Some(active) = state.as_mut() else {
-                return Ok(false);
-            };
-            let Some(lease) = active.observations.get(identity).cloned() else {
-                return Ok(false);
-            };
-            lease
+            let state = self.lock()?;
+            match state
+                .as_ref()
+                .and_then(|active| active.observations.get(identity).cloned())
+            {
+                Some(lease) => lease,
+                None => return Ok(self.retired_lease(identity).is_some()),
+            }
         };
         let result = self.backend.cancel_submission(&lease.submission, reason);
         if let Some(active) = self.lock()?.as_mut() {
@@ -508,6 +567,7 @@ impl PlaybackSession {
             .lock()?
             .as_ref()
             .and_then(|active| active.observations.get(identity).cloned())
+            .or_else(|| self.retired_lease(identity))
             .context("playback identity is no longer observable")?;
         tokio::time::timeout(std::time::Duration::from_millis(1500), async {
             while !lease.submission.output_quiescent() {
@@ -553,6 +613,7 @@ impl super::lifecycle::ModuleLifecycle for PlaybackSession {
         // A pending native enqueue remains owned here until its control fence
         // actually releases it. The outer cleanup deadline retains this owner.
         self.tasks.wait().await;
+        self.wait_retired_writes().await;
         retired?;
         let errors = self.task_errors.lock().unwrap_or_else(|e| e.into_inner());
         ensure!(

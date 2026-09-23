@@ -1041,3 +1041,4 @@ async fn precise_fence_times_out_without_claiming_native_quiescence() {
 }
 
 mod control;
+mod retirement;

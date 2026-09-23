@@ -64,7 +64,12 @@ struct Device {
     owner: Uuid,
     db: DatabaseConnection,
     backend: SubmissionBackend,
+    scope: OnceLock<alia_core::delivery::VoiceScope>,
     registration: OnceLock<OutputRegistration>,
+    block_register: AtomicBool,
+    register_entered: Semaphore,
+    register_release: Semaphore,
+    register_dropped: AtomicUsize,
     commands: Mutex<Vec<BoundControlCommand>>,
     observed_commands: Mutex<Vec<BoundControlCommand>>,
     receipts: Mutex<HashMap<Uuid, BoundControlReceipt>>,
@@ -97,7 +102,12 @@ impl Device {
                 output_sample_rate_hz: 48000,
                 output_channels: 2,
             },
+            scope: OnceLock::new(),
             registration: OnceLock::new(),
+            block_register: AtomicBool::new(false),
+            register_entered: Semaphore::new(0),
+            register_release: Semaphore::new(0),
+            register_dropped: AtomicUsize::new(0),
             commands: Mutex::default(),
             observed_commands: Mutex::default(),
             receipts: Mutex::default(),
@@ -154,6 +164,7 @@ impl Device {
         }
     }
     fn release_all(&self) {
+        self.register_release.add_permits(32);
         self.resume_release.add_permits(32);
         self.stop_release.add_permits(32);
         self.media_release.add_permits(32);
@@ -195,6 +206,15 @@ impl ChannelAdapter for Device {
         self.registration
             .set(registration.clone())
             .map_err(|_| anyhow::anyhow!("duplicate device registration"))?;
+        if self.block_register.load(Ordering::SeqCst) {
+            let mut owner = InFlight {
+                dropped: &self.register_dropped,
+                finished: false,
+            };
+            self.register_entered.add_permits(1);
+            self.register_release.acquire().await?.forget();
+            owner.finished = true;
+        }
         Ok(registration)
     }
     async fn control_output(
@@ -261,10 +281,7 @@ impl ChannelAdapter for Device {
     }
     async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
         assert_eq!(target.user_id, self.owner.to_string());
-        assert_eq!(
-            target.voice,
-            self.registration.get().map(|r| r.binding.scope)
-        );
+        assert_eq!(target.voice, self.scope.get().copied());
         let mut owner = InFlight {
             dropped: &self.stop_dropped,
             finished: false,
@@ -276,6 +293,46 @@ impl ChannelAdapter for Device {
         self.stop_finished.fetch_add(1, Ordering::SeqCst);
         owner.finished = true;
         Ok(())
+    }
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        use alia_core::output_control::{OutputRetirementEvidence, OutputRetirementReceipt};
+        request.validate()?;
+        assert_eq!(Some(request.scope), self.scope.get().copied());
+        if let Some(registration) = self.registration.get() {
+            assert_eq!(request.binding, Some(registration.binding));
+        }
+        if let Some(expected) = &request.expected_backend {
+            assert_eq!(expected, &self.backend);
+        }
+        self.stop_current_playback(
+            &ChannelTarget {
+                user_id: self.owner.to_string(),
+                voice: Some(request.scope),
+            },
+            "original lifecycle model retired",
+        )
+        .await?;
+        // This fake has an explicit scope gate/stop barrier but no native
+        // write queue. Do not invent new media checkpoints from that barrier.
+        let evidence = if self.registration.get().is_some() {
+            OutputRetirementEvidence::Settled {
+                backend: self.backend.clone(),
+                progress: vec![],
+            }
+        } else {
+            assert_eq!(self.media_calls.load(Ordering::SeqCst), 0);
+            OutputRetirementEvidence::NoNativeOwner
+        };
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence,
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
     }
     fn reserve_playback(
         &self,
@@ -355,7 +412,13 @@ struct Scene {
 }
 impl Scene {
     async fn output(&self) -> (Arc<OutputProducer>, ResponseRecord) {
+        let (producer, response) = self.unbound_output().await;
+        producer.bind(response.clone()).await.unwrap();
+        (producer, response)
+    }
+    async fn unbound_output(&self) -> (Arc<OutputProducer>, ResponseRecord) {
         let scope = identity().scope;
+        self.device.scope.set(scope).unwrap();
         let mut input = self.f.response().await;
         input.content["voice_scope"] = json!(scope);
         let producer = self
@@ -370,7 +433,6 @@ impl Scene {
             )
             .unwrap();
         let response = self.service.prepare(input).await.unwrap();
-        producer.bind(response.clone()).await.unwrap();
         (producer, response)
     }
     async fn audio(&self, response: &ResponseRecord) -> AudioDelivery {
@@ -499,6 +561,169 @@ fn authorization() -> ResumeAuthorization {
         detection_id: Uuid::new_v4(),
         through_sequence: 10,
     }
+}
+
+#[tokio::test]
+async fn forged_bind_candidate_cannot_cancel_another_request_response() {
+    with_scene(|s| async move {
+        let (producer, original) = s.unbound_output().await;
+        let foreign = s.service.prepare(s.f.response().await).await.unwrap();
+        assert_ne!(foreign.key.request_id, original.key.request_id);
+        let mut forged = foreign.clone();
+        forged.key.request_id = original.key.request_id;
+        // A caller-controlled record must not become cleanup authority merely
+        // by matching the producer's request fields before actor validation.
+        let mut binding = Box::pin(producer.bind(forged));
+        assert!(futures::poll!(binding.as_mut()).is_pending());
+        producer.output().retire();
+        assert!(binding.await.is_err());
+        acquire(&s.device.stop_entered).await;
+        s.expected_shutdown_failure.store(true, Ordering::SeqCst);
+        let failure = s.service.shutdown().await.unwrap_err().to_string();
+        assert!(
+            failure.contains("output cleanup candidate differs from canonical Response"),
+            "{failure}"
+        );
+        assert!(
+            !s.service.shutdown_pending(),
+            "identity rejection did not join its output owner"
+        );
+        let stored =
+            s.f.repo()
+                .response(s.f.user, foreign.response_id)
+                .await
+                .unwrap();
+        assert_eq!(
+            json!(stored),
+            json!(foreign),
+            "unverified Bind record changed another request's Response"
+        );
+        assert!(s.device.registration.get().is_none());
+        assert_eq!(s.device.reservations.load(Ordering::SeqCst), 0);
+        assert_eq!(s.device.media_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(s.f.count("delivery_responses").await, 2);
+        assert_eq!(s.f.count("output_control_scopes").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn queued_bind_then_immediate_retirement_cancels_original_response() {
+    with_scene(|s| async move {
+        let (producer, response) = s.unbound_output().await;
+        let output = producer.output();
+        let mut binding = Box::pin(producer.bind(response.clone()));
+        // No yield separates Bind enqueue from retirement. The control actor
+        // cannot have consumed the queued canonical Response on this executor.
+        assert!(futures::poll!(binding.as_mut()).is_pending());
+        output.retire();
+        assert!(binding.await.is_err());
+        acquire(&s.device.stop_entered).await;
+        eventually(|| async {
+            s.f.repo()
+                .response(s.f.user, response.response_id)
+                .await
+                .unwrap()
+                .cancel_requested
+        })
+        .await;
+        assert!(
+            s.device.registration.get().is_none(),
+            "retired queued Bind reached device registration"
+        );
+        assert_eq!(s.device.stop_finished.load(Ordering::SeqCst), 1);
+        assert_eq!(s.device.reservations.load(Ordering::SeqCst), 0);
+        assert_eq!(s.device.media_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(s.f.count("delivery_responses").await, 1);
+        assert_eq!(s.f.count("output_control_scopes").await, 0);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn cancellation_during_register_ack_wait_cancels_original_response() {
+    interrupted_registration(BindInterruption::Retire).await;
+}
+
+#[tokio::test]
+async fn semantic_expiry_during_register_ack_wait_cancels_original_response() {
+    interrupted_registration(BindInterruption::SemanticExpiry).await;
+}
+
+#[tokio::test]
+async fn response_cancellation_during_register_ack_wait_stops_original_bind() {
+    interrupted_registration(BindInterruption::CancelResponse).await;
+}
+
+enum BindInterruption {
+    Retire,
+    SemanticExpiry,
+    CancelResponse,
+}
+
+async fn interrupted_registration(interruption: BindInterruption) {
+    with_scene(|s| async move {
+        s.device.block_register.store(true, Ordering::SeqCst);
+        let (producer, response) = s.unbound_output().await;
+        let output = producer.output();
+        let mut binding = Box::pin(producer.bind(response.clone()));
+        assert!(futures::poll!(binding.as_mut()).is_pending());
+        acquire(&s.device.register_entered).await;
+        assert!(
+            !s.f.repo()
+                .response(s.f.user, response.response_id)
+                .await
+                .unwrap()
+                .cancel_requested
+        );
+        match interruption {
+            BindInterruption::Retire => output.retire(),
+            BindInterruption::SemanticExpiry => {
+                assert!(output.near_end_speech(10).unwrap());
+            }
+            BindInterruption::CancelResponse => {
+                assert!(
+                    s.service
+                        .cancel_response(s.f.user, response.response_id)
+                        .await
+                        .unwrap()
+                        .cancel_requested
+                );
+            }
+        }
+        tokio::time::timeout(Duration::from_secs(5), s.device.stop_entered.acquire())
+            .await
+            .expect("original registration was not fenced after cancellation/expiry")
+            .unwrap()
+            .forget();
+        assert!(binding.await.is_err(), "unacknowledged Bind succeeded");
+        assert!(!output.is_alive());
+        assert!(producer.wait_open().await.is_err());
+        eventually(|| async {
+            s.f.repo()
+                .response(s.f.user, response.response_id)
+                .await
+                .unwrap()
+                .cancel_requested
+        })
+        .await;
+        assert_eq!(s.device.register_dropped.load(Ordering::SeqCst), 1);
+        assert_eq!(s.device.stop_finished.load(Ordering::SeqCst), 1);
+        assert_eq!(s.device.reservations.load(Ordering::SeqCst), 0);
+        assert_eq!(s.device.media_calls.load(Ordering::SeqCst), 0);
+        assert!(s.device.commands.lock().unwrap().is_empty());
+        assert_eq!(
+            s.f.count("delivery_responses").await,
+            1,
+            "cancelled Bind created another Response"
+        );
+        assert_eq!(
+            s.f.count("output_control_scopes").await,
+            0,
+            "unreceived registration ACK became a durable device fact"
+        );
+    })
+    .await;
 }
 
 #[tokio::test]

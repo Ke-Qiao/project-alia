@@ -20,7 +20,8 @@ use alia_core::{
         VOICE_CONTRACT_VERSION,
     },
     playback_control::{
-        ControlReceipt, HoldReason, MAX_HOLD_MS, PlaybackControlState, RetiredReason,
+        CommandOutcome, ControlAction, ControlPhase, ControlReceipt, HoldReason, MAX_HOLD_MS,
+        PlaybackControlState, RetiredReason,
     },
 };
 use alia_proto::voice::voice_session_client::VoiceSessionClient;
@@ -42,6 +43,7 @@ use alia_server::modules::interaction::voice_input;
 use alia_server::modules::{
     delivery::{
         DeliveryService,
+        repository::control::{ControlCommandStatus, OutputControlView},
         types::{NewResponse, ResponseKey},
     },
     memory::{context::ContextSource, source::capture_source_epochs},
@@ -59,6 +61,7 @@ use uuid::Uuid;
 const CHANNEL: &str = "official-audio-test";
 const TEST_TOKEN: &str = "injected-test-credential";
 const MODEL_REVISION: &str = "7d1f8b06776b575ac22e2fd4aa7913da2f4b8b98";
+const NEGOTIATED_HOLD_MS: u64 = 30_000;
 
 struct TestChannel {
     fences: Arc<Mutex<Vec<(VoiceScope, bool)>>>,
@@ -207,6 +210,66 @@ impl ChannelAdapter for TestChannel {
         Ok(())
     }
 
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        use alia_core::output_control::{OutputRetirementEvidence, OutputRetirementReceipt};
+        request.validate()?;
+        anyhow::ensure!(
+            self.fences
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(scope, close)| *scope == request.scope && !close),
+            "unknown live output scope"
+        );
+        let registered = self
+            .output
+            .lock()
+            .unwrap()
+            .registered
+            .as_ref()
+            .map(|output| output.registration.clone());
+        let evidence = if let Some(registered) = registered {
+            anyhow::ensure!(
+                request.binding == Some(registered.binding)
+                    && request
+                        .expected_backend
+                        .as_ref()
+                        .is_none_or(|backend| *backend == registered.backend),
+                "original live output or backend changed"
+            );
+            self.stop_current_playback(
+                &ChannelTarget {
+                    user_id: self.owner.to_string(),
+                    voice: Some(request.scope),
+                },
+                "original live output ended",
+            )
+            .await?;
+            // This fixture registers a software control owner but never starts
+            // PCM or native writes, so there are no playback facts to settle.
+            OutputRetirementEvidence::Settled {
+                backend: registered.backend,
+                progress: vec![],
+            }
+        } else {
+            anyhow::ensure!(
+                request.expected_backend.is_none(),
+                "registered backend disappeared"
+            );
+            OutputRetirementEvidence::NoNativeOwner
+        };
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence,
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
+    }
+
     async fn fence_voice(
         &self,
         scope: VoiceScope,
@@ -231,7 +294,7 @@ impl ChannelAdapter for TestChannel {
     }
 
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
-        binding.validate()?;
+        anyhow::ensure!(binding.is_valid(), "invalid output binding");
         let mut output = self.output.lock().unwrap();
         if let Some(current) = &output.registered {
             anyhow::ensure!(
@@ -250,6 +313,7 @@ impl ChannelAdapter for TestChannel {
             },
             maximum_hold_ms: MAX_HOLD_MS,
         };
+        registration.validate()?;
         let mut control = PlaybackControlState::new(binding.scope).unwrap();
         control
             .initialize_capture(output.through, output.speech)
@@ -403,7 +467,7 @@ async fn official_audio(fixture: Fixture) {
         payload: Some(device_frame::Payload::Open(OpenSession {
             protocol_version: VOICE_CONTRACT_VERSION,
             software_hold: true,
-            max_hold_ms: MAX_HOLD_MS,
+            max_hold_ms: NEGOTIATED_HOLD_MS,
             device_boot_id: boot.to_string(),
             channel_id: CHANNEL.into(),
         })),
@@ -448,7 +512,7 @@ async fn official_audio(fixture: Fixture) {
     };
     assert_eq!(capabilities.protocol_version, VOICE_CONTRACT_VERSION);
     assert!(capabilities.software_hold);
-    assert_eq!(capabilities.max_hold_ms, MAX_HOLD_MS);
+    assert_eq!(capabilities.max_hold_ms, NEGOTIATED_HOLD_MS);
     assert_eq!(ready.device_boot_id, boot.to_string());
     assert_eq!(ready.generation_epoch, 1);
     let session_id = Uuid::parse_str(&ready.session_id).unwrap();
@@ -456,6 +520,7 @@ async fn official_audio(fixture: Fixture) {
     let mut sample_offset = 0;
     let mut active_input: Option<voice_input::RecognizedVoiceInput> = None;
     let mut response_id = None;
+    let mut original_registration = None;
 
     for (name, expected, pcm_sha256) in [
         (
@@ -520,6 +585,18 @@ async fn official_audio(fixture: Fixture) {
             producer.bind(response.clone()).await.unwrap();
             assert_eq!(producer.request_id(), input.request_id);
             assert_eq!(producer.output().response_id(), Some(response.response_id));
+            let registration = device
+                .output
+                .lock()
+                .unwrap()
+                .registered
+                .as_ref()
+                .unwrap()
+                .registration
+                .clone();
+            assert_eq!(Some(registration.binding.context_id), response.context_id);
+            assert_eq!(registration.binding.response_id, response.response_id);
+            original_registration = Some(registration);
             response_id = Some(response.response_id);
             active_input = Some(input);
         } else {
@@ -540,9 +617,48 @@ async fn official_audio(fixture: Fixture) {
                     Some(HoldReason::ExplicitWait)
                 );
             }
+            let registration = original_registration.as_ref().unwrap();
+            let view = settled_controls(
+                &fixture,
+                registration,
+                if expected == TurnState::Backchannel {
+                    2
+                } else {
+                    4
+                },
+            )
+            .await;
+            let latest = view.scope.latest_receipt.as_ref().unwrap();
+            assert_eq!(
+                latest.receipt.snapshot.phase,
+                if expected == TurnState::Backchannel {
+                    ControlPhase::Running
+                } else {
+                    ControlPhase::Held
+                }
+            );
+            if expected == TurnState::Backchannel {
+                assert!(matches!(
+                    view.commands[1].command.command.action,
+                    ControlAction::Resume { .. }
+                ));
+            } else {
+                assert_eq!(
+                    latest.receipt.snapshot.reason,
+                    Some(HoldReason::ExplicitWait)
+                );
+                assert!(matches!(
+                    view.commands[3].command.command.action,
+                    ControlAction::ConfirmExplicitWait { .. }
+                ));
+                assert_eq!(
+                    view.commands[2].deadline_at, view.commands[3].deadline_at,
+                    "WAIT must not renew the acoustic hold budget"
+                );
+            }
         }
     }
-    assert_eq!(fixture.count("responses").await, 1);
+    assert_eq!(fixture.count("delivery_responses").await, 1);
     assert_eq!(
         fixture.assistant_count().await,
         0,
@@ -584,6 +700,51 @@ async fn official_audio(fixture: Fixture) {
         .unwrap()
         .unwrap()
         .unwrap();
+}
+
+async fn settled_controls(
+    fixture: &Fixture,
+    registration: &OutputRegistration,
+    count: usize,
+) -> OutputControlView {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let view = fixture
+                .repo()
+                .query_control(fixture.user, &registration.binding)
+                .await
+                .unwrap();
+            assert_eq!(
+                &view.scope.registration, registration,
+                "original output identity or backend changed"
+            );
+            if view.commands.len() == count
+                && view
+                    .commands
+                    .iter()
+                    .all(|record| record.status == ControlCommandStatus::Receipted)
+            {
+                for record in &view.commands {
+                    assert_eq!(record.command.binding, registration.binding);
+                    assert_eq!(record.command.expected_backend, registration.backend);
+                    assert_eq!(record.intent_digest, record.command.intent_digest());
+                    let receipt = record.latest_receipt.as_ref().unwrap();
+                    receipt.validate(&record.command).unwrap();
+                    assert_eq!(receipt.receipt.outcome, CommandOutcome::Applied);
+                    if let ControlAction::Pause { budget_ms, .. } = record.command.command.action {
+                        assert!(
+                            (1..=NEGOTIATED_HOLD_MS).contains(&budget_ms),
+                            "negotiated limit must cap the configured 60000ms hold"
+                        );
+                    }
+                }
+                return view;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("original controls were not receipted in the real ledger")
 }
 
 async fn canonical_response(

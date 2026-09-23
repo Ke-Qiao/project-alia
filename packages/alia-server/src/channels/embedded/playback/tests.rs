@@ -233,6 +233,14 @@ async fn idle_receipt_timeout_cancels_and_joins_the_audio_producer() {
     struct SilentDevice;
     #[tonic::async_trait]
     impl proto::playback_server::Playback for SilentDevice {
+        async fn retire_output(
+            &self,
+            _: tonic::Request<proto::RetireOutputRequest>,
+        ) -> Result<tonic::Response<proto::RetireOutputReceipt>, tonic::Status> {
+            Err(tonic::Status::unimplemented(
+                "transport-only fixture has no original output owner",
+            ))
+        }
         async fn register_output(
             &self,
             _: tonic::Request<proto::RegisterOutputRequest>,
@@ -399,6 +407,14 @@ struct EvidenceDevice {
 }
 #[tonic::async_trait]
 impl proto::playback_server::Playback for EvidenceDevice {
+    async fn retire_output(
+        &self,
+        _: tonic::Request<proto::RetireOutputRequest>,
+    ) -> Result<tonic::Response<proto::RetireOutputReceipt>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "transport-only fixture has no original output owner",
+        ))
+    }
     async fn register_output(
         &self,
         _: tonic::Request<proto::RegisterOutputRequest>,
@@ -445,7 +461,9 @@ impl proto::playback_server::Playback for EvidenceDevice {
             let mut receipt = proto::PlaybackReceipt {
                 scope: first.scope.clone(), playback_id: first.playback_id.clone(), playback_sequence: first.playback_sequence,
                 state: proto::PlaybackState::Accepted as i32, contract_version: PLAYBACK_CONTRACT_VERSION,
-                receipt_sequence: 1, submitted_samples: Some(0),
+                // An independent Control observation may consume sequence 1
+                // before the first Push ACK. Only monotonicity is guaranteed.
+                receipt_sequence: 2, submitted_samples: Some(0),
                 backend: Some(proto::SubmissionBackend { instance_id: uuid::Uuid::new_v4().to_string(),
                     boundary: proto::SubmissionBoundary::AlsaWriteAccepted as i32, output_sample_rate_hz: 48000, output_channels: 2 }),
                 ..Default::default()
@@ -624,7 +642,7 @@ async fn durable_gates_precede_wire_and_end_continues_monotonic_submission_evide
     });
     let f = EvidenceFixture::new(observer.clone()).await;
     let id = delivery_identity();
-    let delivery = tokio::spawn(push(
+    let mut delivery = tokio::spawn(push(
         f.client.clone(),
         id,
         binding(id.scope),
@@ -642,9 +660,10 @@ async fn durable_gates_precede_wire_and_end_continues_monotonic_submission_evide
         "Start awaits durable format admission"
     );
     start_gate.add_permits(1);
-    observer
-        .wait(|| !observer.progress.lock().unwrap().is_empty())
-        .await;
+    tokio::select! {
+        result = &mut delivery => panic!("delivery ended before Audio admission: {result:?}"),
+        _ = observer.wait(|| !observer.progress.lock().unwrap().is_empty()) => {}
+    }
     assert_eq!(
         f.wire.lock().unwrap().len(),
         1,
@@ -688,6 +707,7 @@ async fn durable_gates_precede_wire_and_end_continues_monotonic_submission_evide
     assert_eq!(progress.submitted_source_frames, Some(4));
     assert_eq!(progress.presented_source_frames, None);
     let observed = observer.progress.lock().unwrap().clone();
+    assert_eq!(observed[0].receipt_sequence, 2);
     for pair in observed.windows(2) {
         pair[1].validate(Some(&pair[0]), 4).unwrap();
     }
@@ -784,7 +804,7 @@ fn decoder_rejects_unimplemented_presentation_and_wrong_identity_or_contract() {
         scope: Some(encode_scope(id.scope)),
         playback_id: id.playback_id.to_string(),
         playback_sequence: id.playback_sequence,
-        contract_version: 2,
+        contract_version: PLAYBACK_CONTRACT_VERSION,
         receipt_sequence: 1,
         state: proto::PlaybackState::Accepted as i32,
         ..Default::default()
@@ -797,7 +817,7 @@ fn decoder_rejects_unimplemented_presentation_and_wrong_identity_or_contract() {
     wrong.playback_id = uuid::Uuid::new_v4().to_string();
     assert!(decode_receipt(id, wrong).is_err());
     let mut wrong = valid.clone();
-    wrong.contract_version = 1;
+    wrong.contract_version = 2;
     assert!(decode_receipt(id, wrong).is_err());
     let mut wrong = valid;
     wrong.observation_end = proto::ObservationEnd::PresentedFinished as i32;

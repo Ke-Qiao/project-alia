@@ -97,9 +97,16 @@ async fn old_evidence_and_old_guard_cannot_change_new_binding_capture() {
     signed_bind(&binding, "new-server", "http://localhost:4321").await;
     let current = binding.status().await;
     let mut replacement = SessionGuard::new(boot.clone(), playback.clone());
-    // Reused wire identity must still not turn an old binding into authority.
-    replacement
+    // A revoked epoch remains retired even under the replacement binding.
+    let reused = replacement
         .accept_bound(&binding, &current, ready(&boot, &session), 0)
+        .await
+        .unwrap_err();
+    assert!(format!("{reused:#}").contains("retained retired output epoch"));
+    assert!(playback.active_scope().unwrap().is_none());
+    let replacement_session = Uuid::new_v4().to_string();
+    replacement
+        .accept_bound(&binding, &current, ready(&boot, &replacement_session), 0)
         .await
         .unwrap();
     let new_scope = playback.active_scope().unwrap().unwrap();
@@ -115,10 +122,8 @@ async fn old_evidence_and_old_guard_cannot_change_new_binding_capture() {
     drop(old);
     let after_old_drop = playback.active_scope().unwrap();
     drop(replacement);
-    assert!(
-        result.is_err(),
-        "old binding admitted Evidence; new scope became {after_evidence:?}"
-    );
+    let error = result.unwrap_err();
+    assert!(format!("{error:#}").contains("original voice binding"));
     assert_eq!(after_evidence, Some(new_scope));
     assert_eq!(
         after_old_drop,
@@ -258,11 +263,23 @@ async fn loopback_old_evidence_and_disconnect_preserve_replacement_owner() {
     let current = harness.runtime.binding.status().await;
     let playback = harness.runtime.playback_session.clone();
     let mut replacement = SessionGuard::new(boot.clone(), playback.clone());
-    replacement
+    let reused = replacement
         .accept_bound(
             &harness.runtime.binding,
             &current,
             ready(&boot, &session),
+            0,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{reused:#}").contains("retained retired output epoch"));
+    assert!(playback.active_scope().unwrap().is_none());
+    let replacement_session = Uuid::new_v4().to_string();
+    replacement
+        .accept_bound(
+            &harness.runtime.binding,
+            &current,
+            ready(&boot, &replacement_session),
             0,
         )
         .await

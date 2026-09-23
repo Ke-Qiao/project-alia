@@ -199,6 +199,7 @@ impl super::PlaybackSession {
             .as_mut()
             .filter(|active| active.scope == binding.scope)
             .ok_or(OutputControlError::Unknown)?;
+        ensure!(!active.retired, "output epoch has been permanently retired");
         ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
         if let Some(registered) = &active.registration {
             ensure!(registered.binding == *binding, OutputControlError::Conflict);
@@ -371,6 +372,10 @@ impl super::PlaybackSession {
         self.backend.apply_playback_control(&control, command)
     }
     fn control_generation(&self, active: &mut super::ActiveSession) -> Result<u64> {
+        ensure!(
+            !active.retired,
+            "playback output epoch is permanently retired"
+        );
         ensure!(
             active.control.as_ref().is_none_or(|c| !c.is_retired()),
             "playback control scope was permanently retired"

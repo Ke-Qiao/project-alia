@@ -703,6 +703,7 @@ impl EmbeddedChannel {
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |sequence| {
                 sequence.checked_add(1)
             })
+            .map(|previous| previous + 1)
             .map_err(|_| anyhow::anyhow!("playback sequence exhausted"))
     }
 
@@ -1227,6 +1228,44 @@ impl ChannelAdapter for EmbeddedChannel {
         Ok(())
     }
 
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        request.validate()?;
+        // Retire local admission before the RPC. A late Register reply cannot
+        // restore it, and retirement of an old owner never clears a new scope.
+        {
+            let mut bindings = self.output_bindings.lock().unwrap();
+            if let Some(cached) = bindings.get(&request.scope) {
+                anyhow::ensure!(
+                    request.binding == Some(cached.binding),
+                    "retirement differs from cached original binding"
+                );
+                if let Some(expected) = &request.expected_backend {
+                    anyhow::ensure!(
+                        cached
+                            .registration
+                            .as_ref()
+                            .is_some_and(|registered| registered.backend == *expected),
+                        "retirement differs from cached original backend"
+                    );
+                }
+            }
+            bindings.remove(&request.scope);
+        }
+        let mut client = self.playback_client().await?;
+        let receipt = client
+            .retire_output(self.auth_request(
+                alia_proto::output_control::encode_retirement_request(request),
+            )?)
+            .await?
+            .into_inner();
+        Ok(alia_proto::output_control::decode_retirement_receipt(
+            &receipt, request,
+        )?)
+    }
+
     async fn stop_current_playback(
         &self,
         target: &ChannelTarget,
@@ -1297,7 +1336,9 @@ impl ChannelAdapter for EmbeddedChannel {
                 if let Some(registration) = &previous.registration {
                     return Ok(registration.clone());
                 }
-                previous.admission.clone()
+                // The original registration RPC owns its acknowledgement.
+                // Unknown/pending is not authority to dispatch a second RPC.
+                anyhow::bail!("original output registration is pending or unknown")
             } else {
                 anyhow::ensure!(
                     registrations.len() < 64,

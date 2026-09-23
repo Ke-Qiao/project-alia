@@ -6,6 +6,7 @@ use alia_core::delivery::{
 };
 use alia_core::output_control::{
     BoundControlCommand, BoundControlReceipt, ControlMode, OutputBinding, OutputRegistration,
+    OutputRetirementEvidence, OutputRetirementReceipt, OutputRetirementRequest,
 };
 use alia_core::playback_control::{
     CommandOutcome, ControlAction, ControlCommand, ControlPhase, ControlReceipt, ControlRejection,
@@ -128,6 +129,99 @@ pub fn decode_registration(value: &wire::RegisterOutputReceipt) -> Result<Output
         maximum_hold_ms: value.maximum_hold_ms,
     };
     result.validate().map_err(|e| ControlCodecError(e.0))?;
+    Ok(result)
+}
+pub fn encode_retirement_request(value: &OutputRetirementRequest) -> wire::RetireOutputRequest {
+    wire::RetireOutputRequest {
+        scope: Some(encode_scope(value.scope)),
+        binding: value.binding.map(encode_binding),
+        expected_backend: value.expected_backend.as_ref().map(encode_backend),
+        contract_version: delivery::PLAYBACK_CONTRACT_VERSION,
+    }
+}
+pub fn decode_retirement_request(
+    value: &wire::RetireOutputRequest,
+) -> Result<OutputRetirementRequest> {
+    check(
+        value.contract_version == delivery::PLAYBACK_CONTRACT_VERSION,
+        "incompatible output retirement",
+    )?;
+    let result = OutputRetirementRequest {
+        scope: decode_scope(needed(value.scope.as_ref(), "missing retirement scope")?)?,
+        binding: value.binding.as_ref().map(decode_binding).transpose()?,
+        expected_backend: value
+            .expected_backend
+            .as_ref()
+            .map(decode_backend)
+            .transpose()?,
+    };
+    result
+        .validate()
+        .map_err(|error| ControlCodecError(error.0))?;
+    Ok(result)
+}
+pub fn encode_retirement_receipt(value: &OutputRetirementReceipt) -> wire::RetireOutputReceipt {
+    use wire::retire_output_receipt::Evidence;
+    wire::RetireOutputReceipt {
+        scope: Some(encode_scope(value.scope)),
+        binding: value.binding.map(encode_binding),
+        contract_version: delivery::PLAYBACK_CONTRACT_VERSION,
+        evidence: Some(match &value.evidence {
+            OutputRetirementEvidence::NoNativeOwner => Evidence::NoNativeOwner(true),
+            OutputRetirementEvidence::Settled { backend, progress } => {
+                Evidence::Settled(wire::SettledOutput {
+                    backend: Some(encode_backend(backend)),
+                    native_writes_quiescent: true,
+                    progress: progress.iter().map(encode_progress).collect(),
+                })
+            }
+        }),
+    }
+}
+pub fn decode_retirement_receipt(
+    value: &wire::RetireOutputReceipt,
+    expected: &OutputRetirementRequest,
+) -> Result<OutputRetirementReceipt> {
+    use wire::retire_output_receipt::Evidence;
+    check(
+        value.contract_version == delivery::PLAYBACK_CONTRACT_VERSION,
+        "incompatible retirement receipt",
+    )?;
+    let evidence = match needed(value.evidence.as_ref(), "missing retirement evidence")? {
+        Evidence::NoNativeOwner(true) => OutputRetirementEvidence::NoNativeOwner,
+        Evidence::NoNativeOwner(false) => {
+            return Err(ControlCodecError("false no-native-owner evidence"));
+        }
+        Evidence::Settled(value) => {
+            check(
+                value.native_writes_quiescent,
+                "retirement native writes remain pending",
+            )?;
+            check(
+                value.progress.len() <= alia_core::playback_control::MAX_CONTROL_COMMANDS,
+                "retirement progress exceeds bound",
+            )?;
+            OutputRetirementEvidence::Settled {
+                backend: decode_backend(needed(
+                    value.backend.as_ref(),
+                    "missing retired backend",
+                )?)?,
+                progress: value
+                    .progress
+                    .iter()
+                    .map(decode_progress)
+                    .collect::<Result<_>>()?,
+            }
+        }
+    };
+    let result = OutputRetirementReceipt {
+        scope: decode_scope(needed(value.scope.as_ref(), "missing retired scope")?)?,
+        binding: value.binding.as_ref().map(decode_binding).transpose()?,
+        evidence,
+    };
+    result
+        .validate(expected)
+        .map_err(|error| ControlCodecError(error.0))?;
     Ok(result)
 }
 fn encode_reason(reason: HoldReason) -> i32 {
@@ -624,5 +718,46 @@ mod tests {
         let mut wire = encode_command(&command);
         wire.expected_backend.as_mut().unwrap().boundary = 99;
         assert!(decode_command(&wire).is_err());
+    }
+    #[test]
+    fn retirement_requires_exact_owner_and_explicit_settled_or_no_native_evidence() {
+        let command = command();
+        let request = OutputRetirementRequest {
+            scope: command.binding.scope,
+            binding: Some(command.binding),
+            expected_backend: Some(command.expected_backend.clone()),
+        };
+        assert_eq!(
+            decode_retirement_request(&encode_retirement_request(&request)).unwrap(),
+            request
+        );
+        let value = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence: OutputRetirementEvidence::Settled {
+                backend: command.expected_backend,
+                progress: vec![],
+            },
+        };
+        let mut wire = encode_retirement_receipt(&value);
+        assert_eq!(decode_retirement_receipt(&wire, &request).unwrap(), value);
+        if let Some(wire::retire_output_receipt::Evidence::Settled(settled)) = &mut wire.evidence {
+            settled.native_writes_quiescent = false;
+        }
+        assert!(decode_retirement_receipt(&wire, &request).is_err());
+        wire.evidence = Some(wire::retire_output_receipt::Evidence::NoNativeOwner(true));
+        assert!(decode_retirement_receipt(&wire, &request).is_err());
+        let unregistered = OutputRetirementRequest {
+            expected_backend: None,
+            ..request.clone()
+        };
+        assert!(decode_retirement_receipt(&wire, &unregistered).is_ok());
+        wire.evidence = Some(wire::retire_output_receipt::Evidence::NoNativeOwner(false));
+        assert!(decode_retirement_receipt(&wire, &unregistered).is_err());
+        wire.evidence = None;
+        assert!(decode_retirement_receipt(&wire, &unregistered).is_err());
+        let mut foreign = encode_retirement_receipt(&value);
+        foreign.binding.as_mut().unwrap().context_id = Uuid::new_v4().to_string();
+        assert!(decode_retirement_receipt(&foreign, &request).is_err());
     }
 }

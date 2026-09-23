@@ -7,6 +7,8 @@ service Playback {
   // boot/session; it cannot activate a different voice session.
   rpc Fence(FenceRequest) returns (FenceReceipt);
   rpc RegisterOutput(RegisterOutputRequest) returns (RegisterOutputReceipt);
+  // Exact owner cleanup, independent of minimum-generation admission Fence.
+  rpc RetireOutput(RetireOutputRequest) returns (RetireOutputReceipt);
   rpc Control(ControlRequest) returns (ControlResponse);
   rpc ObserveControl(ControlRequest) returns (ControlResponse);
 }
@@ -134,6 +136,26 @@ message RegisterOutputReceipt {
   uint64 maximum_hold_ms = 3;
   uint32 contract_version = 4;
   bool software_hold = 5;
+}
+message RetireOutputRequest {
+  VoiceScope scope = 1;
+  OutputBinding binding = 2; // Absent only for a known scope with no native owner.
+  SubmissionBackend expected_backend = 3; // May be unknown after a lost Register ACK.
+  uint32 contract_version = 4;
+}
+message SettledOutput {
+  SubmissionBackend backend = 1;
+  bool native_writes_quiescent = 2; // Must be true; never physical silence.
+  repeated PlaybackReceipt progress = 3;
+}
+message RetireOutputReceipt {
+  VoiceScope scope = 1;
+  OutputBinding binding = 2;
+  uint32 contract_version = 3;
+  oneof evidence {
+    bool no_native_owner = 4; // Must be true; unknown or evicted is not evidence.
+    SettledOutput settled = 5;
+  }
 }
 message BoundControlCommand {
   OutputBinding binding = 1;

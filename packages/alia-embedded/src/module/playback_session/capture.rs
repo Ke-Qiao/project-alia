@@ -99,6 +99,7 @@ impl PlaybackSession {
             .as_ref()
             .map_or(Ok(()), |sink| sink.close_voice(&retired.scope));
         let audio = self.retire(&mut retired, "voice capture owner closed");
+        self.remember_retirement_error(retired.scope, "body", &body);
         body.and(audio)?;
         Ok(true)
     }

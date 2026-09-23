@@ -37,6 +37,7 @@ struct Channel {
     owner: Uuid,
     scope: VoiceScope,
     backend: SubmissionBackend,
+    registration: std::sync::OnceLock<OutputRegistration>,
     behavior: Behavior,
     entered: Semaphore,
     release: Semaphore,
@@ -76,11 +77,13 @@ impl ChannelAdapter for Channel {
     }
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
         assert_eq!(binding.scope, self.scope);
-        Ok(OutputRegistration {
+        let registration = OutputRegistration {
             binding,
             backend: self.backend.clone(),
             maximum_hold_ms: 60000,
-        })
+        };
+        self.registration.set(registration.clone()).unwrap();
+        Ok(registration)
     }
     async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
         assert_eq!(target.user_id, self.owner.to_string());
@@ -88,6 +91,40 @@ impl ChannelAdapter for Channel {
         // Scope retirement is a separate barrier. Preserve each test's original
         // exact PlaybackIdentity checkpoint and its injected ACK failure.
         Ok(())
+    }
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        use alia_core::output_control::{OutputRetirementEvidence, OutputRetirementReceipt};
+        request.validate()?;
+        assert_eq!(request.scope, self.scope);
+        let registration = self
+            .registration
+            .get()
+            .expect("fixture output was not registered");
+        assert_eq!(request.binding, Some(registration.binding));
+        assert_eq!(request.expected_backend.as_ref(), Some(&self.backend));
+        self.stop_current_playback(
+            &ChannelTarget {
+                user_id: self.owner.to_string(),
+                voice: Some(self.scope),
+            },
+            "original delivery model retired",
+        )
+        .await?;
+        // The fake owns a software scope gate, not a native write queue. This
+        // proof leaves each exact media cancel's injected unknown ACK intact.
+        let receipt = OutputRetirementReceipt {
+            scope: self.scope,
+            binding: request.binding,
+            evidence: OutputRetirementEvidence::Settled {
+                backend: self.backend.clone(),
+                progress: vec![],
+            },
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
     }
     fn reserve_playback(
         &self,
@@ -206,6 +243,7 @@ fn channel(f: &Fixture, behavior: Behavior) -> Arc<Channel> {
             output_sample_rate_hz: 48000,
             output_channels: 2,
         },
+        registration: std::sync::OnceLock::new(),
         behavior,
         entered: Semaphore::new(0),
         release: Semaphore::new(0),

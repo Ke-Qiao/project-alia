@@ -408,7 +408,6 @@ pub trait ChannelAdapter: ModuleLifecycle {
         anyhow::bail!("channel does not support exact playback cancellation")
     }
 
-    /// Best-effort channel control hook used by channels that can stop active playback.
     /// Register a canonical Response before any playback Start. The peer must
     /// retain this exact binding and report its actual native backend owner.
     async fn register_output(
@@ -431,6 +430,15 @@ pub trait ChannelAdapter: ModuleLifecycle {
         _command: &alia_core::output_control::BoundControlCommand,
     ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
         anyhow::bail!("channel does not support output control observation")
+    }
+
+    /// Permanently retire this exact original owner and wait for admitted
+    /// native writes to settle. A newer session or a generic stop is not proof.
+    async fn retire_voice_output(
+        &self,
+        _request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        anyhow::bail!("channel does not support original output retirement")
     }
 
     async fn stop_current_playback(

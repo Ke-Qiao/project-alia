@@ -43,6 +43,100 @@ impl OutputRegistration {
     }
 }
 
+/// Exact cleanup intent. An absent binding is only meaningful for a locally
+/// known scope which provably never created a native output owner.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutputRetirementRequest {
+    pub scope: VoiceScope,
+    pub binding: Option<OutputBinding>,
+    pub expected_backend: Option<SubmissionBackend>,
+}
+impl OutputRetirementRequest {
+    pub fn validate(&self) -> Result<(), InvalidOutputControl> {
+        require(self.scope.is_valid(), "invalid retirement scope")?;
+        require(
+            self.binding
+                .is_none_or(|binding| binding.is_valid() && binding.scope == self.scope),
+            "retirement binding differs from scope",
+        )?;
+        if let Some(backend) = &self.expected_backend {
+            require(
+                self.binding.is_some(),
+                "backend retirement requires original binding",
+            )?;
+            validate_backend(backend)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OutputRetirementEvidence {
+    NoNativeOwner,
+    /// Original software gates are closed and entered writes have settled.
+    /// This says nothing about physical presentation or speaker silence.
+    Settled {
+        backend: SubmissionBackend,
+        progress: Vec<PlaybackProgress>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutputRetirementReceipt {
+    pub scope: VoiceScope,
+    pub binding: Option<OutputBinding>,
+    pub evidence: OutputRetirementEvidence,
+}
+impl OutputRetirementReceipt {
+    pub fn validate(&self, expected: &OutputRetirementRequest) -> Result<(), InvalidOutputControl> {
+        expected.validate()?;
+        require(
+            self.scope == expected.scope && self.binding == expected.binding,
+            "retirement receipt changed original owner",
+        )?;
+        match &self.evidence {
+            OutputRetirementEvidence::NoNativeOwner => require(
+                expected.expected_backend.is_none(),
+                "registered native backend cannot have no owner",
+            )?,
+            OutputRetirementEvidence::Settled { backend, progress } => {
+                require(
+                    expected.binding.is_some(),
+                    "settled native owner has no binding",
+                )?;
+                validate_backend(backend)?;
+                require(
+                    expected
+                        .expected_backend
+                        .as_ref()
+                        .is_none_or(|expected| expected == backend),
+                    "retirement changed original backend",
+                )?;
+                require(
+                    progress.len() <= MAX_CONTROL_COMMANDS,
+                    "retirement evidence exceeds bound",
+                )?;
+                let mut identities = std::collections::HashSet::new();
+                for fact in progress {
+                    require(
+                        fact.identity.scope == expected.scope
+                            && identities.insert(fact.identity)
+                            && fact.backend.as_ref() == Some(backend)
+                            && fact.submitted_source_frames.is_some()
+                            && fact.observation_end.is_some(),
+                        "retirement lacks original settled playback evidence",
+                    )?;
+                    fact.validate(None, fact.accepted_source_frames)
+                        .map_err(|_| {
+                            InvalidOutputControl("invalid retirement playback progress")
+                        })?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundControlCommand {
     pub binding: OutputBinding,

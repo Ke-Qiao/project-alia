@@ -69,6 +69,16 @@ pub struct DeliveryService {
 }
 
 impl DeliveryService {
+    fn record_failure(&self, failure: String) {
+        tracing::error!(%failure, "delivery supervision failure");
+        let mut failures = self.failures.lock().unwrap();
+        // Keep shutdown failure sticky without retaining unbounded diagnostics
+        // during a prolonged database/device outage. Full events go to tracing.
+        if failures.len() < MAX_SUPERVISORS {
+            failures.push(failure);
+        }
+    }
+
     pub fn new(repository: DeliveryRepository, parent: &CancellationToken) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(MAX_SUPERVISORS);
         let (output_sender, output_receiver) = mpsc::channel(MAX_SUPERVISORS);
@@ -152,10 +162,7 @@ impl DeliveryService {
                         .map_err(anyhow::Error::from)
                         .and_then(|result| result)
                     {
-                        self.failures
-                            .lock()
-                            .unwrap()
-                            .push(format!("delivery supervisor: {error:#}"));
+                        self.record_failure(format!("delivery supervisor: {error:#}"));
                     }
                 }
                 Err(_) => anyhow::bail!(
@@ -209,9 +216,9 @@ impl DeliveryService {
     ) -> DeliveryResult<ResponseRecord> {
         // Signal the original media owners even if the cancellation write is slow.
         // The owner check precedes this signal; knowing another response ID is insufficient.
-        bounded(self.repository.response(owner, response)).await?;
+        let canonical = bounded(self.repository.response(owner, response)).await?;
         for output in self.outputs.lock().unwrap().values() {
-            if output.response_id() == Some(response) {
+            if output.owns_response(&canonical) {
                 output.retire();
             }
         }
@@ -305,11 +312,11 @@ impl DeliveryService {
         loop {
             tokio::select! {biased;
              _=self.stop.cancelled()=>break,
-             result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {self.failures.lock().unwrap().push(format!("delivery task panicked: {error}"));}},
-             result=output_tasks.join_next(),if !output_tasks.is_empty()=>{if let Some(Err(error))=result {self.failures.lock().unwrap().push(format!("output control task panicked: {error}"));self.stop.cancel();}},
+             result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {self.record_failure(format!("delivery task panicked: {error}"));}},
+             result=output_tasks.join_next(),if !output_tasks.is_empty()=>{if let Some(Err(error))=result {self.record_failure(format!("output control task panicked: {error}"));self.stop.cancel();}},
              next=outputs.recv(),if output_tasks.len()<MAX_SUPERVISORS=>match next{Some(input)=>{let service=self.clone();output_tasks.spawn(async move {service.supervise_output(input).await;});},None=>break},
              command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input, command.media_owner).await;let _=command.reply.send(result);});},None=>break},
-             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.failures.lock().unwrap().push(format!("delivery recovery: {error}"));self.stop.cancel();} if let Err(error)=self.repository.recover_expired_controls(256).await{self.failures.lock().unwrap().push(format!("output control recovery: {error}"));self.stop.cancel();}},
+             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.record_failure(format!("delivery recovery: {error}"));self.stop.cancel();} if let Err(error)=self.repository.recover_expired_controls(256).await{self.record_failure(format!("output control recovery: {error}"));self.stop.cancel();}},
             }
         }
         self.close_admission();
@@ -329,18 +336,12 @@ impl DeliveryService {
         }
         while let Some(result) = tasks.join_next().await {
             if let Err(error) = result {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("delivery join failed: {error}"));
+                self.record_failure(format!("delivery join failed: {error}"));
             }
         }
         while let Some(result) = output_tasks.join_next().await {
             if let Err(error) = result {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("output control join failed: {error}"));
+                self.record_failure(format!("output control join failed: {error}"));
             }
         }
         Ok(())
@@ -554,7 +555,7 @@ impl DeliveryService {
                 // try the independent precise checkpoint before freezing Unknown.
                 if let Some(progress) = report.progress {
                  if let Err(error) = bounded(observer.record(progress,false)).await {
-                  self.failures.lock().unwrap().push(format!("last delivery observation: {error}"));
+                  self.record_failure(format!("last delivery observation: {error}"));
                  }
                 }
                 break "transport observation ended before a device terminal checkpoint".to_string();
@@ -562,12 +563,12 @@ impl DeliveryService {
                match self.finish_report(&observer,report).await {
                 Ok(record) if record.status!=DeliveryStatus::Unknown=>return Ok(record),
                 Ok(_)=>break "observation ended without trustworthy completion".to_string(),
-                Err(error)=>{self.failures.lock().unwrap().push(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break reason;}
+                Err(error)=>{self.record_failure(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break reason;}
                }
               },
               Ok(Err(error))=>{adapter_returned=true;break format!("delivery transport failed: {error:#}");},
               Err(_)=>{
-               adapter_cancel.cancel();self.failures.lock().unwrap().push("delivery adapter panicked; original future quarantined with dependencies".into());
+               adapter_cancel.cancel();self.record_failure("delivery adapter panicked; original future quarantined with dependencies".into());
                // Retain the future and pinned channel on panic. Their cleanup semantics
                // are unknown; shutdown must remain incomplete, not tear down dependencies.
                self.persist_unknown(&observer,"delivery adapter panicked").await;
@@ -590,7 +591,7 @@ impl DeliveryService {
         {
             Ok(Ok(result)) => (result.ok(), false),
             Ok(Err(_)) => {
-                self.failures.lock().unwrap().push("playback cancellation adapter panicked; fence and original delivery futures quarantined".into());
+                self.record_failure("playback cancellation adapter panicked; fence and original delivery futures quarantined".into());
                 self.persist_unknown(&observer, "playback cancellation adapter panicked")
                     .await;
                 std::future::pending::<()>().await;
@@ -616,7 +617,7 @@ impl DeliveryService {
                     }
                 }
                 Ok(Err(_)) => {
-                    self.failures.lock().unwrap().push(
+                    self.record_failure(
                         "delivery adapter panicked during cancellation; future quarantined".into(),
                     );
                     self.persist_unknown(
@@ -636,17 +637,14 @@ impl DeliveryService {
             bounded(self.repository.finish_unknown(&observer.permit, &reason)).await
         };
         if let Err(error) = &result {
-            self.failures
-                .lock()
-                .unwrap()
-                .push(format!("delivery terminal persistence: {error}"));
+            self.record_failure(format!("delivery terminal persistence: {error}"));
         }
         if still_running || fence_pending {
             // A deadline is a reporting budget, not proof that the adapter has
             // stopped. Retain its original future and channel until actual exit.
             // Unknown remains frozen; a late final checkpoint is retained as an
             // audit fact, never permission to resume output or replay the input.
-            self.failures.lock().unwrap().push(
+            self.record_failure(
                 "delivery cancellation deadline exceeded; retaining adapter cleanup ownership"
                     .into(),
             );
@@ -673,10 +671,7 @@ impl DeliveryService {
             }
             if let Some(Ok(Ok(report))) = late_delivery {
                 if let Err(error) = self.finish_report(&observer, report).await {
-                    self.failures
-                        .lock()
-                        .unwrap()
-                        .push(format!("late delivery checkpoint: {error}"));
+                    self.record_failure(format!("late delivery checkpoint: {error}"));
                 }
             }
             if let Some(Ok(Ok(progress))) = late_fence {
@@ -691,10 +686,7 @@ impl DeliveryService {
     async fn persist_unknown(&self, observer: &DurableObserver, reason: &str) {
         if let Err(error) = bounded(self.repository.finish_unknown(&observer.permit, reason)).await
         {
-            self.failures
-                .lock()
-                .unwrap()
-                .push(format!("delivery Unknown persistence: {error}"));
+            self.record_failure(format!("delivery Unknown persistence: {error}"));
         }
     }
     async fn save_checkpoint(
@@ -705,10 +697,7 @@ impl DeliveryService {
         match bounded(observer.record(progress, true)).await {
             Ok(record) => Some(record),
             Err(error) => {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("delivery cancellation checkpoint: {error}"));
+                self.record_failure(format!("delivery cancellation checkpoint: {error}"));
                 None
             }
         }
