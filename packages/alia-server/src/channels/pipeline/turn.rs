@@ -268,38 +268,42 @@ pub(super) fn turn_is_interrupted(turn: Option<&VoiceTurn>) -> bool {
     turn.is_some_and(|turn| turn.token.is_cancelled())
 }
 
-pub(super) async fn cancellable_stage<T, F>(
-    turn: Option<&VoiceTurn>,
+pub(super) fn cancellable_stage<'a, T: 'a, F>(
+    turn: Option<&'a VoiceTurn>,
     stage: &'static str,
     fut: F,
-) -> anyhow::Result<Option<T>>
+) -> impl Future<Output = anyhow::Result<Option<T>>> + 'a
 where
-    F: Future<Output = anyhow::Result<T>>,
+    F: Future<Output = anyhow::Result<T>> + 'a,
 {
-    let Some(turn) = turn else {
-        return fut.await.map(Some);
-    };
-
-    tokio::select! {
-        biased;
-        _ = turn.token.cancelled() => {
-            turn.mark_interrupted_stage(stage);
-            tracing::info!(
-                channel_id = %turn.key.channel_id,
-                user_id = %turn.key.user_id,
-                stage,
-                "voice turn interrupted"
-            );
-            Ok(None)
+    // Allocate before constructing the wrapper Future. An async fn would keep
+    // the large producer inline in its initial state and again in select's
+    // branch, multiplying stack usage throughout the caller's poll chain.
+    let fut = Box::pin(fut);
+    async move {
+        let Some(turn) = turn else {
+            return fut.await.map(Some);
+        };
+        tokio::select! {
+            biased;
+            _ = turn.token.cancelled() => {
+                turn.mark_interrupted_stage(stage);
+                tracing::info!(
+                    channel_id = %turn.key.channel_id,
+                    user_id = %turn.key.user_id,
+                    stage,
+                    "voice turn interrupted"
+                );
+                Ok(None)
+            }
+            result = async {
+                if let Some(output) = &turn.output { output.wait_open().await?; }
+                // Retain the same request and its bounded result across holds.
+                let result = fut.await?;
+                if let Some(output) = &turn.output { output.wait_open().await?; }
+                Ok::<_, anyhow::Error>(result)
+            } => result.map(Some),
         }
-        result = async {
-            if let Some(output) = &turn.output { output.wait_open().await?; }
-            // A hold never drops and recreates an in-flight request. Retain its
-            // bounded result until the same original owner is allowed onward.
-            let result = fut.await?;
-            if let Some(output) = &turn.output { output.wait_open().await?; }
-            Ok::<_, anyhow::Error>(result)
-        } => result.map(Some),
     }
 }
 
