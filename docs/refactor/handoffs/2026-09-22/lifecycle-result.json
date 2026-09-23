@@ -1,0 +1,160 @@
+{
+  "status": "paused_at_explicit_user_request",
+  "date": "2026-09-22",
+  "agent": "body_server",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "branch": "codex/duplex-integration",
+  "head_at_handoff": "82167ddf8724ade6b203de2f9fbbe45459034178",
+  "scope_after_pause": "handoff documents and explicitly authorized cleanup of two proven Root-abort schemas only; no tests, compilation, source edits, Git commit, merge, or push",
+  "ledger": {
+    "commits": [
+      "4846b4a4907ede1539a8e133374f2a9820206a47",
+      "56e9accb892ee59343bd20fc0860d8234cd6feb7"
+    ],
+    "both_merged_into_integration": true,
+    "ancestry_check_exit_codes": {
+      "4846b4a4907ede1539a8e133374f2a9820206a47": 0,
+      "56e9accb892ee59343bd20fc0860d8234cd6feb7": 0
+    },
+    "final_real_pg_unique_passed": 13,
+    "failed": 0,
+    "ignored": 0,
+    "followup_test_seconds": 3.82,
+    "evidence_directory": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-control-ledger/run/validation-output-control-20260922",
+    "six_original_core_overlays_excluded_from_both_commits": true
+  },
+  "shared_test_files": {
+    "packages/alia-server/tests/output_lifecycle.rs": {
+      "sha256": "bfe80533a2c76253a1eb6ecf5898a9a53b989d37246de91a207bf71073c7e263",
+      "matches_frozen_evidence": true
+    },
+    "packages/alia-server/tests/delivery_service.rs": {
+      "sha256": "9af63693cf0741b81fe8ec71bf3f30734ca9a47704cdffa4632485e258fe5572",
+      "matches_frozen_evidence": true
+    }
+  },
+  "test_results": [
+    {
+      "command": "CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target cargo test -p alia-server --test output_lifecycle --no-run",
+      "log": "output-lifecycle-compile.log",
+      "exit_code": 101,
+      "failure": "eight then-unresolved production integration compilation errors in voice protocol fields and AudioBuffer caller migration; no test ran"
+    },
+    {
+      "command": "CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target cargo test -p alia-server --test output_lifecycle --test delivery_service --no-run",
+      "log": "output-lifecycle-compile-final.log",
+      "exit_code": 0,
+      "seconds_including_shared_target_wait": 54.24
+    },
+    {
+      "command": "CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target ALIA_TEST_DATABASE_URL=postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final cargo test -p alia-server --test output_lifecycle --test delivery_service -- --nocapture",
+      "log": "output-lifecycle-pg.log",
+      "exit_code": 0,
+      "targets": {
+        "delivery_service": {
+          "passed": 12,
+          "failed": 0,
+          "ignored": 0,
+          "seconds": 11.35
+        },
+        "output_lifecycle": {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0,
+          "seconds": 5.62
+        }
+      }
+    },
+    {
+      "command": "CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target cargo test -p alia-server --test output_lifecycle --no-run",
+      "log": "output-lifecycle-fence-compile.log",
+      "exit_code": 0,
+      "seconds": 54.14
+    },
+    {
+      "command": "CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target ALIA_TEST_DATABASE_URL=postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final cargo test -p alia-server --test output_lifecycle scope_fence_timeout_retains_original_future_until_real_join -- --exact --nocapture",
+      "log": "output-lifecycle-fence-pg.log",
+      "exit_code": 0,
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 5,
+      "seconds": 2.58,
+      "scope": "rerun of one existing case after root changed cancellation persistence and native fencing to run concurrently; included in unique total, not an additional test"
+    }
+  ],
+  "lifecycle_unique_tests": {
+    "passed": 18,
+    "failed": 0,
+    "ignored": 0
+  },
+  "verification_boundary": "18 passed before final cleanup-only production adjustment; affected cleanup case passed after that adjustment. Final complete integration/workspace validation belongs to root.",
+  "dirty_ownership": {
+    "body_server": [
+      "packages/alia-server/tests/delivery_service.rs",
+      "packages/alia-server/tests/output_lifecycle.rs",
+      "docs/refactor/checklists/duplex-lifecycle.md",
+      "run/output-lifecycle-handoff-20260922/"
+    ],
+    "production_output_owner_and_pipeline": "Root; this agent did not edit shared production runtime",
+    "other_shared_dirty_files": "A/C/Root work; preserve and consult Root consolidated handoff; raw status snapshot is git-status-at-handoff.txt",
+    "no_shared_tree_commit_by_this_agent": true
+  },
+  "root_pipeline_abort": {
+    "log_original": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration/run/validation-20260922/integration/pipeline-first.log",
+    "log_preserved": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration/run/output-lifecycle-handoff-20260922/pipeline-first-preserved.log",
+    "sha256": "dd45f191e2206930d9b9407f2319a847dbbb560befd1c9ccad21864b4c0f5636",
+    "requested_tests": 20,
+    "named_passes_before_abort": 3,
+    "complete_suite_result": false,
+    "failed_process": "SIGABRT (signal 6), stack overflow",
+    "case": "channels::pipeline::integration_tests::text_delivery::a_large_provider_chunk_splits_only_at_utf8_boundaries_under_one_delivery",
+    "root_exec_session": 71344,
+    "exit_code": 101,
+    "cause_diagnosed": false,
+    "priority": "first unresolved issue for resumed work; no investigation during pause"
+  },
+  "resource_cleanup": {
+    "database": "alia_refactor_delivery_final",
+    "container": "alia-refactor-test-db",
+    "root_abort_session": "71344",
+    "root_abort_exit": 101,
+    "drops": [
+      {
+        "schema": "pipeline_delivery_387dd79d7b04433ba541aedb0740ccd7",
+        "sql": "DROP SCHEMA \"pipeline_delivery_387dd79d7b04433ba541aedb0740ccd7\" CASCADE",
+        "exit_code": 0,
+        "stdout": "DROP SCHEMA\n",
+        "stderr_file": "pipeline_delivery_387dd79d7b04433ba541aedb0740ccd7.drop.stderr"
+      },
+      {
+        "schema": "pipeline_delivery_a4098bb5d5444dd5a0e965912abcdef7",
+        "sql": "DROP SCHEMA \"pipeline_delivery_a4098bb5d5444dd5a0e965912abcdef7\" CASCADE",
+        "exit_code": 0,
+        "stdout": "DROP SCHEMA\n",
+        "stderr_file": "pipeline_delivery_a4098bb5d5444dd5a0e965912abcdef7.drop.stderr"
+      }
+    ],
+    "schemas_match_baseline": true,
+    "other_client_backends_after": 0,
+    "old_pipeline_schemas_preserved": [
+      "pipeline_delivery_12873bb2547946af85f998a91746a5a4",
+      "pipeline_delivery_5d85b6229c81441fb5e38a8000f7037f",
+      "pipeline_delivery_c7794da066664a34901bca6d85453375"
+    ],
+    "no_test_or_source_change": true
+  },
+  "resources": {
+    "own_active_exec_sessions": 0,
+    "own_containers_created": 0,
+    "pg_window_released": true,
+    "shared_task_db_preserved": true,
+    "user_port_5433_accessed": false
+  },
+  "remaining": [
+    "Diagnose and repair the preserved pipeline stack overflow after the user resumes work.",
+    "Complete actor/live/paired transport work according to A/C and Root handoffs; this handoff makes no unrun success claim.",
+    "Freeze the combined source and run complete required integration/workspace and feature validation; the 18 scoped passes are not full-workspace evidence.",
+    "Review and normally commit the shared dirty integration changes after required validation; keep unrelated overlays excluded."
+  ]
+}

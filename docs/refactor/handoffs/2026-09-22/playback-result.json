@@ -1,0 +1,62 @@
+{
+  "status": "paused_at_explicit_user_request",
+  "date": "2026-09-22",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "branch": "codex/duplex-integration",
+  "head": "82167ddf8724ade6b203de2f9fbbe45459034178",
+  "paired_source_commit": null,
+  "paired_test_cases_written": 5,
+  "paired_test_cases_executed": 0,
+  "commands": [
+    {
+      "command": "cargo check -p alia-server --test duplex_playback --offline",
+      "exit": 101,
+      "log": "duplex-paired-check-initial.log",
+      "note": "initial test-only import and mutable async closure errors; corrected"
+    },
+    {
+      "command": "cargo check -p alia-server --test duplex_playback --locked --offline",
+      "exit": 0,
+      "log": "duplex-paired-check.log"
+    },
+    {
+      "command": "cargo test -p alia-server --test duplex_playback --no-run --locked --offline",
+      "exit": 0,
+      "log": "duplex-paired-link.log",
+      "note": "linked only; tests were not executed"
+    }
+  ],
+  "owned_dirty_files": [
+    "packages/alia-server/tests/duplex_playback.rs",
+    "packages/alia-server/Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-embedded/src/module/playback_session/control.rs",
+    "packages/alia-embedded/src/module/playback_session/submission.rs",
+    "docs/refactor/checklists/duplex-playback.md"
+  ],
+  "all_dirty_snapshot": "git-status.txt",
+  "source_manifest": "source-manifest.json",
+  "active_exec": [],
+  "owned_containers": [],
+  "paired_pg_schemas_created": [],
+  "postgres": "paired tests never started; shared task database and other agents resources belong to root",
+  "replacement_cleanup": {
+    "status": "read_only_risk_not_yet_reproduced",
+    "tests_added": 0,
+    "production_change": false
+  },
+  "prior_C_package": {
+    "commit": "5333eff80149d996edc765da9798781deaceba6d",
+    "branch": "codex/duplex-media-budget",
+    "tests_passed": 59,
+    "status": "completed_and_committed_separately",
+    "evidence": "run/duplex-media-validation/"
+  },
+  "limitations": [
+    "No paired PostgreSQL or gRPC runtime pass",
+    "No Linux/Windows or physical native audio pass",
+    "Shared integration production files are owned and still managed by root/other agents"
+  ],
+  "handoff": "HANDOFF.md",
+  "all_dirty_ownership": "HANDOFF.md: files and resources section"
+}

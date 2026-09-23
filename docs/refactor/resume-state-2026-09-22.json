@@ -1,0 +1,68 @@
+{
+  "checkpoint_version": 2,
+  "work_batch_date": "2026-09-22",
+  "archived_date": "2026-09-23",
+  "status": "historical_pause_user_resumed_2026_09_23",
+  "repository": "/Users/ke-qiao/Developer/project-alia",
+  "main_branch": "codex/architecture-refactor",
+  "verified_production_commit": "e6ba75b34136f7ae3c23774594d7ccae9bc67f89",
+  "integration_branch": "codex/duplex-integration",
+  "integration_worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "unverified_source_snapshot": "ae75a4ee92b1ea2e8c11a1d20c488ba62125d81f",
+  "source_manifest": {
+    "path": "docs/refactor/handoffs/2026-09-22/source-manifest.json",
+    "files": 603,
+    "sha256": "402fac90de744a28de50036b6f8255326a312e6be950aab8262b15abe217a5fa"
+  },
+  "counts_at_pause": {
+    "du_complete": 2,
+    "du_total": 11,
+    "du_remaining": 9,
+    "original_component_packages_verified": 3,
+    "original_component_packages_total": 3,
+    "runtime_pg_unique_passed": 18,
+    "runtime_pg_failed": 0,
+    "paired_authored_and_compiled": 5,
+    "paired_executed": 0,
+    "voice_actor_executed": 0,
+    "later_first_round_items": 6,
+    "active_agents_at_pause": 0,
+    "active_exec_at_pause": 0
+  },
+  "latest_root_result": {
+    "suite_started": 20,
+    "explicit_passed_before_abort": 3,
+    "complete_result": false,
+    "exit_code": 101,
+    "fatal": "stack overflow / SIGABRT",
+    "case": "channels::pipeline::integration_tests::text_delivery::a_large_provider_chunk_splits_only_at_utf8_boundaries_under_one_delivery",
+    "log": "run/validation-20260922/integration/pipeline-first.log"
+  },
+  "known_live_fixture_errors": [
+    "OutputBinding::validate does not exist",
+    "SQL table responses should be delivery_responses"
+  ],
+  "components": {
+    "protocol": "7cc9a845a571c2ba8fc8ed1ce7712a391c7dce7d",
+    "ledger": "56e9accb892ee59343bd20fc0860d8234cd6feb7",
+    "media": "5333eff80149d996edc765da9798781deaceba6d"
+  },
+  "handoffs": [
+    "docs/refactor/handoffs/2026-09-22/voice.md",
+    "docs/refactor/handoffs/2026-09-22/lifecycle.md",
+    "docs/refactor/handoffs/2026-09-22/playback.md",
+    "docs/refactor/handoffs/2026-09-22/runtime.md"
+  ],
+  "resource_cleanup": {
+    "root_abort_schemas_dropped": [
+      "pipeline_delivery_387dd79d7b04433ba541aedb0740ccd7",
+      "pipeline_delivery_a4098bb5d5444dd5a0e965912abcdef7"
+    ],
+    "baseline_restored": true,
+    "old_schemas_preserved": 3,
+    "task_pg_container_preserved": "alia-refactor-test-db:32768",
+    "model_service_preserved": "127.0.0.1:8091",
+    "user_database_5433_untouched": true
+  },
+  "next_action": "Read archived handoffs and inspect snapshot; diagnose default-stack pipeline failure, then complete DU03-DU11 with three agents and actual validation. Do not merge WIP to main."
+}

@@ -1,8 +1,10 @@
 # Project Alia 首轮重构计划
 
-更新：2026-09-22。
+更新：2026-09-23。
 
-执行状态：用户已恢复额度，要求从 DU01 完成暂停纵向整合并维护 checklist。四份交接及 Git 状态已核对，三个 subagent 已恢复分工；当前执行入口为[暂停整合 checklist](checklists/duplex-integration.md)，[额度检查点](resume-checkpoint-2026-09-20.md)保留历史暂停状态。
+**2026-09-23 用户已恢复执行。** 暂停快照 `ae75a4e` 已保存；继续由三个subagent接续语音、生命周期和配对播放，Root先排查Pipeline栈溢出。以下暂停状态保留为历史，活动进度见总checklist。
+
+执行状态：**2026-09-22 用户因额度不足明确要求暂停，代码与三个 subagent 的进度已按工作包收口。** 最新入口为[恢复检查点](resume-checkpoint-2026-09-22.md)及[持续 checklist](checklists/duplex-integration.md)。DU01/DU02 已完成（2/11），三个原组件包已验证合入隔离整合树；运行时专项18项通过，最新Pipeline回归发生栈溢出。下一轮从该失败开始，完成剩余纵向整合与验收后再合入主重构分支。
 
 状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时、音频/Text Delivery、签名 D3、ContextLease、派生缓存和持久政策已提交。Memory 实际向量身份、后端播放参考和独立时钟已验证；Appraisal/Relationship 来源、失效重建与派生 Memory 完整根已整合提交为 `8c3f545`，证据见[构建记录](progress.md)。可恢复暂停的 Core/Embedded Stage 1 已提交为 `213d5ed`，主分支整合为 `e6ba75b`；下一包接通新协议、原 Response 控制账本、语音决策和生产背压，之后继续 Companion、AEC 与真实硬件验收。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
 
