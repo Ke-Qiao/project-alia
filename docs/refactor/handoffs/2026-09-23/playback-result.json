@@ -1,0 +1,93 @@
+{
+  "status": "component_verified_awaiting_root_workspace_validation",
+  "date": "2026-09-23",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "paired_unique_cases": 6,
+  "paired_full_run": {
+    "pass": 6,
+    "fail": 0,
+    "ignored": 0,
+    "exit": 0,
+    "seconds": 13.42,
+    "log": "duplex-paired-runtime-retirement.log"
+  },
+  "affected_case_rechecks": [
+    {
+      "case": "registration_reply_after_fence_never_repopulates_obsolete_channel_binding",
+      "pass": 1,
+      "fail": 0,
+      "exit": 0,
+      "seconds": 0.36,
+      "log": "duplex-paired-registration-final.log"
+    },
+    {
+      "case": "replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up",
+      "pass": 1,
+      "fail": 0,
+      "exit": 0,
+      "seconds": 0.44,
+      "log": "duplex-paired-replacement-final.log"
+    }
+  ],
+  "other_validation": [
+    {
+      "target": "Embedded playback filter before final bounded-error refinement",
+      "pass": 72,
+      "fail": 0,
+      "ignored": 0,
+      "exit": 0,
+      "log": "duplex-retirement-embedded-playback.log"
+    },
+    {
+      "target": "Embedded prior native/body failure standalone",
+      "pass": 1,
+      "fail": 0,
+      "ignored": 0,
+      "exit": 0,
+      "log": "duplex-retirement-prior-failure.log"
+    },
+    {
+      "target": "Embedded final retirement filter (overlaps prior runs)",
+      "pass": 8,
+      "fail": 0,
+      "ignored": 0,
+      "exit": 0,
+      "log": "duplex-retirement-embedded-final.log"
+    },
+    {
+      "target": "Core complete lib suite",
+      "pass": 27,
+      "fail": 0,
+      "ignored": 0,
+      "exit": 0,
+      "log": "duplex-retirement-core-proto.log"
+    },
+    {
+      "target": "Proto complete lib suite",
+      "pass": 4,
+      "fail": 0,
+      "ignored": 0,
+      "exit": 0,
+      "log": "duplex-retirement-core-proto.log"
+    }
+  ],
+  "format_check": "all owned Rust files rustfmt --check exit 0",
+  "source_manifest": "source-manifest.json",
+  "source_manifest_sha256": "c0cbfb8cfea91dbcc7340e32850e31507c14b3ec348b60481f221f6acfe29b65",
+  "active_exec": [],
+  "created_containers": [],
+  "remaining_paired_pg_schemas": [],
+  "manual_schema_deletions": [],
+  "remaining_known_baseline": [
+    "pipeline_delivery_12873bb2547946af85f998a91746a5a4",
+    "pipeline_delivery_5d85b6229c81441fb5e38a8000f7037f",
+    "pipeline_delivery_c7794da066664a34901bca6d85453375"
+  ],
+  "other_pg_client_backends": 0,
+  "no_commit_by_agent": true,
+  "limitations": [
+    "No physical audio, speaker silence, Presented, AEC, or Pi hardware evidence",
+    "Embedded 72 initial regression run overlaps final targeted 8; never sum repeated cases",
+    "Root Server handshake sequence fix and full frozen workspace verification belong to Root and can supersede included Server interface hashes"
+  ]
+}

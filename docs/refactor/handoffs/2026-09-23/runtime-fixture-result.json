@@ -1,0 +1,32 @@
+{
+  "owned_file": "packages/alia-server/tests/server_runtime/delivery.rs",
+  "source_stable": true,
+  "exact": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "seconds": 4.63,
+    "exit": 0,
+    "log": "exact.log"
+  },
+  "suite": {
+    "passed": 43,
+    "failed": 0,
+    "ignored": 0,
+    "seconds": 57.01,
+    "exit": 0,
+    "log": "suite.log"
+  },
+  "unique_tests": 43,
+  "child_20_second_deadline_unchanged": true,
+  "proof": "Real canonical voice intent + original producer/bind; typed scope retirement waits native quiescence; precise cancellation panic still retains media future/dependencies after typed retirement completed. Existing panic/native assertions preserved.",
+  "pg": {
+    "port": 32768,
+    "schema_lists_identical": true,
+    "baseline_pipeline_schemas": 3,
+    "other_client_backends": 0,
+    "explicit_drop_needed": false,
+    "window_released_to": "voice_resume ignored checks"
+  },
+  "limitations": "This is fixture migration; production admission and quarantine guards unchanged. V1 failure evidence remains Root workspace log; Linux V2 must also execute full server_runtime."
+}

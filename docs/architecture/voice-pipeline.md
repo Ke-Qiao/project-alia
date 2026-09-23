@@ -1,6 +1,15 @@
 # Voice Pipeline
 
-The current voice pipeline is built for a practical half-to-full-duplex
+The continuous `server_turn` path now uses paired voice v2 / playback v3,
+an original output owner, and distinct temporary and explicit holds. See the
+[current voice protocol](../refactor/voice-protocol.md) and
+[integration checklist](../refactor/checklists/duplex-integration.md) for its
+behavior and validation status.
+
+The following describes the older `utterance` path. Its local direct responses
+and cancellation flow do not define the continuous duplex contract.
+
+That voice pipeline was built for a practical half-to-full-duplex
 assistant: wake word starts a turn, direct response gives immediate feedback,
 the server handles heavier reasoning, and barge-in can interrupt playback.
 

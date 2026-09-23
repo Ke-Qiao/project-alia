@@ -2,11 +2,12 @@
 
 更新：2026-09-23。
 
-**2026-09-23 用户已恢复执行。** 暂停快照 `ae75a4e` 已保存；继续由三个subagent接续语音、生命周期和配对播放，Root先排查Pipeline栈溢出。以下暂停状态保留为历史，活动进度见总checklist。
+**2026-09-23：继续按已确认范围构建。** 暂停纵向整合实现与完整软件验证完成 DU01—DU10（10/11），用户因额度要求暂停，先保存文档和四份 HANDOFF；下次仅剩 DU11 主分支合入与哈希核对。持续入口为[DU checklist](checklists/duplex-integration.md)，当前证据见[构建记录](progress.md)及[本轮交接](handoffs/2026-09-23/README.md)。2026-09-22 的额度暂停快照和失败记录保留为历史。
 
-执行状态：**2026-09-22 用户因额度不足明确要求暂停，代码与三个 subagent 的进度已按工作包收口。** 最新入口为[恢复检查点](resume-checkpoint-2026-09-22.md)及[持续 checklist](checklists/duplex-integration.md)。DU01/DU02 已完成（2/11），三个原组件包已验证合入隔离整合树；运行时专项18项通过，最新Pipeline回归发生栈溢出。下一轮从该失败开始，完成剩余纵向整合与验收后再合入主重构分支。
+当前实现与本轮验收均指 `codex/duplex-integration`；主重构分支生产源码仍为 `e6ba75b`，待恢复后 DU11 合入。
 
-状态：用户已明确授权开始构建。P1 连续采集/模型/播放栅栏、Embedded 生命周期及 P2 Execution/Memory 来源边界、Server 运行时、音频/Text Delivery、签名 D3、ContextLease、派生缓存和持久政策已提交。Memory 实际向量身份、后端播放参考和独立时钟已验证；Appraisal/Relationship 来源、失效重建与派生 Memory 完整根已整合提交为 `8c3f545`，证据见[构建记录](progress.md)。可恢复暂停的 Core/Embedded Stage 1 已提交为 `213d5ed`，主分支整合为 `e6ba75b`；下一包接通新协议、原 Response 控制账本、语音决策和生产背压，之后继续 Companion、AEC 与真实硬件验收。各阶段出口仍需逐项验收，不能将已实现组件等同于首轮整体完成。
+
+P1 持续采集/模型/播放栅栏、P2 Execution/Memory 来源边界、Server 运行时、Audio/Text Delivery、签名 D3、ContextLease、持久政策、Memory 向量身份、后端播放参考、Appraisal/Relationship 已分别提交。当前 voice v2 / playback v3 组合保留原 Response/Context/媒体 owner，接通两类暂停、持久控制与生成背压；最终完整验收和合并状态以 DU10/DU11 为准。后续 Companion、AEC/时钟、D3 实机、CLI/REST、Mac/Pi 长时负载和其他部署的出口已细分为 [R01—R06 checklist](checklists/next-round.md)，不因本包完成而关闭。
 
 ## 1. 决策来源与已确认范围
 

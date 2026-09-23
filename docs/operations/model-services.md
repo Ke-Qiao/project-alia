@@ -19,6 +19,44 @@ model directories.
 Embedded audio/model behavior is described in
 [alia-embedded audio and voice](../../packages/alia-embedded/docs/audio-and-voice.md).
 
+## Server Turn Detection
+
+Easy-Turn runs only on the Server host in the current macOS Server + Pi 5
+Embedded deployment. Embedded keeps wake word, VAD, continuous capture and
+playback; it does not host this model. Enable it in
+`config/server.d/providers/easy_turn.toml`:
+
+```toml
+[providers.easy_turn]
+enabled = true
+endpoint = "http://127.0.0.1:8091"
+timeout_ms = 5000
+max_concurrency = 1
+```
+
+Start the pinned model service before enabling Embedded `[speech]`
+`mode = "server_turn"`. Preparation, pinned revisions and the service HTTP
+contract are documented in the [Easy-Turn service guide](../../services/easy-turn/README.md).
+`/health` confirms readiness and `/v1/capabilities` reports the actual model,
+format and concurrency limits. Readiness alone does not measure first-request
+latency; record initial and subsequent calls separately when assessing load.
+
+Server uses bounded PCM windows to obtain a transcript and Complete,
+Incomplete, Backchannel or WAIT evidence. This is continuous capture with
+windowed inference, not a model-native incremental decoder. In `server_turn`,
+the accepted model transcript goes directly into the recognized voice input
+path and is not sent through a second STT request.
+
+Use matching voice v2 and playback v3 peers. A fresh Backchannel may release a
+temporary acoustic hold; explicit WAIT retains the same output until explicit
+Continue. The 3-second temporary semantic deadline, configurable 60-second
+hold default (hard maximum 120 seconds), and original output lifetime are
+separate from `timeout_ms`. Increasing a model HTTP timeout does not extend
+resume authority. These are engineering defaults; see the
+[voice protocol](../refactor/voice-protocol.md) for exact ownership and expiry
+rules. Model labels and `inference_ms` do not prove physical speaker pause,
+AEC or end-to-end acoustic latency.
+
 ## Server STT
 
 Server STT currently uses a whisper.cpp-compatible HTTP service. The server
@@ -28,8 +66,9 @@ provider is configured under:
 config/server.d/providers/whisper_cpp.toml
 ```
 
-The server sends captured utterance audio to this service and receives text back
-before routing the turn through the LLM/tool pipeline.
+For the utterance audio path, the server sends captured audio to this service
+and receives text before routing through the LLM/tool pipeline. Continuous
+`server_turn` uses the Easy-Turn transcript described above instead.
 
 ## Server LLM
 

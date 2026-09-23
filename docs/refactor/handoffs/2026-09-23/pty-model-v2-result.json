@@ -1,0 +1,151 @@
+{
+  "saved_at": "2026-09-23T08:58:37.034376+00:00",
+  "state": "V2 true PTY and real-model follow-up complete; whole-package acceptance belongs to Root",
+  "worktree": "/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-integration",
+  "manifest": "run/validation-20260923/final-source-manifest-v2.json",
+  "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+  "build_inputs": 605,
+  "manifest_checks": {
+    "before-pty-model-v2-manifest-check.json": {
+      "checked_at": "2026-09-23T08:54:45.961367+00:00",
+      "stage": "before-pty-model-v2",
+      "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+      "file_count": 605,
+      "unchanged": true,
+      "drift": []
+    },
+    "after-pty-v2-manifest-check.json": {
+      "checked_at": "2026-09-23T08:55:31.595238+00:00",
+      "stage": "after-pty-v2",
+      "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+      "file_count": 605,
+      "unchanged": true,
+      "drift": []
+    },
+    "after-models-v2-manifest-check.json": {
+      "checked_at": "2026-09-23T08:56:02.386369+00:00",
+      "stage": "after-models-v2",
+      "manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+      "file_count": 605,
+      "unchanged": true,
+      "drift": []
+    }
+  },
+  "pty": {
+    "recorded_at": "2026-09-23T08:55:31.246Z",
+    "source_manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+    "tty": true,
+    "stdout_redirection": false,
+    "command": "env -u RUST_MIN_STACK -u RUST_TEST_THREADS -u RUST_BACKTRACE -u DOCS_RS CARGO_TARGET_DIR=/Users/ke-qiao/Developer/project-alia/target CARGO_TERM_COLOR=never CARGO_BUILD_JOBS=2 ALIA_TEST_DATABASE_URL=postgresql://alia_test:alia_test@127.0.0.1:32768/alia_refactor_delivery_final SHERPA_ONNX_ARCHIVE_DIR=/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-audio-clock-a33ec67/target/sherpa-onnx-prebuilt cargo test -p alia-server --lib --offline --locked -- --ignored --nocapture --test-threads=1",
+    "exit_code": 0,
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "test_seconds": 0.34,
+    "tool_chunks": [
+      {
+        "chunk_id": "63b7ba",
+        "wall_time_seconds": 0.444924375,
+        "exit_code": 0,
+        "original_token_count": 173,
+        "output": "    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s\r\n     Running unittests src/lib.rs (/Users/ke-qiao/Developer/project-alia/target/debug/deps/alia_server-8e8c64ed226d264a)\r\n\r\nrunning 3 tests\r\ntest bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ok\r\ntest channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown ... \u001b[1G\u001b[2Kalia> \r\n\u001b[1G\u001b[2Kalia> \r\nok\r\ntest channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal ... \u001b[1G\u001b[2Kalia> \u001b[1G\u001b[2Kalia: \u4f60\u597d\r\n\u001b[1G\u001b[2Kalia> \r\nok\r\n\r\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 246 filtered out; finished in 0.34s\r\n\r\n"
+      }
+    ]
+  },
+  "model_runner": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--test",
+      "easy_turn_live",
+      "--test",
+      "voice_stream_live",
+      "--offline",
+      "--locked",
+      "--",
+      "--ignored",
+      "--nocapture"
+    ],
+    "started_at": "2026-09-23T08:55:37.122709+00:00",
+    "finished_at": "2026-09-23T08:55:48.298176+00:00",
+    "elapsed_seconds": 11.18,
+    "exit_code": 0,
+    "source_manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+    "source_drift": [],
+    "build_jobs": 2,
+    "rust_min_stack": "unset",
+    "rust_test_threads": "default (unset)",
+    "rust_backtrace": "unset",
+    "docs_rs": "unset",
+    "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+  },
+  "model_environment": {
+    "ALIA_VALIDATION_MANIFEST": "final-source-manifest-v2.json",
+    "ALIA_EASY_TURN_PCM": "/Users/ke-qiao/Developer/project-alia/run/easy-turn-stream-pcm/backchannel_real_1.pcm",
+    "ALIA_EASY_TURN_PCM_DIR": "/Users/ke-qiao/Developer/project-alia/run/easy-turn-stream-pcm",
+    "ALIA_EASY_TURN_URL": "http://127.0.0.1:8091"
+  },
+  "model_execution": {
+    "order": [
+      "easy_turn_live",
+      "voice_stream_live"
+    ],
+    "easy_turn_live": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 0.59,
+      "detector_timeout_ms": 30000,
+      "inference_ms": 586.0439580865204
+    },
+    "voice_stream_live": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 1.71,
+      "detector_timeout_ms": 8000,
+      "inference_ms": {
+        "complete": 545.904333004728,
+        "backchannel": 344.7876670397818,
+        "wait": 430.1744159311056
+      }
+    },
+    "additional_pretest_diagnostics_or_prewarm": false,
+    "service_restarted": false,
+    "cache_reset": false,
+    "cold_start_claim": false
+  },
+  "total_in_this_supplement": {
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0
+  },
+  "resources": {
+    "pg_before_equals_after": true,
+    "other_db_clients_after": 0,
+    "active_owned_exec": [],
+    "active_owned_db": [],
+    "created_schemas_remaining": [],
+    "pg_window_transferred_to": "lifecycle_review"
+  },
+  "boundaries": [
+    "23 actor original scoped-run evidence is not relabeled as a V2 rerun",
+    "prior live first-Complete 8s timeout remains in original evidence",
+    "live output is software fixture only; no physical mic/VAD/LLM/TTS/speaker/Pi presentation claim",
+    "no extra unique-test count from repeated voice_stream_live execution"
+  ],
+  "evidence_sha256": {
+    "run/validation-20260923/final-pty-model/pg-before-v2.txt": "ff8f5d2ac3725d2b8daeccc487d86917415ab30acb0902f5b43ce54624386d3f",
+    "run/validation-20260923/final-pty-model/prepared-v2-manifest-check.json": "1dae0ad08366960772e31035b2332d5179813e824a499fea09e292bb9c357721",
+    "run/validation-20260923/final-pty-model/pty-v2.log": "99b8a53368cfdb5a7e829947d83fbe42b37c289a0f3eaf13e9ef3450854767d9",
+    "run/validation-20260923/final-pty-model/before-pty-model-v2-manifest-check.json": "b5c0bf29dc12a928e776383fbee333338a0067dfa0fe61276a761eeccf6ff6cb",
+    "run/validation-20260923/final-pty-model/pty-v2-result.json": "dcdc315d9cdf4a09b794858e0beabfea4f1b942457b90379296301c7307cce30",
+    "run/validation-20260923/final-pty-model/pg-after-v2.txt": "ff8f5d2ac3725d2b8daeccc487d86917415ab30acb0902f5b43ce54624386d3f",
+    "run/validation-20260923/final-pty-model/after-pty-v2-manifest-check.json": "f8859a23f8b42c99ea822cb990ef1457c3965ae0d97a33eaf3edccb056c685fe",
+    "run/validation-20260923/final-pty-model/after-models-v2-manifest-check.json": "85cd658db1ae2c2cbbc776d8c721a18ab6d5788bb5575b039c7ee42cf9f6d05b",
+    "run/validation-20260923/final-models-v2.log": "6929b63015ae30ca3085b470268101297c6195ef6921f0b306cb49c6c21b9b2a",
+    "run/validation-20260923/final-models-v2-result.json": "00fd837a2184b1d0c52d58391a0f978c5f18def781f85a2549f6581f17e188af"
+  }
+}

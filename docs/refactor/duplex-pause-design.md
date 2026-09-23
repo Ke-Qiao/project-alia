@@ -1,6 +1,10 @@
 # 自然全双工的可恢复播放暂停契约
 
-状态：2026-09-20，端到端设计契约。Core 与 Embedded 的 [Stage 1 基础机制](duplex-pause-stage1.md) 已提交为 `213d5ed`，通过 macOS 与 Linux ARM 定向验证，主分支整合为 `e6ba75b`（macOS 完整 workspace 875 项通过）；Server/Proto 正在下一包接入，当前网络 WAIT 仍执行不可逆取消。依据主分支音频包 `5467e8b` 合入后的代码整理；本文只规划硬件端与服务器。用户已确认区分临时疑似插话避让与明确暂停：前者可在新鲜语义证据确认只是附和后恢复，后者等待明确继续。其余时限是工程默认，实际声学效果仍待验证。
+当前状态（2026-09-23）：Server / Proto / Embedded 的纵向接线已实现，成对契约为 `alia.voice.v2` / `alia.playback.v3`。Server 保留原 Delivery owner、规范 Context / Response 与持久控制命令；WAIT 进入明确暂停，只有独立且新鲜的恢复决定才能释放原 Hold。独立 `RetireOutput` 取得原输出的退休证据，不以 generation Fence 或新 session 的状态代替原 native 写入收尾。Easy-Turn 只部署在 Server；目标仍是 macOS Server 与 Pi 5。
+
+Voice、生命周期与两端 playback 的定向验证已形成[本轮组件交接归档](handoffs/2026-09-23/README.md)。这些结果来自不同阶段的源码，不能拼接成最终冻结验收；首次完整整合运行发现旧 fixture 与新退休契约的冲突，修复后的同一源码完整矩阵仍由 Root 验证并另行记录。当前不宣称完整 workspace / Linux ARM 矩阵、Pi 5 真机、物理静音、Presented、声学连续性或 AEC 已通过。
+
+历史设计基线（2026-09-20）：Core 与 Embedded 的 [Stage 1 基础机制](duplex-pause-stage1.md) 已提交为 `213d5ed`，通过 macOS 与 Linux ARM 定向验证，主分支整合为 `e6ba75b`（当时 macOS 完整 workspace 875 项通过）。以下现状表、实施顺序与建议时限保留当时依据 `5467e8b` 整理的设计背景，不代表当前尚未接线；当前 wire 与退休契约见[控制协议](duplex-control-protocol.md)。用户已确认区分临时疑似插话避让与明确暂停：前者可在新鲜语义证据确认只是附和后恢复，后者等待明确继续。其余时限是工程默认，实际声学效果仍待验证。
 
 目标是用户开始插话时先保留原播放并抑制进一步输出，再由明确决策恢复或永久取消。恢复只继续仍由原 owner 持有的未提交媒体，不重新生成回答，不从已提交计数重建音频，不复活已终结的 Delivery。本包不实现 AEC、Companion、前端或通用硬件适配。
 

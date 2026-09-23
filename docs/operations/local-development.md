@@ -48,15 +48,43 @@ those if they match your local workflow.
 For local server + embedded testing:
 
 1. Start PostgreSQL.
-2. Start external model services you selected in server config.
+2. Start external model services you selected in server config. For continuous
+   `server_turn`, start Easy-Turn on the Server host, including when Embedded runs
+   on a Pi 5; see [model services](./model-services.md).
 3. Set embedded local-dev binding fields in `config/embedded.toml` only for
    development.
 4. Run `alia-server`.
 5. Run `alia-embedded`.
 6. Watch server debug output and embedded logs while triggering the wake word.
 
-If you do not need the frontend, the CLI channel and embedded channel are enough
-to validate the core runtime.
+For continuous voice, enable `[providers.easy_turn]` in the Server provider
+fragment and select `mode = "server_turn"` under Embedded `[speech]`. Capture
+must be 16 kHz mono. Build and deploy Server and Embedded together: voice v2
+requires software hold capability and playback v3; old versions are rejected.
+After reconnecting or rebinding, obtain a new voice session instead of reusing
+a retired session identity.
+
+Add a Server policy fragment such as `config/server.d/policies/duplex.toml` when
+an explicit hold budget is needed:
+
+```toml
+[policies.duplex]
+hold_budget_ms = 60000
+```
+
+The default is 60 seconds, with an integer range of 1–120000 milliseconds and
+further limits from the peer and original output lifetime. A suspected
+interruption first creates a temporary hold with a 3-second semantic deadline;
+a fresh Backchannel may resume it. Explicit WAIT retains the original answer
+and requires an explicit Continue. Repeated WAIT and Resume do not renew the
+original deadlines. Stop, a new question, expiry or source revocation retires
+the old output. These times are engineering defaults, not measured acoustic
+latency targets; see the [voice protocol](../refactor/voice-protocol.md).
+
+Use the CLI and Embedded channels for this voice workflow; the frontend is
+optional. Software hold/control receipts and model labels do not establish
+physical silence, AEC quality or Pi speaker timing. Validate the real audio
+path separately before treating a local software run as a hardware result.
 
 ## Useful Diagnostics
 
