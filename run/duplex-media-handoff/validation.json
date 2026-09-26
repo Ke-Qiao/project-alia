@@ -1,0 +1,17 @@
+{
+  "base": "8c3f5450fcedfe250cba7936de6fcdf8076c7040",
+  "branch": "codex/duplex-media-budget",
+  "build_command": "cargo check -p alia-server --all-targets --locked --offline",
+  "build_exit": 101,
+  "build_log": "check-all-targets.log",
+  "lib_errors": 5,
+  "lib_test_errors": 22,
+  "tests_run": false,
+  "format_exit": 0,
+  "diff_check_exit": 0,
+  "format_after_failed_check": true,
+  "active_exec": [],
+  "containers": [],
+  "pg_accessed": false,
+  "status": "incomplete; does not compile"
+}

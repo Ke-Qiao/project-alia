@@ -23,8 +23,10 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 mod media;
+mod output;
 pub use media::TextDelivery;
 use media::{DeliveryInput, MediaIdentity, MediaProgress, MediaReport};
+pub use output::{OutputProducer, VoiceOutput};
 
 const DB_TIMEOUT: Duration = Duration::from_secs(2);
 const CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
@@ -42,6 +44,7 @@ pub struct AudioDelivery {
 }
 struct Command {
     input: DeliveryInput,
+    media_owner: Option<output::MediaOwner>,
     reply: oneshot::Sender<DeliveryResult<DeliveryRecord>>,
 }
 
@@ -54,6 +57,9 @@ pub struct DeliveryService {
     running: AtomicBool,
     sender: mpsc::Sender<Command>,
     receiver: Mutex<Option<mpsc::Receiver<Command>>>,
+    output_sender: mpsc::Sender<output::NewOutput>,
+    output_receiver: Mutex<Option<mpsc::Receiver<output::NewOutput>>>,
+    outputs: StdMutex<HashMap<alia_core::delivery::VoiceScope, VoiceOutput>>,
     task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
     /// Only reservation + durable admission are serialized. Media I/O never holds
     /// this gate. A per-key gate can replace it if measured admission needs demand it.
@@ -63,8 +69,19 @@ pub struct DeliveryService {
 }
 
 impl DeliveryService {
+    fn record_failure(&self, failure: String) {
+        tracing::error!(%failure, "delivery supervision failure");
+        let mut failures = self.failures.lock().unwrap();
+        // Keep shutdown failure sticky without retaining unbounded diagnostics
+        // during a prolonged database/device outage. Full events go to tracing.
+        if failures.len() < MAX_SUPERVISORS {
+            failures.push(failure);
+        }
+    }
+
     pub fn new(repository: DeliveryRepository, parent: &CancellationToken) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(MAX_SUPERVISORS);
+        let (output_sender, output_receiver) = mpsc::channel(MAX_SUPERVISORS);
         Arc::new(Self {
             repository,
             instance_id: Uuid::new_v4(),
@@ -74,6 +91,9 @@ impl DeliveryService {
             running: AtomicBool::new(false),
             sender,
             receiver: Mutex::new(Some(receiver)),
+            output_sender,
+            output_receiver: Mutex::new(Some(output_receiver)),
+            outputs: StdMutex::new(HashMap::new()),
             task: Mutex::new(None),
             admission: Mutex::new(()),
             active: StdMutex::new(HashMap::new()),
@@ -90,16 +110,23 @@ impl DeliveryService {
             return Ok(());
         }
         bounded(self.repository.recover_expired(256)).await?;
+        self.repository.recover_expired_controls(256).await?;
         let rx = self
             .receiver
             .lock()
             .await
             .take()
             .ok_or_else(|| anyhow::anyhow!("delivery cannot restart"))?;
+        let outputs = self
+            .output_receiver
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("output control cannot restart"))?;
         self.running.store(true, Ordering::Release);
         let service = self.clone();
         *task = Some(tokio::spawn(async move {
-            let result = service.clone().run(rx).await;
+            let result = service.clone().run(rx, outputs).await;
             service.running.store(false, Ordering::Release);
             result
         }));
@@ -115,6 +142,9 @@ impl DeliveryService {
     pub async fn shutdown(&self) -> anyhow::Result<()> {
         self.close_admission();
         self.stop.cancel();
+        for output in self.outputs.lock().unwrap().values() {
+            output.retire();
+        }
         for (_, cancel) in self.active.lock().unwrap().values() {
             cancel.cancel();
         }
@@ -132,10 +162,7 @@ impl DeliveryService {
                         .map_err(anyhow::Error::from)
                         .and_then(|result| result)
                     {
-                        self.failures
-                            .lock()
-                            .unwrap()
-                            .push(format!("delivery supervisor: {error:#}"));
+                        self.record_failure(format!("delivery supervisor: {error:#}"));
                     }
                 }
                 Err(_) => anyhow::bail!(
@@ -189,7 +216,12 @@ impl DeliveryService {
     ) -> DeliveryResult<ResponseRecord> {
         // Signal the original media owners even if the cancellation write is slow.
         // The owner check precedes this signal; knowing another response ID is insufficient.
-        bounded(self.repository.response(owner, response)).await?;
+        let canonical = bounded(self.repository.response(owner, response)).await?;
+        for output in self.outputs.lock().unwrap().values() {
+            if output.owns_response(&canonical) {
+                output.retire();
+            }
+        }
         for (id, cancel) in self.active.lock().unwrap().values() {
             if *id == response {
                 cancel.cancel();
@@ -231,9 +263,27 @@ impl DeliveryService {
                     "delivery supervision has not started".into(),
                 ));
             }
+            // Queue ownership starts before the caller can drop its producer.
+            // A missing/retired output may still be an idempotent fact lookup;
+            // supervise checks that fact before requiring a live media owner.
+            let media_owner = if input.payload.medium() == DeliveryMedium::Audio {
+                input.target.voice.and_then(|scope| {
+                    self.outputs
+                        .lock()
+                        .unwrap()
+                        .get(&scope)
+                        .and_then(|output| output.retain_media(input.response_id).ok())
+                })
+            } else {
+                None
+            };
             let (reply, receive) = oneshot::channel();
             self.sender
-                .try_send(Command { input, reply })
+                .try_send(Command {
+                    input,
+                    media_owner,
+                    reply,
+                })
                 .map_err(|_| DeliveryError::CapacityExceeded)?;
             receive
         };
@@ -250,21 +300,35 @@ impl DeliveryService {
             Ok(())
         }
     }
-    async fn run(self: Arc<Self>, mut receiver: mpsc::Receiver<Command>) -> anyhow::Result<()> {
+    async fn run(
+        self: Arc<Self>,
+        mut receiver: mpsc::Receiver<Command>,
+        mut outputs: mpsc::Receiver<output::NewOutput>,
+    ) -> anyhow::Result<()> {
         let mut tasks = JoinSet::new();
+        let mut output_tasks = JoinSet::new();
         let mut recovery = tokio::time::interval(Duration::from_secs(5));
         recovery.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {biased;
              _=self.stop.cancelled()=>break,
-             result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {self.failures.lock().unwrap().push(format!("delivery task panicked: {error}"));}},
-             command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input).await;let _=command.reply.send(result);});},None=>break},
-             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.failures.lock().unwrap().push(format!("delivery recovery: {error}"));self.stop.cancel();}},
+             result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(Err(error))=result {self.record_failure(format!("delivery task panicked: {error}"));}},
+             result=output_tasks.join_next(),if !output_tasks.is_empty()=>{if let Some(Err(error))=result {self.record_failure(format!("output control task panicked: {error}"));self.stop.cancel();}},
+             next=outputs.recv(),if output_tasks.len()<MAX_SUPERVISORS=>match next{Some(input)=>{let service=self.clone();output_tasks.spawn(async move {service.supervise_output(input).await;});},None=>break},
+             command=receiver.recv(),if tasks.len()<MAX_SUPERVISORS=>match command{Some(command)=>{let service=self.clone();tasks.spawn(async move {let result=service.supervise(command.input, command.media_owner).await;let _=command.reply.send(result);});},None=>break},
+             _=recovery.tick()=>{if let Err(error)=bounded(self.repository.recover_expired(256)).await{self.record_failure(format!("delivery recovery: {error}"));self.stop.cancel();} if let Err(error)=self.repository.recover_expired_controls(256).await{self.record_failure(format!("output control recovery: {error}"));self.stop.cancel();}},
             }
         }
         self.close_admission();
         self.stop.cancel();
         receiver.close();
+        outputs.close();
+        for output in self.outputs.lock().unwrap().values() {
+            output.retire();
+        }
+        while let Some(input) = outputs.recv().await {
+            self.clone().supervise_output(input).await;
+        }
         while let Some(command) = receiver.recv().await {
             let _ = command.reply.send(Err(DeliveryError::InvalidTransition(
                 "delivery stopped before admission".into(),
@@ -272,18 +336,21 @@ impl DeliveryService {
         }
         while let Some(result) = tasks.join_next().await {
             if let Err(error) = result {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("delivery join failed: {error}"));
+                self.record_failure(format!("delivery join failed: {error}"));
+            }
+        }
+        while let Some(result) = output_tasks.join_next().await {
+            if let Err(error) = result {
+                self.record_failure(format!("output control join failed: {error}"));
             }
         }
         Ok(())
     }
-    async fn supervise(self: &Arc<Self>, input: DeliveryInput) -> DeliveryResult<DeliveryRecord> {
-        let owner = Uuid::parse_str(&input.target.user_id)
-            .map_err(|_| DeliveryError::Unauthorized("target has no linked account".into()))?;
-        let gate = tokio::select! {biased;_=self.stop.cancelled()=>return Err(DeliveryError::InvalidTransition("delivery stopped before reservation".into())),guard=self.admission.lock()=>guard};
+    async fn existing_delivery(
+        &self,
+        owner: Uuid,
+        input: &mut DeliveryInput,
+    ) -> DeliveryResult<Option<DeliveryRecord>> {
         let response = bounded(self.repository.response(owner, input.response_id)).await?;
         if input.channel.owner_user_id() != Some(owner)
             || input.channel.channel_id() != response.channel_id
@@ -307,6 +374,43 @@ impl DeliveryService {
                 return Err(DeliveryError::IdempotencyConflict);
             }
             // A retry sees the durable fact, never obtains another dispatch owner.
+            return Ok(Some(existing));
+        }
+        Ok(None)
+    }
+    async fn supervise(
+        self: &Arc<Self>,
+        mut input: DeliveryInput,
+        media_owner: Option<output::MediaOwner>,
+    ) -> DeliveryResult<DeliveryRecord> {
+        let owner = Uuid::parse_str(&input.target.user_id)
+            .map_err(|_| DeliveryError::Unauthorized("target has no linked account".into()))?;
+        if let Some(existing) = self.existing_delivery(owner, &mut input).await? {
+            return Ok(existing);
+        }
+        // Keep the queue's original owner through native tail completion. Never
+        // hold the admission mutex while waiting for a reversible hold.
+        let _media_owner = media_owner;
+        if input.payload.medium() == DeliveryMedium::Audio && input.target.voice.is_some() {
+            let output = _media_owner
+                .as_ref()
+                .ok_or_else(|| {
+                    DeliveryError::InvalidTransition(
+                        "voice output has no original producer owner".into(),
+                    )
+                })?
+                .output();
+            output
+                .wait_open()
+                .await
+                .map_err(|e| DeliveryError::InvalidTransition(e.to_string()))?;
+            input.payload = match input.payload {
+                media::Payload::Audio(stream) => media::Payload::Audio(output.gate_stream(stream)),
+                other => other,
+            };
+        }
+        let gate = tokio::select! {biased;_=self.stop.cancelled()=>return Err(DeliveryError::InvalidTransition("delivery stopped before reservation".into())),guard=self.admission.lock()=>guard};
+        if let Some(existing) = self.existing_delivery(owner, &mut input).await? {
             return Ok(existing);
         }
         self.ensure_open()?;
@@ -451,7 +555,7 @@ impl DeliveryService {
                 // try the independent precise checkpoint before freezing Unknown.
                 if let Some(progress) = report.progress {
                  if let Err(error) = bounded(observer.record(progress,false)).await {
-                  self.failures.lock().unwrap().push(format!("last delivery observation: {error}"));
+                  self.record_failure(format!("last delivery observation: {error}"));
                  }
                 }
                 break "transport observation ended before a device terminal checkpoint".to_string();
@@ -459,12 +563,12 @@ impl DeliveryService {
                match self.finish_report(&observer,report).await {
                 Ok(record) if record.status!=DeliveryStatus::Unknown=>return Ok(record),
                 Ok(_)=>break "observation ended without trustworthy completion".to_string(),
-                Err(error)=>{self.failures.lock().unwrap().push(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break reason;}
+                Err(error)=>{self.record_failure(format!("delivery terminal persistence: {error}"));let reason=format!("terminal evidence unavailable: {error}");terminal_error=Some(error);break reason;}
                }
               },
               Ok(Err(error))=>{adapter_returned=true;break format!("delivery transport failed: {error:#}");},
               Err(_)=>{
-               adapter_cancel.cancel();self.failures.lock().unwrap().push("delivery adapter panicked; original future quarantined with dependencies".into());
+               adapter_cancel.cancel();self.record_failure("delivery adapter panicked; original future quarantined with dependencies".into());
                // Retain the future and pinned channel on panic. Their cleanup semantics
                // are unknown; shutdown must remain incomplete, not tear down dependencies.
                self.persist_unknown(&observer,"delivery adapter panicked").await;
@@ -487,7 +591,7 @@ impl DeliveryService {
         {
             Ok(Ok(result)) => (result.ok(), false),
             Ok(Err(_)) => {
-                self.failures.lock().unwrap().push("playback cancellation adapter panicked; fence and original delivery futures quarantined".into());
+                self.record_failure("playback cancellation adapter panicked; fence and original delivery futures quarantined".into());
                 self.persist_unknown(&observer, "playback cancellation adapter panicked")
                     .await;
                 std::future::pending::<()>().await;
@@ -513,7 +617,7 @@ impl DeliveryService {
                     }
                 }
                 Ok(Err(_)) => {
-                    self.failures.lock().unwrap().push(
+                    self.record_failure(
                         "delivery adapter panicked during cancellation; future quarantined".into(),
                     );
                     self.persist_unknown(
@@ -533,17 +637,14 @@ impl DeliveryService {
             bounded(self.repository.finish_unknown(&observer.permit, &reason)).await
         };
         if let Err(error) = &result {
-            self.failures
-                .lock()
-                .unwrap()
-                .push(format!("delivery terminal persistence: {error}"));
+            self.record_failure(format!("delivery terminal persistence: {error}"));
         }
         if still_running || fence_pending {
             // A deadline is a reporting budget, not proof that the adapter has
             // stopped. Retain its original future and channel until actual exit.
             // Unknown remains frozen; a late final checkpoint is retained as an
             // audit fact, never permission to resume output or replay the input.
-            self.failures.lock().unwrap().push(
+            self.record_failure(
                 "delivery cancellation deadline exceeded; retaining adapter cleanup ownership"
                     .into(),
             );
@@ -570,10 +671,7 @@ impl DeliveryService {
             }
             if let Some(Ok(Ok(report))) = late_delivery {
                 if let Err(error) = self.finish_report(&observer, report).await {
-                    self.failures
-                        .lock()
-                        .unwrap()
-                        .push(format!("late delivery checkpoint: {error}"));
+                    self.record_failure(format!("late delivery checkpoint: {error}"));
                 }
             }
             if let Some(Ok(Ok(progress))) = late_fence {
@@ -588,10 +686,7 @@ impl DeliveryService {
     async fn persist_unknown(&self, observer: &DurableObserver, reason: &str) {
         if let Err(error) = bounded(self.repository.finish_unknown(&observer.permit, reason)).await
         {
-            self.failures
-                .lock()
-                .unwrap()
-                .push(format!("delivery Unknown persistence: {error}"));
+            self.record_failure(format!("delivery Unknown persistence: {error}"));
         }
     }
     async fn save_checkpoint(
@@ -602,10 +697,7 @@ impl DeliveryService {
         match bounded(observer.record(progress, true)).await {
             Ok(record) => Some(record),
             Err(error) => {
-                self.failures
-                    .lock()
-                    .unwrap()
-                    .push(format!("delivery cancellation checkpoint: {error}"));
+                self.record_failure(format!("delivery cancellation checkpoint: {error}"));
                 None
             }
         }

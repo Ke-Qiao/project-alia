@@ -1,0 +1,20 @@
+{
+  "status": "complete",
+  "branch": "codex/duplex-media-budget",
+  "base": "8c3f5450fcedfe250cba7936de6fcdf8076c7040",
+  "parent": "779f4f80617aeffee2148ee1bdb2c0a79bb42b7d",
+  "source_manifest_sha256": "743d76fbbb293c389297244c2fa26832db5b98fe4c848b0e4546fdbac48088e7",
+  "platform": "Darwin arm64",
+  "rustc": "1.94.1 (e408947bf 2026-03-25)",
+  "tests_passed": 59,
+  "pg": "2 cases, random schemas, window released",
+  "format_exit": 0,
+  "diff_exit": 0,
+  "active_exec": [],
+  "containers_created": [],
+  "limitations": [
+    "Encoded application retention only; decoder/transport/RSS/native are separate",
+    "Pause actor and Held lifecycle integration follows in DU01",
+    "No Linux/Windows/physical audio verification in C"
+  ]
+}

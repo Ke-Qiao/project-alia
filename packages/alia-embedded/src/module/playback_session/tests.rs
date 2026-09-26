@@ -247,6 +247,70 @@ fn hardware_stop_failure_never_leaves_a_stale_scope_admissible() {
     assert!(!session.enqueue(&lease, &[2]).unwrap());
 }
 
+#[tokio::test]
+async fn prior_native_and_body_retirement_failures_survive_later_successful_close() {
+    use alia_core::output_control::OutputRetirementRequest;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Body(AtomicBool);
+    impl VoiceOutputFence for Body {
+        fn activate_voice(&self, _: &VoiceScope) -> Result<()> {
+            Ok(())
+        }
+        fn fence_voice(&self, _: &VoiceScope) -> Result<()> {
+            ensure!(!self.0.load(Ordering::Acquire), "original body stop failed");
+            Ok(())
+        }
+        fn close_voice(&self, scope: &VoiceScope) -> Result<()> {
+            self.fence_voice(scope)
+        }
+    }
+    let device = Arc::new(Device::default());
+    let session = PlaybackSession::new(device.clone());
+    let original = scope(1);
+    session.activate(&original).unwrap();
+    session
+        .begin(&original, &Uuid::new_v4().to_string(), 1, 16000)
+        .unwrap();
+    device.1.store(true, Ordering::Release);
+    assert!(
+        session
+            .fence(
+                &VoiceScope {
+                    generation_epoch: 2,
+                    ..original
+                },
+                false
+            )
+            .is_err()
+    );
+    device.1.store(false, Ordering::Release);
+    assert!(
+        session.stop().await.is_err(),
+        "later close erased the earlier native failure"
+    );
+
+    let body = Arc::new(Body(AtomicBool::new(false)));
+    let session = PlaybackSession::with_output_fence(Arc::new(Device::default()), body.clone());
+    let original = scope(1);
+    session.activate(&original).unwrap();
+    let request = OutputRetirementRequest {
+        scope: original,
+        binding: None,
+        expected_backend: None,
+    };
+    body.0.store(true, Ordering::Release);
+    assert!(session.retire_output(&request).is_err());
+    body.0.store(false, Ordering::Release);
+    assert!(
+        session.retire_output(&request).is_err(),
+        "retry erased the original body failure"
+    );
+    assert!(
+        session.stop().await.is_err(),
+        "later close erased the earlier body failure"
+    );
+}
+
 #[test]
 fn observation_capacity_counts_ended_inputs_until_submission_or_cancel() {
     let device = Arc::new(Device::default());

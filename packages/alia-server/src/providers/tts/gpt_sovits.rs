@@ -4,17 +4,21 @@
 //! Connects to GPT-SoVITS HTTP API for high-quality voice synthesis.
 
 use std::collections::BTreeMap;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use super::audio_budget::{
+    EncodedAudio, MAX_ENCODED_PAYLOAD_BYTES, MAX_TTS_STREAM_BYTES, ResponseAudioBudget,
+    TtsAudioStream,
+};
+use super::http_body::{ERROR_BODY_BYTES, check_length, error_body, read_body};
 use crate::config::{ExpressionStyleSection, ServerConfig, VoiceProfileSection};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
@@ -588,10 +592,14 @@ fn non_empty(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn apply_pitch_shift_to_wav(bytes: &mut [u8], prosody: SovitsProsodyMapping) {
+fn apply_pitch_shift_to_wav(bytes: &mut [u8], prosody: SovitsProsodyMapping) -> anyhow::Result<()> {
     if pitch_is_neutral(prosody.pitch_factor) {
-        return;
+        return Ok(());
     }
+    anyhow::ensure!(
+        canonical_pcm_prefix(bytes),
+        "pitch fallback requires a canonical PCM WAV fmt header"
+    );
     if let Some((from, to)) = rewrite_wav_sample_rate(bytes, prosody.pitch_factor) {
         tracing::debug!(
             pitch_shift_semitones = prosody.pitch_shift_semitones,
@@ -600,14 +608,36 @@ fn apply_pitch_shift_to_wav(bytes: &mut [u8], prosody: SovitsProsodyMapping) {
             "applied bounded GPT-SoVITS pitch shift via WAV sample-rate header"
         );
     }
+    Ok(())
 }
 
 fn pitch_is_neutral(pitch_factor: f32) -> bool {
     (pitch_factor - 1.0).abs() <= 0.001
 }
 
+fn canonical_pcm_prefix(bytes: &[u8]) -> bool {
+    if bytes.len() < 36
+        || &bytes[..4] != b"RIFF"
+        || &bytes[8..12] != b"WAVE"
+        || &bytes[12..16] != b"fmt "
+    {
+        return false;
+    }
+    let read16 = |offset| u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+    let read32 = |offset| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+    let channels = read16(22);
+    let rate = read32(24);
+    read32(16) >= 16
+        && read16(20) == 1
+        && (1..=8).contains(&channels)
+        && (1..=192_000).contains(&rate)
+        && read16(34) == 16
+        && read16(32) == channels * 2
+        && read32(28) == rate * u32::from(channels) * 2
+}
+
 fn rewrite_wav_sample_rate(bytes: &mut [u8], pitch_factor: f32) -> Option<(u32, u32)> {
-    if bytes.len() < 36 || pitch_is_neutral(pitch_factor) {
+    if !canonical_pcm_prefix(bytes) || pitch_is_neutral(pitch_factor) {
         return None;
     }
     if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
@@ -640,37 +670,39 @@ fn rewrite_wav_sample_rate(bytes: &mut [u8], pitch_factor: f32) -> Option<(u32, 
 #[derive(Debug)]
 struct StreamingWavPitchRewriter {
     prosody: SovitsProsodyMapping,
-    pending: Vec<u8>,
+    pending: [u8; 36],
+    len: usize,
     complete: bool,
 }
-
 impl StreamingWavPitchRewriter {
     fn new(prosody: SovitsProsodyMapping) -> Self {
         Self {
             prosody,
-            pending: Vec::new(),
+            pending: [0; 36],
+            len: 0,
             complete: pitch_is_neutral(prosody.pitch_factor),
         }
     }
-
-    fn push(&mut self, chunk: Vec<u8>) -> Vec<u8> {
+    fn push(&mut self, chunk: &[u8]) -> anyhow::Result<(usize, Option<[u8; 36]>)> {
         if self.complete {
-            return chunk;
+            return Ok((0, None));
         }
-
-        self.pending.extend_from_slice(&chunk);
-        if self.pending.len() < 36 {
-            return Vec::new();
+        let count = chunk.len().min(36 - self.len);
+        self.pending[self.len..self.len + count].copy_from_slice(&chunk[..count]);
+        self.len += count;
+        if self.len < 36 {
+            return Ok((count, None));
         }
-
-        apply_pitch_shift_to_wav(&mut self.pending, self.prosody);
+        apply_pitch_shift_to_wav(&mut self.pending, self.prosody)?;
         self.complete = true;
-        std::mem::take(&mut self.pending)
+        Ok((count, Some(self.pending)))
     }
-
-    fn finish(&mut self) -> Vec<u8> {
-        self.complete = true;
-        std::mem::take(&mut self.pending)
+    fn finish(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.complete || self.len == 0,
+            "TTS ended inside pitch WAV header"
+        );
+        Ok(())
     }
 }
 
@@ -709,6 +741,8 @@ async fn set_remote_weights(
     value: &str,
     timeout: Duration,
 ) -> anyhow::Result<()> {
+    let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4())?;
+    let reservation = budget.reserve(ERROR_BODY_BYTES).await?;
     let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
     let response = client
         .get(format!("{base}/{path}"))
@@ -719,7 +753,7 @@ async fn set_remote_weights(
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body = error_body(response, &reservation).await;
         anyhow::bail!("GPT-SoVITS {path} failed {status}: {body}");
     }
 
@@ -969,15 +1003,14 @@ impl ModuleLifecycle for GptSovitsTts {
 
 #[async_trait]
 impl TtsAdapter for GptSovitsTts {
-    async fn synthesize(&self, text: &str) -> anyhow::Result<Vec<u8>> {
-        self.synthesize_request(&TtsRequest::plain(text)).await
-    }
-
-    async fn synthesize_request(&self, tts: &TtsRequest) -> anyhow::Result<Vec<u8>> {
+    async fn synthesize_request(
+        &self,
+        tts: &TtsRequest,
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<EncodedAudio> {
         let config = self.config.read().await.clone();
-
         let (request, prosody) = config.request(tts, 0);
-
+        let reservation = budget.reserve(MAX_ENCODED_PAYLOAD_BYTES).await?;
         let response = self
             .client
             .post(&config.endpoint)
@@ -985,35 +1018,29 @@ impl TtsAdapter for GptSovitsTts {
             .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
             .send()
             .await?;
-
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("GPT-SoVITS API error {}: {}", status, body);
+            let body = error_body(response, &reservation).await;
+            anyhow::bail!("GPT-SoVITS API error {status}: {body}");
         }
-
-        let audio_bytes = response.bytes().await?;
-        let mut audio_bytes = audio_bytes.to_vec();
-        apply_pitch_shift_to_wav(&mut audio_bytes, prosody);
-        Ok(audio_bytes)
-    }
-
-    async fn synthesize_stream(
-        &self,
-        text: &str,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
-        self.synthesize_stream_request(&TtsRequest::plain(text))
-            .await
+        let mut data = read_body(response, &reservation, MAX_ENCODED_PAYLOAD_BYTES).await?;
+        apply_pitch_shift_to_wav(&mut data, prosody)?;
+        reservation.seal(data)
     }
 
     async fn synthesize_stream_request(
         &self,
         tts: &TtsRequest,
-    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<TtsAudioStream> {
         let config = self.config.read().await.clone();
-
         let (request, prosody) = config.request(tts, 1);
-
+        let mut header_reservation = if pitch_is_neutral(prosody.pitch_factor) {
+            None
+        } else {
+            Some(budget.reserve(36).await?)
+        };
+        let first = budget.reserve(MAX_ENCODED_PAYLOAD_BYTES).await?;
         let response = self
             .client
             .post(&config.endpoint)
@@ -1021,49 +1048,47 @@ impl TtsAdapter for GptSovitsTts {
             .timeout(Duration::from_secs(config.request_timeout_sec.max(1)))
             .send()
             .await?;
-
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("GPT-SoVITS API error {}: {}", status, body);
+            let body = error_body(response, &first).await;
+            anyhow::bail!("GPT-SoVITS API error {status}: {body}");
         }
-
+        check_length(&response, MAX_TTS_STREAM_BYTES)?;
         let idle_timeout = Duration::from_secs(config.stream_idle_timeout_sec.max(1));
-        let stream = async_stream::stream! {
-            let mut byte_stream = response.bytes_stream();
-            let mut pitch_rewriter = StreamingWavPitchRewriter::new(prosody);
-
+        Ok(Box::pin(async_stream::try_stream! {
+            let mut chunks = response.bytes_stream();
+            let mut first = Some(first);
+            let mut pitch = StreamingWavPitchRewriter::new(prosody);
+            let mut total = 0usize;
             loop {
-                match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
-                    Ok(Some(Ok(chunk))) => {
-                        let rewritten = pitch_rewriter.push(chunk.to_vec());
-                        if !rewritten.is_empty() {
-                            yield Ok(rewritten);
-                        }
-                    }
-                    Ok(Some(Err(e))) => {
-                        yield Err(anyhow::anyhow!("Stream error: {}", e));
-                        break;
-                    }
-                    Ok(None) => {
-                        let tail = pitch_rewriter.finish();
-                        if !tail.is_empty() {
-                            yield Ok(tail);
-                        }
-                        break;
-                    }
-                    Err(_) => {
-                        yield Err(anyhow::anyhow!(
-                            "GPT-SoVITS stream idle timeout after {}s",
-                            idle_timeout.as_secs()
-                        ));
-                        break;
-                    }
+                // At the exact cumulative limit only probe EOF. More input is
+                // rejected before any application copy or retained payload.
+                let reservation = match first.take() {
+                    Some(first) => first,
+                    None => budget.reserve(if total == MAX_TTS_STREAM_BYTES {0} else {MAX_ENCODED_PAYLOAD_BYTES}).await?,
+                };
+                let chunk = tokio::time::timeout(idle_timeout, chunks.next()).await
+                    .map_err(|_| anyhow::anyhow!("GPT-SoVITS stream idle timeout after {}s", idle_timeout.as_secs()))?;
+                let Some(chunk) = chunk else { pitch.finish()?; break; };
+                let chunk = chunk?;
+                if chunk.len() > MAX_ENCODED_PAYLOAD_BYTES {
+                    Err(anyhow::anyhow!("TTS stream payload exceeds 1 MiB"))?;
                 }
+                if chunk.len() > MAX_TTS_STREAM_BYTES - total {
+                    Err(anyhow::anyhow!("TTS stream exceeds 8 MiB cumulative bytes"))?;
+                }
+                total += chunk.len();
+                let (used, header) = pitch.push(&chunk)?;
+                let header = match header {
+                    Some(header) => Some(header_reservation.take().expect("reserved before header copy").seal(header.to_vec())?),
+                    None => None,
+                };
+                let data = if used < chunk.len() { Some(reservation.seal(chunk[used..].to_vec())?) } else { None };
+                drop(chunk);
+                if let Some(header) = header { yield header; }
+                if let Some(data) = data { yield data; }
             }
-        };
-
-        Ok(Box::pin(stream))
+        }))
     }
 
     async fn provider_adjustments(&self, request: &TtsRequest) -> Vec<TtsProviderAdjustment> {
@@ -1098,6 +1123,7 @@ impl TtsAdapter for GptSovitsTts {
 
 #[cfg(test)]
 mod tests {
+    mod http;
     use super::*;
     use crate::expression::ProsodyControls;
 
@@ -1220,7 +1246,7 @@ mod tests {
             sample_rate_pitch_fallback_enabled: true,
         };
 
-        apply_pitch_shift_to_wav(&mut wav, prosody);
+        apply_pitch_shift_to_wav(&mut wav, prosody).unwrap();
 
         assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 48_000);
         assert_eq!(u32::from_le_bytes(wav[28..32].try_into().unwrap()), 96_000);
@@ -1243,10 +1269,11 @@ mod tests {
         };
         let mut rewriter = StreamingWavPitchRewriter::new(prosody);
 
-        assert!(rewriter.push(wav[..12].to_vec()).is_empty());
-        let rewritten = rewriter.push(wav[12..].to_vec());
-
-        assert!(!rewritten.is_empty());
+        assert_eq!(rewriter.push(&wav[..12]).unwrap(), (12, None));
+        let (used, rewritten) = rewriter.push(&wav[12..]).unwrap();
+        assert_eq!(used, 24);
+        let rewritten = rewritten.unwrap();
+        rewriter.finish().unwrap();
         assert_eq!(
             u32::from_le_bytes(rewritten[24..28].try_into().unwrap()),
             48_000

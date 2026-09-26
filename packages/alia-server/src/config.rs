@@ -693,6 +693,8 @@ fn default_gpt_sovits_max_pitch_shift_semitones() -> f32 {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct PoliciesSection {
     #[serde(default)]
+    pub duplex: DuplexPolicySection,
+    #[serde(default)]
     pub routing: RoutingPolicySection,
     #[serde(default)]
     pub transcript_correction: TranscriptCorrectionPolicySection,
@@ -716,6 +718,38 @@ pub struct PoliciesSection {
     pub scheduler: SchedulerSection,
     #[serde(default)]
     pub tools: ToolsSection,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DuplexPolicySection {
+    #[serde(
+        default = "default_duplex_hold_budget_ms",
+        deserialize_with = "deserialize_duplex_hold_budget_ms"
+    )]
+    pub hold_budget_ms: u64,
+}
+impl Default for DuplexPolicySection {
+    fn default() -> Self {
+        Self {
+            hold_budget_ms: default_duplex_hold_budget_ms(),
+        }
+    }
+}
+fn default_duplex_hold_budget_ms() -> u64 {
+    60_000
+}
+fn deserialize_duplex_hold_budget_ms<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u64::deserialize(deserializer)?;
+    if (1..=alia_core::playback_control::MAX_HOLD_MS).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(
+            "policies.duplex.hold_budget_ms must be 1..120000",
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

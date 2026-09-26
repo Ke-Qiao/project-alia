@@ -27,6 +27,10 @@ pub enum BindingState {
 /// Persistent binding data written to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindingData {
+    // Clones identify this exact in-process binding lifetime. Never persist it:
+    // loading identical fields must still invalidate an outstanding handshake.
+    #[serde(skip)]
+    runtime_identity: std::sync::Arc<()>,
     pub state: BindingState,
     pub server_id: Option<String>,
     pub server_name: Option<String>,
@@ -69,6 +73,7 @@ impl BindingData {
 impl Default for BindingData {
     fn default() -> Self {
         Self {
+            runtime_identity: std::sync::Arc::new(()),
             state: BindingState::Unbound,
             server_id: None,
             server_name: None,
@@ -119,7 +124,7 @@ impl BindingManager {
             .await?
         {
             let mut current = self.data.write().await;
-            self.revoke_outputs();
+            self.revoke_outputs(&mut current);
             *current = data;
         }
 
@@ -134,7 +139,7 @@ impl BindingManager {
     #[doc(hidden)]
     pub async fn update_for_test(&self, state: BindingState, server_id: Option<String>) {
         let mut data = self.data.write().await;
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         data.state = state;
         data.server_id = server_id;
     }
@@ -148,7 +153,10 @@ impl BindingManager {
             .map_err(|_| anyhow::anyhow!("binding output revocation is already installed"))
     }
 
-    fn revoke_outputs(&self) {
+    fn revoke_outputs(&self, data: &mut BindingData) {
+        // Every caller owns data.write(); admission checks this identity under
+        // data.read(). No timestamp or same-configuration ABA can restore it.
+        data.runtime_identity = std::sync::Arc::new(());
         if let Some(hook) = self.output_revocation.get() {
             hook();
         }
@@ -213,7 +221,7 @@ impl BindingManager {
             );
         }
 
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         data.state = BindingState::Bound;
         data.server_id = Some(server_id.to_string());
         data.server_name = Some(server_name.to_string());
@@ -242,7 +250,7 @@ impl BindingManager {
             _ => bail!("not bound"),
         }
 
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         *data = BindingData::default();
         drop(data);
         self.persist().await?;
@@ -293,7 +301,7 @@ impl BindingManager {
             .as_secs()
             + 300; // 5 minutes
 
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         data.state = BindingState::HandoffPending;
         data.handoff_token = Some(token.clone());
         data.handoff_expires_at = Some(expires_at);
@@ -369,7 +377,7 @@ impl BindingManager {
         );
         verify_payload(new_server_public_key, &payload, authorization)?;
 
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         data.state = BindingState::Bound;
         data.server_id = Some(new_server_id.to_string());
         data.server_name = Some(new_server_name.to_string());
@@ -395,6 +403,24 @@ impl BindingManager {
         self.data.read().await.clone()
     }
 
+    /// Admit a synchronous event from the exact original voice connection.
+    /// Lock order is Binding -> Session -> backend. The closure must not perform
+    /// network/file I/O, initialize native hardware, or await native completion.
+    pub(crate) async fn with_current_binding<T>(
+        &self,
+        original: &BindingData,
+        admit: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let current = self.data.read().await;
+        anyhow::ensure!(
+            original.state == BindingState::Bound
+                && current.state == BindingState::Bound
+                && std::sync::Arc::ptr_eq(&original.runtime_identity, &current.runtime_identity),
+            "original voice binding is no longer current"
+        );
+        admit()
+    }
+
     /// Seed a local development binding without cryptographic handshaking.
     /// This is intentionally explicit and config-gated for same-machine testing.
     pub async fn seed_dev_binding(
@@ -404,7 +430,7 @@ impl BindingManager {
         server_endpoint: &str,
     ) -> Result<()> {
         let mut data = self.data.write().await;
-        self.revoke_outputs();
+        self.revoke_outputs(&mut data);
         data.state = BindingState::Bound;
         data.server_id = Some(server_id.to_string());
         data.server_name = Some(server_name.to_string());

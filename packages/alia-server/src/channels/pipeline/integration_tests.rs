@@ -231,8 +231,33 @@ struct OutputChannel {
     streaming: bool,
     sequence: std::sync::atomic::AtomicU64,
     first_gate: Option<Arc<tokio::sync::Semaphore>>,
+    registration_entered: Option<Arc<tokio::sync::Semaphore>>,
+    registration_release: Option<Arc<tokio::sync::Semaphore>>,
+    backend: std::sync::OnceLock<alia_core::delivery::SubmissionBackend>,
+    bindings: Mutex<
+        std::collections::HashMap<VoiceSessionScope, alia_core::output_control::OutputBinding>,
+    >,
+    controls: Mutex<
+        std::collections::HashMap<
+            VoiceSessionScope,
+            alia_core::playback_control::PlaybackControlState,
+        >,
+    >,
+    control_sequence: std::sync::atomic::AtomicU64,
     texts: Mutex<Vec<String>>,
     audio: Mutex<Vec<AudioPayload>>,
+}
+impl OutputChannel {
+    fn backend(&self) -> alia_core::delivery::SubmissionBackend {
+        self.backend
+            .get_or_init(|| alia_core::delivery::SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: alia_core::delivery::SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 24000,
+                output_channels: 1,
+            })
+            .clone()
+    }
 }
 impl ModuleLifecycle for OutputChannel {
     fn name(&self) -> &'static str {
@@ -249,6 +274,100 @@ impl ChannelAdapter for OutputChannel {
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         self.owner
+    }
+    async fn register_output(
+        &self,
+        binding: alia_core::output_control::OutputBinding,
+    ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
+        let original = *self
+            .bindings
+            .lock()
+            .unwrap()
+            .entry(binding.scope)
+            .or_insert(binding);
+        assert_eq!(original, binding);
+        self.controls
+            .lock()
+            .unwrap()
+            .entry(binding.scope)
+            .or_insert_with(|| {
+                alia_core::playback_control::PlaybackControlState::new(binding.scope).unwrap()
+            });
+        if let Some(entered) = &self.registration_entered {
+            entered.add_permits(1);
+        }
+        if let Some(release) = &self.registration_release {
+            release.acquire().await?.forget();
+        }
+        Ok(alia_core::output_control::OutputRegistration {
+            binding,
+            backend: self.backend(),
+            maximum_hold_ms: 120_000,
+        })
+    }
+    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        if let Some(scope) = target.voice {
+            if let Some(control) = self.controls.lock().unwrap().get_mut(&scope) {
+                control.retire(alia_core::playback_control::RetiredReason::Closed);
+            }
+        }
+        Ok(())
+    }
+    async fn retire_voice_output(
+        &self,
+        request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        use alia_core::output_control::{OutputRetirementEvidence, OutputRetirementReceipt};
+        request.validate()?;
+        let binding = self.bindings.lock().unwrap().get(&request.scope).copied();
+        if let Some(binding) = binding {
+            assert_eq!(request.binding, Some(binding));
+        }
+        if let Some(expected) = &request.expected_backend {
+            assert_eq!(expected, &self.backend());
+        }
+        self.stop_current_playback(
+            &ChannelTarget {
+                user_id: self.owner.unwrap().to_string(),
+                voice: Some(request.scope),
+            },
+            "original pipeline model retired",
+        )
+        .await?;
+        // This software-only fixture has no native writes beyond its explicit
+        // scope gate. Media observations remain the deliver_audio facts.
+        let evidence = if binding.is_some() {
+            OutputRetirementEvidence::Settled {
+                backend: self.backend(),
+                progress: vec![],
+            }
+        } else {
+            OutputRetirementEvidence::NoNativeOwner
+        };
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence,
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
+    }
+    async fn control_output(
+        &self,
+        command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        let mut controls = self.controls.lock().unwrap();
+        let control = controls.get_mut(&command.binding.scope).unwrap();
+        Ok(alia_core::output_control::BoundControlReceipt {
+            observation_sequence: self.control_sequence.fetch_add(1, Ordering::SeqCst) + 1,
+            command: command.clone(),
+            intent_digest: command.intent_digest(),
+            receipt: control.apply(&command.command, 0, true),
+            backend: self.backend(),
+            mode: alia_core::output_control::ControlMode::SoftwareGate,
+            native_writes_quiescent: true,
+            progress: vec![],
+        })
     }
     fn reserve_playback(
         &self,
@@ -293,12 +412,7 @@ impl ChannelAdapter for OutputChannel {
             submitted_source_frames: Some(frames),
             presented_source_frames: None,
             end_accepted: true,
-            backend: Some(alia_core::delivery::SubmissionBackend {
-                instance_id: Uuid::new_v4(),
-                boundary: alia_core::delivery::SubmissionBoundary::CpalCallbackBuffer,
-                output_sample_rate_hz: 24000,
-                output_channels: 1,
-            }),
+            backend: Some(self.backend()),
             observation_end: Some(alia_core::delivery::ObservationEnd::SubmissionFinished),
         };
         observer.progress(progress.clone()).await?;
@@ -408,6 +522,8 @@ impl Fixture {
 }
 fn input(text: &str) -> RecognizedVoiceInput {
     RecognizedVoiceInput {
+        request_id: Uuid::new_v4(),
+        output: None,
         source_received_at: chrono::Utc::now() - chrono::Duration::hours(1),
         source_privacy_epoch: 41,
         source_relationship_epoch: 0,
@@ -419,6 +535,127 @@ fn input(text: &str) -> RecognizedVoiceInput {
         generation_epoch: 7,
         cancel: CancellationToken::new(),
     }
+}
+
+fn attach_output(
+    modules: &ModuleRegistry,
+    channel: Arc<dyn ChannelAdapter>,
+    input: &mut RecognizedVoiceInput,
+) {
+    input.output = Some(
+        modules
+            .delivery
+            .begin_voice_output(
+                input.user_id.parse().unwrap(),
+                input.request_id,
+                VoiceSessionScope {
+                    session_id: input.session_id,
+                    device_boot_id: input.device_boot_id,
+                    generation_epoch: input.generation_epoch,
+                },
+                channel,
+                input.cancel.clone(),
+                None,
+            )
+            .unwrap(),
+    );
+}
+
+#[tokio::test]
+async fn prepared_voice_error_before_register_ack_keeps_original_context_and_response() {
+    struct UnexpectedTts;
+    impl ModuleLifecycle for UnexpectedTts {
+        fn name(&self) -> &'static str {
+            "unexpected-error-tts"
+        }
+    }
+    #[async_trait]
+    impl crate::providers::adapter::TtsAdapter for UnexpectedTts {
+        async fn synthesize_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            panic!("prepared voice error started a replacement TTS request");
+        }
+        async fn synthesize_stream_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            panic!("prepared voice error started a replacement TTS stream");
+        }
+    }
+    with_linked_fixture(|mut fixture| async move {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        Arc::get_mut(&mut fixture.modules).unwrap().tts = Arc::new(UnexpectedTts);
+        let entered = Arc::new(tokio::sync::Semaphore::new(0));
+        let channel = Arc::new(OutputChannel {
+            owner: Some(Uuid::from_u128(42)),
+            registration_entered: Some(entered.clone()),
+            registration_release: Some(Arc::new(tokio::sync::Semaphore::new(0))),
+            ..Default::default()
+        });
+        let user = Uuid::from_u128(42).to_string();
+        let mut turn = VoiceTurn::request(CancellationToken::new());
+        turn.output_channel = Some(channel.clone());
+        turn.source_privacy_epoch = Some(41);
+        turn.source_relationship_epoch = Some(0);
+        let scope = VoiceSessionScope {
+            session_id: Uuid::new_v4(),
+            device_boot_id: Uuid::new_v4(),
+            generation_epoch: 1,
+        };
+        turn.voice_scope = Some(scope);
+        turn.output = Some(fixture.modules.delivery.begin_voice_output(
+            Uuid::from_u128(42), turn.id, scope, channel.clone(), turn.token.clone(), None,
+        ).unwrap());
+        ensure_turn_context(&fixture.modules, &turn, "test", &user, "Read this answer")
+            .await.unwrap();
+        let mut prepare = Box::pin(delivery::prepare_response(
+            &fixture.modules, Some(&turn), "test", &user, None, "assistant_response",
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            tokio::select! {
+                result = prepare.as_mut() => panic!("prepare finished before Register barrier: {result:?}"),
+                permit = entered.acquire() => permit.unwrap().forget(),
+            }
+        }).await.unwrap();
+        let response_id = *turn.response_id.get().expect("prepare hid canonical ID behind Register ACK");
+        assert!(turn.output.as_ref().unwrap().output().response_id().is_none());
+        assert!(!turn.token.is_cancelled());
+        let original = fixture.modules.delivery.get_response(Uuid::from_u128(42), response_id).await.unwrap();
+        let db = fixture.conversation.db.as_ref().unwrap();
+        let context_count = || async {
+            db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+                "SELECT count(*) AS n FROM context_leases".to_owned()))
+                .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap()
+        };
+        let contexts_before = context_count().await;
+        // Exercise the actual error handler before the output actor's own
+        // cancellation becomes visible. An ACK failure and error notification
+        // may race with that cancellation on a multithreaded executor.
+        let error = anyhow::anyhow!("injected registration acknowledgement failure");
+        let target = ChannelTarget { user_id: user.clone(), voice: Some(scope) };
+        let (prepared, notified) = tokio::join!(prepare.as_mut(), notify_pipeline_error(
+            &fixture.modules, channel.as_ref(), &target, "test", &user,
+            PipelineErrorStage::Delivery, Some("Read this answer"), Some(&error),
+            false, true, Some(&turn),
+        ));
+        assert!(prepared.is_err());
+        assert_eq!(context_count().await, contexts_before, "prepared error materialized a replacement Context");
+        let responses = db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+            "SELECT count(*) AS n FROM delivery_responses".to_owned()))
+            .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap();
+        assert_eq!(responses, 1, "prepared error created a replacement Response");
+        let cancelled = fixture.modules.delivery.get_response(Uuid::from_u128(42), response_id).await.unwrap();
+        assert!(cancelled.cancel_requested);
+        assert_eq!(cancelled.context_id, original.context_id);
+        assert_eq!(cancelled.key.request_id, turn.id);
+        assert_eq!(notified.delivery, error_notice::PipelineErrorDelivery::Failed);
+        assert!(channel.texts.lock().unwrap().is_empty());
+        assert!(channel.audio.lock().unwrap().is_empty());
+    }).await;
 }
 
 #[tokio::test]
@@ -557,6 +794,7 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
     with_linked_fixture(|mut fixture| async move {
         let mut input = input("Keep this exact recognized transcript.");
         input.user_id = Uuid::from_u128(42).to_string();
+        attach_output(&fixture.modules, fixture.output.clone(), &mut input);
         let session_id = input.session_id;
         let source_received_at = input.source_received_at;
         voice::process_recognized_voice(
@@ -844,6 +1082,20 @@ where
 
 #[tokio::test]
 async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response() {
+    run_sentence_budget_case(false, false).await;
+}
+
+#[tokio::test]
+async fn sentence_tts_failure_is_not_committed_as_success_or_replayed() {
+    run_sentence_budget_case(true, false).await;
+}
+
+#[tokio::test]
+async fn sentence_hold_retains_in_flight_result_and_defers_next_tts() {
+    run_sentence_budget_case(false, true).await;
+}
+
+async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
     struct Streaming;
     impl ModuleLifecycle for Streaming {
         fn name(&self) -> &'static str {
@@ -867,6 +1119,15 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
     }
     struct Speech {
         calls: std::sync::atomic::AtomicUsize,
+        db: sea_orm::DatabaseConnection,
+        owners: Mutex<Vec<Uuid>>,
+        texts: Mutex<Vec<String>>,
+        fail: bool,
+        pause_first_request: bool,
+        first_started: tokio::sync::Semaphore,
+        first_release: tokio::sync::Semaphore,
+        first_completed: tokio::sync::Semaphore,
+        second_started: tokio::sync::Semaphore,
     }
     impl ModuleLifecycle for Speech {
         fn name(&self) -> &'static str {
@@ -875,20 +1136,65 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
     }
     #[async_trait]
     impl crate::providers::adapter::TtsAdapter for Speech {
-        async fn synthesize(&self, _: &str) -> anyhow::Result<Vec<u8>> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(vec![0; 400])
-        }
-        async fn synthesize_stream(
+        async fn synthesize_request(
             &self,
-            _: &str,
-        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<Vec<u8>>> + Send>>> {
-            panic!("sentence pipeline uses bounded pre-synthesis")
+            request: &crate::providers::adapter::TtsRequest,
+            budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            use sea_orm::ConnectionTrait;
+            let crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id) =
+                budget.owner()
+            else {
+                panic!("sentence TTS must use its real Response budget");
+            };
+            let row = self.db.query_one(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT context_id, source_event_id FROM delivery_responses WHERE response_id=$1",
+                [id.into()],
+            )).await?.expect("Response must be committed before starting TTS");
+            assert!(row.try_get::<Option<Uuid>>("", "context_id")?.is_some());
+            assert!(
+                row.try_get::<Option<Uuid>>("", "source_event_id")?
+                    .is_some()
+            );
+            self.owners.lock().unwrap().push(id);
+            self.texts.lock().unwrap().push(request.text.clone());
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                self.first_started.add_permits(1);
+                if self.pause_first_request {
+                    self.first_release.acquire().await.unwrap().forget();
+                }
+            } else {
+                self.second_started.add_permits(1);
+            }
+            anyhow::ensure!(!self.fail, "injected bounded TTS failure");
+            let result = budget.copy_from_slice(&[0; 400]).await;
+            if call == 0 {
+                self.first_completed.add_permits(1);
+            }
+            result
+        }
+        async fn synthesize_stream_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            unreachable!("fixture expects buffered synthesis")
         }
     }
     with_linked_fixture(|mut fixture| async move {
         let speech = Arc::new(Speech {
             calls: Default::default(),
+            db: fixture.conversation.db.as_ref().unwrap().clone(),
+            owners: Default::default(),
+            texts: Default::default(),
+            fail: fail_tts,
+            pause_first_request,
+            first_started: tokio::sync::Semaphore::new(0),
+            first_release: tokio::sync::Semaphore::new(0),
+            first_completed: tokio::sync::Semaphore::new(0),
+            second_started: tokio::sync::Semaphore::new(0),
         });
         let llm = Arc::new(Streaming);
         let modules = Arc::get_mut(&mut fixture.modules).unwrap();
@@ -907,6 +1213,9 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
         channels.register(output.clone()).await.unwrap();
         let mut recognized = input("Read two sentences.");
         recognized.user_id = Uuid::from_u128(42).to_string();
+        attach_output(&fixture.modules, output.clone(), &mut recognized);
+        let control = recognized.output.as_ref().unwrap().output();
+        let scope = recognized.output.as_ref().unwrap().scope();
         let modules = fixture.modules.clone();
         let policy = fixture.policy.clone();
         let task = tokio::spawn(async move {
@@ -921,6 +1230,40 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
             )
             .await
         });
+        if pause_first_request {
+            speech.first_started.acquire().await.unwrap().forget();
+            output.controls.lock().unwrap().get_mut(&scope).unwrap().observe_capture(0, true).unwrap();
+            assert!(control.explicit_wait(Uuid::new_v4(), 0).unwrap());
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                while output.control_sequence.load(Ordering::SeqCst) < 1 { tokio::task::yield_now().await; }
+            }).await.unwrap();
+            speech.first_release.add_permits(1);
+            speech.first_completed.acquire().await.unwrap().forget();
+            assert!(tokio::time::timeout(std::time::Duration::from_millis(100),
+                speech.second_started.acquire()).await.is_err(), "Held started another TTS request");
+            assert!(output.audio.lock().unwrap().is_empty(), "Held emitted first in-flight result");
+            assert_eq!(speech.calls.load(Ordering::SeqCst), 1);
+            assert!(control.request_resume(alia_core::playback_control::ResumeAuthorization {
+                kind: alia_core::playback_control::ResumeKind::ExplicitContinue,
+                detection_id: Uuid::new_v4(), through_sequence: 0,
+            }).unwrap());
+            tokio::time::timeout(std::time::Duration::from_secs(3), control.wait_open()).await.unwrap().unwrap();
+        }
+        if fail_tts {
+            task.await.unwrap().unwrap();
+            assert_eq!(*speech.texts.lock().unwrap(), [
+                "First sentence.".to_owned(),
+            ], "a failed bound voice scope must not create a replacement notice or replay the response");
+            assert_eq!(speech.calls.load(Ordering::SeqCst), 1);
+            assert!(output.audio.lock().unwrap().is_empty());
+            let owners = speech.owners.lock().unwrap().clone();
+            assert_eq!(owners.len(), 1, "a bound voice output retains its sole canonical Response");
+            let id = owners[0];
+            let response = fixture.modules.delivery.get_response(Uuid::from_u128(42), id).await.unwrap();
+            assert_ne!(response.status, crate::modules::delivery::types::ResponseStatus::Committed);
+            assert!(response.final_content.is_none());
+            return;
+        }
         tokio::time::timeout(std::time::Duration::from_secs(3), async {
             while speech.calls.load(Ordering::SeqCst) < 2 {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -942,6 +1285,9 @@ async fn sentence_delivery_presynthesizes_bounded_fragments_under_one_response()
             .unwrap()
             .unwrap();
         let id: Uuid = row.try_get("", "response_id").unwrap();
+        assert_eq!(*speech.owners.lock().unwrap(), [id, id]);
+        assert!(output.audio.lock().unwrap().iter().filter(|payload| payload.data.owner().is_some())
+            .all(|payload| payload.data.owner() == Some(crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id))));
         let records = fixture
             .modules
             .delivery

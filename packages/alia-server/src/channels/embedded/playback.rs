@@ -99,6 +99,7 @@ pub(super) async fn cancel_exact(
 pub(super) async fn push(
     mut client: PlaybackClient<Channel>,
     identity: PlaybackIdentity,
+    binding: alia_core::output_control::OutputBinding,
     audio: AudioPayloadStream,
     auth: tonic::metadata::MetadataMap,
     observer: Arc<dyn PlaybackObserver>,
@@ -106,11 +107,16 @@ pub(super) async fn push(
     idle: Duration,
 ) -> Result<AudioDeliveryReport> {
     ensure!(identity.is_valid(), "invalid voice playback identity");
+    ensure!(
+        binding.is_valid() && binding.scope == identity.scope,
+        "playback differs from canonical output"
+    );
     let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
     let cancel_client = client.clone();
     let cancel_auth = auth.clone();
     let (tx, rx) = mpsc::channel(8);
     let (ack_tx, ack_rx) = oneshot::channel();
+    let (start_tx, start_rx) = oneshot::channel();
     let offered = Arc::new(AtomicU64::new(0));
     let end_offered = Arc::new(AtomicBool::new(false));
     let mut last: Option<PlaybackProgress> = None;
@@ -119,15 +125,22 @@ pub(super) async fn push(
         audio,
         tx,
         identity,
+        binding,
         offered.clone(),
         observer.clone(),
         ack_rx,
+        start_tx,
         child.clone(),
         end_offered.clone(),
     ));
     let mut request = tonic::Request::new(tokio_stream::wrappers::ReceiverStream::new(rx));
     *request.metadata_mut() = auth;
     let receiving = async {
+        // A reversible hold may retain the first provider payload. Start the
+        // transport's handshake clock only once Start is actually available.
+        start_rx
+            .await
+            .context("playback ended before Start was prepared")?;
         let mut receipts = tokio::time::timeout(idle, client.push(request))
             .await
             .context("playback response handshake timeout")??
@@ -145,12 +158,14 @@ pub(super) async fn push(
             );
             progress.validate(last.as_ref(), offered.load(Ordering::Acquire))?;
             if handshake.is_some() {
+                // Control and Push share the original submission's observation
+                // clock. A control snapshot can precede this first Push ACK;
+                // validate above enforces positive, monotonic receipt numbers.
                 ensure!(
-                    progress.receipt_sequence == 1
-                        && progress.accepted_source_frames == 0
+                    progress.accepted_source_frames == 0
                         && !progress.end_accepted
                         && progress.observation_end.is_none(),
-                    "invalid playback v2 handshake acknowledgement"
+                    "invalid playback v3 handshake acknowledgement"
                 );
             }
             observer.progress(progress.clone()).await?;
@@ -306,14 +321,17 @@ async fn produce(
     mut audio: AudioPayloadStream,
     tx: mpsc::Sender<proto::PlaybackFrame>,
     identity: PlaybackIdentity,
+    binding: alia_core::output_control::OutputBinding,
     offered: Arc<AtomicU64>,
     observer: Arc<dyn PlaybackObserver>,
     handshake: oneshot::Receiver<()>,
+    start: oneshot::Sender<()>,
     cancel: CancellationToken,
     end_offered: Arc<AtomicBool>,
 ) -> Result<u64> {
     let mut decoder = PcmDecoder::default();
     let mut handshake = Some(handshake);
+    let mut start = Some(start);
     let mut sequence = 0_u64;
     let mut samples = 0_u64;
     let frame = |payload| proto::PlaybackFrame {
@@ -332,6 +350,7 @@ async fn produce(
             observer.start(sample_rate, 1).await?;
             tx.send(frame(playback_frame::Payload::Start(
                 proto::PlaybackStart {
+                    output_binding: Some(alia_proto::output_control::encode_binding(binding)),
                     contract_version: PLAYBACK_CONTRACT_VERSION,
                     sample_rate_hz: sample_rate,
                     channels: 1,
@@ -340,6 +359,10 @@ async fn produce(
             )))
             .await
             .context("playback Start stream closed")?;
+            let _ = start
+                .take()
+                .context("playback Start already prepared")?
+                .send(());
             ack.await
                 .context("playback handshake was not acknowledged")?;
         }
@@ -413,7 +436,20 @@ impl PcmDecoder {
             self.spec = Some(spec);
             self.header_done = true;
         }
-        self.pending.extend(payload.data);
+        // This is the explicit decoder workspace boundary. Its PCM output and
+        // protobuf queue have separate caps; the encoded lease ends only when
+        // the source AudioBuffer is dropped, never through an implicit clone.
+        const WORKSPACE_BYTES: usize = crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+        ensure!(
+            payload.data.len() <= WORKSPACE_BYTES,
+            "decoder input exceeds 2 MiB"
+        );
+        ensure!(
+            self.pending.len() <= WORKSPACE_BYTES - payload.data.len(),
+            "decoder workspace exceeds 2 MiB"
+        );
+        self.pending.try_reserve_exact(payload.data.len())?;
+        self.pending.extend_from_slice(&payload.data);
         if !self.header_done {
             let Some((offset, spec, declared)) = wav_header(&self.pending)? else {
                 ensure!(self.pending.len() <= 65536, "WAV header exceeds 64 KiB");

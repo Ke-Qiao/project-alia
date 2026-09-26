@@ -12,22 +12,21 @@ use anyhow::{Context, Result};
 use futures::stream;
 use tracing::{debug, warn};
 
-use crate::binding::BindingManager;
+use crate::binding::{BindingData, BindingManager};
 use crate::identity;
 
 use super::capture::SpeechCapture;
 
-pub(super) async fn voice_connection(
-    binding: &BindingManager,
+pub(super) fn voice_connection(
+    original: &BindingData,
     device_id: &str,
     keypair_path: &Path,
 ) -> Result<(String, IngressAuth)> {
-    let status = binding.status().await;
     anyhow::ensure!(
-        status.state == crate::binding::BindingState::Bound,
+        original.state == crate::binding::BindingState::Bound,
         "device has no active binding"
     );
-    let endpoint = status
+    let endpoint = original
         .server_endpoint
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("cannot open voice session before device is bound"))?;

@@ -1,11 +1,16 @@
 syntax = "proto3";
-package alia.playback.v2;
+package alia.playback.v3;
 
 service Playback {
   rpc Push(stream PlaybackFrame) returns (stream PlaybackReceipt);
   // Independent of media backpressure. Can only affect the matching local
   // boot/session; it cannot activate a different voice session.
   rpc Fence(FenceRequest) returns (FenceReceipt);
+  rpc RegisterOutput(RegisterOutputRequest) returns (RegisterOutputReceipt);
+  // Exact owner cleanup, independent of minimum-generation admission Fence.
+  rpc RetireOutput(RetireOutputRequest) returns (RetireOutputReceipt);
+  rpc Control(ControlRequest) returns (ControlResponse);
+  rpc ObserveControl(ControlRequest) returns (ControlResponse);
 }
 
 message VoiceScope {
@@ -29,7 +34,8 @@ message PlaybackStart {
   uint32 sample_rate_hz = 1;
   uint32 channels = 2; // Currently mono only.
   string source = 3;
-  uint32 contract_version = 4; // Must equal 2; ACK before first Audio.
+  uint32 contract_version = 4; // Must equal 3; ACK before first Audio.
+  OutputBinding output_binding = 5; // Must exactly match prior RegisterOutput.
 }
 
 message PlaybackAudio {
@@ -112,4 +118,144 @@ message FenceReceipt {
   // final immutable evidence even if the Push acknowledgement was lost. Scope
   // fences leave this absent and prove only the generation admission barrier.
   PlaybackReceipt final_progress = 6;
+}
+
+message OutputBinding {
+  VoiceScope scope = 1;
+  string response_id = 2;
+  string context_id = 3;
+  string server_instance_id = 4;
+}
+message RegisterOutputRequest {
+  OutputBinding binding = 1;
+  uint32 contract_version = 2;
+}
+message RegisterOutputReceipt {
+  OutputBinding binding = 1;
+  SubmissionBackend backend = 2;
+  uint64 maximum_hold_ms = 3;
+  uint32 contract_version = 4;
+  bool software_hold = 5;
+}
+message RetireOutputRequest {
+  VoiceScope scope = 1;
+  OutputBinding binding = 2; // Absent only for a known scope with no native owner.
+  SubmissionBackend expected_backend = 3; // May be unknown after a lost Register ACK.
+  uint32 contract_version = 4;
+}
+message SettledOutput {
+  SubmissionBackend backend = 1;
+  bool native_writes_quiescent = 2; // Must be true; never physical silence.
+  repeated PlaybackReceipt progress = 3;
+}
+message RetireOutputReceipt {
+  VoiceScope scope = 1;
+  OutputBinding binding = 2;
+  uint32 contract_version = 3;
+  oneof evidence {
+    bool no_native_owner = 4; // Must be true; unknown or evicted is not evidence.
+    SettledOutput settled = 5;
+  }
+}
+message BoundControlCommand {
+  OutputBinding binding = 1;
+  ControlCommand command = 2;
+  SubmissionBackend expected_backend = 3;
+}
+message ControlRequest {
+  BoundControlCommand command = 1;
+  string intent_digest = 2;
+}
+message ControlCommand {
+  VoiceScope scope = 1;
+  string hold_id = 2;
+  string command_id = 3;
+  uint64 sequence = 4;
+  oneof action {
+    PauseCommand pause = 5;
+    ResumeCommand resume = 6;
+    ConfirmExplicitWaitCommand confirm_explicit_wait = 7;
+  }
+}
+message PauseCommand {
+  HoldReason reason = 1;
+  uint64 through_sequence = 2;
+  uint64 budget_ms = 3; // Immutable; an exact retry never extends the original hold.
+}
+message ResumeCommand {
+  ResumeKind kind = 1;
+  string detection_id = 2;
+  uint64 through_sequence = 3;
+}
+message ConfirmExplicitWaitCommand {
+  string detection_id = 1;
+  uint64 through_sequence = 2;
+}
+enum HoldReason {
+  HOLD_REASON_UNSPECIFIED = 0;
+  HOLD_REASON_ACOUSTIC_CANDIDATE = 1;
+  HOLD_REASON_EXPLICIT_WAIT = 2;
+}
+enum ResumeKind {
+  RESUME_KIND_UNSPECIFIED = 0;
+  RESUME_KIND_FRESH_BACKCHANNEL = 1;
+  RESUME_KIND_EXPLICIT_CONTINUE = 2;
+}
+enum ControlPhase {
+  CONTROL_PHASE_UNSPECIFIED = 0;
+  CONTROL_PHASE_RUNNING = 1;
+  CONTROL_PHASE_PAUSING = 2;
+  CONTROL_PHASE_HELD = 3;
+  CONTROL_PHASE_RETIRED = 4;
+}
+enum RetiredReason {
+  RETIRED_REASON_UNSPECIFIED = 0;
+  RETIRED_REASON_CANCELLED = 1;
+  RETIRED_REASON_CLOSED = 2;
+  RETIRED_REASON_EXPIRED = 3;
+  RETIRED_REASON_BACKEND_CHANGED = 4;
+  RETIRED_REASON_CAPACITY = 5;
+}
+enum ControlRejection {
+  CONTROL_REJECTION_UNSPECIFIED = 0;
+  CONTROL_REJECTION_INVALID = 1;
+  CONTROL_REJECTION_IDENTITY_CONFLICT = 2;
+  CONTROL_REJECTION_SEQUENCE = 3;
+  CONTROL_REJECTION_ANOTHER_HOLD = 4;
+  CONTROL_REJECTION_NOT_HELD = 5;
+  CONTROL_REJECTION_STALE_EVIDENCE = 6;
+  CONTROL_REJECTION_EXPLICIT_CONTINUE_REQUIRED = 7;
+  CONTROL_REJECTION_NATIVE_WRITE_PENDING = 8;
+  CONTROL_REJECTION_RETIRED = 9;
+}
+message ControlSnapshot {
+  VoiceScope scope = 1;
+  ControlPhase phase = 2;
+  optional string hold_id = 3;
+  optional HoldReason reason = 4;
+  uint64 sequence = 5;
+  optional uint64 remaining_ms = 6;
+  optional RetiredReason retired = 7;
+}
+message ControlReceipt {
+  string command_id = 1;
+  oneof outcome {
+    bool applied = 2; // Must be true; this is the original outcome, not current phase.
+    ControlRejection rejected = 3;
+  }
+  ControlSnapshot snapshot = 4;
+}
+enum ControlMode {
+  CONTROL_MODE_UNSPECIFIED = 0;
+  CONTROL_MODE_SOFTWARE_GATE = 1;
+}
+message ControlResponse {
+  uint64 observation_sequence = 8;
+  BoundControlCommand command = 1;
+  string intent_digest = 2;
+  ControlReceipt receipt = 3;
+  SubmissionBackend backend = 4;
+  ControlMode mode = 5;
+  bool native_writes_quiescent = 6;
+  repeated PlaybackReceipt progress = 7; // At most 32 original identities.
 }

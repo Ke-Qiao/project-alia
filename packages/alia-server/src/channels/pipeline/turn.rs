@@ -21,6 +21,7 @@ pub(super) struct VoiceTurn {
     pub(super) id: Uuid,
     pub(super) response_id: Arc<std::sync::OnceLock<Uuid>>,
     pub(super) output_channel: Option<Arc<dyn crate::channels::adapter::ChannelAdapter>>,
+    pub(super) output: Option<Arc<crate::modules::delivery::OutputProducer>>,
     pub(super) received_at: chrono::DateTime<chrono::Utc>,
     /// Required for production inbound sources; synthetic turns start unstamped.
     pub(super) source_privacy_epoch: Option<i64>,
@@ -120,6 +121,7 @@ impl VoiceTurnRegistry {
             id,
             response_id: Arc::default(),
             output_channel: None,
+            output: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_relationship_epoch: None,
@@ -220,6 +222,7 @@ impl VoiceTurn {
             id: Uuid::new_v4(),
             response_id: Arc::default(),
             output_channel: None,
+            output: None,
             received_at: chrono::Utc::now(),
             source_privacy_epoch: None,
             source_relationship_epoch: None,
@@ -265,31 +268,42 @@ pub(super) fn turn_is_interrupted(turn: Option<&VoiceTurn>) -> bool {
     turn.is_some_and(|turn| turn.token.is_cancelled())
 }
 
-pub(super) async fn cancellable_stage<T, F>(
-    turn: Option<&VoiceTurn>,
+pub(super) fn cancellable_stage<'a, T: 'a, F>(
+    turn: Option<&'a VoiceTurn>,
     stage: &'static str,
     fut: F,
-) -> anyhow::Result<Option<T>>
+) -> impl Future<Output = anyhow::Result<Option<T>>> + 'a
 where
-    F: Future<Output = anyhow::Result<T>>,
+    F: Future<Output = anyhow::Result<T>> + 'a,
 {
-    let Some(turn) = turn else {
-        return fut.await.map(Some);
-    };
-
-    tokio::select! {
-        biased;
-        _ = turn.token.cancelled() => {
-            turn.mark_interrupted_stage(stage);
-            tracing::info!(
-                channel_id = %turn.key.channel_id,
-                user_id = %turn.key.user_id,
-                stage,
-                "voice turn interrupted"
-            );
-            Ok(None)
+    // Allocate before constructing the wrapper Future. An async fn would keep
+    // the large producer inline in its initial state and again in select's
+    // branch, multiplying stack usage throughout the caller's poll chain.
+    let fut = Box::pin(fut);
+    async move {
+        let Some(turn) = turn else {
+            return fut.await.map(Some);
+        };
+        tokio::select! {
+            biased;
+            _ = turn.token.cancelled() => {
+                turn.mark_interrupted_stage(stage);
+                tracing::info!(
+                    channel_id = %turn.key.channel_id,
+                    user_id = %turn.key.user_id,
+                    stage,
+                    "voice turn interrupted"
+                );
+                Ok(None)
+            }
+            result = async {
+                if let Some(output) = &turn.output { output.wait_open().await?; }
+                // Retain the same request and its bounded result across holds.
+                let result = fut.await?;
+                if let Some(output) = &turn.output { output.wait_open().await?; }
+                Ok::<_, anyhow::Error>(result)
+            } => result.map(Some),
         }
-        result = fut => result.map(Some),
     }
 }
 

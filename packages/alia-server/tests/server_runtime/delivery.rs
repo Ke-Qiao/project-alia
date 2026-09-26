@@ -1,5 +1,11 @@
 use super::*;
-use alia_core::delivery::{PlaybackIdentity, PlaybackProgress, VoiceScope};
+use alia_core::delivery::{
+    PlaybackIdentity, PlaybackProgress, SubmissionBackend, SubmissionBoundary, VoiceScope,
+};
+use alia_core::output_control::{
+    OutputBinding, OutputRegistration, OutputRetirementEvidence, OutputRetirementReceipt,
+    OutputRetirementRequest,
+};
 use alia_server::channels::adapter::{
     AudioDeliveryReport, AudioPayloadStream, ChannelAdapter, ChannelCapabilities, ChannelTarget,
     PlaybackObserver,
@@ -29,6 +35,14 @@ pub(super) async fn account(state: &AppState, role: &str) -> (Uuid, String) {
 pub(super) async fn draft(
     state: &AppState,
     owner: Uuid,
+) -> alia_server::modules::delivery::types::ResponseRecord {
+    draft_with_voice(state, owner, None).await
+}
+
+async fn draft_with_voice(
+    state: &AppState,
+    owner: Uuid,
+    voice: Option<VoiceScope>,
 ) -> alia_server::modules::delivery::types::ResponseRecord {
     let session = state
         .modules
@@ -72,6 +86,10 @@ pub(super) async fn draft(
         )
         .await
         .unwrap();
+    let mut content = json!({"intent":"respond_to_source"});
+    if let Some(scope) = voice {
+        content["voice_scope"] = json!(scope);
+    }
     DeliveryRepository::new(state.db.clone())
         .prepare(NewResponse {
             context_id: context.lease().id(),
@@ -86,7 +104,7 @@ pub(super) async fn draft(
             source_privacy_epoch: Some(epoch),
             channel_id: "delivery-test".into(),
             kind: "assistant_response".into(),
-            content: json!({"intent":"respond_to_source"}),
+            content,
         })
         .await
         .unwrap()
@@ -421,6 +439,9 @@ struct PanicFencePlayback {
     inner: NativePlayback,
     fence_entered: Arc<Semaphore>,
     media_dropped: Arc<AtomicUsize>,
+    registration: std::sync::OnceLock<OutputRegistration>,
+    retired: std::sync::atomic::AtomicBool,
+    retirement_finished: Arc<AtomicUsize>,
 }
 
 struct MediaDrop(Arc<AtomicUsize>);
@@ -464,6 +485,11 @@ impl ChannelAdapter for PanicFencePlayback {
         target: &ChannelTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<Option<PlaybackIdentity>> {
+        assert!(!self.retired.load(Ordering::SeqCst));
+        assert_eq!(
+            target.voice,
+            Some(self.registration.get().unwrap().binding.scope)
+        );
         Ok(Some(PlaybackIdentity {
             scope: target.voice.expect("probe needs an original voice scope"),
             playback_id,
@@ -475,6 +501,54 @@ impl ChannelAdapter for PanicFencePlayback {
         Ok(())
     }
 
+    async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
+        assert!(!self.retired.load(Ordering::SeqCst));
+        let registration = OutputRegistration {
+            binding,
+            backend: SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 48000,
+                output_channels: 1,
+            },
+            maximum_hold_ms: 60000,
+        };
+        self.registration.set(registration.clone()).unwrap();
+        Ok(registration)
+    }
+
+    async fn retire_voice_output(
+        &self,
+        request: &OutputRetirementRequest,
+    ) -> anyhow::Result<OutputRetirementReceipt> {
+        request.validate()?;
+        let registration = self.registration.get().unwrap();
+        assert_eq!(request.scope, registration.binding.scope);
+        assert_eq!(request.binding, Some(registration.binding));
+        assert_eq!(
+            request.expected_backend.as_ref(),
+            Some(&registration.backend)
+        );
+        self.retired.store(true, Ordering::SeqCst);
+        while self.inner.active.load(Ordering::SeqCst) != 0 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        // This empty-PCM probe owns only a software gate and a blocking call.
+        // It proves those writes settled, without inventing media progress or
+        // claiming that the independently panicked precise cancel completed.
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence: OutputRetirementEvidence::Settled {
+                backend: registration.backend.clone(),
+                progress: vec![],
+            },
+        };
+        receipt.validate(request)?;
+        self.retirement_finished.fetch_add(1, Ordering::SeqCst);
+        Ok(receipt)
+    }
+
     async fn deliver_audio(
         &self,
         target: &ChannelTarget,
@@ -483,6 +557,7 @@ impl ChannelAdapter for PanicFencePlayback {
         observer: Arc<dyn PlaybackObserver>,
         cancel: CancellationToken,
     ) -> anyhow::Result<AudioDeliveryReport> {
+        assert!(!self.retired.load(Ordering::SeqCst));
         let _drop = MediaDrop(self.media_dropped.clone());
         self.inner
             .deliver_audio(target, identity, audio, observer, cancel)
@@ -550,6 +625,7 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
             let active = Arc::new(AtomicUsize::new(0));
             let stops = Arc::new(AtomicUsize::new(0));
             let media_dropped = Arc::new(AtomicUsize::new(0));
+            let retirement_finished = Arc::new(AtomicUsize::new(0));
             let runtime = ServerBuilder::from_config(Arc::new(f.config), CancellationToken::new())
                 .with_channel(PanicFencePlayback {
                     inner: NativePlayback {
@@ -557,18 +633,26 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
                         active: active.clone(), stops: stops.clone(),
                     },
                     fence_entered: fence_entered.clone(), media_dropped: media_dropped.clone(),
+                    registration: std::sync::OnceLock::new(),
+                    retired: std::sync::atomic::AtomicBool::new(false),
+                    retirement_finished: retirement_finished.clone(),
                 }).build().await.unwrap();
             let state = runtime.state().clone();
-            let response = draft(&state, owner).await;
+            let scope = VoiceScope {
+                device_boot_id: Uuid::new_v4(), session_id: Uuid::new_v4(), generation_epoch: 1,
+            };
+            let response = draft_with_voice(&state, owner, Some(scope)).await;
             let response_id = response.response_id;
             let service = state.delivery.clone();
             let channel = state.channels.get("delivery-test").await.unwrap();
+            let _producer = service.begin_voice_output(
+                owner, response.key.request_id, scope, channel.clone(), CancellationToken::new(), None,
+            ).unwrap();
+            _producer.bind(response).await.unwrap();
             let dispatch = tokio::spawn(async move {
                 service.deliver_audio(alia_server::modules::delivery::AudioDelivery {
                     response_id, output_key: "native:panic".into(), content: json!({"text":"panic probe"}),
-                    channel, target: ChannelTarget { user_id: owner.to_string(), voice: Some(VoiceScope {
-                        device_boot_id: Uuid::new_v4(), session_id: Uuid::new_v4(), generation_epoch: 1,
-                    }) },
+                    channel, target: ChannelTarget { user_id: owner.to_string(), voice: Some(scope) },
                     audio: Box::pin(futures::stream::empty()), cancel: CancellationToken::new(),
                 }).await
             });
@@ -589,12 +673,13 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
             }).await.unwrap();
             assert_eq!(active.load(Ordering::SeqCst), 1);
             assert_eq!(media_dropped.load(Ordering::SeqCst), 0);
+            assert_eq!(retirement_finished.load(Ordering::SeqCst), 0);
             assert_eq!(stops.load(Ordering::SeqCst), 0);
             assert!(state.delivery.shutdown_pending());
             state.db.ping().await.unwrap();
             release.release();
             tokio::time::timeout(Duration::from_secs(2), async {
-                while active.load(Ordering::SeqCst) != 0 {
+                while active.load(Ordering::SeqCst) != 0 || retirement_finished.load(Ordering::SeqCst) != 1 {
                     tokio::task::yield_now().await;
                 }
             }).await.unwrap();

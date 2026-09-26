@@ -1,6 +1,8 @@
 # 可恢复暂停：成对协议与 Embedded 控制接入
 
-2026-09-20 阶段交付。基于 Stage1 `213d5ede62fc714c028f0f009730ef060f424bf8`，本包只实现 Core/Proto 与 Embedded。服务器的持久控制账本、原 Delivery owner、语义路由、生成/TTS 背压及端到端集成仍未完成，因此这不是自然全双工端到端恢复的验收。用户要求额度收口后停止新增功能，后续从持久交接继续。
+当前状态（2026-09-23）：Server 纵向接线与原输出退休协议已实现，组件定向证据见[本轮交接归档](handoffs/2026-09-23/README.md)。最终同一冻结源码的整合矩阵由 Root 另行记录；本文不以组件通过代替最终验收。新增退休与序号语义见文末。
+
+历史基线（2026-09-20）：基于 Stage1 `213d5ede62fc714c028f0f009730ef060f424bf8` 的阶段交付只实现 Core/Proto 与 Embedded。当时服务器的持久控制账本、原 Delivery owner、语义路由、生成/TTS 背压及端到端集成尚未完成；用户要求额度收口后停止新增功能，从持久交接继续。下文初包验证保留这一历史范围。
 
 ## 成对升级的契约
 
@@ -25,7 +27,7 @@
 
 voice v2 的 `TurnEvidence.output_decision` 区分 Unchanged、PauseRequested、ResumeRequested、Cancelled。这些是语义请求，不是设备回执。仅 Complete + Unchanged + 严格增加 epoch 允许 `response_enqueued=true`；Pause/ResumeRequested 必须同 epoch 且不入队；Cancelled 必须增加 epoch 且不入队；Unchanged 且不入队必须同 epoch。只有严格增加 epoch 才 fence。相同 epoch 的 Evidence 不操作本地控制门，ResumeRequested 本身不能恢复 Held。
 
-## 已验证与边界
+## 2026-09-20 已验证与边界
 
 本工作树 macOS ARM64 的离线锁定验证：Core **27** 项、Proto **3** 项通过；Embedded 默认与无默认 feature 的 all-targets check 均通过；两种配置的完整 lib 测试各 **145** 项通过。默认配置真实链接本地 Sherpa v1.13.1 arm64 静态库，归档 SHA-256 为 `ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb`，没有用 DOCS_RS 跳过链接。
 
@@ -40,3 +42,33 @@ voice v2 的 `TurnEvidence.output_decision` 区分 Unchanged、PauseRequested、
 在 `2619a28` 基础上新增原 Binding 的进程内寿命身份；相同持久配置重载也使旧握手失效。Ready 与每条 Evidence 在 Binding 读锁内核验原身份并同步接纳，遵守 Binding → Session → backend；endpoint 取自同一原始快照，网络与密钥读取在锁外。旧连接退出只关闭自己实际拥有的 capture handle，不能凭相同 wire UUID 关闭新绑定下的 scope。协议版本与 wire 字段不变。
 
 签名绑定故障用例先取得 4 项真实 red，修复后 8 项定向用例通过，其中 3 项为实际 TCP/gRPC loopback，并有确定性同步接纳/撤权锁序验证。Embedded 默认与无默认库测试各 153/153 通过，两种 all-targets 检查通过；默认配置使用真实锁定 Sherpa archive。源码提交为 `7bea32152059cce68a2bde89dc79614713d183e8`。完整命令、摘要、结果与未完成边界见 [协议检查表](checklists/duplex-protocol.md)。此修复不构成 Server 纵向启用或硬件暂停验收。
+
+## 2026-09-23：原输出退休证据（整合验收中）
+
+`Fence` 继续表示 generation 准入屏障。它不能仅凭当前 session 已替换或不存在，就证明原 native 写入已收尾。新增独立 `RetireOutput`，不改变 Pause/Resume 的可逆语义。
+
+- 请求固定原 `scope`，可携带原 `OutputBinding` 与已知 `expected_backend`。Register ACK 未知时仍使用首次原 binding；不重新 Register，不生成另一个 owner。
+- Server 的本地登记正在等待 ACK 或结果未知时，重复登记立即拒绝，保留原 waiter。退休在删除本地 cache 前校验已有 binding 与已知 backend；冲突请求不能删除有效登记。原 admission token 已被移除或替换后，迟到 Register ACK 不能回填 cache。
+- `NoNativeOwner` 是显式事实，只适用于设备确知且从未创建 native owner 的 scope。远端未知、记录已驱逐、缺失 backend 字段，都不构成这项事实。已登记的 owner 不能省略原 binding。
+- `Settled` 返回原 backend 与原身份的最终软件进度，要求控制门已永久关闭、已进入的 native writes 已收尾。它不证明物理 Presented 或扬声器静音。
+- 设备保留最多 64 条退休记录，包含原登记、控制门、提交对象和未完成写入的所有权，并为当前 scope 预留退休槽。容量压力只能回收已收尾记录；未收尾记录不能为了接纳新 scope 而丢弃。旧输出的查询、精确取消与收尾不得修改新 session。仍保留的退休 exact scope 不能被 Ready 重新激活，即使绑定已经更换；合法新 session 使用新身份。
+- 退休与鉴权的同步 admission 在原锁序内执行；等待 native writes 在锁外执行。返回前重新认证。整个 output 的收尾超时由 Server 报告为不完整，并继续保留同一个在途等待；不能改报成功。
+- 首次退休当前 exact scope 同步关闭其 Body 准入；查询已替换的旧 scope 不触碰新的 Body owner。Pause 本身仍只控制本包定义的声音及生产背压。
+- Body 失败也必须继续执行 audio 退休，原 native / Body 错误保留到最终 shutdown；后续成功 close 不能抹除它。每条退休记录保留首次错误，运行时错误列表最多 64 条，后续错误仍记录日志。
+
+Server 在 Bind 入队前固定本地候选身份，在异步设备登记前固定可信规范 Response ID。永久取消即使发生在排队或 Register ACK 等待期间，也按数据库的不可变身份核验并取消原 Response；设备 registration 只在获得实际登记事实后记录。候选记录不授权取消另一个规范请求。
+
+### 播放身份、控制与观察序号
+
+这些序号的作用不同，不能互相替代，也不能用计数推断命令已执行或媒体已呈现：
+
+| 序号 | 含义 |
+| --- | --- |
+| `PlaybackIdentity.playback_sequence` | Server 分配的播放身份顺序，首项为 1；递增使用 checked add，溢出拒绝。它不随进度查询改变。 |
+| `ControlCommand.sequence` | 同一 scope 的控制命令顺序，参与不可变意图与幂等校验；重复命令不成为新命令，不刷新 Hold 时限。 |
+| `BoundControlReceipt.observation_sequence` | 原控制门的快照顺序，与 immutable outcome 分离；更高序号可推进当前状态。 |
+| `PlaybackProgress.receipt_sequence` | 同一个原 submission 的软件进度观察顺序。Push、Control / Observe、精确取消与 RetireOutput 共享该计数，不是各 RPC 自己从 1 开始。 |
+
+首个 Push ACK 到达前，独立 Control / Observe 可能已采样同一 submission，因此 ACK 的 `receipt_sequence` 可以是 2 或更大。Server 先验证协议版本、原身份、backend、正数及单调进度，再要求握手 `accepted_source_frames == 0`、`end_accepted == false`、无 `observation_end`；不能额外要求该序号等于 1。后续观察仍须保持原身份和单调水位，不允许借这一规则重开终态。
+
+本补充的最终软件验收进度以 [纵向整合 checklist](checklists/duplex-integration.md) 为准；此前平台和真机边界不因新增 RPC 而改变。

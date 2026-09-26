@@ -1,0 +1,28 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.03s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-04e3e2536907c891)
+
+running 21 tests
+test providers::tts::audio_budget::tests::standalone_request_is_not_a_canonical_response_budget ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_rewrites_wav_sample_rate ... ok
+test providers::tts::audio_budget::tests::seal_accounts_retained_capacity_and_rejects_oversized_allocations ... ok
+test providers::tts::audio_budget::tests::same_response_cannot_renew_or_bypass_held_capacity ... ok
+test providers::tts::gpt_sovits::tests::pause_bias_expands_fragment_interval ... ok
+test providers::tts::gpt_sovits::tests::pitch_degradation_is_reported_as_provider_adjustment ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_mapping_requires_sample_rate_fallback_opt_in ... ok
+test providers::tts::gpt_sovits::tests::prosody_maps_to_sovits_generation_params_with_limits ... ok
+test providers::tts::gpt_sovits::tests::streaming_pitch_rewriter_buffers_until_wav_header_is_available ... ok
+test providers::tts::gpt_sovits::tests::http::pitch_does_not_rewrite_an_unproven_fixed_offset_or_accept_partial_header ... ok
+test providers::tts::audio_budget::tests::clones_slices_queue_derived_pcm_and_http_bytes_share_last_drop ... ok
+test providers::tts::audio_budget::tests::global_capacity_is_shared_and_cancelled_waiter_releases_local_credit ... ok
+test providers::tts::gpt_sovits::tests::http::dropped_http_stream_does_not_release_a_delivered_clone ... ok
+test providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof ... ok
+test providers::tts::gpt_sovits::tests::http::cancelling_partial_body_and_dropping_unpolled_stream_release_credits ... ok
+test providers::tts::gpt_sovits::tests::http::small_wav_buffered_and_fragmented_pitch_stream_keep_bytes_and_owner ... ok
+test providers::tts::gpt_sovits::tests::http::oversized_content_length_rejects_without_consuming_a_body ... ok
+test providers::tts::gpt_sovits::tests::http::unknown_length_buffered_body_rejects_cumulative_overflow ... ok
+test providers::tts::gpt_sovits::tests::http::unending_chunked_stream_has_a_total_bound_even_if_consumer_drops_every_chunk ... ok
+test providers::tts::audio_budget::tests::registry_has_no_historical_uuid_growth_and_live_owners_are_bounded ... ok
+test providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 214 filtered out; finished in 1.02s

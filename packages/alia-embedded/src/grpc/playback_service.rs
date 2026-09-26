@@ -1,10 +1,12 @@
-use super::auth::{extract_bearer_token, require_auth, require_auth_token};
+use super::auth::{extract_bearer_token, require_auth_token};
 use crate::binding::BindingManager;
-use crate::module::playback_session::{PlaybackLease, PlaybackSession};
+use crate::module::playback_session::{OutputControlError, PlaybackLease, PlaybackSession};
 use alia_core::delivery::{
     ObservationEnd, PLAYBACK_CONTRACT_VERSION, PlaybackIdentity, PlaybackProgress,
     SubmissionBoundary, VoiceScope,
 };
+use alia_core::playback_control::ControlPhase;
+use alia_proto::output_control as codec;
 use alia_proto::playback::{self as proto, playback_frame, playback_server::Playback};
 use futures::Stream;
 use std::pin::Pin;
@@ -23,6 +25,21 @@ pub struct PlaybackService {
 impl PlaybackService {
     pub fn new(session: Arc<PlaybackSession>, binding: Arc<BindingManager>) -> Self {
         Self { session, binding }
+    }
+    async fn admitted<T>(
+        &self,
+        token: &str,
+        admit: impl FnOnce() -> anyhow::Result<T>,
+    ) -> Result<T, Status> {
+        self.binding
+            .with_verified_grpc_auth(
+                token,
+                alia_transport::EMBEDDED_CONTROL_SCOPE,
+                || Ok(admit()),
+            )
+            .await
+            .map_err(|error| Status::unauthenticated(error.to_string()))?
+            .map_err(control_error)
     }
 }
 pub struct PlaybackOutput {
@@ -55,6 +72,80 @@ impl Drop for OwnedLease {
 #[tonic::async_trait]
 impl Playback for PlaybackService {
     type PushStream = PlaybackOutput;
+    async fn register_output(
+        &self,
+        request: Request<proto::RegisterOutputRequest>,
+    ) -> Result<Response<proto::RegisterOutputReceipt>, Status> {
+        let token = extract_bearer_token(request.metadata())?;
+        let request = request.into_inner();
+        if request.contract_version != PLAYBACK_CONTRACT_VERSION {
+            return Err(Status::failed_precondition("playback v3 required"));
+        }
+        let output = codec::decode_binding(
+            request
+                .binding
+                .as_ref()
+                .ok_or_else(|| Status::invalid_argument("missing output binding"))?,
+        )
+        .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let registered = self
+            .admitted(&token, || self.session.register_output(&output))
+            .await?;
+        Ok(Response::new(codec::encode_registration(&registered)))
+    }
+    async fn retire_output(
+        &self,
+        request: Request<proto::RetireOutputRequest>,
+    ) -> Result<Response<proto::RetireOutputReceipt>, Status> {
+        let token = extract_bearer_token(request.metadata())?;
+        let request = codec::decode_retirement_request(request.get_ref())
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        self.admitted(&token, || self.session.retire_output(&request))
+            .await?;
+        let evidence = self
+            .session
+            .observe_output_retirement(&request)
+            .await
+            .map_err(control_error)?;
+        // Replacement is allowed; the authentication owner must still be valid.
+        self.admitted(&token, || Ok(())).await?;
+        Ok(Response::new(codec::encode_retirement_receipt(&evidence)))
+    }
+    async fn control(
+        &self,
+        request: Request<proto::ControlRequest>,
+    ) -> Result<Response<proto::ControlResponse>, Status> {
+        let token = extract_bearer_token(request.metadata())?;
+        let command = codec::decode_control_request(request.get_ref())
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let mut result = self
+            .admitted(&token, || self.session.apply_bound_control(&command))
+            .await?;
+        if result.receipt.snapshot.phase == ControlPhase::Pausing {
+            // The original owner survives an RPC timeout/drop. No binding or
+            // Session mutex is held while waiting for a native write to settle.
+            self.session
+                .wait_held(&command.binding.scope, command.command.hold_id)
+                .await
+                .map_err(|error| Status::deadline_exceeded(error.to_string()))?;
+            result = self
+                .admitted(&token, || self.session.observe_bound_control(&command))
+                .await?;
+        }
+        Ok(Response::new(codec::encode_control_receipt(&result)))
+    }
+    async fn observe_control(
+        &self,
+        request: Request<proto::ControlRequest>,
+    ) -> Result<Response<proto::ControlResponse>, Status> {
+        let token = extract_bearer_token(request.metadata())?;
+        let command = codec::decode_control_request(request.get_ref())
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let result = self
+            .admitted(&token, || self.session.observe_bound_control(&command))
+            .await?;
+        Ok(Response::new(codec::encode_control_receipt(&result)))
+    }
     async fn push(
         &self,
         request: Request<tonic::Streaming<proto::PlaybackFrame>>,
@@ -92,15 +183,15 @@ impl Playback for PlaybackService {
         &self,
         request: Request<proto::FenceRequest>,
     ) -> Result<Response<proto::FenceReceipt>, Status> {
-        require_auth(&self.binding, &request).await?;
+        let token = extract_bearer_token(request.metadata())?;
         let request = request.into_inner();
         let scope = decode_scope(request.scope.as_ref())?;
         let mut final_progress = None;
         let applied = match (&request.playback_id, request.playback_sequence) {
-            (None, None) => self
-                .session
-                .fence(&scope, request.close_session)
-                .map_err(internal)?,
+            (None, None) => {
+                self.admitted(&token, || self.session.fence(&scope, request.close_session))
+                    .await?
+            }
             (Some(id), Some(sequence)) if !request.close_session => {
                 let identity = PlaybackIdentity {
                     scope,
@@ -110,11 +201,20 @@ impl Playback for PlaybackService {
                 if !identity.is_valid() {
                     return Err(Status::invalid_argument("invalid exact playback identity"));
                 }
+                self.admitted(&token, || {
+                    anyhow::ensure!(
+                        self.session.cancel_identity(&identity, &request.reason)?,
+                        "playback identity was not cancelled"
+                    );
+                    Ok(())
+                })
+                .await?;
                 let progress = self
                     .session
-                    .cancel_observed(&identity, &request.reason)
+                    .observe_cancelled(&identity)
                     .await
                     .map_err(internal)?;
+                self.admitted(&token, || Ok(())).await?;
                 final_progress = Some(receipt(&progress));
                 true
             }
@@ -181,11 +281,22 @@ async fn run_push(
     if start.channels != 1 || start.contract_version != PLAYBACK_CONTRACT_VERSION {
         let _ = tx
             .send(Err(Status::failed_precondition(
-                "requires mono PCM16 and playback contract v2",
+                "requires mono PCM16 and playback contract v3",
             )))
             .await;
         return Ok(());
     }
+    let output_binding = match start.output_binding.as_ref().map(codec::decode_binding) {
+        Some(Ok(binding)) if binding.scope == scope => binding,
+        _ => {
+            let _ = tx
+                .send(Err(Status::invalid_argument(
+                    "Start requires its exact registered output binding",
+                )))
+                .await;
+            return Ok(());
+        }
+    };
     let begin_session = session.clone();
     let begin_binding = binding.clone();
     let begin_token = token.clone();
@@ -195,8 +306,8 @@ async fn run_push(
             &begin_token,
             alia_transport::EMBEDDED_CONTROL_SCOPE,
             || {
-                begin_session.begin(
-                    &scope,
+                begin_session.begin_bound(
+                    &output_binding,
                     &first.playback_id,
                     first.playback_sequence,
                     start.sample_rate_hz,
@@ -223,6 +334,7 @@ async fn run_push(
     let mut last: Option<PlaybackProgress> = None;
     let mut last_sent = tokio::time::Instant::now() - Duration::from_secs(1);
     let mut input_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut held_idle: Option<Duration> = None;
     let mut end_seen = false;
     let mut input_closed = false;
     let mut pending_end = false;
@@ -230,6 +342,20 @@ async fn run_push(
     let mut progress_tick = tokio::time::interval(Duration::from_millis(20));
     let mut auth_tick = tokio::time::interval(Duration::from_millis(250));
     let outcome = loop {
+        let held = session
+            .observe_control(&scope)
+            .is_ok_and(|snapshot| snapshot.phase == ControlPhase::Held);
+        match (held, held_idle) {
+            (true, None) => {
+                held_idle =
+                    Some(input_deadline.saturating_duration_since(tokio::time::Instant::now()))
+            }
+            (false, Some(remaining)) => {
+                input_deadline = tokio::time::Instant::now() + remaining;
+                held_idle = None;
+            }
+            _ => {}
+        }
         {
             let mut snapshot = session.progress(&lease, 0);
             // Heartbeats remain independent of a full media queue. A terminal
@@ -294,11 +420,12 @@ async fn run_push(
                     break Some(ObservationEnd::Cancelled { reason: "playback authorization expired or was revoked".into() });
                 }
             }
-            _ = tokio::time::sleep_until(input_deadline), if !input_closed && pending.is_none() => {
+            _ = tokio::time::sleep_until(input_deadline), if !input_closed && pending.is_none() && held_idle.is_none() => {
                 break Some(ObservationEnd::Failed { reason: "playback input/EOF idle deadline".into() });
             }
             message = incoming.message(), if !input_closed && pending.is_none() => {
                 input_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                if held_idle.is_some() { held_idle = Some(Duration::from_secs(5)); }
                 let frame = match message {
                     Ok(Some(frame)) if !end_seen => frame,
                     Ok(None) if end_seen => {
@@ -436,6 +563,13 @@ fn receipt(progress: &PlaybackProgress) -> proto::PlaybackReceipt {
         }),
         observation_end: end as i32,
         reason,
+    }
+}
+fn control_error(error: anyhow::Error) -> Status {
+    match error.downcast_ref::<OutputControlError>() {
+        Some(OutputControlError::Unknown) => Status::not_found(error.to_string()),
+        Some(OutputControlError::Conflict) => Status::already_exists(error.to_string()),
+        None => Status::failed_precondition(error.to_string()),
     }
 }
 fn internal(error: impl std::fmt::Display) -> Status {

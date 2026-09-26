@@ -53,7 +53,10 @@ impl AudioSubmission {
     ) -> Result<Arc<Self>> {
         Self::with_control(identity, generation, source_sample_rate, backend, None)
     }
-    pub(crate) fn with_control(
+    /// Attach a submission to the backend's original retained control owner.
+    /// Scope, generation and backend identity must all match; external backend
+    /// implementations must not omit the gate when claiming reversible hold.
+    pub fn with_control(
         identity: PlaybackIdentity,
         generation: u64,
         source_sample_rate: u32,

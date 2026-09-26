@@ -10,6 +10,7 @@ use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::module::ModuleLifecycle;
+pub use crate::providers::tts::audio_budget::AudioBuffer;
 
 /// Channel capabilities — declares what I/O a channel supports.
 ///
@@ -30,7 +31,7 @@ pub struct ChannelCapabilities {
     /// waiting for the full response and calling `send_message`.
     pub streaming: bool,
     /// When `true`, the channel can consume TTS audio chunks incrementally.
-    /// Channels that leave this false use a safe full-buffer fallback.
+    /// Channels that leave this false receive one bounded synthesized payload.
     pub audio_streaming: bool,
     pub sensors: bool,
     pub hardware_control: bool,
@@ -79,7 +80,7 @@ pub struct ChannelAction {
 /// Audio payload exchanged between channels and the AI pipeline.
 #[derive(Debug, Clone, Serialize)]
 pub struct AudioPayload {
-    pub data: Vec<u8>,
+    pub data: AudioBuffer,
     pub sample_rate: u32,
     pub channels: u16,
     pub format: AudioFormat,
@@ -345,41 +346,17 @@ pub trait ChannelAdapter: ModuleLifecycle {
         ))
     }
 
-    /// Send a stream of audio chunks to the channel.
-    ///
-    /// The default implementation preserves correctness by buffering chunks and
-    /// delegating to `send_audio`. Low-latency channels should override this to
-    /// apply backpressure and start playback as soon as enough audio is ready.
+    /// A channel must implement bounded stream consumption explicitly. The
+    /// default never accumulates a potentially unlimited encoded stream.
     async fn send_audio_stream(
         &self,
-        target: &ChannelTarget,
-        mut audio: AudioPayloadStream,
+        _target: &ChannelTarget,
+        _audio: AudioPayloadStream,
     ) -> anyhow::Result<()> {
-        let Some(first) = audio.next().await else {
-            return Ok(());
-        };
-        let mut combined = first?;
-
-        while let Some(next) = audio.next().await {
-            let next = next?;
-            if next.sample_rate != combined.sample_rate
-                || next.channels != combined.channels
-                || next.format != combined.format
-            {
-                anyhow::bail!(
-                    "audio stream changed format from {:?}/{}Hz/{}ch to {:?}/{}Hz/{}ch",
-                    combined.format,
-                    combined.sample_rate,
-                    combined.channels,
-                    next.format,
-                    next.sample_rate,
-                    next.channels
-                );
-            }
-            combined.data.extend(next.data);
-        }
-
-        self.send_audio(target, combined).await
+        anyhow::bail!(
+            "bounded audio streaming not supported by channel '{}'",
+            self.channel_type()
+        )
     }
 
     /// Reserve only local sequence/identity. The service supplies the UUID and
@@ -431,7 +408,39 @@ pub trait ChannelAdapter: ModuleLifecycle {
         anyhow::bail!("channel does not support exact playback cancellation")
     }
 
-    /// Best-effort channel control hook used by channels that can stop active playback.
+    /// Register a canonical Response before any playback Start. The peer must
+    /// retain this exact binding and report its actual native backend owner.
+    async fn register_output(
+        &self,
+        _binding: alia_core::output_control::OutputBinding,
+    ) -> anyhow::Result<alia_core::output_control::OutputRegistration> {
+        anyhow::bail!("channel does not support playback v3 output registration")
+    }
+
+    async fn control_output(
+        &self,
+        _command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        anyhow::bail!("channel does not support reversible output control")
+    }
+
+    /// Read the original command's result; this must never apply a command.
+    async fn observe_output_control(
+        &self,
+        _command: &alia_core::output_control::BoundControlCommand,
+    ) -> anyhow::Result<alia_core::output_control::BoundControlReceipt> {
+        anyhow::bail!("channel does not support output control observation")
+    }
+
+    /// Permanently retire this exact original owner and wait for admitted
+    /// native writes to settle. A newer session or a generic stop is not proof.
+    async fn retire_voice_output(
+        &self,
+        _request: &alia_core::output_control::OutputRetirementRequest,
+    ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+        anyhow::bail!("channel does not support original output retirement")
+    }
+
     async fn stop_current_playback(
         &self,
         _target: &ChannelTarget,

@@ -1,11 +1,14 @@
 //! One gate belongs to the original scope/native owner. Native callbacks only
 //! touch its atomics; command history and elapsed-time checks stay off callback.
 use alia_core::delivery::{SubmissionBackend, VoiceScope};
+use alia_core::output_control::{
+    BoundControlCommand, BoundControlReceipt, ControlMode, OutputBinding, OutputRegistration,
+};
 use alia_core::playback_control::*;
 use anyhow::{Result, ensure};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use std::time::Instant;
 
@@ -30,6 +33,7 @@ pub struct PlaybackControl {
     pub backend: SubmissionBackend,
     origin: Instant,
     gate: AtomicUsize,
+    observation_sequence: AtomicU64,
     state: Mutex<PlaybackControlState>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,7 +43,10 @@ pub enum OutputBlocked {
 }
 
 impl PlaybackControl {
-    pub(crate) fn new(
+    /// Create the gate owned by one native backend generation. Implementations
+    /// of AudioPlaybackBackend must retain and reuse this Arc for that scope;
+    /// creating a replacement does not authorize media from a retired owner.
+    pub fn new(
         scope: VoiceScope,
         generation: u64,
         backend: SubmissionBackend,
@@ -52,6 +59,7 @@ impl PlaybackControl {
             backend,
             origin: Instant::now(),
             gate: 0.into(),
+            observation_sequence: 0.into(),
             state: Mutex::new(state),
         }))
     }
@@ -71,7 +79,9 @@ impl PlaybackControl {
             }
         }
     }
-    pub(crate) fn apply(&self, command: &ControlCommand) -> ControlReceipt {
+    /// Backend control entry after PlaybackSession has checked admission and
+    /// owner identity. It must operate on the retained native gate, never a copy.
+    pub fn apply(&self, command: &ControlCommand) -> ControlReceipt {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let now = self.now();
         let mut receipt = state.apply(command, now, self.quiescent());
@@ -105,6 +115,17 @@ impl PlaybackControl {
         self.synchronize(snapshot.phase);
         read(snapshot)
     }
+    pub(crate) fn initialize_capture(
+        &self,
+        through: Option<u64>,
+        speech: Option<u64>,
+    ) -> Result<()> {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .initialize_capture(through, speech)
+            .map_err(|e| anyhow::anyhow!("invalid initial capture barrier: {e:?}"))
+    }
     pub(crate) fn observe_capture(&self, sequence: u64, speech: bool) -> Result<()> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.expire(self.now());
@@ -113,7 +134,8 @@ impl PlaybackControl {
         self.synchronize(snapshot.phase);
         result.map_err(|e| anyhow::anyhow!("capture cannot authorize playback control: {e:?}"))
     }
-    pub(crate) fn retire(&self, reason: RetiredReason) {
+    /// Permanently fence this backend owner before discarding its queued media.
+    pub fn retire(&self, reason: RetiredReason) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         self.gate.fetch_or(CLOSED, Ordering::AcqRel);
         state.retire(reason);
@@ -159,7 +181,145 @@ impl Drop for ScopeWrite {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum OutputControlError {
+    #[error("output registration or command is unknown")]
+    Unknown,
+    #[error("output binding, backend or immutable control intent conflicts")]
+    Conflict,
+}
+
 impl super::PlaybackSession {
+    /// A canonical response binds once to this exact local generation. The
+    /// native owner is created here, before Start or any reversible command.
+    pub fn register_output(&self, binding: &OutputBinding) -> Result<OutputRegistration> {
+        ensure!(binding.is_valid(), "invalid output binding");
+        let mut state = self.lock()?;
+        let active = state
+            .as_mut()
+            .filter(|active| active.scope == binding.scope)
+            .ok_or(OutputControlError::Unknown)?;
+        ensure!(!active.retired, "output epoch has been permanently retired");
+        ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        if let Some(registered) = &active.registration {
+            ensure!(registered.binding == *binding, OutputControlError::Conflict);
+            return Ok(registered.clone());
+        }
+        ensure!(
+            active.input.is_none() && active.observations.is_empty(),
+            "output registration must precede media"
+        );
+        let capture = active
+            .capture
+            .as_ref()
+            .map(|capture| capture.watermarks())
+            .transpose()?;
+        let uninitialized = active.control.is_none();
+        let generation = self.control_generation(active)?;
+        let control = self.backend.playback_control(&active.scope, generation)?;
+        if uninitialized {
+            if let Some((through, speech)) = capture {
+                control.initialize_capture(through, speech)?;
+            }
+        }
+        active.control = Some(control.clone());
+        let registered = OutputRegistration {
+            binding: *binding,
+            backend: control.backend.clone(),
+            maximum_hold_ms: active.maximum_hold_ms,
+        };
+        registered.validate()?;
+        active.registration = Some(registered.clone());
+        Ok(registered)
+    }
+    pub fn apply_bound_control(
+        &self,
+        command: &BoundControlCommand,
+    ) -> Result<BoundControlReceipt> {
+        self.bound_control(command, true)
+    }
+    pub fn observe_bound_control(
+        &self,
+        command: &BoundControlCommand,
+    ) -> Result<BoundControlReceipt> {
+        self.bound_control(command, false)
+    }
+    fn bound_control(
+        &self,
+        command: &BoundControlCommand,
+        apply: bool,
+    ) -> Result<BoundControlReceipt> {
+        command.validate()?;
+        let state = self.lock()?;
+        ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        let active = state
+            .as_ref()
+            .filter(|active| active.scope == command.binding.scope)
+            .ok_or(OutputControlError::Unknown)?;
+        let registered = active
+            .registration
+            .as_ref()
+            .ok_or(OutputControlError::Unknown)?;
+        ensure!(
+            registered.binding == command.binding && registered.backend == command.expected_backend,
+            OutputControlError::Conflict
+        );
+        if let ControlAction::Pause { budget_ms, .. } = command.command.action {
+            ensure!(
+                budget_ms <= registered.maximum_hold_ms,
+                "hold budget exceeds negotiated capability"
+            );
+        }
+        let control = active.control.as_ref().ok_or(OutputControlError::Unknown)?;
+        if !self.backend.is_playback_current(control.generation) {
+            control.retire(RetiredReason::BackendChanged);
+        }
+        let previous = control.recorded_receipt(&command.command);
+        ensure!(
+            !previous.as_ref().is_some_and(
+                |r| r.outcome == CommandOutcome::Rejected(ControlRejection::IdentityConflict)
+            ),
+            OutputControlError::Conflict
+        );
+        let receipt = match previous {
+            Some(receipt) => receipt,
+            None if apply => self
+                .backend
+                .apply_playback_control(control, &command.command)?,
+            None => return Err(OutputControlError::Unknown.into()),
+        };
+        let mut leases = active.observations.values().collect::<Vec<_>>();
+        leases.sort_by_key(|lease| lease.playback_sequence);
+        let result = control.with_snapshot(|snapshot| {
+            // Snapshot and order assignment share the control mutex. A delayed
+            // caller can never publish an old snapshot with a newer sequence.
+            let observation_sequence = control
+                .observation_sequence
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                    value.checked_add(1)
+                })
+                .map_err(|_| anyhow::anyhow!("control observation sequence exhausted"))?
+                + 1;
+            Ok::<_, anyhow::Error>(BoundControlReceipt {
+                observation_sequence,
+                command: command.clone(),
+                intent_digest: command.intent_digest(),
+                receipt: ControlReceipt {
+                    snapshot,
+                    ..receipt
+                },
+                backend: control.backend.clone(),
+                mode: ControlMode::SoftwareGate,
+                native_writes_quiescent: control.quiescent(),
+                progress: leases
+                    .into_iter()
+                    .map(|lease| lease.submission.next_snapshot())
+                    .collect(),
+            })
+        })?;
+        result.validate(command)?;
+        Ok(result)
+    }
     pub fn control_evidence(&self, scope: &VoiceScope) -> Result<PlaybackControlEvidence> {
         let state = self.lock()?;
         let active = state
@@ -212,6 +372,10 @@ impl super::PlaybackSession {
         self.backend.apply_playback_control(&control, command)
     }
     fn control_generation(&self, active: &mut super::ActiveSession) -> Result<u64> {
+        ensure!(
+            !active.retired,
+            "playback output epoch is permanently retired"
+        );
         ensure!(
             active.control.as_ref().is_none_or(|c| !c.is_retired()),
             "playback control scope was permanently retired"

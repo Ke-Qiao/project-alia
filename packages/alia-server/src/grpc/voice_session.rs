@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use alia_core::capture::{CaptureWindow, MAX_FRAME_SAMPLES};
 use alia_core::delivery::VoiceScope;
-use alia_core::turn::{TurnController, TurnDecision};
+use alia_core::output_control::VOICE_CONTRACT_VERSION;
+use alia_core::playback_control::{MAX_HOLD_MS, ResumeAuthorization, ResumeKind};
+use alia_core::turn::TurnController;
 use alia_core::voice::{TurnObservation, TurnState};
 use alia_proto::voice::voice_session_server::VoiceSession;
 use alia_proto::voice::{self, DeviceFrame, SessionEvent, device_frame, session_event};
@@ -20,7 +22,8 @@ use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use super::audio_ingress::{AdmittedSource, ServerAudioIngressService};
-use crate::channels::ChannelRegistry;
+use crate::channels::adapter::ChannelAdapter;
+use crate::modules::delivery::{DeliveryService, VoiceOutput};
 use crate::modules::interaction::turn_detector::{DetectionError, TurnDetector};
 use crate::modules::interaction::voice_input::{RecognizedVoiceInput, VoiceInputHandle};
 
@@ -38,9 +41,10 @@ type Detection = Pin<Box<dyn Future<Output = Result<TurnObservation, DetectionEr
 
 pub struct VoiceSessionService {
     auth: ServerAudioIngressService,
-    channels: Arc<ChannelRegistry>,
     detector: Option<Arc<dyn TurnDetector>>,
     input: VoiceInputHandle,
+    delivery: Arc<DeliveryService>,
+    hold_budget: Duration,
     shutdown: CancellationToken,
     runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     sessions: Sessions,
@@ -49,20 +53,80 @@ pub struct VoiceSessionService {
 impl VoiceSessionService {
     pub fn new(
         auth: ServerAudioIngressService,
-        channels: Arc<ChannelRegistry>,
         detector: Option<Arc<dyn TurnDetector>>,
         input: VoiceInputHandle,
+        delivery: Arc<DeliveryService>,
+        hold_budget: Duration,
         shutdown: CancellationToken,
         runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     ) -> Self {
         Self {
             auth,
-            channels,
             detector,
             input,
+            delivery,
+            hold_budget,
             shutdown,
             runtime_tasks,
             sessions: Arc::default(),
+        }
+    }
+}
+
+struct OutputRuntime {
+    delivery: Arc<DeliveryService>,
+    hold_budget: Duration,
+    maximum_hold_ms: u64,
+}
+
+fn negotiated_hold_limit(open: &voice::OpenSession) -> Result<u64, Status> {
+    if open.protocol_version != VOICE_CONTRACT_VERSION {
+        return Err(Status::failed_precondition(
+            "unsupported voice protocol version",
+        ));
+    }
+    if !open.software_hold || !(1..=MAX_HOLD_MS).contains(&open.max_hold_ms) {
+        return Err(Status::failed_precondition(
+            "voice software hold capabilities are incompatible",
+        ));
+    }
+    Ok(open.max_hold_ms)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SemanticRequest {
+    Listen,
+    Pause,
+    Resume(ResumeKind),
+    Cancel,
+    Respond(String),
+}
+
+fn semantic_request(observation: &TurnObservation) -> SemanticRequest {
+    match observation.state {
+        TurnState::Incomplete => SemanticRequest::Listen,
+        TurnState::Wait => SemanticRequest::Pause,
+        TurnState::Backchannel => SemanticRequest::Resume(ResumeKind::FreshBackchannel),
+        TurnState::Complete => {
+            let transcript = observation.transcript.trim();
+            // Match the whole utterance only. A request such as "继续解释新的
+            // 问题" is a new turn, never permission to release an old hold.
+            let phrase = transcript
+                .trim_matches(|c: char| ".,!?;:，。！？；：".contains(c))
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase();
+            match phrase.as_str() {
+                "" => SemanticRequest::Listen,
+                "继续" | "继续说" | "接着说" | "请继续" | "继续吧" | "continue"
+                | "please continue" | "go on" | "resume" | "resume speaking" => {
+                    SemanticRequest::Resume(ResumeKind::ExplicitContinue)
+                }
+                "停止" | "停止播放" | "别说了" | "不用说了" | "不要继续" | "不要继续说了"
+                | "stop" | "stop speaking" | "cancel" | "cancel that" => SemanticRequest::Cancel,
+                _ => SemanticRequest::Respond(transcript.to_owned()),
+            }
         }
     }
 }
@@ -147,11 +211,7 @@ impl VoiceSession for VoiceSessionService {
                 "first voice frame must open a session",
             ));
         };
-        if open.protocol_version != 1 {
-            return Err(Status::failed_precondition(
-                "unsupported voice protocol version",
-            ));
-        }
+        let maximum_hold_ms = negotiated_hold_limit(&open)?;
         let claimed_channel = self
             .auth
             .authenticate_ingress(&auth_request, Some(&open.channel_id))
@@ -170,8 +230,12 @@ impl VoiceSession for VoiceSessionService {
             SessionLease::acquire(self.sessions.clone(), channel_id, &self.shutdown).await?;
         let (tx, rx) = mpsc::channel(8);
         let auth = self.auth.clone();
-        let channels = self.channels.clone();
         let input = self.input.clone();
+        let output_runtime = OutputRuntime {
+            delivery: self.delivery.clone(),
+            hold_budget: self.hold_budget.min(Duration::from_millis(maximum_hold_ms)),
+            maximum_hold_ms,
+        };
         self.runtime_tasks
             .try_spawn("voice_session", async move {
                 let result = run_session(
@@ -181,13 +245,14 @@ impl VoiceSession for VoiceSessionService {
                     boot,
                     detector,
                     input,
-                    channels.clone(),
                     SessionCredentials {
                         auth,
                         request: auth_request,
                         channel: lease.channel.clone(),
                         source: None,
                     },
+                    output_runtime,
+                    AUTH_RECHECK,
                 )
                 .await;
                 if let Err(error) = result {
@@ -252,16 +317,11 @@ impl SessionCredentials {
 }
 
 async fn fence_output(
-    channels: &ChannelRegistry,
-    channel_id: &str,
+    channel: &Arc<dyn ChannelAdapter>,
     scope: VoiceScope,
     close_session: bool,
     reason: &str,
 ) -> Result<(), Status> {
-    let channel = channels
-        .get(channel_id)
-        .await
-        .ok_or_else(|| Status::unavailable("voice output channel disappeared"))?;
     tokio::time::timeout(
         Duration::from_secs(1),
         channel.fence_voice(scope, close_session, reason),
@@ -298,6 +358,7 @@ async fn accept_capture(
     frame: DeviceFrame,
     window: &mut CaptureWindow,
     credentials: &mut SessionCredentials,
+    output: Option<&VoiceOutput>,
 ) -> Result<bool, Status> {
     match frame.payload {
         Some(device_frame::Payload::Audio(frame)) => {
@@ -310,6 +371,13 @@ async fn accept_capture(
                     std::time::SystemTime::now(),
                 )
                 .map_err(|error| Status::invalid_argument(error.to_string()))?;
+            if frame.speech_active
+                && let Some(output) = output
+            {
+                output
+                    .near_end_speech(frame.sequence)
+                    .map_err(|_| Status::unavailable("original output pause queue unavailable"))?;
+            }
             Ok(true)
         }
         Some(device_frame::Payload::Close(_)) => Ok(false),
@@ -327,6 +395,7 @@ async fn drain_pending<S>(
     stream: &mut S,
     window: &mut CaptureWindow,
     credentials: &mut SessionCredentials,
+    output: Option<&VoiceOutput>,
 ) -> Result<bool, Status>
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
@@ -336,7 +405,7 @@ where
             None => break,
             Some(None) => return Ok(false),
             Some(Some(frame)) => {
-                if !accept_capture(frame?, window, credentials).await? {
+                if !accept_capture(frame?, window, credentials, output).await? {
                     return Ok(false);
                 }
                 if drained == MAX_PENDING_FRAMES - 1 {
@@ -357,12 +426,16 @@ async fn run_session<S>(
     boot: Uuid,
     detector: Arc<dyn TurnDetector>,
     input: VoiceInputHandle,
-    channels: Arc<ChannelRegistry>,
-    credentials: SessionCredentials,
+    mut credentials: SessionCredentials,
+    output_runtime: OutputRuntime,
+    auth_recheck_interval: Duration,
 ) -> Result<(), Status>
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
 {
+    let source = credentials.auth.admit_source(&lease.channel).await?;
+    let channel = source.channel();
+    credentials.source = Some(source);
     let result = tokio::select! {
         biased;
         _ = lease.cancel.cancelled() => Ok(()),
@@ -373,15 +446,15 @@ where
         boot,
         detector,
         input,
-        channels.clone(),
         credentials,
+        output_runtime,
+        auth_recheck_interval,
     )
     => result,
     };
     lease.cancel.cancel();
     let closed = fence_output(
-        &channels,
-        &lease.channel,
+        &channel,
         VoiceScope {
             session_id: lease.id,
             device_boot_id: boot,
@@ -404,17 +477,21 @@ async fn run_session_inner<S>(
     boot: Uuid,
     detector: Arc<dyn TurnDetector>,
     input: VoiceInputHandle,
-    channels: Arc<ChannelRegistry>,
     mut credentials: SessionCredentials,
+    output_runtime: OutputRuntime,
+    auth_recheck_interval: Duration,
 ) -> Result<(), Status>
 where
     S: Stream<Item = Result<DeviceFrame, Status>> + Unpin,
 {
-    let source = credentials.auth.admit_source(&lease.channel).await?;
+    let source = credentials
+        .source
+        .as_ref()
+        .expect("source admitted before session loop");
+    let channel = source.channel();
     let owner_user_id = source.user_id;
     let source_privacy_epoch = source.privacy_epoch;
     let source_relationship_epoch = source.relationship_epoch;
-    credentials.source = Some(source);
     // A channel can be replaced between the initial handshake authentication
     // and admission. Verify the credential and pinned source together before
     // allowing capture or model work.
@@ -425,7 +502,9 @@ where
         boot,
         1,
         session_event::Payload::Ready(voice::SessionReady {
-            protocol_version: 1,
+            protocol_version: VOICE_CONTRACT_VERSION,
+            software_hold: true,
+            max_hold_ms: output_runtime.maximum_hold_ms,
             sample_rate_hz: 16_000,
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
@@ -437,10 +516,13 @@ where
     let mut detection: Option<Detection> = None;
     let mut through_sequence = 0;
     let mut response_cancel = lease.cancel.child_token();
+    let mut output: Option<VoiceOutput> = None;
     let mut retry_at: Option<tokio::time::Instant> = None;
     let mut busy_deadline: Option<tokio::time::Instant> = None;
-    let mut auth_recheck =
-        tokio::time::interval_at(tokio::time::Instant::now() + AUTH_RECHECK, AUTH_RECHECK);
+    let mut auth_recheck = tokio::time::interval_at(
+        tokio::time::Instant::now() + auth_recheck_interval,
+        auth_recheck_interval,
+    );
     auth_recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         if lease.cancel.is_cancelled() || tx.is_closed() {
@@ -464,7 +546,7 @@ where
             _ = auth_recheck.tick() => {
                 // Refresh already queued with capture takes precedence over a
                 // periodic check of the old token. This drain is also bounded.
-                if !drain_pending(&mut stream, &mut window, &mut credentials).await? { return Ok(()); }
+                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
                 credentials.revalidate().await?;
             },
             _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
@@ -473,7 +555,7 @@ where
             frame = tokio::time::timeout(STREAM_IDLE, stream.next()) => {
                 let frame = frame.map_err(|_| Status::deadline_exceeded("voice capture stalled"))?;
                 let Some(frame) = frame else { return Ok(()); };
-                if !accept_capture(frame?, &mut window, &mut credentials).await? { return Ok(()); }
+                if !accept_capture(frame?, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
             }
             result = async { detection.as_mut().expect("select guard").await }, if detection.is_some() => {
                 detection = None;
@@ -497,23 +579,66 @@ where
                 // Give already-arrived speech a chance to invalidate this
                 // snapshot before committing a response. The drain is bounded;
                 // a producer that never yields must not monopolize the runtime.
-                if !drain_pending(&mut stream, &mut window, &mut credentials).await? { return Ok(()); }
-                let decision = controller.observe(&observation, window.revision()).map_err(|_| Status::out_of_range("voice epoch exhausted"))?;
-                let response_enqueued = match decision {
-                    TurnDecision::Stale => continue,
-                    TurnDecision::Respond { generation_epoch, transcript } => {
-                        credentials.revalidate().await?;
-                        let owner = lease.slot.owner.lock().await;
-                        if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
-                            return Ok(());
-                        }
+                if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                // Revalidation may revoke the original source but cannot replace
+                // it. Drain again after that await before consuming freshness.
+                if observation.state != TurnState::Incomplete {
+                    credentials.revalidate().await?;
+                    if !drain_pending(&mut stream, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
+                }
+                if !controller.accept_evidence(&observation, window.revision()) { continue; }
+                let owner = lease.slot.owner.lock().await;
+                if lease.cancel.is_cancelled() || !owner.as_ref().is_some_and(|(id, _)| *id == lease.id) {
+                    return Ok(());
+                }
+                let (response_enqueued, output_decision) = match semantic_request(&observation) {
+                    SemanticRequest::Listen => (false, voice::OutputDecision::Unchanged),
+                    SemanticRequest::Pause => {
+                        let requested = output.as_ref().filter(|output| output.is_alive())
+                            .map(|output| output.explicit_wait(observation.id.request_id, through_sequence))
+                            .transpose().map_err(|_| Status::unavailable("original output pause queue unavailable"))?
+                            .unwrap_or(false);
+                        window.finish_utterance();
+                        (false, if requested { voice::OutputDecision::PauseRequested } else { voice::OutputDecision::Unchanged })
+                    },
+                    SemanticRequest::Resume(kind) => {
+                        let requested = output.as_ref().filter(|output| output.is_alive())
+                            .map(|output| output.request_resume(ResumeAuthorization {
+                                kind, detection_id: observation.id.request_id, through_sequence,
+                            }))
+                            .transpose().map_err(|_| Status::unavailable("original output resume queue unavailable"))?
+                            .unwrap_or(false);
+                        window.finish_utterance();
+                        // This is only a request. The supervised original owner
+                        // waits for the exact receipt before releasing production.
+                        (false, if requested { voice::OutputDecision::ResumeRequested } else { voice::OutputDecision::Unchanged })
+                    },
+                    SemanticRequest::Cancel => {
+                        if let Some(output) = output.take() { output.retire(); }
                         response_cancel.cancel();
-                        fence_output(&channels, &lease.channel,
+                        let generation_epoch = controller.invalidate().map_err(|_| Status::out_of_range("voice epoch exhausted"))?;
+                        fence_output(&channel,
                             VoiceScope { session_id: lease.id, device_boot_id: boot, generation_epoch },
-                            false, "voice_turn_replaced").await?;
+                            false, "user_stopped_original_output").await?;
+                        window.finish_utterance();
+                        (false, voice::OutputDecision::Cancelled)
+                    },
+                    SemanticRequest::Respond(transcript) => {
+                        if let Some(output) = output.take() { output.retire(); }
+                        response_cancel.cancel();
+                        let generation_epoch = controller.invalidate().map_err(|_| Status::out_of_range("voice epoch exhausted"))?;
+                        let scope = VoiceScope { session_id: lease.id, device_boot_id: boot, generation_epoch };
+                        fence_output(&channel, scope, false, "voice_turn_replaced").await?;
                         if lease.cancel.is_cancelled() { return Ok(()); }
                         response_cancel = lease.cancel.child_token();
+                        let request_id = Uuid::new_v4();
+                        let producer = output_runtime.delivery.begin_voice_output(
+                            owner_user_id, request_id, scope, channel.clone(), response_cancel.clone(),
+                            Some(output_runtime.hold_budget),
+                        ).map_err(|_| Status::resource_exhausted("voice output supervision unavailable"))?;
+                        let current_output = producer.output();
                         input.try_submit(RecognizedVoiceInput {
+                            request_id, output: Some(producer),
                             channel_id: lease.channel.clone(), user_id: owner_user_id.to_string(), transcript,
                             session_id: lease.id, device_boot_id: boot, generation_epoch, cancel: response_cancel.clone(),
                             source_received_at: window.source_received_at()
@@ -521,23 +646,14 @@ where
                             source_privacy_epoch,
                             source_relationship_epoch,
                         }).map_err(|_| Status::resource_exhausted("voice processing capacity reached"))?;
-                        drop(owner);
+                        // Retain only the control handle. The actual queue,
+                        // pipeline and media owners determine output lifetime.
+                        output = Some(current_output);
                         window.finish_utterance();
-                        true
-                    },
-                    TurnDecision::ContinueListening => false,
-                    TurnDecision::Backchannel => { window.finish_utterance(); false },
-                    TurnDecision::Wait => {
-                        // Explicit hold: stop current generation. Resuming from a
-                        // presented playback cursor needs the delivery contract.
-                        response_cancel.cancel();
-                        fence_output(&channels, &lease.channel,
-                            VoiceScope { session_id: lease.id, device_boot_id: boot, generation_epoch: controller.generation_epoch() },
-                            false, "user_requested_wait").await?;
-                        window.finish_utterance();
-                        false
+                        (true, voice::OutputDecision::Unchanged)
                     },
                 };
+                drop(owner);
                 send_event(tx, lease, boot, controller.generation_epoch(), session_event::Payload::Evidence(voice::TurnEvidence {
                     request_id: observation.id.request_id.to_string(), through_sequence,
                     transcript: observation.transcript, state: match observation.state {
@@ -546,7 +662,7 @@ where
                         TurnState::Backchannel => voice::TurnState::Backchannel,
                         TurnState::Wait => voice::TurnState::Wait,
                     } as i32,
-                    response_enqueued, inference_ms: observation.inference_ms,
+                    response_enqueued, inference_ms: observation.inference_ms, output_decision: output_decision as i32,
                 })).await?;
             }
         }
@@ -556,8 +672,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::channels::ChannelRegistry;
+    use crate::modules::delivery::repository::DeliveryRepository;
     use crate::modules::interaction::voice_input;
     use alia_core::voice::{DetectionId, ModelIdentity, PcmWindow};
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
+    use std::panic::AssertUnwindSafe;
     use tokio::sync::oneshot;
 
     struct ModelCall(
@@ -586,11 +706,14 @@ mod tests {
     }
     impl ModelCall {
         fn answer(self, state: TurnState) {
+            self.answer_text(state, "sample");
+        }
+        fn answer_text(self, state: TurnState, transcript: &str) {
             self.1
                 .send(Ok(TurnObservation {
                     id: self.0,
                     state,
-                    transcript: "sample".into(),
+                    transcript: transcript.into(),
                     inference_ms: 1.0,
                     model: ModelIdentity {
                         source: "injected-test".into(),
@@ -602,6 +725,93 @@ mod tests {
         }
     }
 
+    fn evidence_payload(event: &SessionEvent) -> &voice::TurnEvidence {
+        let Some(session_event::Payload::Evidence(evidence)) = &event.payload else {
+            panic!("expected semantic evidence");
+        };
+        evidence
+    }
+
+    #[test]
+    fn paired_v2_requires_explicit_bounded_software_hold_capabilities() {
+        let mut open = voice::OpenSession {
+            protocol_version: VOICE_CONTRACT_VERSION,
+            software_hold: true,
+            max_hold_ms: MAX_HOLD_MS,
+            ..Default::default()
+        };
+        assert_eq!(negotiated_hold_limit(&open).unwrap(), MAX_HOLD_MS);
+        open.protocol_version = 1;
+        assert_eq!(
+            negotiated_hold_limit(&open).unwrap_err().code(),
+            tonic::Code::FailedPrecondition
+        );
+        open.protocol_version = VOICE_CONTRACT_VERSION;
+        open.software_hold = false;
+        assert!(negotiated_hold_limit(&open).is_err());
+        open.software_hold = true;
+        for budget in [0, MAX_HOLD_MS + 1, u64::MAX] {
+            open.max_hold_ms = budget;
+            assert!(negotiated_hold_limit(&open).is_err());
+        }
+        open.max_hold_ms = 1;
+        assert_eq!(negotiated_hold_limit(&open).unwrap(), 1);
+    }
+
+    #[test]
+    fn semantic_controls_match_whole_complete_utterances_not_substrings() {
+        let observation = |state, transcript: &str| TurnObservation {
+            id: DetectionId::new(1),
+            state,
+            transcript: transcript.into(),
+            inference_ms: 1.0,
+            model: ModelIdentity {
+                source: "test".into(),
+                revision: "1".into(),
+                device: "test".into(),
+            },
+        };
+        for phrase in [
+            "继续",
+            " 请继续！ ",
+            "Continue.",
+            "please   continue",
+            "接着说",
+        ] {
+            assert_eq!(
+                semantic_request(&observation(TurnState::Complete, phrase)),
+                SemanticRequest::Resume(ResumeKind::ExplicitContinue)
+            );
+        }
+        for phrase in [
+            "继续讲这个问题",
+            "为什么你说 continue",
+            "\"continue\"",
+            "stop sign 是什么意思",
+        ] {
+            assert_eq!(
+                semantic_request(&observation(TurnState::Complete, phrase)),
+                SemanticRequest::Respond(phrase.into())
+            );
+        }
+        assert_eq!(
+            semantic_request(&observation(TurnState::Complete, "不要继续")),
+            SemanticRequest::Cancel
+        );
+        assert_eq!(
+            semantic_request(&observation(TurnState::Incomplete, "继续")),
+            SemanticRequest::Listen
+        );
+        assert_eq!(
+            semantic_request(&observation(TurnState::Wait, "先停一下")),
+            SemanticRequest::Pause
+        );
+        assert_eq!(
+            semantic_request(&observation(TurnState::Backchannel, "嗯")),
+            SemanticRequest::Resume(ResumeKind::FreshBackchannel)
+        );
+    }
+
     struct AuthChannel {
         revoked: std::sync::atomic::AtomicBool,
         privacy_epoch: std::sync::atomic::AtomicI64,
@@ -609,6 +819,7 @@ mod tests {
         required_token: std::sync::Mutex<Option<String>>,
         checked: std::sync::Mutex<Vec<String>>,
         fences: std::sync::Mutex<Vec<(VoiceScope, bool)>>,
+        next_verification: std::sync::Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
     }
     impl Default for AuthChannel {
         fn default() -> Self {
@@ -619,6 +830,7 @@ mod tests {
                 required_token: Default::default(),
                 checked: Default::default(),
                 fences: Default::default(),
+                next_verification: Default::default(),
             }
         }
     }
@@ -689,6 +901,11 @@ mod tests {
                 anyhow::ensure!(token == expected, "old test credential expired");
             }
             self.checked.lock().unwrap().push(token.to_owned());
+            let pause = self.next_verification.lock().unwrap().take();
+            if let Some((entered, release)) = pause {
+                entered.send(()).unwrap();
+                release.await?;
+            }
             Ok(serde_json::json!({"authenticated": true}))
         }
         async fn fence_voice(&self, scope: VoiceScope, close: bool, _: &str) -> anyhow::Result<()> {
@@ -697,10 +914,45 @@ mod tests {
         }
         async fn stop_current_playback(
             &self,
-            _: &crate::channels::adapter::ChannelTarget,
+            target: &crate::channels::adapter::ChannelTarget,
             _: &str,
         ) -> anyhow::Result<()> {
-            panic!("voice session must never dispatch an unscoped stop");
+            assert!(
+                target.voice.is_some_and(|scope| scope.is_valid()),
+                "must stop only original output scope"
+            );
+            Ok(())
+        }
+        async fn retire_voice_output(
+            &self,
+            request: &alia_core::output_control::OutputRetirementRequest,
+        ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+            request.validate()?;
+            anyhow::ensure!(
+                request.binding.is_none() && request.expected_backend.is_none(),
+                "actor fixture never registers a native output"
+            );
+            anyhow::ensure!(
+                self.fences
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(scope, close)| *scope == request.scope && !close),
+                "unknown actor output scope"
+            );
+            self.stop_current_playback(
+                &crate::channels::adapter::ChannelTarget {
+                    user_id: Uuid::from_u128(7).to_string(),
+                    voice: Some(request.scope),
+                },
+                "original actor output ended",
+            )
+            .await?;
+            Ok(alia_core::output_control::OutputRetirementReceipt {
+                scope: request.scope,
+                binding: None,
+                evidence: alia_core::output_control::OutputRetirementEvidence::NoNativeOwner,
+            })
         }
     }
     fn token(revision: u64) -> String {
@@ -730,24 +982,118 @@ mod tests {
         }
     }
 
+    static DATABASE_CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
+
+    struct TestDatabase {
+        db: DatabaseConnection,
+        admin: DatabaseConnection,
+        schema: String,
+        _permit: tokio::sync::SemaphorePermit<'static>,
+    }
+    impl TestDatabase {
+        async fn new() -> Self {
+            let permit = DATABASE_CASES.acquire().await.unwrap();
+            let url = std::env::var("ALIA_TEST_DATABASE_URL")
+                .expect("voice output actor tests require disposable PostgreSQL");
+            let mut options = ConnectOptions::new(url.clone());
+            options.max_connections(1).sqlx_logging(false);
+            let admin = Database::connect(options).await.unwrap();
+            let schema = format!("voice_actor_{}", Uuid::new_v4().simple());
+            admin
+                .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+                .await
+                .unwrap();
+            let mut options = ConnectOptions::new(url);
+            options
+                .max_connections(4)
+                .sqlx_logging(false)
+                .set_schema_search_path(format!("{schema},public"));
+            let db = Database::connect(options).await.unwrap();
+            let database = Self {
+                db,
+                admin,
+                schema,
+                _permit: permit,
+            };
+            if let Err(error) = crate::modules::platform::migrations::run(&database.db).await {
+                database.cleanup().await;
+                panic!("voice actor migrations failed: {error:#}");
+            }
+            database
+        }
+        async fn cleanup(self) {
+            self.db.close().await.unwrap();
+            self.admin
+                .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.schema))
+                .await
+                .unwrap();
+            self.admin.close().await.unwrap();
+        }
+    }
+
     struct Harness {
         audio: mpsc::Sender<Result<DeviceFrame, Status>>,
         events: mpsc::Receiver<Result<SessionEvent, Status>>,
         calls: mpsc::Receiver<ModelCall>,
         input: mpsc::Receiver<RecognizedVoiceInput>,
         cancel: CancellationToken,
-        task: tokio::task::JoinHandle<Result<(), Status>>,
+        task: Option<tokio::task::JoinHandle<Result<(), Status>>>,
         sequence: u64,
         channel: Arc<AuthChannel>,
     }
 
-    impl Harness {
-        async fn new() -> Self {
-            Self::with_channel(Arc::new(AuthChannel::default())).await
+    impl Drop for Harness {
+        fn drop(&mut self) {
+            self.cancel.cancel();
+            if let Some(task) = self.task.take() {
+                task.abort();
+            }
         }
+    }
 
-        async fn with_channel(channel: Arc<AuthChannel>) -> Self {
-            let cancel = CancellationToken::new();
+    async fn with_harness<F, Fut>(channel: Arc<AuthChannel>, test: F)
+    where
+        F: FnOnce(Harness) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        with_harness_recheck(channel, AUTH_RECHECK, test).await;
+    }
+
+    async fn with_harness_recheck<F, Fut>(channel: Arc<AuthChannel>, interval: Duration, test: F)
+    where
+        F: FnOnce(Harness) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let database = TestDatabase::new().await;
+        let cancel = CancellationToken::new();
+        let delivery = DeliveryService::new(DeliveryRepository::new(database.db.clone()), &cancel);
+        // All cases exercise the real recovery and supervisor path. Keep cleanup
+        // outside the caught test future so panic cannot strand its schema.
+        let result = AssertUnwindSafe(async {
+            delivery.start().await.unwrap();
+            test(Harness::with_channel(channel, cancel.clone(), delivery.clone(), interval).await)
+                .await;
+        })
+        .catch_unwind()
+        .await;
+        cancel.cancel();
+        let stopped = tokio::time::timeout(Duration::from_secs(5), delivery.shutdown()).await;
+        database.cleanup().await;
+        if let Err(error) = result {
+            std::panic::resume_unwind(error);
+        }
+        stopped
+            .expect("voice actor Delivery shutdown deadline")
+            .unwrap();
+    }
+
+    impl Harness {
+        async fn with_channel(
+            channel: Arc<AuthChannel>,
+            cancel: CancellationToken,
+            delivery: Arc<DeliveryService>,
+            auth_recheck_interval: Duration,
+        ) -> Self {
             let lease = SessionLease::acquire(Arc::default(), "device".into(), &cancel)
                 .await
                 .unwrap();
@@ -759,6 +1105,11 @@ mod tests {
             let channels = Arc::new(ChannelRegistry::new());
             channels.register(channel.clone()).await.unwrap();
             let auth = credentials(channels.clone());
+            let output_runtime = OutputRuntime {
+                delivery: delivery.clone(),
+                hold_budget: Duration::from_secs(60),
+                maximum_hold_ms: MAX_HOLD_MS,
+            };
             let task = tokio::spawn(async move {
                 run_session(
                     ReceiverStream::new(rx),
@@ -767,8 +1118,9 @@ mod tests {
                     Uuid::new_v4(),
                     detector,
                     input_handle,
-                    channels,
                     auth,
+                    output_runtime,
+                    auth_recheck_interval,
                 )
                 .await
             });
@@ -778,7 +1130,7 @@ mod tests {
                 calls,
                 input,
                 cancel,
-                task,
+                task: Some(task),
                 sequence: 0,
                 channel,
             };
@@ -828,6 +1180,27 @@ mod tests {
                 .await
                 .unwrap();
         }
+        async fn checked_token(&mut self, token: &str, count: usize) {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    let checked = self
+                        .channel
+                        .checked
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|value| *value == token)
+                        .count();
+                    if checked >= count {
+                        return;
+                    }
+                    self.silence().await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("refreshed credential was not revalidated");
+        }
         async fn call(&mut self) -> ModelCall {
             tokio::time::timeout(Duration::from_secs(2), self.calls.recv())
                 .await
@@ -841,109 +1214,371 @@ mod tests {
                 .unwrap()
                 .unwrap()
         }
-        async fn finish(self) {
-            self.cancel.cancel();
-            tokio::time::timeout(Duration::from_secs(2), self.task)
+        async fn join(&mut self) -> Result<(), Status> {
+            tokio::time::timeout(Duration::from_secs(3), self.task.take().unwrap())
                 .await
                 .unwrap()
                 .unwrap()
-                .unwrap();
+        }
+        async fn finish(mut self) {
+            self.cancel.cancel();
+            self.join().await.unwrap();
         }
     }
 
     #[tokio::test]
     async fn recognized_speech_bypasses_stt_and_backchannel_preserves_generation() {
-        let mut h = Harness::new().await;
-        h.speech().await;
-        h.call().await.answer(TurnState::Complete);
-        assert_eq!(h.event().await.generation_epoch, 2);
-        let first = h.input.recv().await.unwrap();
-        assert_eq!(first.transcript, "sample");
-        assert_eq!(first.source_privacy_epoch, 7);
-        assert_eq!(first.source_relationship_epoch, 11);
-        h.speech().await;
-        h.call().await.answer(TurnState::Backchannel);
-        assert_eq!(h.event().await.generation_epoch, 2);
-        assert!(!first.cancel.is_cancelled());
-        assert!(h.input.try_recv().is_err());
-        h.speech().await;
-        h.call().await.answer(TurnState::Wait);
-        assert_eq!(h.event().await.generation_epoch, 3);
-        assert!(first.cancel.is_cancelled());
-        h.finish().await;
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            assert_eq!(h.event().await.generation_epoch, 2);
+            let first = h.input.recv().await.unwrap();
+            assert!(!first.request_id.is_nil());
+            let producer = first.output.as_ref().unwrap();
+            assert_eq!(producer.request_id(), first.request_id);
+            assert_eq!(producer.scope().generation_epoch, first.generation_epoch);
+            let pinned: Arc<dyn ChannelAdapter> = h.channel.clone();
+            assert!(Arc::ptr_eq(&producer.channel(), &pinned));
+            assert!(
+                producer.output().response_id().is_none(),
+                "actor alone cannot invent a Response"
+            );
+            assert_eq!(first.transcript, "sample");
+            assert_eq!(first.source_privacy_epoch, 7);
+            assert_eq!(first.source_relationship_epoch, 11);
+            h.speech().await;
+            h.call().await.answer(TurnState::Backchannel);
+            let backchannel = h.event().await;
+            assert_eq!(backchannel.generation_epoch, 2);
+            assert_eq!(
+                evidence_payload(&backchannel).output_decision,
+                voice::OutputDecision::ResumeRequested as i32
+            );
+            tokio::time::timeout(Duration::from_secs(2), producer.wait_open())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!first.cancel.is_cancelled());
+            assert!(h.input.try_recv().is_err());
+            h.speech().await;
+            h.call().await.answer(TurnState::Wait);
+            let wait = h.event().await;
+            assert_eq!(wait.generation_epoch, 2);
+            assert_eq!(
+                evidence_payload(&wait).output_decision,
+                voice::OutputDecision::PauseRequested as i32
+            );
+            assert!(!first.cancel.is_cancelled());
+            assert_eq!(
+                first.output.as_ref().unwrap().output().hold_reason(),
+                Some(alia_core::playback_control::HoldReason::ExplicitWait)
+            );
+            h.finish().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn explicit_wait_needs_complete_explicit_continue_and_stop_never_resumes() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            h.event().await;
+            let original = h.input.recv().await.unwrap();
+            let producer = original.output.as_ref().unwrap();
+            h.speech().await;
+            h.call().await.answer(TurnState::Wait);
+            let paused = h.event().await;
+            assert_eq!(paused.generation_epoch, original.generation_epoch);
+            assert_eq!(
+                evidence_payload(&paused).output_decision,
+                voice::OutputDecision::PauseRequested as i32
+            );
+            h.speech().await;
+            h.call().await.answer(TurnState::Backchannel);
+            let backchannel = h.event().await;
+            assert_eq!(
+                evidence_payload(&backchannel).output_decision,
+                voice::OutputDecision::Unchanged as i32
+            );
+            assert_eq!(
+                producer.output().hold_reason(),
+                Some(alia_core::playback_control::HoldReason::ExplicitWait)
+            );
+            h.speech().await;
+            h.call().await.answer_text(TurnState::Complete, "请继续。");
+            let resumed = h.event().await;
+            assert_eq!(resumed.generation_epoch, original.generation_epoch);
+            assert_eq!(
+                evidence_payload(&resumed).output_decision,
+                voice::OutputDecision::ResumeRequested as i32
+            );
+            tokio::time::timeout(Duration::from_secs(2), producer.wait_open())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!original.cancel.is_cancelled());
+            assert!(h.input.try_recv().is_err());
+            h.speech().await;
+            h.call().await.answer_text(TurnState::Complete, "别说了");
+            let stopped = h.event().await;
+            assert_eq!(stopped.generation_epoch, original.generation_epoch + 1);
+            assert_eq!(
+                evidence_payload(&stopped).output_decision,
+                voice::OutputDecision::Cancelled as i32
+            );
+            assert!(original.cancel.is_cancelled());
+            h.speech().await;
+            h.call().await.answer_text(TurnState::Complete, "继续");
+            let gone = h.event().await;
+            assert_eq!(gone.generation_epoch, stopped.generation_epoch);
+            assert_eq!(
+                evidence_payload(&gone).output_decision,
+                voice::OutputDecision::Unchanged as i32
+            );
+            assert!(h.input.try_recv().is_err());
+            h.finish().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn newer_captured_speech_rejects_old_continue_and_new_topic_replaces_original_owner() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            h.event().await;
+            let original = h.input.recv().await.unwrap();
+            h.speech().await;
+            let stale = h.call().await;
+            h.speech().await;
+            stale.answer_text(TurnState::Complete, "继续");
+            let fresh = h.call().await;
+            assert!(h.events.try_recv().is_err());
+            assert!(original.output.as_ref().unwrap().output().is_held());
+            fresh.answer_text(TurnState::Complete, "继续讲这个问题");
+            let event = h.event().await;
+            assert_eq!(event.generation_epoch, original.generation_epoch + 1);
+            assert!(evidence_payload(&event).response_enqueued);
+            assert_eq!(
+                evidence_payload(&event).output_decision,
+                voice::OutputDecision::Unchanged as i32
+            );
+            let replacement = h.input.recv().await.unwrap();
+            assert_ne!(replacement.request_id, original.request_id);
+            assert_eq!(replacement.transcript, "继续讲这个问题");
+            assert!(original.cancel.is_cancelled());
+            assert!(!replacement.cancel.is_cancelled());
+            h.finish().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn speech_queued_during_resume_revalidation_invalidates_the_original_detection() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            h.event().await;
+            let original = h.input.recv().await.unwrap();
+            h.speech().await;
+            let old = h.call().await;
+            let (entered, checking) = oneshot::channel();
+            let (release, wait) = oneshot::channel();
+            *h.channel.next_verification.lock().unwrap() = Some((entered, wait));
+            old.answer_text(TurnState::Complete, "继续");
+            tokio::time::timeout(Duration::from_secs(2), checking)
+                .await
+                .unwrap()
+                .unwrap();
+            h.speech().await;
+            release.send(()).unwrap();
+            let fresh = h.call().await;
+            assert!(
+                h.events.try_recv().is_err(),
+                "old Continue must not emit semantic permission"
+            );
+            assert!(original.output.as_ref().unwrap().output().is_held());
+            fresh.answer(TurnState::Wait);
+            assert_eq!(
+                evidence_payload(&h.event().await).output_decision,
+                voice::OutputDecision::PauseRequested as i32
+            );
+            assert!(!original.cancel.is_cancelled());
+            assert!(h.input.try_recv().is_err());
+            h.finish().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn resume_revalidates_original_privacy_relationship_and_binding_before_enqueue() {
+        for domain in 0..3 {
+            with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                h.event().await;
+                let original = h.input.recv().await.unwrap();
+                h.speech().await;
+                h.call().await.answer(TurnState::Wait);
+                h.event().await;
+                h.speech().await;
+                let continuing = h.call().await;
+                match domain {
+                    0 => h
+                        .channel
+                        .privacy_epoch
+                        .store(8, std::sync::atomic::Ordering::SeqCst),
+                    1 => h
+                        .channel
+                        .relationship_epoch
+                        .store(12, std::sync::atomic::Ordering::SeqCst),
+                    _ => h
+                        .channel
+                        .revoked
+                        .store(true, std::sync::atomic::Ordering::SeqCst),
+                }
+                continuing.answer_text(TurnState::Complete, "继续");
+                let error = h.join().await.unwrap_err();
+                assert_eq!(
+                    error.code(),
+                    if domain == 2 {
+                        tonic::Code::Unauthenticated
+                    } else {
+                        tonic::Code::PermissionDenied
+                    }
+                );
+                assert!(original.cancel.is_cancelled());
+                assert!(h.input.try_recv().is_err());
+                assert!(
+                    h.events.try_recv().is_err(),
+                    "revoked source must not announce ResumeRequested"
+                );
+            })
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_last_producer_ends_output_even_while_voice_session_stays_alive() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            let admitted = h.event().await;
+            let original = h.input.recv().await.unwrap();
+            let control = original.output.as_ref().unwrap().output();
+            drop(original);
+            assert!(!control.is_alive());
+            h.speech().await;
+            h.call().await.answer_text(TurnState::Complete, "继续");
+            let no_output = h.event().await;
+            assert_eq!(no_output.generation_epoch, admitted.generation_epoch);
+            assert_eq!(
+                evidence_payload(&no_output).output_decision,
+                voice::OutputDecision::Unchanged as i32
+            );
+            assert!(h.input.try_recv().is_err());
+            h.finish().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn saturated_recognized_queue_fails_closed_without_leaking_output_producer() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            for _ in 0..8 {
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                assert!(evidence_payload(&h.event().await).response_enqueued);
+            }
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            assert_eq!(
+                h.join().await.unwrap_err().code(),
+                tonic::Code::ResourceExhausted
+            );
+            for _ in 0..8 {
+                let queued = h.input.try_recv().unwrap();
+                assert!(queued.cancel.is_cancelled());
+                assert!(!queued.output.as_ref().unwrap().output().is_alive());
+            }
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn speech_arriving_during_inference_rejects_old_snapshot_and_reevaluates() {
-        let mut h = Harness::new().await;
-        let received_after = chrono::Utc::now();
-        h.speech().await;
-        let old = h.call().await;
-        let received_before = chrono::Utc::now();
-        h.speech().await;
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while h.audio.capacity() != h.audio.max_capacity() {
-                tokio::task::yield_now().await;
-            }
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            let received_after = chrono::Utc::now();
+            h.speech().await;
+            let old = h.call().await;
+            let received_before = chrono::Utc::now();
+            h.speech().await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while h.audio.capacity() != h.audio.max_capacity() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            old.answer(TurnState::Complete);
+            let current = h.call().await;
+            assert!(h.input.try_recv().is_err());
+            current.answer(TurnState::Complete);
+            assert_eq!(h.event().await.generation_epoch, 2);
+            let input = h.input.recv().await.unwrap();
+            assert!(input.source_received_at >= received_after);
+            assert!(input.source_received_at <= received_before);
+            assert_eq!(input.source_privacy_epoch, 7);
+            assert_eq!(input.source_relationship_epoch, 11);
+            h.finish().await;
         })
-        .await
-        .unwrap();
-        old.answer(TurnState::Complete);
-        let current = h.call().await;
-        assert!(h.input.try_recv().is_err());
-        current.answer(TurnState::Complete);
-        assert_eq!(h.event().await.generation_epoch, 2);
-        let input = h.input.recv().await.unwrap();
-        assert!(input.source_received_at >= received_after);
-        assert!(input.source_received_at <= received_before);
-        assert_eq!(input.source_privacy_epoch, 7);
-        assert_eq!(input.source_relationship_epoch, 11);
-        h.finish().await;
+        .await;
     }
 
     #[tokio::test]
     async fn capture_gap_fails_and_invalidates_already_enqueued_response() {
-        let mut h = Harness::new().await;
-        h.speech().await;
-        h.call().await.answer(TurnState::Complete);
-        h.event().await;
-        let response = h.input.recv().await.unwrap();
-        h.audio
-            .send(Ok(DeviceFrame {
-                payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
-                    sequence: 999,
-                    sample_offset: 0,
-                    pcm_s16le: vec![0; 2],
-                    speech_active: true,
-                })),
-            }))
-            .await
-            .unwrap();
-        let error = tokio::time::timeout(Duration::from_secs(2), h.task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap_err();
-        assert_eq!(error.code(), tonic::Code::InvalidArgument);
-        assert!(response.cancel.is_cancelled());
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            h.event().await;
+            let response = h.input.recv().await.unwrap();
+            h.audio
+                .send(Ok(DeviceFrame {
+                    payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                        sequence: 999,
+                        sample_offset: 0,
+                        pcm_s16le: vec![0; 2],
+                        speech_active: true,
+                    })),
+                }))
+                .await
+                .unwrap();
+            let error = h.join().await.unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument);
+            assert!(response.cancel.is_cancelled());
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn busy_model_retries_bounded_window_without_requiring_another_utterance() {
-        let mut h = Harness::new().await;
-        let received_after = chrono::Utc::now();
-        h.speech().await;
-        let busy = h.call().await;
-        let received_before = chrono::Utc::now();
-        busy.1.send(Err(DetectionError::Busy)).unwrap();
-        h.call().await.answer(TurnState::Complete);
-        assert_eq!(h.event().await.generation_epoch, 2);
-        let input = h.input.recv().await.unwrap();
-        assert!(input.source_received_at >= received_after);
-        assert!(input.source_received_at <= received_before);
-        assert_eq!(input.source_privacy_epoch, 7);
-        assert_eq!(input.source_relationship_epoch, 11);
-        h.finish().await;
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            let received_after = chrono::Utc::now();
+            h.speech().await;
+            let busy = h.call().await;
+            let received_before = chrono::Utc::now();
+            busy.1.send(Err(DetectionError::Busy)).unwrap();
+            h.call().await.answer(TurnState::Complete);
+            assert_eq!(h.event().await.generation_epoch, 2);
+            let input = h.input.recv().await.unwrap();
+            assert!(input.source_received_at >= received_after);
+            assert!(input.source_received_at <= received_before);
+            assert_eq!(input.source_privacy_epoch, 7);
+            assert_eq!(input.source_relationship_epoch, 11);
+            h.finish().await;
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -957,111 +1592,113 @@ mod tests {
     }
 
     async fn changed_epoch_during_detection_retires_session(privacy: bool) {
-        let mut old = Harness::new().await;
-        old.speech().await;
-        let call = old.call().await;
-        let channel = old.channel.clone();
-        let (changed, domain, epoch) = if privacy {
-            (&channel.privacy_epoch, "privacy", 8)
-        } else {
-            (&channel.relationship_epoch, "relationship", 12)
-        };
-        changed.store(epoch, std::sync::atomic::Ordering::SeqCst);
-        call.answer(TurnState::Complete);
-        let error = tokio::time::timeout(Duration::from_secs(2), old.task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap_err();
-        assert_eq!(error.code(), tonic::Code::PermissionDenied);
-        assert!(error.message().contains(&format!("{domain} epoch changed")));
-        assert!(old.input.try_recv().is_err());
-        assert!(channel.fences.lock().unwrap().last().unwrap().1);
+        let channel = Arc::new(AuthChannel::default());
+        with_harness(channel.clone(), |mut old| async move {
+            old.speech().await;
+            let call = old.call().await;
+            let channel = old.channel.clone();
+            let (changed, domain, epoch) = if privacy {
+                (&channel.privacy_epoch, "privacy", 8)
+            } else {
+                (&channel.relationship_epoch, "relationship", 12)
+            };
+            changed.store(epoch, std::sync::atomic::Ordering::SeqCst);
+            call.answer(TurnState::Complete);
+            let error = old.join().await.unwrap_err();
+            assert_eq!(error.code(), tonic::Code::PermissionDenied);
+            assert!(error.message().contains(&format!("{domain} epoch changed")));
+            assert!(old.input.try_recv().is_err());
+            assert!(channel.fences.lock().unwrap().last().unwrap().1);
+        })
+        .await;
 
-        let mut fresh = Harness::with_channel(channel).await;
-        fresh.speech().await;
-        fresh.call().await.answer(TurnState::Complete);
-        fresh.event().await;
-        let input = fresh.input.recv().await.unwrap();
-        assert_eq!(input.source_privacy_epoch, if privacy { 8 } else { 7 });
-        assert_eq!(
-            input.source_relationship_epoch,
-            if privacy { 11 } else { 12 }
-        );
-        fresh.finish().await;
+        with_harness(channel, |mut fresh| async move {
+            fresh.speech().await;
+            fresh.call().await.answer(TurnState::Complete);
+            fresh.event().await;
+            let input = fresh.input.recv().await.unwrap();
+            assert_eq!(input.source_privacy_epoch, if privacy { 8 } else { 7 });
+            assert_eq!(
+                input.source_relationship_epoch,
+                if privacy { 11 } else { 12 }
+            );
+            fresh.finish().await;
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn source_epoch_is_fixed_at_ready_before_first_audio_and_not_renewed_by_auth() {
-        let h = Harness::new().await;
-        h.channel
-            .privacy_epoch
-            .store(8, std::sync::atomic::Ordering::SeqCst);
-        h.refresh(token(1)).await;
-        let error = tokio::time::timeout(Duration::from_secs(2), h.task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap_err();
-        assert_eq!(error.code(), tonic::Code::PermissionDenied);
-        assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.channel
+                .privacy_epoch
+                .store(8, std::sync::atomic::Ordering::SeqCst);
+            h.refresh(token(1)).await;
+            let error = h.join().await.unwrap_err();
+            assert_eq!(error.code(), tonic::Code::PermissionDenied);
+            assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+        })
+        .await;
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn privacy_change_retires_idle_session_and_cancels_queued_response() {
-        let mut h = Harness::new().await;
-        h.speech().await;
-        h.call().await.answer(TurnState::Complete);
-        h.event().await;
-        h.channel
-            .privacy_epoch
-            .store(8, std::sync::atomic::Ordering::SeqCst);
-        for _ in 0..6 {
-            h.silence().await;
-            tokio::time::advance(Duration::from_secs(5)).await;
-            tokio::task::yield_now().await;
-        }
-        let error = h.task.await.unwrap().unwrap_err();
-        assert_eq!(error.code(), tonic::Code::PermissionDenied);
-        let queued = h.input.recv().await.unwrap();
-        assert_eq!(queued.source_privacy_epoch, 7);
-        assert!(queued.cancel.is_cancelled());
-        assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+        with_harness_recheck(
+            Arc::new(AuthChannel::default()),
+            Duration::from_millis(100),
+            |mut h| async move {
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                h.event().await;
+                h.channel
+                    .privacy_epoch
+                    .store(8, std::sync::atomic::Ordering::SeqCst);
+                let error = h.join().await.unwrap_err();
+                assert_eq!(error.code(), tonic::Code::PermissionDenied);
+                let queued = h.input.recv().await.unwrap();
+                assert_eq!(queued.source_privacy_epoch, 7);
+                assert!(queued.cancel.is_cancelled());
+                assert!(h.channel.fences.lock().unwrap().last().unwrap().1);
+            },
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn continuously_ready_capture_does_not_starve_model_or_control() {
-        let mut h = Harness::new().await;
-        h.speech().await;
-        let call = h.call().await;
-        let audio = h.audio.clone();
-        let mut sequence = h.sequence;
-        let feeder = tokio::spawn(async move {
-            loop {
-                let frame = DeviceFrame {
-                    payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
-                        sequence,
-                        sample_offset: sequence * 1600,
-                        pcm_s16le: vec![0; 3200],
-                        speech_active: false,
-                    })),
-                };
-                if audio.send(Ok(frame)).await.is_err() {
-                    return;
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            let call = h.call().await;
+            let audio = h.audio.clone();
+            let mut sequence = h.sequence;
+            let feeder = tokio::spawn(async move {
+                loop {
+                    let frame = DeviceFrame {
+                        payload: Some(device_frame::Payload::Audio(voice::CaptureFrame {
+                            sequence,
+                            sample_offset: sequence * 1600,
+                            pcm_s16le: vec![0; 3200],
+                            speech_active: false,
+                        })),
+                    };
+                    if audio.send(Ok(frame)).await.is_err() {
+                        return;
+                    }
+                    sequence += 1;
                 }
-                sequence += 1;
-            }
-        });
-        call.answer(TurnState::Backchannel);
-        assert!(matches!(
-            h.event().await.payload,
-            Some(session_event::Payload::Evidence(_))
-        ));
-        h.finish().await;
-        tokio::time::timeout(Duration::from_secs(2), feeder)
-            .await
-            .unwrap()
-            .unwrap();
+            });
+            call.answer(TurnState::Backchannel);
+            assert!(matches!(
+                h.event().await.payload,
+                Some(session_event::Payload::Evidence(_))
+            ));
+            h.finish().await;
+            tokio::time::timeout(Duration::from_secs(2), feeder)
+                .await
+                .unwrap()
+                .unwrap();
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -1101,116 +1738,123 @@ mod tests {
         assert!(old.cancel.is_cancelled());
         assert!(!new.cancel.is_cancelled());
     }
-    #[tokio::test(start_paused = true)]
-    async fn renewed_credentials_keep_session_alive_beyond_five_minutes() {
-        let mut h = Harness::new().await;
-        let mut issued = Vec::new();
-        for seconds in (5..=365).step_by(5) {
-            h.silence().await;
-            if seconds % 120 == 0 {
-                let fresh = token(seconds);
-                issued.push(fresh.clone());
-                *h.channel.required_token.lock().unwrap() = Some(fresh.clone());
-                // This refresh and the 30-second check become ready together.
-                h.refresh(fresh).await;
-            }
-            tokio::time::advance(Duration::from_secs(5)).await;
-            tokio::task::yield_now().await;
-            assert!(
-                !h.task.is_finished(),
-                "session ended at virtual second {seconds}"
-            );
-        }
-        let checked = h.channel.checked.lock().unwrap().clone();
-        assert!(checked.len() >= 12, "30-second revalidation was skipped");
-        assert_eq!(issued.len(), 3);
-        assert!(issued.iter().all(|token| checked.contains(token)));
-        h.finish().await;
+    #[tokio::test]
+    async fn renewed_credentials_survive_repeated_periodic_revalidation() {
+        with_harness_recheck(
+            Arc::new(AuthChannel::default()),
+            Duration::from_millis(100),
+            |mut h| async move {
+                for revision in 1..=3 {
+                    let fresh = token(revision);
+                    h.refresh(fresh.clone()).await;
+                    // This is a short real-clock scheduling test. Signed token-age
+                    // rejection is covered separately; do not advance live PG timers.
+                    h.checked_token(&fresh, 1).await;
+                    *h.channel.required_token.lock().unwrap() = Some(fresh.clone());
+                    h.checked_token(&fresh, 5).await;
+                    assert!(!h.task.as_ref().unwrap().is_finished());
+                    // Allow the next explicitly authenticated credential to replace it.
+                    *h.channel.required_token.lock().unwrap() = None;
+                }
+                h.finish().await;
+            },
+        )
+        .await;
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn binding_revocation_closes_on_periodic_revalidation() {
-        let mut h = Harness::new().await;
-        let channel = h.channel.clone();
-        channel
-            .revoked
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        for _ in 0..6 {
-            h.silence().await;
-            tokio::time::advance(Duration::from_secs(5)).await;
-            tokio::task::yield_now().await;
-        }
-        let error = h.task.await.unwrap().unwrap_err();
-        assert_eq!(error.code(), tonic::Code::Unauthenticated);
-        assert!(channel.fences.lock().unwrap().last().unwrap().1);
+        with_harness_recheck(
+            Arc::new(AuthChannel::default()),
+            Duration::from_millis(100),
+            |mut h| async move {
+                let channel = h.channel.clone();
+                channel
+                    .revoked
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                let error = h.join().await.unwrap_err();
+                assert_eq!(error.code(), tonic::Code::Unauthenticated);
+                assert!(channel.fences.lock().unwrap().last().unwrap().1);
+            },
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn wrong_or_stale_signed_refresh_is_rejected_and_closes_scoped_output() {
         use base64::Engine;
         for invalid_case in 0..4 {
-            let h = Harness::new().await;
-            let channel = h.channel.clone();
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let claims = alia_transport::AuthTokenClaims {
-                version: 1,
-                server_id: if invalid_case == 2 {
-                    "different-device"
-                } else {
-                    "device"
-                }
-                .into(),
-                scope: if invalid_case == 3 {
-                    "different-scope"
-                } else {
-                    alia_transport::EMBEDDED_INGRESS_SCOPE
-                }
-                .into(),
-                iat: if invalid_case == 1 { now - 301 } else { now },
-                exp: now + 900,
-            };
-            let payload = serde_json::to_vec(&claims).unwrap();
-            let key =
-                ed25519_dalek::SigningKey::from_bytes(&[if invalid_case == 0 { 9 } else { 7 }; 32]);
-            let signature = alia_transport::sign_payload(&key, &payload);
-            let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-            h.refresh(format!(
-                "{}.{}",
-                engine.encode(payload),
-                engine.encode(signature)
-            ))
+            with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+                let channel = h.channel.clone();
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let claims = alia_transport::AuthTokenClaims {
+                    version: 1,
+                    server_id: if invalid_case == 2 {
+                        "different-device"
+                    } else {
+                        "device"
+                    }
+                    .into(),
+                    scope: if invalid_case == 3 {
+                        "different-scope"
+                    } else {
+                        alia_transport::EMBEDDED_INGRESS_SCOPE
+                    }
+                    .into(),
+                    iat: if invalid_case == 1 { now - 301 } else { now },
+                    exp: now + 900,
+                };
+                let payload = serde_json::to_vec(&claims).unwrap();
+                let key = ed25519_dalek::SigningKey::from_bytes(
+                    &[if invalid_case == 0 { 9 } else { 7 }; 32],
+                );
+                let signature = alia_transport::sign_payload(&key, &payload);
+                let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+                h.refresh(format!(
+                    "{}.{}",
+                    engine.encode(payload),
+                    engine.encode(signature)
+                ))
+                .await;
+                let error = h.join().await.unwrap_err();
+                assert_eq!(error.code(), tonic::Code::Unauthenticated);
+                assert!(channel.fences.lock().unwrap().last().unwrap().1);
+            })
             .await;
-            let error = h.task.await.unwrap().unwrap_err();
-            assert_eq!(error.code(), tonic::Code::Unauthenticated);
-            assert!(channel.fences.lock().unwrap().last().unwrap().1);
         }
     }
 
     #[tokio::test]
-    async fn complete_wait_and_close_send_immutable_scoped_fences() {
-        let mut h = Harness::new().await;
-        h.speech().await;
-        h.call().await.answer(TurnState::Complete);
-        let response = h.event().await;
-        let input = h.input.recv().await.unwrap();
-        h.speech().await;
-        h.call().await.answer(TurnState::Wait);
-        let wait = h.event().await;
-        assert_eq!(wait.generation_epoch, response.generation_epoch + 1);
-        assert!(input.cancel.is_cancelled());
-        let channel = h.channel.clone();
-        h.finish().await;
-        let fences = channel.fences.lock().unwrap();
-        assert_eq!(fences.len(), 3);
-        for (scope, _) in fences.iter() {
-            assert_eq!(scope.session_id.to_string(), response.session_id);
-            assert_eq!(scope.device_boot_id.to_string(), response.device_boot_id);
-        }
-        assert_eq!((fences[0].0.generation_epoch, fences[0].1), (2, false));
-        assert_eq!((fences[1].0.generation_epoch, fences[1].1), (3, false));
-        assert!(fences[2].1);
+    async fn complete_wait_keeps_owner_and_only_close_sends_terminal_fence() {
+        with_harness(Arc::new(AuthChannel::default()), |mut h| async move {
+            h.speech().await;
+            h.call().await.answer(TurnState::Complete);
+            let response = h.event().await;
+            let input = h.input.recv().await.unwrap();
+            h.speech().await;
+            h.call().await.answer(TurnState::Wait);
+            let wait = h.event().await;
+            assert_eq!(wait.generation_epoch, response.generation_epoch);
+            assert!(!input.cancel.is_cancelled());
+            assert_eq!(
+                evidence_payload(&wait).output_decision,
+                voice::OutputDecision::PauseRequested as i32
+            );
+            let channel = h.channel.clone();
+            h.finish().await;
+            let fences = channel.fences.lock().unwrap();
+            assert_eq!(fences.len(), 2);
+            for (scope, _) in fences.iter() {
+                assert_eq!(scope.session_id.to_string(), response.session_id);
+                assert_eq!(scope.device_boot_id.to_string(), response.device_boot_id);
+            }
+            assert_eq!((fences[0].0.generation_epoch, fences[0].1), (2, false));
+            assert!(fences[1].1);
+            assert!(input.cancel.is_cancelled());
+        })
+        .await;
     }
 }

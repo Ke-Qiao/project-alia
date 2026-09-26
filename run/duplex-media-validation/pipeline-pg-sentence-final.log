@@ -1,0 +1,9 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/run/worktrees/alia-duplex-media-budget/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.09s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-04e3e2536907c891)
+
+running 2 tests
+test channels::pipeline::integration_tests::sentence_delivery_presynthesizes_bounded_fragments_under_one_response ... ok
+test channels::pipeline::integration_tests::sentence_tts_failure_is_not_committed_as_success_or_replayed ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 234 filtered out; finished in 4.01s

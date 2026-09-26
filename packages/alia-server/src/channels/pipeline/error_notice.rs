@@ -126,6 +126,18 @@ pub(super) async fn notify_pipeline_error(
             delivery: PipelineErrorDelivery::Cancelled,
         };
     }
+    if original_turn.output.is_some() && original_turn.response_id.get().is_some() {
+        // Preparing the canonical Response fixes this voice generation's
+        // identity before Register ACK. A failure cancels that owner; a spoken
+        // replacement requires a new admitted generation.
+        if let Ok(owner) = Uuid::parse_str(user_id) {
+            super::delivery::interrupt_response(modules, original_turn, owner).await;
+        }
+        return PipelineErrorNotification {
+            notice,
+            delivery: PipelineErrorDelivery::Failed,
+        };
+    }
     let notice_turn = async {
         let owner = Uuid::parse_str(user_id)?;
         super::delivery::interrupt_response(modules, original_turn, owner).await;
@@ -419,12 +431,20 @@ async fn deliver_voice_error_notice(
         }),
         Some((channel_id, user_id)),
     );
+    let budget =
+        match super::streaming::prepare_audio_budget(modules, target, channel_id, turn).await {
+            Ok(budget) => budget,
+            Err(error) => {
+                tracing::warn!(error=%error, "error TTS has no admitted Response budget");
+                return PipelineErrorDelivery::Failed;
+            }
+        };
     let audio_bytes = match cancellable_stage(
         turn,
         "error_tts",
         modules
             .tts
-            .synthesize_request(&TtsRequest::plain(&notice.tts_text)),
+            .synthesize_request(&TtsRequest::plain(&notice.tts_text), budget),
     )
     .await
     {
@@ -451,7 +471,7 @@ async fn deliver_voice_error_notice(
     };
 
     let audio_out = AudioPayload {
-        data: audio_bytes,
+        data: audio_bytes.into_buffer(),
         sample_rate: 24000,
         channels: 1,
         format: AudioFormat::Wav,
@@ -521,7 +541,6 @@ fn preview(input: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
     use crate::channels::adapter::ChannelAction;
-    use crate::providers::adapter::TtsAdapter;
 
     #[test]
     fn builds_chinese_notice_without_raw_error() {
@@ -589,26 +608,29 @@ mod tests {
         }
     }
     #[async_trait::async_trait]
-    impl TtsAdapter for CancellingTts {
-        async fn synthesize(&self, _: &str) -> anyhow::Result<Vec<u8>> {
+    impl crate::providers::adapter::TtsAdapter for CancellingTts {
+        async fn synthesize_request(
+            &self,
+            _: &crate::providers::adapter::TtsRequest,
+            budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
             self.cancel.cancel();
             if self.fails {
                 anyhow::bail!("test synthesis error");
             }
-            Ok(vec![1, 2])
+            budget.copy_from_slice(&[1, 2]).await
         }
-        async fn synthesize_stream(
+        async fn synthesize_stream_request(
             &self,
-            _: &str,
-        ) -> anyhow::Result<
-            std::pin::Pin<Box<dyn futures::Stream<Item = anyhow::Result<Vec<u8>>> + Send>>,
-        > {
-            unreachable!("error notice uses buffered synthesis")
+            _: &crate::providers::adapter::TtsRequest,
+            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            unreachable!("fixture expects buffered synthesis")
         }
     }
 
     #[tokio::test]
-    async fn cancellation_at_tts_completion_prevents_audio_and_error_fallback() {
+    async fn unadmitted_error_notice_never_starts_tts_or_side_effects() {
         for fails in [false, true] {
             let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
             let channel = RecordingChannel::default();
@@ -634,7 +656,11 @@ mod tests {
                 Some(&turn),
             )
             .await;
-            assert_eq!(delivery, PipelineErrorDelivery::Cancelled);
+            assert_eq!(delivery, PipelineErrorDelivery::Failed);
+            assert!(
+                !turn.token.is_cancelled(),
+                "TTS must not run before Response preparation"
+            );
             assert_eq!(channel.effects.load(std::sync::atomic::Ordering::SeqCst), 0);
         }
     }

@@ -119,5 +119,6 @@ network-interface.workspace = true
 mdns-sd.workspace = true
 
 [dev-dependencies]
+alia-embedded = { path = "../alia-embedded", default-features = false }
 tokio = { workspace = true, features = ["test-util"] }
 reqwest.workspace = true

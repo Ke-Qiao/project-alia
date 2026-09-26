@@ -18,6 +18,23 @@ pub(super) async fn process_recognized_voice(
         return Ok(());
     }
     let (channel_id, channel) = resolve_event_channel(channels, &input.channel_id).await?;
+    let channel = if let Some(output) = &input.output {
+        anyhow::ensure!(
+            output.request_id() == input.request_id
+                && output.owner().to_string() == input.user_id
+                && output.scope()
+                    == VoiceSessionScope {
+                        session_id: input.session_id,
+                        device_boot_id: input.device_boot_id,
+                        generation_epoch: input.generation_epoch,
+                    }
+                && output.channel().channel_id() == channel_id,
+            "recognized input differs from its original output owner"
+        );
+        output.channel()
+    } else {
+        channel
+    };
     if input.cancel.is_cancelled() {
         return Ok(());
     }
@@ -37,7 +54,7 @@ pub(super) async fn process_recognized_voice(
         .register(
             channel_id.clone(),
             input.user_id.clone(),
-            Uuid::new_v4(),
+            input.request_id,
             interrupt_config,
             input.cancel,
         )
@@ -48,6 +65,7 @@ pub(super) async fn process_recognized_voice(
         generation_epoch: input.generation_epoch,
     });
     turn.output_channel = Some(channel.clone());
+    turn.output = input.output;
     turn.received_at = input.source_received_at;
     turn.source_privacy_epoch = Some(input.source_privacy_epoch);
     turn.source_relationship_epoch = Some(input.source_relationship_epoch);
