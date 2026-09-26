@@ -21,6 +21,7 @@ pub struct AppState {
     pub execution: Arc<crate::modules::execution::ExecutionService>,
     pub delivery: Arc<crate::modules::delivery::DeliveryService>,
     pub voice_input: crate::modules::interaction::voice_input::VoiceInputHandle,
+    pub voice_initiatives: crate::modules::interaction::initiative::VoiceInitiativeHandle,
     pub pipeline_task: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub turn_detector: Option<Arc<dyn crate::modules::interaction::turn_detector::TurnDetector>>,
     pub db: DatabaseConnection,

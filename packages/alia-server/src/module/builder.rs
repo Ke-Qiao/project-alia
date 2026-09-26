@@ -777,6 +777,27 @@ impl ServerBuilder {
                 .await?;
         }
 
+        let voice_initiatives =
+            crate::modules::interaction::initiative::VoiceInitiativeHandle::default();
+        let companion = Arc::new(crate::modules::companion::CompanionService::new(
+            db.clone(),
+            voice_initiatives.clone(),
+            self.cancel_token.clone(),
+        ));
+        let companion_cleanup = companion.clone();
+        cleanup.add("companion", ShutdownPhase::Producers, move || {
+            let companion = companion_cleanup.clone();
+            async move { companion.stop().await }
+        });
+        let companion_admission = companion.clone();
+        cleanup.add("companion_admission", ShutdownPhase::Ingress, move || {
+            let companion = companion_admission.clone();
+            async move {
+                companion.close();
+                Ok(())
+            }
+        });
+
         // Build registry
         let registry = ModuleRegistry {
             cleanup: cleanup.clone(),
@@ -792,6 +813,7 @@ impl ServerBuilder {
             conversation: conversation_arc,
             memory: memory_arc,
             context,
+            companion,
             cache: cache_arc,
             skills,
             persona,
@@ -829,6 +851,7 @@ impl ServerBuilder {
             execution,
             delivery,
             voice_input,
+            voice_initiatives,
             pipeline_task: Arc::default(),
             turn_detector,
             db,
@@ -957,6 +980,12 @@ impl ServerBuilder {
         start_module(state.modules.insights.as_ref(), &state.cancel_token).await?;
         start_module(state.modules.scheduler.as_ref(), &state.cancel_token).await?;
         start_module(state.modules.rule_engine.as_ref(), &state.cancel_token).await?;
+        startup_step(
+            &state.cancel_token,
+            "starting companion shadow supervision",
+            state.modules.companion.start(),
+        )
+        .await?;
         state
             .sensors
             .spawn_cleanup_loop(state.cancel_token.clone())

@@ -34,20 +34,30 @@ impl Peer {
         let signal = seen.clone();
         let count = calls.clone();
         let reply = Arc::new(reply);
+        let stop = CancellationToken::new();
+        let body_stop = stop.clone();
         let router = Router::new().route(
             "/tts",
-            post(move || {
+            // Consume the real request body before sending a stalled response.
+            post(move |_: Bytes| {
                 let reply = reply.clone();
                 let signal = signal.clone();
                 let count = count.clone();
+                let body_stop = body_stop.clone();
                 async move {
                     count.fetch_add(1, Ordering::SeqCst);
                     signal.notify_one();
-                    reply()
+                    // Graceful server shutdown does not finish an infinite body.
+                    // Only fixture teardown releases these deliberately stalled peers.
+                    reply().map(|body| {
+                        Body::from_stream(
+                            body.into_data_stream()
+                                .take_until(body_stop.cancelled_owned()),
+                        )
+                    })
                 }
             }),
         );
-        let stop = CancellationToken::new();
         let shutdown = stop.clone();
         let task = tokio::spawn(async move {
             axum::serve(listener, router)
@@ -72,10 +82,15 @@ impl Peer {
     }
     async fn close(mut self) {
         self.stop.cancel();
-        tokio::time::timeout(Duration::from_secs(3), self.task.take().unwrap())
-            .await
-            .unwrap()
-            .unwrap();
+        let mut task = self.task.take().unwrap();
+        match tokio::time::timeout(Duration::from_secs(3), &mut task).await {
+            Ok(result) => result.unwrap(),
+            Err(error) => {
+                task.abort();
+                let stopped = task.await;
+                panic!("HTTP peer shutdown timed out: {error}; aborted task: {stopped:?}");
+            }
+        }
     }
 }
 impl Drop for Peer {

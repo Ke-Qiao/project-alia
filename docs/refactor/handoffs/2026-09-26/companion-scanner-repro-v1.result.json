@@ -1,0 +1,29 @@
+{
+  "binary": "target/debug/deps/server_runtime-1dc044b93c32fdc1",
+  "test": "companion::companion_runtime_discovers_canonical_sources_and_joins_worker",
+  "source_changes": [],
+  "single": {"exit_code": 0, "passed": 1, "failed": 0, "test_seconds": 9.42, "wall_seconds": 9.43},
+  "parallel": {
+    "exit_codes": [0, 0],
+    "passed": [1, 1],
+    "failed": [0, 0],
+    "test_seconds": [9.47, 9.46],
+    "wall_seconds": 9.642,
+    "observation": "Both isolated schemas held one appraisal by approximately 4.3 seconds. No processed or rejected source, or operation, was observed while source age advanced to approximately 4.95 seconds. Both tests then passed and cleaned their schemas."
+  },
+  "conclusion": "The original full-workspace failure did not reproduce. These passes do not establish its root cause.",
+  "after": {
+    "server_runtime_schemas": 0,
+    "other_client_connections": 0,
+    "preserved_schema_baseline": [
+      "pipeline_delivery_12873bb2547946af85f998a91746a5a4",
+      "pipeline_delivery_5d85b6229c81441fb5e38a8000f7037f",
+      "pipeline_delivery_c7794da066664a34901bca6d85453375"
+    ]
+  },
+  "limitations": [
+    "The V1 scanner does not expose a fixed error class or completed-scan diagnostic.",
+    "No PostgreSQL or server source instrumentation was added.",
+    "The host-clock versus PostgreSQL-clock opportunity condition is a code-path finding, not a verified explanation for the original failure."
+  ]
+}

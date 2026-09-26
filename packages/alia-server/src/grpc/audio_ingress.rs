@@ -23,7 +23,9 @@ pub(crate) struct AdmittedSource {
 }
 
 impl AdmittedSource {
-    pub(crate) fn channel(&self) -> Arc<dyn ChannelAdapter> { self.channel.clone() }
+    pub(crate) fn channel(&self) -> Arc<dyn ChannelAdapter> {
+        self.channel.clone()
+    }
 }
 
 #[derive(Clone)]

@@ -1,0 +1,32 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "--locked",
+    "--offline",
+    "--",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "inherited_real_pty": {
+    "0": true,
+    "1": true,
+    "2": true
+  },
+  "started_at": "2026-09-26T06:05:58.971678+00:00",
+  "finished_at": "2026-09-26T06:05:59.473905+00:00",
+  "elapsed_seconds": 0.5,
+  "exit_code": 0,
+  "source_manifest_sha256": "8ea6d4f7cc63b82d22b8c584c8c0b426b11e04f952f64bd15b7776d352cc18a1",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

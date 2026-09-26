@@ -59,6 +59,7 @@ struct Inner {
     wake: Notify,
     response: std::sync::OnceLock<ResponseCandidate>,
     registration: std::sync::OnceLock<OutputRegistration>,
+    expected_context: std::sync::OnceLock<Uuid>,
     // Keep the original budget identity alive across sentence gaps and native
     // tails, even when no encoded buffer happens to be retained at that instant.
     audio_budget: std::sync::OnceLock<crate::providers::tts::audio_budget::ResponseAudioBudget>,
@@ -107,11 +108,34 @@ impl OutputProducer {
     pub async fn wait_open(&self) -> anyhow::Result<()> {
         self.output.wait_open().await
     }
+    /// Set by the original voice actor before handing an initiative producer
+    /// to generation. Neither a later Response nor a retry may change it.
+    pub(crate) fn constrain_initiative(
+        &self,
+        context_id: Uuid,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!context_id.is_nil(), "initiative has no Context");
+        if let Err(id) = self.output.0.expected_context.set(context_id) {
+            anyhow::ensure!(
+                self.output.0.expected_context.get() == Some(&id),
+                "initiative Context changed"
+            );
+        }
+        self.output.tighten_deadline(deadline);
+        anyhow::ensure!(self.output.is_alive(), "initiative deadline expired");
+        Ok(())
+    }
     pub async fn bind(&self, response: ResponseRecord) -> anyhow::Result<()> {
         let output = &self.output;
         anyhow::ensure!(
             response.key.user_id == output.0.owner
                 && response.key.request_id == output.0.request_id
+                && output
+                    .0
+                    .expected_context
+                    .get()
+                    .is_none_or(|id| response.context_id == Some(*id))
                 && response.channel_id == output.0.channel.channel_id(),
             "canonical Response differs from original producer"
         );
@@ -407,6 +431,7 @@ impl DeliveryService {
             wake: Notify::new(),
             response: std::sync::OnceLock::new(),
             registration: std::sync::OnceLock::new(),
+            expected_context: std::sync::OnceLock::new(),
             audio_budget: std::sync::OnceLock::new(),
             sender,
         }));

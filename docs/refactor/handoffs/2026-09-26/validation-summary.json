@@ -1,0 +1,80 @@
+{
+  "date": "2026-09-26",
+  "branch": "codex/architecture-refactor",
+  "status": "shadow_foundation_validated_live_disabled",
+  "source_manifest_sha256": "8ea6d4f7cc63b82d22b8c584c8c0b426b11e04f952f64bd15b7776d352cc18a1",
+  "source_inputs": 619,
+  "source_drift": [],
+  "workspace_v3": {
+    "passed": 1005,
+    "failed": 0,
+    "ignored": 5,
+    "exit_code": 0,
+    "elapsed_seconds": 403.01
+  },
+  "separately_executed_ignored": {
+    "actual_pty": 3,
+    "actual_easy_turn_and_grpc": 2,
+    "failed": 0
+  },
+  "macos_unique_executed_tests": 1010,
+  "directed_not_added_again": {
+    "companion": 26,
+    "tts_http": 9
+  },
+  "compile_checks": {
+    "macos": [
+      "Server no-default all-targets",
+      "Embedded no-default all-targets"
+    ],
+    "linux_arm64": [
+      "Server no-default all-targets",
+      "Embedded no-default all-targets"
+    ],
+    "linux_current_scope": "compile only; no Linux tests this package"
+  },
+  "retained_failures": {
+    "v1_workspace": {
+      "passed": 996,
+      "failed": 5,
+      "ignored": 5
+    },
+    "v1_failures": [
+      "four TTS HTTP fixture shutdown timeouts; fixture repaired",
+      "one Companion scanner deadline; unreproduced, opaque diagnostics and absence clock semantics improved without assigning an unproven cause"
+    ],
+    "v2": "TaskTrackerToken import compile failure; corrected module path in V3"
+  },
+  "progress": {
+    "du_completed": 11,
+    "du_total": 11,
+    "cp_completed": 4,
+    "cp_total": 7,
+    "rounds_completed": 0,
+    "rounds_total": 6
+  },
+  "model_inference_ms": {
+    "first_adapter_call": 11173.574666958302,
+    "grpc_complete": 531.876458087936,
+    "grpc_backchannel": 327.3724999744445,
+    "grpc_wait": 414.7805420216173,
+    "limit": "existing service was not restarted; not cold-start or end-to-end acoustic latency evidence"
+  },
+  "pg_baseline": {
+    "database": "alia_refactor_delivery_final",
+    "container": "alia-refactor-test-db",
+    "remaining_schemas": [
+      "pipeline_delivery_12873bb2547946af85f998a91746a5a4",
+      "pipeline_delivery_5d85b6229c81441fb5e38a8000f7037f",
+      "pipeline_delivery_c7794da066664a34901bca6d85453375"
+    ],
+    "other_clients": 0
+  },
+  "not_validated": [
+    "CP05 live output",
+    "physical Pi/speaker/AEC/actuator",
+    "24 hour workload",
+    "Windows",
+    "future local Easy-Turn or colocated deployment"
+  ]
+}

@@ -1,6 +1,7 @@
 //! PostgreSQL-owned, immutable provenance for actual materialized model inputs.
 //! No adapter snapshot or in-memory fixture can manufacture a persistent lease.
 mod capture;
+pub(crate) mod companion;
 mod rebuild;
 mod relationship;
 pub use rebuild::AppraisalRebuildPage;

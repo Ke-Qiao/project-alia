@@ -33,6 +33,7 @@ pub struct CaptureWindow {
     pre_roll_received: VecDeque<(usize, SystemTime)>,
     source_received_at: Option<SystemTime>,
     evaluated_revision: Option<u64>,
+    last_received_at: Option<SystemTime>,
 }
 
 impl CaptureWindow {
@@ -77,6 +78,7 @@ impl CaptureWindow {
         self.next_sequence = next_sequence;
         self.next_sample = next_sample;
         self.revision = revision;
+        self.last_received_at = Some(received_at);
         if speech && !self.active {
             self.active = true;
             self.source_received_at = Some(
@@ -121,6 +123,17 @@ impl CaptureWindow {
     }
     pub fn through_sequence(&self) -> u64 {
         self.next_sequence.saturating_sub(1)
+    }
+
+    /// A pending utterance remains occupied even after silence or an Incomplete
+    /// model result. Only its semantic owner may call finish_utterance.
+    pub fn is_idle(&self) -> bool {
+        !self.active
+    }
+
+    /// Host receive time, absent until the first continuous frame is accepted.
+    pub fn last_received_at(&self) -> Option<SystemTime> {
+        self.last_received_at
     }
 
     /// Trusted receiver time of the first frame retained in this utterance.
@@ -216,6 +229,29 @@ mod tests {
         window.finish_utterance();
         frame(&mut window, true);
         assert_eq!(window.audio.len(), 3200);
+    }
+
+    #[test]
+    fn idle_snapshot_requires_semantic_completion_and_preserves_frame_time() {
+        let mut window = CaptureWindow::default();
+        assert!(window.is_idle());
+        assert_eq!(window.last_received_at(), None);
+        let at = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(10);
+        window.push(0, 0, &[0; 3200], true, at).unwrap();
+        for n in 1..=7 {
+            window.push(n, n * 1600, &[0; 3200], false, at).unwrap();
+        }
+        assert!(window.take_ready().is_some());
+        assert!(!window.is_idle());
+        window.finish_utterance();
+        assert!(window.is_idle());
+        assert_eq!(window.last_received_at(), Some(at));
+        assert!(
+            window
+                .push(100, 0, &[0; 2], false, SystemTime::now())
+                .is_err()
+        );
+        assert_eq!(window.last_received_at(), Some(at));
     }
 
     #[test]

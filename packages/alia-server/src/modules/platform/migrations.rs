@@ -65,6 +65,7 @@ pub const MIGRATIONS: &[Migration<'static>] = &[
     migration!("m20260914_000011_appraisal_rebuild.sql"),
     migration!("m20260920_000012_appraisal_memory_erasure.sql"),
     migration!("m20260920_000013_output_control.sql"),
+    migration!("m20260926_000014_companion.sql"),
 ];
 
 pub async fn run(db: &DatabaseConnection) -> anyhow::Result<MigrationReport> {

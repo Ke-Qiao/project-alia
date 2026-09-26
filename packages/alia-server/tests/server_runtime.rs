@@ -50,6 +50,9 @@ mod relationship_api;
 #[path = "server_runtime/relationship_rebuild.rs"]
 mod relationship_rebuild;
 
+#[path = "server_runtime/companion.rs"]
+mod companion;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,

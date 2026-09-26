@@ -24,8 +24,12 @@ use uuid::Uuid;
 use super::audio_ingress::{AdmittedSource, ServerAudioIngressService};
 use crate::channels::adapter::ChannelAdapter;
 use crate::modules::delivery::{DeliveryService, VoiceOutput};
+use crate::modules::interaction::initiative::VoiceInitiativeHandle;
 use crate::modules::interaction::turn_detector::{DetectionError, TurnDetector};
 use crate::modules::interaction::voice_input::{RecognizedVoiceInput, VoiceInputHandle};
+use crate::modules::memory::context::ContextService;
+
+mod initiative;
 
 const STREAM_IDLE: Duration = Duration::from_secs(10);
 const MAX_SESSIONS: usize = 16;
@@ -48,6 +52,7 @@ pub struct VoiceSessionService {
     shutdown: CancellationToken,
     runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
     sessions: Sessions,
+    initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
 }
 
 impl VoiceSessionService {
@@ -69,7 +74,18 @@ impl VoiceSessionService {
             shutdown,
             runtime_tasks,
             sessions: Arc::default(),
+            initiatives: None,
         }
+    }
+
+    /// Explicit wiring only; the default service never advertises initiatives.
+    pub fn with_initiatives(
+        mut self,
+        handle: VoiceInitiativeHandle,
+        context: Arc<ContextService>,
+    ) -> Self {
+        self.initiatives = Some((handle, context));
+        self
     }
 }
 
@@ -77,6 +93,8 @@ struct OutputRuntime {
     delivery: Arc<DeliveryService>,
     hold_budget: Duration,
     maximum_hold_ms: u64,
+    initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
+    initiative_output_enabled: bool,
 }
 
 fn negotiated_hold_limit(open: &voice::OpenSession) -> Result<u64, Status> {
@@ -235,6 +253,11 @@ impl VoiceSession for VoiceSessionService {
             delivery: self.delivery.clone(),
             hold_budget: self.hold_budget.min(Duration::from_millis(maximum_hold_ms)),
             maximum_hold_ms,
+            initiatives: open
+                .initiative_admission
+                .then(|| self.initiatives.clone())
+                .flatten(),
+            initiative_output_enabled: false,
         };
         self.runtime_tasks
             .try_spawn("voice_session", async move {
@@ -250,6 +273,7 @@ impl VoiceSession for VoiceSessionService {
                         request: auth_request,
                         channel: lease.channel.clone(),
                         source: None,
+                        last_frame_at: tokio::time::Instant::now(),
                     },
                     output_runtime,
                     AUTH_RECHECK,
@@ -273,6 +297,7 @@ struct SessionCredentials {
     channel: String,
     /// Captured once before Ready. Refresh may invalidate, never replace it.
     source: Option<AdmittedSource>,
+    last_frame_at: tokio::time::Instant,
 }
 
 impl SessionCredentials {
@@ -360,6 +385,9 @@ async fn accept_capture(
     credentials: &mut SessionCredentials,
     output: Option<&VoiceOutput>,
 ) -> Result<bool, Status> {
+    // Only an actual peer frame refreshes transport liveness. Internal
+    // opportunity requests must not keep a stalled capture session alive.
+    credentials.last_frame_at = tokio::time::Instant::now();
     match frame.payload {
         Some(device_frame::Payload::Audio(frame)) => {
             window
@@ -496,6 +524,21 @@ where
     // and admission. Verify the credential and pinned source together before
     // allowing capture or model work.
     credentials.revalidate().await?;
+    let initial_owner = lease.slot.owner.lock().await;
+    if lease.cancel.is_cancelled()
+        || !initial_owner
+            .as_ref()
+            .is_some_and(|(id, _)| *id == lease.id)
+    {
+        return Err(Status::cancelled(
+            "original voice session replaced before Ready",
+        ));
+    }
+    let mut initiatives = output_runtime
+        .initiatives
+        .clone()
+        .map(|(handle, context)| initiative::Session::new(handle, context, lease, boot));
+    drop(initial_owner);
     send_event(
         tx,
         lease,
@@ -508,9 +551,11 @@ where
             sample_rate_hz: 16_000,
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
+            initiative_admission: initiatives.is_some(),
         }),
     )
     .await?;
+    credentials.last_frame_at = tokio::time::Instant::now();
     let mut window = CaptureWindow::default();
     let mut controller = TurnController::default();
     let mut detection: Option<Detection> = None;
@@ -543,6 +588,15 @@ where
         tokio::select! {
             _ = lease.cancel.cancelled() => return Ok(()),
             _ = tx.closed() => return Ok(()),
+            request = async { initiatives.as_mut().expect("select guard").receiver.recv().await }, if initiatives.is_some() => {
+                if let Some(request) = request {
+                    initiatives.as_mut().expect("initiative receiver").handle(
+                        request, &mut stream, tx, lease, &mut credentials, &mut window,
+                        &mut controller, detection.is_some() || retry_at.is_some() || busy_deadline.is_some(),
+                        &mut output, &mut response_cancel, &output_runtime,
+                    ).await;
+                }
+            },
             _ = auth_recheck.tick() => {
                 // Refresh already queued with capture takes precedence over a
                 // periodic check of the old token. This drain is also bounded.
@@ -552,7 +606,7 @@ where
             _ = async { tokio::time::sleep_until(retry_at.expect("select guard")).await }, if retry_at.is_some() => {
                 retry_at = None;
             }
-            frame = tokio::time::timeout(STREAM_IDLE, stream.next()) => {
+            frame = tokio::time::timeout_at(credentials.last_frame_at + STREAM_IDLE, stream.next()) => {
                 let frame = frame.map_err(|_| Status::deadline_exceeded("voice capture stalled"))?;
                 let Some(frame) = frame else { return Ok(()); };
                 if !accept_capture(frame?, &mut window, &mut credentials, output.as_ref()).await? { return Ok(()); }
@@ -979,6 +1033,7 @@ mod tests {
             request,
             channel: "device".into(),
             source: None,
+            last_frame_at: tokio::time::Instant::now(),
         }
     }
 
@@ -1040,6 +1095,7 @@ mod tests {
         task: Option<tokio::task::JoinHandle<Result<(), Status>>>,
         sequence: u64,
         channel: Arc<AuthChannel>,
+        initiatives: Option<VoiceInitiativeHandle>,
     }
 
     impl Drop for Harness {
@@ -1064,6 +1120,18 @@ mod tests {
         F: FnOnce(Harness) -> Fut,
         Fut: Future<Output = ()>,
     {
+        with_harness_runtime(channel, interval, false, test).await;
+    }
+
+    async fn with_harness_runtime<F, Fut>(
+        channel: Arc<AuthChannel>,
+        interval: Duration,
+        initiatives_enabled: bool,
+        test: F,
+    ) where
+        F: FnOnce(Harness) -> Fut,
+        Fut: Future<Output = ()>,
+    {
         let database = TestDatabase::new().await;
         let cancel = CancellationToken::new();
         let delivery = DeliveryService::new(DeliveryRepository::new(database.db.clone()), &cancel);
@@ -1071,8 +1139,26 @@ mod tests {
         // outside the caught test future so panic cannot strand its schema.
         let result = AssertUnwindSafe(async {
             delivery.start().await.unwrap();
-            test(Harness::with_channel(channel, cancel.clone(), delivery.clone(), interval).await)
-                .await;
+            let initiatives = initiatives_enabled.then(|| {
+                (
+                    VoiceInitiativeHandle::default(),
+                    Arc::new(ContextService::new(
+                        database.db.clone(),
+                        Arc::new(crate::providers::embedding::NoopEmbedding),
+                    )),
+                )
+            });
+            test(
+                Harness::with_channel(
+                    channel,
+                    cancel.clone(),
+                    delivery.clone(),
+                    interval,
+                    initiatives,
+                )
+                .await,
+            )
+            .await;
         })
         .catch_unwind()
         .await;
@@ -1088,11 +1174,34 @@ mod tests {
     }
 
     impl Harness {
+        /// Transport-only fixture for virtual clocks. The disconnected database
+        /// fails any accidental SQL/output call; no Delivery worker is started.
+        async fn idle_transport() -> Self {
+            let cancel = CancellationToken::new();
+            let delivery = DeliveryService::new(
+                DeliveryRepository::new(DatabaseConnection::Disconnected),
+                &cancel,
+            );
+            let context = Arc::new(ContextService::new(
+                DatabaseConnection::Disconnected,
+                Arc::new(crate::providers::embedding::NoopEmbedding),
+            ));
+            Self::with_channel(
+                Arc::new(AuthChannel::default()),
+                cancel,
+                delivery,
+                AUTH_RECHECK,
+                Some((VoiceInitiativeHandle::default(), context)),
+            )
+            .await
+        }
+
         async fn with_channel(
             channel: Arc<AuthChannel>,
             cancel: CancellationToken,
             delivery: Arc<DeliveryService>,
             auth_recheck_interval: Duration,
+            initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
         ) -> Self {
             let lease = SessionLease::acquire(Arc::default(), "device".into(), &cancel)
                 .await
@@ -1109,6 +1218,8 @@ mod tests {
                 delivery: delivery.clone(),
                 hold_budget: Duration::from_secs(60),
                 maximum_hold_ms: MAX_HOLD_MS,
+                initiatives: initiatives.clone(),
+                initiative_output_enabled: false,
             };
             let task = tokio::spawn(async move {
                 run_session(
@@ -1133,6 +1244,7 @@ mod tests {
                 task: Some(task),
                 sequence: 0,
                 channel,
+                initiatives: initiatives.map(|(handle, _)| handle),
             };
             assert!(matches!(
                 harness.event().await.payload,
@@ -1224,6 +1336,194 @@ mod tests {
             self.cancel.cancel();
             self.join().await.unwrap();
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn initiative_snapshot_polling_cannot_extend_capture_idle_deadline() {
+        let mut h = Harness::idle_transport().await;
+        let handle = h.initiatives.clone().unwrap();
+        let owner = h.channel.owner_user_id().unwrap();
+        assert!(handle.snapshot(owner, "device").await.is_err());
+        let ready_at = tokio::time::Instant::now();
+        // These mailbox requests reach the real capture actor, but no further
+        // DeviceFrame arrives. Recreating timeout(STREAM_IDLE, next()) here
+        // would postpone expiry until 18 seconds and fail the bounded join.
+        for _ in 0..4 {
+            tokio::time::advance(Duration::from_secs(2)).await;
+            assert!(handle.snapshot(owner, "device").await.is_err());
+            assert!(!h.task.as_ref().unwrap().is_finished());
+        }
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert_eq!(
+            h.join().await.unwrap_err().code(),
+            tonic::Code::DeadlineExceeded
+        );
+        assert_eq!(tokio::time::Instant::now() - ready_at, STREAM_IDLE);
+        assert!(h.calls.try_recv().is_err());
+        assert!(h.input.try_recv().is_err());
+        assert!(handle.snapshot(owner, "device").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn initiative_closed_output_gate_cannot_advance_scope_or_read_context() {
+        let mut h = Harness::idle_transport().await;
+        let handle = h.initiatives.clone().unwrap();
+        let owner = h.channel.owner_user_id().unwrap();
+        h.silence().await;
+        let opportunity = handle.snapshot(owner, "device").await.unwrap();
+        let scope = opportunity.scope;
+        let deadline = opportunity.expires_at;
+        let cancel = CancellationToken::new();
+        let error = handle
+            .reserve(
+                crate::modules::interaction::initiative::VoiceInitiativeRequest {
+                    initiative_id: Uuid::new_v4(),
+                    opportunity,
+                    context: crate::modules::memory::context::ContextBinding {
+                        context_id: Uuid::new_v4(),
+                        owner_id: owner,
+                        request_id: Uuid::new_v4(),
+                        source_event_id: None,
+                        source_privacy_epoch: 7,
+                    },
+                    deadline,
+                    cancel: cancel.clone(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("initiative output admission is disabled")
+        );
+        assert!(cancel.is_cancelled());
+        assert_eq!(handle.snapshot(owner, "device").await.unwrap().scope, scope);
+        assert!(h.channel.fences.lock().unwrap().is_empty());
+        assert!(h.calls.try_recv().is_err());
+        assert!(h.input.try_recv().is_err());
+        h.finish().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn authenticated_refresh_frame_extends_transport_idle_but_not_capture_freshness() {
+        let mut h = Harness::idle_transport().await;
+        let handle = h.initiatives.clone().unwrap();
+        let owner = h.channel.owner_user_id().unwrap();
+        let ready_at = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(6)).await;
+        let refreshed_token = token(1);
+        h.refresh(refreshed_token.clone()).await;
+        // The snapshot drains the real RefreshAuth frame and waits for its
+        // authentication. It still cannot manufacture a capture opportunity.
+        assert!(handle.snapshot(owner, "device").await.is_err());
+        assert!(
+            h.channel
+                .checked
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|value| *value == refreshed_token)
+        );
+        for elapsed in [5, 4] {
+            tokio::time::advance(Duration::from_secs(elapsed)).await;
+            assert!(handle.snapshot(owner, "device").await.is_err());
+            assert!(!h.task.as_ref().unwrap().is_finished());
+        }
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(
+            h.join().await.unwrap_err().code(),
+            tonic::Code::DeadlineExceeded
+        );
+        assert_eq!(
+            tokio::time::Instant::now() - ready_at,
+            Duration::from_secs(16)
+        );
+        assert!(h.calls.try_recv().is_err());
+        assert!(h.input.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn initiative_snapshot_requires_capture_and_never_allocates_output() {
+        with_harness_runtime(
+            Arc::new(AuthChannel::default()),
+            AUTH_RECHECK,
+            true,
+            |mut h| async move {
+                let handle = h.initiatives.clone().unwrap();
+                let owner = h.channel.owner_user_id().unwrap();
+                assert!(handle.snapshot(owner, "device").await.is_err());
+                let before = chrono::Utc::now();
+                h.silence().await;
+                assert!(handle.snapshot(Uuid::new_v4(), "device").await.is_err());
+                let snapshot = handle.snapshot(owner, "device").await.unwrap();
+                assert_eq!(snapshot.scope.generation_epoch, 1);
+                assert_eq!(snapshot.speech_revision, 0);
+                assert_eq!(snapshot.through_sequence, 0);
+                assert!(snapshot.last_capture_at >= before);
+                assert!(snapshot.last_capture_at <= snapshot.observed_at);
+                assert!(snapshot.expires_at - snapshot.observed_at <= chrono::Duration::seconds(5));
+                assert!(h.channel.fences.lock().unwrap().is_empty());
+                assert!(h.calls.try_recv().is_err());
+                assert!(h.input.try_recv().is_err());
+                h.finish().await;
+                assert!(handle.snapshot(owner, "device").await.is_err());
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn initiative_snapshot_rechecks_speech_arriving_during_authentication() {
+        with_harness_runtime(
+            Arc::new(AuthChannel::default()),
+            AUTH_RECHECK,
+            true,
+            |mut h| async move {
+                let handle = h.initiatives.clone().unwrap();
+                let owner = h.channel.owner_user_id().unwrap();
+                h.silence().await;
+                let (entered, entered_rx) = oneshot::channel();
+                let (release, wait) = oneshot::channel();
+                *h.channel.next_verification.lock().unwrap() = Some((entered, wait));
+                let snapshot = tokio::spawn(async move { handle.snapshot(owner, "device").await });
+                entered_rx.await.unwrap();
+                h.speech().await;
+                release.send(()).unwrap();
+                assert!(snapshot.await.unwrap().is_err());
+                assert!(h.input.try_recv().is_err());
+                assert!(h.channel.fences.lock().unwrap().is_empty());
+                h.finish().await;
+            },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn initiative_snapshot_rejects_original_output_even_when_held() {
+        with_harness_runtime(
+            Arc::new(AuthChannel::default()),
+            AUTH_RECHECK,
+            true,
+            |mut h| async move {
+                let handle = h.initiatives.clone().unwrap();
+                let owner = h.channel.owner_user_id().unwrap();
+                h.speech().await;
+                h.call().await.answer(TurnState::Complete);
+                h.event().await;
+                let original = h.input.recv().await.unwrap();
+                h.silence().await;
+                assert!(handle.snapshot(owner, "device").await.is_err());
+                h.speech().await;
+                h.call().await.answer(TurnState::Wait);
+                h.event().await;
+                assert!(original.output.as_ref().unwrap().output().is_held());
+                assert!(handle.snapshot(owner, "device").await.is_err());
+                assert!(!original.cancel.is_cancelled());
+                h.finish().await;
+            },
+        )
+        .await;
     }
 
     #[tokio::test]

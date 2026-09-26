@@ -291,6 +291,10 @@ impl ServerRuntime {
                     Duration::from_millis(state.config.policies.duplex.hold_budget_ms),
                     cancel.clone(),
                     state.runtime_tasks.clone(),
+                )
+                .with_initiatives(
+                    state.voice_initiatives.clone(),
+                    state.modules.context.clone(),
                 );
                 let grpc_cancel = cancel.clone();
                 listeners.spawn(async move {

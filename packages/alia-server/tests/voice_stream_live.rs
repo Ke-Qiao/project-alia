@@ -468,6 +468,7 @@ async fn official_audio(fixture: Fixture) {
             protocol_version: VOICE_CONTRACT_VERSION,
             software_hold: true,
             max_hold_ms: NEGOTIATED_HOLD_MS,
+            initiative_admission: false,
             device_boot_id: boot.to_string(),
             channel_id: CHANNEL.into(),
         })),

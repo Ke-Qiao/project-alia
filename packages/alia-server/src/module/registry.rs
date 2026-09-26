@@ -29,6 +29,7 @@ pub struct ModuleRegistry {
     pub conversation: Arc<dyn ConversationBackend>,
     pub memory: Arc<dyn MemoryBackend>,
     pub context: Arc<crate::modules::memory::context::ContextService>,
+    pub companion: Arc<crate::modules::companion::CompanionService>,
     pub cache: Arc<dyn CacheBackend>,
     pub skills: Arc<dyn SkillProvider>,
     pub persona: Arc<dyn PersonaProvider>,

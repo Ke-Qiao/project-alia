@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod body_deliveries;
 pub mod channels;
+pub mod companion;
 pub mod conversations;
 pub mod deliveries;
 pub mod devices;
@@ -34,6 +35,7 @@ fn api_routes() -> Router<AppState> {
     Router::new()
         .merge(auth::routes())
         .merge(channels::routes())
+        .merge(companion::routes())
         .merge(users::routes())
         .merge(devices::routes())
         .merge(deliveries::routes())

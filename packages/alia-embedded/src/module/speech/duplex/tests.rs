@@ -182,6 +182,7 @@ fn ready(boot: &str, session: &str) -> SessionEvent {
             sample_rate_hz: SAMPLE_RATE,
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
+            initiative_admission: false,
         })),
     }
 }
@@ -1178,3 +1179,4 @@ fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_eviden
 }
 
 mod binding_admission;
+mod initiative;

@@ -23,6 +23,7 @@ message OpenSession {
   string channel_id = 3;      // Must match authenticated binding.
   bool software_hold = 4;     // Required; paired playback v3 contract.
   uint64 max_hold_ms = 5;     // Device engineering limit, not a requested timeout.
+  bool initiative_admission = 6; // Explicit support; absent peers cannot receive initiatives.
 }
 
 message CaptureFrame {
@@ -42,6 +43,7 @@ message SessionEvent {
   oneof payload {
     SessionReady ready = 4;
     TurnEvidence evidence = 5;
+    InitiativeAdmitted initiative_admitted = 6;
   }
 }
 
@@ -52,6 +54,16 @@ message SessionReady {
   uint32 max_frame_samples = 4;
   bool software_hold = 5;     // Required; no implicit old WAIT compatibility.
   uint64 max_hold_ms = 6;     // Negotiated engineering upper bound.
+  bool initiative_admission = 7;
+}
+
+// An owned proactive output, never a fabricated transcript or model decision.
+// The capture watermark and original session still constrain admission.
+message InitiativeAdmitted {
+  string initiative_id = 1;
+  string request_id = 2;
+  string context_id = 3;
+  uint64 through_sequence = 4;
 }
 
 message TurnEvidence {

@@ -360,6 +360,7 @@ fn capture_stream(
         yield DeviceFrame { payload: Some(device_frame::Payload::Open(OpenSession {
             protocol_version: VOICE_CONTRACT_VERSION, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
             software_hold: true, max_hold_ms: MAX_HOLD_MS,
+            initiative_admission: true,
         })) };
         // Local playback admission must be activated before audio can cause a
         // response to race back over the separate playback RPC connection.
@@ -458,6 +459,9 @@ struct SessionGuard {
     session_id: Option<String>,
     epoch: u64,
     through_sequence: Option<u64>,
+    initiative_admission: bool,
+    initiatives: std::collections::HashSet<Uuid>,
+    initiative_requests: std::collections::HashSet<Uuid>,
 }
 
 impl SessionGuard {
@@ -477,6 +481,9 @@ impl SessionGuard {
             session_id: None,
             epoch: 0,
             through_sequence: None,
+            initiative_admission: false,
+            initiatives: Default::default(),
+            initiative_requests: Default::default(),
         }
     }
 
@@ -510,53 +517,85 @@ impl SessionGuard {
                 event.session_id == *session_id,
                 "voice event session identity changed"
             );
-            let Some(session_event::Payload::Evidence(evidence)) = event.payload else {
-                bail!("expected turn evidence after Ready")
+            let (through_sequence, advances, initiative) = match event.payload {
+                Some(session_event::Payload::InitiativeAdmitted(admission)) => {
+                    ensure!(
+                        self.initiative_admission,
+                        "initiative admission was not negotiated"
+                    );
+                    let initiative = Uuid::parse_str(&admission.initiative_id)?;
+                    let request = Uuid::parse_str(&admission.request_id)?;
+                    let context = Uuid::parse_str(&admission.context_id)?;
+                    ensure!(
+                        !initiative.is_nil() && !request.is_nil() && !context.is_nil(),
+                        "initiative identity must not be nil"
+                    );
+                    ensure!(
+                        self.epoch.checked_add(1) == Some(event.generation_epoch),
+                        "initiative must advance exactly one generation"
+                    );
+                    ensure!(
+                        self.initiatives.len() < 64
+                            && !self.initiatives.contains(&initiative)
+                            && !self.initiative_requests.contains(&request),
+                        "initiative admission duplicate or capacity exceeded"
+                    );
+                    (
+                        admission.through_sequence,
+                        true,
+                        Some((initiative, request)),
+                    )
+                }
+                Some(session_event::Payload::Evidence(evidence)) => {
+                    ensure!(
+                        !evidence.request_id.trim().is_empty(),
+                        "turn evidence request id is empty"
+                    );
+                    let state =
+                        TurnState::try_from(evidence.state).context("unknown server turn state")?;
+                    ensure!(
+                        state != TurnState::Unspecified,
+                        "server turn state is unspecified"
+                    );
+                    let decision = OutputDecision::try_from(evidence.output_decision)
+                        .context("unknown output decision")?;
+                    let advances = event.generation_epoch > self.epoch;
+                    if evidence.response_enqueued {
+                        ensure!(
+                            state == TurnState::Complete
+                                && decision == OutputDecision::Unchanged
+                                && advances,
+                            "response admission requires Complete, Unchanged and a new generation"
+                        );
+                    } else {
+                        match decision {
+                            OutputDecision::Cancelled => {
+                                ensure!(advances, "output cancellation must advance generation")
+                            }
+                            OutputDecision::Unchanged
+                            | OutputDecision::PauseRequested
+                            | OutputDecision::ResumeRequested => ensure!(
+                                !advances,
+                                "unchanged or reversible output request must retain generation"
+                            ),
+                            OutputDecision::Unspecified => bail!("output decision is unspecified"),
+                        }
+                    }
+                    debug!(request_id = %evidence.request_id, ?state, ?decision, response_enqueued = evidence.response_enqueued,
+                "voice semantic evidence received; output decision is a request, not a native control receipt");
+                    (evidence.through_sequence, advances, None)
+                }
+                _ => bail!("expected turn evidence or negotiated initiative after Ready"),
             };
             ensure!(
-                evidence.through_sequence < sent,
-                "turn evidence refers to unsent capture"
+                through_sequence < sent,
+                "voice admission refers to unsent capture"
             );
             ensure!(
                 self.through_sequence
-                    .is_none_or(|previous| evidence.through_sequence >= previous),
-                "turn evidence capture sequence regressed"
+                    .is_none_or(|previous| through_sequence >= previous),
+                "voice admission capture sequence regressed"
             );
-            ensure!(
-                !evidence.request_id.trim().is_empty(),
-                "turn evidence request id is empty"
-            );
-            let state = TurnState::try_from(evidence.state).context("unknown server turn state")?;
-            ensure!(
-                state != TurnState::Unspecified,
-                "server turn state is unspecified"
-            );
-            let decision = OutputDecision::try_from(evidence.output_decision)
-                .context("unknown output decision")?;
-            let advances = event.generation_epoch > self.epoch;
-            if evidence.response_enqueued {
-                ensure!(
-                    state == TurnState::Complete
-                        && decision == OutputDecision::Unchanged
-                        && advances,
-                    "response admission requires Complete, Unchanged and a new generation"
-                );
-            } else {
-                match decision {
-                    OutputDecision::Cancelled => {
-                        ensure!(advances, "output cancellation must advance generation")
-                    }
-                    OutputDecision::Unchanged
-                    | OutputDecision::PauseRequested
-                    | OutputDecision::ResumeRequested => ensure!(
-                        !advances,
-                        "unchanged or reversible output request must retain generation"
-                    ),
-                    OutputDecision::Unspecified => bail!("output decision is unspecified"),
-                }
-            }
-            debug!(request_id = %evidence.request_id, ?state, ?decision, response_enqueued = evidence.response_enqueued,
-                "voice semantic evidence received; output decision is a request, not a native control receipt");
             // Same-epoch evidence is never permission to release the native
             // gate. Only independently authenticated Control can do that.
             if advances {
@@ -571,7 +610,11 @@ impl SessionGuard {
                     )
                     .context("advancing local voice playback fence")?;
             }
-            self.through_sequence = Some(evidence.through_sequence);
+            if let Some((initiative, request)) = initiative {
+                self.initiatives.insert(initiative);
+                self.initiative_requests.insert(request);
+            }
+            self.through_sequence = Some(through_sequence);
         } else {
             let Some(session_event::Payload::Ready(ready)) = event.payload else {
                 bail!("first voice event must be Ready")
@@ -597,6 +640,7 @@ impl SessionGuard {
                 )
                 .context("activating local voice playback session")?;
             self.session_id = Some(event.session_id.clone());
+            self.initiative_admission = ready.initiative_admission;
             info!(session_id = %event.session_id, boot_id = %self.boot_id, "continuous voice session ready");
         }
         self.epoch = event.generation_epoch;

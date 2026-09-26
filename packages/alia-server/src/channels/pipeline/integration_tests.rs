@@ -463,6 +463,11 @@ impl Fixture {
         let output = Arc::new(OutputChannel::default());
         channels.register(output.clone()).await.unwrap();
         let modules = Arc::new(ModuleRegistry {
+            companion: Arc::new(crate::modules::companion::CompanionService::new(
+                sea_orm::DatabaseConnection::Disconnected,
+                crate::modules::interaction::initiative::VoiceInitiativeHandle::default(),
+                CancellationToken::new(),
+            )),
             context: Arc::new(crate::modules::memory::context::ContextService::new(
                 sea_orm::DatabaseConnection::Disconnected,
                 factory::create_embedding(&config, "noop").unwrap().into(),
