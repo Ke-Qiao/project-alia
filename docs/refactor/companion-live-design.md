@@ -178,6 +178,8 @@ pub(crate) async fn admit_invitation(
 
 ## 8. Fresh / Existing、提交未知与单次能力
 
+实施决定已补充于 [存储契约](companion-live-storage-design.md)：READ COMMITTED 下持有同一 pending 行锁至事务完成，重试获得锁后再查询原 admission；存在则 Existing，无记录且原意图/来源仍有效才证明可按原意图重试。Existing 仅返回 opaque receipt，不在擦除后重返 private Response。设备本地可恢复门与迟到 Resume 竞争详见 [设备契约](companion-live-device-design.md)。
+
 建议返回类型明确区分：
 
 ```rust

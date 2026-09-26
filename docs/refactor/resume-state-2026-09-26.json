@@ -18,7 +18,7 @@
     "test_matrix_repeated": false,
     "reason": "Merged build inputs are byte-identical to the validated V2 candidate."
   },
-  "r01_status": "shadow_foundation_validated_ready_to_commit",
+  "r01_status": "cp05_implementation_starting",
   "r01_checklist": "docs/refactor/checklists/companion.md",
   "remaining_rounds": [
     "R01",
@@ -34,7 +34,7 @@
     "companion_replay"
   ],
   "scope": "Server/macOS + Embedded/Pi5; Easy-Turn on Server; no frontend or generic Embedded adaptation",
-  "next_action": "Commit validated shadow foundation, then execute CP05 live storage, dedicated Context/Delivery constraints and local speech gate with three subagents. Keep live output disabled until complete integration validation.",
+  "next_action": "Execute CP05 with three subagents against validated shadow commit 98f237c. Storage/admission, dedicated Context and Delivery constraints, device capture gate in parallel; Root owns runner, lifecycle and integration. Live remains disabled until paired acceptance.",
   "r01_progress": {
     "completed": 4,
     "total": 7,
@@ -69,5 +69,6 @@
     "ignored_followup_pass": 5,
     "macos_unique_executed": 1010,
     "macos_no_default_all_targets": "Server and Embedded passed"
-  }
+  },
+  "r01_source_commit": "98f237c192bcab29aac4e8ed1d405cc305f05b48"
 }
