@@ -1,0 +1,11 @@
+{
+  "date": "2026-09-26",
+  "merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+  "source_manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+  "build_inputs_verified": 605,
+  "source_drift": [],
+  "code_conflicts": 0,
+  "documentation_conflicts": 3,
+  "test_matrix_repeated": false,
+  "reason": "Merged build inputs are byte-identical to the validated V2 candidate."
+}

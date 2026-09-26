@@ -1,6 +1,6 @@
 # 可恢复暂停纵向整合 checklist
 
-更新：2026-09-23。**DU01—DU10 完成（10/11）；用户额度暂停，已保存文档；仅 DU11 正式合入与合并后核对待完成。** V2 固定源码 `5810687`：macOS 默认 workspace **967 passed / 0 failed / 5 ignored**，5 个 ignored 另行真实 PTY/模型全部通过；Linux ARM64 本轮矩阵 **325 passed / 0 failed**。两端 no-default all-targets 与 27 文件格式检查通过，605 个输入前后无漂移。V1 的 964/3/5 及两份夹具修正独立保留。最新入口为[本轮检查点](../resume-checkpoint-2026-09-23.md)，详细数字见[验收汇总](../handoffs/2026-09-23/validation-summary.json)。
+更新：2026-09-26。**DU01—DU11 完成（11/11）。** 已通过的 V2 候选于 `948b3c4` 合入主重构分支，合并后逐项核对 605 个构建输入，哈希全部一致；仅解决三处文档冲突，没有源码冲突。历史验证为 macOS workspace 967/0/5（另补 5/5 真实 PTY/模型）、Linux ARM64 定向矩阵 325/0/0；未重复运行不变输入。合并证据见 [DU11 result](../handoffs/2026-09-23/du11-merge-result.json)。下一阶段为 [R01 Companion checklist](companion.md)。
 
 本表是当前任务入口，旧 [2026-09-20 检查点](../resume-checkpoint-2026-09-20.md) 及四份 HANDOFF 作为历史证据保留。只有满足完成条件并写入证据后才能勾选；编译、测试运行、平台验证和真机验收分别记录。
 
@@ -29,7 +29,7 @@ A/B/C 原独立子包已提交并合入。后续三组在整合树内按文件�
 - [x] **DU08 子包验收（A/B/C）**：A Ready/原 Binding 竞争；B 后加入 Delivery deadline、snapshot 上界、真实关系来源及实际 PG；C 所有调用端编译、真实 HTTP 与额度生命周期；对应子 checklist 及固定提交齐全。
 - [x] **DU09 组合故障测试（Root）**：真实两端 gRPC 的队列满、Start 前、End 后尾部、超 media idle、鉴权撤销/刷新、丢 ACK、旧恢复与捕获屏障；无新增 Response/history/TTS/媒体 owner。
 - [x] **DU10 完整验证（Root）**：默认 workspace、两端无默认 all-targets、适用 Linux ARM、真实 PTY/模型；源码 manifest 无漂移，失败与 ignored 单列；旧 WAIT 模型用例已符合完整新协议。
-- [ ] **DU11 完成提交（Root）**：通过以上出口后才合入主重构分支；更新协议/操作文档、progress、计划和机器可读状态；清理仅任务自有临时执行资源。
+- [x] **DU11 完成提交（Root）**：通过以上出口后才合入主重构分支；更新协议/操作文档、progress、计划和机器可读状态；清理仅任务自有临时执行资源。
 
 ## 必须保持的行为
 
@@ -122,8 +122,8 @@ Web/iOS/Android 与通用 Embedded 适配继续按 [延期台账](../deferred.md
 - [x] V2 完整默认 workspace：967 passed / 0 failed / 5 ignored，203.85 秒；Ignored 另行 5/5 通过，不重复累计。
 - [x] V2 三个真实 PTY 与两个真实模型用例，3 + 2 passed、0 failed；原期限保留，无额外预热，不宣称冷启动。
 - [x] V2 Linux ARM64 检查、Embedded 全库、受影响 Server PG 矩阵与 Runtime 全套，共 325 unique passed / 0 failed。
-- [ ] 归档同一输入的汇总证据、正常提交并合回主重构分支。
+- [x] 归档同一输入的汇总证据、正常提交并合回主重构分支。
 
-## 2026-09-23 额度暂停最终状态
+## 2026-09-23 额度暂停最终状态（历史，已于 9 月 26 日恢复）
 
 用户明确要求停止，三个 subagent 均 completed，活动 exec 为 0。DU **10/11**、剩余 **1**；R01—R06 **0/6**、剩余 **6**。源码 `5810687` 与栈修复 `9c4f5b0` 已正常提交，完整 V2 验证已归档，正式合入留待恢复。下次首项是 DU11，不重新开始 DU01，也不重复已通过且输入未变的矩阵。

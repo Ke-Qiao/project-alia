@@ -1,7 +1,7 @@
 {
   "checkpoint_version": 3,
   "work_batch_date": "2026-09-23",
-  "status": "paused_by_user_after_validation_before_merge",
+  "status": "historical_pause_resumed_2026_09_26",
   "repository": "/Users/ke-qiao/Developer/project-alia",
   "main_branch": "codex/architecture-refactor",
   "integration_branch": "codex/duplex-integration",
@@ -81,5 +81,7 @@
     "DU11: inspect saved integration and documentation commits, merge into codex/architecture-refactor, verify identical 605 inputs, mark checklist complete"
   ],
   "resource_cleanup_complete": true,
-  "saved_integration_checkpoint_commit": "53adbde23257bbb38769c679a25bb930787e0571"
+  "saved_integration_checkpoint_commit": "53adbde23257bbb38769c679a25bb930787e0571",
+  "resumed_merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+  "current_state_path": "docs/refactor/resume-state-2026-09-26.json"
 }

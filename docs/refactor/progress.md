@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-09-26 当前状态：DU11 已完成，暂停纵向整合 11/11。** 合并 `948b3c4`，605 个输入与最终 V2 一致，未重跑相同源码的验证。当前进入 R01 Companion shadow/回放与受约束主动表达，三名 subagent 分别梳理策略状态、投递接线、回放与故障验证；详细步骤见 [Companion checklist](checklists/companion.md)。下方 9 月 23 日暂停状态作为历史保留。
+
 更新：2026-09-23。分支：`codex/architecture-refactor`；源代码基线：`3530395`。
 
 **2026-09-23 额度暂停：暂停纵向整合实现与完整软件验收完成，DU01—DU10 为 10/11，用户因额度明确要求暂停，文档已保存，正式合入留待下次 DU11。** 源码修复为 `5810687`，默认栈修复为 `9c4f5b0`。voice v2 / playback v3 已接通原 Response/Context、两类暂停、持久控制、生产背压与精确旧输出退休。完整入口为[本轮检查点](resume-checkpoint-2026-09-23.md)、[DU checklist](checklists/duplex-integration.md)及[四份交接与证据](handoffs/2026-09-23/README.md)。

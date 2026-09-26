@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-26",
+  "status": "active",
+  "branch": "codex/architecture-refactor",
+  "du_merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+  "du_progress": {
+    "completed": 11,
+    "total": 11
+  },
+  "du_source_manifest": {
+    "date": "2026-09-26",
+    "merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+    "source_manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+    "build_inputs_verified": 605,
+    "source_drift": [],
+    "code_conflicts": 0,
+    "documentation_conflicts": 3,
+    "test_matrix_repeated": false,
+    "reason": "Merged build inputs are byte-identical to the validated V2 candidate."
+  },
+  "r01_status": "auditing_existing_paths_and_specifying_contract",
+  "r01_checklist": "docs/refactor/checklists/companion.md",
+  "remaining_rounds": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06"
+  ],
+  "subagents": [
+    "companion_policy",
+    "companion_delivery",
+    "companion_replay"
+  ],
+  "scope": "Server/macOS + Embedded/Pi5; Easy-Turn on Server; no frontend or generic Embedded adaptation",
+  "next_action": "Complete R01 design based on existing code, assign separate files, build and test shadow/replay and constrained output using canonical source/Context/Response/Delivery."
+}

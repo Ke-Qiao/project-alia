@@ -1,5 +1,7 @@
 # Project Alia 首轮重构计划
 
+**2026-09-26 当前状态：DU11 已完成，暂停纵向整合 11/11。** 合并 `948b3c4`，605 个输入与最终 V2 一致，未重跑相同源码的验证。当前进入 R01 Companion shadow/回放与受约束主动表达，三名 subagent 分别梳理策略状态、投递接线、回放与故障验证；详细步骤见 [Companion checklist](checklists/companion.md)。下方 9 月 23 日暂停状态作为历史保留。
+
 更新：2026-09-23。
 
 **2026-09-23：继续按已确认范围构建。** 暂停纵向整合实现与完整软件验证完成 DU01—DU10（10/11），用户因额度要求暂停，先保存文档和四份 HANDOFF；下次仅剩 DU11 主分支合入与哈希核对。持续入口为[DU checklist](checklists/duplex-integration.md)，当前证据见[构建记录](progress.md)及[本轮交接](handoffs/2026-09-23/README.md)。2026-09-22 的额度暂停快照和失败记录保留为历史。
