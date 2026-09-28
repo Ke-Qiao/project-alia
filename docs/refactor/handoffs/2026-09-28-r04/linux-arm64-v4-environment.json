@@ -1,0 +1,162 @@
+{
+  "prepared_at": "2026-09-28T08:31:22.897620+00:00",
+  "container": "alia-r04-arm64-20260928-v4",
+  "container_state": "running idle sleep; no Cargo launched",
+  "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+  "platform": "linux/arm64",
+  "cache_method": "Independent APFS cp -cR clone of stopped R01 cache; prior source/cache/evidence unmodified",
+  "source_frozen": true,
+  "source_files_copied": 633,
+  "source_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+  "source_host_container_before_after_verified": true,
+  "cargo_commands_run": 0,
+  "postgres_commands_run": 0,
+  "tests_run": 0,
+  "next_step": "Wait for Root exclusive Cargo grant, then run-checks.py sequential Server + Embedded no-default all-targets; stop only this container afterward.",
+  "before_host": {
+    "recorded_at": "2026-09-28T08:31:21.976496+00:00",
+    "locations": [
+      "/Users/ke-qiao/Developer/project-alia",
+      "/Users/ke-qiao/Developer/project-alia/run/validation-20260928-r04/linux-arm64-v4/source"
+    ],
+    "file_count_per_location": 633,
+    "manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+    "errors": [],
+    "exit_code": 0
+  },
+  "after_host": {
+    "recorded_at": "2026-09-28T08:31:22.897425+00:00",
+    "locations": [
+      "/Users/ke-qiao/Developer/project-alia",
+      "/Users/ke-qiao/Developer/project-alia/run/validation-20260928-r04/linux-arm64-v4/source"
+    ],
+    "file_count_per_location": 633,
+    "manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+    "errors": [],
+    "exit_code": 0
+  },
+  "environment_stages": [
+    {
+      "argv": [
+        "docker",
+        "create",
+        "--pull",
+        "never",
+        "--name",
+        "alia-r04-arm64-20260928-v4",
+        "--platform",
+        "linux/arm64",
+        "--label",
+        "alia.task=r04-linux-20260928-v4",
+        "--workdir",
+        "/workspace",
+        "--mount",
+        "type=bind,source=/Users/ke-qiao/Developer/project-alia/run/validation-20260928-r04/linux-arm64-v4/source,target=/workspace,readonly",
+        "--mount",
+        "type=bind,source=/Users/ke-qiao/Developer/project-alia/run/validation-20260928-r04/linux-arm64-v4/cache,target=/cache",
+        "--mount",
+        "type=bind,source=/Users/ke-qiao/.cargo/registry,target=/cache/cargo/registry,readonly",
+        "--mount",
+        "type=bind,source=/Users/ke-qiao/Developer/project-alia/run/validation-20260928-r04/linux-arm64-v4/evidence,target=/evidence",
+        "--env",
+        "CARGO_HOME=/cache/cargo",
+        "--env",
+        "CARGO_TARGET_DIR=/cache/target",
+        "--env",
+        "CARGO_TERM_COLOR=never",
+        "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+        "sleep",
+        "infinity"
+      ],
+      "started": "2026-09-28T08:31:21.976884+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.472860+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "start",
+        "alia-r04-arm64-20260928-v4"
+      ],
+      "started": "2026-09-28T08:31:22.473177+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.575053+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "alia-r04-arm64-20260928-v4",
+        "--format",
+        "{{json .State}} {{json .Image}} {{json .Mounts}}"
+      ],
+      "started": "2026-09-28T08:31:22.575292+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.593417+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-r04-arm64-20260928-v4",
+        "sha256sum",
+        "-c",
+        "/evidence/source.sha256"
+      ],
+      "started": "2026-09-28T08:31:22.593701+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.673178+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-r04-arm64-20260928-v4",
+        "rustc",
+        "-Vv"
+      ],
+      "started": "2026-09-28T08:31:22.673436+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.731285+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-r04-arm64-20260928-v4",
+        "pkg-config",
+        "--modversion",
+        "alsa",
+        "dbus-1"
+      ],
+      "started": "2026-09-28T08:31:22.731550+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.763292+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-r04-arm64-20260928-v4",
+        "protoc",
+        "--version"
+      ],
+      "started": "2026-09-28T08:31:22.763925+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.794754+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-r04-arm64-20260928-v4",
+        "sha256sum",
+        "-c",
+        "/evidence/source.sha256"
+      ],
+      "started": "2026-09-28T08:31:22.795024+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T08:31:22.861344+00:00"
+    }
+  ]
+}

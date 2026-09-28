@@ -1,20 +1,35 @@
 # 2026-09-28 继续构建入口
 
-分支 `codex/architecture-refactor`，本轮起点 `8d74b6c`；已验证 shadow 基础 `98f237c`。用户额度恢复后，Root 和三个 subagent 已完成 CP05 live 整合与 CP06 故障矩阵，CP07 已完成并正常提交 `a79cb1f`，已提交 630 输入逐项与验证 V1 一致。
+分支 `codex/architecture-refactor`。本次已正常本地提交：R01源码 **`a79cb1f`**、R01验收记录 **`75bf97c`**、R04源码 **`8f5bb83`**。没有推送或创建PR；此前主线合入和旧工作树不需要重复处理。
 
-**DU 11/11；R01 CP01—CP07 7/7；R01—R06 1/6。** 当前继续 R04 的三个已定位软件问题，0/3 待实现/验证。
+**DU 11/11；R01 CP01—CP07 7/7；R04四组修复4/4、MG05统一验收完成；后续轮次R01—R06为2/6（R01、R04）。** 六项规模不同，这不是整个项目完成百分比。
 
-- [x] 读取上轮四份 HANDOFF，保留当前分支、旧 overlay 和历史失败证据。
-- [x] 三个 subagent：`companion_replay_28` 存储，`companion_policy_28` Context/内容与 Linux 编译，`companion_delivery_28` 语音 actor 与设备 capture gate。
-- [x] Root runner、服务装配、单 channel/global 容量、公平轮转和原 owner 停机排空。
-- [x] 正向主动邀请完整配对；TTS 期间删源零首媒体；原 H1 Resume ACK 丢失后新语音产生 H2，再明确继续原音频后缀。
-- [x] 630 输入 V1：workspace **1036/0/5**，真实 PTY **3/3**、实际 Easy-Turn **2/2**；合计 **1041 项不同 macOS 测试**。两平台 Server/Embedded no-default all-targets、fmt 通过，全部源码哈希无漂移。
-- [x] 四份 [HANDOFF 与验收摘要](handoffs/2026-09-28/README.md)、准确边界及原始失败已归档。
-- [x] 正常本地提交 R01 `a79cb1f`，已提交输入与 V1 一致；CP07/R01 完成。
-- [ ] 从 [R04 三项已定位缺口](handoffs/2026-09-28/r04-readiness.md) 继续，不依赖前端或真实硬件。
+## 已完成 checklist
 
-默认政策仍 shadow；显式 Enabled 已接入规范 Context/Response/Delivery 固定邀请。`admit_before` 仅约束提交与首次 reserve，`valid_until` 保持原候选截止；重试/Hold/继续均不续权。没有启动用户 Server/device。
+- [x] Root与三个subagent继续协作，按独立模块分工；始终只有一个Cargo/PG验证窗口。
+- [x] R01受约束主动邀请走规范Context/Response/Delivery，保持原输出owner、两类暂停、来源撤销与预算身份；默认政策仍为shadow，没有更改用户部署政策。
+- [x] R04完整HTTP配置模板、实际role/profile及分片校验、原子保存；未认证setup仅loopback，成功响应排空并关闭stalled连接。
+- [x] Companion四个REST操作的真实DTO、Bearer、CAS、未知完成和擦除结果进入OpenAPI及终端指南。
+- [x] OpenAI显式在线probe每次最多5秒，诊断不包含密钥/URL，等待期间不持有配置锁。
+- [x] 设备9个handler统一使用当前owner/admin权限；多渠道要求明确选择，status走实际RPC，未知遥测保留null。
+- [x] R04冻结633输入V4：workspace **1053通过/0失败/5忽略**（319.39秒），真实PTY **3/3**、实际CPU Easy-Turn **2/2**，共 **1058项不同macOS测试**。
+- [x] R04 macOS/Linux ARM64两端no-default all-targets及fmt通过；Linux仅编译，未执行Linux运行时或PG测试。
+- [x] 源码提交`8f5bb83`的633个输入与V4逐项相同，无额外/缺失输入；四份HANDOFF及结果已归档。
 
-任务 PG 在 32768 保留运行，测试后非 public schema 与其他连接均为 0；用户 5433 数据库未操作。真实 CPU Easy-Turn 在 8091 保留运行，本次 Linux 验证容器已停止，所有快照和缓存保留。旧工作树不需要重新合并。
+本轮下一次应读取 **[R04四份HANDOFF](handoffs/2026-09-28-r04/README.md)**（runtime、api、setup、device-health）、[管理checklist](checklists/management.md)、[六轮checklist](checklists/next-round.md)及实际Git状态。机器状态在 [JSON](resume-state-2026-09-28.json)，冻结身份与逐项结果在 [验收摘要](handoffs/2026-09-28-r04/validation-summary.json)。R01独立验收为630输入、1036/0/5加专用环境5项=1041 unique，不能再加到R04数量。
 
-机器状态见 [JSON](resume-state-2026-09-28.json)，逐项出口见 [Companion checklist](checklists/companion.md)。真实 Pi 音频、AEC、执行器和 24 小时运行仍开放；硬件信息已向用户询问，暂无回复时先完成独立软件工作。前端和通用 Embedded 适配等继续见 [延期台账](deferred.md)。
+## 下次按依赖继续
+
+- [ ] **R02 AEC与双讲**：先取得H02/H03的Pi系统、接入方式、供电散热、麦克风/声卡/扬声器型号及布局，再接实际AEC、时钟映射与双讲测量。
+- [ ] **R03执行器**：取得H04的控制板、反馈、机构限位及安全状态，再接签名动作资产并验证停止/失联/重启。
+- [ ] **R05整机验收**：补齐H01—H05部署机器、模型版本/地址、硬件和测试接入，执行干净安装/配对/恢复及至少24小时混合负载。
+- [ ] **R06其他平台/未来部署**：指定目标OS/CPU/runner后补完整运行矩阵；未来设备模型、同机多进程/单进程与动态迁移分别验收，当前不测试Pi5承载Easy-Turn。
+- [ ] **V01验证异常跟踪**：V3中3个旧Companion配对场景在25秒内超时；随后同一原workspace binary默认9项并行全过，V4完整回归也通过。V4只加固定阶段和最多1秒无内容/身份状态诊断，首次失败根因仍未确定。若复现，保留阶段/ScanProgress/候选退休原因再定位，不延长期限、不串行化或忽略测试。
+
+硬件信息已询问但尚未收到，不能把信息待补充写成用户取消首轮全双工/AEC或真机验收。前端Web/iOS/Android、Embedded通用适配、邀请历史的后续只读使用及组件接入门槛见 [台账](deferred.md)。C01/C02未因提案列名引入新依赖。
+
+## 资源与验证边界
+
+任务PG `alia-refactor-test-db` 在 **32768** 保留运行，最终非public schema和其他连接均为0；用户5433数据库未操作。实际CPU Easy-Turn在 **8091** 保留运行；Linux V4编译容器已停止，V1仅创建未运行、V2只准备后停止、V3没有Linux快照，历史缓存/快照和旧工作树均保留。三个subagent本包工作均已结束，没有遗留Cargo/PG测试进程。
+
+Provider的5秒是单次probe期限，顺序聚合可能累加。设备公开GetBindingStatus仅说明本次RPC可达，不证明可信body pin、实际配对或硬件健康。真实模型测试数值不是声学端到端或冷启动指标；本轮没有Pi/AEC/执行器/24小时验收。

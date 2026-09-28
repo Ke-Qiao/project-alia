@@ -1,6 +1,6 @@
 {
   "date": "2026-09-28",
-  "status": "r01_complete_r04_in_progress",
+  "status": "r01_r04_complete_hardware_inputs_pending",
   "branch": "codex/architecture-refactor",
   "du_merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
   "du_progress": {
@@ -23,7 +23,6 @@
   "remaining_rounds": [
     "R02",
     "R03",
-    "R04",
     "R05",
     "R06"
   ],
@@ -33,7 +32,7 @@
     "companion_delivery_28"
   ],
   "scope": "Server/macOS + Embedded/Pi5; Easy-Turn on Server; no frontend or generic Embedded adaptation",
-  "next_action": "Complete R04 independent packages with three subagents, run directed/full applicable regressions, update checklists and commit. Hardware details still pending.",
+  "next_action": "Read the R04 four HANDOFFs, current checklist and Git state. Obtain H01-H05 hardware/deployment details before R02 AEC, R03 actuators and R05 actual Mac+Pi acceptance. R06 runtime certification requires a named OS/CPU/runner; preserve V01 unresolved paired-timeout evidence and use existing stage diagnostics if it recurs. Do not repeat already verified R01/R04 or implement deferred frontends.",
   "r01_progress": {
     "completed": 7,
     "total": 7,
@@ -148,17 +147,63 @@
   },
   "r01_source_commit": "a79cb1f0b2c45847dce561dfde549f4318a1312a",
   "round_progress": {
-    "completed": 1,
-    "total": 6
+    "completed": 2,
+    "total": 6,
+    "completed_ids": [
+      "R01",
+      "R04"
+    ],
+    "remaining_ids": [
+      "R02",
+      "R03",
+      "R05",
+      "R06"
+    ]
   },
   "r04_progress": {
-    "completed": 0,
-    "total": 3,
-    "scope": "three located software gaps; does not by itself mean full R04 accepted",
+    "completed": 4,
+    "total": 4,
+    "scope": "four software gaps incl device ownership/status found during actual management audit",
     "tasks": [
       "HTTP OOBE complete validated config",
       "Companion OpenAPI and terminal CAS workflow",
-      "bounded actual OpenAI health probe"
-    ]
+      "bounded actual OpenAI health probe",
+      "owner/current-admin device REST and real reachable status"
+    ],
+    "completed_ids": [
+      "MG01",
+      "MG02",
+      "MG03",
+      "MG04"
+    ],
+    "acceptance_gate": "MG05 complete; source committed and 633 inputs verified"
+  },
+  "r04_status": "complete",
+  "r04_source_commit": "8f5bb83f4a313723428abf854c1e663b159c6c45",
+  "r04_checklist": "docs/refactor/checklists/management.md",
+  "r04_source_manifest": {
+    "path": "docs/refactor/handoffs/2026-09-28-r04/final-source-manifest-v4.json",
+    "files": 633,
+    "sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b"
+  },
+  "r04_evidence": {
+    "summary": "docs/refactor/handoffs/2026-09-28-r04/validation-summary.json",
+    "workspace_v4": {
+      "passed": 1053,
+      "failed": 0,
+      "ignored": 5,
+      "source_drift": []
+    },
+    "real_pty": 3,
+    "actual_easy_turn": 2,
+    "macos_unique_executed": 1058,
+    "macos_no_default_all_targets": "both passed",
+    "linux_arm64_no_default_all_targets": "both passed; compile only",
+    "committed_inputs_verified": 633
+  },
+  "known_validation_issue": {
+    "id": "V01",
+    "status": "root cause unconfirmed",
+    "details": "R04 V3 three old Companion paired cases exceeded the original 25s deadline. Same original binary then passed 9/9; V4 added diagnostics only and the full workspace passed. Keep the failure record and investigate stage/state if recurrence; no deadline relaxation."
   }
 }

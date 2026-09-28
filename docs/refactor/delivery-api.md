@@ -1,6 +1,6 @@
 # Response 与 Delivery 操作契约
 
-状态：2026-09-13，音频、文本与身体投递接口已实现并通过 macOS 整包及真实 HTTP 回归，测试证据见[构建记录](progress.md)。不代表实际声卡或机构已验收。
+状态：2026-09-28。音频、文本与身体投递接口已实现，voice v2 / playback v3 的原输出暂停/恢复及 Companion 固定邀请已整合。测试证据见[构建记录](progress.md)，不代表实际声卡或机构已验收。
 
 一个 Response 对应一次规范响应，拥有最初接纳的用户、请求、来源版本和生成意图。逐句 TTS 的每个 Delivery 保存同一 Response 下不可变的文本片段。Response 最终正文与助手会话消息在同一事务提交；重试返回原消息 UUID，不能产生第二份历史。取消或设备失联不会改写已经发生的工具 Effect。
 
@@ -42,7 +42,7 @@ submitted 是观察结束的明确结果，不能驱动 PostSpeech。只有完�
 
 ## 播放协议与所有权
 
-Playback contract version 2 要求 Start 接收确认之后才发送 Audio。回执携带原 VoiceScope、playback_id、playback_sequence、严格递增 receipt_sequence，以及后端实例和输出格式。End 仅关闭输入；回执流继续传递 submitted 进度，直到明确观察终态。心跳不能无限延长总观察期限。
+当前 Playback contract version 3 要求 Start 接收确认之后才发送 Audio，并支持原输出 Pause / Resume / Observe；主动邀请还要求精确 initiative capture gate version 1。临时避让与 ExplicitWait 的恢复条件、原期限和丢 ACK 处理见 [voice 协议](voice-protocol.md)。回执携带原 VoiceScope、playback_id、playback_sequence、严格递增 receipt_sequence，以及后端实例和输出格式。End 仅关闭输入；回执流继续传递 submitted 进度，直到明确观察终态。心跳不能无限延长总观察期限。
 
 所有计数使用均值下混后的源 PCM 帧。原始立体声一帧仍算一帧；设备输出声道展开与重采样不改变此单位。计数只可单调增加，并满足 presented ≤ submitted ≤ accepted ≤ offered。缺少证据为 null；旧传输连完整 progress 都缺失，不能把空字段解释为已确认的零或成功。
 
@@ -52,4 +52,4 @@ Server 在网络发送前分配播放 UUID、预留本地序号并保存 Deliver
 
 单条取消包含精确 playback_id/sequence；需等待已进入的后端写入收尾，并返回 final_progress，不能用“停止当前音频”或空 ACK 冒充取消证据。Push 与精准取消共享设备原始单调序号，ACK 丢失后的快照不重新编号。整个会话退休继续使用原 scope fence；迟到取消不能影响同 epoch 的另一条播放。已经 Unknown 的状态不会因迟到证据复活，真实迟到快照保存为独立审计，可通过 events 接口读取。恢复仅处理已过期 owner，永不重放音频。
 
-旧来源 epoch 不能被投递延迟重新盖章。新响应、媒体准入和最终历史提交核对原版本；已发生的进度事实即使随后撤权或遗忘也必须保存。缓存、ContextPack 和 Companion 的完整来源传播仍是下一主线，不能由这一检查替代。
+旧来源 epoch 不能被投递延迟重新盖章。新响应、媒体准入和最终历史提交核对原版本；已发生的进度事实即使随后撤权或遗忘也必须保存。当前缓存、ContextLease 与 Companion 均沿规范来源闭包传播权限；每次输出和恢复仍重新校验，不能以历史检查成功替代当前准入。

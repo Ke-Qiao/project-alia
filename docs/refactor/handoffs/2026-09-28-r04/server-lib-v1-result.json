@@ -1,0 +1,23 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "--locked",
+    "--offline"
+  ],
+  "started_at": "2026-09-28T07:50:39.670826+00:00",
+  "finished_at": "2026-09-28T07:51:08.944579+00:00",
+  "elapsed_seconds": 29.27,
+  "exit_code": 101,
+  "source_manifest_sha256": "7e6adbd3ed00b47a572b9754e33d3b4ee5e23628a454a9ee72a7342e20b99025",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

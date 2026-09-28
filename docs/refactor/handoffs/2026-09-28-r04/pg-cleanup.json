@@ -1,0 +1,22 @@
+{
+  "checked_at": "2026-09-28T08:42:29.402073+00:00",
+  "container": "alia-refactor-test-db",
+  "database": "alia_refactor_delivery_final",
+  "port": 32768,
+  "user_database_port_5433": "untouched",
+  "command": [
+    "docker",
+    "exec",
+    "alia-refactor-test-db",
+    "psql",
+    "-U",
+    "alia_test",
+    "-d",
+    "alia_refactor_delivery_final",
+    "-tAc",
+    "SELECT json_build_object('nonpublic_schemas',coalesce((SELECT json_agg(nspname ORDER BY nspname) FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') AND nspname NOT LIKE 'pg_%'),'[]'::json),'other_connections',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()))"
+  ],
+  "exit_code": 0,
+  "nonpublic_schemas": [],
+  "other_connections": 0
+}

@@ -1,0 +1,189 @@
+{
+  "scope": "R04",
+  "note": "Raw logs and wrappers remain under run; final manifest, stage results, counts and failure assessment archived here. PTY output was observed live, not redirected.",
+  "files": [
+    {
+      "path": "run/validation-20260928-r04/count_workspace_tests.py",
+      "bytes": 10634,
+      "sha256": "7a5247cf6a19216143af7410f85c896e76d69090353f543676fd22695f48157e"
+    },
+    {
+      "path": "run/validation-20260928-r04/final-source-manifest-v1.json",
+      "bytes": 102612,
+      "sha256": "7e6adbd3ed00b47a572b9754e33d3b4ee5e23628a454a9ee72a7342e20b99025"
+    },
+    {
+      "path": "run/validation-20260928-r04/final-source-manifest-v2.json",
+      "bytes": 102612,
+      "sha256": "8994cf93c68e3fe6aa81c767b6541eafd4e0889b389286bad9e901e2e026b28f"
+    },
+    {
+      "path": "run/validation-20260928-r04/final-source-manifest-v3.json",
+      "bytes": 102612,
+      "sha256": "b3ff3f99531932bd169d9c73b92cc16d7d6b341e655d37e68b972df3e913897a"
+    },
+    {
+      "path": "run/validation-20260928-r04/final-source-manifest-v4.json",
+      "bytes": 102612,
+      "sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b"
+    },
+    {
+      "path": "run/validation-20260928-r04/format-v4-result.json",
+      "bytes": 578,
+      "sha256": "504356d6b8122225f0a437d3abf12c76c81052c69e9e4f313aa5be5a2d0a1047"
+    },
+    {
+      "path": "run/validation-20260928-r04/format-v4.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "run/validation-20260928-r04/freeze_source.py",
+      "bytes": 1079,
+      "sha256": "329cc3b42b73d00605c1e49a4631dc10bfcd55f773095309be1ce5ebe81c5006"
+    },
+    {
+      "path": "run/validation-20260928-r04/health-refusal-v2-result.json",
+      "bytes": 767,
+      "sha256": "a815d369cea603ef46ab3c7baff9d78615a87260a46fb806220247c46e481b86"
+    },
+    {
+      "path": "run/validation-20260928-r04/health-refusal-v2.log",
+      "bytes": 861,
+      "sha256": "8dfeb557d3dd782de6cbb852005ad44c68ca0a694db0ceffc3a8ea9f6a7fc754"
+    },
+    {
+      "path": "run/validation-20260928-r04/mac-embedded-no-default-v4-result.json",
+      "bytes": 666,
+      "sha256": "dad1af31c882bee9e241657d65e39dd50fcb734d29b03f646cd91f66ca4edfb5"
+    },
+    {
+      "path": "run/validation-20260928-r04/mac-embedded-no-default-v4.log",
+      "bytes": 72,
+      "sha256": "a41051563a4cb5fc1b1bcdd9aa0ba28ca80f7736d629d90cc138218756e8e3a9"
+    },
+    {
+      "path": "run/validation-20260928-r04/mac-server-no-default-v4-result.json",
+      "bytes": 665,
+      "sha256": "660358dc78b4bbe02145869bfd50cf62b7c2a8698a825ed267b4b12bcece4294"
+    },
+    {
+      "path": "run/validation-20260928-r04/mac-server-no-default-v4.log",
+      "bytes": 166,
+      "sha256": "ddee32ab03265356bbe1625dc86549b7a7a06a7cbce080a90ed25572c6d82849"
+    },
+    {
+      "path": "run/validation-20260928-r04/models-v4-result.json",
+      "bytes": 735,
+      "sha256": "2d1ce4ec1d2ef3c32edf01dd23e43a9547e2a83a1dc3575dd8a1b6e4af6b2a77"
+    },
+    {
+      "path": "run/validation-20260928-r04/models-v4.log",
+      "bytes": 1008,
+      "sha256": "12784d1c3d8bf836ee7f055e9c0fd962d2035b9b7649deb64dab15c356481f16"
+    },
+    {
+      "path": "run/validation-20260928-r04/paired-one-v3-result.json",
+      "bytes": 789,
+      "sha256": "eb34af01b010b2f4520835ce01c5209009eb61fe620ae0c1c85a7681d400271d"
+    },
+    {
+      "path": "run/validation-20260928-r04/paired-one-v3.log",
+      "bytes": 469,
+      "sha256": "70030cac8a52eabd80b258d08d893a7ad2bd09fa3a4364cff676f8ccedc829b0"
+    },
+    {
+      "path": "run/validation-20260928-r04/paired-workspace-binary-v3-result.json",
+      "bytes": 604,
+      "sha256": "8b493adc5925215b32deb31a1a079a3e006d306f085f9aa7c9c2821d5495aa25"
+    },
+    {
+      "path": "run/validation-20260928-r04/paired-workspace-binary-v3.log",
+      "bytes": 900,
+      "sha256": "f4cdcad29db0f2eee1cfb8d20997254a49d692c4e4c40c52b96c184caa76ef55"
+    },
+    {
+      "path": "run/validation-20260928-r04/pty-v4-observation.txt",
+      "bytes": 689,
+      "sha256": "b5578a9e111fed3f33e5c3a5028a2260342f5824c4cb87a1e0be413f643e207a"
+    },
+    {
+      "path": "run/validation-20260928-r04/pty-v4-result.json",
+      "bytes": 772,
+      "sha256": "b4e4a13449fab93fead45149903602784525e8c41b6706bc44bb9f0fcd45ad53"
+    },
+    {
+      "path": "run/validation-20260928-r04/run_pty_stage.py",
+      "bytes": 2905,
+      "sha256": "b186a865be0ce2b7846408d99d6623643f89698442fd0817ff65faa468496ca6"
+    },
+    {
+      "path": "run/validation-20260928-r04/run_stage.py",
+      "bytes": 2928,
+      "sha256": "57c076a9e5d72cb0d87f3eed908bef17f8f48541528a520bacc8c3d2715f36b6"
+    },
+    {
+      "path": "run/validation-20260928-r04/server-lib-v1-result.json",
+      "bytes": 629,
+      "sha256": "74272dbcd0fc171155a8d171cfca5bb872b202ea0d5e1a5587bf077455aacdbc"
+    },
+    {
+      "path": "run/validation-20260928-r04/server-lib-v1.log",
+      "bytes": 2240,
+      "sha256": "4a3aaa99de5acf65160f3c502c9c6e43a29bc7ebc802a94a468fa8d1759c2b21"
+    },
+    {
+      "path": "run/validation-20260928-r04/server-lib-v2-result.json",
+      "bytes": 629,
+      "sha256": "582e06bca483520d92ef3d55f5ed927504d9dd7f4f4a17dd2b2a91a93330e884"
+    },
+    {
+      "path": "run/validation-20260928-r04/server-lib-v2.log",
+      "bytes": 34876,
+      "sha256": "08dd16d14e0ede1f4671b402c8111185794030a84bd9c689da15e7f401c8fdd7"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v3-counts.json",
+      "bytes": 19332,
+      "sha256": "a94e960681dec31b5ea2388cb18f20758174110bdf999eb573686342ce5bab27"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v3-counts.txt",
+      "bytes": 4973,
+      "sha256": "62889f82686e36d0df72ddcd99e1971a7a932fe09ec6f17068a756b80602a3f0"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v3-result.json",
+      "bytes": 607,
+      "sha256": "f02a4d6bfa6fbc4ea17a0f1c087688fa1a0eae3892049727585c9cb75d80733b"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v3.log",
+      "bytes": 76376,
+      "sha256": "d9636102ce50b257e0ad57d8dd4aec6944d62a368eb3150002d0c7d4fb51ffde"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v4-counts.json",
+      "bytes": 44074,
+      "sha256": "3142951bac41c867a2cca4da0f9446b0b48dacd0258371f817eb949604bf26b8"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v4-counts.txt",
+      "bytes": 9214,
+      "sha256": "2d49d2ee863335db810e95bbc20cd4a5af0709bde80b47eaa8444e80cf30304c"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v4-result.json",
+      "bytes": 605,
+      "sha256": "1224cf465c77798062a605e079384ffc92e45e56b45df1ed5831cd20b56c8899"
+    },
+    {
+      "path": "run/validation-20260928-r04/workspace-v4.log",
+      "bytes": 108910,
+      "sha256": "c1dd568908b9157061d13fd4d8713375c25fe0ca5ee57c48132e263674521d19"
+    }
+  ],
+  "linux_results": "linux-arm64-v4-result-summary.json",
+  "committed_source": "committed-source-verification.json",
+  "pg_cleanup": "pg-cleanup.json"
+}

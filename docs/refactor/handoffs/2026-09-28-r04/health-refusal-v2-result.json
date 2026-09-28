@@ -1,0 +1,27 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "providers::llm::openai::tests::health_probe_connection_refusal_is_distinct_and_redacted",
+    "--locked",
+    "--offline",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "started_at": "2026-09-28T07:59:01.197248+00:00",
+  "finished_at": "2026-09-28T07:59:06.732952+00:00",
+  "elapsed_seconds": 5.54,
+  "exit_code": 101,
+  "source_manifest_sha256": "8994cf93c68e3fe6aa81c767b6541eafd4e0889b389286bad9e901e2e026b28f",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

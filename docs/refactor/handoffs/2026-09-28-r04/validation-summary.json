@@ -1,0 +1,86 @@
+{
+  "date": "2026-09-28",
+  "status": "passed_and_committed",
+  "source_manifest": {
+    "path": "final-source-manifest-v4.json",
+    "files": 633,
+    "sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b"
+  },
+  "workspace": {
+    "passed": 1053,
+    "failed": 0,
+    "ignored": 5,
+    "elapsed_seconds": 319.39,
+    "running_targets": 66,
+    "doctest_targets": 5,
+    "excluded_nested_summary_count": 1,
+    "source_drift": []
+  },
+  "additional": {
+    "real_pty": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads": 1,
+      "stdin_stdout_stderr_isatty": true,
+      "result": "pty-v4-result.json",
+      "observation": "pty-v4-observation.txt"
+    },
+    "actual_easy_turn": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "device": "cpu",
+      "direct_backchannel_ms": 351.9891659998393,
+      "grpc_ms": {
+        "Complete": 494.77104200013855,
+        "Backchannel": 327.1521249989746,
+        "Wait": 411.2532500002999
+      },
+      "result": "models-v4-result.json"
+    }
+  },
+  "macos_unique_executed": 1058,
+  "macos_no_default_all_targets": {
+    "server": "passed",
+    "embedded": "passed"
+  },
+  "linux_arm64_no_default_all_targets": {
+    "server": "passed",
+    "embedded": "passed",
+    "test_execution": false,
+    "result": "linux-arm64-v4-result-summary.json",
+    "source_drift": [],
+    "container_stopped": true
+  },
+  "format_check": "passed",
+  "build_environment": {
+    "macos_rust": "1.94.1",
+    "jobs": 2,
+    "RUST_MIN_STACK": "unset",
+    "RUST_TEST_THREADS": "unset; PTY explicit --test-threads=1",
+    "DOCS_RS": "unset",
+    "sherpa_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+  },
+  "evidence_limits": [
+    "All directed reruns are excluded from the unique test count; R01 tests are not added to R04.",
+    "V3 workspace stopped with 699/3/3; original paired binary later passed 9/9. V4 full passed after adding only failure diagnostics; original timeout cause remains unconfirmed.",
+    "Unix-domain refusal fixture proves actual Unix connection refusal and error classification; TCP 200/401/404 and stalled response are checked separately.",
+    "Health 5s timeout is per enabled OpenAI probe, not a global aggregate health deadline.",
+    "Device REST fixtures verify owner/current-admin checks and adapter result mapping, not real Pi hardware or authenticated body pins.",
+    "Public binding-status reachability does not prove device ownership/binding correctness or telemetry availability.",
+    "Model durations are observed calls, not cold-start or end-to-end acoustic benchmarks.",
+    "No Pi AEC, actuator or 24-hour deployment validation in this package."
+  ],
+  "source_commit": "8f5bb83f4a313723428abf854c1e663b159c6c45",
+  "pg_cleanup": {
+    "checked_at": "2026-09-28T08:42:29.402073+00:00",
+    "container": "alia-refactor-test-db",
+    "database": "alia_refactor_delivery_final",
+    "port": 32768,
+    "user_database_port_5433": "untouched",
+    "exit_code": 0,
+    "nonpublic_schemas": [],
+    "other_connections": 0
+  }
+}

@@ -1,6 +1,6 @@
 # 构建记录
 
-**2026-09-28：R01 CP01—CP07 已完成，7/7；后续轮次 R01—R06 为 1/6。** 源码 `a79cb1f`，630 输入与冻结 V1 一致；workspace 1036/0/5，实际 PTY 3、Easy-Turn 2，合计 1041 unique macOS；macOS/Linux ARM64 两端 no-default all-targets 与 fmt 通过。默认 shadow，显式 Enabled 可走固定邀请规范投递；H2 恢复保持原音频。当前继续 R04 的 HTTP 新装配置、Companion OpenAPI、在线健康探测超时三项。详见 [恢复入口](resume-checkpoint-2026-09-28.md)、[机器状态](resume-state-2026-09-28.json)及 [四份 HANDOFF](handoffs/2026-09-28/README.md)。以下旧日期段落仅为历史。
+**2026-09-28：R01与R04均已完成，后续轮次为2/6。** R01源码 `a79cb1f`（CP7/7），R04源码 `8f5bb83`（管理4/4及统一验收完成）。R04冻结633输入逐项与提交一致，workspace1053/0/5、真实PTY3、实际Easy-Turn2，合计1058 unique macOS；macOS/Linux ARM64两端no-default all-targets与fmt通过，Linux仅编译。首次V3旧配对超时根因未定，保留V01；下一步依H01—H05推进AEC、执行器及Mac+Pi实机验收，其他Server平台按明确目标推进。详见 [恢复入口](resume-checkpoint-2026-09-28.md)、[R04 checklist](checklists/management.md)及 [本包四份HANDOFF](handoffs/2026-09-28-r04/README.md)。以下旧日期段落仅为历史。
 
 **2026-09-26 当前状态：DU11 已完成，暂停纵向整合 11/11。** 合并 `948b3c4`，605 个输入与最终 V2 一致，未重跑相同源码的验证。当前进入 R01 Companion shadow/回放与受约束主动表达，三名 subagent 分别梳理策略状态、投递接线、回放与故障验证；详细步骤见 [Companion checklist](checklists/companion.md)。下方 9 月 23 日暂停状态作为历史保留。
 
