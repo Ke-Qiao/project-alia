@@ -1,5 +1,7 @@
 # Project Alia 首轮重构计划
 
+**2026-09-28：R01 完成并提交 `a79cb1f`，CP 7/7、R01—R06 1/6。** 630 输入源码一致，1041 项不同 macOS 测试和两平台编译通过；当前按 [R04 三项核对](handoffs/2026-09-28/r04-readiness.md) 继续。默认 shadow，显式 Enabled 的固定邀请纵向链和原输出暂停/恢复已接通。当前细项见 [Companion checklist](checklists/companion.md)，以下旧日期段落仅保留历史。
+
 **2026-09-26 当前状态：DU11 已完成，暂停纵向整合 11/11。** 合并 `948b3c4`，605 个输入与最终 V2 一致，未重跑相同源码的验证。当前进入 R01 Companion shadow/回放与受约束主动表达，三名 subagent 分别梳理策略状态、投递接线、回放与故障验证；详细步骤见 [Companion checklist](checklists/companion.md)。下方 9 月 23 日暂停状态作为历史保留。
 
 更新：2026-09-23。

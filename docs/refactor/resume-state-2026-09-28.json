@@ -1,0 +1,164 @@
+{
+  "date": "2026-09-28",
+  "status": "r01_complete_r04_in_progress",
+  "branch": "codex/architecture-refactor",
+  "du_merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+  "du_progress": {
+    "completed": 11,
+    "total": 11
+  },
+  "du_source_manifest": {
+    "date": "2026-09-26",
+    "merge_commit": "948b3c4e23abfed7d08aa302c34a1907f8694fb1",
+    "source_manifest_sha256": "1939a948191002882ba70e2578ad87d266d428b2ba423ccfa31aa178a34998d4",
+    "build_inputs_verified": 605,
+    "source_drift": [],
+    "code_conflicts": 0,
+    "documentation_conflicts": 3,
+    "test_matrix_repeated": false,
+    "reason": "Merged build inputs are byte-identical to the validated V2 candidate."
+  },
+  "r01_status": "complete",
+  "r01_checklist": "docs/refactor/checklists/companion.md",
+  "remaining_rounds": [
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06"
+  ],
+  "subagents": [
+    "companion_policy_28",
+    "companion_replay_28",
+    "companion_delivery_28"
+  ],
+  "scope": "Server/macOS + Embedded/Pi5; Easy-Turn on Server; no frontend or generic Embedded adaptation",
+  "next_action": "Complete R04 independent packages with three subagents, run directed/full applicable regressions, update checklists and commit. Hardware details still pending.",
+  "r01_progress": {
+    "completed": 7,
+    "total": 7,
+    "completed_ids": [
+      "CP01",
+      "CP02",
+      "CP03",
+      "CP04",
+      "CP05",
+      "CP06",
+      "CP07"
+    ],
+    "remaining_ids": []
+  },
+  "updated_at": "2026-09-28",
+  "checkpoint": "docs/refactor/resume-checkpoint-2026-09-28.md",
+  "cp05": {
+    "source_frozen": true,
+    "implementation_verified": "frozen workspace + paired + platforms complete, committed",
+    "live_output_enabled": "explicit Enabled supported by real Server wiring; policy defaults shadow; no user deployment",
+    "checklist": "docs/refactor/checklists/companion.md",
+    "base_commit": "8d74b6c",
+    "two_deadlines": {
+      "admit_before": "original decision/opportunity/capture freshness minimum; strict before commit and first reserve",
+      "valid_until": "original candidate expiry; never extended by Hold, retry, or resume"
+    },
+    "directed_results": {
+      "companion_v2": {
+        "passed": 31,
+        "failed": 1,
+        "ignored": 0,
+        "frozen": false
+      },
+      "voice_core_proto_v1": {
+        "passed": 36,
+        "failed": 0,
+        "ignored": 0,
+        "frozen": false
+      },
+      "voice_embedded_v1": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "frozen": false
+      },
+      "companion_v3": {
+        "passed": 38,
+        "failed": 0,
+        "ignored": 0,
+        "frozen": false
+      },
+      "runtime_http_v1": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "frozen": false
+      },
+      "paired_companion_v3": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "frozen": false
+      }
+    },
+    "source_manifest": {
+      "path": "run/validation-20260928/final-source-manifest-v1.json",
+      "files": 630,
+      "sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a"
+    }
+  },
+  "previous_shadow_baseline": {
+    "source_commit": "98f237c192bcab29aac4e8ed1d405cc305f05b48",
+    "source_manifest": {
+      "version": 3,
+      "files": 619,
+      "sha256": "8ea6d4f7cc63b82d22b8c584c8c0b426b11e04f952f64bd15b7776d352cc18a1",
+      "path": "docs/refactor/handoffs/2026-09-26/final-source-manifest-v3.json"
+    },
+    "evidence": {
+      "directed_pass": 26,
+      "tts_http_pass": 9,
+      "linux_arm64_no_default_all_targets": "Server and Embedded passed; compile only",
+      "workspace_v3": {
+        "passed": 1005,
+        "failed": 0,
+        "ignored": 5
+      },
+      "live_output_enabled": false,
+      "ignored_followup_pass": 5,
+      "macos_unique_executed": 1010,
+      "macos_no_default_all_targets": "Server and Embedded passed"
+    }
+  },
+  "r01_source_manifest": {
+    "path": "run/validation-20260928/final-source-manifest-v1.json",
+    "files": 630,
+    "sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a"
+  },
+  "r01_evidence": {
+    "summary": "docs/refactor/handoffs/2026-09-28/validation-summary.json",
+    "workspace_v1": {
+      "passed": 1036,
+      "failed": 0,
+      "ignored": 5,
+      "source_drift": []
+    },
+    "real_pty": 3,
+    "actual_easy_turn": 2,
+    "macos_unique_executed": 1041,
+    "macos_no_default_all_targets": "both passed",
+    "linux_arm64_no_default_all_targets": "both passed; compile only"
+  },
+  "r01_source_commit": "a79cb1f0b2c45847dce561dfde549f4318a1312a",
+  "round_progress": {
+    "completed": 1,
+    "total": 6
+  },
+  "r04_progress": {
+    "completed": 0,
+    "total": 3,
+    "scope": "three located software gaps; does not by itself mean full R04 accepted",
+    "tasks": [
+      "HTTP OOBE complete validated config",
+      "Companion OpenAPI and terminal CAS workflow",
+      "bounded actual OpenAI health probe"
+    ]
+  }
+}

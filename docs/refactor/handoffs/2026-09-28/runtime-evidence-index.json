@@ -1,0 +1,261 @@
+{
+  "date": "2026-09-28",
+  "note": "原始日志/脚本位于忽略的run目录；本索引是归档时哈希，不以缺失原件冒充可复现日志。",
+  "files": [
+    {
+      "path": "run/validation-20260928/archive_evidence.py",
+      "bytes": 2480,
+      "sha256": "0e27e20437dc1508669f3749bfa1f4d602435fdca95472184faf56245bf5640f"
+    },
+    {
+      "path": "run/validation-20260928/companion-http-v1-result.json",
+      "bytes": 621,
+      "sha256": "b72b57b49a133097034596dd5e6af609bbc0d665e459e47d89abc2cbe027f66d"
+    },
+    {
+      "path": "run/validation-20260928/companion-http-v1.log",
+      "bytes": 1029,
+      "sha256": "e10e3839799e761aeb8191ec8413d247916fcc37128d53b69f75a5514c9e1141"
+    },
+    {
+      "path": "run/validation-20260928/companion-initial-result.json",
+      "bytes": 237,
+      "sha256": "44625b0a14d54475c8544cfc2230f2fd789c77ad102ebb5b2b2bfc0d9a60b842"
+    },
+    {
+      "path": "run/validation-20260928/companion-initial.log",
+      "bytes": 2156,
+      "sha256": "2bff5d3b0436a8f93495f25e5deaa9c0282a3c8405e8271ca99acded8902e8b1"
+    },
+    {
+      "path": "run/validation-20260928/companion-v2-result.json",
+      "bytes": 237,
+      "sha256": "ee3cd279d2adae09f204163ff31c66a84a764d55492353de52bade8ff671966b"
+    },
+    {
+      "path": "run/validation-20260928/companion-v2.log",
+      "bytes": 4968,
+      "sha256": "7497ac4da58661de97eec20293f68397da9bb6919573e1a7849066987724a14d"
+    },
+    {
+      "path": "run/validation-20260928/companion-v3-result.json",
+      "bytes": 597,
+      "sha256": "c52dd253b0090338a5ca2d1045aef1edc702d84067e0ccf4bdff74fea056df08"
+    },
+    {
+      "path": "run/validation-20260928/companion-v3.log",
+      "bytes": 5063,
+      "sha256": "4ea7574845ca0a23d9525a4d53ce14603bbdbf5daeacfe2562888ee6fee54b47"
+    },
+    {
+      "path": "run/validation-20260928/count_workspace_tests.py",
+      "bytes": 10634,
+      "sha256": "7a5247cf6a19216143af7410f85c896e76d69090353f543676fd22695f48157e"
+    },
+    {
+      "path": "run/validation-20260928/easy-turn-service.log",
+      "bytes": 1763,
+      "sha256": "cde91303e208d545028b4d14ed5848f6d0bb9617f846f9ca05b071aaffd01048"
+    },
+    {
+      "path": "run/validation-20260928/final-source-manifest-v1.json",
+      "bytes": 102124,
+      "sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a"
+    },
+    {
+      "path": "run/validation-20260928/freeze_source.py",
+      "bytes": 1081,
+      "sha256": "787191a411267800b20f9463960b158a46f590816fe12448305dd82b096ed52c"
+    },
+    {
+      "path": "run/validation-20260928/initial-build-result.json",
+      "bytes": 278,
+      "sha256": "c5aacd9f3d108109c6273af4bb37c994309efdfa07baef87dd5e1e0970d07a04"
+    },
+    {
+      "path": "run/validation-20260928/initial-build.log",
+      "bytes": 7275,
+      "sha256": "35e85d97ebb2ccac857513fe359cca0a7a4d226f86e52cc4994ac13b431d98af"
+    },
+    {
+      "path": "run/validation-20260928/mac-embedded-no-default-v1-result.json",
+      "bytes": 667,
+      "sha256": "17cda7892b8f309f2d400396efcf2a1d79eea11cae093c345cf74d23074dd170"
+    },
+    {
+      "path": "run/validation-20260928/mac-embedded-no-default-v1.log",
+      "bytes": 341,
+      "sha256": "13965cf1cf616efa948db6086824e3c6cb522eb76ad4aedfd731a153f8723160"
+    },
+    {
+      "path": "run/validation-20260928/mac-server-no-default-v1-result.json",
+      "bytes": 665,
+      "sha256": "999f65756dd0be0c88e48dea2cd33e59e961f9db729740360dbf65d68d402a0f"
+    },
+    {
+      "path": "run/validation-20260928/mac-server-no-default-v1.log",
+      "bytes": 434,
+      "sha256": "cbffbfd82200ff1ead0a1120db664c7b0c428bf6a859707e1a44d79a6974739e"
+    },
+    {
+      "path": "run/validation-20260928/models-v1-result.json",
+      "bytes": 735,
+      "sha256": "3b67ae760e51f7e1ed93ad6039a2d1cb12bed480724fd68feed92f744be85aca"
+    },
+    {
+      "path": "run/validation-20260928/models-v1.log",
+      "bytes": 1009,
+      "sha256": "6445636c4cde037f90b3cb3f8a20306775bbba0f3843489348a97d82cffc3f02"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-h2-v1-result.json",
+      "bytes": 606,
+      "sha256": "902f48963277ab6dbbdba659f95b55573b75713accb71a62cc83ca1aeaa76aac"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-h2-v1.log",
+      "bytes": 471,
+      "sha256": "03e33af76c29566f63cd8601dc1e6c6cbb8e99aa161d9419264cd78a2ae2a531"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v1-result.json",
+      "bytes": 624,
+      "sha256": "93f207c802ad9b2a3deab409a2895a412b85bc2086f5a8147475195f3b11c284"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v1.log",
+      "bytes": 1826,
+      "sha256": "1be01d01615ee863c339045eda8b4c9e6fbc8b79c2e75ba79f705cce4e2ec74f"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v2-result.json",
+      "bytes": 594,
+      "sha256": "6407a22a9f6ea3147e475946c81d152bb2e357d414047c91a53d6f183e4db208"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v2.log",
+      "bytes": 20885,
+      "sha256": "fca065e6822817525ace969624dfdee4a5cf68d8b7af459b83f3e8cf895019e5"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v3-result.json",
+      "bytes": 593,
+      "sha256": "01968468e4d35681d705abb062858043385d89e878ffa5858945765df1ae527e"
+    },
+    {
+      "path": "run/validation-20260928/paired-companion-v3.log",
+      "bytes": 569,
+      "sha256": "341754059e319696f36843f2e5a0ec1b5ab005e7184a55d6bcfc80aed0e6a86c"
+    },
+    {
+      "path": "run/validation-20260928/paired-full-v1-result.json",
+      "bytes": 576,
+      "sha256": "ab90b0f31dfefd6bc6e6c0e475ffd59d1a76953cb727cfa01998011f8f99929d"
+    },
+    {
+      "path": "run/validation-20260928/paired-full-v1.log",
+      "bytes": 1064,
+      "sha256": "fbc2de8a00c77bf1926a9d510ba6b506a9ccaafb8e24d0526f356a8da232c5ce"
+    },
+    {
+      "path": "run/validation-20260928/paired-full-v2-result.json",
+      "bytes": 576,
+      "sha256": "54d8395b5e4713400550476ef17a587482d3622943b0979defe2db25cc04ab27"
+    },
+    {
+      "path": "run/validation-20260928/paired-full-v2.log",
+      "bytes": 1157,
+      "sha256": "50d0f5bf98be374612a534d8fe43d83d99d07f854b7e593d7eaf296933b19674"
+    },
+    {
+      "path": "run/validation-20260928/pre-freeze-status.txt",
+      "bytes": 3200,
+      "sha256": "0c6f17f017643f2c1d7417454d04d6bef2d954bb1ac2bb25afd0feda7b8c0436"
+    },
+    {
+      "path": "run/validation-20260928/pty-v1-observation.txt",
+      "bytes": 741,
+      "sha256": "beb0b4f2b70bb9d25f57a40abc9f7e9443f968ef7ef6b462b24715cd23fc6e25"
+    },
+    {
+      "path": "run/validation-20260928/pty-v1-result.json",
+      "bytes": 772,
+      "sha256": "7da0a448838707c68ddc3c41c63a242e95478bd7767153cf11ec69759693c1c9"
+    },
+    {
+      "path": "run/validation-20260928/run-voice-check.py",
+      "bytes": 1924,
+      "sha256": "fe94f9cf43d7d6c989307738c7993d3a7fd01246a643598061acf565d6ee1d3d"
+    },
+    {
+      "path": "run/validation-20260928/run_pty_stage.py",
+      "bytes": 2905,
+      "sha256": "b186a865be0ce2b7846408d99d6623643f89698442fd0817ff65faa468496ca6"
+    },
+    {
+      "path": "run/validation-20260928/run_stage.py",
+      "bytes": 2928,
+      "sha256": "57c076a9e5d72cb0d87f3eed908bef17f8f48541528a520bacc8c3d2715f36b6"
+    },
+    {
+      "path": "run/validation-20260928/voice-core-proto-v1-result.json",
+      "bytes": 576,
+      "sha256": "8516b5846e0313c2190faa65b096091371e494c2b76e69d36ce7556531a8750f"
+    },
+    {
+      "path": "run/validation-20260928/voice-core-proto-v1.log",
+      "bytes": 4214,
+      "sha256": "8f020c7c9d7e227d158b4a88650f894ea962e6cb1f612db5c1dcb0bb24554cd6"
+    },
+    {
+      "path": "run/validation-20260928/voice-embedded-v1-result.json",
+      "bytes": 570,
+      "sha256": "fc6c24d9c0ffcd9e8a543096ed48ee3a7ac6f10630d6cffad35ea53bbad0e7d7"
+    },
+    {
+      "path": "run/validation-20260928/voice-embedded-v1.log",
+      "bytes": 1315,
+      "sha256": "b48b2f4981770f25aa58150569eb4cc6e29cc57c5afdf93240c97db4268e71b5"
+    },
+    {
+      "path": "run/validation-20260928/voice-handoff-v1-result.json",
+      "bytes": 580,
+      "sha256": "5b5ce884ac0a17a4650d86e79232c15d7bfd2c98f85c9da0d2acfe985900e489"
+    },
+    {
+      "path": "run/validation-20260928/voice-handoff-v1.log",
+      "bytes": 505,
+      "sha256": "dc4f18ca4e7c40e8d52ca274a292a559f3e3fcf6beff8ed3a9c5079d43a4f3a4"
+    },
+    {
+      "path": "run/validation-20260928/voice-server-v1-result.json",
+      "bytes": 568,
+      "sha256": "bcdd65d30c14b4188533f2eeeac46a95b29f3b64e5fc19ccd20847741ced9754"
+    },
+    {
+      "path": "run/validation-20260928/voice-server-v1.log",
+      "bytes": 1363,
+      "sha256": "49665e175802de76cbbe1dbbd966884cb3b0518025b145d266f7a15dfae5694d"
+    },
+    {
+      "path": "run/validation-20260928/workspace-v1-counts.json",
+      "bytes": 44073,
+      "sha256": "a6dcb3f4288675ac9bbff9fdcb25d5b7e553dbc111dc1f41871da63182009eac"
+    },
+    {
+      "path": "run/validation-20260928/workspace-v1-counts.txt",
+      "bytes": 9210,
+      "sha256": "77acb837614e6188ec03274bce020a21bc64ce789b4eebf5c457d1ca7832a7e9"
+    },
+    {
+      "path": "run/validation-20260928/workspace-v1-result.json",
+      "bytes": 605,
+      "sha256": "41a9cc0242e24e970695f6e1880dad2c394fa8c2da425d27fd0704b0206b6a81"
+    },
+    {
+      "path": "run/validation-20260928/workspace-v1.log",
+      "bytes": 107518,
+      "sha256": "90374779464e224aae5f1061f32d940436e11a583f18412788011905e4f0a8d4"
+    }
+  ]
+}

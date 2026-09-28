@@ -1,0 +1,20 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "-p",
+    "alia-embedded",
+    "-p",
+    "alia-core",
+    "-p",
+    "alia-proto",
+    "--no-run",
+    "--locked",
+    "--offline"
+  ],
+  "elapsed_seconds": 98.29,
+  "exit_code": 101,
+  "frozen": false
+}

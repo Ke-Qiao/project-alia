@@ -1,0 +1,84 @@
+{
+  "prepared_at": "2026-09-28T06:53:50.377738+00:00",
+  "container": "alia-cp-arm64-20260928-v1",
+  "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+  "platform": "linux/arm64",
+  "previous_container": "alia-companion-arm64-20260926-v3",
+  "previous_container_unchanged": true,
+  "image_reused_without_commit": true,
+  "old_cache_read_only_during_clone": true,
+  "cache_method": "APFS cp -cR (43 GiB logical data)",
+  "source_frozen": false,
+  "source_files_copied": 0,
+  "cargo_run": false,
+  "tests_run": false,
+  "postgres_used": false,
+  "next_step": "After Root freezes its final manifest, run prepare-source.py MANIFEST; then run-checks.py checks source and Cargo.lock before/after sequential server/embedded no-default all-targets compilation.",
+  "records": [
+    {
+      "argv": [
+        "docker",
+        "inspect",
+        "alia-cp-arm64-20260928-v1",
+        "--format",
+        "{{json .State}} {{json .Image}} {{json .Mounts}}"
+      ],
+      "started_at": "2026-09-28T06:53:49.997442+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-09-28T06:53:50.020352+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "inspect",
+        "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+        "--format",
+        "{{json .Id}} {{json .Architecture}} {{json .Os}}"
+      ],
+      "started_at": "2026-09-28T06:53:50.020466+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-09-28T06:53:50.039844+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "pkg-config",
+        "--modversion",
+        "alsa",
+        "dbus-1",
+        "protobuf"
+      ],
+      "started_at": "2026-09-28T06:53:50.040149+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-09-28T06:53:50.087995+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "protoc",
+        "--version"
+      ],
+      "started_at": "2026-09-28T06:53:50.088103+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-09-28T06:53:50.138623+00:00"
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "rustc",
+        "--version",
+        "--verbose"
+      ],
+      "started_at": "2026-09-28T06:53:50.138770+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-09-28T06:53:50.375512+00:00"
+    }
+  ]
+}

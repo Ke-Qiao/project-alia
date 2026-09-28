@@ -1,23 +1,39 @@
 # R01 · Companion shadow、回放与受约束主动表达
 
-更新：2026-09-26。DU01—DU11 已合入且 605 个输入与验证候选一致。R01 shadow / 回放基础已完成定向验收，V3 软件验证已通过；首轮其它 R02—R06 和用户延期项不变。
+更新：2026-09-28。当前 **CP01—CP07：7/7**；源码已正常提交 `a79cb1f`，630 输入逐项与冻结 V1 一致。默认政策保持 shadow，真实 Server 装配现在支持 owner 显式启用 Enabled；没有启动用户设备或更改用户政策。
 
-- [x] **CP01 契约与状态归属**：已核对已有路径并记录 [契约](../companion-contract.md)、候选/机会/决策归属、来源与删除边界；三个实现包已分配。
-- [x] **CP02 纯策略与可回放输入**：显式时间/版本/证据，固定抑制原因与预算；11 项纯策略测试通过，回放不调用实时模型/传感器。
-- [x] **CP03 持久候选与权限**：唯一去重键、有效期、来源失效、用户政策、重启不重发及有界状态；9 项真实 PG 测试通过。本项为 shadow 持久化，live pending / admission 另归 CP05。
-- [x] **CP04 Shadow 运行装配**：真实生命周期和受限入口，默认只记录决定，不产生 Response/媒体/动作/外部副作用；6 项真实 Runtime / HTTP / PG 测试通过，覆盖重启扫描、8 请求容量、取消排空、提交前超时后的原身份重试。
-- [ ] **CP05 规范投递整合**：明确允许后走原 Context/Response/Delivery，交互占用与新语音优先，原权限/过期前后重验。
-- [ ] **CP06 故障与回放验证**：相同输入可复现；删除/撤权、重启、重复、队列饱和、机会过期与语音竞争均有实际证据。
-- [ ] **CP07 完整验收与提交**：适用真实 PG/软件双端/平台验证，记录 source manifest、边界、正常提交与下一步。
+- [x] **CP01 契约与状态归属**：候选/机会/决策、来源与删除边界见 [契约](../companion-contract.md)。
+- [x] **CP02 纯策略与可回放输入**：显式时间、政策版本、完整证据及预算；确定性回放不调用实时模型或传感器。
+- [x] **CP03 持久候选与权限**：shadow 持久去重、有效期、来源失效、政策与有界状态；live 另由 CP05 管理。
+- [x] **CP04 Shadow 运行装配**：真实生命周期、owner REST 入口、容量与关闭排空；shadow 不生成 Response、媒体或动作。
+- [x] **CP05 规范投递整合**：原子 admission/专用 Context/唯一 Response，原机会 reserve、固定邀请一次 TTS 和规范 Delivery；设备原 capture watermark 防止尚未上行的新语音被抢占。
+- [x] **CP06 故障与回放验证**：删除、撤权、重启、重复、预算/容量、机会过期、reserve 拒绝/未知/取消、TTS 期间撤权、近端语音、H1 ACK 丢失后 H2 恢复均有软件测试证据。SQL 未知提交用真实事务 barrier 验证，未做 PostgreSQL 物理 commit ACK 断网。
+- [x] **CP07 完整验收与提交**：630 输入 V1 全量、真实 PTY、模型、平台检查与证据归档通过；`a79cb1f` 已提交且输入一致。
 
-当前 **4/7**；CP05 未完成，CP06 的 shadow 部分已有证据但 live 故障矩阵未执行，CP07 的完整 R01 验收仍开放。三个 subagent 分别负责纯策略、持久来源、语音机会，Root 负责装配和组合验收。产品默认先 shadow；当前 API 和生产 actor 均拒绝 live 输出，不能因引用架构提案而擅自开启现有设备输出。
+## CP05 已实现出口
 
-本阶段冻结 V3：619 个输入，manifest `8ea6d4f7cc63b82d22b8c584c8c0b426b11e04f952f64bd15b7776d352cc18a1`。完整 workspace 1005/0/5；5 个 ignored 已另行通过（真实 PTY 3、实际 Easy-Turn 2），合计 1010 项不同测试。定向 26/26、TTS HTTP 9/9 不重复累计。macOS 和 Linux ARM64 的 Server / Embedded no-default all-targets 检查通过；本轮 Linux 只编译，未重复 Linux 测试。详见 [验收摘要](../handoffs/2026-09-26/validation-summary.json)。
+- [x] `CompanionInvitation` 只允许 ResponseCommit / OutputAdmission；完整 Appraisal 来源根与新的 initiative request 固定不变。
+- [x] TTL 内等待独立机会；政策、来源墓碑、同主题和不可退款预算与唯一 Context/Response 在同一事务准入。Fresh permit 不可序列化/重建，Existing 只核对原事实。
+- [x] 分离 `admit_before`（提交与首次 reserve 的短期限）与 `valid_until`（原候选输出期限）；Hold、恢复及重试都不延长期限。
+- [x] 精确 v1 capture capability；Register / Start 在真实 PlaybackSession 锁内检查原 N，本地新语音先 Hold，随后正式 Pause 接管。
+- [x] paired scanner → actor reserve → Context/Response → 固定邀请 TTS → Delivery；删除来源后零首媒体，原 producer/native owner 不被换新。
+- [x] H1 Resume Applied 后新本地 speech、丢失 ACK、Observe、H2 Pause、fresh ExplicitContinue：原 cursor 40 + 120 = 160，唯一 Response/admission/TTS/Push。
+- [x] Runner 原意图最多三次有界对账；同 channel 一次/global 四次；扫描轮转排除已尝试项；停机取消并排空原 owner。
+- [x] 完整 Runtime 的 Enabled 持久 CAS、owner 隔离与重启覆盖；默认 shadow。
 
-CP05 后续必须逐项完成：
+## 本轮证据
 
-- [ ] 专用 CompanionOutput Context，只允许固定意图的 ResponseCommit/OutputAdmission，保留原 Appraisal 来源与新 initiative request 身份。
-- [ ] 候选在 TTL 内等待/重评独立机会；政策、同主题、预算与唯一 Response 在同一事务准入，未知结果不重发。
-- [ ] 设备 capture watermark 与主动 Register/Start 原子验证，保护“本地已说话但上行帧仍在网络中”的竞争。
-- [ ] 正向 paired reserve→Response→固定邀请 TTS→Delivery，以及来源/机会撤销、近端说话、暂停/恢复/取消和超时/丢 ACK 测试。
-- [ ] 完成以上后才开放持久 `enabled`；中间构建维持 snapshot-only 和无媒体 shadow。
+冻结 V1：630 输入；manifest SHA-256 `58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a`。完整 `cargo test --workspace --locked --offline` **1036 passed / 0 failed / 5 ignored**，493.98 秒，默认栈/默认测试线程，运行前后输入无漂移。按 66 Running + 5 Doc-tests 的父 summary 计数，排除一个嵌套子进程通过项，不重复累加定向测试。
+
+开发期定向 Companion 38、Runtime/HTTP 7、Core/Proto/Embedded/actor 50、完整 duplex 9 均通过；首次 import 编译失败、SQL 擦除预期错误、paired 身份握手与示例重复 identity 失败分别保留。最终计数只使用统一冻结轮次。
+
+实际 PTY 3/3 和 Easy-Turn 2/2 已补跑，合计 **1041 项不同 macOS 测试**。macOS 与 Linux ARM64 两端 no-default all-targets 通过；Linux 本包仅编译。所有阶段源码无漂移，fmt 通过，测试 PG schema/连接均已清理。
+
+上轮 619 输入 / 1010 unique 仅属于已提交的 shadow 基础 `98f237c`，不表示本轮 live 源码曾经过那次测试。当前 [恢复入口](../resume-checkpoint-2026-09-28.md) 和 [四份 HANDOFF](../handoffs/2026-09-28/README.md) 记录统一证据。
+
+## 保留边界
+
+- [ ] Pi 真实麦克风/声卡/扬声器、AEC、物理静音/恢复听感与 24 小时整机运行，归 R02/R05。
+- [ ] 执行器位置反馈和真实 D3 动作，归 R03。
+- [ ] 后续普通 Generation 对邀请历史的只读引用；当前邀请 Context 不扩展为 Generation 权限，见 [延期台账](../deferred.md)。
+- [ ] 前端、通用 Embedded 适配、设备侧模型和同机部署分别按用户原决定延后，不能把 Cargo 编译通过当作部署验收。

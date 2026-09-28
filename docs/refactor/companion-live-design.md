@@ -1,6 +1,8 @@
-# CP05 Companion 真实主动表达设计（待实施 / 未验收）
+# CP05 Companion 真实主动表达设计（实现中 / 待完整验收）
 
-更新：2026-09-26。本文是 CP05 的实施草案，不代表真实主动表达已经启用，不作为软件、Pi 5 真机或声学验收证据。编写时 R01 shadow 源码处于统一验证冻结期；本文仅新增设计文档，不改变被冻结的源码或现有勾选状态。
+2026-09-28：本合同已进入当前工作树实现与定向验证；最新状态以 [恢复入口](resume-checkpoint-2026-09-28.md) 和 [checklist](checklists/companion.md) 为准。下文保留原设计依据，不代表全部故障、平台或真机验收已完成。
+
+最初设计于 2026-09-26；本次实现状态更新于 2026-09-28。CP05 的持久准入、专用 Context、固定邀请 runner、原 voice actor 与设备 capture gate 已实现。定向 Companion 38/0/0、Runtime/HTTP 7/0/0、完整 duplex 配对回归 9/0/0 已分别通过，均为冻结前结果，不能相加作为最终 workspace 数。当前冻结 V1 为 630 inputs，manifest SHA-256 `58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a`；Root 正在执行统一验收，CP07 尚未完成。本文不作为 Pi 5 真机或声学验收证据，也不表示已启动用户设备。
 
 约束以 [Companion 契约](companion-contract.md) 为准。近端语音的临时避让和明确暂停沿用[自然全双工可恢复暂停契约](duplex-pause-design.md)及[控制协议](duplex-control-protocol.md)：临时疑似插话可经新鲜语义确认恢复，明确 Wait 必须等待明确继续。CP05 不得用每次近端语音都永久取消的实现替代这项已确认的产品要求。
 
@@ -20,7 +22,7 @@
 | `delivery` | 规范 Response、精确内容约束、唯一派发和媒体 / Hold owner | 不因 Existing、未知 ACK、恢复或重启新建替代媒体 |
 | Embedded capture / playback owner | 首次 Register / Start 的本地竞争屏障、临时阻断及原输出恢复 | Server 尚未看到的本地 speech 也必须阻止错误启动 |
 
-默认仍为 Shadow。只有完整 live 链及组合验证完成后，才解除 `enabled` 的入口限制；不因存在本文、已持久旧配置或单个测试通过而打开任何用户设备。
+默认仍为 Shadow。当前 ServerBuilder 已装配 live 依赖，具备 live readiness 的实例允许 active owner 显式将持久政策改为 Enabled；未装配 live 的实例仍拒绝该值。原 actor 与设备还必须协商精确的主动输出 capture gate 版本。源码装配和软件测试没有自动启用政策，也没有部署或打开用户设备；完整平台与冻结验收仍由 CP07 收口。
 
 ## 2. 候选生命周期与稳定身份
 
@@ -59,7 +61,7 @@ admission、initiative request、Context 的身份必须在第一次事务意图
 
 ## 4. 专用 Context 与不可变邀请内容
 
-建议在 [`context/types.rs`](../../packages/alia-server/src/modules/memory/context/types.rs) 新增：
+已在 [`context/types.rs`](../../packages/alia-server/src/modules/memory/context/types.rs) 实现：
 
 ```rust
 ContextPurpose::CompanionInvitation
@@ -72,7 +74,7 @@ ContextEvidence::CompanionAdmission {
 
 `CompanionInvitation` 只授权已有的 `ContextUse::ResponseCommit` 和 `ContextUse::OutputAdmission`，不新增泛化的 ContextUse，不授权 Execution、AppraisalWrite、AffectRead、Memory、Cache 等用途。必须恰有一个与用途匹配的 CompanionAdmission 证据；普通 Generation 即使拷贝这一证据也不能取得主动表达身份。
 
-建议在 [`context/companion.rs`](../../packages/alia-server/src/modules/memory/context/companion.rs) 增加仅供服务内部调用的发行接口：
+[`context/companion.rs`](../../packages/alia-server/src/modules/memory/context/companion.rs) 已提供仅供服务内部调用的发行接口，具体实现在 `companion/invitation.rs`：
 
 ```rust
 pub(crate) async fn issue_invitation_in_transaction(
@@ -82,7 +84,7 @@ pub(crate) async fn issue_invitation_in_transaction(
 ) -> ContextResult<ContextLease>;
 ```
 
-接口自行读取 durable admission、候选、canonical Appraisal 与 parent；不接受调用方上传的 roots、epoch、scope、自由文本或权限声明。Context 使用原来源头和新的 request_id，materialized_digest 覆盖下述完整、类型化的固定响应内容。valid_until 只能取来源、候选和本次决策 deadline 的较早者，发行、重试、heartbeat 或 actor reserve 都不能延长。
+接口自行读取 durable admission、候选、canonical Appraisal 与 parent；不接受调用方上传的 roots、epoch、scope、自由文本或权限声明。Context 使用原来源头和新的 request_id，materialized_digest 覆盖下述完整、类型化的固定响应内容。输出 valid_until 固定为原 candidate.expires_at（已取来源与原 TTL 的较早者）。短机会另用 admit_before 控制首次准入及 actor reserve，二者不混用；发行、重试、heartbeat 或恢复均不得延长任一期限。
 
 固定响应 envelope 至少包含：
 
@@ -103,26 +105,24 @@ content.source_event_id
 
 不得复用 `SourceNotice`：当前 SourceNotice 仅授权 OutputAdmission，不能提交规范 Response history；Delivery 控制绑定还显式拒绝 `source_notice`。强行复用会混淆两种权限与可恢复输出语义。
 
-## 5. Delivery 内容校验必须补齐的位置
+## 5. Delivery 已实现的内容校验
 
-当前 Delivery 的 Context 校验主要返回 notice literal；Generation 没有固定邀请的精确内容限制。CP05 不能只在 Companion runner 检查一次。
-
-建议让 Delivery 私有 `validate_context` 返回已经验证的 ContextLease，再以小型 `validate_response_intent(lease, key, kind, content)` 同时保留原 notice 限制和新增 Companion 限制。不要借此设计通用策略框架。
+Delivery 私有 `validate_context` 现返回已经验证的 ContextLease，再以 `validate_response_intent(lease, key, kind, content)` 同时保留原 notice 限制和专用 Companion 限制。固定内容检查位于持久入口，runner 自身的固定 literal 不能替代这些检查。
 
 | 具体入口 | 必须验证的约束 |
 | --- | --- |
 | [`prepare_in_transaction`](../../packages/alia-server/src/modules/delivery/repository.rs) | 专用 purpose、固定 output key / kind、完整内容 digest、原来源头、admission / request / expected scope 一致 |
 | 同文件 `validate_response_context` | 每次重新读取的已存 Response 仍符合专用 Context 的完整 intent；不能仅首次 prepare 验证 |
-| 同文件 `mark_generated_in_transaction` | 除大小边界和 prepared content 外，**另验传入 final_content 恰为固定邀请的 `{"text": literal}`**；目前验证 prepared content 不会自动限制 final_content |
+| 同文件 `mark_generated_in_transaction` | 除大小边界和 prepared content 外，**另验传入 final_content 恰为固定邀请的 `{"text": literal}`**；邀请的 committed 重试也重验当前 Context |
 | 同文件 `prepare_media` | representation 的 text 必须为固定 literal，媒体 identity 的 scope 必须为同一 expected scope；限制固定邀请所需的输出数量 / output key，不能让通用 256 个 representation 上限变成重复邀请许可 |
-| [`repository/text.rs`](../../packages/alia-server/src/modules/delivery/repository/text.rs) 的 `offer_text_chunk` / `offer_text_end` | 如果这类 Response 能进入文字出口，按规范 UTF-8 字节偏移校验每个 chunk 和 End 的完整 literal；否则入口显式拒绝该 medium，不能留下任意文本出口 |
+| [`repository/text.rs`](../../packages/alia-server/src/modules/delivery/repository/text.rs) 的 Start / `offer_text_chunk` / `offer_text_end` | 本轮固定邀请只允许音频，以上文字入口逐一明确拒绝；不能借通用文字投递重放邀请 |
 | 固定邀请 runner / TTS 调用 | 只把冻结 literal 交给受信 TTS；不能把候选私密描述、Appraisal 自由文本或模型生成内容作为实际媒体输入 |
 
-已 committed Response 的相同 final_content 重试是历史幂等读取，可以保留现有“不重建被擦除 assistant message”的行为；它不发行任何新的输出权限。SQL 对文本和 metadata 的限制不能证明任意 PCM 真正念了这段话，实际 TTS 输入及唯一 producer 路径仍须验证。
+普通已 committed Response 的相同 final_content 重试保留历史幂等读取；固定邀请还会重验当前专用 Context。两者都不会重建被擦除 assistant message，也不发行新的输出权限。SQL 对文本和 metadata 的限制不能证明任意 PCM 真正念了这段话；本轮配对测试使用明确受控的 TTS/native fixture，不作声学内容验证声明。
 
 ## 6. Durable admission 的最小完整持久契约
 
-建议新增 `companion_admissions`，而非把历史 shadow decision 改造成可消费 grant。至少冻结：
+独立迁移 `m20260926_000015_companion_live.sql` 已加入 `companion_live_pending`、`companion_admissions`、跨模式 `companion_source_claims` 及来源擦除关联表。历史 shadow decision 不会变为可消费 grant。admission 冻结：
 
 | 字段组 | 内容与约束 |
 | --- | --- |
@@ -142,18 +142,20 @@ content.source_event_id
 
 源撤销、privacy / relationship clear、Appraisal 修订以及政策撤销必须同事务使 admission 失效并擦除私密派生快照。仅保留预算 / 去重所需 opaque tombstone，擦除后的 replay 不再返回原 inputs、内容 hash 或私密原因；不能从日志补回。
 
-live pending、active admissions、私密 snapshots 和运行任务均须有每 owner / 全局上限；容量检查必须在同一容量锁内完成，不能用并发 COUNT 后无锁插入。沿用当前 shadow 的有界清理原则；live 的具体数值须在 migration / repository 常量中统一确定并测试，不能借 shadow 已有上限声称新表已受限。过期清理只处理有界批次，不能删除仍用于拒绝迟到请求的去重身份。
+live pending 私密记录上限为每 owner 4 / 全局 128，私密 grant 为每 owner 128 / 全局 1024；容量检查在同 schema 的事务容量锁内完成，跨 schema 测试不会共享全局锁。runner 最多 4 个并发尝试，且同 voice channel 同时只有一个尝试，避免后续 snapshot 覆盖已冻结机会。过期清理每批有界，保留拒绝迟到请求所需的去重与 charge 身份。
 
 ## 7. 同事务占预算与准备 Response
 
-建议内部接口：
+当前内部接口将一次冻结与原事务准入分开：
 
 ```rust
-pub(crate) async fn admit_invitation(
-    &self,
-    candidate_id: Uuid,
-    opportunity: VoiceOpportunity,
-) -> CompanionResult<AdmissionResult>;
+impl LiveRepository {
+    async fn prepare_intent(
+        &self, candidate_id: Uuid, opportunity: VoiceOpportunity,
+    ) -> LiveResult<LiveAdmissionIntent>;
+
+    async fn admit(&self, intent: &LiveAdmissionIntent) -> LiveResult<AdmissionResult>;
+}
 ```
 
 `VoiceOpportunity` 必须来自已绑定的原 actor，不提供反序列化的外部调用入口。repository 根据 candidate 固定 owner，验证 opportunity 的 owner / channel / server instance / session / boot；不允许 caller 选择另一位 owner 或任意 scope。离线 Simulation 永远不会走这一接口。
@@ -180,7 +182,7 @@ pub(crate) async fn admit_invitation(
 
 实施决定已补充于 [存储契约](companion-live-storage-design.md)：READ COMMITTED 下持有同一 pending 行锁至事务完成，重试获得锁后再查询原 admission；存在则 Existing，无记录且原意图/来源仍有效才证明可按原意图重试。Existing 仅返回 opaque receipt，不在擦除后重返 private Response。设备本地可恢复门与迟到 Resume 竞争详见 [设备契约](companion-live-device-design.md)。
 
-建议返回类型明确区分：
+当前返回类型明确区分新权限与不带私密输出的回执：
 
 ```rust
 pub(crate) enum AdmissionResult {
@@ -189,10 +191,9 @@ pub(crate) enum AdmissionResult {
         context: ContextBinding,
         response: ResponseRecord,
     },
-    Existing {
-        admission: AdmissionReceipt,
-        response: ResponseRecord,
-    },
+    Existing(AdmissionReceipt),
+    Deferred(Vec<DecisionReason>),
+    Retired,
 }
 ```
 
@@ -204,15 +205,15 @@ pub(crate) enum AdmissionResult {
 
 ## 9. 与现有 VoiceSession actor 的接线
 
-当前 [`VoiceInitiativeRequest`](../../packages/alia-server/src/modules/interaction/initiative.rs) 已要求 ContextBinding，actor 会先验证 OutputAdmission，再 invalidate 分配新 generation、fence 并创建输出。因此采用“durable admission / Context / Response commit 在前，原 actor reserve 在后”的顺序，无需发行未授权临时 Context。
+当前 [`VoiceInitiativeRequest`](../../packages/alia-server/src/modules/interaction/initiative.rs) 消费不可 Clone/Deserialize 的 `LiveAdmissionPermit`，其中固定 ContextBinding、原机会、scope 和两段期限。actor 先验证 OutputAdmission，再 invalidate 分配新 generation、fence 并创建输出。顺序为“durable admission / Context / Response prepare commit 在前，原 actor reserve 在后”，无需发行未授权临时 Context。
 
-expected_scope 从真实 opportunity 的 scope 计算：session 和 device boot 相同，generation 为原值 `checked_add(1)`。这只是冻结预期，分配权仍属于 actor；[`TurnController::invalidate`](../../crates/alia-core/src/turn.rs) 当前恰好增加一次 generation。CP05 需让 actor 分配后显式比较实际 scope 与 admission.expected_scope，溢出或不一致都拒绝。
+expected_scope 从真实 opportunity 的 scope 计算：session 和 device boot 相同，generation 为原值 `checked_add(1)`。这只是冻结预期，分配权仍属于 actor；[`TurnController::invalidate`](../../crates/alia-core/src/turn.rs) 恰好增加一次 generation。actor 已在分配后显式比较实际 scope 与 admission.expected_scope，溢出或不一致均拒绝。
 
 actor 继续执行原 owner / channel / session / boot、机会 identity、generation、speech revision、近期 capture、无 utterance / detection / retry / 活输出的检查，并在每次 await 后 drain 已到采集和重查。当前 snapshot TTL 为 5 秒、actor capture freshness 为 2 秒；纯决策更宽的上限不放松 actor 的真实门槛。speech revision 为 0 可以表示尚无 speech 的有效空闲 capture 窗口，不能把 0 一概判为缺证据。
 
-`LiveAdmissionPermit` 应作为 reserve 请求的实际能力输入，或先由模块内接口消费后构造不可外部伪造的请求；不能只靠注释约定“调用方记得仅 Fresh 调用”。返回的原 `Arc<OutputProducer>` 通过已有 [`constrain_initiative(context_id, deadline)`](../../packages/alia-server/src/modules/delivery/service/output.rs) 绑定专用 Context 并缩短 deadline，后续绑定 Response 时检查一致。
+`LiveAdmissionPermit` 是 reserve 请求的实际能力输入。返回的原 `Arc<OutputProducer>` 通过 [`constrain_initiative(context_id, capture, deadline)`](../../packages/alia-server/src/modules/delivery/service/output.rs) 绑定专用 Context、immutable capture N，并缩短 deadline；后续绑定 Response/control 时再次检查一致。
 
-候选 / source / decision / opportunity 截止时间均只能收紧。当前纯决策 deadline 包含短机会期限；初版应按原合同严格执行，接受慢 TTS 可能到期无输出。若产品需要将“最后准入时间”与“已准入输出剩余寿命”分开，应先增加明确且可验证的两段期限契约，不能在 runner 中隐式刷新五秒机会或 ContextLease。
+实施契约明确区分两段期限：`admit_before = min(原 decision.valid_until, opportunity.expires_at, last_capture_at + 2s)`，只允许在严格早于此值时完成持久准入与原 actor 的最终预约核验；`grant.valid_until = candidate.expires_at`，已经受原 source 与原候选 TTL 约束，最多为既有策略允许的 300 秒。首次预约成功后，原 OutputProducer 的媒体与可恢复 Hold 只受这份固定输出期限及当前来源/政策控制，不再把旧机会当作持续空闲事实。后续 fresh capture 通过原 Hold/Continue 处理。Context 验证保留历史 Allowed 决策、历史准入时间 `< admit_before`，当前时间必须 `< valid_until`；纯 replay 仍使用原冻结 as_of。机会过期后不可补做首次 reserve，也不可换新机会重试未知提交；输出截止时间也不会因恢复、重新扫描或 heartbeat 刷新。应测试短机会已过但既有输出可在原期限内恢复，以及两个边界相等时均拒绝新权限。
 
 在 actor 尚未建立输出 owner 前发现新 speech / epoch 变化，属于失效的首次准入，拒绝这次预约且保留已消费预算。输出 owner 建立后发生近端 speech，则进入原输出的可恢复避让 / Hold 流程；不能把同一条件无差别实现成 permanent cancel。
 
@@ -232,7 +233,7 @@ actor 继续执行原 owner / channel / session / boot、机会 identity、gener
 
 ## 11. 设备已捕获、尚未上传 speech 的竞争
 
-Server drain 只能处理已经到达的帧。设备可能已在本地捕获新 speech 并更新 watermark，但帧仍在网络中；此时 Server 的机会与 reserve 检查仍可能认为空闲。Fence、InitiativeAdmitted SessionEvent、Register 和 Start 又可能经不同 RPC 以不同次序到达。现有 fence 会替换旧 control，watermark 本身不会建立 Hold，故只检查 SessionEvent 或 Server capture revision 不足以封住这个窗口。
+Server drain 只能处理已经到达的帧。设备可能已在本地捕获新 speech 并更新 watermark，但帧仍在网络中；此时 Server 的机会与 reserve 检查仍可能认为空闲。Fence、InitiativeAdmitted SessionEvent、Register 和 Start 又可能经不同 RPC 以不同次序到达。仅有 watermark 而没有 capture gate 的旧路径不能建立 Hold；当前实现已加入精确 v1 capability、同步 capture barrier 和可恢复本地门，避免只依赖 Server revision 或 SessionEvent。
 
 首次主动输出必须在设备 capture 所有者的同步屏障内完成下列行为：
 
@@ -247,43 +248,34 @@ Server drain 只能处理已经到达的帧。设备可能已在本地捕获新 
 
 设备临界区只安装 / 检查轻量状态、取得原 owner，不在 capture 锁下做网络、SQL、模型或等待 native 收尾。必须审阅现有 capture → PlaybackSession → backend gate 的锁关系，保持控制与收尾在原 owned task 上进行。此软件门不证明所有真实近端语音都被 VAD 检出，也不证明硬件排队尾音已经消失。
 
-## 12. 建议实施文件与验收顺序
+## 12. 当前实现文件与验收归属
 
-| 文件范围 | 计划改动 |
+| 文件范围 | 已实现职责 |
 | --- | --- |
-| `modules/companion/repository.rs` 与局部 admission 子模块 | live pending、原子预算 / grant / prepare、Fresh / Existing、查询与有界清理 |
-| 下一条独立 migration | admission / pending schema、不可变约束、必要 FK / 唯一性、来源和政策撤销闭包；不回写已完成 shadow migration 冒充先前已验收 |
+| `modules/companion/repository.rs` 与 `live/` | live pending、原子预算 / grant / prepare、Fresh / Existing、查询与有界清理 |
+| `m20260926_000015_companion_live.sql` | admission / pending schema、不可变约束、必要 FK / 唯一性、来源和政策撤销闭包；未回写已完成 shadow migration |
 | `modules/memory/context/types.rs`、`repository.rs`、`companion.rs` | 专用 purpose / evidence、issuer、source-first 验证与排序；不扩大 Generation |
 | `modules/delivery/repository.rs`、`repository/text.rs`、相关 control 校验 | 固定 intent、final_content、media / text 内容约束与逐次撤权 |
 | `modules/interaction/initiative.rs`、`grpc/voice_session/initiative.rs` | 消费 Fresh permit、actual / expected scope 比较、沿原 actor 的预约与取消 |
-| `modules/companion` runner / service 与最少装配 | 固定文本 TTS、原 OutputProducer / Response 接线、有界任务与关闭；完成前仍拒绝 live enabled |
+| `modules/companion` runner / service 与 ServerBuilder | 固定文本 TTS、原 OutputProducer / Response 接线、有界任务与关闭；默认 Shadow，具备 live readiness 后才接纳显式 Enabled |
 | `proto` 与 Embedded capture / duplex / playback registration 路径 | 明确 admission 和机会屏障、不同 RPC 次序处理、本地临时门及原 Hold 恢复 |
 | 现有 PG / VoiceSession / Delivery / Embedded / loopback 测试位置 | 下面的定向用例；随后由 Root 统一组合、workspace 与目标平台验证 |
 
-上述是建议范围，不是已修改文件清单。具体 migration 序号、局部类型名与容量常量由实施包确定后冻结；不得为了避免接口协调改成外部 JSON authority 或泛化 Generation。
+上述职责已进入 V1 冻结输入；实际文件与哈希以 [630 输入 manifest](../../run/validation-20260928/final-source-manifest-v1.json) 为准。当前已通过的组件/配对定向证据分别保存在 [policy handoff](handoffs/2026-09-28/policy.md)、[repository handoff](handoffs/2026-09-28/repository.md) 和 [voice handoff](handoffs/2026-09-28/voice.md)；统一 workspace、平台检查及正常提交已完成；630 输入逐项与已提交 `a79cb1f` 一致。
 
-## 13. 待实施与待验收清单
+## 13. 实际验收与证据边界
 
-以下全部未勾选；每项必须有实际代码与验证证据后，再由主 checklist 记录完成。本文不自动同步既有 [Companion checklist](checklists/companion.md)。
+R01 CP01—CP07 已收口。源码提交 `a79cb1f`，630 输入 V1；完整 workspace 1036/0/5，另行真实 PTY 3、实际 Easy-Turn 2，共 1041 个不同 macOS 测试；macOS/Linux ARM64 两端 no-default all-targets 通过。统一结果见 [验收摘要](handoffs/2026-09-28/validation-summary.json)。以下以实际故障路径为单位，不声称穷举全部排列。
 
-- [ ] live pending 与 shadow tombstone 分离；busy / unknown 可有界重评，TTL 永不刷新，旧 Shadow 不升级。
-- [ ] 稳定 candidate / admission / request / Context / Response key；同源、换政策、rebuild 和重复 operation 不重复表达。
-- [ ] 专用 CompanionInvitation 只授权 ResponseCommit / OutputAdmission；其他 ContextUse 全拒绝。
-- [ ] 新 request 成功发行派生 Context，原 Appraisal parent 与 request 不变；缺任一 canonical root 均拒绝。
-- [ ] 假 owner、外部 roots / epoch / scope / opportunity、Simulation 和普通 Generation 伪造 invitation 均拒绝。
-- [ ] 最后一次每日预算的两事务屏障测试只有一个 Fresh；policy CAS、UTC 换日、cooldown 和 awaiting_response 并发均保持不变量。
-- [ ] 同事务 grant + Context + Response：任一写入失败全部回滚，无半成品权限或免费输出。
-- [ ] Fresh permit 不可查询重建；Existing / commit ACK 未知 / reserve ACK 未知不重派、不新建 scope、不退款。
-- [ ] 固定 content 在 prepare、stored Response 再验证、final_content、media prepare、text chunk / End 全覆盖；自由文本、额外字段、scope 篡改和重复 representation 拒绝。
-- [ ] 每次输出或恢复验证都观察当前 Companion policy；关闭、quiet、paused、revision 变化与 dispatch / Start / Resume 竞争均失效。
-- [ ] privacy / relationship clear、原 source / Appraisal / Memory / Cache / Graph 变化覆盖完整擦除闭包，源锁与 grant 锁顺序无死锁。
-- [ ] private evidence 过期 / 擦除后 replay 不泄漏 inputs / 内容 hash；opaque tombstone 保留必要去重与预算，存储和 GC 有硬上限。
-- [ ] actor 始终为唯一 generation 分配者；expected scope 溢出 / 不一致、原 session / boot / instance 消失、非空闲 / capture 过期拒绝。
-- [ ] 合法零 speech revision 可接纳；缺 capture 或伪造 bound owner 不可接纳；await 后新到 speech 不能穿过 Server gate。
-- [ ] 设备已捕获未上传 speech 在 Fence 前、Fence 后 Register 前、Register 后 Start 前及 Start 期间均有受控竞争测试。
-- [ ] Fence / SessionEvent / Register / Start 乱序、丢 ACK、重复 ACK 与旧 scope 不清除本地更新的阻断。
-- [ ] 登记后的 AcousticCandidate 是可恢复临时避让；新鲜附和可恢复原未提交媒体，ExplicitWait 只能明确继续。
-- [ ] 恢复不重生成、不重放前缀、不换 generation、不产生第二份 Response/history；旧 Resume / 超期 Continue 不开放门。
-- [ ] 权限撤销和永久取消仍可清理、记录迟到事实；重启不恢复旧媒体，原 owner / task 全部有界收尾。
-- [ ] DB / loopback / Embedded 软件组合验证通过后再解除 enabled 限制；默认仍 Shadow，不自动打开用户设备。
-- [ ] macOS Server + Pi 5 的真实双讲、尾音、恢复完整性、AEC 及长期运行单独记录；不把软件测试当真机通过。
+- [x] 独立 pending、shared source claim、原 TTL、不升级旧 shadow、重启退休与私有容量：7 live 和9 shadow PG 用例覆盖；同 schema 不同 owner 容量锁用 `pg_blocking_pids` 验证。
+- [x] 原事务对账与原子性：真实 Response INSERT 故障、production TX staged rollback/commit、COMMIT deferred deadline 失败；只在已确认新提交后产生 Fresh，Existing 无 permit。没有逐一注入 grant/Context INSERT 故障或物理 PostgreSQL commit ACK 丢失。
+- [x] 不可退款预算：两个真实事务并发争抢最后额度仅一个 Fresh；政策改版、退休和擦除不退款。此用例使用 `tokio::join!`，没有强制最后额度的 SQL 等待 barrier；UTC 换日与 awaiting_response 的证据为纯策略测试，未做实际跨午夜 PG 实验。
+- [x] 专用 purpose 与完整 parent roots：5 Context PG 用例覆盖新 request、用途限制、固定 envelope/final/media/text 禁止、存储篡改重验、两段期限及撤权；只授予原固定邀请输出。
+- [x] live 动态擦除覆盖 policy / message / privacy / relationship 和禁用账户后的清理；Graph/Cache 等共用来源闭包在 shadow/Context 既有回归中覆盖。本轮没有逐一重复全部 live 触发族，不把静态共享路径说成每族单独实跑。
+- [x] Runner reserve 拒绝、原 reply 未知、取消、Existing 清理均经过真实 PG + 受控 mailbox；这是 mailbox 故障注入，不是实际网络断连。
+- [x] 真实 actor 和软件设备完整正向投递、TTS 期间删源零首媒体、H1 Resume Applied/ACK 丢失后新本地 speech → H2 → fresh ExplicitContinue，保持原 producer/scope/cursor，只有一次 TTS/Response/admission。
+- [x] Register/Start 的原 capture N 和本地 Hold 竞争在真实 Session/native fixture 验证，协议重排与正式/临时 Hold 共用门的对应路径见 [设备矩阵](companion-live-device-design.md#7-已运行的软件矩阵与后续-checklist)。没有为相同状态机穷举所有 RPC/队列排列。
+- [x] 权限丢失后的清理、同 channel 单尝试、扫描轮转和生命周期排空已有回归；默认 shadow，真实装配支持明确 Enabled，没有自动打开用户设备。
+- [ ] Pi 真机双讲、尾音、物理静音/恢复、AEC 与 24 小时运行归 R02/R05；软件提交与模型标签不作为声学通过证据。
+
+上述未单独注入的排列和跨午夜实验是本轮证据的限制；没有据此声称发现生产故障，也没有增加未要求的通用故障代理框架。若后续真实运行暴露相应问题，应保存原输入与故障边界，先补针对性回归再修复。

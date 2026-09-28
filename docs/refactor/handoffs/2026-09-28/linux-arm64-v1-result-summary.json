@@ -1,0 +1,140 @@
+{
+  "kind": "Linux ARM64 native compilation only; no test execution and no PostgreSQL",
+  "source_manifest_sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a",
+  "source_file_count": 630,
+  "started": "2026-09-28T07:18:50.160762+00:00",
+  "finished": "2026-09-28T07:19:14.501513+00:00",
+  "stages": [
+    {
+      "name": "source-before-container",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "sha256sum",
+        "-c",
+        "/evidence/source.sha256"
+      ],
+      "started": "2026-09-28T07:18:50.160762+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:18:50.352444+00:00"
+    },
+    {
+      "name": "cargo-lock-before",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "sha256sum",
+        "Cargo.lock"
+      ],
+      "started": "2026-09-28T07:18:50.352683+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:18:50.385642+00:00"
+    },
+    {
+      "name": "cargo-metadata",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "cargo",
+        "metadata",
+        "--no-deps",
+        "--offline",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "started": "2026-09-28T07:18:50.385872+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:18:50.465802+00:00"
+    },
+    {
+      "name": "server-no-default-all-targets",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "timeout",
+        "1800",
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "started": "2026-09-28T07:18:50.466177+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:19:09.382147+00:00"
+    },
+    {
+      "name": "embedded-no-default-all-targets",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "timeout",
+        "1800",
+        "cargo",
+        "check",
+        "-p",
+        "alia-embedded",
+        "--no-default-features",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "started": "2026-09-28T07:19:09.382706+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:19:14.380497+00:00"
+    },
+    {
+      "name": "source-after-container",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "sha256sum",
+        "-c",
+        "/evidence/source.sha256"
+      ],
+      "started": "2026-09-28T07:19:14.381046+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:19:14.449266+00:00"
+    },
+    {
+      "name": "cargo-lock-after",
+      "argv": [
+        "docker",
+        "exec",
+        "alia-cp-arm64-20260928-v1",
+        "sha256sum",
+        "Cargo.lock"
+      ],
+      "started": "2026-09-28T07:19:14.449495+00:00",
+      "exit_code": 0,
+      "finished": "2026-09-28T07:19:14.477302+00:00"
+    }
+  ],
+  "source_before": {
+    "checked_at": "2026-09-28T07:18:50.157681+00:00",
+    "file_count": 630,
+    "manifest_sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a",
+    "errors": [],
+    "exit_code": 0
+  },
+  "source_after": {
+    "checked_at": "2026-09-28T07:19:14.501297+00:00",
+    "file_count": 630,
+    "manifest_sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a",
+    "errors": [],
+    "exit_code": 0
+  },
+  "exit_code": 0
+}

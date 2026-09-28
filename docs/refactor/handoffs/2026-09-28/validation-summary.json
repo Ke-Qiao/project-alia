@@ -1,0 +1,84 @@
+{
+  "date": "2026-09-28",
+  "status": "passed_and_committed",
+  "source_manifest": {
+    "files": 630,
+    "path": "final-source-manifest-v1.json",
+    "sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a"
+  },
+  "workspace": {
+    "passed": 1036,
+    "failed": 0,
+    "ignored": 5,
+    "elapsed_seconds": 493.98,
+    "running_targets": 66,
+    "doctest_targets": 5,
+    "excluded_nested_summary_count": 1,
+    "source_drift": []
+  },
+  "additional": {
+    "real_pty": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "test_threads": 1,
+      "stdin_stdout_stderr_isatty": true,
+      "result": "pty-v1-result.json",
+      "transcript": "pty-v1-observation.txt"
+    },
+    "actual_easy_turn": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "device": "cpu",
+      "direct_backchannel_ms": 1474.9273340003128,
+      "grpc_ms": {
+        "Complete": 507.5185830000919,
+        "Backchannel": 341.0022910002226,
+        "Wait": 405.1227090003522
+      },
+      "result": "models-v1-result.json"
+    }
+  },
+  "macos_unique_executed": 1041,
+  "macos_no_default_all_targets": {
+    "server": "passed",
+    "embedded": "passed"
+  },
+  "linux_arm64_no_default_all_targets": {
+    "server": "passed",
+    "embedded": "passed",
+    "test_execution": false,
+    "result": "linux-arm64-v1-result-summary.json",
+    "source_drift": []
+  },
+  "build_environment": {
+    "macos_rust": "1.94.1",
+    "jobs": 2,
+    "RUST_MIN_STACK": "unset",
+    "RUST_TEST_THREADS": "unset; PTY explicit --test-threads=1",
+    "DOCS_RS": "unset",
+    "sherpa_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+  },
+  "evidence_limits": [
+    "定向回归包含于workspace，不累加。",
+    "实际模型数值仅本次调用耗时，不是端到端声学或冷启动指标。",
+    "Linux本包仅编译，未执行Linux测试。",
+    "SQL barrier验证提交/回滚后的原事务对账，不是物理网络丢失PostgreSQL commit ACK。",
+    "没有Pi硬件/声学/AEC/执行器/24小时验收。"
+  ],
+  "format_check": "passed",
+  "pg_cleanup": {
+    "nonpublic_schemas": [],
+    "other_connections": 0,
+    "port": 32768,
+    "user_database_port_5433": "untouched"
+  },
+  "resources": {
+    "task_pg": "running",
+    "easy_turn_8091": "running",
+    "linux_validation_container": "stopped; docker stop ended the idle holder with exit 137 after all cargo stages exited 0"
+  },
+  "source_commit": "a79cb1f0b2c45847dce561dfde549f4318a1312a",
+  "committed_source_verification": "committed-source-verification.json"
+}

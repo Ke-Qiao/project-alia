@@ -1,18 +1,20 @@
-# CP05 Repository / admission implementation contract draft
+# CP05 Repository / admission implementation contract
 
-Prepared 2026-09-26 during V2 verification. Read-only design review; no CP05 source, migration, Cargo or PostgreSQL execution is represented here. Root selected the single pending-row transaction model below; no separately committed claim transaction is proposed.
+2026-09-28：本合同已按当前实现更新。Root 已冻结本轮 V1：630 个输入，manifest SHA-256 `58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a`，文件 `run/validation-20260928/final-source-manifest-v1.json`，并报告正常提交 `a79cb1f`。Root 的冻结验证为 macOS workspace 1036 passed / 0 failed / 5 ignored，另行实际通过 PTY 3 和 Easy-Turn 2，合计 1041 个不同测试；Linux ARM64 Server / Embedded no-default all-targets 编译通过，没有新增 Linux 运行测试。
+
+本合同从 2026-09-26 的设计审阅转为实现记录。当前采用单个原 pending 行事务，不存在另行提交的 attempt claim。Companion V3 定向证据为 38 passed / 0 failed / 0 ignored；该运行早于 V1 冻结，不重复计入全量不同测试数。真实物理 commit ACK 丢失尚未注入，本文不宣布 CP07 完成。完整范围和状态由 Root 在 [恢复入口](resume-checkpoint-2026-09-28.md)、[checklist](checklists/companion.md) 中汇总。
 
 ## 1. Feasibility and ownership boundary
 
 The atomic write is feasible with existing APIs: canonical Context authority and evidence reads, a new Companion admission row, `context::repository::persist`, and `DeliveryRepository::prepare_in_transaction` can all share one `DatabaseTransaction`. `ContextService::validate_in_transaction` already accepts that transaction. Appraisal validation reads its original parent and does not require the derived lease's request ID to equal the original parent request ID.
 
-Use a new `CompanionInvitation` purpose, exactly one `CompanionAdmission { id, intent_digest }` dependency, and only `ResponseCommit | OutputAdmission`. No existing Generation or AppraisalRebuild capability changes. `evidence_key` must put the admission after all original source references, including `MemorySourceMessage` currently at ordinal 9.
+The implemented `CompanionInvitation` purpose uses exactly one `CompanionAdmission { id, intent_digest }` dependency and only `ResponseCommit | OutputAdmission`. Existing Generation and AppraisalRebuild capabilities do not expand. Admission evidence follows original source evidence in lock ordering.
 
-The source helper currently returns only a `CanonicalObservation` and erasure roots. The issuer also needs the validated original lease with its complete dependencies. Add a private helper result carrying that lease, or have the issuer call the same canonical loader and `load` again in the same transaction. Do not reconstruct dependencies from the observation's single Appraisal reference.
+The issuer's private `invitation_lease` path loads the complete original lease in the same transaction after canonical source validation. It preserves all parent dependencies rather than reconstructing roots from the observation's Appraisal reference. The derived Context changes the request identity for the new initiative while retaining the original source facts and parent Appraisal identity.
 
 ## 2. Concrete Rust boundary
 
-All APIs below are crate-internal. They are not HTTP request DTOs. Names may be adjusted together before implementation.
+All APIs below are crate-internal and implemented in `modules/companion/live`. They are not HTTP request DTOs. The excerpt omits ordinary getters and return aliases but uses current names.
 
 ```rust
 // Separate from the shadow report and its immutable candidate table.
@@ -28,14 +30,16 @@ pub(crate) struct PendingInvitation {
 // No Deserialize and no public field constructor; Clone is allowed for exact
 // intent retry, never for obtaining another permit.
 pub(crate) struct LiveAdmissionIntent {
-    candidate_id: Uuid,
+    candidate: Candidate,
     admission_id: Uuid,
     initiative_request_id: Uuid,
     context_id: Uuid,
     server_instance_id: Uuid,
     opportunity: VoiceOpportunity,
     expected_scope: VoiceScope,
-    intent_digest: String,
+    admit_before: DateTime<Utc>,
+    valid_until: DateTime<Utc>,
+    digest: String,
 }
 
 // No Clone, Deserialize, Default or SQL-query constructor.
@@ -48,8 +52,8 @@ pub(crate) enum AdmissionResult {
         response: ResponseRecord,
     },
     Existing(AdmissionReceipt),
-    Deferred(DeferReason), // No grant or budget charge; bounded scheduler delay.
-    Retired(RetirementReason),
+    Deferred(Vec<DecisionReason>), // No grant or budget charge.
+    Retired,
 }
 
 // Opaque receipt only. Existing does not return private input/scope/content
@@ -63,37 +67,48 @@ pub(crate) struct AdmissionReceipt {
     pub budget_date: NaiveDate,
 }
 
-pub(crate) enum LiveRepoError {
+pub(crate) enum LiveError {
     InvalidInput,
     Conflict,
     Forbidden,
-    Unavailable,
+    Unavailable(String),
     CommitUnknown { candidate_id: Uuid, admission_id: Uuid },
 }
 
-impl CompanionRepository {
-    async fn discover_live_pending(
-        &self, instance_id: Uuid, limit: u16,
-    ) -> Result<Vec<PendingInvitation>, LiveRepoError>; // <=32
+impl LiveRepository {
+    fn new(db: DatabaseConnection, instance_id: Uuid) -> Self;
+
+    async fn discover_pending(
+        &self, limit: u16,
+    ) -> Result<Vec<PendingInvitation>, LiveError>; // 1..=32
+
+    async fn discover_pending_excluding(
+        &self, limit: u16, excluded: &[Uuid],
+    ) -> Result<Vec<PendingInvitation>, LiveError>; // excluded <=1024
 
     // Freezes the actor-issued opportunity once. Never accepts a serializable
     // OpportunitySnapshot / Simulation or client-supplied source authority.
-    async fn prepare_live_intent(
-        &self, candidate_id: Uuid, instance_id: Uuid,
-        opportunity: VoiceOpportunity,
-    ) -> Result<LiveAdmissionIntent, LiveRepoError>;
+    async fn prepare_intent(
+        &self, candidate_id: Uuid, opportunity: VoiceOpportunity,
+    ) -> Result<LiveAdmissionIntent, LiveError>;
 
-    async fn admit_invitation(
+    async fn admit(
         &self, intent: &LiveAdmissionIntent,
-    ) -> Result<AdmissionResult, LiveRepoError>;
+    ) -> Result<AdmissionResult, LiveError>;
 
-    async fn admission_receipt(
+    async fn receipt(
         &self, owner: Uuid, admission_id: Uuid,
-    ) -> Result<AdmissionReceipt, LiveRepoError>;
+    ) -> Result<AdmissionReceipt, LiveError>;
 
-    async fn retire_live_batch(
-        &self, instance_id: Uuid, limit: u16,
-    ) -> Result<u64, LiveRepoError>; // <=32; no output reconstruction
+    async fn retire_candidate(
+        &self, candidate_id: Uuid, reason: RetirementReason,
+    ) -> Result<(), LiveError>;
+
+    async fn retire_admission(
+        &self, owner: Uuid, admission_id: Uuid, reason: RetirementReason,
+    ) -> Result<(), LiveError>;
+
+    async fn retire_batch(&self, limit: u16) -> Result<u64, LiveError>;
 }
 
 // Only Context creates the lease; callers supply no free roots or timestamps.
@@ -102,11 +117,13 @@ pub(crate) async fn issue_invitation_in_transaction(
 ) -> ContextResult<ContextLease>;
 ```
 
-`prepare_live_intent` only reads/cross-checks the durable pending row and the trusted actor snapshot. It creates no grant and does not claim actor ownership. The pending row belongs to one server instance. An in-flight managed task retains the exact returned intent through retries; a second scan must not obtain a replacement opportunity for that same in-flight task. After process restart, retire pending rows belonging to the previous instance rather than reconstructing a lost in-memory intent.
+`prepare_intent` only reads/cross-checks the durable pending row and the trusted actor snapshot. It creates no grant and does not claim actor ownership. `LiveRepository` receives the actual `VoiceInitiativeHandle::instance_id()`. An in-flight managed task retains the exact returned intent through retries; a second scan cannot obtain a replacement opportunity for that same attempt. After process restart, `retire_batch` retires pending/admitted rows belonging to the previous instance rather than reconstructing a lost in-memory intent.
+
+Discovery excludes the caller's retained candidate IDs before the final SQL LIMIT. The service's inspected rounds and one active attempt per channel prevent a blocked first batch from hiding subsequent candidates. These are bounded in-memory scheduling facts; there is no `next_check_at` column or durable replacement opportunity.
 
 IDs use versioned domains plus the stable candidate ID. `expected_scope.generation_epoch = opportunity.scope.generation_epoch.checked_add(1)`; the actor remains the only allocator. SQL unsigned values must use validated typed JSON or NUMERIC(20,0), not unchecked conversion of `u64` to signed BIGINT.
 
-The exact final deadline can be conservatively frozen from candidate/source and the original opportunity/capture deadline. A retry cannot extend it. Mutable transaction `as_of` and budget facts are re-read; the caller cannot provide them.
+The implementation freezes `admit_before` to the minimum of the original candidate deadline, opportunity deadline, last capture + 2 seconds and the next UTC day boundary, conservatively truncated to SQL microseconds. It is also checked against the Allowed decision's validity. Output `valid_until` is exactly the original candidate expiry. Durable admission and the actor's final first-reserve check must occur strictly before admit_before. A final DB-time check follows all Context/Response writes; a deferred constraint trigger checks the same strict boundary at COMMIT. Once admitted, the original producer may continue/Hold/resume only before the fixed output deadline and with current source/policy validation. No retry extends either timestamp. Transaction as_of and budget facts are read from SQL, never supplied by the caller.
 
 ## 3. Fresh, Existing, and commit uncertainty
 
@@ -121,22 +138,21 @@ Root's selected proof requires **READ COMMITTED**, not REPEATABLE READ:
 
 This proof depends on `candidate_id UNIQUE` in admissions, fixed response key uniqueness, no partial commits, no path deleting an admission after charging, and every writer holding the same candidate lock. It does not prove physical output or an actor/device ACK. It also does not justify changing the opportunity, scope, admission, request, Context or output key when retrying.
 
-A temporary lack of opportunity before `prepare_live_intent` is allowed to leave pending unchanged. Once a specific admission attempt is frozen, retry that opportunity only. If it expires, retire the candidate; do not take a new snapshot to replace it. Restart retires prior-instance pending/admissions without replaying output. This distinguishes ordinary pre-attempt idle polling from uncertain commit reconciliation.
+A temporary lack of opportunity before `prepare_intent` is allowed to leave pending unchanged. Once a specific admission attempt is frozen, retry that opportunity only. If it expires, retire the candidate; do not take a new snapshot to replace it. Restart retires prior-instance pending/admissions without replaying output. The managed runner retires an Existing receipt's planned grant/Response because no original producer was handed to that attempt; the charge remains. This distinguishes ordinary pre-attempt idle polling from uncertain commit reconciliation.
 
 ## 4. Database schema and invariants
 
-Use a new migration after `m20260926_000014_companion.sql`; do not amend the already-verified shadow migration.
+Implemented in `m20260926_000015_companion_live.sql`, after the already-verified shadow migration. The shadow migration was not rewritten.
 
 ### Shared source identity
 
-For an enforced cross-mode boundary, add a small immutable `companion_source_claims` table:
+The immutable `companion_source_claims` table enforces the cross-mode boundary:
 
 | Column | Constraint |
 | --- | --- |
 | owner_id, source_event_id, kind, generator_version | Composite primary key; kind/version fixed for this first intention |
 | origin_mode | `shadow` or `enabled`; immutable |
 | policy_revision | Positive, frozen at first claim |
-| candidate_id | Stable opaque ID, optional for existing limited shadow worklists |
 
 Backfill from distinct existing `companion_processed_sources` with origin `shadow`, including sources that were examined but limited out of candidate generation. Both future shadow and live source admission use this table under the existing owner privacy lock. A live insert cannot change a shadow claim. Existing shadow candidate and processed-source tombstones must also be checked during migration/transition so an erased candidate is never upgraded.
 
@@ -144,33 +160,35 @@ This is source dedup, not a second separately committed attempt claim. Insert it
 
 ### `companion_live_pending`
 
-| Column group | Proposed fields and constraints |
+| Column group | Implemented fields and constraints |
 | --- | --- |
 | Permanent identity | candidate_id PK; owner_id; source_event_id; kind; generator_version; source-claim FK/composite uniqueness |
 | Owner lifetime | server_instance_id; state `pending/admitted/retired`; bounded retirement reason |
-| Private frozen input | nullable candidate JSON <=32KiB, candidate_digest, appraisal_id, source_context_id, policy revision/digest, original epochs; all fields erased together on retirement |
+| Private frozen input | nullable candidate JSON <=32KiB, candidate_digest, appraisal_id; Context/policy/epoch facts are inside the candidate JSON; the three nullable columns are cleared together on retirement |
 | Original time | created_at from canonical original source, expires_at unchanged; no scanner/refetch timestamp grants more lifetime |
-| Bounded work | next_check_at may only delay work, never extend expiry; admission_id nullable once admitted |
+| Admission lookup | `companion_admissions.candidate_id` is unique; pending has no separate admission_id or next_check_at column |
 
-All candidate/source/policy identity is immutable. Only pending→admitted/retired and bounded scheduling facts may change. No retired→pending. Source/Appraisal columns must not have cascade-delete behavior that removes the permanent identity. Proposed private capacity: 4 pending per owner, 128 globally; use the existing short capacity-lock pattern after source locks, not unlocked COUNT + INSERT. Root may choose different constants before implementation, but they must be explicit and tested.
+All candidate/source/policy identity is immutable. Only pending→admitted/retired is permitted; no retired→pending. Source/Appraisal deletion cannot cascade away the permanent identity. Private capacity is 4 pending per owner and 128 per current schema. Count and insertion share a capacity advisory lock using `hashtextextended(current_schema(), fixed_domain)` after source locks. Independent schemas do not contend, while different owners in the same schema still serialize.
 
 ### `companion_admissions`
 
-| Column group | Proposed fields and constraints |
+| Column group | Implemented fields and constraints |
 | --- | --- |
 | Permanent identity | admission_id PK; candidate_id UNIQUE referencing the permanent pending row without CASCADE; owner_id; initiative_request_id; fixed output_key; UNIQUE(owner_id,initiative_request_id,output_key) |
 | Permanent charge | charged_at from DB clock, budget_date UTC, budget_revision >0; UNIQUE(owner_id,budget_revision); never decremented or removed by source/policy cleanup |
 | Read-only state | active/retired, enumerated retirement reason; one-way transition |
 | Private grant | nullable typed grant JSON <=64KiB and intent_digest; includes candidate/decision/policy versions, canonical source header, exact actor snapshot, expected scope, exact fixed envelope and deadline |
-| Context | nullable context_id, `REFERENCES context_leases(context_id) DEFERRABLE INITIALLY DEFERRED`; active requires a context; erasure may clear its lookup link but never its charge |
+| Context | immutable non-null context_id, `REFERENCES context_leases(context_id) DEFERRABLE INITIALLY DEFERRED`; the existing lease and this opaque link remain after retirement |
 | Original opportunity | unique(server_instance_id,opportunity_id) across all admissions, retained as opaque replay fence after erasure |
-| Private lifetime | private_until capped by original source/candidate and stated retention; no renewal; private grant/digest cleared together |
+| Original deadlines | immutable admit_before and valid_until columns; `charged_at < admit_before <= valid_until`; deferred COMMIT check; no separate private_until column or renewal |
 
 Check that active implies complete private grant, digest and live context reference; erased/retired-private inputs cannot be refilled. A before-update trigger rejects immutable-field changes. The fixed envelope uses `deny_unknown_fields`, canonical digest and bounded bytes. Its kind and response output key are both `companion_invitation`; literal comes only from `CandidateKind::FollowUpInvitation.text()`.
 
-Do not cascade admissions from source, Appraisal, Context, policy or relationship rows. Source/authority invalidation first retires admissions and erases their private fields; it keeps permanent identity, opportunity replay fence and charge columns. Existing Context leases themselves are immutable and referenced by Response: the implementation must explicitly decide whether their already-opaque provenance references remain revoked or a dedicated deletion/nullable-FK path removes the new derived lease. Do not attempt an UPDATE that violates `context_leases_immutable`, or accidentally delete charge history while solving this link.
+Admissions do not cascade from source, Appraisal, Context, policy or relationship rows. `retire_companion_live` retires pending → admission → Response, clears candidate/grant/digests and the root index, and marks the canonical Response cancel_requested. Permanent identity, opportunity replay fence, charge columns, immutable Context lease and its non-null FK remain. Later Context validation fails against the retired admission/current source. No Context mutation or charge deletion is used to implement revocation.
 
-Use private admission limits of 128/owner and 1024/global as a proposed starting point; count active/private storage, not opaque historical charges. Pending and admission source-root links have separate bounded tables and are deleted on erasure. Extend all current source invalidation roots, including graph-node projections and relevant cache columns; preserve the existing no-op/cache-hit exclusions.
+Private admission limits are 128/owner and 1024/current schema; only private grants count toward this bound, not historical opaque charges. One `companion_live_sources` index links candidate IDs to Appraisal, Affect, message, memory, graph, cache, execution and response roots; it is deleted on retirement. The migration installs those source triggers plus graph-node, policy, privacy and relationship invalidation. This implementation inventory is not a claim that every trigger family has a new live fault test; section 7 identifies the actual tested subset.
+
+`retire_candidate` / `retire_admission` lock by original instance and opaque identity without requiring a currently active account or newly valid source authority. This permits cleanup after account revocation and after an unknown commit that actually left a grant/Response. They never reacquire source locks in reverse order. Batch expiry/old-instance cleanup is limited to 1..=32 rows using SKIP LOCKED.
 
 ## 5. Budget survives erasure and policy changes
 
@@ -181,7 +199,7 @@ Budget calculations must read all charged admissions, including retired/erased/f
 - Revision is the prior maximum per-owner budget_revision plus one, under the existing owner privacy lock; use checked arithmetic. Index/unique `(owner_id,budget_revision)` gives a cheap latest revision without scanning all historical rows.
 - UTC date and charged_at are created from one explicit transaction DB time and constrained to agree. A failed transaction writes neither admission nor charge. A reserve or output failure after commit never refunds.
 - Day rollover permits a new daily count but does not erase cooldown, old dedup, or awaiting-response history.
-- Awaiting response requires a new authorized canonical user message in the original conversation/channel after the charge. Keep only the opaque conversation identity needed to check this after private snapshot erasure; no content or free-form explanation. Presence, elapsed time and silence cannot satisfy it. If source authority needed for that comparison has been erased, fail closed rather than fabricating a response.
+- Awaiting response compares the new candidate's already-validated canonical user message with the latest charge: the conversation must match and its original source_received_at must be strictly later than charged_at. The ledger keeps the opaque conversation ID for this comparison; it does not keep message content. Presence, elapsed time and silence cannot satisfy it. A source that fails current canonical validation cannot supply a new candidate.
 
 No separate mutable daily-counter table is necessary at these small daily limits. The permanent charge rows are the ledger. Owner serialization prevents two candidates consuming the last slot; SQL uniqueness catches implementation mistakes.
 
@@ -195,23 +213,36 @@ No separate mutable daily-counter table is necessary at these small daily limits
 | `ContextService::validate_in_transaction` | Every new permission gate rereads current source and live Companion policy/admission |
 | `DeliveryRepository::prepare_in_transaction` | Existing immutable response-key advisory lock and intent conflict; same transaction as charge/grant |
 | `DeliveryRepository::response_in_transaction` | Read by response ID; existing-by-key recovery can query the fixed key inside Companion or add one narrow Delivery helper, never call prepare to manufacture a permit |
-| `DatabaseConversationProvider::commit_response` | Existing atomic assistant history + mark_generated path after admission; enforce exact final literal in Delivery first |
+| `DatabaseConversationBackend::commit_response` | Existing atomic assistant history + mark_generated path after admission; enforce exact final literal in Delivery first |
 | `DispatchPermit` pattern | No Clone/Deserialize and no lookup constructor; use same ownership discipline for LiveAdmissionPermit |
 
 The new migration must extend `context_leases_purpose_check`. Delivery must constrain exact prepared envelope, stored response revalidation, final_content, media literal/scope/key/count, and text chunks/End (or explicitly reject text for this audio-only first intent). Existing general Generation contexts must not be allowed to impersonate `kind=companion_invitation` just because they can commit normal responses.
 
 Cancellation writes follow source→admission→Response order. Current policy CAS obtains owner authority and Companion policy before its erasure trigger; ordinary owner admission is serialized by privacy. Direct source mutation holds source first, so admission validation must never lock grant before canonical roots. Delivery validation after Response locking must not discover any new unlocked root: the transaction must already hold its complete original closure.
 
-## 7. Tests that establish the selected proof
+## 7. Actual fault evidence and remaining boundaries
 
-1. Same pending candidate: transaction A holds FOR UPDATE, transaction B starts retry and is observed waiting on that row. A commits grant+Context+Response; B acquires lock and returns Existing, no permit, exactly one charge/Response.
-2. Same barrier, A rolls back after injected failures at grant insert, Context persist and Response prepare. B's new READ COMMITTED SELECT observes absence; exact original intent can return one Fresh. No half grant, lease or budget is left by A.
-3. Client commit ACK loss is a separate integration fault from SQL-lock timeout. Tests 1/2 prove serialization and rollback/commit branching; they do not by themselves prove an actual dropped commit ACK occurred. If an ACK-loss proxy/test hook is used, record the injected boundary precisely.
-4. Changed opportunity/scope/intent after a frozen attempt conflicts; expiry retires and never rebinds; old instance restart cannot produce Fresh.
-5. Last daily slot with two different candidates: owner lock serializes, one Fresh only. Then policy CAS, source deletion, relationship/privacy clear and GC leave charge count/cooldown/dedup intact.
-6. Old shadow/limited/erased source claims cannot create live pending after enabling; explicit rebuild cannot refresh source time or bypass source claim.
-7. Erased replay/Existing returns opaque receipt only; no private input, content hash, scope snapshot or log reconstruction. All source-trigger families are covered.
-8. Strict Context purpose forbids every non-output use; copied admission evidence on Generation is rejected. Parent Appraisal request remains unchanged while new response request succeeds.
-9. All current-policy revocation races fail at later Delivery gates; cleanup and late physical facts remain recordable. No Existing/restart/unknown branch recreates output.
+The following maps the storage/source requirements in live-design section 13 to the actual 7 live Repository, 9 shadow Repository and 5 invitation Context tests. All are in the V3 component run and Root's subsequent frozen workspace run. Related runner/mailbox cases are labeled separately. Test names and earlier failures are retained in [repository handoff](handoffs/2026-09-28/repository.md).
 
-The fixed opportunity/decision deadline is currently only a few seconds. Before the runner package, explicitly test that initial TTS/registration can meet it and that any supported Hold/resume still respects the same deadline. A short deadline may intentionally retire an invitation; it is not permission to silently extend a lease.
+| Requirement | Actual evidence | Limit of that evidence |
+| --- | --- | --- |
+| Same original transaction, committed outcome | Production `stage_for_test` writes grant + Context + Response without producing a permit; another connection is observed blocked via pg_blocking_pids; commit then yields only Existing with one charge/Response | The blocker holds authority/source/pending locks. The observer proves blocking on the original transaction, not which individual lock the retry first waited on |
+| Atomic rollback | Injected Response INSERT trigger failure leaves no admission/derived Context; staged production rollback allows the same immutable intent to return one Fresh; subsequent call returns Existing | Grant INSERT and Context persist do not each have an independently injected failure case |
+| Final commit deadline | A real staged transaction is held until admit_before; the deferred COMMIT constraint rejects it and no grant/Context/Response survives | This is a known SQL rejection, not a lost database commit acknowledgement |
+| Last daily budget / no refund | Two real `admit` futures via tokio::join! produce one Fresh and one DailyBudgetExhausted; retirement, new policy and new source retain the charge/cooldown; DELETE is rejected | This budget test does not force a pg_blocking_pids barrier at the last slot. UTC midnight and awaiting_response are pure-policy tests, not actual midnight crossing or concurrent-response PG tests |
+| Original source time, shadow separation, old instance | Live tests retain original expiry, refuse all five old shadow claims including limited, and retire old-instance pending. Shadow tests cover stable identity/rebuild, stale-source retirement, competing workers and restart | No replacement opportunity/output is reconstructed; this is database/runtime state evidence, not a process killed during network COMMIT |
+| Complete parent roots and strict purpose | Context tests compare every parent dependency, preserve original Appraisal/request identity, reject missing/changed evidence, and allow only ResponseCommit/OutputAdmission | The tested Context fixture's roots do not mean every possible source family has an independently mutated live example |
+| Current-source revocation and cleanup | Live/Context cases mutate message, policy, privacy and relationship, check private erasure and retained charge, reject later Context/Delivery gates and permit finish_unknown cleanup. Account revocation still permits original-instance retirement | Graph/Cache/Memory/Appraisal trigger-family coverage in the shadow suite is not automatically live trigger coverage. Not every live family or lock interleaving was separately fault-injected |
+| Opaque Existing, failed reserve | Runner tests verify Existing causes no Reserve/TTS; rejected reserve, dropped oneshot reply and shutdown retain one charge, retire grant/Response, and produce no replacement opportunity/media | Dropped reserve reply is a controlled mailbox fault without a produced OutputProducer; it is neither database COMMIT ACK loss nor a physical device/network failure |
+| Bounded private state | Live owner pending capacity, exclusion-before-LIMIT, same-schema different-owner capacity lock and private erasure are tested; shadow private retention/capacity and opaque tombstones are tested | Constants 128 schema pending / 1024 schema grants and all historical ledger growth are not a new full-capacity soak test. Permanent opaque identity/charges intentionally survive private GC |
+| Two deadlines | Real COMMIT expiry case plus Context tests show old short opportunity cannot issue another lease, while existing output validation remains valid until original candidate expiry; boundary equality is rejected | Context tests do not prove actual Hold/resume audio. Root's separate actor/software-paired matrix owns that evidence; none of it substitutes for Pi acoustic validation |
+
+**Commit ACK uncertainty is not a completed physical fault injection.** There is no proxy/network cut after PostgreSQL COMMIT and before its acknowledgement in these tests. The production path conservatively maps commit errors to CommitUnknown and only constructs Fresh after successful commit return. The tested transaction barriers establish serialization and commit/rollback outcomes without manufacturing a permit, but do not exercise an actual lost COMMIT response. A future injected ACK-loss boundary must be recorded precisely and must reuse the same immutable intent.
+
+The current suite found no additional concrete production defect during this documentation review. The incomplete rows above remain explicit evidence limits; they must not be converted into blanket claims that every budget interleaving, write site, source family or physical fault was exercised.
+
+- [x] Current live API/schema, cleanup ownership and two-deadline contract recorded.
+- [x] Actual component tests and frozen aggregate results separated; no duplicate test counting.
+- [ ] Physical database commit ACK-loss injection, if claimed in a later fault matrix, must have its own recorded transport boundary and result.
+- [ ] Stronger last-budget barrier, real UTC rollover/concurrent response, per-write-site failure and every-live-source-family claims need additional focused evidence before those stronger claims are made.
+- [ ] CP07 completion is determined by Root's full checklist and acceptance record, not this storage document.

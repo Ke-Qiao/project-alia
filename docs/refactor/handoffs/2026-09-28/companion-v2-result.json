@@ -1,0 +1,17 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "companion::",
+    "--locked",
+    "--offline",
+    "--",
+    "--nocapture"
+  ],
+  "elapsed_seconds": 54.02,
+  "exit_code": 101,
+  "frozen": false
+}

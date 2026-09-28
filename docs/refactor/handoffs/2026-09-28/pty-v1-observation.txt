@@ -1,0 +1,9 @@
+Captured from actual PTY exec session 40081, chunk e51c68, 2026-09-28.
+stdin/stdout/stderr isatty=true; no shell output redirection.
+Command: cargo test -p alia-server --lib --locked --offline -- --ignored --nocapture --test-threads=1
+bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ok
+channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown ... ok
+channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 295 filtered out; finished in 0.32s
+Process exit=0; source drift=[]; wall=16.81s (includes build).
+This is an observation transcript, not a byte-for-byte terminal recording.
