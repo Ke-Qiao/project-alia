@@ -201,6 +201,9 @@ async fn companion_shadow_http_has_durable_retry_and_erasure_without_side_effect
             let client = client();
             let operation = Uuid::new_v4();
             let body = json!({"operation_id":operation,"appraisal_ids":[appraisal.appraisal_id]});
+            let invalid_uuid = client.get(format!("{url}/replay/not-a-uuid")).bearer_auth(&token).send().await.unwrap();
+            assert_eq!(invalid_uuid.status(), 400);
+            assert!(invalid_uuid.headers()["content-type"].to_str().unwrap().starts_with("text/plain"));
             for invalid in [
                 json!({"operation_id":operation,"appraisal_ids":[]}),
                 json!({"operation_id":operation,"appraisal_ids":[Uuid::nil()]}),

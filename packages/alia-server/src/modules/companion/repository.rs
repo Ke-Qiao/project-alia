@@ -63,13 +63,13 @@ impl From<serde_json::Error> for RepoError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShadowDecision {
     pub input: DecisionInput,
     pub decision: DecisionRecord,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShadowReport {
     pub operation_id: Uuid,

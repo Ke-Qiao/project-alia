@@ -65,10 +65,10 @@ fn default_true() -> bool {
 
 async fn get_device(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
 ) -> Result<Json<Option<DeviceInfo>>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "discovery_status".to_string(),
@@ -112,12 +112,33 @@ async fn get_device(
 }
 
 async fn get_device_status(
-    State(_state): State<AppState>,
-    _auth: AuthUser,
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(query): Query<DeviceQuery>,
 ) -> Result<Json<DeviceStatus>> {
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
+    // A discovery candidate or cached Connected flag is not an online probe.
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        channel.execute_action(ChannelAction {
+            name: "binding_status".into(),
+            params: serde_json::json!({}),
+        }),
+    )
+    .await
+    .map_err(|_| AppError::Unavailable("device status query timed out"))?
+    .map_err(|_| AppError::Unavailable("device status unavailable"))?;
+    let device_id = response
+        .get("device_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|id| !id.trim().is_empty())
+        .ok_or(AppError::Unavailable(
+            "device status has no device identity",
+        ))?;
     Ok(Json(DeviceStatus {
-        device_id: String::new(),
-        online: false,
+        device_id: device_id.to_string(),
+        online: true,
+        // These metrics have no device telemetry source in this contract.
         cpu_percent: None,
         memory_percent: None,
         temperature_c: None,
@@ -126,10 +147,10 @@ async fn get_device_status(
 
 async fn bind_device(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(body): Json<BindDeviceRequest>,
 ) -> Result<Json<DeviceInfo>> {
-    let channel = resolve_embedded_channel(&state, body.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, body.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "bind_device".to_string(),
@@ -168,10 +189,10 @@ async fn bind_device(
 
 async fn unbind_device(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(body): Json<UnbindDeviceRequest>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, body.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, body.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "unbind_device".to_string(),
@@ -185,10 +206,10 @@ async fn unbind_device(
 
 async fn get_device_settings(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "get_settings".to_string(),
@@ -200,11 +221,11 @@ async fn get_device_settings(
 
 async fn update_device_settings(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "update_settings".to_string(),
@@ -216,10 +237,10 @@ async fn update_device_settings(
 
 async fn list_direct_responses(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "list_direct_responses".to_string(),
@@ -231,11 +252,11 @@ async fn list_direct_responses(
 
 async fn upsert_direct_response(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "upsert_direct_response".to_string(),
@@ -247,11 +268,11 @@ async fn upsert_direct_response(
 
 async fn delete_direct_response(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<DeviceQuery>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>> {
-    let channel = resolve_embedded_channel(&state, query.channel_id.as_deref()).await?;
+    let channel = resolve_embedded_channel(&state, &auth, query.channel_id.as_deref()).await?;
     let response = channel
         .execute_action(ChannelAction {
             name: "delete_direct_response".to_string(),
@@ -263,8 +284,12 @@ async fn delete_direct_response(
 
 async fn resolve_embedded_channel(
     state: &AppState,
+    auth: &AuthUser,
     channel_id: Option<&str>,
 ) -> Result<Arc<dyn ChannelAdapter>> {
+    let permitted = |channel: &Arc<dyn ChannelAdapter>| {
+        auth.is_admin() || channel.owner_user_id() == Some(auth.id)
+    };
     if let Some(channel_id) = channel_id {
         let (resolved_channel_id, channel) = state
             .channels
@@ -277,16 +302,28 @@ async fn resolve_embedded_channel(
                 "channel '{resolved_channel_id}' is not an embedded channel"
             )));
         }
+        if !permitted(&channel) {
+            return Err(AppError::Forbidden);
+        }
         return Ok(channel);
     }
 
-    state
+    let channels = state
         .channels
         .list()
         .await
         .into_iter()
-        .find(|channel| channel.channel_type() == "embedded")
-        .ok_or_else(|| AppError::NotFound("no embedded channel registered".to_string()))
+        .filter(|channel| channel.channel_type() == "embedded" && permitted(channel))
+        .collect::<Vec<_>>();
+    match channels.as_slice() {
+        [] => Err(AppError::NotFound(
+            "no accessible embedded channel registered".into(),
+        )),
+        [channel] => Ok(channel.clone()),
+        _ => Err(AppError::Validation(
+            "multiple accessible embedded channels; specify channel_id".into(),
+        )),
+    }
 }
 
 pub fn routes() -> Router<AppState> {

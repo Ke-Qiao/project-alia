@@ -1,8 +1,11 @@
 //! OOBE bootstrap logic: detection, CLI key handler, config generation.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use network_interface::{Addr, NetworkInterface, NetworkInterfaceConfig};
+use anyhow::Context;
+
+use crate::config::{ServerConfig, merge_toml_values};
 
 /// Result of the OOBE setup flow.
 #[derive(Clone)]
@@ -165,105 +168,99 @@ pub(crate) fn default_config_target() -> PathBuf {
     local
 }
 
-/// Write the example config to disk.
+/// HTTP setup edits one complete document, assembled from the same embedded
+/// files used by CLI setup. Fragment precedence matches ServerConfig::load.
+pub(crate) fn example_config() -> anyhow::Result<String> {
+    let mut config = toml::from_str(EXAMPLE_CONFIG)?;
+    let mut fragments: Vec<_> = EXAMPLE_CONFIG_FRAGMENTS.iter().collect();
+    fragments.sort_by_key(|(name, _)| *name);
+    for (_, content) in fragments {
+        merge_toml_values(&mut config, toml::from_str(content)?);
+    }
+    toml::to_string_pretty(&config).context("serialize complete setup template")
+}
+
+/// Keep the CLI's editable base + fragments layout. This is a first-install
+/// operation: existing configuration must never be overwritten with defaults.
 pub fn release_example_config(target: &Path) -> anyhow::Result<PathBuf> {
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(target, EXAMPLE_CONFIG)?;
     let fragment_dir = target.with_extension("d");
-    std::fs::create_dir_all(&fragment_dir)?;
-    for (name, content) in EXAMPLE_CONFIG_FRAGMENTS {
-        let path = fragment_dir.join(name);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+    anyhow::ensure!(
+        std::fs::symlink_metadata(target).is_err(),
+        "configuration already exists: {}",
+        target.display()
+    );
+    ServerConfig::load_candidate(target, &example_config()?)?.validate_llm_roles()?;
+    std::fs::create_dir_all(config_parent(target))?;
+    // Exclusive creation also protects an existing fragment tree. Only this
+    // newly-owned tree is removed if installation cannot publish its base.
+    std::fs::create_dir(&fragment_dir).with_context(|| {
+        format!(
+            "create new configuration fragments {}",
+            fragment_dir.display()
+        )
+    })?;
+    let result = (|| {
+        for (name, content) in EXAMPLE_CONFIG_FRAGMENTS {
+            let path = fragment_dir.join(name);
+            std::fs::create_dir_all(config_parent(&path))?;
+            std::fs::write(path, content)?;
         }
-        std::fs::write(path, content)?;
+        write_validated_config(target, EXAMPLE_CONFIG, false)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&fragment_dir);
     }
+    result
+}
+
+pub(crate) fn save_config(target: &Path, content: &str) -> anyhow::Result<PathBuf> {
+    write_validated_config(target, content, true)
+}
+
+fn config_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
+
+fn write_validated_config(target: &Path, content: &str, replace: bool) -> anyhow::Result<PathBuf> {
+    // Resolve an existing symlink exactly as the runtime loader does, so the
+    // validated fragment directory is also the one loaded after publication.
+    let destination = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
+    ServerConfig::load_candidate(&destination, content)?.validate_llm_roles()?;
+    let parent = config_parent(&destination);
+    std::fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(".alia-setup-{}.tmp", uuid::Uuid::new_v4()));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary)?;
+    let result = (|| -> anyhow::Result<()> {
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        if replace {
+            std::fs::rename(&temporary, &destination)?;
+        } else {
+            // A second CLI/HTTP completion cannot be overwritten between the
+            // first-install check and this final publication.
+            std::fs::hard_link(&temporary, &destination)?;
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&temporary);
+    result.with_context(|| format!("save configuration {}", target.display()))?;
     Ok(target.to_path_buf())
-}
-
-/// Discover all usable local IP addresses by enumerating network interfaces.
-/// Filters out virtual/tunnel interfaces and applies IP eligibility rules.
-fn local_ips() -> Vec<std::net::IpAddr> {
-    let Ok(interfaces) = NetworkInterface::show() else {
-        return vec![];
-    };
-
-    interfaces
-        .into_iter()
-        .filter(|iface| {
-            let name = iface.name.to_lowercase();
-
-            let is_virtual =
-                // --- VMware ---
-                name.contains("vmnet") || name.contains("vmware") || name.contains("vmnic") ||
-                // --- VirtualBox ---
-                name.contains("vboxnet") || name.contains("virtualbox") ||
-                // --- Hyper-V & Windows Virtual Adapters ---
-                name.contains("vethernet") || name.contains("hyper-v") ||
-                // --- Docker & Container Networking ---
-                name.contains("docker") || name.contains("veth") || name.contains("br-") || 
-                name.contains("cni") || name.contains("flannel") ||
-                // --- VPNs & Tunnels ---
-                name.contains("utun") || name.contains("tun") || name.contains("tap") || 
-                name.contains("wg") || name.contains("tailscale") || name.contains("zerotier") || 
-                name.starts_with("zt") || name.contains("ppp") ||
-                // --- Apple Specific (AirDrop/Sidecar) ---
-                name.contains("awdl") || name.contains("llw");
-
-            !is_virtual
-        })
-        .flat_map(|iface| iface.addr)
-        .filter_map(|addr| {
-            let ip = match addr {
-                Addr::V4(v4) => std::net::IpAddr::V4(v4.ip),
-                Addr::V6(v6) => std::net::IpAddr::V6(v6.ip),
-            };
-
-            if is_usable_ip(&ip) { Some(ip) } else { None }
-        })
-        .collect()
-}
-
-/// Filter function: keep only usable/real IPs.
-fn is_usable_ip(ip: &std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(v4) => {
-            // Standard checks
-            let is_standard = !v4.is_loopback() && !v4.is_unspecified() && !v4.is_broadcast();
-
-            // Filter out 198.18.0.0/15 (often used by proxy tools like Clash/V2Ray)
-            let is_proxy_range = v4.octets()[0] == 198 && (v4.octets()[1] & 0xfe) == 18;
-
-            is_standard && !is_proxy_range
-        }
-        std::net::IpAddr::V6(v6) => {
-            // Keep IPv6 except loopback, link-local (fe80::), and unique-local (fd00::)
-            !v6.is_loopback()
-                && !v6.is_unicast_link_local()
-                && !v6.is_unique_local()
-                && !v6.is_multicast()
-        }
-    }
 }
 
 /// Print the OOBE banner to the terminal.
 pub fn print_banner(port: u16) {
-    let mut ips = local_ips();
-    ips.sort_by_key(|ip| (ip.is_ipv6(), ip.to_string())); // IPv4 first, then IPv6, sorted
-    ips.dedup(); // Remove duplicates
-
-    let ip_line = if ips.is_empty() {
-        format!("  http://localhost:{port}")
-    } else {
-        ips.iter()
-            .map(|ip| format!("http://{ip}:{port}"))
-            .chain(std::iter::once(format!("http://localhost:{port}")))
-            .collect::<Vec<_>>()
-            .join("\n  ")
-    };
-
     eprintln!();
     eprintln!("════════════════════════════════════════════════════════════");
     eprintln!("               ✦  Alia — First Run Setup  ✦");
@@ -271,9 +268,8 @@ pub fn print_banner(port: u16) {
     eprintln!();
     eprintln!("  No configuration file found.");
     eprintln!();
-    eprintln!("  → Connect alia-frontend to server for the interactive setup wizard:\n");
-    eprintln!("  list of addresses reported by your system:");
-    eprintln!("  {ip_line}");
+    eprintln!("  → Local setup HTTP API: http://127.0.0.1:{port}/api/v1/setup");
+    eprintln!("    Use curl locally, or forward this loopback port through SSH.");
     eprintln!();
     eprintln!("  → Or press [c] + Enter to generate a config file");
     eprintln!("    directly and edit it manually.");

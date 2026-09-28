@@ -9,7 +9,10 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use super::bootstrap::SetupResult;
+use super::bootstrap::{self, SetupResult};
+
+#[cfg(test)]
+mod tests;
 
 // ── State for the OOBE server ──────────────────────────────────────────
 
@@ -71,11 +74,17 @@ struct GenerateConfigResponse {
     template: String,
 }
 
-/// Return the example config template for the frontend to display/edit.
-async fn generate_config() -> Json<GenerateConfigResponse> {
-    Json(GenerateConfigResponse {
-        template: include_str!("../../../../config/server.example.toml").to_string(),
-    })
+/// Return the full embedded example, including all referenced profiles.
+async fn generate_config() -> Result<Json<GenerateConfigResponse>, (axum::http::StatusCode, String)>
+{
+    bootstrap::example_config()
+        .map(|template| Json(GenerateConfigResponse { template }))
+        .map_err(|error| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Setup template unavailable: {error:#}"),
+            )
+        })
 }
 
 #[derive(Deserialize)]
@@ -95,53 +104,17 @@ struct SaveConfigResponse {
     error: Option<String>,
 }
 
-/// Validate and save config from the frontend wizard.
+/// Validate the effective configuration before atomically publishing its base.
 async fn save_config(
     State(state): State<OobeState>,
     Json(body): Json<SaveConfigRequest>,
 ) -> Json<SaveConfigResponse> {
-    // Validate TOML syntax
-    if let Err(e) = toml::from_str::<toml::Value>(&body.config) {
-        return Json(SaveConfigResponse {
-            success: false,
-            path: String::new(),
-            error: Some(format!("Invalid TOML: {e}")),
-        });
-    }
-
-    // Validate it can parse as ServerConfig
-    if let Err(e) = toml::from_str::<crate::config::ServerConfig>(&body.config) {
-        return Json(SaveConfigResponse {
-            success: false,
-            path: String::new(),
-            error: Some(format!("Config validation failed: {e}")),
-        });
-    }
-
-    let target: PathBuf = body.path.map(PathBuf::from).unwrap_or_else(|| {
-        let local = PathBuf::from("config/server.toml");
-        if local.parent().map_or(false, |p| p.exists()) {
-            local
-        } else {
-            dirs::config_dir()
-                .map(|d| d.join("alia").join("server.toml"))
-                .unwrap_or(local)
-        }
-    });
-
-    // Write config
-    if let Some(parent) = target.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Json(SaveConfigResponse {
-                success: false,
-                path: target.to_string_lossy().into_owned(),
-                error: Some(format!("Failed to create directory: {e}")),
-            });
-        }
-    }
-
-    match std::fs::write(&target, &body.config) {
-        Ok(()) => {
+    let target = body
+        .path
+        .map(PathBuf::from)
+        .unwrap_or_else(bootstrap::default_config_target);
+    match bootstrap::save_config(&target, &body.config) {
+        Ok(target) => {
             let path_str = target.to_string_lossy().into_owned();
             // Signal setup complete
             let _ = state.done_tx.send(Some(SetupResult::ConfigReady(target)));
@@ -154,7 +127,7 @@ async fn save_config(
         Err(e) => Json(SaveConfigResponse {
             success: false,
             path: target.to_string_lossy().into_owned(),
-            error: Some(format!("Failed to write file: {e}")),
+            error: Some(format!("Config save failed: {e:#}")),
         }),
     }
 }

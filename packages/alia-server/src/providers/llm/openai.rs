@@ -423,11 +423,19 @@ impl ModuleLifecycle for OpenAiLlm {
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        let config = self.config.read().await;
+        // The probe has its own short deadline; chat/stream request lifetimes
+        // are unrelated. Do not retain the settings lock while the peer stalls.
+        let config = self.config.read().await.clone();
         if config.api_key.trim().is_empty() {
-            ModuleHealth::Unhealthy("API key not configured".to_string())
+            ModuleHealth::Unhealthy(format!(
+                "OpenAI profile '{}' API key not configured",
+                self.profile_id
+            ))
         } else if !config.health_probe_enabled {
-            ModuleHealth::Degraded("API key configured; live provider probe disabled".to_string())
+            ModuleHealth::Degraded(format!(
+                "OpenAI profile '{}' API key configured; live provider probe disabled",
+                self.profile_id
+            ))
         } else {
             match self
                 .client
@@ -437,15 +445,31 @@ impl ModuleLifecycle for OpenAiLlm {
                     config.model
                 ))
                 .header("Authorization", format!("Bearer {}", config.api_key.trim()))
+                .timeout(std::time::Duration::from_secs(5))
                 .send()
                 .await
             {
                 Ok(response) if response.status().is_success() => ModuleHealth::Healthy,
                 Ok(response) => ModuleHealth::Degraded(format!(
-                    "OpenAI model probe returned {}",
+                    "OpenAI profile '{}' model probe returned {}",
+                    self.profile_id,
                     response.status()
                 )),
-                Err(error) => ModuleHealth::Degraded(format!("OpenAI probe failed: {error}")),
+                Err(error) => {
+                    // Transport errors can contain credential-bearing URLs.
+                    // Health diagnostics need a category, never request data.
+                    let failure = if error.is_timeout() {
+                        "timed out after 5s"
+                    } else if error.is_connect() {
+                        "connection failed"
+                    } else {
+                        "request failed"
+                    };
+                    ModuleHealth::Degraded(format!(
+                        "OpenAI profile '{}' probe {failure}",
+                        self.profile_id
+                    ))
+                }
             }
         }
     }
@@ -881,6 +905,149 @@ fn openai_responses_text_format(options: &LlmRequestOptionsSection) -> Option<Va
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn health_probe_default_disabled_and_missing_key_do_not_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let llm = OpenAiLlm::for_profile("major");
+        {
+            let mut config = llm.config.write().await;
+            assert!(!config.health_probe_enabled);
+            config.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+        }
+        assert!(matches!(
+            llm.health_check().await,
+            ModuleHealth::Unhealthy(message) if message.contains("API key not configured")
+        ));
+        llm.config.write().await.api_key = "local-health-secret".into();
+        assert!(matches!(
+            llm.health_check().await,
+            ModuleHealth::Degraded(message) if message.contains("probe disabled")
+                && message.contains("'major'") && !message.contains("local-health-secret")
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn health_probe_preserves_http_status_without_disclosing_request_or_body() {
+        for status in ["200 OK", "401 Unauthorized", "404 Not Found"] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let llm = OpenAiLlm::for_profile("major");
+            {
+                let mut config = llm.config.write().await;
+                config.api_key = "local-health-secret".into();
+                config.base_url = format!(
+                    "http://{}/private-url-secret/v1",
+                    listener.local_addr().unwrap()
+                );
+                config.model = "test-model".into();
+                config.health_probe_enabled = true;
+            }
+            let peer = async {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0; 1];
+                    socket.read_exact(&mut byte).await.unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() <= 8192);
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(
+                    request
+                        .starts_with("GET /private-url-secret/v1/models/test-model HTTP/1.1\r\n")
+                );
+                assert!(
+                    request
+                        .to_ascii_lowercase()
+                        .contains("\r\nauthorization: bearer local-health-secret\r\n")
+                );
+                let body = "private-response-secret";
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            };
+            let (health, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+                tokio::join!(llm.health_check(), peer)
+            })
+            .await
+            .unwrap();
+            if status == "200 OK" {
+                assert!(matches!(health, ModuleHealth::Healthy));
+            } else {
+                let ModuleHealth::Degraded(message) = health else {
+                    panic!("HTTP rejection must be degraded");
+                };
+                assert!(message.contains(status));
+                assert!(message.contains("'major'"));
+                for secret in [
+                    "local-health-secret",
+                    "private-url-secret",
+                    "private-response-secret",
+                    "Authorization",
+                ] {
+                    assert!(!message.contains(secret));
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn health_probe_connection_refusal_is_distinct_and_redacted() {
+        // A closed random TCP port may be reused or silently time out on the
+        // host. Keep this actual local endpoint bound, but never listen: the
+        // kernel refuses the connection without a port race or synthetic error.
+        struct SocketPath(std::path::PathBuf);
+        impl Drop for SocketPath {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("alia-{}.sock", uuid::Uuid::new_v4().simple()));
+        let reserved = tokio::net::UnixSocket::new_stream().unwrap();
+        reserved.bind(&path).unwrap();
+        let _socket_path = SocketPath(path.clone());
+        let refused = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::net::UnixStream::connect(&path),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::ConnectionRefused);
+        let mut llm = OpenAiLlm::for_profile("major");
+        llm.client = Client::builder().unix_socket(path).build().unwrap();
+        {
+            let mut config = llm.config.write().await;
+            config.api_key = "local-health-secret".into();
+            config.base_url = "http://localhost/private-url-secret/v1".into();
+            config.health_probe_enabled = true;
+        }
+        let health = tokio::time::timeout(Duration::from_secs(2), llm.health_check())
+            .await
+            .unwrap();
+        let ModuleHealth::Degraded(message) = health else {
+            panic!("connection refusal must be degraded");
+        };
+        assert_eq!(message, "OpenAI profile 'major' probe connection failed");
+        drop(reserved);
+    }
 
     #[test]
     fn openai_stream_text_extracts_delta_content() {

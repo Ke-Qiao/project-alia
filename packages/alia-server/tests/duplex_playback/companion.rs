@@ -268,6 +268,42 @@ async fn count(s: &Scene, table: &str) -> i64 {
         .try_get("", "n")
         .unwrap()
 }
+
+/// Failure-only evidence before shutdown changes candidate states. Never print
+/// identities, source text, private grants or raw database errors.
+async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> String {
+    let progress = state.modules.companion.scan_progress();
+    let rows = tokio::time::timeout(Duration::from_secs(1), async {
+        let row =
+            s.f.db
+                .query_one(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "SELECT jsonb_build_object(
+                'appraisals', (SELECT count(*) FROM appraisal_records),
+                'responses', (SELECT count(*) FROM delivery_responses),
+                'pending', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT state, retirement_reason, count(*) AS count
+                    FROM companion_live_pending GROUP BY state, retirement_reason
+                    ORDER BY state, retirement_reason) v),
+                'admissions', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT state, retirement_reason, count(*) AS count
+                    FROM companion_admissions GROUP BY state, retirement_reason
+                    ORDER BY state, retirement_reason) v)) AS summary"
+                        .to_string(),
+                ))
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("missing diagnostic row"))?;
+        Ok::<serde_json::Value, anyhow::Error>(row.try_get("", "summary")?)
+    })
+    .await;
+    let rows = match rows {
+        Ok(Ok(rows)) => rows.to_string(),
+        Ok(Err(_)) => "unavailable".into(),
+        Err(_) => "diagnostic deadline exceeded".into(),
+    };
+    format!("scan={progress:?}; rows={rows}")
+}
+
 async fn seed(state: &alia_server::state::AppState, owner: Uuid) -> Uuid {
     let conversation = state
         .modules
@@ -367,6 +403,7 @@ async fn complete_invitation(scenario: Scenario) {
         });
         let voice_server=RpcServer{stop:stop.clone(),task:Some(task)};
         let mut heartbeat=None;
+        let mut stage="connect voice client";
         let result=AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(25),async {
             let (tx,rx)=mpsc::channel(8);
             let boot=Uuid::new_v4();
@@ -379,7 +416,9 @@ async fn complete_invitation(scenario: Scenario) {
             let mut request=Request::new(ReceiverStream::new(rx));
             request.metadata_mut().insert("authorization",format!("Bearer {token}").parse().unwrap());
             let mut client=VoiceSessionClient::connect(endpoint).await.unwrap();
+            stage="open voice stream";
             let mut events=client.stream(request).await.unwrap().into_inner();
+            stage="receive Ready";
             let ready=events.message().await.unwrap().unwrap();
             assert!(matches!(ready.payload,Some(session_event::Payload::Ready(ref v)) if v.initiative_capture_gate_version==1));
             s.scope=VoiceScope{session_id:ready.session_id.parse().unwrap(),device_boot_id:boot,generation_epoch:ready.generation_epoch};
@@ -417,15 +456,20 @@ async fn complete_invitation(scenario: Scenario) {
                     sequence+=1;
                 }
             }));
+            stage="enable companion policy";
             let policy=state.modules.companion.policy(s.f.user).await.unwrap();
             assert_eq!(policy.policy.mode,CompanionMode::Shadow);
             state.modules.companion.replace_policy(s.f.user,policy.revision,CompanionPolicy{mode:CompanionMode::Enabled,..policy.policy}).await.unwrap();
+            stage="seed source and appraisal";
             let source=seed(&state,s.f.user).await;
+            stage="receive InitiativeAdmitted";
             let event=events.message().await.unwrap().unwrap();
             let admission=match event.payload {Some(session_event::Payload::InitiativeAdmitted(v))=>v,other=>panic!("expected initiative: {other:?}")};
             s.scope.generation_epoch=event.generation_epoch;
             s.session.admit_initiative_event(&s.scope,InitiativeCapture{initiative_id:admission.initiative_id.parse().unwrap(),request_id:admission.request_id.parse().unwrap(),through_sequence:admission.through_sequence},admission.context_id.parse().unwrap()).unwrap();
+            stage="enter original TTS";
             signal(&tts.entered).await;
+            stage="verify original admission";
             assert_eq!(count(&s,"companion_admissions").await,1);
             assert_eq!(count(&s,"delivery_responses").await,1);
             assert_eq!(s.wire.registrations.lock().unwrap().len(),1);
@@ -440,10 +484,12 @@ async fn complete_invitation(scenario: Scenario) {
             assert_eq!(registered.binding.context_id.to_string(),admission.context_id);
             assert_eq!(registered.binding.initiative_capture.unwrap().through_sequence,admission.through_sequence);
             if revoke_during_tts {
+                stage="revoke original source";
                 state.modules.context.clear_relationship(s.f.user,Uuid::new_v4(),0).await.unwrap();
             }
             tts.release.add_permits(1);
             if revoke_during_tts {
+                stage="observe retired admission";
                 eventually(||async {
                     let row=s.f.db.query_one(Statement::from_string(DatabaseBackend::Postgres,"SELECT state FROM companion_admissions".to_string())).await.unwrap().unwrap();
                     row.try_get::<String>("","state").unwrap()=="retired"
@@ -451,8 +497,10 @@ async fn complete_invitation(scenario: Scenario) {
                 assert_eq!(s.wire.pushes.load(Ordering::SeqCst),0);
                 assert_eq!(count(&s,"companion_admissions").await,1,"erasure cannot refund charge");
             } else {
+                stage="accept original media end";
                 eventually(||async {s.submission().is_some_and(|v|v.snapshot(1).end_accepted)}).await;
                 if scenario == Scenario::ResumeRace {
+                    stage="complete H1 to H2 handoff";
                     let response=s.service.get_response(s.f.user,response_id).await.unwrap();
                     resume_race(&s,&response,&capture_tx,&mut model_calls).await;
                     assert_eq!(s.drain(),vec![17;120],"resume must keep exactly the original unsubmitted suffix");
@@ -460,6 +508,7 @@ async fn complete_invitation(scenario: Scenario) {
                     assert!(model_calls.try_recv().is_err(),"silent invitation cannot invoke turn inference");
                     assert_eq!(s.drain(),vec![17;160]);
                 }
+                stage="observe original submission";
                 eventually(||async {
                     let records=s.service.list_deliveries(s.f.user,response_id).await.unwrap();
                     records.len()==1 && records[0].status==DeliveryStatus::Submitted
@@ -470,11 +519,17 @@ async fn complete_invitation(scenario: Scenario) {
                 assert_eq!(s.wire.pushes.load(Ordering::SeqCst),1);
                 assert_eq!(s.device.submissions.lock().unwrap().len(),1);
             }
+            stage="verify completed output";
             assert_eq!(tts.calls.load(Ordering::SeqCst),1);
             assert_eq!(count(&s,"delivery_responses").await,1,"H2 must retain the sole original Response");
             assert_eq!(count(&s,"companion_admissions").await,1,"control recovery cannot charge another initiative");
             assert_eq!(count(&s,"execution_effects").await,0);
         })).catch_unwind().await;
+        let timeout_diagnostic = if matches!(&result, Ok(Err(_))) {
+            Some(timeout_state(&s, &state).await)
+        } else {
+            None
+        };
         stop.cancel();
         if let Some(task)=heartbeat {task.await.unwrap();}
         tts.release.add_permits(1);
@@ -489,7 +544,7 @@ async fn complete_invitation(scenario: Scenario) {
             // publish the synthesis that was just released above.
             assert_eq!(s.wire.pushes.load(Ordering::SeqCst), 0);
         }
-        match result {Ok(Ok(()))=>(),Ok(Err(_))=>panic!("complete companion path exceeded 25 seconds"),Err(error)=>std::panic::resume_unwind(error)}
+        match result {Ok(Ok(()))=>(),Ok(Err(_))=>panic!("complete companion path exceeded 25 seconds at {stage}; {}",timeout_diagnostic.unwrap()),Err(error)=>std::panic::resume_unwind(error)}
     }).await;
 }
 #[tokio::test]

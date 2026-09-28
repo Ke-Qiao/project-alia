@@ -359,9 +359,9 @@ impl Drop for ServerRuntime {
     }
 }
 
-struct HttpListener {
-    listener: TcpListener,
-    connections: Arc<Connections>,
+pub(super) struct HttpListener {
+    pub(super) listener: TcpListener,
+    pub(super) connections: Arc<Connections>,
 }
 impl axum::serve::Listener for HttpListener {
     type Io = Connection;

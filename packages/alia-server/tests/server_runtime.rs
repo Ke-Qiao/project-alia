@@ -53,6 +53,13 @@ mod relationship_rebuild;
 #[path = "server_runtime/companion.rs"]
 mod companion;
 
+#[path = "server_runtime/devices.rs"]
+mod devices;
+
+#[cfg(feature = "llm-openai")]
+#[path = "server_runtime/health.rs"]
+mod health;
+
 #[derive(Default)]
 struct NativeGate {
     open: Mutex<bool>,

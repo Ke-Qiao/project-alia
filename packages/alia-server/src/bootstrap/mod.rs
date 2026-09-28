@@ -8,7 +8,6 @@ mod setup;
 pub use crate::module::lifecycle::{ShutdownHandle, ShutdownIncomplete};
 pub(crate) use runtime::RuntimeWiring;
 pub use runtime::ServerRuntime;
-use runtime::attach_frontend;
 pub use setup::run_setup;
 
 pub async fn build(

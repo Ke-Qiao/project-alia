@@ -2133,9 +2133,20 @@ impl ServerConfig {
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        let config_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
-
         let content = load_config_with_fragments(&canonical)?;
+        Self::from_merged_content(&canonical, &content)
+    }
+
+    /// Validate a proposed base file against the fragments that will actually
+    /// accompany it, without changing the current configuration on disk.
+    pub(crate) fn load_candidate(path: &Path, content: &str) -> anyhow::Result<Self> {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let content = merge_config_fragments(&canonical, toml::from_str(content)?)?;
+        Self::from_merged_content(&canonical, &content)
+    }
+
+    fn from_merged_content(path: &Path, content: &str) -> anyhow::Result<Self> {
+        let config_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut config: ServerConfig = toml::from_str(&content)?;
         config.config_dir = config_dir;
         config.providers.ensure_default_llm_provider_profiles();
@@ -2177,6 +2188,66 @@ impl ServerConfig {
         }
 
         Ok(config)
+    }
+
+    /// Resolve configured LLM roles without initializing adapters or making
+    /// network requests. `noop` and absent optional roles match the factories.
+    pub(crate) fn validate_llm_roles(&self) -> anyhow::Result<()> {
+        let roles = &self.llm.roles;
+        for (role, id, kind) in [
+            ("minor", Some(roles.minor.as_str()), LlmProfileKind::Chat),
+            ("major", Some(roles.major.as_str()), LlmProfileKind::Chat),
+            (
+                "default",
+                Some(roles.default.as_str()),
+                LlmProfileKind::Chat,
+            ),
+            (
+                "transcript_correction",
+                roles.transcript_correction.as_deref(),
+                LlmProfileKind::Chat,
+            ),
+            (
+                "memory_capture",
+                roles.memory_capture.as_deref(),
+                LlmProfileKind::Chat,
+            ),
+            (
+                "sentence_expression",
+                roles.sentence_expression.as_deref(),
+                LlmProfileKind::Chat,
+            ),
+            (
+                "embedding",
+                Some(roles.embedding.as_str()),
+                LlmProfileKind::Embedding,
+            ),
+        ] {
+            let Some(id) = id.filter(|id| *id != "noop") else {
+                continue;
+            };
+            let profile = self
+                .profiles
+                .llm_profile(id)
+                .with_context(|| format!("LLM role '{role}'"))?;
+            anyhow::ensure!(
+                profile.kind == kind,
+                "LLM role '{role}' requires a {kind:?} profile, but '{id}' is {:?}",
+                profile.kind
+            );
+            let provider = self
+                .llm_provider_profile(&profile.provider)
+                .with_context(|| format!("LLM role '{role}', profile '{id}'"))?;
+            anyhow::ensure!(
+                kind != LlmProfileKind::Embedding
+                    || matches!(
+                        provider.kind(),
+                        LlmProviderKind::OpenAi | LlmProviderKind::Noop
+                    ),
+                "LLM role 'embedding', profile '{id}' requires an OpenAI or noop provider"
+            );
+        }
+        Ok(())
     }
 
     /// Resolve a path that may be relative. Relative paths are resolved
@@ -2224,7 +2295,10 @@ impl ServerConfig {
 }
 
 pub fn load_config_with_fragments(path: &Path) -> anyhow::Result<String> {
-    let mut content = read_toml_value(path)?;
+    merge_config_fragments(path, read_toml_value(path)?)
+}
+
+fn merge_config_fragments(path: &Path, mut content: toml::Value) -> anyhow::Result<String> {
     for fragment in config_fragments(path)? {
         let fragment_value = read_toml_value(&fragment)?;
         merge_toml_values(&mut content, fragment_value);
@@ -2240,7 +2314,7 @@ fn read_toml_value(path: &Path) -> anyhow::Result<toml::Value> {
         .with_context(|| format!("failed to parse config file {}", path.display()))
 }
 
-fn merge_toml_values(base: &mut toml::Value, overlay: toml::Value) {
+pub(crate) fn merge_toml_values(base: &mut toml::Value, overlay: toml::Value) {
     match (base, overlay) {
         (toml::Value::Table(base), toml::Value::Table(overlay)) => {
             for (key, value) in overlay {

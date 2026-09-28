@@ -18,7 +18,7 @@ pub const MAX_DECISION_RECORD_BYTES: usize = 4 * 1024;
 pub const MAX_OPPORTUNITY_SECONDS: i64 = 10;
 pub const MAX_CAPTURE_AGE_SECONDS: i64 = 5;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CompanionMode {
     Disabled,
@@ -27,15 +27,18 @@ pub enum CompanionMode {
     Enabled,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionPolicy {
     pub mode: CompanionMode,
     pub quiet: bool,
     pub paused: bool,
     /// Admissions per UTC date, including outcomes that remain unknown.
+    #[schema(minimum = 0, maximum = 24)]
     pub daily_budget: u16,
+    #[schema(minimum = 30, maximum = 86400)]
     pub cooldown_seconds: u32,
+    #[schema(minimum = 1, maximum = 300)]
     pub candidate_ttl_seconds: u32,
     pub require_response_before_next: bool,
 }
@@ -71,7 +74,7 @@ impl CompanionPolicy {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PolicySnapshot {
     pub revision: i64,
@@ -90,7 +93,9 @@ impl PolicySnapshot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(deny_unknown_fields)]
 pub struct AppraisalReference {
     pub appraisal_id: Uuid,
@@ -110,7 +115,7 @@ impl AppraisalReference {
 
 /// A bounded canonical source header. No message text, inferred emotion,
 /// free-form topic, or private reason is copied into the decision record.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct CanonicalObservation {
     pub owner_id: Uuid,
@@ -184,7 +189,7 @@ impl CanonicalObservation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateKind {
     FollowUpInvitation,
@@ -198,7 +203,7 @@ impl CandidateKind {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Candidate {
     pub id: Uuid,
@@ -257,7 +262,7 @@ impl Candidate {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OpportunitySource {
     Unavailable,
@@ -270,7 +275,7 @@ pub enum OpportunitySource {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityState {
     Unknown,
@@ -281,21 +286,21 @@ pub enum ActivityState {
     OutputHeld,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OwnerAssurance {
     Unknown,
     BoundOwner,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputCapability {
     Unavailable,
     FollowUpVoice,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct OpportunitySnapshot {
     pub source: OpportunitySource,
@@ -389,7 +394,7 @@ impl OpportunitySnapshot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetSnapshot {
     pub revision: u64,
@@ -441,7 +446,7 @@ impl BudgetSnapshot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DecisionInput {
     pub candidate: Candidate,
@@ -473,7 +478,7 @@ impl DecisionInput {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionOutcome {
     Suppressed,
@@ -483,7 +488,9 @@ pub enum DecisionOutcome {
 }
 
 /// Declaration order is the versioned, stable ordering in a decision record.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionReason {
     PolicyDisabled,
@@ -520,7 +527,7 @@ impl DecisionReason {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DecisionRecord {
     pub schema_version: u16,
