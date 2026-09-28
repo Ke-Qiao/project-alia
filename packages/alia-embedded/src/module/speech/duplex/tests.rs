@@ -183,6 +183,7 @@ fn ready(boot: &str, session: &str) -> SessionEvent {
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
             initiative_admission: false,
+            initiative_capture_gate_version: 0,
         })),
     }
 }
@@ -935,6 +936,7 @@ async fn queued_capture_before_wire_ready_fences_resume_and_seeds_later_generati
             response_id: Uuid::new_v4(),
             context_id: Uuid::new_v4(),
             server_instance_id: Uuid::new_v4(),
+            initiative_capture: None,
         };
         let registered = playback.register_output(&binding).unwrap();
         let pause = BoundControlCommand {
@@ -1035,6 +1037,7 @@ fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_eviden
         response_id: Uuid::new_v4(),
         context_id: Uuid::new_v4(),
         server_instance_id: Uuid::new_v4(),
+        initiative_capture: None,
     };
     let registration = playback.register_output(&binding).unwrap();
     let command = BoundControlCommand {

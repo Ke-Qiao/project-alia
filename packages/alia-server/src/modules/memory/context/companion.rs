@@ -1,11 +1,16 @@
-//! Read-only Companion source admission. This gate never issues a ContextLease
-//! or borrows a generation/rebuild capability to authorize a new side effect.
+//! Canonical Companion source reads and narrowly scoped invitation Contexts.
+//! A generation/rebuild capability cannot authorize a new invitation by itself.
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, DatabaseTransaction};
 use uuid::Uuid;
 
 use super::{repository::*, *};
 use crate::modules::companion::types::{AppraisalReference, CanonicalObservation};
+
+mod invitation;
+pub(crate) use invitation::{
+    issue_invitation_in_transaction, read_invitation_grant, validate_invitation_reference,
+};
 
 pub(crate) struct CompanionAuthority {
     pub context_policy_version: i64,
@@ -68,6 +73,8 @@ pub(crate) async fn lock_companion_authority(
 
 pub(crate) struct CompanionSource {
     pub observation: CanonicalObservation,
+    /// Original parent identity with every flattened canonical dependency.
+    pub lease: ContextLease,
     /// Opaque references for transactional erasure, never copied source text.
     pub erasure_roots: Vec<(&'static str, Uuid)>,
 }
@@ -153,6 +160,12 @@ pub(crate) async fn load_companion_source(
             ContextEvidence::Appraisal { id, .. } => roots.push(("appraisal", *id)),
             ContextEvidence::AffectProjection { id, .. } => roots.push(("affect", *id)),
             ContextEvidence::Relationship { .. } => (),
+            ContextEvidence::CompanionAdmission { .. } => {
+                return Err(ContextError::Revoked(
+                    "an invitation cannot become a new Companion source".into(),
+                )
+                .into());
+            }
         }
     }
     match fact {
@@ -181,5 +194,6 @@ pub(crate) async fn load_companion_source(
             valid_until: until,
         },
         erasure_roots: roots,
+        lease,
     })
 }

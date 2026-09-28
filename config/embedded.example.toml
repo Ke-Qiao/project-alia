@@ -8,7 +8,8 @@
 # - [runtime]
 # - [device_runtime]
 # - [modules]
-# - # Paths are relative to this config file's directory, including these defaults.
+#
+# Paths are relative to this config file's directory, including these defaults.
 # Each library instance should use its own state/key/plugin paths and address.
 # Port 0 chooses a free port; discovery advertises the actual bound port.
 [device_runtime]
@@ -25,7 +26,7 @@ grpc_drain_timeout_ms = 1000
 [modules]
 mixer = "noop"
 
-[identity]
+# - [identity]
 # - [audio]
 # - [audio_debug]
 # - [edge_stt]

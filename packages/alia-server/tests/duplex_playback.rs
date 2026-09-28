@@ -279,6 +279,9 @@ struct Wire {
     hold_registration: AtomicBool,
     registered: Semaphore,
     release_registration: Semaphore,
+    hold_resume_ack: AtomicBool,
+    resume_applied: Semaphore,
+    release_resume: Semaphore,
     controls: Mutex<Vec<BoundControlCommand>>,
     observations: AtomicUsize,
     pushes: AtomicUsize,
@@ -320,12 +323,22 @@ impl Playback for Proxy {
         &self,
         request: Request<proto::ControlRequest>,
     ) -> std::result::Result<Response<proto::ControlResponse>, Status> {
-        self.0
-            .controls
-            .lock()
-            .unwrap()
-            .push(alia_proto::output_control::decode_control_request(request.get_ref()).unwrap());
+        let command =
+            alia_proto::output_control::decode_control_request(request.get_ref()).unwrap();
+        self.0.controls.lock().unwrap().push(command.clone());
         let result = self.0.inner.control(request).await?;
+        if matches!(command.command.action, ControlAction::Resume { .. })
+            && self.0.hold_resume_ack.swap(false, Ordering::SeqCst)
+        {
+            let receipt =
+                alia_proto::output_control::decode_control_receipt(result.get_ref(), &command)
+                    .unwrap();
+            assert_eq!(receipt.receipt.outcome, CommandOutcome::Applied);
+            self.0.resume_applied.add_permits(1);
+            self.0.release_resume.acquire().await.unwrap().forget();
+            // Delivery must Observe the original command after this lost ACK.
+            return Err(Status::unavailable("injected loss after applied Resume"));
+        }
         if self.0.lose_control_ack.swap(false, Ordering::SeqCst) {
             return Err(Status::unavailable(
                 "injected loss after native command execution",
@@ -465,11 +478,14 @@ impl Runtime {
             .install_output_revocation(Arc::new(move || revoked.revoke_all().unwrap()))
             .unwrap();
         let wire = Arc::new(Wire {
-            inner: PlaybackService::new(session.clone(), binding),
+            inner: PlaybackService::new(session.clone(), binding.clone()),
             lose_control_ack: AtomicBool::new(false),
             hold_registration: AtomicBool::new(false),
             registered: Semaphore::new(0),
             release_registration: Semaphore::new(0),
+            hold_resume_ack: AtomicBool::new(false),
+            resume_applied: Semaphore::new(0),
+            release_resume: Semaphore::new(0),
             controls: Mutex::new(Vec::new()),
             observations: AtomicUsize::new(0),
             pushes: AtomicUsize::new(0),
@@ -480,10 +496,16 @@ impl Runtime {
         let stop = CancellationToken::new();
         let shutdown = stop.clone();
         let proxy = Proxy(wire.clone());
+        let binding_service = companion::binding_service(binding, &directory.0);
         let server = tokio::spawn(async move {
             let incoming = async_stream::stream! { loop { yield listener.accept().await.map(|(stream, _)| stream); } };
             tonic::transport::Server::builder()
                 .add_service(PlaybackServer::new(proxy))
+                .add_service(
+                    alia_proto::binding::device_binding_server::DeviceBindingServer::new(
+                        binding_service,
+                    ),
+                )
                 .serve_with_incoming_shutdown(incoming, shutdown.cancelled())
                 .await
                 .unwrap();
@@ -528,8 +550,13 @@ impl Runtime {
             EmbeddedChannelConfig {
                 id: "test-device".into(),
                 owner_user_id: Some(f.user),
-                expected_device_id: None,
-                expected_device_public_key: None,
+                expected_device_id: Some("companion-paired-device".into()),
+                expected_device_public_key: Some(base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    ed25519_dalek::SigningKey::from_bytes(&[19; 32])
+                        .verifying_key()
+                        .as_bytes(),
+                )),
                 endpoint,
                 discovery_service_name: "_alia-paired-test._tcp".into(),
                 discovery_timeout_sec: 1,
@@ -562,6 +589,7 @@ impl Runtime {
     }
     async fn close(self) {
         self.scene.wire.release_registration.add_permits(8);
+        self.scene.wire.release_resume.add_permits(8);
         // Free native queue waiters before joining either production supervisor.
         self.scene.session.revoke_all().unwrap();
         let delivery = self.scene.service.shutdown().await;
@@ -884,6 +912,7 @@ async fn registration_reply_after_fence_never_repopulates_obsolete_channel_bindi
             response_id: response.response_id,
             context_id: response.context_id.unwrap(),
             server_instance_id: Uuid::new_v4(),
+            initiative_capture: None,
         };
         s.wire.hold_registration.store(true, Ordering::SeqCst);
         let channel = s.channel.clone();
@@ -1004,3 +1033,6 @@ async fn replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_u
     })
     .await;
 }
+
+#[path = "duplex_playback/companion.rs"]
+mod companion;

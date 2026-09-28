@@ -5,12 +5,13 @@ use alia_core::delivery::{
     SubmissionBoundary, VoiceScope,
 };
 use alia_core::output_control::{
-    BoundControlCommand, BoundControlReceipt, ControlMode, OutputBinding, OutputRegistration,
-    OutputRetirementEvidence, OutputRetirementReceipt, OutputRetirementRequest,
+    BoundControlCommand, BoundControlReceipt, ControlMode, InitiativeCapture, OutputBinding,
+    OutputRegistration, OutputRetirementEvidence, OutputRetirementReceipt, OutputRetirementRequest,
 };
 use alia_core::playback_control::{
     CommandOutcome, ControlAction, ControlCommand, ControlPhase, ControlReceipt, ControlRejection,
-    ControlSnapshot, HoldReason, ResumeAuthorization, ResumeKind, RetiredReason,
+    ControlSnapshot, HoldReason, LocalCaptureHoldSnapshot, ResumeAuthorization, ResumeKind,
+    RetiredReason,
 };
 use uuid::Uuid;
 
@@ -93,6 +94,13 @@ pub fn encode_binding(value: OutputBinding) -> wire::OutputBinding {
         response_id: value.response_id.to_string(),
         context_id: value.context_id.to_string(),
         server_instance_id: value.server_instance_id.to_string(),
+        initiative_capture: value
+            .initiative_capture
+            .map(|capture| wire::InitiativeCapture {
+                initiative_id: capture.initiative_id.to_string(),
+                request_id: capture.request_id.to_string(),
+                through_sequence: capture.through_sequence,
+            }),
     }
 }
 pub fn decode_binding(value: &wire::OutputBinding) -> Result<OutputBinding> {
@@ -101,6 +109,17 @@ pub fn decode_binding(value: &wire::OutputBinding) -> Result<OutputBinding> {
         response_id: uuid(&value.response_id)?,
         context_id: uuid(&value.context_id)?,
         server_instance_id: uuid(&value.server_instance_id)?,
+        initiative_capture: value
+            .initiative_capture
+            .as_ref()
+            .map(|capture| {
+                Ok::<_, ControlCodecError>(InitiativeCapture {
+                    initiative_id: uuid(&capture.initiative_id)?,
+                    request_id: uuid(&capture.request_id)?,
+                    through_sequence: capture.through_sequence,
+                })
+            })
+            .transpose()?,
     })
 }
 pub fn encode_registration(value: &OutputRegistration) -> wire::RegisterOutputReceipt {
@@ -110,6 +129,7 @@ pub fn encode_registration(value: &OutputRegistration) -> wire::RegisterOutputRe
         maximum_hold_ms: value.maximum_hold_ms,
         contract_version: delivery::PLAYBACK_CONTRACT_VERSION,
         software_hold: true,
+        initiative_capture_gate_version: value.initiative_capture_gate_version,
     }
 }
 pub fn decode_registration(value: &wire::RegisterOutputReceipt) -> Result<OutputRegistration> {
@@ -127,6 +147,7 @@ pub fn decode_registration(value: &wire::RegisterOutputReceipt) -> Result<Output
             "missing registered backend",
         )?)?,
         maximum_hold_ms: value.maximum_hold_ms,
+        initiative_capture_gate_version: value.initiative_capture_gate_version,
     };
     result.validate().map_err(|e| ControlCodecError(e.0))?;
     Ok(result)
@@ -397,6 +418,12 @@ pub fn encode_snapshot(value: &ControlSnapshot) -> wire::ControlSnapshot {
         sequence: value.sequence,
         remaining_ms: value.remaining_ms,
         retired: value.retired.map(encode_retired),
+        local_capture_hold: value
+            .local_capture_hold
+            .map(|local| wire::LocalCaptureHold {
+                through_sequence: local.through_sequence,
+                remaining_ms: local.remaining_ms,
+            }),
     }
 }
 pub fn decode_snapshot(value: &wire::ControlSnapshot) -> Result<ControlSnapshot> {
@@ -414,6 +441,12 @@ pub fn decode_snapshot(value: &wire::ControlSnapshot) -> Result<ControlSnapshot>
         sequence: value.sequence,
         remaining_ms: value.remaining_ms,
         retired: value.retired.map(decode_retired).transpose()?,
+        local_capture_hold: value.local_capture_hold.as_ref().map(|local| {
+            LocalCaptureHoldSnapshot {
+                through_sequence: local.through_sequence,
+                remaining_ms: local.remaining_ms,
+            }
+        }),
     })
 }
 pub fn encode_progress(value: &PlaybackProgress) -> wire::PlaybackReceipt {
@@ -596,6 +629,7 @@ mod tests {
                 response_id: Uuid::from_u128(4),
                 context_id: Uuid::from_u128(5),
                 server_instance_id: Uuid::from_u128(6),
+                initiative_capture: None,
             },
             command: ControlCommand {
                 scope,
@@ -681,6 +715,7 @@ mod tests {
                     sequence: 1,
                     remaining_ms: Some(0),
                     retired: Some(RetiredReason::Expired),
+                    local_capture_hold: None,
                 },
             },
         };
@@ -707,6 +742,7 @@ mod tests {
             binding: command.binding,
             backend: command.expected_backend.clone(),
             maximum_hold_ms: MAX_HOLD_MS,
+            initiative_capture_gate_version: 0,
         };
         let mut wire = encode_registration(&registration);
         assert_eq!(decode_registration(&wire).unwrap(), registration);
@@ -718,6 +754,61 @@ mod tests {
         let mut wire = encode_command(&command);
         wire.expected_backend.as_mut().unwrap().boundary = 99;
         assert!(decode_command(&wire).is_err());
+    }
+
+    #[test]
+    fn initiative_binding_requires_exact_capability_and_local_hold_survives_codec() {
+        let mut command = command();
+        command.binding.initiative_capture = Some(InitiativeCapture {
+            initiative_id: Uuid::from_u128(20),
+            request_id: Uuid::from_u128(21),
+            through_sequence: 0,
+        });
+        let registration = OutputRegistration {
+            binding: command.binding,
+            backend: command.expected_backend.clone(),
+            maximum_hold_ms: MAX_HOLD_MS,
+            initiative_capture_gate_version:
+                alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
+        };
+        let mut wire = encode_registration(&registration);
+        assert_eq!(decode_registration(&wire).unwrap(), registration);
+        for unsupported in [0, 2] {
+            wire.initiative_capture_gate_version = unsupported;
+            assert!(decode_registration(&wire).is_err());
+        }
+        let receipt = BoundControlReceipt {
+            observation_sequence: 1,
+            command: command.clone(),
+            intent_digest: command.intent_digest(),
+            backend: command.expected_backend.clone(),
+            mode: ControlMode::SoftwareGate,
+            native_writes_quiescent: true,
+            progress: vec![],
+            receipt: ControlReceipt {
+                command_id: command.command.command_id,
+                outcome: CommandOutcome::Applied,
+                snapshot: ControlSnapshot {
+                    scope: command.binding.scope,
+                    phase: ControlPhase::Held,
+                    hold_id: None,
+                    reason: None,
+                    sequence: 1,
+                    remaining_ms: None,
+                    retired: None,
+                    local_capture_hold: Some(LocalCaptureHoldSnapshot {
+                        through_sequence: 1,
+                        remaining_ms: 1000,
+                    }),
+                },
+            },
+        };
+        let wire = encode_control_receipt(&receipt);
+        assert_eq!(decode_control_receipt(&wire, &command).unwrap(), receipt);
+        let mut unbound = receipt.clone();
+        unbound.command.binding.initiative_capture = None;
+        unbound.intent_digest = unbound.command.intent_digest();
+        assert!(unbound.validate(&unbound.command).is_err());
     }
     #[test]
     fn retirement_requires_exact_owner_and_explicit_settled_or_no_native_evidence() {

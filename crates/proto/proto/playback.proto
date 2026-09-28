@@ -120,11 +120,17 @@ message FenceReceipt {
   PlaybackReceipt final_progress = 6;
 }
 
+message InitiativeCapture {
+  string initiative_id = 1;
+  string request_id = 2;
+  uint64 through_sequence = 3;
+}
 message OutputBinding {
   VoiceScope scope = 1;
   string response_id = 2;
   string context_id = 3;
   string server_instance_id = 4;
+  InitiativeCapture initiative_capture = 5;
 }
 message RegisterOutputRequest {
   OutputBinding binding = 1;
@@ -136,6 +142,7 @@ message RegisterOutputReceipt {
   uint64 maximum_hold_ms = 3;
   uint32 contract_version = 4;
   bool software_hold = 5;
+  uint32 initiative_capture_gate_version = 6;
 }
 message RetireOutputRequest {
   VoiceScope scope = 1;
@@ -228,6 +235,10 @@ enum ControlRejection {
   CONTROL_REJECTION_NATIVE_WRITE_PENDING = 8;
   CONTROL_REJECTION_RETIRED = 9;
 }
+message LocalCaptureHold {
+  uint64 through_sequence = 1;
+  uint64 remaining_ms = 2;
+}
 message ControlSnapshot {
   VoiceScope scope = 1;
   ControlPhase phase = 2;
@@ -236,6 +247,7 @@ message ControlSnapshot {
   uint64 sequence = 5;
   optional uint64 remaining_ms = 6;
   optional RetiredReason retired = 7;
+  LocalCaptureHold local_capture_hold = 8;
 }
 message ControlReceipt {
   string command_id = 1;

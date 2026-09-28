@@ -82,6 +82,11 @@ pub enum CommandOutcome {
     Applied,
     Rejected(ControlRejection),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalCaptureHoldSnapshot {
+    pub through_sequence: u64,
+    pub remaining_ms: u64,
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControlSnapshot {
     pub scope: VoiceScope,
@@ -93,6 +98,8 @@ pub struct ControlSnapshot {
     pub sequence: u64,
     pub remaining_ms: Option<u64>,
     pub retired: Option<RetiredReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_capture_hold: Option<LocalCaptureHoldSnapshot>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ControlReceipt {
@@ -110,6 +117,17 @@ struct Hold {
     expires_ms: u64,
 }
 #[derive(Debug)]
+struct LocalCaptureHold {
+    through_sequence: u64,
+    expires_ms: u64,
+}
+#[derive(Debug)]
+struct InitiativeProtection {
+    released_through: u64,
+    maximum_hold_ms: u64,
+    local: Option<LocalCaptureHold>,
+}
+#[derive(Debug)]
 pub struct PlaybackControlState {
     scope: VoiceScope,
     hold: Option<Hold>,
@@ -117,6 +135,7 @@ pub struct PlaybackControlState {
     retired: Option<RetiredReason>,
     capture: Option<u64>,
     speech: Option<u64>,
+    initiative: Option<InitiativeProtection>,
     commands: Vec<(ControlCommand, CommandOutcome)>,
 }
 impl PlaybackControlState {
@@ -131,12 +150,19 @@ impl PlaybackControlState {
             retired: None,
             capture: None,
             speech: None,
+            initiative: None,
             commands: Vec::with_capacity(MAX_CONTROL_COMMANDS),
         })
     }
     /// The local capture owner supplies these facts before uploading the frame.
     /// A gap is not silently interpreted as silence and cannot authorize resume.
-    pub fn observe_capture(&mut self, sequence: u64, speech: bool) -> Result<(), ControlRejection> {
+    pub fn observe_capture(
+        &mut self,
+        sequence: u64,
+        speech: bool,
+        now_ms: u64,
+    ) -> Result<(), ControlRejection> {
+        self.expire(now_ms);
         if self.retired.is_some() {
             return Err(ControlRejection::Retired);
         }
@@ -150,6 +176,61 @@ impl PlaybackControlState {
         self.capture = Some(sequence);
         if speech {
             self.speech = Some(sequence);
+            if let Some(protection) = &mut self.initiative {
+                let expires = now_ms.saturating_add(protection.maximum_hold_ms);
+                let expires = self
+                    .hold
+                    .as_ref()
+                    .map_or(expires, |hold| expires.min(hold.expires_ms));
+                let local = protection.local.get_or_insert(LocalCaptureHold {
+                    through_sequence: sequence,
+                    expires_ms: expires,
+                });
+                local.through_sequence = sequence;
+                local.expires_ms = local.expires_ms.min(expires);
+            }
+        }
+        Ok(())
+    }
+    /// Arm once under the original Session admission lock, before any media.
+    pub fn arm_initiative_capture(
+        &mut self,
+        through: u64,
+        maximum_hold_ms: u64,
+    ) -> Result<(), ControlRejection> {
+        if self.initiative.is_some()
+            || self.retired.is_some()
+            || !self.commands.is_empty()
+            || self.hold.is_some()
+            || !(1..=MAX_HOLD_MS).contains(&maximum_hold_ms)
+            || self.capture.is_none_or(|last| last < through)
+            || self.speech.is_some_and(|last| last > through)
+        {
+            return Err(ControlRejection::StaleEvidence);
+        }
+        self.initiative = Some(InitiativeProtection {
+            released_through: through,
+            maximum_hold_ms,
+            local: None,
+        });
+        Ok(())
+    }
+    /// Capture and Start are serialized by the caller's original Session lock.
+    pub fn validate_initiative_start(
+        &self,
+        through: Option<u64>,
+        speech: Option<u64>,
+    ) -> Result<(), ControlRejection> {
+        let protection = self.initiative.as_ref().ok_or(ControlRejection::Invalid)?;
+        if self.retired.is_some()
+            || through.is_none()
+            || self.capture != through
+            || self.speech != speech
+            || (self.hold.is_none()
+                && protection.local.is_none()
+                && speech.is_some_and(|last| last > protection.released_through))
+        {
+            return Err(ControlRejection::StaleEvidence);
         }
         Ok(())
     }
@@ -176,7 +257,13 @@ impl PlaybackControlState {
         self.retired.get_or_insert(reason);
     }
     pub fn expire(&mut self, now_ms: u64) {
-        if self.hold.as_ref().is_some_and(|h| now_ms >= h.expires_ms) {
+        if self.hold.as_ref().is_some_and(|h| now_ms >= h.expires_ms)
+            || self
+                .initiative
+                .as_ref()
+                .and_then(|p| p.local.as_ref())
+                .is_some_and(|h| now_ms >= h.expires_ms)
+        {
             self.retire(RetiredReason::Expired);
         }
     }
@@ -186,7 +273,9 @@ impl PlaybackControlState {
             scope: self.scope,
             phase: if self.retired.is_some() {
                 ControlPhase::Retired
-            } else if self.hold.is_some() {
+            } else if self.hold.is_some()
+                || self.initiative.as_ref().is_some_and(|p| p.local.is_some())
+            {
                 if quiescent {
                     ControlPhase::Held
                 } else {
@@ -203,6 +292,12 @@ impl PlaybackControlState {
                 .as_ref()
                 .map(|h| h.expires_ms.saturating_sub(now_ms)),
             retired: self.retired,
+            local_capture_hold: self.initiative.as_ref().and_then(|p| p.local.as_ref()).map(
+                |local| LocalCaptureHoldSnapshot {
+                    through_sequence: local.through_sequence,
+                    remaining_ms: local.expires_ms.saturating_sub(now_ms),
+                },
+            ),
         }
     }
     /// Query an existing immutable outcome without accepting a command or
@@ -286,7 +381,11 @@ impl PlaybackControlState {
                 if self.capture.is_none_or(|last| through_sequence > last) {
                     return Err(StaleEvidence);
                 }
-                let expires_ms = now.checked_add(budget_ms).ok_or(Invalid)?;
+                let mut expires_ms = now.checked_add(budget_ms).ok_or(Invalid)?;
+                if let Some(local) = self.initiative.as_mut().and_then(|p| p.local.as_mut()) {
+                    expires_ms = expires_ms.min(local.expires_ms);
+                    local.expires_ms = expires_ms;
+                }
                 self.hold = Some(Hold {
                     id: c.hold_id,
                     reason,
@@ -307,6 +406,11 @@ impl PlaybackControlState {
                     return Err(NativeWritePending);
                 }
                 self.hold = None;
+                if let Some(protection) = &mut self.initiative {
+                    protection.local = None;
+                    protection.released_through =
+                        protection.released_through.max(a.through_sequence);
+                }
             }
             ControlAction::ConfirmExplicitWait {
                 detection_id,
@@ -363,7 +467,7 @@ mod tests {
             generation_epoch: 3,
         })
         .unwrap();
-        s.observe_capture(7, true).unwrap();
+        s.observe_capture(7, true, 0).unwrap();
         s
     }
     fn pause(s: &PlaybackControlState, reason: HoldReason) -> ControlCommand {
@@ -443,7 +547,7 @@ mod tests {
         let mut s = state();
         let p = pause(&s, HoldReason::AcousticCandidate);
         s.apply(&p, 0, true);
-        s.observe_capture(8, true).unwrap();
+        s.observe_capture(8, true, 0).unwrap();
         let mut r = resume(&p, ResumeKind::FreshBackchannel);
         assert_eq!(
             s.apply(&r, 1, true).outcome,
@@ -470,7 +574,7 @@ mod tests {
                 .outcome,
             CommandOutcome::Rejected(ControlRejection::NativeWritePending)
         );
-        assert!(s.observe_capture(9, false).is_err());
+        assert!(s.observe_capture(9, false, 0).is_err());
         assert_eq!(s.snapshot(1, true).phase, ControlPhase::Retired);
         let mut s = state();
         for _ in 0..=MAX_CONTROL_COMMANDS {
@@ -517,7 +621,7 @@ mod tests {
         stale.apply(&p, 0, true); // wrong scope rejected
         let p = pause(&stale, HoldReason::AcousticCandidate);
         stale.apply(&p, 0, true);
-        stale.observe_capture(8, true).unwrap();
+        stale.observe_capture(8, true, 0).unwrap();
         let c = ControlCommand {
             command_id: Uuid::new_v4(),
             sequence: 2,
@@ -587,5 +691,90 @@ mod tests {
             s.apply(&over, 0, true).outcome,
             CommandOutcome::Rejected(ControlRejection::Invalid)
         );
+    }
+
+    #[test]
+    fn initiative_local_hold_survives_old_applied_resume_and_transfers_to_next_hold() {
+        let mut s = state();
+        s.arm_initiative_capture(7, 3_000).unwrap();
+        s.observe_capture(8, true, 10).unwrap();
+        let local = s.snapshot(10, false);
+        assert_eq!(local.phase, ControlPhase::Pausing);
+        assert_eq!(local.hold_id, None);
+        assert_eq!(local.local_capture_hold.unwrap().through_sequence, 8);
+        s.validate_initiative_start(Some(8), Some(8)).unwrap();
+        let mut p = pause(&s, HoldReason::AcousticCandidate);
+        if let ControlAction::Pause {
+            through_sequence, ..
+        } = &mut p.action
+        {
+            *through_sequence = 8;
+        }
+        assert_eq!(s.apply(&p, 20, true).outcome, CommandOutcome::Applied);
+        let mut r = resume(&p, ResumeKind::FreshBackchannel);
+        if let ControlAction::Resume { authorization } = &mut r.action {
+            authorization.through_sequence = 8;
+        }
+        assert_eq!(s.apply(&r, 30, true).snapshot.phase, ControlPhase::Running);
+        s.observe_capture(9, true, 40).unwrap();
+        let replay = s.apply(&r, 50, true);
+        assert_eq!(replay.outcome, CommandOutcome::Applied);
+        assert_eq!(replay.snapshot.phase, ControlPhase::Held);
+        assert_eq!(replay.snapshot.hold_id, None);
+        assert_eq!(
+            replay.snapshot.local_capture_hold.unwrap().through_sequence,
+            9
+        );
+        let mut next = pause(&s, HoldReason::ExplicitWait);
+        next.sequence = 3;
+        if let ControlAction::Pause {
+            through_sequence, ..
+        } = &mut next.action
+        {
+            *through_sequence = 9;
+        }
+        assert_eq!(s.apply(&next, 60, true).outcome, CommandOutcome::Applied);
+        let mut continued = resume(&next, ResumeKind::FreshBackchannel);
+        continued.sequence = 4;
+        if let ControlAction::Resume { authorization } = &mut continued.action {
+            authorization.through_sequence = 9;
+        }
+        assert_eq!(
+            s.apply(&continued, 70, true).outcome,
+            CommandOutcome::Rejected(ControlRejection::ExplicitContinueRequired)
+        );
+        continued.command_id = Uuid::new_v4();
+        continued.sequence = 5;
+        if let ControlAction::Resume { authorization } = &mut continued.action {
+            authorization.kind = ResumeKind::ExplicitContinue;
+        }
+        let current = s.apply(&continued, 80, true);
+        assert_eq!(current.snapshot.phase, ControlPhase::Running);
+        assert_eq!(current.snapshot.local_capture_hold, None);
+        s.validate_initiative_start(Some(9), Some(9)).unwrap();
+        assert_eq!(current.snapshot.scope, p.scope);
+    }
+
+    #[test]
+    fn initiative_capture_requires_original_clock_and_local_deadline_never_refreshes() {
+        let mut s = state();
+        assert!(s.arm_initiative_capture(6, 3000).is_err());
+        assert!(s.arm_initiative_capture(8, 3000).is_err());
+        s.arm_initiative_capture(7, 3000).unwrap();
+        assert!(s.arm_initiative_capture(7, 3000).is_err());
+        s.observe_capture(8, false, 10).unwrap();
+        assert_eq!(s.snapshot(10, true).phase, ControlPhase::Running);
+        s.validate_initiative_start(Some(8), Some(7)).unwrap();
+        assert!(s.validate_initiative_start(Some(7), Some(7)).is_err());
+        s.observe_capture(9, true, 20).unwrap();
+        s.observe_capture(10, true, 3000).unwrap();
+        assert_eq!(
+            s.snapshot(3000, true)
+                .local_capture_hold
+                .unwrap()
+                .remaining_ms,
+            20
+        );
+        assert_eq!(s.snapshot(3020, true).retired, Some(RetiredReason::Expired));
     }
 }

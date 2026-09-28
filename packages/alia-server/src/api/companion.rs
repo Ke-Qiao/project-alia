@@ -52,7 +52,7 @@ async fn update_policy(
             "expected_revision must be positive".into(),
         ));
     }
-    if body.policy.mode == CompanionMode::Enabled {
+    if body.policy.mode == CompanionMode::Enabled && !state.modules.companion.live_ready() {
         return Err(AppError::Validation(
             "live companion admission is not available yet; use shadow or disabled".into(),
         ));

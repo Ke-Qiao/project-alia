@@ -70,7 +70,7 @@ async fn companion_http_policy_is_owner_scoped_cas_and_survives_restart() {
                 .unwrap();
             assert_eq!(initial["revision"], 1);
             assert_eq!(initial["policy"]["mode"], "shadow");
-            for mode in ["enabled", "unknown"] {
+            for mode in ["unknown"] {
                 let mut policy = initial["policy"].clone();
                 policy["mode"] = json!(mode);
                 assert_eq!(
@@ -697,6 +697,83 @@ async fn companion_http_prewrite_timeout_preserves_original_operation_for_retry(
         if let Err(error) = result {
             std::panic::resume_unwind(error);
         }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn companion_live_policy_is_explicit_and_persists_without_output_authority() {
+    with_fixture(|f| async move {
+        let runtime = f.builder().build().await.unwrap();
+        let state = runtime.state().clone();
+        let (owner, token) = delivery::account(&state, "user").await;
+        let (_, other_token) = delivery::account(&state, "user").await;
+        let url = format!("http://{}/api/v1/companion/policy", runtime.http_addr());
+        let stop = state.cancel_token.clone();
+        let serving = tokio::spawn(runtime.run());
+        let result = AssertUnwindSafe(async {
+            let client = client();
+            let policy = CompanionPolicy {
+                mode: CompanionMode::Enabled,
+                ..Default::default()
+            };
+            let enabled: Value = client
+                .put(&url)
+                .bearer_auth(&token)
+                .json(&json!({"expected_revision":1,"policy":policy}))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(enabled["revision"], 2);
+            assert_eq!(enabled["policy"]["mode"], "enabled");
+            let other: Value = client
+                .get(&url)
+                .bearer_auth(&other_token)
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(other["policy"]["mode"], "shadow");
+            for table in ["companion_admissions", "delivery_responses", "deliveries"] {
+                let row = state
+                    .db
+                    .query_one(Statement::from_string(
+                        DatabaseBackend::Postgres,
+                        format!("SELECT count(*) AS n FROM {table}"),
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(row.try_get::<i64>("", "n").unwrap(), 0);
+            }
+        })
+        .catch_unwind()
+        .await;
+        stop.cancel();
+        serving.await.unwrap().unwrap();
+        if let Err(error) = result {
+            std::panic::resume_unwind(error);
+        }
+        let restarted = f.builder().build().await.unwrap();
+        let policy = restarted
+            .state()
+            .modules
+            .companion
+            .policy(owner)
+            .await
+            .unwrap();
+        assert_eq!(policy.revision, 2);
+        assert_eq!(policy.policy.mode, CompanionMode::Enabled);
+        restarted.shutdown().await.unwrap();
     })
     .await;
 }

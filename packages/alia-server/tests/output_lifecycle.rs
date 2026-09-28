@@ -159,6 +159,7 @@ impl Device {
                     sequence: command.command.sequence,
                     remaining_ms: held.then_some(30000),
                     retired: None,
+                    local_capture_hold: None,
                 },
             },
         }
@@ -202,6 +203,7 @@ impl ChannelAdapter for Device {
             binding,
             backend: self.backend.clone(),
             maximum_hold_ms: 60000,
+            initiative_capture_gate_version: 0,
         };
         self.registration
             .set(registration.clone())

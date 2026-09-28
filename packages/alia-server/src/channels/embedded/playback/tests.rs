@@ -9,6 +9,7 @@ fn binding(scope: VoiceScope) -> alia_core::output_control::OutputBinding {
         response_id: uuid::Uuid::new_v4(),
         context_id: uuid::Uuid::new_v4(),
         server_instance_id: uuid::Uuid::new_v4(),
+        initiative_capture: None,
     }
 }
 

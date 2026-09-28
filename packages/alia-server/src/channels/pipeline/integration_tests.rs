@@ -303,6 +303,7 @@ impl ChannelAdapter for OutputChannel {
             binding,
             backend: self.backend(),
             maximum_hold_ms: 120_000,
+            initiative_capture_gate_version: 0,
         })
     }
     async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
@@ -1237,7 +1238,7 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
         });
         if pause_first_request {
             speech.first_started.acquire().await.unwrap().forget();
-            output.controls.lock().unwrap().get_mut(&scope).unwrap().observe_capture(0, true).unwrap();
+            output.controls.lock().unwrap().get_mut(&scope).unwrap().observe_capture(0, true, 0).unwrap();
             assert!(control.explicit_wait(Uuid::new_v4(), 0).unwrap());
             tokio::time::timeout(std::time::Duration::from_secs(3), async {
                 while output.control_sequence.load(Ordering::SeqCst) < 1 { tokio::task::yield_now().await; }

@@ -10,7 +10,13 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::types::*;
-use crate::modules::memory::context::{ContextBinding, ContextError, ContextService, ContextUse};
+use crate::modules::companion::live::types::{
+    INVITATION_KIND, INVITATION_MEDIA_KEY, INVITATION_OUTPUT_KEY, InvitationContent,
+};
+use crate::modules::companion::types::CandidateKind;
+use crate::modules::memory::context::{
+    ContextBinding, ContextError, ContextLease, ContextPurpose, ContextService, ContextUse,
+};
 pub mod control;
 mod text;
 
@@ -43,7 +49,7 @@ impl DeliveryRepository {
         input: NewResponse,
     ) -> DeliveryResult<ResponseRecord> {
         validate_response(&input)?;
-        let notice_text = validate_context(
+        let lease = validate_context(
             tx,
             input.context_id,
             &input.key,
@@ -55,7 +61,7 @@ impl DeliveryRepository {
             ContextUse::OutputAdmission,
         )
         .await?;
-        validate_notice_intent(&input.kind, &input.content, notice_text)?;
+        validate_response_intent(&lease, &input.key, &input.kind, &input.content)?;
         tx.execute(stmt(
             "SELECT pg_advisory_xact_lock(hashtextextended($1, 891129))",
             vec![
@@ -83,6 +89,21 @@ impl DeliveryRepository {
         {
             if old.intent_digest != intent_digest {
                 return Err(DeliveryError::IdempotencyConflict);
+            }
+            if old.context_id != Some(lease.id())
+                || old.key != input.key
+                || old.conversation_id != input.conversation_id
+                || old.source_event_id != input.source_event_id
+                || old.source_received_at.timestamp_micros()
+                    != input.source_received_at.timestamp_micros()
+                || old.source_privacy_epoch != input.source_privacy_epoch
+                || old.channel_id != input.channel_id
+            {
+                return Err(DeliveryError::IdempotencyConflict);
+            }
+            validate_response_intent(&lease, &old.key, &old.kind, &old.content)?;
+            if let Some(final_content) = &old.final_content {
+                validate_invitation_final_content(&old, final_content)?;
             }
             return Ok(old);
         }
@@ -135,7 +156,8 @@ impl DeliveryRepository {
                 "final response content exceeds bound".into(),
             ));
         }
-        if old.status == ResponseStatus::Committed {
+        validate_invitation_final_content(&old, &final_content)?;
+        if old.status == ResponseStatus::Committed && old.kind != INVITATION_KIND {
             if old.final_content.as_ref() != Some(&final_content) {
                 return Err(DeliveryError::IdempotencyConflict);
             }
@@ -143,6 +165,7 @@ impl DeliveryRepository {
         }
         let old =
             validate_response_context(tx, owner, response_id, ContextUse::ResponseCommit).await?;
+        validate_invitation_final_content(&old, &final_content)?;
         if old.status == ResponseStatus::Committed {
             if old.final_content.as_ref() != Some(&final_content) {
                 return Err(DeliveryError::IdempotencyConflict);
@@ -276,6 +299,13 @@ impl DeliveryRepository {
         }
         let tx = self.db.begin().await?;
         let response = validate_response_source(&tx, owner, input.response_id).await?;
+        validate_invitation_media(
+            &response,
+            medium,
+            &input.output_key,
+            &input.content,
+            input.identity.as_ref(),
+        )?;
         if response.kind == "source_notice"
             && input.content.get("text") != response.content.get("text")
         {
@@ -323,6 +353,11 @@ impl DeliveryRepository {
         if response_count >= 256 {
             return Err(DeliveryError::CapacityExceeded);
         }
+        if response.kind == INVITATION_KIND && response_count != 0 {
+            return Err(DeliveryError::Unauthorized(
+                "an invitation has only one audio representation".into(),
+            ));
+        }
         tx.execute(stmt(
             "SELECT pg_advisory_xact_lock($1)",
             vec![CAPACITY_LOCK.into()],
@@ -349,8 +384,16 @@ impl DeliveryRepository {
         instance: Uuid,
     ) -> DeliveryResult<Option<DispatchPermit>> {
         let tx = self.db.begin().await?;
-        let response_id = required_delivery(&tx, id).await?.response_id;
+        let observed = required_delivery(&tx, id).await?;
+        let response_id = observed.response_id;
         let response = validate_response_source(&tx, owner, response_id).await?;
+        validate_invitation_media(
+            &response,
+            observed.media_kind,
+            &observed.output_key,
+            &observed.content,
+            observed.identity.as_ref(),
+        )?;
         let old = locked_delivery(&tx, id).await?;
         if old.owner_id != instance {
             return Err(DeliveryError::Unauthorized(
@@ -817,7 +860,7 @@ async fn validate_response_context(
     let context_id = old.context_id.ok_or_else(|| {
         DeliveryError::Unauthorized("historical response has no context lease".into())
     })?;
-    let notice_text = validate_context(
+    let lease = validate_context(
         db,
         context_id,
         &old.key,
@@ -829,10 +872,25 @@ async fn validate_response_context(
         purpose,
     )
     .await?;
-    validate_notice_intent(&old.kind, &old.content, notice_text)?;
+    validate_response_intent(&lease, &old.key, &old.kind, &old.content)?;
+    if let Some(final_content) = &old.final_content {
+        validate_invitation_final_content(&old, final_content)?;
+    }
     let current = owned_response(db, owner, id).await?;
-    if current.context_id != old.context_id || current.intent_digest != old.intent_digest {
+    if current.context_id != old.context_id
+        || current.intent_digest != old.intent_digest
+        || current.key != old.key
+        || current.conversation_id != old.conversation_id
+        || current.source_event_id != old.source_event_id
+        || current.source_received_at != old.source_received_at
+        || current.source_privacy_epoch != old.source_privacy_epoch
+        || current.channel_id != old.channel_id
+    {
         return Err(DeliveryError::IdempotencyConflict);
+    }
+    validate_response_intent(&lease, &current.key, &current.kind, &current.content)?;
+    if let Some(final_content) = &current.final_content {
+        validate_invitation_final_content(&current, final_content)?;
     }
     Ok(current)
 }
@@ -842,7 +900,15 @@ async fn validate_delivery_source(
 ) -> DeliveryResult<ResponseRecord> {
     let delivery = required_delivery(db, id).await?;
     let response = required_response(db, delivery.response_id).await?;
-    validate_response_source(db, response.key.user_id, response.response_id).await
+    let response = validate_response_source(db, response.key.user_id, response.response_id).await?;
+    validate_invitation_media(
+        &response,
+        delivery.media_kind,
+        &delivery.output_key,
+        &delivery.content,
+        delivery.identity.as_ref(),
+    )?;
+    Ok(response)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -856,7 +922,7 @@ async fn validate_context(
     epoch: Option<i64>,
     channel_id: &str,
     purpose: ContextUse,
-) -> DeliveryResult<Option<&'static str>> {
+) -> DeliveryResult<ContextLease> {
     let epoch =
         epoch.ok_or_else(|| DeliveryError::Unauthorized("source epoch is absent".into()))?;
     let validated = ContextService::validate_in_transaction(
@@ -881,7 +947,85 @@ async fn validate_context(
             "response differs from original context source".into(),
         ));
     }
-    Ok(validated.lease.notice_text())
+    Ok(validated.lease)
+}
+
+fn validate_response_intent(
+    lease: &ContextLease,
+    key: &ResponseKey,
+    kind: &str,
+    content: &Value,
+) -> DeliveryResult<()> {
+    validate_notice_intent(kind, content, lease.notice_text())?;
+    if lease.purpose() == ContextPurpose::CompanionInvitation {
+        let invitation = invitation_content(content)?;
+        if kind != INVITATION_KIND
+            || key.output_key != INVITATION_OUTPUT_KEY
+            || invitation.digest().map_err(|_| invitation_error())? != lease.materialized_digest()
+            || crate::modules::memory::context::evidence_digest(content)
+                .map_err(|_| invitation_error())?
+                != lease.materialized_digest()
+        {
+            return Err(invitation_error());
+        }
+    } else if kind == INVITATION_KIND || key.output_key == INVITATION_OUTPUT_KEY {
+        return Err(invitation_error());
+    }
+    Ok(())
+}
+
+fn invitation_error() -> DeliveryError {
+    DeliveryError::Unauthorized("invitation differs from its dedicated fixed authority".into())
+}
+
+fn invitation_content(content: &Value) -> DeliveryResult<InvitationContent> {
+    let invitation: InvitationContent =
+        serde_json::from_value(content.clone()).map_err(|_| invitation_error())?;
+    invitation.validate().map_err(|_| invitation_error())?;
+    Ok(invitation)
+}
+
+fn validate_invitation_final_content(
+    response: &ResponseRecord,
+    final_content: &Value,
+) -> DeliveryResult<()> {
+    if response.kind == INVITATION_KIND
+        && final_content != &json!({"text": CandidateKind::FollowUpInvitation.text()})
+    {
+        return Err(invitation_error());
+    }
+    Ok(())
+}
+
+fn reject_invitation_text(response: &ResponseRecord) -> DeliveryResult<()> {
+    if response.kind == INVITATION_KIND {
+        return Err(DeliveryError::Unauthorized(
+            "invitations only authorize audio output".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_invitation_media(
+    response: &ResponseRecord,
+    medium: DeliveryMedium,
+    output_key: &str,
+    content: &Value,
+    identity: Option<&alia_core::delivery::PlaybackIdentity>,
+) -> DeliveryResult<()> {
+    if response.kind != INVITATION_KIND {
+        return Ok(());
+    }
+    let invitation = invitation_content(&response.content)?;
+    if medium != DeliveryMedium::Audio
+        || output_key != INVITATION_MEDIA_KEY
+        || content != &json!({"text": invitation.text})
+        || identity
+            .is_none_or(|identity| !identity.is_valid() || identity.scope != invitation.voice_scope)
+    {
+        return Err(invitation_error());
+    }
+    Ok(())
 }
 
 fn validate_notice_intent(kind: &str, content: &Value, notice: Option<&str>) -> DeliveryResult<()> {

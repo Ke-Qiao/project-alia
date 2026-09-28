@@ -512,6 +512,7 @@ impl ChannelAdapter for PanicFencePlayback {
                 output_channels: 1,
             },
             maximum_hold_ms: 60000,
+            initiative_capture_gate_version: 0,
         };
         self.registration.set(registration.clone()).unwrap();
         Ok(registration)

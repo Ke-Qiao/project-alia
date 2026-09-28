@@ -85,6 +85,7 @@ pub enum ContextPurpose {
     MemoryCapture,
     MemoryMaintenance,
     AppraisalRebuild,
+    CompanionInvitation,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -157,6 +158,10 @@ pub enum ContextEvidence {
         id: Uuid,
         content_digest: String,
     },
+    CompanionAdmission {
+        id: Uuid,
+        intent_digest: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +183,12 @@ impl ContextLease {
             ContextPurpose::MemoryMaintenance => usage == ContextUse::MemoryMaintenance,
             ContextPurpose::AppraisalRebuild => {
                 matches!(usage, ContextUse::AppraisalWrite | ContextUse::AffectRead)
+            }
+            ContextPurpose::CompanionInvitation => {
+                matches!(
+                    usage,
+                    ContextUse::ResponseCommit | ContextUse::OutputAdmission
+                )
             }
         }
     }

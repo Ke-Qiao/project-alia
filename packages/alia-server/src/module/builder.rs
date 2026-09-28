@@ -779,11 +779,19 @@ impl ServerBuilder {
 
         let voice_initiatives =
             crate::modules::interaction::initiative::VoiceInitiativeHandle::default();
-        let companion = Arc::new(crate::modules::companion::CompanionService::new(
-            db.clone(),
-            voice_initiatives.clone(),
-            self.cancel_token.clone(),
-        ));
+        let companion = Arc::new(
+            crate::modules::companion::CompanionService::new(
+                db.clone(),
+                voice_initiatives.clone(),
+                self.cancel_token.clone(),
+            )
+            .with_live_outputs(crate::modules::companion::LiveOutputs {
+                context: context.clone(),
+                delivery: delivery.clone(),
+                conversation: conversation_arc.clone(),
+                tts: tts.clone(),
+            }),
+        );
         let companion_cleanup = companion.clone();
         cleanup.add("companion", ShutdownPhase::Producers, move || {
             let companion = companion_cleanup.clone();

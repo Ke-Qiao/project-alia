@@ -59,6 +59,7 @@ fn registration_for(
             response_id: response.response_id,
             context_id: response.context_id.unwrap(),
             server_instance_id: Uuid::new_v4(),
+            initiative_capture: None,
         },
         backend: SubmissionBackend {
             instance_id: Uuid::new_v4(),
@@ -67,6 +68,7 @@ fn registration_for(
             output_channels: 2,
         },
         maximum_hold_ms: DEFAULT_CONTROL_HOLD_MS,
+        initiative_capture_gate_version: 0,
     }
 }
 async fn relationship_registration(f: &Fixture) -> OutputRegistration {
@@ -220,6 +222,7 @@ fn observed(
                 sequence: watermark,
                 remaining_ms: is_held.then_some(30000),
                 retired: None,
+                local_capture_hold: None,
             },
         },
     }

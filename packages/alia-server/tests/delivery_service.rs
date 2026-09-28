@@ -81,6 +81,7 @@ impl ChannelAdapter for Channel {
             binding,
             backend: self.backend.clone(),
             maximum_hold_ms: 60000,
+            initiative_capture_gate_version: 0,
         };
         self.registration.set(registration.clone()).unwrap();
         Ok(registration)

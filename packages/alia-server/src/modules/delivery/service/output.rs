@@ -5,10 +5,13 @@ use super::*;
 use crate::modules::delivery::repository::control::{ControlAdmission, OutputControlStatus};
 use alia_core::{
     delivery::VoiceScope,
-    output_control::{BoundControlCommand, BoundControlReceipt, OutputBinding, OutputRegistration},
+    output_control::{
+        BoundControlCommand, BoundControlReceipt, InitiativeCapture, OutputBinding,
+        OutputRegistration,
+    },
     playback_control::{
         CommandOutcome, ControlAction, ControlCommand, ControlPhase, HoldReason,
-        MAX_CONTROL_COMMANDS, ResumeAuthorization,
+        LocalCaptureHoldSnapshot, MAX_CONTROL_COMMANDS, ResumeAuthorization,
     },
 };
 use anyhow::Context;
@@ -48,6 +51,12 @@ enum Work {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct InitiativeConstraint {
+    context_id: Uuid,
+    capture: InitiativeCapture,
+}
+
 struct Inner {
     request_id: Uuid,
     owner: Uuid,
@@ -59,7 +68,7 @@ struct Inner {
     wake: Notify,
     response: std::sync::OnceLock<ResponseCandidate>,
     registration: std::sync::OnceLock<OutputRegistration>,
-    expected_context: std::sync::OnceLock<Uuid>,
+    initiative: std::sync::OnceLock<InitiativeConstraint>,
     // Keep the original budget identity alive across sentence gaps and native
     // tails, even when no encoded buffer happens to be retained at that instant.
     audio_budget: std::sync::OnceLock<crate::providers::tts::audio_budget::ResponseAudioBudget>,
@@ -113,13 +122,21 @@ impl OutputProducer {
     pub(crate) fn constrain_initiative(
         &self,
         context_id: Uuid,
+        capture: InitiativeCapture,
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(!context_id.is_nil(), "initiative has no Context");
-        if let Err(id) = self.output.0.expected_context.set(context_id) {
+        anyhow::ensure!(
+            !context_id.is_nil() && capture.is_valid() && capture.request_id == self.request_id(),
+            "initiative has no original Context/request"
+        );
+        let constraint = InitiativeConstraint {
+            context_id,
+            capture,
+        };
+        if let Err(value) = self.output.0.initiative.set(constraint) {
             anyhow::ensure!(
-                self.output.0.expected_context.get() == Some(&id),
-                "initiative Context changed"
+                self.output.0.initiative.get() == Some(&value),
+                "initiative binding changed"
             );
         }
         self.output.tighten_deadline(deadline);
@@ -133,9 +150,9 @@ impl OutputProducer {
                 && response.key.request_id == output.0.request_id
                 && output
                     .0
-                    .expected_context
+                    .initiative
                     .get()
-                    .is_none_or(|id| response.context_id == Some(*id))
+                    .is_none_or(|value| response.context_id == Some(value.context_id))
                 && response.channel_id == output.0.channel.channel_id(),
             "canonical Response differs from original producer"
         );
@@ -431,7 +448,7 @@ impl DeliveryService {
             wake: Notify::new(),
             response: std::sync::OnceLock::new(),
             registration: std::sync::OnceLock::new(),
-            expected_context: std::sync::OnceLock::new(),
+            initiative: std::sync::OnceLock::new(),
             audio_budget: std::sync::OnceLock::new(),
             sender,
         }));
@@ -475,6 +492,7 @@ impl DeliveryService {
                     response_id: response.response_id,
                     context_id,
                     server_instance_id: self.instance_id,
+                    initiative_capture: output.0.initiative.get().map(|value| value.capture),
                 })
             }),
             expected_backend: output
@@ -635,6 +653,17 @@ impl DeliveryService {
                         anyhow::ensure!(matches, "original output binding changed");
                     }
                     Work::Action { hold_id, action } => {
+                        if output
+                            .0
+                            .gate
+                            .lock()
+                            .unwrap()
+                            .hold
+                            .as_ref()
+                            .is_none_or(|hold| hold.id != hold_id)
+                        {
+                            return Ok::<_, anyhow::Error>(());
+                        }
                         sequence = sequence
                             .checked_add(1)
                             .context("control sequence exhausted")?;
@@ -642,8 +671,24 @@ impl DeliveryService {
                             sequence <= MAX_CONTROL_COMMANDS as u64,
                             "control command capacity exhausted"
                         );
-                        self.control_output(output, sequence, hold_id, action)
-                            .await?;
+                        if let Some(hold) = self
+                            .control_output(output, sequence, hold_id, action)
+                            .await?
+                        {
+                            let remaining = hold
+                                .deadline
+                                .saturating_duration_since(Instant::now())
+                                .as_millis() as u64;
+                            anyhow::ensure!(remaining > 0, "local capture handoff expired");
+                            pending.push_front(Work::Action {
+                                hold_id: hold.id,
+                                action: ControlAction::Pause {
+                                    reason: hold.reason,
+                                    through_sequence: hold.through_sequence,
+                                    budget_ms: remaining,
+                                },
+                            });
+                        }
                     }
                 }
                 Ok::<_, anyhow::Error>(())
@@ -702,6 +747,7 @@ impl DeliveryService {
                 .context_id
                 .context("canonical Response has no Context")?,
             server_instance_id: self.instance_id,
+            initiative_capture: output.0.initiative.get().map(|value| value.capture),
         };
         let registration = output.0.channel.register_output(binding).await?;
         registration.validate()?;
@@ -747,7 +793,7 @@ impl DeliveryService {
         sequence: u64,
         hold_id: Uuid,
         action: ControlAction,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<Hold>> {
         let registration = output
             .0
             .registration
@@ -809,7 +855,7 @@ impl DeliveryService {
         output: &VoiceOutput,
         command: &BoundControlCommand,
         receipt: BoundControlReceipt,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<Hold>> {
         receipt.validate(command)?;
         let recorded = self.repository.record_control(&receipt).await?;
         // Store a late observation as a fact before checking permission to open
@@ -834,9 +880,43 @@ impl DeliveryService {
         );
         if let ControlAction::Resume { authorization } = command.command.action {
             if receipt.receipt.outcome == CommandOutcome::Applied {
+                let snapshot = &current.receipt.snapshot;
+                if command.binding.initiative_capture.is_some() {
+                    let mut gate = output.0.gate.lock().unwrap();
+                    let now = Instant::now();
+                    // Applied is the historical outcome. New local speech may
+                    // already own a gate even if the ACK snapshot predates it.
+                    let local = snapshot.local_capture_hold.or_else(|| {
+                        gate.last_speech
+                            .filter(|n| *n > authorization.through_sequence)
+                            .map(|through_sequence| LocalCaptureHoldSnapshot {
+                                through_sequence,
+                                remaining_ms: gate
+                                    .deadline()
+                                    .saturating_duration_since(now)
+                                    .as_millis()
+                                    as u64,
+                            })
+                    });
+                    if let Some(local) = local {
+                        if snapshot.hold_id.is_none() {
+                            let handoff = gate.handoff_after_applied_resume(
+                                command.command.hold_id,
+                                local,
+                                now,
+                            )?;
+                            drop(gate);
+                            output.signal();
+                            return Ok(handoff);
+                        }
+                        // Another proved formal hold already protects this owner.
+                        return Ok(None);
+                    }
+                }
                 anyhow::ensure!(
                     current.observation_sequence == receipt.observation_sequence
-                        && current.receipt.snapshot.phase == ControlPhase::Running,
+                        && snapshot.phase == ControlPhase::Running
+                        && snapshot.local_capture_hold.is_none(),
                     "resume is not the current device state"
                 );
                 let resumed = output.0.gate.lock().unwrap().resume(
@@ -861,6 +941,6 @@ impl DeliveryService {
                 "device did not accept the original hold"
             );
         }
-        Ok(())
+        Ok(None)
     }
 }

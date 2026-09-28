@@ -97,7 +97,7 @@ impl TestChannel {
         if let Some(registered) = &mut output.registered {
             registered
                 .control
-                .observe_capture(sequence, speech)
+                .observe_capture(sequence, speech, 0)
                 .unwrap();
         }
     }
@@ -312,6 +312,7 @@ impl ChannelAdapter for TestChannel {
                 output_channels: 2,
             },
             maximum_hold_ms: MAX_HOLD_MS,
+            initiative_capture_gate_version: 0,
         };
         registration.validate()?;
         let mut control = PlaybackControlState::new(binding.scope).unwrap();
@@ -469,6 +470,7 @@ async fn official_audio(fixture: Fixture) {
             software_hold: true,
             max_hold_ms: NEGOTIATED_HOLD_MS,
             initiative_admission: false,
+            initiative_capture_gate_version: 0,
             device_boot_id: boot.to_string(),
             channel_id: CHANNEL.into(),
         })),

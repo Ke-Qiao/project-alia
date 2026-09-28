@@ -7,7 +7,8 @@ use alia_core::text_delivery::{
 impl DeliveryRepository {
     pub async fn text_start(&self, permit: &DispatchPermit) -> DeliveryResult<()> {
         let tx = self.db.begin().await?;
-        validate_delivery_source(&tx, permit.delivery_id).await?;
+        let response = validate_delivery_source(&tx, permit.delivery_id).await?;
+        reject_invitation_text(&response)?;
         let old = permitted(&tx, permit).await?;
         text_state(&old)?;
         if old.cancel_requested {
@@ -44,6 +45,7 @@ impl DeliveryRepository {
         }
         let tx = self.db.begin().await?;
         let response = validate_delivery_source(&tx, permit.delivery_id).await?;
+        reject_invitation_text(&response)?;
         if response.kind == "source_notice" {
             let text = response
                 .content
@@ -104,6 +106,7 @@ impl DeliveryRepository {
     ) -> DeliveryResult<()> {
         let tx = self.db.begin().await?;
         let response = validate_delivery_source(&tx, permit.delivery_id).await?;
+        reject_invitation_text(&response)?;
         if response.kind == "source_notice"
             && response
                 .content

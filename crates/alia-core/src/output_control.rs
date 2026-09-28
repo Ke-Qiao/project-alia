@@ -9,6 +9,22 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 pub const VOICE_CONTRACT_VERSION: u32 = 2;
+pub const INITIATIVE_CAPTURE_GATE_VERSION: u32 = 1;
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct InitiativeCapture {
+    pub initiative_id: Uuid,
+    pub request_id: Uuid,
+    pub through_sequence: u64,
+}
+impl InitiativeCapture {
+    pub fn is_valid(&self) -> bool {
+        !self.initiative_id.is_nil() && !self.request_id.is_nil()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OutputBinding {
@@ -16,6 +32,8 @@ pub struct OutputBinding {
     pub response_id: Uuid,
     pub context_id: Uuid,
     pub server_instance_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initiative_capture: Option<InitiativeCapture>,
 }
 impl OutputBinding {
     pub fn is_valid(&self) -> bool {
@@ -23,6 +41,9 @@ impl OutputBinding {
             && !self.response_id.is_nil()
             && !self.context_id.is_nil()
             && !self.server_instance_id.is_nil()
+            && self
+                .initiative_capture
+                .is_none_or(|capture| capture.is_valid())
     }
 }
 
@@ -31,11 +52,18 @@ pub struct OutputRegistration {
     pub binding: OutputBinding,
     pub backend: SubmissionBackend,
     pub maximum_hold_ms: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub initiative_capture_gate_version: u32,
 }
 impl OutputRegistration {
     pub fn validate(&self) -> Result<(), InvalidOutputControl> {
         require(self.binding.is_valid(), "invalid output binding")?;
         validate_backend(&self.backend)?;
+        require(
+            self.binding.initiative_capture.is_none()
+                || self.initiative_capture_gate_version == INITIATIVE_CAPTURE_GATE_VERSION,
+            "initiative capture gate was not negotiated",
+        )?;
         require(
             (1..=MAX_HOLD_MS).contains(&self.maximum_hold_ms),
             "invalid maximum hold",
@@ -241,17 +269,31 @@ impl BoundControlReceipt {
             (snapshot.phase == ControlPhase::Retired) == snapshot.retired.is_some(),
             "control retirement evidence mismatch",
         )?;
+        let formal = snapshot.hold_id.is_some();
+        require(
+            formal == snapshot.reason.is_some() && formal == snapshot.remaining_ms.is_some(),
+            "partial formal hold identity",
+        )?;
+        if let Some(local) = snapshot.local_capture_hold {
+            require(
+                expected
+                    .binding
+                    .initiative_capture
+                    .is_some_and(|capture| local.through_sequence > capture.through_sequence)
+                    && local.remaining_ms <= MAX_HOLD_MS,
+                "unbound local capture hold",
+            )?;
+        }
         match snapshot.phase {
             ControlPhase::Held | ControlPhase::Pausing => require(
-                snapshot.hold_id.is_some()
-                    && snapshot.reason.is_some()
-                    && snapshot.remaining_ms.is_some(),
-                "held state lacks hold identity",
+                formal
+                    || snapshot
+                        .local_capture_hold
+                        .is_some_and(|local| local.remaining_ms > 0),
+                "held state lacks formal or local capture hold",
             )?,
             ControlPhase::Running => require(
-                snapshot.hold_id.is_none()
-                    && snapshot.reason.is_none()
-                    && snapshot.remaining_ms.is_none(),
+                !formal && snapshot.local_capture_hold.is_none(),
                 "running state retains a hold",
             )?,
             ControlPhase::Retired => (),
@@ -322,6 +364,7 @@ mod tests {
                 response_id: Uuid::from_u128(4),
                 context_id: Uuid::from_u128(5),
                 server_instance_id: Uuid::from_u128(6),
+                initiative_capture: None,
             },
             command: ControlCommand {
                 scope,
@@ -366,5 +409,37 @@ mod tests {
             *budget_ms += 1;
         }
         assert!(over.validate().is_err());
+    }
+
+    #[test]
+    fn initiative_none_preserves_binding_json_and_some_binds_the_original_zero_watermark() {
+        let mut original = command();
+        let old = serde_json::json!({
+            "scope": original.binding.scope,
+            "response_id": original.binding.response_id,
+            "context_id": original.binding.context_id,
+            "server_instance_id": original.binding.server_instance_id,
+        });
+        assert_eq!(serde_json::to_value(original.binding).unwrap(), old);
+        assert_eq!(
+            serde_json::from_value::<OutputBinding>(old).unwrap(),
+            original.binding
+        );
+        let digest = original.intent_digest();
+        original.binding.initiative_capture = Some(InitiativeCapture {
+            initiative_id: Uuid::new_v4(),
+            request_id: Uuid::new_v4(),
+            through_sequence: 0,
+        });
+        original.validate().unwrap();
+        assert_ne!(original.intent_digest(), digest);
+        let frozen = original.intent_digest();
+        original
+            .binding
+            .initiative_capture
+            .as_mut()
+            .unwrap()
+            .through_sequence = 1;
+        assert_ne!(original.intent_digest(), frozen);
     }
 }

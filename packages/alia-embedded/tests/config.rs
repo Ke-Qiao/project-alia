@@ -193,3 +193,9 @@ wakeword = "noop"
     );
     assert_eq!(reloaded.modules.wakeword, "noop");
 }
+
+#[test]
+fn shipped_embedded_example_loads_through_the_runtime_loader() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/embedded.example.toml");
+    alia_embedded::config::load_config(&path).expect("shipped embedded example must be usable");
+}

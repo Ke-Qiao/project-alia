@@ -126,10 +126,28 @@ impl PlaybackControl {
             .initialize_capture(through, speech)
             .map_err(|e| anyhow::anyhow!("invalid initial capture barrier: {e:?}"))
     }
+    fn arm_initiative_capture(&self, through: u64, maximum_hold_ms: u64) -> Result<()> {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .arm_initiative_capture(through, maximum_hold_ms)
+            .map_err(|e| anyhow::anyhow!("initiative capture cannot be armed: {e:?}"))
+    }
+    pub(super) fn validate_initiative_start(
+        &self,
+        through: Option<u64>,
+        speech: Option<u64>,
+    ) -> Result<()> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.expire(self.now());
+        let result = state.validate_initiative_start(through, speech);
+        self.synchronize(state.snapshot(self.now(), self.quiescent()).phase);
+        result.map_err(|e| anyhow::anyhow!("initiative Start capture differs: {e:?}"))
+    }
     pub(crate) fn observe_capture(&self, sequence: u64, speech: bool) -> Result<()> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.expire(self.now());
-        let result = state.observe_capture(sequence, speech);
+        let result = state.observe_capture(sequence, speech, self.now());
         let snapshot = state.snapshot(self.now(), self.quiescent());
         self.synchronize(snapshot.phase);
         result.map_err(|e| anyhow::anyhow!("capture cannot authorize playback control: {e:?}"))
@@ -201,6 +219,12 @@ impl super::PlaybackSession {
             .ok_or(OutputControlError::Unknown)?;
         ensure!(!active.retired, "output epoch has been permanently retired");
         ensure!(!self.shutdown.is_cancelled(), "playback runtime is stopped");
+        if let Some((capture, context_id)) = active.initiative_event {
+            ensure!(
+                binding.initiative_capture == Some(capture) && binding.context_id == context_id,
+                "Register differs from original initiative event"
+            );
+        }
         if let Some(registered) = &active.registration {
             ensure!(registered.binding == *binding, OutputControlError::Conflict);
             return Ok(registered.clone());
@@ -214,6 +238,19 @@ impl super::PlaybackSession {
             .as_ref()
             .map(|capture| capture.watermarks())
             .transpose()?;
+        if let Some(initiative) = binding.initiative_capture {
+            let (through, speech) = capture
+                .ok_or_else(|| anyhow::anyhow!("initiative requires original capture owner"))?;
+            ensure!(
+                through.is_some_and(|n| n >= initiative.through_sequence)
+                    && speech.is_none_or(|n| n <= initiative.through_sequence),
+                "initiative superseded by local speech or unknown capture"
+            );
+            ensure!(
+                active.control.is_none(),
+                "initiative requires a fresh control owner"
+            );
+        }
         let uninitialized = active.control.is_none();
         let generation = self.control_generation(active)?;
         let control = self.backend.playback_control(&active.scope, generation)?;
@@ -222,11 +259,16 @@ impl super::PlaybackSession {
                 control.initialize_capture(through, speech)?;
             }
         }
+        if let Some(initiative) = binding.initiative_capture {
+            control.arm_initiative_capture(initiative.through_sequence, active.maximum_hold_ms)?;
+        }
         active.control = Some(control.clone());
         let registered = OutputRegistration {
             binding: *binding,
             backend: control.backend.clone(),
             maximum_hold_ms: active.maximum_hold_ms,
+            initiative_capture_gate_version:
+                alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
         };
         registered.validate()?;
         active.registration = Some(registered.clone());
@@ -393,8 +435,8 @@ impl super::PlaybackSession {
         active.generation = Some(generation);
         Ok(generation)
     }
-    /// Feed the actual contiguous capture clock, including silence. This method
-    /// does not infer speech or automatically pause/resume playback.
+    /// Feed the actual contiguous capture clock, including silence. Initiative
+    /// owners close their local gate on speech; no capture fact grants Resume.
     pub fn observe_capture_for_control(
         &self,
         scope: &VoiceScope,
@@ -431,6 +473,35 @@ impl super::PlaybackSession {
     }
     /// Dropping this waiter never drops the gate, native stream or expiration
     /// owner. Timeout is missing acknowledgement, not proof of Held/Rejected.
+    pub async fn wait_bound_quiescent(&self, binding: &OutputBinding) -> Result<()> {
+        tokio::time::timeout(std::time::Duration::from_millis(1500), async {
+            loop {
+                let settled = {
+                    let state = self.lock()?;
+                    let active = state
+                        .as_ref()
+                        .filter(|active| {
+                            active
+                                .registration
+                                .as_ref()
+                                .is_some_and(|r| r.binding == *binding)
+                        })
+                        .ok_or(OutputControlError::Unknown)?;
+                    active
+                        .control
+                        .as_ref()
+                        .ok_or(OutputControlError::Unknown)?
+                        .quiescent()
+                };
+                if settled {
+                    return Ok::<_, anyhow::Error>(());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("original native writes did not settle"))?
+    }
     pub async fn wait_held(
         &self,
         scope: &VoiceScope,

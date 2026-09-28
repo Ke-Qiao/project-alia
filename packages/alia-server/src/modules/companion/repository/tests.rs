@@ -17,12 +17,12 @@ use sea_orm::{ConnectOptions, Database};
 use std::{future::Future, panic::AssertUnwindSafe, path::Path, sync::Arc, time::Duration};
 
 #[derive(Clone)]
-struct Fixture {
-    db: DatabaseConnection,
+pub(crate) struct Fixture {
+    pub(crate) db: DatabaseConnection,
     admin: DatabaseConnection,
     schema: String,
-    owner: Uuid,
-    session: Uuid,
+    pub(crate) owner: Uuid,
+    pub(crate) session: Uuid,
     runtime: Arc<ExpressionRuntime>,
 }
 impl Fixture {
@@ -86,20 +86,20 @@ impl Fixture {
             }
         }
     }
-    fn repo(&self) -> CompanionRepository {
+    pub(crate) fn repo(&self) -> CompanionRepository {
         CompanionRepository::new(self.db.clone())
     }
-    fn context(&self) -> ContextService {
+    pub(crate) fn context(&self) -> ContextService {
         ContextService::new(self.db.clone(), Arc::new(NoopEmbedding))
     }
-    async fn add_owner(&self, owner: Uuid, session: Uuid) {
+    pub(crate) async fn add_owner(&self, owner: Uuid, session: Uuid) {
         self.db.execute(sql("INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Companion fixture','not-a-login','user','active')", vec![owner.into(), format!("{owner}@companion.test").into()])).await.unwrap();
         self.db.execute(sql("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'companion-device',$2)", vec![session.into(), owner.to_string().into()])).await.unwrap();
     }
-    async fn seed(&self) -> (Uuid, Uuid) {
+    pub(crate) async fn seed(&self) -> (Uuid, Uuid) {
         self.seed_for(self.owner, self.session).await
     }
-    async fn seed_for(&self, owner: Uuid, session: Uuid) -> (Uuid, Uuid) {
+    pub(crate) async fn seed_for(&self, owner: Uuid, session: Uuid) -> (Uuid, Uuid) {
         let text = "thank you PRIVATE_COMPANION_FIXTURE";
         let stamps = capture_source_epochs(&self.db, owner).await.unwrap();
         let source = Uuid::new_v4();
@@ -130,7 +130,7 @@ impl Fixture {
         let receipt = self.runtime.submit_appraisal(input, drafts).await.unwrap();
         (receipt.appraisal_id, source)
     }
-    async fn count(&self, table: &str) -> i64 {
+    pub(crate) async fn count(&self, table: &str) -> i64 {
         self.db
             .query_one(sql(
                 &format!("SELECT COUNT(*)::bigint AS n FROM {table}"),
@@ -186,7 +186,7 @@ impl Fixture {
         .expect("Companion cleanup exceeded its budget");
     }
 }
-async fn with_fixture<F, Fut>(test: F)
+pub(crate) async fn with_fixture<F, Fut>(test: F)
 where
     F: FnOnce(Fixture) -> Fut,
     Fut: Future<Output = ()>,

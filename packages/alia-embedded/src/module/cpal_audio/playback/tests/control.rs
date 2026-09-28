@@ -262,6 +262,9 @@ impl AudioPlaybackBackend for LocalBackend {
     fn cancel_submission(&self, s: &Arc<AudioSubmission>, reason: &str) -> Result<bool> {
         Ok(self.0.cancel_submission(s, reason))
     }
+    fn end_submission(&self, s: &Arc<AudioSubmission>, total: u64) -> Result<bool> {
+        self.0.submit(s, total, &[], true)
+    }
     fn begin_scoped_playback(&self) -> Result<u64> {
         self.0.begin()
     }
@@ -694,4 +697,302 @@ fn hold_wakes_an_already_idle_worker_and_expires_with_no_media_or_waiter() {
     assert!(stops.load(Ordering::Acquire) > 0);
     sender.shutdown();
     task.join().unwrap().unwrap();
+}
+
+#[test]
+fn initiative_capture_before_registration_rejects_without_allocating_a_native_owner() {
+    use crate::module::playback_session::CaptureControlBarrier;
+    use alia_core::output_control::{InitiativeCapture, OutputBinding};
+    for before_fence in [true, false] {
+        let (sender, receiver) = channel(8);
+        receiver.set_backend(SubmissionBackend {
+            instance_id: uuid::Uuid::new_v4(),
+            boundary: SubmissionBoundary::CpalCallbackBuffer,
+            output_sample_rate_hz: 16000,
+            output_channels: 2,
+        });
+        let session = Arc::new(PlaybackSession::new(Arc::new(LocalBackend(sender))));
+        let original = VoiceScope {
+            device_boot_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            generation_epoch: 1,
+        };
+        let scope = VoiceScope {
+            generation_epoch: 2,
+            ..original
+        };
+        let capture = CaptureControlBarrier::default();
+        session
+            .activate_with_capture(&original, capture.clone(), 3000)
+            .unwrap();
+        session
+            .accept_capture(&capture, 0, false, || Ok(()))
+            .unwrap();
+        if before_fence {
+            session
+                .accept_capture(&capture, 1, true, || Ok(()))
+                .unwrap();
+        }
+        session.fence(&scope, false).unwrap();
+        let generation = receiver.generation().load(Ordering::Acquire);
+        let binding = OutputBinding {
+            scope,
+            response_id: uuid::Uuid::new_v4(),
+            context_id: uuid::Uuid::new_v4(),
+            server_instance_id: uuid::Uuid::new_v4(),
+            initiative_capture: Some(InitiativeCapture {
+                initiative_id: uuid::Uuid::new_v4(),
+                request_id: uuid::Uuid::new_v4(),
+                through_sequence: 0,
+            }),
+        };
+        if before_fence {
+            assert!(session.register_output(&binding).is_err());
+        } else {
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let owner = session.clone();
+            let captured = capture.clone();
+            let capturing = thread::spawn(move || {
+                owner.accept_capture(&captured, 1, true, || {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+            });
+            entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            let owner = session.clone();
+            let (attempt_tx, attempt_rx) = mpsc::channel();
+            let registering = thread::spawn(move || {
+                attempt_tx.send(()).unwrap();
+                owner.register_output(&binding)
+            });
+            attempt_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            release_tx.send(()).unwrap();
+            capturing.join().unwrap().unwrap();
+            assert!(registering.join().unwrap().is_err());
+        }
+        assert_eq!(receiver.generation().load(Ordering::Acquire), generation);
+        assert!(
+            session
+                .begin_bound(&binding, &uuid::Uuid::new_v4().to_string(), 1, 16000)
+                .is_err()
+        );
+        session.close(&scope).unwrap();
+    }
+}
+
+#[test]
+fn initiative_register_then_speech_before_start_retains_original_media_for_cpal_and_alsa() {
+    use crate::module::playback_session::CaptureControlBarrier;
+    use alia_core::output_control::*;
+    for alsa in [false, true] {
+        let (sender, receiver) = channel(8);
+        receiver.set_backend(SubmissionBackend {
+            instance_id: uuid::Uuid::new_v4(),
+            boundary: if alsa {
+                SubmissionBoundary::AlsaWriteAccepted
+            } else {
+                SubmissionBoundary::CpalCallbackBuffer
+            },
+            output_sample_rate_hz: 16000,
+            output_channels: 2,
+        });
+        let session = Arc::new(PlaybackSession::new(Arc::new(LocalBackend(sender.clone()))));
+        let original = VoiceScope {
+            device_boot_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            generation_epoch: 1,
+        };
+        let scope = VoiceScope {
+            generation_epoch: 2,
+            ..original
+        };
+        let capture = CaptureControlBarrier::default();
+        session
+            .activate_with_capture(&original, capture.clone(), 3000)
+            .unwrap();
+        session
+            .accept_capture(&capture, 0, false, || Ok(()))
+            .unwrap();
+        session.fence(&scope, false).unwrap();
+        let binding = OutputBinding {
+            scope,
+            response_id: uuid::Uuid::new_v4(),
+            context_id: uuid::Uuid::new_v4(),
+            server_instance_id: uuid::Uuid::new_v4(),
+            initiative_capture: Some(InitiativeCapture {
+                initiative_id: uuid::Uuid::new_v4(),
+                request_id: uuid::Uuid::new_v4(),
+                through_sequence: 0,
+            }),
+        };
+        let registered = session.register_output(&binding).unwrap();
+        let generation = receiver.generation().load(Ordering::Acquire);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let owner = session.clone();
+        let captured = capture.clone();
+        let capturing = thread::spawn(move || {
+            owner.accept_capture(&captured, 1, true, || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                Ok(())
+            })
+        });
+        entered_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let owner = session.clone();
+        let (attempt_tx, attempt_rx) = mpsc::channel();
+        let starting = thread::spawn(move || {
+            attempt_tx.send(()).unwrap();
+            owner.begin_bound(&binding, &uuid::Uuid::new_v4().to_string(), 1, 16000)
+        });
+        attempt_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        release_tx.send(()).unwrap();
+        capturing.join().unwrap().unwrap();
+        let lease = starting.join().unwrap().unwrap();
+        let local = session.observe_control(&scope).unwrap();
+        assert_eq!(local.phase, ControlPhase::Held);
+        assert_eq!(local.hold_id, None);
+        // Late event, identical Fence and Register ACK cannot reopen local speech.
+        session
+            .admit_initiative_event(
+                &scope,
+                binding.initiative_capture.unwrap(),
+                binding.context_id,
+            )
+            .unwrap();
+        session.fence(&scope, false).unwrap();
+        assert_eq!(session.register_output(&binding).unwrap(), registered);
+        assert_eq!(
+            session.observe_control(&scope).unwrap().phase,
+            ControlPhase::Held
+        );
+        session.enqueue(&lease, &[10, 20, 30]).unwrap();
+        session.end(&lease).unwrap();
+        assert!(lease.submission.try_begin_output().is_err());
+        assert!(matches!(receiver.take(true), Some(PlaybackAction::Stop)));
+        assert!(receiver.take(true).is_none());
+        let mut p = BoundControlCommand {
+            binding,
+            expected_backend: registered.backend.clone(),
+            command: ControlCommand {
+                scope,
+                hold_id: uuid::Uuid::new_v4(),
+                command_id: uuid::Uuid::new_v4(),
+                sequence: 1,
+                action: ControlAction::Pause {
+                    reason: HoldReason::AcousticCandidate,
+                    through_sequence: 1,
+                    budget_ms: 3000,
+                },
+            },
+        };
+        assert_eq!(
+            session.apply_bound_control(&p).unwrap().receipt.outcome,
+            CommandOutcome::Applied
+        );
+        let mut r = p.clone();
+        r.command.command_id = uuid::Uuid::new_v4();
+        r.command.sequence = 2;
+        r.command.action = ControlAction::Resume {
+            authorization: ResumeAuthorization {
+                kind: ResumeKind::FreshBackchannel,
+                detection_id: uuid::Uuid::new_v4(),
+                through_sequence: 1,
+            },
+        };
+        assert_eq!(
+            session
+                .apply_bound_control(&r)
+                .unwrap()
+                .receipt
+                .snapshot
+                .phase,
+            ControlPhase::Running
+        );
+        let mut renderer = Renderer::default();
+        let mut buffer = PlaybackBuffer::new(receiver.generation());
+        render_pending(&receiver, &mut renderer, &mut buffer);
+        // Keep one real native write entered across the next local speech.
+        let (chunk, write) = if alsa {
+            buffer.alsa_chunk(3)
+        } else {
+            (vec![], None)
+        };
+        if !alsa {
+            assert_eq!(buffer.next_sample(), 10);
+        }
+        session
+            .accept_capture(&capture, 2, true, || Ok(()))
+            .unwrap();
+        assert_eq!(
+            session.observe_control(&scope).unwrap().phase,
+            ControlPhase::Pausing
+        );
+        if alsa {
+            let (_, mut clock) = reference_clock(16000, 2);
+            let reading = clock.probe.unknown_clock();
+            confirm_alsa_write(&mut buffer, &chunk, 1, write, &mut clock, reading).unwrap();
+        } else {
+            assert_eq!(buffer.next_sample(), 10);
+        }
+        let late = session.observe_bound_control(&r).unwrap();
+        assert_eq!(late.receipt.outcome, CommandOutcome::Applied);
+        assert_eq!(late.receipt.snapshot.phase, ControlPhase::Held);
+        assert_eq!(late.receipt.snapshot.hold_id, None);
+        assert_eq!(
+            late.receipt
+                .snapshot
+                .local_capture_hold
+                .unwrap()
+                .through_sequence,
+            2
+        );
+        if alsa {
+            assert!(buffer.alsa_chunk(2).0.is_empty());
+        } else {
+            assert_eq!(buffer.next_sample(), 0);
+            assert_eq!(buffer.next_sample(), 0);
+        }
+        p.command.hold_id = uuid::Uuid::new_v4();
+        p.command.command_id = uuid::Uuid::new_v4();
+        p.command.sequence = 3;
+        p.command.action = ControlAction::Pause {
+            reason: HoldReason::ExplicitWait,
+            through_sequence: 2,
+            budget_ms: 2000,
+        };
+        session.apply_bound_control(&p).unwrap();
+        let mut continued = p.clone();
+        continued.command.command_id = uuid::Uuid::new_v4();
+        continued.command.sequence = 4;
+        continued.command.action = ControlAction::Resume {
+            authorization: ResumeAuthorization {
+                kind: ResumeKind::ExplicitContinue,
+                detection_id: uuid::Uuid::new_v4(),
+                through_sequence: 2,
+            },
+        };
+        assert_eq!(
+            session
+                .apply_bound_control(&continued)
+                .unwrap()
+                .receipt
+                .snapshot
+                .phase,
+            ControlPhase::Running
+        );
+        if alsa {
+            assert_eq!(buffer.alsa_chunk(2).0, vec![20, 20, 30, 30]);
+        } else {
+            assert_eq!(
+                (0..4).map(|_| buffer.next_sample()).collect::<Vec<_>>(),
+                vec![20, 20, 30, 30]
+            );
+        }
+        assert_eq!(receiver.generation().load(Ordering::Acquire), generation);
+        assert_eq!(lease.identity().scope, scope);
+        session.close(&scope).unwrap();
+    }
 }

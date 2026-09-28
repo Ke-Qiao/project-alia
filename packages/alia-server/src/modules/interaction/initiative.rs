@@ -31,12 +31,17 @@ pub struct VoiceOpportunity {
 }
 
 #[derive(Debug)]
-pub struct VoiceInitiativeRequest {
-    pub initiative_id: Uuid,
-    pub opportunity: VoiceOpportunity,
-    pub context: ContextBinding,
-    pub deadline: DateTime<Utc>,
-    pub cancel: CancellationToken,
+pub(crate) struct VoiceInitiativeRequest {
+    pub(crate) permit: crate::modules::companion::live::LiveAdmissionPermit,
+    pub(crate) cancel: CancellationToken,
+}
+impl VoiceInitiativeRequest {
+    pub(crate) fn from_permit(
+        permit: crate::modules::companion::live::LiveAdmissionPermit,
+        cancel: CancellationToken,
+    ) -> Self {
+        Self { permit, cancel }
+    }
 }
 
 #[derive(Debug)]
@@ -65,10 +70,18 @@ struct Endpoint {
     sender: mpsc::Sender<Request>,
 }
 
-#[derive(Clone, Default)]
-pub struct VoiceInitiativeHandle(Arc<Mutex<HashMap<String, Endpoint>>>);
-
+#[derive(Clone)]
+pub struct VoiceInitiativeHandle(Arc<Mutex<HashMap<String, Endpoint>>>, Uuid);
+impl Default for VoiceInitiativeHandle {
+    fn default() -> Self {
+        Self(Arc::default(), Uuid::new_v4())
+    }
+}
 impl VoiceInitiativeHandle {
+    pub(crate) fn instance_id(&self) -> Uuid {
+        self.1
+    }
+
     pub async fn snapshot(
         &self,
         owner: Uuid,
@@ -88,14 +101,14 @@ impl VoiceInitiativeHandle {
 
     /// Cancellation on drop covers unknown acknowledgements too. A caller must
     /// reconcile its durable initiative instead of submitting a new identity.
-    pub async fn reserve(
+    pub(crate) async fn reserve(
         &self,
         request: VoiceInitiativeRequest,
     ) -> anyhow::Result<ReservedVoiceInitiative> {
         let guard = request.cancel.clone().drop_guard();
         let sender = self.sender(
-            &request.opportunity.channel_id,
-            Some(request.opportunity.scope.session_id),
+            &request.permit.opportunity().channel_id,
+            Some(request.permit.opportunity().scope.session_id),
         )?;
         let (reply, receive) = oneshot::channel();
         sender
@@ -173,33 +186,36 @@ mod tests {
 
     fn request(session: Uuid) -> VoiceInitiativeRequest {
         let owner = Uuid::new_v4();
-        VoiceInitiativeRequest {
-            initiative_id: Uuid::new_v4(),
-            opportunity: VoiceOpportunity {
-                id: Uuid::new_v4(),
-                owner,
-                channel_id: "device".into(),
-                scope: alia_core::delivery::VoiceScope {
-                    session_id: session,
-                    device_boot_id: Uuid::new_v4(),
-                    generation_epoch: 1,
-                },
-                speech_revision: 0,
-                through_sequence: 0,
-                observed_at: Utc::now(),
-                last_capture_at: Utc::now(),
-                expires_at: Utc::now() + chrono::Duration::seconds(5),
+        let opportunity = VoiceOpportunity {
+            id: Uuid::new_v4(),
+            owner,
+            channel_id: "device".into(),
+            scope: alia_core::delivery::VoiceScope {
+                session_id: session,
+                device_boot_id: Uuid::new_v4(),
+                generation_epoch: 1,
             },
-            context: ContextBinding {
-                context_id: Uuid::new_v4(),
-                owner_id: owner,
-                request_id: Uuid::new_v4(),
-                source_event_id: Some(Uuid::new_v4()),
-                source_privacy_epoch: 1,
-            },
-            deadline: Utc::now() + chrono::Duration::seconds(5),
-            cancel: CancellationToken::new(),
-        }
+            speech_revision: 0,
+            through_sequence: 0,
+            observed_at: Utc::now(),
+            last_capture_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::seconds(5),
+        };
+        let context = ContextBinding {
+            context_id: Uuid::new_v4(),
+            owner_id: owner,
+            request_id: Uuid::new_v4(),
+            source_event_id: Some(Uuid::new_v4()),
+            source_privacy_epoch: 1,
+        };
+        VoiceInitiativeRequest::from_permit(
+            crate::modules::companion::live::LiveAdmissionPermit::fixture(
+                opportunity,
+                context,
+                Utc::now() + chrono::Duration::seconds(5),
+            ),
+            CancellationToken::new(),
+        )
     }
 
     #[tokio::test]

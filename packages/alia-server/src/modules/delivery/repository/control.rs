@@ -138,11 +138,12 @@ impl DeliveryRepository {
                 return Ok(old);
             }
             let response = validate_response_source(&tx, owner, binding.response_id).await?;
-            validate_response_binding(&response, &binding)?;
+            let invitation_deadline = validate_response_binding(&tx, &response, &binding).await?;
             let deliveries = scope_deliveries(&tx, &binding).await?;
             let now = database_now(&tx).await?;
             validate_deliveries(&deliveries, &registration, now)?;
-            let deadline = observation_deadline(&deliveries, response.created_at + chrono::Duration::milliseconds(MAX_HOLD_MS as i64));
+            let original_deadline = response.created_at + chrono::Duration::milliseconds(MAX_HOLD_MS as i64);
+            let deadline = observation_deadline(&deliveries, original_deadline.min(invitation_deadline.unwrap_or(original_deadline)));
             if deadline <= now { return Err(revoked("original output lifetime expired")); }
             let digest = registration_digest(&registration)?;
             let inserted = tx.execute(stmt("INSERT INTO output_control_scopes(response_id,owner_id,device_boot_id,session_id,generation_epoch,registration,registration_digest,deadline_at) VALUES($1,$2,$3,$4,$5::text::numeric,$6,$7,$8) ON CONFLICT DO NOTHING", vec![binding.response_id.into(),owner.into(),binding.scope.device_boot_id.into(),binding.scope.session_id.into(),binding.scope.generation_epoch.to_string().into(),serde_json::to_value(&registration)?.into(),digest.into(),deadline.into()])).await?.rows_affected();
@@ -181,7 +182,7 @@ impl DeliveryRepository {
             // The shared validator takes policy, active account, privacy,
             // relationship and exact Context root locks before Response.
             let response = validate_response_source(&tx, owner, binding.response_id).await?;
-            validate_response_binding(&response, &binding)?;
+            let invitation_deadline = validate_response_binding(&tx, &response, &binding).await?;
             let scope = required_scope(&tx, binding.response_id, true).await?;
             same_binding(&scope, owner, &binding)?;
             if command.expected_backend != scope.registration.backend { return Err(ControlLedgerError::Conflict); }
@@ -197,7 +198,7 @@ impl DeliveryRepository {
             // Registration can precede Start. Later real audio observations may
             // shorten authority, but can never extend the registered lifetime.
             // Sample the clock after acquiring Delivery locks, not before a wait.
-            let output_deadline = observation_deadline(&deliveries, scope.deadline_at);
+            let output_deadline = observation_deadline(&deliveries, scope.deadline_at.min(invitation_deadline.unwrap_or(scope.deadline_at)));
             let now = database_now(&tx).await?;
             validate_deliveries(&deliveries, &scope.registration, now)?;
             if output_deadline <= now { return Err(revoked("original audio observation lifetime expired")); }
@@ -443,10 +444,11 @@ fn same_command(
     }
     Ok(())
 }
-fn validate_response_binding(
+async fn validate_response_binding(
+    tx: &DatabaseTransaction,
     response: &ResponseRecord,
     binding: &OutputBinding,
-) -> ControlLedgerResult<()> {
+) -> ControlLedgerResult<Option<DateTime<Utc>>> {
     let original: Option<VoiceScope> = serde_json::from_value(
         response
             .content
@@ -455,6 +457,11 @@ fn validate_response_binding(
             .unwrap_or(Value::Null),
     )?;
     if response.context_id != Some(binding.context_id)
+        || binding.initiative_capture.is_some_and(|capture| {
+            capture.request_id != response.key.request_id
+                || capture.initiative_id != response.key.request_id
+        })
+        || (response.kind == "companion_invitation") != binding.initiative_capture.is_some()
         || original != Some(binding.scope)
         || response.kind == "source_notice"
         || response.cancel_requested
@@ -467,7 +474,31 @@ fn validate_response_binding(
             "prepared Response no longer authorizes this original control binding",
         ));
     }
-    Ok(())
+    if let Some(capture) = binding.initiative_capture {
+        // validate_response_source already owns the exact roots and grant in
+        // this transaction; this read cannot mint or refresh authority.
+        let content: crate::modules::companion::live::types::InvitationContent =
+            serde_json::from_value(response.content.clone())?;
+        let grant = crate::modules::memory::context::companion::read_invitation_grant(
+            tx,
+            response.key.user_id,
+            content.admission_id,
+        )
+        .await
+        .map_err(|_| revoked("original invitation grant is no longer valid"))?;
+        if binding.context_id != grant.context_id
+            || binding.scope != grant.expected_scope
+            || capture.request_id != grant.initiative_request_id
+            || capture.initiative_id != grant.initiative_request_id
+            || capture.through_sequence != grant.opportunity.through_sequence
+        {
+            return Err(revoked(
+                "initiative binding differs from original admission",
+            ));
+        }
+        return Ok(Some(grant.valid_until));
+    }
+    Ok(None)
 }
 async fn active_owner(db: &impl ConnectionTrait, owner: Uuid) -> ControlLedgerResult<()> {
     if db
@@ -607,6 +638,84 @@ async fn retire_scope(tx: &DatabaseTransaction, id: Uuid, reason: &str) -> Contr
     audit(tx, id, None, "control_retired", json!({"reason":reason})).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod initiative_tests {
+    use super::*;
+    use crate::modules::companion::{
+        live::tests::with_fixture,
+        types::{CompanionMode, CompanionPolicy},
+    };
+    use alia_core::{
+        delivery::{SubmissionBackend, SubmissionBoundary},
+        output_control::{INITIATIVE_CAPTURE_GATE_VERSION, InitiativeCapture},
+    };
+
+    #[tokio::test]
+    async fn initiative_registration_requires_canonical_capture_and_original_output_deadline() {
+        with_fixture(|f| async move {
+            f.enable_live(CompanionPolicy {
+                mode: CompanionMode::Enabled,
+                ..Default::default()
+            })
+            .await;
+            let (permit, context, response) = f.fresh(&f.live(Uuid::new_v4())).await;
+            let repository = DeliveryRepository::new(f.db.clone());
+            let registration = OutputRegistration {
+                binding: OutputBinding {
+                    scope: permit.expected_scope(),
+                    response_id: response.response_id,
+                    context_id: context.context_id,
+                    server_instance_id: Uuid::new_v4(),
+                    initiative_capture: Some(InitiativeCapture {
+                        initiative_id: permit.initiative_id(),
+                        request_id: context.request_id,
+                        through_sequence: permit.opportunity().through_sequence,
+                    }),
+                },
+                backend: SubmissionBackend {
+                    instance_id: Uuid::new_v4(),
+                    boundary: SubmissionBoundary::CpalCallbackBuffer,
+                    output_sample_rate_hz: 16000,
+                    output_channels: 1,
+                },
+                maximum_hold_ms: MAX_HOLD_MS,
+                initiative_capture_gate_version: INITIATIVE_CAPTURE_GATE_VERSION,
+            };
+            for changed in 0..3 {
+                let mut invalid = registration.clone();
+                match changed {
+                    0 => {
+                        invalid
+                            .binding
+                            .initiative_capture
+                            .as_mut()
+                            .unwrap()
+                            .through_sequence += 1
+                    }
+                    1 => {
+                        invalid
+                            .binding
+                            .initiative_capture
+                            .as_mut()
+                            .unwrap()
+                            .initiative_id = Uuid::new_v4()
+                    }
+                    _ => invalid.binding.initiative_capture = None,
+                }
+                assert!(repository.register_control(f.owner, invalid).await.is_err());
+            }
+            let accepted = repository
+                .register_control(f.owner, registration.clone())
+                .await
+                .unwrap();
+            assert_eq!(accepted.registration, registration);
+            assert_eq!(accepted.deadline_at, permit.deadline());
+            assert_eq!(f.count("output_control_scopes").await, 1);
+        })
+        .await;
+    }
+}
 fn validate_snapshot_advance(
     old: &BoundControlReceipt,
     next: &BoundControlReceipt,
@@ -621,6 +730,16 @@ fn validate_snapshot_advance(
             && a.remaining_ms
                 .zip(b.remaining_ms)
                 .is_some_and(|(a, b)| b > a))
+        || (a.sequence == b.sequence
+            && a.local_capture_hold.is_some()
+            && b.local_capture_hold.is_none()
+            && b.phase != ControlPhase::Retired)
+        || a.local_capture_hold
+            .zip(b.local_capture_hold)
+            .is_some_and(|(old, new)| {
+                new.through_sequence < old.through_sequence
+                    || (a.sequence == b.sequence && new.remaining_ms > old.remaining_ms)
+            })
         || (a.sequence == b.sequence
             && a.phase == ControlPhase::Held
             && b.phase == ControlPhase::Pausing)

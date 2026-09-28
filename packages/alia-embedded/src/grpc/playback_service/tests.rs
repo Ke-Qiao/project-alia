@@ -448,6 +448,7 @@ fn output_binding(scope: VoiceScope) -> OutputBinding {
         response_id: scope.session_id,
         context_id: scope.device_boot_id,
         server_instance_id: Uuid::from_u128(901),
+        initiative_capture: None,
     }
 }
 fn start() -> playback_frame::Payload {

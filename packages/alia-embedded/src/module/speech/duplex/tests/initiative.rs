@@ -8,6 +8,11 @@ fn setup(negotiated: bool) -> (SessionGuard, String, String) {
     let mut event = ready(&boot, &session);
     if let Some(session_event::Payload::Ready(ready)) = event.payload.as_mut() {
         ready.initiative_admission = negotiated;
+        ready.initiative_capture_gate_version = if negotiated {
+            alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION
+        } else {
+            0
+        };
     }
     guard.accept(event, 0).unwrap();
     (guard, boot, session)
@@ -34,6 +39,16 @@ fn initiative_requires_negotiation_and_real_capture_watermark() {
     let (mut old_peer, boot, session) = setup(false);
     assert!(old_peer.accept(admitted(&boot, &session), 4).is_err());
     assert_eq!(old_peer.epoch, 1);
+    for unsupported in [0, 2] {
+        let (mut foundation_only, boot, session) = setup(true);
+        foundation_only.initiative_capture_gate_version = unsupported;
+        assert!(
+            foundation_only
+                .accept(admitted(&boot, &session), 4)
+                .is_err()
+        );
+        assert_eq!(foundation_only.epoch, 1);
+    }
     let (mut guard, boot, session) = setup(true);
     assert!(guard.accept(admitted(&boot, &session), 3).is_err());
     assert_eq!(guard.epoch, 1);

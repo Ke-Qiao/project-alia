@@ -47,6 +47,7 @@ pub(super) struct Session {
     _registration: crate::modules::interaction::initiative::Registration,
     context: Arc<ContextService>,
     boot: Uuid,
+    instance_id: Uuid,
     opportunity: Option<(VoiceOpportunity, tokio::time::Instant)>,
     used_requests: HashSet<Uuid>,
     used_initiatives: HashSet<Uuid>,
@@ -68,12 +69,14 @@ impl Session {
         lease: &SessionLease,
         boot: Uuid,
     ) -> Self {
+        let instance_id = handle.instance_id();
         let (registration, receiver) = handle.register(lease.channel.clone(), lease.id);
         Self {
             receiver,
             _registration: registration,
             context,
             boot,
+            instance_id,
             opportunity: None,
             used_requests: HashSet::new(),
             used_initiatives: HashSet::new(),
@@ -226,10 +229,11 @@ impl Session {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("voice opportunity absent or consumed"))?;
         anyhow::ensure!(
-            original == &request.opportunity
+            original == request.permit.opportunity()
                 && tokio::time::Instant::now() < *monotonic_deadline
                 && Utc::now() < original.expires_at
-                && Utc::now() < request.deadline,
+                && Utc::now() < request.permit.admit_before()
+                && Utc::now() < request.permit.deadline(),
             "voice opportunity changed or expired"
         );
         anyhow::ensure!(
@@ -259,19 +263,26 @@ impl Session {
         runtime: &OutputRuntime,
     ) -> anyhow::Result<ReservedVoiceInitiative> {
         let guard = request.cancel.clone().drop_guard();
-        // Shadow wiring alone cannot authorize output. CP05 must connect the
-        // dedicated live policy/source grant and atomic device capture-watermark
-        // admission before this gate is backed by persistent authorization.
-        // No production builder can enable it in this intermediate package.
+        // The dedicated live runner and paired device capture gate are both
+        // required; merely being able to answer snapshots cannot admit output.
         anyhow::ensure!(
             runtime.initiative_output_enabled,
             "initiative output admission is disabled"
         );
         anyhow::ensure!(
-            !request.initiative_id.is_nil()
-                && !request.context.request_id.is_nil()
-                && !request.context.context_id.is_nil()
-                && request.context.owner_id == request.opportunity.owner,
+            runtime.initiative_capture_gate_version
+                == alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
+            "initiative local capture gate was not negotiated"
+        );
+        anyhow::ensure!(
+            request.permit.server_instance_id() == self.instance_id,
+            "initiative permit belongs to another server instance"
+        );
+        anyhow::ensure!(
+            !request.permit.initiative_id().is_nil()
+                && !request.permit.context().request_id.is_nil()
+                && !request.permit.context().context_id.is_nil()
+                && request.permit.context().owner_id == request.permit.opportunity().owner,
             "invalid initiative identity"
         );
         anyhow::ensure!(
@@ -279,20 +290,31 @@ impl Session {
             "voice initiative reservation capacity exhausted"
         );
         anyhow::ensure!(
-            !self.used_requests.contains(&request.context.request_id)
-                && !self.used_initiatives.contains(&request.initiative_id),
+            !self
+                .used_requests
+                .contains(&request.permit.context().request_id)
+                && !self
+                    .used_initiatives
+                    .contains(&request.permit.initiative_id()),
             "initiative reservation already attempted; reconcile original identity"
         );
-        self.used_requests.insert(request.context.request_id);
-        self.used_initiatives.insert(request.initiative_id);
+        self.used_requests
+            .insert(request.permit.context().request_id);
+        self.used_initiatives.insert(request.permit.initiative_id());
         drain(stream, window, credentials, output.as_ref(), lease).await?;
         self.check_request(&request, lease, window, controller, busy, output.as_ref())?;
         let validated = self
             .context
-            .validate(&request.context, ContextUse::OutputAdmission)
+            .validate(request.permit.context(), ContextUse::OutputAdmission)
             .await?;
         drain(stream, window, credentials, output.as_ref(), lease).await?;
         self.check_request(&request, lease, window, controller, busy, output.as_ref())?;
+        anyhow::ensure!(validated.lease.purpose() == crate::modules::memory::context::ContextPurpose::CompanionInvitation
+            && validated.lease.dependencies().iter().filter(|dependency| matches!(dependency,
+                crate::modules::memory::context::ContextEvidence::CompanionAdmission { .. })).count() == 1
+            && validated.lease.dependencies().iter().any(|dependency| matches!(dependency,
+                crate::modules::memory::context::ContextEvidence::CompanionAdmission { id, .. } if *id == request.permit.admission_id())),
+            "initiative Context does not carry its committed admission");
         revalidate(credentials, lease).await?;
         drain(stream, window, credentials, output.as_ref(), lease).await?;
         let source = credentials
@@ -300,16 +322,18 @@ impl Session {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("voice source absent"))?;
         anyhow::ensure!(
-            source.user_id == request.context.owner_id
-                && source.privacy_epoch == request.context.source_privacy_epoch
+            source.user_id == request.permit.context().owner_id
+                && source.privacy_epoch == request.permit.context().source_privacy_epoch
                 && validated.lease.source().channel_id == lease.channel,
             "initiative differs from original voice source"
         );
         let channel = source.channel();
-        let deadline = request
-            .deadline
-            .min(request.opportunity.expires_at)
-            .min(validated.lease.valid_until().unwrap_or(request.deadline));
+        let deadline = request.permit.deadline().min(
+            validated
+                .lease
+                .valid_until()
+                .unwrap_or(request.permit.deadline()),
+        );
         let current_owner = lease.slot.owner.lock().await;
         drain(stream, window, credentials, output.as_ref(), lease).await?;
         anyhow::ensure!(
@@ -327,25 +351,35 @@ impl Session {
             device_boot_id: self.boot,
             generation_epoch: controller.invalidate()?,
         };
+        anyhow::ensure!(
+            scope == request.permit.expected_scope(),
+            "actual voice scope differs from committed admission"
+        );
         self.opportunity = None;
         fence_output(&channel, scope, false, "initiative_output_admitted").await?;
         drain(stream, window, credentials, output.as_ref(), lease).await?;
         self.available(lease, window, busy, output.as_ref())?;
         anyhow::ensure!(
-            window.revision() == request.opportunity.speech_revision
+            window.revision() == request.permit.opportunity().speech_revision
                 && !request.cancel.is_cancelled()
-                && Utc::now() < deadline,
+                && Utc::now() < deadline
+                && Utc::now() < request.permit.admit_before(),
             "initiative opportunity expired during fence"
         );
         let producer = runtime.delivery.begin_voice_output(
-            request.context.owner_id,
-            request.context.request_id,
+            request.permit.context().owner_id,
+            request.permit.context().request_id,
             scope,
             channel,
             request.cancel.clone(),
             Some(runtime.hold_budget),
         )?;
-        producer.constrain_initiative(request.context.context_id, deadline)?;
+        let capture = alia_core::output_control::InitiativeCapture {
+            initiative_id: request.permit.initiative_id(),
+            request_id: request.permit.context().request_id,
+            through_sequence: request.permit.opportunity().through_sequence,
+        };
+        producer.constrain_initiative(request.permit.context().context_id, capture, deadline)?;
         *response_cancel = request.cancel.clone();
         self.active = Some(request.cancel.clone());
         *output = Some(producer.output());
@@ -355,10 +389,10 @@ impl Session {
             self.boot,
             scope.generation_epoch,
             session_event::Payload::InitiativeAdmitted(voice::InitiativeAdmitted {
-                initiative_id: request.initiative_id.to_string(),
-                request_id: request.context.request_id.to_string(),
-                context_id: request.context.context_id.to_string(),
-                through_sequence: window.through_sequence(),
+                initiative_id: request.permit.initiative_id().to_string(),
+                request_id: request.permit.context().request_id.to_string(),
+                context_id: request.permit.context().context_id.to_string(),
+                through_sequence: capture.through_sequence,
             }),
         )
         .await?;
@@ -373,8 +407,8 @@ impl Session {
         guard.disarm();
         session_guard.disarm();
         Ok(ReservedVoiceInitiative {
-            initiative_id: request.initiative_id,
-            context: request.context,
+            initiative_id: request.permit.initiative_id(),
+            context: request.permit.context().clone(),
             output: producer,
             scope,
             cancel: request.cancel,

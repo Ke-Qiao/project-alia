@@ -1,6 +1,8 @@
 //! The original producer's reversible gate. No database transaction or native
 //! I/O holds this lock. Expiry and cancellation can only close it permanently.
-use alia_core::playback_control::{HoldReason, ResumeAuthorization, ResumeKind};
+use alia_core::playback_control::{
+    HoldReason, LocalCaptureHoldSnapshot, ResumeAuthorization, ResumeKind,
+};
 use std::time::Duration;
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -77,6 +79,42 @@ impl Gate {
         };
         self.hold = Some(hold.clone());
         Some(hold)
+    }
+    /// The old Resume was applied, but a later device capture already closed
+    /// its local gate. Replace only that completed formal hold, never the owner.
+    pub fn handoff_after_applied_resume(
+        &mut self,
+        old_hold: Uuid,
+        local: LocalCaptureHoldSnapshot,
+        now: Instant,
+    ) -> anyhow::Result<Option<Hold>> {
+        anyhow::ensure!(
+            self.is_alive(now) && local.remaining_ms > 0,
+            "local capture hold expired"
+        );
+        let Some(old) = self.hold.as_ref() else {
+            anyhow::bail!("original resume hold disappeared");
+        };
+        if old.id != old_hold {
+            return Ok(None);
+        }
+        self.last_speech = Some(
+            self.last_speech
+                .map_or(local.through_sequence, |n| n.max(local.through_sequence)),
+        );
+        let deadline = old
+            .deadline
+            .min(self.deadline)
+            .min(now + Duration::from_millis(local.remaining_ms));
+        let hold = Hold {
+            id: Uuid::new_v4(),
+            reason: HoldReason::AcousticCandidate,
+            through_sequence: local.through_sequence,
+            deadline,
+            semantic_deadline: Some((now + TEMPORARY_HOLD).min(deadline)),
+        };
+        self.hold = Some(hold.clone());
+        Ok(Some(hold))
     }
     pub fn confirm(&mut self, through_sequence: u64, now: Instant) -> Option<Uuid> {
         if !self.is_alive(now) || self.last_speech.is_some_and(|n| n > through_sequence) {
@@ -178,5 +216,56 @@ mod tests {
         assert!(gate.is_alive(now));
         gate.media_owners = 0;
         assert!(!gate.is_alive(now));
+    }
+
+    #[test]
+    fn applied_resume_handoff_keeps_owner_closed_and_never_refreshes_original_deadline() {
+        let now = Instant::now();
+        let mut gate = Gate::new(now, DEFAULT_HOLD).unwrap();
+        let first = gate.hold(HoldReason::AcousticCandidate, 8, now).unwrap();
+        let second = gate
+            .handoff_after_applied_resume(
+                first.id,
+                LocalCaptureHoldSnapshot {
+                    through_sequence: 9,
+                    remaining_ms: 1000,
+                },
+                now + Duration::from_millis(50),
+            )
+            .unwrap()
+            .unwrap();
+        assert_ne!(second.id, first.id);
+        assert_eq!(second.deadline, now + Duration::from_millis(1050));
+        assert_eq!(gate.last_speech, Some(9));
+        assert!(!gate.resume(
+            first.id,
+            authorization(ResumeKind::FreshBackchannel, 9),
+            now
+        ));
+        assert!(!gate.resume(
+            second.id,
+            authorization(ResumeKind::FreshBackchannel, 8),
+            now
+        ));
+        assert!(
+            gate.handoff_after_applied_resume(
+                first.id,
+                LocalCaptureHoldSnapshot {
+                    through_sequence: 10,
+                    remaining_ms: 2000
+                },
+                now
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(gate.hold.as_ref().unwrap().deadline, second.deadline);
+        assert!(gate.resume(
+            second.id,
+            authorization(ResumeKind::FreshBackchannel, 9),
+            now
+        ));
+        assert!(gate.hold.is_none());
+        assert_eq!(gate.deadline, now + OUTPUT_LIFETIME);
     }
 }

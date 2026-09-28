@@ -125,7 +125,7 @@ impl Playback for PlaybackService {
             // The original owner survives an RPC timeout/drop. No binding or
             // Session mutex is held while waiting for a native write to settle.
             self.session
-                .wait_held(&command.binding.scope, command.command.hold_id)
+                .wait_bound_quiescent(&command.binding)
                 .await
                 .map_err(|error| Status::deadline_exceeded(error.to_string()))?;
             result = self

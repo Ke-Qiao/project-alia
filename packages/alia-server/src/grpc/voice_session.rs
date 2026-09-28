@@ -95,6 +95,7 @@ struct OutputRuntime {
     maximum_hold_ms: u64,
     initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
     initiative_output_enabled: bool,
+    initiative_capture_gate_version: u32,
 }
 
 fn negotiated_hold_limit(open: &voice::OpenSession) -> Result<u64, Status> {
@@ -257,7 +258,14 @@ impl VoiceSession for VoiceSessionService {
                 .initiative_admission
                 .then(|| self.initiatives.clone())
                 .flatten(),
-            initiative_output_enabled: false,
+            initiative_output_enabled: self.initiatives.is_some(),
+            initiative_capture_gate_version: if open.initiative_capture_gate_version
+                == alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION
+            {
+                open.initiative_capture_gate_version
+            } else {
+                0
+            },
         };
         self.runtime_tasks
             .try_spawn("voice_session", async move {
@@ -552,6 +560,7 @@ where
             channels: 1,
             max_frame_samples: MAX_FRAME_SAMPLES as u32,
             initiative_admission: initiatives.is_some(),
+            initiative_capture_gate_version: output_runtime.initiative_capture_gate_version,
         }),
     )
     .await?;
@@ -1220,6 +1229,8 @@ mod tests {
                 maximum_hold_ms: MAX_HOLD_MS,
                 initiatives: initiatives.clone(),
                 initiative_output_enabled: false,
+                initiative_capture_gate_version:
+                    alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
             };
             let task = tokio::spawn(async move {
                 run_session(
@@ -1376,19 +1387,20 @@ mod tests {
         let cancel = CancellationToken::new();
         let error = handle
             .reserve(
-                crate::modules::interaction::initiative::VoiceInitiativeRequest {
-                    initiative_id: Uuid::new_v4(),
-                    opportunity,
-                    context: crate::modules::memory::context::ContextBinding {
-                        context_id: Uuid::new_v4(),
-                        owner_id: owner,
-                        request_id: Uuid::new_v4(),
-                        source_event_id: None,
-                        source_privacy_epoch: 7,
-                    },
-                    deadline,
-                    cancel: cancel.clone(),
-                },
+                crate::modules::interaction::initiative::VoiceInitiativeRequest::from_permit(
+                    crate::modules::companion::live::LiveAdmissionPermit::fixture(
+                        opportunity,
+                        crate::modules::memory::context::ContextBinding {
+                            context_id: Uuid::new_v4(),
+                            owner_id: owner,
+                            request_id: Uuid::new_v4(),
+                            source_event_id: None,
+                            source_privacy_epoch: 7,
+                        },
+                        deadline,
+                    ),
+                    cancel.clone(),
+                ),
             )
             .await
             .unwrap_err();

@@ -361,6 +361,7 @@ fn capture_stream(
             protocol_version: VOICE_CONTRACT_VERSION, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
             software_hold: true, max_hold_ms: MAX_HOLD_MS,
             initiative_admission: true,
+            initiative_capture_gate_version: alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
         })) };
         // Local playback admission must be activated before audio can cause a
         // response to race back over the separate playback RPC connection.
@@ -460,6 +461,7 @@ struct SessionGuard {
     epoch: u64,
     through_sequence: Option<u64>,
     initiative_admission: bool,
+    initiative_capture_gate_version: u32,
     initiatives: std::collections::HashSet<Uuid>,
     initiative_requests: std::collections::HashSet<Uuid>,
 }
@@ -482,6 +484,7 @@ impl SessionGuard {
             epoch: 0,
             through_sequence: None,
             initiative_admission: false,
+            initiative_capture_gate_version: 0,
             initiatives: Default::default(),
             initiative_requests: Default::default(),
         }
@@ -520,7 +523,9 @@ impl SessionGuard {
             let (through_sequence, advances, initiative) = match event.payload {
                 Some(session_event::Payload::InitiativeAdmitted(admission)) => {
                     ensure!(
-                        self.initiative_admission,
+                        self.initiative_admission
+                            && self.initiative_capture_gate_version
+                                == alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
                         "initiative admission was not negotiated"
                     );
                     let initiative = Uuid::parse_str(&admission.initiative_id)?;
@@ -543,7 +548,7 @@ impl SessionGuard {
                     (
                         admission.through_sequence,
                         true,
-                        Some((initiative, request)),
+                        Some((initiative, request, context)),
                     )
                 }
                 Some(session_event::Payload::Evidence(evidence)) => {
@@ -599,18 +604,28 @@ impl SessionGuard {
             // Same-epoch evidence is never permission to release the native
             // gate. Only independently authenticated Control can do that.
             if advances {
-                self.playback
-                    .fence(
-                        &VoiceScope {
-                            device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
-                            session_id: Uuid::parse_str(&event.session_id)?,
-                            generation_epoch: event.generation_epoch,
+                let scope = VoiceScope {
+                    device_boot_id: Uuid::parse_str(&event.device_boot_id)?,
+                    session_id: Uuid::parse_str(&event.session_id)?,
+                    generation_epoch: event.generation_epoch,
+                };
+                if let Some((initiative_id, request_id, context_id)) = initiative {
+                    self.playback.admit_initiative_event(
+                        &scope,
+                        alia_core::output_control::InitiativeCapture {
+                            initiative_id,
+                            request_id,
+                            through_sequence,
                         },
-                        false,
-                    )
-                    .context("advancing local voice playback fence")?;
+                        context_id,
+                    )?;
+                } else {
+                    self.playback
+                        .fence(&scope, false)
+                        .context("advancing local voice playback fence")?;
+                }
             }
-            if let Some((initiative, request)) = initiative {
+            if let Some((initiative, request, _)) = initiative {
                 self.initiatives.insert(initiative);
                 self.initiative_requests.insert(request);
             }
@@ -641,6 +656,7 @@ impl SessionGuard {
                 .context("activating local voice playback session")?;
             self.session_id = Some(event.session_id.clone());
             self.initiative_admission = ready.initiative_admission;
+            self.initiative_capture_gate_version = ready.initiative_capture_gate_version;
             info!(session_id = %event.session_id, boot_id = %self.boot_id, "continuous voice session ready");
         }
         self.epoch = event.generation_epoch;

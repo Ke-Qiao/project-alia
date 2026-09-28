@@ -24,6 +24,7 @@ message OpenSession {
   bool software_hold = 4;     // Required; paired playback v3 contract.
   uint64 max_hold_ms = 5;     // Device engineering limit, not a requested timeout.
   bool initiative_admission = 6; // Explicit support; absent peers cannot receive initiatives.
+  uint32 initiative_capture_gate_version = 7; // Exactly 1 proves paired local capture Hold.
 }
 
 message CaptureFrame {
@@ -55,6 +56,7 @@ message SessionReady {
   bool software_hold = 5;     // Required; no implicit old WAIT compatibility.
   uint64 max_hold_ms = 6;     // Negotiated engineering upper bound.
   bool initiative_admission = 7;
+  uint32 initiative_capture_gate_version = 8;
 }
 
 // An owned proactive output, never a fabricated transcript or model decision.

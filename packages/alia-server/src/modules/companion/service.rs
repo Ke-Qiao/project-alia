@@ -1,5 +1,6 @@
-//! Bounded, restartable shadow work over canonical SQL facts. No output adapter
-//! or model is available to this service; a decision is never dispatch authority.
+//! Bounded work over canonical SQL facts. Shadow decisions never grant output;
+//! the optional live runner requires a fresh durable permit and the voice actor.
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -9,17 +10,24 @@ use std::time::Duration;
 use sea_orm::DatabaseConnection;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::{TaskTracker, task_tracker::TaskTrackerToken};
 use uuid::Uuid;
 
+use super::live::{LiveError, LiveRepository};
 use super::repository::{CompanionRepository, RepoError, RepoResult, ShadowReport};
+use super::runner::{LiveOutputs, LiveRunner, RunOutcome};
 use super::types::{CompanionPolicy, OpportunitySnapshot, PolicySnapshot};
 use crate::modules::interaction::initiative::VoiceInitiativeHandle;
 
 const BATCH_LIMIT: u16 = 32;
 const SCAN_INTERVAL: Duration = Duration::from_secs(5);
+const LIVE_TASK_LIMIT: usize = 4;
+const ATTEMPT_FENCE_LIMIT: usize = 1024;
+
+#[cfg(test)]
+mod tests;
 
 struct RequestPermit {
     _capacity: OwnedSemaphorePermit,
@@ -39,6 +47,8 @@ pub struct ScanProgress {
 
 pub struct CompanionService {
     repository: CompanionRepository,
+    live_repository: Arc<LiveRepository>,
+    live: Option<Arc<LiveRunner>>,
     voice: VoiceInitiativeHandle,
     instance_id: Uuid,
     cancel: CancellationToken,
@@ -47,7 +57,7 @@ pub struct CompanionService {
     requests: Arc<Semaphore>,
     in_flight: TaskTracker,
     scan_progress: std::sync::Mutex<ScanProgress>,
-    worker: Mutex<Option<JoinHandle<()>>>,
+    worker: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
 }
 
 impl CompanionService {
@@ -56,10 +66,13 @@ impl CompanionService {
         voice: VoiceInitiativeHandle,
         cancel: CancellationToken,
     ) -> Self {
+        let instance_id = voice.instance_id();
         Self {
-            repository: CompanionRepository::new(db),
+            repository: CompanionRepository::new(db.clone()),
+            live_repository: Arc::new(LiveRepository::new(db, instance_id)),
+            live: None,
             voice,
-            instance_id: Uuid::new_v4(),
+            instance_id,
             cancel: cancel.child_token(),
             closed: AtomicBool::new(false),
             admission: std::sync::Mutex::new(()),
@@ -68,6 +81,22 @@ impl CompanionService {
             scan_progress: std::sync::Mutex::new(ScanProgress::default()),
             worker: Mutex::new(None),
         }
+    }
+
+    /// Construction-time wiring only. Default policy remains shadow; Enabled
+    /// also requires durable admission and the paired actor's local capture gate.
+    pub(crate) fn with_live_outputs(mut self, outputs: LiveOutputs) -> Self {
+        self.live = Some(Arc::new(LiveRunner::new(
+            self.live_repository.clone(),
+            self.voice.clone(),
+            outputs,
+            self.cancel.clone(),
+        )));
+        self
+    }
+
+    pub fn live_ready(&self) -> bool {
+        self.live.is_some()
     }
 
     fn admit(&self) -> RepoResult<RequestPermit> {
@@ -125,9 +154,16 @@ impl CompanionService {
         policy: CompanionPolicy,
     ) -> RepoResult<PolicySnapshot> {
         let _permit = self.admit()?;
-        self.repository
-            .replace_policy(owner, expected, policy)
-            .await
+        if self.live_ready() {
+            self.live_repository
+                .replace_policy(owner, expected, policy)
+                .await
+                .map_err(live_error)
+        } else {
+            self.repository
+                .replace_policy(owner, expected, policy)
+                .await
+        }
     }
 
     pub async fn evaluate(
@@ -158,20 +194,112 @@ impl CompanionService {
         }
         let service = self.clone();
         *worker = Some(tokio::spawn(async move {
+            let mut live_tasks = JoinSet::new();
+            let mut active_channels = HashSet::new();
+            // A failed/unknown frozen attempt cannot take another snapshot on
+            // a later scan, even if its bounded SQL retirement was unavailable.
+            // Entries expire only at the original candidate's fixed deadline.
+            let mut attempted = HashMap::new();
+            // Rotate past disconnected/busy devices without changing candidate
+            // expiry or taking a second opportunity for a frozen attempt.
+            let mut inspected = HashMap::new();
+            let mut failure = None;
             let mut interval = tokio::time::interval(SCAN_INTERVAL);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
                     biased;
                     _ = service.cancel.cancelled() => break,
+                    result = live_tasks.join_next(), if !live_tasks.is_empty() => {
+                        match result.expect("nonempty live tasks") {
+                            Ok((id, channel, outcome)) => {
+                                active_channels.remove(&channel);
+                                if matches!(outcome, RunOutcome::NoOpportunity) {
+                                    attempted.remove(&id);
+                                }
+                                report_live_outcome(outcome);
+                            }
+                            Err(error) => {
+                                service.close();
+                                failure = Some(anyhow::Error::from(error));
+                                break;
+                            }
+                        }
+                        continue;
+                    }
                     _ = interval.tick() => {}
                 }
                 tokio::select! {
                     biased;
                     _ = service.cancel.cancelled() => break,
-                    _ = service.scan_batch() => {}
+                    result = tokio::time::timeout(SCAN_INTERVAL, service.scan_batch()) => {
+                        if result.is_err() {
+                            tracing::warn!("Companion shadow scan reached its batch deadline");
+                        }
+                    }
+                }
+                if let Some(runner) = &service.live {
+                    attempted.retain(|_, deadline| *deadline > chrono::Utc::now());
+                    inspected.retain(|_, deadline| *deadline > chrono::Utc::now());
+                    let excluded: Vec<_> = attempted
+                        .keys()
+                        .chain(inspected.keys())
+                        .copied()
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
+                    let candidates = tokio::select! {
+                        biased;
+                        _ = service.cancel.cancelled() => break,
+                        result = async {
+                            service.live_repository.retire_batch(BATCH_LIMIT).await?;
+                            service.live_repository.discover_pending_excluding(BATCH_LIMIT, &excluded).await
+                        } => result,
+                    };
+                    match candidates {
+                        Ok(candidates) => {
+                            if candidates.is_empty() {
+                                inspected.clear();
+                            }
+                            for pending in candidates {
+                                if live_tasks.len() >= LIVE_TASK_LIMIT
+                                    || attempted.len() + inspected.len() >= ATTEMPT_FENCE_LIMIT
+                                {
+                                    break;
+                                }
+                                if attempted.contains_key(&pending.candidate_id) {
+                                    continue;
+                                }
+                                if !active_channels.insert(pending.channel_id.clone()) {
+                                    inspected.insert(pending.candidate_id, pending.expires_at);
+                                    continue;
+                                }
+                                let id = pending.candidate_id;
+                                let channel = pending.channel_id.clone();
+                                attempted.insert(id, pending.expires_at);
+                                inspected.insert(id, pending.expires_at);
+                                let runner = runner.clone();
+                                live_tasks
+                                    .spawn(async move { (id, channel, runner.run(pending).await) });
+                            }
+                        }
+                        Err(_) => tracing::warn!(
+                            "Companion live discovery unavailable; deferred to next scan"
+                        ),
+                    }
                 }
             }
+            service.cancel.cancel();
+            // Child tokens are cancelled before draining. No JoinSet is dropped
+            // with outstanding attempts while shared dependencies are released.
+            while let Some(result) = live_tasks.join_next().await {
+                match result {
+                    Ok((_, _, outcome)) => report_live_outcome(outcome),
+                    Err(error) if failure.is_none() => failure = Some(error.into()),
+                    Err(_) => (),
+                }
+            }
+            failure.map_or(Ok(()), Err)
         }));
         Ok(())
     }
@@ -191,7 +319,9 @@ impl CompanionService {
             // Keep the handle in its owner even if the caller's grace expires.
             let result = task.await;
             worker.take();
-            result.map_err(anyhow::Error::from)
+            result
+                .map_err(anyhow::Error::from)
+                .and_then(std::convert::identity)
         } else {
             Ok(())
         };
@@ -301,4 +431,28 @@ fn automatic_operation_id(owner: Uuid, appraisal: Uuid) -> Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
+}
+
+fn live_error(error: LiveError) -> RepoError {
+    match error {
+        LiveError::InvalidInput => RepoError::InvalidInput("invalid live Companion policy".into()),
+        LiveError::Conflict => RepoError::Conflict,
+        LiveError::Forbidden => RepoError::Forbidden,
+        LiveError::Unavailable(_) | LiveError::CommitUnknown { .. } => {
+            RepoError::Unavailable("live Companion completion unconfirmed".into())
+        }
+    }
+}
+
+fn report_live_outcome(outcome: RunOutcome) {
+    match outcome {
+        RunOutcome::Failed(stage) => tracing::warn!(
+            stage,
+            "original Companion attempt ended without confirmed output"
+        ),
+        RunOutcome::Observed(status) => {
+            tracing::debug!(?status, "original Companion Delivery observation recorded")
+        }
+        RunOutcome::NoOpportunity | RunOutcome::Existing | RunOutcome::Retired => (),
+    }
 }

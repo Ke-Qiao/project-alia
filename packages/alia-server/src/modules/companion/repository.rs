@@ -259,6 +259,15 @@ impl CompanionRepository {
                 source.appraisals[0].appraisal_id,
             )
         });
+        // Shared immutable origin also covers observations limited out of this
+        // shadow batch; no later live policy can promote the same source.
+        for observation in &sources {
+            tx.execute(sql("INSERT INTO companion_source_claims(owner_id,source_event_id,kind,generator_version,origin_mode,policy_revision) VALUES($1,$2,'follow_up_invitation',$3,'shadow',$4) ON CONFLICT DO NOTHING", vec![owner.into(), observation.source_event_id.into(), GENERATOR_VERSION.into(), policy.revision.into()])).await?;
+            let claim = tx.query_one(sql("SELECT origin_mode FROM companion_source_claims WHERE owner_id=$1 AND source_event_id=$2 AND kind='follow_up_invitation' AND generator_version=$3", vec![owner.into(), observation.source_event_id.into(), GENERATOR_VERSION.into()])).await?.unwrap();
+            if claim.try_get::<String>("", "origin_mode")? != "shadow" {
+                return Err(RepoError::Conflict);
+            }
+        }
         let opportunity =
             opportunity.unwrap_or_else(|| OpportunitySnapshot::unavailable(authority.as_of));
         let mut decisions = Vec::new();
@@ -372,7 +381,7 @@ impl CompanionRepository {
             ));
         }
         let tx = self.transaction().await?;
-        let rows = tx.query_all(sql("SELECT a.owner_id,a.appraisal_id,c.channel_id FROM appraisal_records a JOIN context_leases c ON c.context_id=a.context_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state p ON p.user_id=a.owner_id AND p.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority r ON r.owner_id=a.owner_id AND r.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version LEFT JOIN companion_policies cp ON cp.owner_id=a.owner_id WHERE a.status='active' AND a.source_fact->>'kind'='user_message' AND a.valid_until>clock_timestamp() AND a.effective_at<=clock_timestamp() AND a.effective_at+(COALESCE((cp.policy->>'candidate_ttl_seconds')::integer,60)*interval '1 second')>clock_timestamp() AND COALESCE(cp.policy->>'mode','shadow')='shadow' AND (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND NOT EXISTS(SELECT 1 FROM companion_processed_sources s WHERE s.owner_id=a.owner_id AND (s.appraisal_id=a.appraisal_id OR s.source_event_id=a.source_event_id)) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources s WHERE s.owner_id=a.owner_id AND s.appraisal_id=a.appraisal_id) ORDER BY a.effective_at,a.appraisal_id LIMIT $1", vec![i64::from(limit).into()])).await?;
+        let rows = tx.query_all(sql("SELECT a.owner_id,a.appraisal_id,c.channel_id FROM appraisal_records a JOIN context_leases c ON c.context_id=a.context_id JOIN users u ON u.id=a.owner_id AND u.status='active' JOIN memory_privacy_state p ON p.user_id=a.owner_id AND p.privacy_epoch=a.source_privacy_epoch JOIN relationship_authority r ON r.owner_id=a.owner_id AND r.relationship_epoch=a.source_relationship_epoch JOIN context_policy g ON g.singleton AND g.version=a.policy_version LEFT JOIN companion_policies cp ON cp.owner_id=a.owner_id WHERE a.status='active' AND a.source_fact->>'kind'='user_message' AND a.valid_until>clock_timestamp() AND a.effective_at<=clock_timestamp() AND a.effective_at+(COALESCE((cp.policy->>'candidate_ttl_seconds')::integer,60)*interval '1 second')>clock_timestamp() AND COALESCE(cp.policy->>'mode','shadow')='shadow' AND (g.policy->'appraisal'->'affect'->>'enabled')::boolean AND (g.policy->'appraisal'->'affect'->>'relationship_profile_user_visible')::boolean AND g.policy->>'paused_until' IS NULL AND NOT EXISTS(SELECT 1 FROM companion_processed_sources s WHERE s.owner_id=a.owner_id AND (s.appraisal_id=a.appraisal_id OR s.source_event_id=a.source_event_id)) AND NOT EXISTS(SELECT 1 FROM companion_rejected_sources s WHERE s.owner_id=a.owner_id AND s.appraisal_id=a.appraisal_id) AND NOT EXISTS(SELECT 1 FROM companion_source_claims s WHERE s.owner_id=a.owner_id AND s.source_event_id=a.source_event_id) ORDER BY a.effective_at,a.appraisal_id LIMIT $1", vec![i64::from(limit).into()])).await?;
         tx.commit().await?;
         rows.into_iter()
             .map(|row| {
@@ -406,7 +415,10 @@ impl CompanionRepository {
     }
 }
 
-async fn locked_policy(tx: &DatabaseTransaction, owner: Uuid) -> RepoResult<PolicySnapshot> {
+pub(super) async fn locked_policy(
+    tx: &DatabaseTransaction,
+    owner: Uuid,
+) -> RepoResult<PolicySnapshot> {
     let seed = CompanionPolicy::default();
     tx.execute(sql("INSERT INTO companion_policies(owner_id,policy,policy_digest) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", vec![owner.into(), json!(seed).into(), canonical_digest(&seed)?.into()])).await?;
     let row = tx.query_one(sql("SELECT revision,policy,policy_digest FROM companion_policies WHERE owner_id=$1 FOR UPDATE", vec![owner.into()])).await?.ok_or(RepoError::Forbidden)?;
@@ -525,4 +537,4 @@ fn sql(text: &str, values: Vec<Value>) -> Statement {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

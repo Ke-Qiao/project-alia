@@ -239,6 +239,7 @@ fn evidence_key(value: &ContextEvidence) -> (u8, Uuid) {
         ContextEvidence::Appraisal { id, .. } => (7, *id),
         ContextEvidence::AffectProjection { id, .. } => (8, *id),
         ContextEvidence::MemorySourceMessage { id, .. } => (9, *id),
+        ContextEvidence::CompanionAdmission { id, .. } => (10, *id),
     }
 }
 
@@ -246,11 +247,30 @@ pub(crate) async fn validate_evidence(
     tx: &DatabaseTransaction,
     lease: &ContextLease,
 ) -> ContextResult<()> {
+    let admissions = lease
+        .dependencies
+        .iter()
+        .filter(|reference| matches!(reference, ContextEvidence::CompanionAdmission { .. }))
+        .count();
+    if admissions != usize::from(lease.purpose == ContextPurpose::CompanionInvitation) {
+        return Err(revoked(
+            "companion evidence requires its dedicated invitation purpose",
+        ));
+    }
     let mut refs = lease.dependencies.clone();
     refs.sort_by_key(evidence_key);
     for reference in &refs {
         let owner = lease.source.owner_id;
         match reference {
+            ContextEvidence::CompanionAdmission { id, intent_digest } => {
+                Box::pin(super::companion::validate_invitation_reference(
+                    tx,
+                    lease,
+                    *id,
+                    intent_digest,
+                ))
+                .await?;
+            }
             ContextEvidence::Relationship { epoch } => {
                 if super::appraisal::relationship_epoch(tx, owner).await? != *epoch {
                     return Err(revoked("relationship projection was cleared"));

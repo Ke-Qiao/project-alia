@@ -53,6 +53,7 @@ struct ActiveSession {
     control: Option<Arc<PlaybackControl>>,
     registration: Option<alia_core::output_control::OutputRegistration>,
     capture: Option<CaptureControlBarrier>,
+    initiative_event: Option<(alia_core::output_control::InitiativeCapture, Uuid)>,
     maximum_hold_ms: u64,
     retired: bool,
 }
@@ -153,6 +154,7 @@ impl PlaybackSession {
         }
         active.retired = true;
         active.input = None;
+        active.initiative_event = None;
         if let Some(control) = active.control.as_ref() {
             control.retire(alia_core::playback_control::RetiredReason::Cancelled);
         }
@@ -282,6 +284,7 @@ impl PlaybackSession {
             observations: HashMap::new(),
             control: None,
             registration: None,
+            initiative_event: None,
             capture,
             maximum_hold_ms,
             retired: false,
@@ -348,6 +351,40 @@ impl PlaybackSession {
         body.and(audio)?;
         Ok(true)
     }
+    /// The independently authenticated Register is safe even when its RPC wins
+    /// the race with this voice event. Neither ordering may replace its gate.
+    pub fn admit_initiative_event(
+        &self,
+        scope: &VoiceScope,
+        capture: alia_core::output_control::InitiativeCapture,
+        context_id: Uuid,
+    ) -> Result<()> {
+        ensure!(
+            capture.is_valid() && !context_id.is_nil(),
+            "invalid initiative event identity"
+        );
+        self.fence(scope, false)?;
+        let mut state = self.lock()?;
+        let active = state
+            .as_mut()
+            .filter(|active| active.scope == *scope && !active.retired)
+            .ok_or_else(|| anyhow::anyhow!("initiative event scope is stale"))?;
+        if let Some(previous) = active.initiative_event {
+            ensure!(
+                previous == (capture, context_id),
+                "initiative event changed original binding"
+            );
+        }
+        if let Some(registration) = &active.registration {
+            ensure!(
+                registration.binding.initiative_capture == Some(capture)
+                    && registration.binding.context_id == context_id,
+                "initiative event differs from registered output"
+            );
+        }
+        active.initiative_event = Some((capture, context_id));
+        Ok(())
+    }
     pub fn begin(
         &self,
         scope: &VoiceScope,
@@ -413,6 +450,18 @@ impl PlaybackSession {
                 active.registration.is_none(),
                 "registered output requires its exact binding"
             ),
+        }
+        if binding.is_some_and(|binding| binding.initiative_capture.is_some()) {
+            let (through, speech) = active
+                .capture
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("initiative capture owner absent"))?
+                .watermarks()?;
+            active
+                .control
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("initiative control owner absent"))?
+                .validate_initiative_start(through, speech)?;
         }
         ensure!(
             same_session(&active.scope, scope),
