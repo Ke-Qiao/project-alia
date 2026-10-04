@@ -34,37 +34,39 @@ Paths are resolved relative to the embedded config file.
 
 ## Animation Format
 
-The `.anim` files keep the Python format:
+The `.anim` reader requires:
 
 - first line: blendshape count/header, currently ignored by Rust
-- following lines: whitespace-separated numbers
-- Rust reads the first three values per frame as `[rot_x, rot_y, rot_z]`
+- following nonempty lines: exactly three finite whitespace-separated numbers
+  as `[rot_x, rot_y, rot_z]`, each within `[-180, 180]`
+- at most 64 KiB per file and 600 source frames; loops and playback cadence
+  must fit the declared bounded action duration
 
 ## Expression Action
 
-The native motion runtime supports bounded animation playback through the
-generic embedded expression service:
+The native motion runtime accepts animation actions inside the signed
+`alia.body.v1.BodyControl/Exchange` command. The old scope-free generic
+expression execution path is disabled. An animation action has this shape:
 
 ```json
 {
-  "id": "demo-neck-animation",
-  "timeline": [
-    {
-      "action": "play_animation",
-      "duration_ms": 1200,
-      "params": {
-        "name": "neck",
-        "fps": 30,
-        "loops": 1
-      }
-    }
-  ]
+  "duration_ms": 1200,
+  "intensity": 0.2,
+  "motion": { "kind": "animation", "file": "neck", "fps": 30, "loops": 1 }
 }
 ```
 
-`name` may be `neck`, `neck2`, or an explicit `.anim` file name inside
-`animation_dir`. Paths are rejected intentionally; animations must live in the
-configured asset directory.
+This is an action fragment, not a complete executable request. The original
+Response/owner, voice or nonvoice scope, boot/control lease, sequence, binding
+and signatures are required; see [the body contract](../../../docs/refactor/body-command-design.md).
+The file must pass the current size/frame/duration validation before admission.
+
+`file` may be `neck`, `neck2`, or an explicit `.anim` file name inside
+`animation_dir`. Paths and symlink escapes are rejected; animations must be
+regular files within the configured asset directory. The command signature
+covers the file name and playback parameters, not the file contents. Local
+asset signatures/hashes and validation against the selected mechanism remain
+R03 work; these historical files are not evidence of hardware safety.
 
 ## Delete Boundary
 

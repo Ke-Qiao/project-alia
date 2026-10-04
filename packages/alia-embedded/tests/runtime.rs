@@ -133,6 +133,10 @@ impl ModuleLifecycle for Probe {
     }
 }
 impl WakeWordEngine for Probe {
+    fn reset(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn detect(&self, _: &[i16]) -> Option<WakeWordEvent> {
         None
     }

@@ -1,11 +1,21 @@
 use super::*;
 use crate::{
     binding::BindingState,
-    config::MotionConfig,
-    module::{lifecycle::ModuleLifecycle, noop::NoopAudioPlayback},
+    config::{EmbeddedConfig, MotionConfig},
+    grpc::DeviceBindingService,
+    module::{
+        lifecycle::ModuleLifecycle,
+        noop::{NoopAudioPlayback, NoopDiscovery},
+    },
+    plugin::PluginRegistry,
+    settings::EmbeddedSettingsManager,
     storage::EmbeddedStore,
 };
 use alia_core::delivery::VoiceScope;
+use alia_proto::binding::{
+    BindRequest, UnbindRequest, device_binding_client::DeviceBindingClient,
+    device_binding_server::DeviceBindingServer,
+};
 use alia_proto::body::{
     body_control_client::BodyControlClient, body_control_server::BodyControlServer,
 };
@@ -21,6 +31,8 @@ use uuid::Uuid;
 struct Fixture {
     _dir: tempfile::TempDir,
     client: BodyControlClient<tonic::transport::Channel>,
+    binding_client: DeviceBindingClient<tonic::transport::Channel>,
+    endpoint: String,
     binding: Arc<BindingManager>,
     motion: Arc<MotionRuntime>,
     playback: Arc<PlaybackSession>,
@@ -98,20 +110,40 @@ impl Fixture {
             "body-test-device".into(),
             device_key.clone(),
         );
+        let mut config = EmbeddedConfig::default();
+        config.identity.device_id = "body-test-device".into();
+        config.config_path = dir.path().join("embedded.toml");
+        let binding_service = DeviceBindingService::new(
+            binding.clone(),
+            config.identity.clone(),
+            Arc::new(NoopDiscovery),
+            Arc::new(PluginRegistry::new(dir.path().join("plugins"))),
+            motion.clone(),
+            Arc::new(EmbeddedSettingsManager::new(&config)),
+            device_key.verifying_key().to_bytes().to_vec(),
+        );
         let stop = CancellationToken::new();
         let shutdown = stop.clone();
         let server = tokio::spawn(async move {
             tonic::transport::Server::builder()
                 .add_service(BodyControlServer::new(service))
+                .add_service(DeviceBindingServer::new(binding_service))
                 .serve_with_incoming_shutdown(incoming, shutdown.cancelled())
                 .await
         });
-        let client = BodyControlClient::connect(format!("http://{address}"))
+        let endpoint = format!("http://{address}");
+        let transport = tonic::transport::Channel::from_shared(endpoint.clone())
+            .unwrap()
+            .connect()
             .await
             .unwrap();
+        let client = BodyControlClient::new(transport.clone());
+        let binding_client = DeviceBindingClient::new(transport);
         Self {
             _dir: dir,
             client,
+            binding_client,
+            endpoint,
             binding,
             motion,
             playback,
@@ -138,11 +170,7 @@ impl Fixture {
         let signature = sign_payload(&self.server_key, &body_request_payload(&payload));
         SignedBodyPayload { payload, signature }
     }
-    async fn raw(
-        &self,
-        envelope: SignedBodyPayload,
-        ttl: Duration,
-    ) -> std::result::Result<SignedBodyPayload, Status> {
+    fn authenticated<T>(&self, body: T, ttl: Duration) -> Request<T> {
         let token = mint_auth_token(
             &self.server_key,
             "body-test-server",
@@ -150,13 +178,20 @@ impl Fixture {
             ttl,
         )
         .unwrap();
-        let mut request = Request::new(envelope);
+        let mut request = Request::new(body);
         request
             .metadata_mut()
             .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        request
+    }
+    async fn raw(
+        &self,
+        envelope: SignedBodyPayload,
+        ttl: Duration,
+    ) -> std::result::Result<SignedBodyPayload, Status> {
         self.client
             .clone()
-            .exchange(request)
+            .exchange(self.authenticated(envelope, ttl))
             .await
             .map(Response::into_inner)
     }
@@ -215,6 +250,7 @@ impl Fixture {
     }
     async fn finish(self) {
         drop(self.client);
+        drop(self.binding_client);
         self.stop.cancel();
         tokio::time::timeout(Duration::from_secs(3), self.server)
             .await
@@ -229,9 +265,9 @@ impl Fixture {
     }
 }
 
-async fn with_node(
-    test: impl for<'a> FnOnce(&'a Fixture) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
-) {
+async fn with_node<T>(
+    test: impl for<'a> FnOnce(&'a Fixture) -> Pin<Box<dyn Future<Output = T> + Send + 'a>>,
+) -> T {
     let fixture = Fixture::new().await;
     let result = AssertUnwindSafe(tokio::time::timeout(
         Duration::from_secs(15),
@@ -241,7 +277,7 @@ async fn with_node(
     .await;
     fixture.finish().await;
     match result {
-        Ok(Ok(())) => {}
+        Ok(Ok(result)) => result,
         Ok(Err(_)) => panic!("body RPC test timed out"),
         Err(panic) => std::panic::resume_unwind(panic),
     }
@@ -449,6 +485,188 @@ async fn forged_target_signature_timestamp_and_binding_retirement_prevent_writes
                 observation.snapshot().end,
                 Some(BodyEnd::Cancelled { .. })
             ));
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn public_status_reachability_and_reconnect_cannot_authorize_unbound_or_foreign_body_control()
+{
+    with_node(|node| {
+        Box::pin(async move {
+            let lease = node.open().await;
+            let command = node.command(
+                lease,
+                1,
+                BodyScope::Nonvoice {
+                    scope_id: Uuid::new_v4(),
+                },
+            );
+            let mut binding = node.binding_client.clone();
+            assert!(
+                binding
+                    .unbind(node.authenticated(
+                        UnbindRequest {
+                            server_id: "body-test-server".into(),
+                        },
+                        Duration::from_secs(60),
+                    ))
+                    .await
+                    .unwrap()
+                    .into_inner()
+                    .success
+            );
+            for foreign_binding in [false, true] {
+                if foreign_binding {
+                    let key = SigningKey::from_bytes(&[47; 32]);
+                    let public = key.verifying_key().to_bytes();
+                    let issued_at = current_unix_timestamp().unwrap();
+                    let auth_token = sign_payload(
+                        &key,
+                        &bind_payload(
+                            "other-server",
+                            "Other",
+                            "http://127.0.0.1:2",
+                            &public,
+                            issued_at,
+                        ),
+                    );
+                    assert!(
+                        binding
+                            .bind(BindRequest {
+                                server_id: "other-server".into(),
+                                server_name: "Other".into(),
+                                server_endpoint: "http://127.0.0.1:2".into(),
+                                auth_token,
+                                server_public_key: public.to_vec(),
+                                issued_at,
+                            })
+                            .await
+                            .unwrap()
+                            .into_inner()
+                            .success
+                    );
+                }
+                // This public RPC remains reachable without any bearer token.
+                // Neither a nonempty device ID nor is_bound grants body authority.
+                let status = binding.get_binding_status(()).await.unwrap().into_inner();
+                assert_eq!(status.device_id, "body-test-device");
+                assert_eq!(status.is_bound, foreign_binding);
+                assert_eq!(
+                    status.bound_server_id,
+                    if foreign_binding { "other-server" } else { "" }
+                );
+                assert!(node.motion.control_state().lease.is_none());
+                // Establish a new TCP/gRPC connection after each binding change.
+                let mut reconnected = BodyControlClient::connect(node.endpoint.clone())
+                    .await
+                    .unwrap();
+                for operation in [
+                    BodyOperation::Inspect,
+                    BodyOperation::Open {
+                        device_boot_id: lease.device_boot_id,
+                        expected_generation: lease.generation,
+                        server_instance_id: lease.server_instance_id,
+                    },
+                    BodyOperation::Submit {
+                        command: command.clone(),
+                    },
+                ] {
+                    let request = node.request(operation);
+                    let error = reconnected
+                        .exchange(
+                            node.authenticated(node.envelope(&request), Duration::from_secs(60)),
+                        )
+                        .await
+                        .unwrap_err();
+                    assert_eq!(error.code(), tonic::Code::FailedPrecondition);
+                }
+                assert!(node.motion.observe(command.identity).is_err());
+                assert!(node.motion.control_state().lease.is_none());
+            }
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn replacement_runtime_boot_rejects_original_control_and_command_without_replaying() {
+    // Two sequential mock runtimes retain the same fixture device/server keys.
+    // This covers the boot contract, not process-kill or controller power loss.
+    let original = with_node(|node| {
+        Box::pin(async move {
+            let command = node.command(
+                node.open().await,
+                1,
+                BodyScope::Nonvoice {
+                    scope_id: Uuid::new_v4(),
+                },
+            );
+            node.call(BodyOperation::Submit {
+                command: command.clone(),
+            })
+            .await
+            .unwrap();
+            let BodyEvidence::Progress { progress } = node
+                .call(BodyOperation::Cancel {
+                    command: command.clone(),
+                    reason: "close first mock runtime".into(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert!(progress.writer_quiescent && progress.position_confirmed_actions.is_none());
+            command
+        })
+    })
+    .await;
+    with_node(move |node| {
+        Box::pin(async move {
+            let before = node.motion.control_state();
+            let lease = original.identity.lease;
+            assert_ne!(before.device_boot_id, lease.device_boot_id);
+            for operation in [
+                BodyOperation::Open {
+                    device_boot_id: lease.device_boot_id,
+                    expected_generation: before.generation,
+                    server_instance_id: lease.server_instance_id,
+                },
+                BodyOperation::Submit {
+                    command: original.clone(),
+                },
+                BodyOperation::Observe {
+                    identity: original.identity,
+                    after_receipt_sequence: 0,
+                },
+                BodyOperation::Cancel {
+                    command: original.clone(),
+                    reason: "late old cancel".into(),
+                },
+                BodyOperation::Close {
+                    lease,
+                    reason: "late old close".into(),
+                },
+            ] {
+                assert!(node.call(operation).await.is_err());
+                assert_eq!(node.motion.control_state(), before);
+            }
+            assert!(node.motion.observe(original.identity).is_err());
+            let fresh = node.command(node.open().await, 1, original.scope);
+            let BodyEvidence::Progress { progress } = node
+                .call(BodyOperation::Submit {
+                    command: fresh.clone(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            progress.validate(None, &fresh).unwrap();
+            assert_eq!(progress.accepted_actions, 1);
+            assert!(progress.position_confirmed_actions.is_none());
         })
     })
     .await;

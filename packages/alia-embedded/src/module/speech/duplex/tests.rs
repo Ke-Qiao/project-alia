@@ -3,6 +3,7 @@ use crate::module::context::AudioBus;
 use crate::module::lifecycle::ModuleLifecycle;
 use crate::module::traits::{AudioPlaybackBackend, WakeWordEvent};
 use crate::storage::EmbeddedStore;
+use alia_core::audio_clock::{AudioClockReading, AudioStreamId, AudioTimeQuality, AudioTiming};
 use alia_proto::voice::{
     SessionReady, TurnEvidence,
     voice_session_server::{VoiceSession, VoiceSessionServer},
@@ -19,6 +20,9 @@ struct LocalAudio {
     stops: AtomicU64,
     generation: AtomicU64,
     captured: AtomicU64,
+    wake_prefix: std::sync::atomic::AtomicBool,
+    wake_checks: AtomicU64,
+    wake_resets: AtomicU64,
     control: std::sync::Mutex<Option<Arc<crate::module::playback_session::PlaybackControl>>>,
 }
 
@@ -161,8 +165,24 @@ impl VoiceActivityEngine for LocalAudio {
     }
 }
 impl WakeWordEngine for LocalAudio {
+    fn reset(&self) -> Result<()> {
+        self.wake_prefix.store(false, Ordering::SeqCst);
+        self.wake_resets.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent> {
-        (pcm.first() == Some(&99)).then(|| WakeWordEvent {
+        let detected = match pcm.first() {
+            Some(97) => {
+                self.wake_prefix.store(true, Ordering::SeqCst);
+                false
+            }
+            Some(98) => self.wake_prefix.swap(false, Ordering::SeqCst),
+            Some(99) => true,
+            _ => false,
+        };
+        self.wake_checks.fetch_add(1, Ordering::SeqCst);
+        detected.then(|| WakeWordEvent {
             keyword: "wake".into(),
             confidence: 1.0,
             timestamp_us: 0,
@@ -405,6 +425,55 @@ fn publish(bus: &AudioBus, value: i16, offset: u64) {
     });
 }
 
+fn native_frame(value: i16, offset: u64, stream_id: Uuid, continuity: u64) -> AudioFrame {
+    AudioFrame {
+        timing: Some(CaptureTiming {
+            native: AudioTiming {
+                stream: AudioStreamId {
+                    boot_id: Uuid::from_u128(1),
+                    stream_id,
+                    direction: AudioDirection::Capture,
+                },
+                format: AudioFormat {
+                    sample_rate_hz: 48000,
+                    channels: 2,
+                },
+                start_frame: offset * 3,
+                frames: 960,
+                continuity,
+                clock: AudioClockReading {
+                    clock_id: stream_id,
+                    callback_ns: None,
+                    sample_ns: None,
+                    queued_frames: None,
+                    quality: AudioTimeQuality::Unknown,
+                },
+                observed_boot_ns: 0,
+            },
+            converted_format: AudioFormat {
+                sample_rate_hz: SAMPLE_RATE,
+                channels: 1,
+            },
+            converted_start_frame: offset,
+            converted_frames: 320,
+            resampled: true,
+        }),
+        pcm: vec![value; 320],
+        sample_rate: SAMPLE_RATE,
+        timestamp_us: offset * 1_000_000 / SAMPLE_RATE as u64,
+    }
+}
+
+async fn reached(counter: &AtomicU64, count: u64) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while counter.load(Ordering::SeqCst) < count {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn captures_during_playback_receives_all_turn_states_and_reconnects() {
     let Harness {
@@ -587,6 +656,155 @@ async fn audio_bus_lag_ends_active_stream_instead_of_hiding_a_gap() {
 }
 
 #[tokio::test]
+async fn native_xrun_or_restart_retires_active_output_before_fresh_wake() {
+    for restart in [false, true] {
+        let Harness {
+            runtime,
+            audio,
+            events: _,
+            local,
+            mut seen,
+            shutdown,
+            server,
+            _directory,
+        } = harness(8).await;
+        let cancel = runtime.cancel.clone();
+        let playback = runtime.playback_session.clone();
+        let task = tokio::spawn(runtime.run());
+        let original = Uuid::new_v4();
+        audio.publish(native_frame(99, 0, original, 1));
+        let Seen::Opened {
+            output,
+            boot,
+            session,
+        } = received(&mut seen).await
+        else {
+            panic!("expected Open")
+        };
+        assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+        let lease = playback
+            .begin(
+                &VoiceScope {
+                    device_boot_id: Uuid::parse_str(&boot).unwrap(),
+                    session_id: Uuid::parse_str(&session).unwrap(),
+                    generation_epoch: 2,
+                },
+                &Uuid::new_v4().to_string(),
+                1,
+                24000,
+            )
+            .unwrap();
+        assert!(playback.enqueue(&lease, &[1, 2, 3]).unwrap());
+        assert!(playback.end(&lease).unwrap());
+
+        let (next_stream, next_continuity) = if restart {
+            (Uuid::new_v4(), 1)
+        } else {
+            (original, 2)
+        };
+        // The converted clock remains continuous. Only native evidence exposes
+        // the xrun/reopen, before this frame can reach VAD or the old upload.
+        audio.publish(native_frame(98, 320, next_stream, next_continuity));
+        reached(&local.wake_resets, 2).await;
+        tokio::time::timeout(Duration::from_secs(3), output.closed())
+            .await
+            .unwrap();
+        assert!(!playback.is_active());
+        assert_eq!(local.stops.load(Ordering::SeqCst), 1);
+        assert_eq!(local.captured.load(Ordering::SeqCst), 1);
+        assert!(
+            seen.try_recv().is_err(),
+            "damaged capture reached the server"
+        );
+
+        audio.publish(native_frame(99, 640, next_stream, next_continuity));
+        let Seen::Opened {
+            output: next_output,
+            session: next_session,
+            ..
+        } = received(&mut seen).await
+        else {
+            panic!("fresh wake must open a new session")
+        };
+        assert_ne!(session, next_session);
+        let Seen::Audio(frame) = received(&mut seen).await else {
+            panic!("fresh capture must upload")
+        };
+        assert_eq!((frame.sequence, frame.sample_offset), (0, 0));
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), next_output.closed())
+            .await
+            .unwrap();
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn native_capture_loss_clears_partial_wake_before_accepting_new_audio() {
+    for restart in [false, true] {
+        let Harness {
+            runtime,
+            audio,
+            events: _,
+            local,
+            mut seen,
+            shutdown,
+            server,
+            _directory,
+        } = harness(8).await;
+        let cancel = runtime.cancel.clone();
+        let task = tokio::spawn(runtime.run());
+        let original = Uuid::new_v4();
+        audio.publish(native_frame(97, 0, original, 1));
+        reached(&local.wake_checks, 1).await;
+        let (next_stream, next_continuity) = if restart {
+            (Uuid::new_v4(), 1)
+        } else {
+            (original, 2)
+        };
+        audio.publish(native_frame(98, 320, next_stream, next_continuity));
+        reached(&local.wake_resets, 2).await;
+        audio.publish(native_frame(98, 640, next_stream, next_continuity));
+        reached(&local.wake_checks, 2).await;
+        assert!(
+            seen.try_recv().is_err(),
+            "partial wake crossed a native gap"
+        );
+        assert!(!local.wake_prefix.load(Ordering::SeqCst));
+
+        audio.publish(native_frame(97, 960, next_stream, next_continuity));
+        audio.publish(native_frame(98, 1280, next_stream, next_continuity));
+        let Seen::Opened { output, .. } = received(&mut seen).await else {
+            panic!("a complete fresh wake must still open the session")
+        };
+        assert_eq!(local.captured.load(Ordering::SeqCst), 4);
+        assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+        assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), output.closed())
+            .await
+            .unwrap();
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
+#[tokio::test]
 async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
     let (tx, _rx) = mpsc::channel(1);
     let cancel = CancellationToken::new();
@@ -745,6 +963,49 @@ fn rejects_format_changes_clock_gaps_and_untrusted_server_identity() {
     regressed.generation_epoch = 0;
     assert!(guard.accept(regressed, 1).is_err());
     assert_eq!(local.stops.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn native_capture_timing_validates_format_cursor_and_evidence_without_aligning_clocks() {
+    let original = Uuid::new_v4();
+    for damage in [
+        "native format",
+        "converted format",
+        "converted count",
+        "converted cursor",
+        "direction",
+        "clock identity",
+        "resampling flag",
+        "missing evidence",
+        "new evidence",
+    ] {
+        let mut clock = CaptureClock::default();
+        let mut first = native_frame(1, 0, original, 1);
+        let mut next = native_frame(1, 320, original, 1);
+        let timing = next.timing.as_mut().unwrap();
+        match damage {
+            "native format" => timing.native.format.sample_rate_hz += 1,
+            "converted format" => timing.converted_format.channels = 2,
+            "converted count" => timing.converted_frames -= 1,
+            "converted cursor" => timing.converted_start_frame += 1,
+            "direction" => timing.native.stream.direction = AudioDirection::Playback,
+            "clock identity" => timing.native.clock.clock_id = Uuid::new_v4(),
+            "resampling flag" => timing.resampled = false,
+            "missing evidence" => next.timing = None,
+            "new evidence" => first.timing = None,
+            _ => unreachable!(),
+        }
+        clock.accept(&first).unwrap();
+        assert!(clock.accept(&next).is_err(), "accepted {damage}");
+    }
+
+    let mut clock = CaptureClock::default();
+    clock.accept(&native_frame(1, 0, original, 1)).unwrap();
+    let mut next = native_frame(1, 320, original, 1);
+    // An input batch may produce no output during conversion. Native cursors
+    // and converted cursors are separate, and unknown timestamps remain valid.
+    next.timing.as_mut().unwrap().native.start_frame += 960;
+    clock.accept(&next).unwrap();
 }
 
 #[test]

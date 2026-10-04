@@ -13,6 +13,7 @@ struct Fixture {
     url: String,
     client: reqwest::Client,
     done: watch::Receiver<Option<SetupResult>>,
+    done_tx: Arc<watch::Sender<Option<SetupResult>>>,
     stop: CancellationToken,
     serving: JoinHandle<()>,
 }
@@ -22,12 +23,14 @@ impl Fixture {
         let directory = std::env::temp_dir().join(format!("alia-oobe-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let (done_tx, done) = watch::channel(None);
+        let done_tx = Arc::new(done_tx);
+        let stop = CancellationToken::new();
         let app = routes().with_state(OobeState {
-            done_tx: Arc::new(done_tx),
+            done_tx: done_tx.clone(),
+            cancel: stop.clone(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let stop = CancellationToken::new();
         let shutdown = stop.clone();
         let serving = tokio::spawn(async move {
             axum::serve(listener, app)
@@ -43,6 +46,7 @@ impl Fixture {
                 .build()
                 .unwrap(),
             done,
+            done_tx,
             stop,
             serving,
         }
@@ -352,5 +356,132 @@ async fn cli_keeps_fragment_layout_and_refuses_to_replace_existing_configuration
         std::fs::read_to_string(&operator_file).unwrap(),
         "# operator configuration\n"
     );
+    f.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_http_saves_publish_one_configuration_and_one_completion() {
+    let mut f = Fixture::new().await;
+    let template = f.template().await;
+    let first = f.directory.join("first.toml");
+    let second = f.directory.join("second.toml");
+    let (a, b) = tokio::join!(f.save(&first, &template), f.save(&second, &template));
+    assert_ne!(
+        a["success"], b["success"],
+        "exactly one save must win: {a}, {b}"
+    );
+    let (winner, loser) = if a["success"] == true {
+        (&first, &second)
+    } else {
+        (&second, &first)
+    };
+    f.assert_ready(winner);
+    assert_eq!(std::fs::read_to_string(winner).unwrap(), template);
+    assert!(
+        !loser.exists(),
+        "rejected completion must not write another path"
+    );
+    f.done.borrow_and_update();
+    assert!(
+        bootstrap::finish_setup(&f.done_tx, || {
+            panic!("a late CLI must not publish or cancel the HTTP winner")
+        })
+        .is_err()
+    );
+    assert!(!f.done.has_changed().unwrap());
+    assert_eq!(f.save(winner, "[broken").await["success"], false);
+    assert_eq!(std::fs::read_to_string(winner).unwrap(), template);
+    f.assert_no_temporary_files();
+    f.close().await;
+}
+
+#[tokio::test]
+async fn cli_completion_or_cancellation_prevents_late_http_writes() {
+    for cancelled in [false, true] {
+        let mut f = Fixture::new().await;
+        let cli_target = f.directory.join("cli.toml");
+        let http_target = f.directory.join("http.toml");
+        let template = f.template().await;
+        bootstrap::finish_setup(&f.done_tx, || {
+            if cancelled {
+                Ok(SetupResult::Cancelled)
+            } else {
+                bootstrap::release_example_config(&cli_target).map(SetupResult::ConfigReady)
+            }
+        })
+        .unwrap();
+        f.done.borrow_and_update();
+        let result = f.save(&http_target, &template).await;
+        assert_eq!(result["success"], false, "{result}");
+        assert!(!http_target.exists());
+        assert!(!f.done.has_changed().unwrap());
+        if cancelled {
+            assert!(!cli_target.exists());
+        } else {
+            f.assert_ready(&cli_target);
+        }
+        f.close().await;
+    }
+}
+
+#[tokio::test]
+async fn setup_rejects_foreign_hosts_origins_and_non_json_without_writing() {
+    let f = Fixture::new().await;
+    let target = f.directory.join("server.toml");
+    let template = f.template().await;
+    let url = format!("{}/api/v1/setup/save-config", f.url);
+    let body = json!({"path": target, "config": template});
+    for (host, origin) in [
+        (Some("rebind.example"), None),
+        (Some("127.0.0.1.rebind.example"), None),
+        (Some("127.0.0.2"), None),
+        (None, Some("https://outside.example")),
+        (None, Some("null")),
+        (None, Some("http://localhost")),
+    ] {
+        let mut request = f.client.post(&url).json(&body);
+        if let Some(host) = host {
+            request = request.header("Host", host);
+        }
+        if let Some(origin) = origin {
+            request = request.header("Origin", origin);
+        }
+        assert_eq!(
+            request.send().await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+        assert!(!target.exists());
+        assert!(f.done.borrow().is_none());
+    }
+    assert_eq!(
+        f.client
+            .post(&url)
+            .header("Content-Type", "text/plain")
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    assert!(!target.exists());
+    let result: Value = f
+        .client
+        .post(&url)
+        .header("Origin", &f.url)
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        result["success"], true,
+        "same-origin JSON is allowed: {result}"
+    );
+    f.assert_ready(&target);
     f.close().await;
 }

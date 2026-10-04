@@ -16,6 +16,29 @@ pub enum SetupResult {
     Cancelled,
 }
 
+/// HTTP save, CLI generation and cancellation share one completion decision.
+/// The watch write lock covers publication, so a losing caller never writes a
+/// second configuration. A failed preparation leaves setup available for retry.
+pub(crate) fn finish_setup(
+    done: &tokio::sync::watch::Sender<Option<SetupResult>>,
+    prepare: impl FnOnce() -> anyhow::Result<SetupResult>,
+) -> anyhow::Result<SetupResult> {
+    let mut result = Err(anyhow::anyhow!("setup has already completed"));
+    done.send_if_modified(|current| {
+        if current.is_some() {
+            return false;
+        }
+        result = prepare();
+        if let Ok(ready) = &result {
+            *current = Some(ready.clone());
+            true
+        } else {
+            false
+        }
+    });
+    result
+}
+
 /// Check if any config file exists in the standard search locations.
 pub fn needs_setup() -> bool {
     // If explicitly set, check if the file actually exists

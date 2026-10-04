@@ -82,6 +82,15 @@ impl ModuleLifecycle for SherpaOnnxKws {
 }
 
 impl WakeWordEngine for SherpaOnnxKws {
+    fn reset(&self) -> Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("wakeword state lock poisoned"))?;
+        state.spotter.reset(&state.stream);
+        Ok(())
+    }
+
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent> {
         if pcm.is_empty() {
             return None;

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use alia_core::audio_clock::{AudioDirection, AudioFormat, CaptureTiming};
 use alia_core::delivery::VoiceScope;
 use alia_core::output_control::VOICE_CONTRACT_VERSION;
 use alia_core::playback_control::MAX_HOLD_MS;
@@ -52,6 +53,10 @@ pub(super) struct Runtime {
 impl Runtime {
     pub async fn run(mut self) {
         let _cancel_on_exit = self.cancel.clone().drop_guard();
+        if let Err(error) = self.wakeword.reset() {
+            warn!(%error, "failed to reset wakeword before continuous capture");
+            return;
+        }
         let mut session: Option<Session> = None;
         let mut pre_roll = PreRoll::new(self.config.pre_roll_ms as usize * 16);
         let mut clock = CaptureClock::default();
@@ -113,6 +118,10 @@ impl Runtime {
                 self.audio = self.audio.resubscribe();
                 if let Err(error) = self.vad.reset() {
                     warn!(%error, "failed to reset continuous VAD");
+                    break;
+                }
+                if let Err(error) = self.wakeword.reset() {
+                    warn!(%error, "failed to reset wakeword after capture loss");
                     break;
                 }
             }
@@ -318,6 +327,7 @@ impl PreRoll {
 struct CaptureClock {
     origin_us: Option<u64>,
     samples: u64,
+    timing: Option<CaptureTiming>,
 }
 
 impl CaptureClock {
@@ -326,7 +336,47 @@ impl CaptureClock {
             frame.sample_rate == SAMPLE_RATE && !frame.pcm.is_empty(),
             "capture format changed or frame is empty; expected 16 kHz mono"
         );
-        let origin = *self.origin_us.get_or_insert(frame.timestamp_us);
+        if self.origin_us.is_some() {
+            ensure!(
+                self.timing.is_some() == frame.timing.is_some(),
+                "native capture timing evidence changed"
+            );
+        }
+        if let Some(timing) = frame.timing {
+            ensure!(
+                timing.native.stream.direction == AudioDirection::Capture
+                    && timing.native.format.is_valid()
+                    && timing.native.frames != 0
+                    && timing.native.clock.clock_id == timing.native.stream.stream_id
+                    && timing.converted_format
+                        == (AudioFormat {
+                            sample_rate_hz: SAMPLE_RATE,
+                            channels: 1,
+                        })
+                    && timing.converted_frames == frame.pcm.len() as u64
+                    && timing.resampled == (timing.native.format.sample_rate_hz != SAMPLE_RATE),
+                "invalid native capture timing or converted format"
+            );
+            if let Some(previous) = self.timing {
+                ensure!(
+                    timing.native.stream == previous.native.stream
+                        && timing.native.continuity == previous.native.continuity
+                        && timing.native.format == previous.native.format,
+                    "native capture stream or continuity changed"
+                );
+                ensure!(
+                    timing.converted_start_frame
+                        == previous
+                            .converted_start_frame
+                            .checked_add(previous.converted_frames)
+                            .context("converted capture clock overflow")?,
+                    "converted capture cursor discontinuity"
+                );
+            }
+            // Native batches can produce no converted output, and resampling
+            // retains a tail. Their cursors are not a calibrated sample map.
+        }
+        let origin = self.origin_us.unwrap_or(frame.timestamp_us);
         let expected = origin
             .checked_add(
                 self.samples
@@ -340,10 +390,13 @@ impl CaptureClock {
             frame.timestamp_us.abs_diff(expected) <= 1,
             "capture timestamp discontinuity"
         );
-        self.samples = self
+        let samples = self
             .samples
             .checked_add(frame.pcm.len() as u64)
             .context("capture sample clock overflow")?;
+        self.origin_us = Some(origin);
+        self.samples = samples;
+        self.timing = frame.timing;
         Ok(())
     }
 }

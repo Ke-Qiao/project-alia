@@ -19,6 +19,9 @@ pub struct WakeWordEvent {
 /// `detect()` runs on the speech consumer worker. Native audio callbacks only
 /// publish PCM and evidence; model inference must never run inside a callback.
 pub trait WakeWordEngine: ModuleLifecycle {
+    /// Discard partial detection history after capture loss or a fresh start.
+    fn reset(&self) -> Result<()>;
+
     /// Feed PCM frames, returns detection event if wake word is found.
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent>;
 }

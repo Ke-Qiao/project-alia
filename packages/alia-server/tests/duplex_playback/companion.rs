@@ -273,6 +273,7 @@ async fn count(s: &Scene, table: &str) -> i64 {
 /// identities, source text, private grants or raw database errors.
 async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> String {
     let progress = state.modules.companion.scan_progress();
+    let started = std::time::Instant::now();
     let rows = tokio::time::timeout(Duration::from_secs(1), async {
         let row =
             s.f.db
@@ -288,7 +289,11 @@ async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> Strin
                 'admissions', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
                     SELECT state, retirement_reason, count(*) AS count
                     FROM companion_admissions GROUP BY state, retirement_reason
-                    ORDER BY state, retirement_reason) v)) AS summary"
+                    ORDER BY state, retirement_reason) v),
+                'task_db_waits', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT state, wait_event_type, count(*) AS count
+                    FROM pg_stat_activity WHERE datname=current_database()
+                    GROUP BY state, wait_event_type ORDER BY state, wait_event_type) v)) AS summary"
                         .to_string(),
                 ))
                 .await?
@@ -301,7 +306,10 @@ async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> Strin
         Ok(Err(_)) => "unavailable".into(),
         Err(_) => "diagnostic deadline exceeded".into(),
     };
-    format!("scan={progress:?}; rows={rows}")
+    format!(
+        "scan={progress:?}; diagnostic_wait_ms={} (test_process_monotonic, pool/query combined); rows={rows}",
+        started.elapsed().as_millis()
+    )
 }
 
 async fn seed(state: &alia_server::state::AppState, owner: Uuid) -> Uuid {
@@ -365,6 +373,14 @@ async fn seed(state: &alia_server::state::AppState, owner: Uuid) -> Uuid {
 }
 
 async fn complete_invitation(scenario: Scenario) {
+    // Only fixed, identity-free admission diagnostics are enabled. Never
+    // inherit a broad RUST_LOG filter that could include requests or grants.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("off,alia_server::modules::companion::runner=debug")
+        .without_time()
+        .with_ansi(false)
+        .with_test_writer()
+        .try_init();
     let revoke_during_tts = scenario == Scenario::Revoke;
     with_db(|f| async move {
         let paired = Runtime::new(f,4096).await;

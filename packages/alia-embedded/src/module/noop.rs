@@ -116,6 +116,10 @@ impl ModuleLifecycle for NoopWakeWord {
 }
 
 impl WakeWordEngine for NoopWakeWord {
+    fn reset(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn detect(&self, _pcm: &[i16]) -> Option<WakeWordEvent> {
         None
     }

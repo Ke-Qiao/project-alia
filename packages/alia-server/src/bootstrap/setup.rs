@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::channels::cli::{INPUT_POLL_INTERVAL, TerminalSession};
 use crate::oobe::bootstrap::{
-    SetupResult, default_config_target, print_banner, release_example_config,
+    SetupResult, default_config_target, finish_setup, print_banner, release_example_config,
 };
 use crate::oobe::routes::{OobeState, routes};
 
@@ -55,9 +55,10 @@ async fn run_setup_on(
         tracing::info!("setup has no interactive terminal; use the HTTP setup API");
         None
     };
-    let app = Router::new()
-        .merge(routes())
-        .with_state(OobeState { done_tx });
+    let app = Router::new().merge(routes()).with_state(OobeState {
+        done_tx: done_tx.clone(),
+        cancel: cancel.clone(),
+    });
     let connections = SetupConnections(Connections::new());
     let server = axum::serve(
         super::runtime::HttpListener {
@@ -91,6 +92,11 @@ async fn run_setup_on(
             result
         }
     };
+    if cancel.is_cancelled() || served.is_err() || input_completed {
+        // A request whose body finishes during drain cannot publish a new
+        // configuration after cancellation or input failure.
+        let _ = finish_setup(&done_tx, || Ok(SetupResult::Cancelled));
+    }
     cancel.cancel();
     // ConfigReady can precede the successful response being written. Preserve
     // the original server until that response drains. Stalled peers do not own
@@ -156,7 +162,7 @@ fn setup_input(
                 continue;
             }
             if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                let _ = done.send(Some(SetupResult::Cancelled));
+                let _ = finish_setup(&done, || Ok(SetupResult::Cancelled));
                 break;
             }
             match key.code {
@@ -168,12 +174,22 @@ fn setup_input(
                 }
                 KeyCode::Enter => match line.trim().to_ascii_lowercase().as_str() {
                     "c" => {
-                        let path = release_example_config(&default_config_target())?;
-                        let _ = done.send(Some(SetupResult::ConfigReady(path)));
+                        // HTTP may have completed while terminal input was
+                        // pending. A losing CLI must neither write nor replace it.
+                        if let Err(error) = finish_setup(&done, || {
+                            if cancel.is_cancelled() {
+                                return Ok(SetupResult::Cancelled);
+                            }
+                            release_example_config(&default_config_target())
+                                .map(SetupResult::ConfigReady)
+                        }) && done.borrow().is_none()
+                        {
+                            return Err(error);
+                        }
                         break;
                     }
                     "q" => {
-                        let _ = done.send(Some(SetupResult::Cancelled));
+                        let _ = finish_setup(&done, || Ok(SetupResult::Cancelled));
                         break;
                     }
                     _ => line.clear(),
@@ -259,6 +275,57 @@ mod tests {
         let shutdown = CancellationToken::new();
         shutdown.cancel();
         assert!(run_setup(shutdown).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = bind_setup_listener(0).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let stop = CancellationToken::new();
+        let _stop_on_drop = stop.clone().drop_guard();
+        let serving = tokio::spawn(run_setup_on(listener, stop.clone(), false));
+        let directory =
+            std::env::temp_dir().join(format!("alia-setup-cancel-{}", uuid::Uuid::new_v4()));
+        let target = directory.join("server.toml");
+        let body = serde_json::to_vec(&serde_json::json!({
+            "path": target,
+            "config": crate::oobe::bootstrap::example_config().unwrap(),
+        }))
+        .unwrap();
+        let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+        socket.write_all(format!("POST /api/v1/setup/save-config HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await.unwrap();
+        // 100 Continue proves the accepted request is waiting for its body;
+        // no sleep or scheduler timing assumption is needed.
+        let mut accepted = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !accepted.ends_with(b"\r\n\r\n") {
+                accepted.push(socket.read_u8().await.unwrap());
+                assert!(accepted.len() < 1024);
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            String::from_utf8(accepted)
+                .unwrap()
+                .contains("100 Continue")
+        );
+        stop.cancel();
+        let _ = socket.write_all(&body).await;
+        let completed = tokio::time::timeout(Duration::from_secs(4), serving)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(completed, None);
+        assert!(
+            !target.exists(),
+            "drain cannot publish after caller cancellation"
+        );
+        assert!(!directory.exists());
+        assert!(tokio::net::TcpStream::connect(address).await.is_err());
     }
 
     #[tokio::test]

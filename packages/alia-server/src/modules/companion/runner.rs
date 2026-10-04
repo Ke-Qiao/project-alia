@@ -79,13 +79,21 @@ impl LiveRunner {
         // synthesis or Delivery. Successful submission leaves its native tail
         // with the existing output owner, not a replacement task here.
         let guard = cancel.clone().drop_guard();
-        let opportunity = match within(
+        let snapshot_started = std::time::Instant::now();
+        let snapshot = within(
             pending.expires_at,
             &cancel,
             self.voice.snapshot(pending.owner_id, &pending.channel_id),
         )
-        .await
-        {
+        .await;
+        tracing::debug!(
+            phase = "voice_snapshot",
+            wait_ms = snapshot_started.elapsed().as_millis() as u64,
+            ready = snapshot.is_ok(),
+            clock = "server_process_monotonic",
+            "Companion admission wait"
+        );
+        let opportunity = match snapshot {
             Ok(value) => value,
             Err(_) if cancel.is_cancelled() => {
                 self.retire_candidate(pending.candidate_id, RetirementReason::Shutdown)
@@ -94,14 +102,22 @@ impl LiveRunner {
             }
             Err(_) => return RunOutcome::NoOpportunity,
         };
-        let intent = match within(pending.expires_at, &cancel, async {
+        let prepare_started = std::time::Instant::now();
+        let prepared = within(pending.expires_at, &cancel, async {
             Ok(self
                 .repository
                 .prepare_intent(pending.candidate_id, opportunity)
                 .await?)
         })
-        .await
-        {
+        .await;
+        tracing::debug!(
+            phase = "freeze_intent",
+            wait_ms = prepare_started.elapsed().as_millis() as u64,
+            ready = prepared.is_ok(),
+            clock = "server_process_monotonic",
+            "Companion admission wait"
+        );
+        let intent = match prepared {
             Ok(value) => value,
             Err(_) => {
                 self.retire_candidate(pending.candidate_id, RetirementReason::AttemptFailed)
@@ -111,11 +127,38 @@ impl LiveRunner {
         };
 
         for attempt in 0..RECONCILIATION_ATTEMPTS {
+            let admission_started = std::time::Instant::now();
+            // The existing contract deadline is evaluated in the Server's UTC
+            // clock here. This is a budget observation, not a measurement of
+            // latency between Server, database or device clocks.
+            tracing::debug!(
+                phase = "admit",
+                attempt,
+                remaining_ms = (intent.admit_before() - Utc::now()).num_milliseconds(),
+                clock = "server_utc_deadline_evaluation",
+                "Companion original admission budget"
+            );
             let admission = tokio::select! {
                 biased;
                 _ = cancel.cancelled() => break,
                 result = tokio::time::timeout(remaining(intent.admit_before()), self.repository.admit(&intent)) => result,
             };
+            let outcome = match &admission {
+                Ok(Ok(AdmissionResult::Fresh { .. })) => "fresh",
+                Ok(Ok(AdmissionResult::Existing(_))) => "existing",
+                Ok(Ok(AdmissionResult::Retired)) => "retired",
+                Ok(Ok(AdmissionResult::Deferred(_))) => "deferred",
+                Ok(Err(_)) => "error",
+                Err(_) => "deadline",
+            };
+            tracing::debug!(
+                phase = "admit",
+                attempt,
+                outcome,
+                wait_ms = admission_started.elapsed().as_millis() as u64,
+                clock = "server_process_monotonic",
+                "Companion admission wait"
+            );
             match admission {
                 Ok(Ok(AdmissionResult::Fresh {
                     permit,
