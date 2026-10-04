@@ -1,0 +1,107 @@
+{
+  "recorded_at": "2026-10-04T10:42:54.611117+00:00",
+  "artifacts": {
+    "alia-server": {
+      "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-server",
+      "sha256": "f6dba03d98b473413bfdf29d9c002718956741716a9919bc8265d361d0a5effc",
+      "size_bytes": 46020472,
+      "checks": {
+        "file": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "file",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-file.log"
+        },
+        "elf": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "readelf",
+            "-h",
+            "-l",
+            "-d",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-elf.log"
+        },
+        "ldd": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "ldd",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-ldd.log"
+        }
+      }
+    },
+    "alia-embedded": {
+      "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-embedded",
+      "sha256": "e8179ef176b38a91af8cad7dd4a67fc8209284f9676682a7e23ae9205673fb10",
+      "size_bytes": 50408280,
+      "checks": {
+        "file": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "file",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-file.log"
+        },
+        "elf": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "readelf",
+            "-h",
+            "-l",
+            "-d",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-elf.log"
+        },
+        "ldd": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "ldd",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-ldd.log"
+        }
+      }
+    }
+  },
+  "compiled_library_fingerprints": {
+    "release/.fingerprint/alia-server-fc507e2c49a238db/lib-alia_server.json": {
+      "features": "[\"channel-embedded\", \"default\", \"embed-openai\", \"insights\", \"llm-anthropic\", \"llm-gemini\", \"llm-openai\", \"plugin-home-assistant\", \"stt-whisper\", \"tools-http\", \"tts-sovits\", \"turn-easy\"]",
+      "rustflags": [],
+      "declared_features": "[\"channel-embedded\", \"default\", \"embed-openai\", \"insights\", \"llm-anthropic\", \"llm-gemini\", \"llm-openai\", \"plugin-home-assistant\", \"stt-whisper\", \"tools-http\", \"tts-sovits\", \"turn-easy\"]"
+    },
+    "release/.fingerprint/alia-embedded-d0de881c8e11dc19/lib-alia_embedded.json": {
+      "features": "[\"default\", \"direct-response\", \"sherpa-onnx\", \"stt-sherpa\", \"wakeword-sherpa\"]",
+      "rustflags": [],
+      "declared_features": "[\"default\", \"direct-response\", \"sherpa-onnx\", \"stt-sherpa\", \"vision-opencv\", \"wakeword-sherpa\"]"
+    }
+  },
+  "validation_script_sha256": {
+    "run-stage.py": "f02b5d668651c22e5fd19c3cf462c490d88688cfb904a8e27ce0a857bc58c34b",
+    "release-smoke.py": "32d34b34f939661bfc51c9d4ba1c693f572157f6cbf7b6f5f674849a247025a0"
+  }
+}

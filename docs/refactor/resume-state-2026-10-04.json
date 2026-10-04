@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-04",
+  "status": "completed_bounded_followup",
+  "branch": "codex/architecture-refactor",
+  "base_head": "8c1742287b75720a2530711ce78c447679369884",
+  "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+  "source_manifest": {
+    "path": "docs/refactor/handoffs/2026-10-04/final-source-manifest-v1.json",
+    "inputs": 633,
+    "sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0"
+  },
+  "du_progress": {
+    "completed": 11,
+    "total": 11
+  },
+  "r01_progress": {
+    "completed": 7,
+    "total": 7
+  },
+  "r04_initial_package": {
+    "repair_groups_completed": 4,
+    "repair_groups_total": 4,
+    "MG05": "complete"
+  },
+  "round_progress": {
+    "completed": 2,
+    "total": 6,
+    "completed_ids": [
+      "R01",
+      "R04"
+    ],
+    "remaining_ids": [
+      "R02",
+      "R03",
+      "R05",
+      "R06"
+    ]
+  },
+  "current_validation": {
+    "macos_workspace": {
+      "passed": 1062,
+      "failed": 0,
+      "ignored": 5,
+      "measured": 0,
+      "filtered_out": 0
+    },
+    "real_pty": 3,
+    "macos_unique_passed": 1065,
+    "linux": {
+      "unique_passed": 578,
+      "failed": 0,
+      "ignored": 3,
+      "targets": 8,
+      "default_release_link": "passed both packages",
+      "release_start_stop_restart": "passed two rounds; 4 processes exit 0",
+      "scope": "Linux ARM64 native container; no real hardware or model inference"
+    }
+  },
+  "v01": "open_not_reproduced_root_cause_unknown",
+  "subagents": [
+    "audio_readiness_1004",
+    "motion_protocol_1004",
+    "linux_runtime_1004"
+  ],
+  "validation_window_owner": null,
+  "scope": "current Linux ARM64 container release/runtime, R02/R03 software preparation, R04 bounded audit; no hardware actions",
+  "checkpoint": "docs/refactor/resume-checkpoint-2026-10-04.md",
+  "handoffs": "docs/refactor/handoffs/2026-10-04/README.md",
+  "validation_summary": "docs/refactor/handoffs/2026-10-04/validation-summary.json",
+  "next_action": "Read this checkpoint, four handoffs and actual Git state. This bounded package is complete; do not repeat passed macOS/Linux validation without changes. Continue R02/R03 from current trusted Pi SSH target and exact audio/controller/actuator information, then read-only inventory. AEC consumer/reframing/clock measurement and signed asset bytes/MCU feedback remain explicit next work; no guessed hardware or real actions. V01 remains open with default shadow.",
+  "constraints": [
+    "default shadow unchanged",
+    "single Cargo/PG window",
+    "do not touch user DB5433",
+    "do not alter retained services, bindings, network or credentials",
+    "no frontend/platform/dependency expansion",
+    "V01 remains open; no deadline relaxation"
+  ],
+  "updated_at": "2026-10-04T10:57:48.768211+00:00",
+  "subagent_status": "all three completed; no pending source edits or test jobs",
+  "committed_source_verification": "docs/refactor/handoffs/2026-10-04/committed-source-verification.json",
+  "resource_cleanup": {
+    "status": "completed",
+    "record": "resource-cleanup.json",
+    "new_task_containers_stopped": true,
+    "task_db_final_counts": {
+      "non_public_schemas": 0,
+      "other_connections": 0
+    },
+    "retained_container_states_unchanged": true,
+    "retained_model_services": "not probed or modified; current health is not asserted",
+    "exclusive_validation_window": null
+  },
+  "open_items": [
+    "V01 original intermittent Companion timeout; failing V3 artifact is not retained",
+    "R02 hardware baseline, AEC consumer, 10 ms reframing, drift and synchronized measurement",
+    "R03 asset-content signing and MCU boot/ACK/position/limits",
+    "R04 aggregate health budget/dedup/concurrency, directory durability and deployment account boundaries",
+    "R05 clean installation/upgrade/recovery and at least 24-hour physical mixed-load validation",
+    "R06 only separately specified other Server platforms; frontend/general Embedded/device-side Easy-Turn deferred"
+  ]
+}

@@ -1,0 +1,621 @@
+{
+  "recorded_at": "2026-10-04T10:51:57.854713+00:00",
+  "assessment": "PASSED_CURRENT_LINUX_BUILD_AND_NON_HARDWARE_RUN",
+  "scope": "Linux ARM64 native container; default build features; noop runtime smoke plus existing mock/protocol fixtures. Not a Pi, acoustic, physical actuator, external-model or full Linux workspace acceptance.",
+  "source_identity": {
+    "baseline_head": "8c17422",
+    "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+    "inputs": 633,
+    "cargo_lock_sha256": "845d709734b382d24baaec28bd9d69a524e92c4b41366184de02f0ef7a322dfc",
+    "workspace_and_snapshot_final_errors": [],
+    "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+    "commit_note": "Root independently matched all 633 committed and working-tree inputs to the frozen manifest; see committed-source-verification.json."
+  },
+  "environment": {
+    "container": "alia-review-linux-20261004-v1",
+    "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+    "architecture": "aarch64-unknown-linux-gnu",
+    "rustc_verbose": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-unknown-linux-gnu\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "selected_environment": {
+      "CARGO_HOME": "/cache/cargo",
+      "CARGO_TARGET_DIR": "/cache/target",
+      "CARGO_TERM_COLOR": "never",
+      "CARGO_BUILD_JOBS": "2",
+      "RUSTFLAGS": null,
+      "RUST_TEST_THREADS": null,
+      "RUST_MIN_STACK": null,
+      "DOCS_RS": null,
+      "SHERPA_ONNX_LIB_DIR": null,
+      "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+      "platform": "Linux-7.0.14-orbstack-00380-ga7e0a2dc9535-aarch64-with-glibc2.36"
+    },
+    "native_versions": {
+      "ALSA": "1.2.8",
+      "DBus": "1.14.10",
+      "protobuf": "3.21.12",
+      "OpenSSL": "3.0.20"
+    },
+    "native_archive": {
+      "copied_archive_exists": true,
+      "expected_sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+      "actual_sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+      "sherpa_sys_build_script_sha256": "6e45edebae2256484f0c061e931feec9f04ceee61f6119f4f233e0f7b3779df7"
+    },
+    "native_linked_symbols": {
+      "argv": [
+        "docker",
+        "exec",
+        "alia-review-linux-20261004-v1",
+        "python3",
+        "-c",
+        "import json,subprocess; from pathlib import Path; out=subprocess.check_output(['nm','--defined-only','/cache/target/release/alia-embedded'],text=True); names=['SherpaOnnxCreateKeywordSpotter','SherpaOnnxCreateOfflineRecognizer','SherpaOnnxCreateVoiceActivityDetector']; found={n:any(line.endswith(' '+n) for line in out.splitlines()) for n in names}; Path('/evidence/native-linked-symbols.json').write_text(json.dumps(found,indent=2)+'\\n'); print(json.dumps(found)); assert all(found.values())"
+      ],
+      "started_at": "2026-10-04T10:49:46.018595+00:00",
+      "exit_code": 0,
+      "finished_at": "2026-10-04T10:49:46.142416+00:00"
+    },
+    "model_inference_run": false,
+    "native_linked_symbol_results": {
+      "SherpaOnnxCreateKeywordSpotter": true,
+      "SherpaOnnxCreateOfflineRecognizer": true,
+      "SherpaOnnxCreateVoiceActivityDetector": true
+    }
+  },
+  "features": {
+    "alia-embedded": {
+      "version": "0.1.0",
+      "resolve_features": [
+        "default",
+        "direct-response",
+        "sherpa-onnx",
+        "stt-sherpa",
+        "wakeword-sherpa"
+      ],
+      "declared_default_features": [
+        "wakeword-sherpa",
+        "stt-sherpa",
+        "direct-response"
+      ]
+    },
+    "alia-server": {
+      "version": "0.1.0",
+      "resolve_features": [
+        "channel-embedded",
+        "default",
+        "embed-openai",
+        "insights",
+        "llm-anthropic",
+        "llm-gemini",
+        "llm-openai",
+        "plugin-home-assistant",
+        "stt-whisper",
+        "tools-http",
+        "tts-sovits",
+        "turn-easy"
+      ],
+      "declared_default_features": [
+        "channel-embedded",
+        "llm-openai",
+        "llm-anthropic",
+        "llm-gemini",
+        "stt-whisper",
+        "tts-sovits",
+        "embed-openai",
+        "tools-http",
+        "insights",
+        "plugin-home-assistant",
+        "turn-easy"
+      ]
+    },
+    "sherpa-onnx": {
+      "version": "1.13.1",
+      "resolve_features": [
+        "default",
+        "static"
+      ],
+      "declared_default_features": [
+        "static"
+      ]
+    },
+    "sherpa-onnx-sys": {
+      "version": "1.13.1",
+      "resolve_features": [
+        "static"
+      ],
+      "declared_default_features": [
+        "static"
+      ]
+    }
+  },
+  "compiled_library_fingerprints": {
+    "release/.fingerprint/alia-server-fc507e2c49a238db/lib-alia_server.json": {
+      "features": "[\"channel-embedded\", \"default\", \"embed-openai\", \"insights\", \"llm-anthropic\", \"llm-gemini\", \"llm-openai\", \"plugin-home-assistant\", \"stt-whisper\", \"tools-http\", \"tts-sovits\", \"turn-easy\"]",
+      "rustflags": [],
+      "declared_features": "[\"channel-embedded\", \"default\", \"embed-openai\", \"insights\", \"llm-anthropic\", \"llm-gemini\", \"llm-openai\", \"plugin-home-assistant\", \"stt-whisper\", \"tools-http\", \"tts-sovits\", \"turn-easy\"]"
+    },
+    "release/.fingerprint/alia-embedded-d0de881c8e11dc19/lib-alia_embedded.json": {
+      "features": "[\"default\", \"direct-response\", \"sherpa-onnx\", \"stt-sherpa\", \"wakeword-sherpa\"]",
+      "rustflags": [],
+      "declared_features": "[\"default\", \"direct-response\", \"sherpa-onnx\", \"stt-sherpa\", \"vision-opencv\", \"wakeword-sherpa\"]"
+    }
+  },
+  "release_artifacts": {
+    "alia-server": {
+      "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-server",
+      "sha256": "f6dba03d98b473413bfdf29d9c002718956741716a9919bc8265d361d0a5effc",
+      "size_bytes": 46020472,
+      "checks": {
+        "file": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "file",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-file.log"
+        },
+        "elf": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "readelf",
+            "-h",
+            "-l",
+            "-d",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-elf.log"
+        },
+        "ldd": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "ldd",
+            "/cache/target/release/alia-server"
+          ],
+          "exit_code": 0,
+          "log": "alia-server-ldd.log"
+        }
+      },
+      "dynamic_libraries": [
+        "libssl.so.3",
+        "libcrypto.so.3",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    "alia-embedded": {
+      "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-embedded",
+      "sha256": "e8179ef176b38a91af8cad7dd4a67fc8209284f9676682a7e23ae9205673fb10",
+      "size_bytes": 50408280,
+      "checks": {
+        "file": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "file",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-file.log"
+        },
+        "elf": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "readelf",
+            "-h",
+            "-l",
+            "-d",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-elf.log"
+        },
+        "ldd": {
+          "argv": [
+            "docker",
+            "exec",
+            "alia-review-linux-20261004-v1",
+            "ldd",
+            "/cache/target/release/alia-embedded"
+          ],
+          "exit_code": 0,
+          "log": "alia-embedded-ldd.log"
+        }
+      },
+      "dynamic_libraries": [
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libdbus-1.so.3",
+        "libasound.so.2",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "libsystemd.so.0",
+        "libcap.so.2",
+        "libgcrypt.so.20",
+        "liblzma.so.5",
+        "libzstd.so.1",
+        "liblz4.so.1",
+        "libgpg-error.so.0"
+      ]
+    }
+  },
+  "stages": [
+    {
+      "stage": "server-release",
+      "command": [
+        "cargo",
+        "build",
+        "-p",
+        "alia-server",
+        "--release",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 184.857,
+      "started_at": "2026-10-04T10:37:29.966505+00:00",
+      "finished_at": "2026-10-04T10:40:34.823527+00:00",
+      "source_drift": [],
+      "log": "run/validation-20261004/linux-arm64-v1/evidence/server-release.log",
+      "log_sha256": "b8c2d14b2c894a727b1df5a4c8a88e27054b892a8158b32dee0aaf47becf5725"
+    },
+    {
+      "stage": "embedded-release",
+      "command": [
+        "cargo",
+        "build",
+        "-p",
+        "alia-embedded",
+        "--release",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 85.59,
+      "started_at": "2026-10-04T10:40:44.886566+00:00",
+      "finished_at": "2026-10-04T10:42:10.476611+00:00",
+      "source_drift": [],
+      "log": "run/validation-20261004/linux-arm64-v1/evidence/embedded-release.log",
+      "log_sha256": "0035b241593022103d93d883fb092dd6b608d83a8dbc30145a86c8aff5b8c3e5"
+    },
+    {
+      "stage": "release-smoke",
+      "command": [
+        "python3",
+        "/evidence/release-smoke.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.135,
+      "started_at": "2026-10-04T10:42:55.040440+00:00",
+      "finished_at": "2026-10-04T10:42:56.175901+00:00",
+      "source_drift": [],
+      "log": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.log",
+      "log_sha256": "7fd09bb8073c124aad944b2af5638da7834918b0a62181ffebeed7349114bd59"
+    },
+    {
+      "stage": "server-runtime-protocol",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--lib",
+        "--test",
+        "server_runtime",
+        "--test",
+        "duplex_playback",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 219.742,
+      "started_at": "2026-10-04T10:43:29.358488+00:00",
+      "finished_at": "2026-10-04T10:47:09.100850+00:00",
+      "source_drift": [],
+      "log": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.log",
+      "log_sha256": "b9f6a17b5bbd68e50e78b53f53cc19c4b53ad94e39db950125ec1e4e378bd973"
+    },
+    {
+      "stage": "embedded-runtime-protocol",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--lib",
+        "--test",
+        "config",
+        "--test",
+        "identity",
+        "--test",
+        "binding",
+        "--test",
+        "runtime",
+        "--locked",
+        "--offline",
+        "-j2"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 61.408,
+      "started_at": "2026-10-04T10:47:25.139864+00:00",
+      "finished_at": "2026-10-04T10:48:26.547794+00:00",
+      "source_drift": [],
+      "log": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol.log",
+      "log_sha256": "3a8fad393c9843d3dec25f0dcc2bb906ca4d0baf97d27badcf9c0cf795399474"
+    }
+  ],
+  "tests": {
+    "unique_passed": 578,
+    "failed": 0,
+    "ignored": 3,
+    "target_count": 8,
+    "excluded_nested_summary_count": 1,
+    "counting_rule": "last outer libtest summary per Cargo target, separate package/target identity; no duplicate reruns added",
+    "targets": [
+      {
+        "cargo_target": "unittests src/lib.rs (/cache/target/debug/deps/alia_server-87eed725b54e1b12)",
+        "binary_sha256": "f219bbb789cf449ea7534835a5018c8249a8ace68cb5c03c14bdd5d1448e68d2",
+        "passed": 313,
+        "failed": 0,
+        "ignored": 3,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 29.56,
+        "line": 337
+      },
+      {
+        "cargo_target": "tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-09cdc9574bc937c0)",
+        "binary_sha256": "e1a15655d82506120b5e48175e462ba4e667bb6ece3a99c4b8fc8662386fa001",
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 25.1,
+        "line": 352
+      },
+      {
+        "cargo_target": "tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-d688634c1b44968f)",
+        "binary_sha256": "5195258df82bcaa154d68e07ae4b0179fbb657f1b087d316ea1e745ef279c6e5",
+        "passed": 53,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 79.66,
+        "line": 417
+      },
+      {
+        "cargo_target": "unittests src/lib.rs (/cache/target/debug/deps/alia_embedded-f98c9684ba49d968)",
+        "binary_sha256": "c0d63c6cb9fb9c4f23af6324892c836b6e1f190b1a9101d61e79489dc951baa7",
+        "passed": 174,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 25.96,
+        "line": 212
+      },
+      {
+        "cargo_target": "tests/binding.rs (/cache/target/debug/deps/binding-4d59c305a899c580)",
+        "binary_sha256": "26e728e1b32d578c641c42ecb3eaef8632e084946ce2e7ecab6d352c1ab3d65e",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 220
+      },
+      {
+        "cargo_target": "tests/config.rs (/cache/target/debug/deps/config-548c4f348bf1e58d)",
+        "binary_sha256": "c79f3b1dd06161b9768a7e234a946ff6afebe4c98ad1cd72738cc33fb47f94ed",
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 244
+      },
+      {
+        "cargo_target": "tests/identity.rs (/cache/target/debug/deps/identity-f23fa05fcb77ab95)",
+        "binary_sha256": "d12baeeb268b92930fdd618a04fca4bb9ecdfd8c3dbe6b9ada1ff9d3b8339e2b",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 252
+      },
+      {
+        "cargo_target": "tests/runtime.rs (/cache/target/debug/deps/runtime-f3c62390348f2b0f)",
+        "binary_sha256": "51ee92c5aa5c648ffe717e34d6b092e4b00a61010d314d1c31eeade394f38a52",
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.09,
+        "line": 269
+      }
+    ],
+    "ignored_tests": [
+      {
+        "line": 10,
+        "name": "bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation",
+        "status": "ignored",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      },
+      {
+        "line": 11,
+        "name": "channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown",
+        "status": "ignored",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      },
+      {
+        "line": 18,
+        "name": "channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal",
+        "status": "ignored",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      }
+    ],
+    "not_selected": "Two Easy-Turn live targets, Linux PTY ignored cases, all remaining Linux integration targets. macOS passes are not counted here."
+  },
+  "release_smoke": {
+    "started_at": "2026-10-04T10:42:55.102864+00:00",
+    "scope": "Linux container release binaries; no acoustic model, device or binding mutation",
+    "configuration_sha256": {
+      "server.toml": "5191dc00d00beb3201a5d0208abb2a47351c6e1e6c1fecf8a9651387d96ee0ae",
+      "embedded.toml": "f989e46262d8e77d7404e5ddcbcaac5cdc6733120a38000ff2feb3402b933ee6"
+    },
+    "rounds": [
+      {
+        "round": 1,
+        "health_http_status": 200,
+        "health_overall": "ok",
+        "module_health": {
+          "rule_engine": "healthy",
+          "stt": "healthy",
+          "scheduler": "healthy",
+          "conversation": "healthy",
+          "insights": "healthy",
+          "memory": "healthy",
+          "llm.major": "healthy",
+          "tools": "healthy",
+          "cache": "healthy",
+          "tts": "healthy",
+          "router": "healthy",
+          "embedding": "healthy",
+          "skills": "healthy",
+          "persona": "healthy",
+          "llm.minor": "healthy"
+        },
+        "persisted_account_login": false,
+        "same_private_keys": true,
+        "companion_mode": "shadow",
+        "unchanged_policy_revision": true,
+        "device_status_online": true,
+        "unknown_telemetry_null": true,
+        "public_binding_status_grpc": 0,
+        "device_unbound": true,
+        "anonymous_observe_control_grpc": 16,
+        "server_shutdown": {
+          "exit_code": 0,
+          "signal": "SIGTERM",
+          "elapsed_seconds": 0.0036
+        },
+        "embedded_shutdown": {
+          "exit_code": 0,
+          "signal": "SIGTERM",
+          "elapsed_seconds": 0.0028
+        },
+        "all_three_listeners_closed": true
+      },
+      {
+        "round": 2,
+        "health_http_status": 200,
+        "health_overall": "ok",
+        "module_health": {
+          "llm.minor": "healthy",
+          "conversation": "healthy",
+          "stt": "healthy",
+          "scheduler": "healthy",
+          "persona": "healthy",
+          "embedding": "healthy",
+          "cache": "healthy",
+          "llm.major": "healthy",
+          "skills": "healthy",
+          "insights": "healthy",
+          "router": "healthy",
+          "tools": "healthy",
+          "memory": "healthy",
+          "rule_engine": "healthy",
+          "tts": "healthy"
+        },
+        "persisted_account_login": true,
+        "same_private_keys": true,
+        "companion_mode": "shadow",
+        "unchanged_policy_revision": true,
+        "device_status_online": true,
+        "unknown_telemetry_null": true,
+        "public_binding_status_grpc": 0,
+        "device_unbound": true,
+        "anonymous_observe_control_grpc": 16,
+        "server_shutdown": {
+          "exit_code": 0,
+          "signal": "SIGTERM",
+          "elapsed_seconds": 0.0039
+        },
+        "embedded_shutdown": {
+          "exit_code": 0,
+          "signal": "SIGTERM",
+          "elapsed_seconds": 0.0073
+        },
+        "all_three_listeners_closed": true
+      }
+    ],
+    "exit_code": 0,
+    "finished_at": "2026-10-04T10:42:56.165352+00:00",
+    "remaining_smoke_processes": 0,
+    "cleanup_forced_kills": 0,
+    "process_exit_codes": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "validation_script_sha256": {
+    "run-stage.py": "f02b5d668651c22e5fd19c3cf462c490d88688cfb904a8e27ce0a857bc58c34b",
+    "release-smoke.py": "32d34b34f939661bfc51c9d4ba1c693f572157f6cbf7b6f5f674849a247025a0"
+  },
+  "final_resources": {
+    "task_pg": {
+      "non_public_schemas": 0,
+      "other_connections": 0
+    },
+    "linux_container": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 137,
+      "Error": "",
+      "StartedAt": "2026-10-04T10:10:45.745987956Z",
+      "FinishedAt": "2026-10-04T10:49:47.32155606Z"
+    },
+    "container_exit_note": "137 comes from explicit docker stop of the idle sleep holder; both release builds and all test commands exited 0, OOMKilled=false.",
+    "new_task_database_container": "stopped by Root after independent zero-schema/zero-other-connection verification; see resource-cleanup.json",
+    "previous_containers_and_user_5433": "not modified",
+    "exclusive_window": "returned; no active Cargo/PG window",
+    "root_cleanup_record": "resource-cleanup.json"
+  },
+  "evidence_directory": "run/validation-20261004/linux-arm64-v1/evidence",
+  "root_finalized_at": "2026-10-04T10:57:48.768211+00:00"
+}

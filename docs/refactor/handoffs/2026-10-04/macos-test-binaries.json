@@ -1,0 +1,1074 @@
+{
+  "recorded_at": "2026-10-04T10:56:33.303632+00:00",
+  "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+  "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+  "scope": "Retained binary paths from the recorded Cargo run, hashed after validation with unchanged frozen inputs; not a reproducible-build proof. Doc-tests have no separately retained binary. Ignored test binaries may exist without their ignored test cases executing.",
+  "workspace_log_sha256": "beb8172f600b72fdc923552809e19683f20c277be06c3b8eaef853052915ab47",
+  "running_target_count": 66,
+  "workspace": [
+    {
+      "cargo_target": "unittests src/lib.rs (target/debug/deps/alia_core-986a89f5da68fb6e)",
+      "path": "target/debug/deps/alia_core-986a89f5da68fb6e",
+      "sha256": "03fe23224771085b1b12e65d2cb6059dbba53db767ceee04c74d2c8f7cd3b28e",
+      "size_bytes": 2175336,
+      "counts": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 39
+      }
+    },
+    {
+      "cargo_target": "unittests src/lib.rs (target/debug/deps/alia_embedded-e7e0f3f5ffe0d9c6)",
+      "path": "target/debug/deps/alia_embedded-e7e0f3f5ffe0d9c6",
+      "sha256": "a64fb1808d13925f7e819a0df55eac792a059df20f9acbd7c52b68909f4d7237",
+      "size_bytes": 40973824,
+      "counts": {
+        "passed": 167,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 26.16,
+        "line": 212
+      }
+    },
+    {
+      "cargo_target": "unittests src/main.rs (target/debug/deps/alia_embedded-e736b3d83d8e40b8)",
+      "path": "target/debug/deps/alia_embedded-e736b3d83d8e40b8",
+      "sha256": "02353b251e272ca0de3acf472936a38b49b215db0f3fdf86390f818125fc9f7e",
+      "size_bytes": 1004608,
+      "counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 218
+      }
+    },
+    {
+      "cargo_target": "tests/audio.rs (target/debug/deps/audio-50336d26cfed2c3a)",
+      "path": "target/debug/deps/audio-50336d26cfed2c3a",
+      "sha256": "9ad33f40c743165e47732b020d730f30dfb9e9c23e0915643f60b8cbf0bb0543",
+      "size_bytes": 1640248,
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 233
+      }
+    },
+    {
+      "cargo_target": "tests/binding.rs (target/debug/deps/binding-fc1a9dfb61160068)",
+      "path": "target/debug/deps/binding-fc1a9dfb61160068",
+      "sha256": "c20d9ad7e5029c8d42e1bf0b69dcec7d543750f53ece7e7656ae5f0c09ed1728",
+      "size_bytes": 11021800,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 240
+      }
+    },
+    {
+      "cargo_target": "tests/config.rs (target/debug/deps/config-543736abfdebfee2)",
+      "path": "target/debug/deps/config-543736abfdebfee2",
+      "sha256": "08497691bf02dbf0fb8288b1a5b054d5f467bf089ff5aa69614c430bf929b57d",
+      "size_bytes": 6658552,
+      "counts": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 263
+      }
+    },
+    {
+      "cargo_target": "tests/direct_response.rs (target/debug/deps/direct_response-577a0872d1c5feca)",
+      "path": "target/debug/deps/direct_response-577a0872d1c5feca",
+      "sha256": "68ade6908fc7374d64e8af259ded3bd0bdbc15713d61a5620e68c9956f41b219",
+      "size_bytes": 2033488,
+      "counts": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 276
+      }
+    },
+    {
+      "cargo_target": "tests/discovery.rs (target/debug/deps/discovery-d6168e8c316c215f)",
+      "path": "target/debug/deps/discovery-d6168e8c316c215f",
+      "sha256": "316fa10d82452ee17ada55575b32b10905f0fde866dd9d06a6b928afb9d23cdd",
+      "size_bytes": 1634680,
+      "counts": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 284
+      }
+    },
+    {
+      "cargo_target": "tests/identity.rs (target/debug/deps/identity-f0b1aa9563127460)",
+      "path": "target/debug/deps/identity-f0b1aa9563127460",
+      "sha256": "ee52ecc5530f3d0c786d3df81c415e08cc14bc8cc9e556c6bb6c5330c1ff2592",
+      "size_bytes": 2307688,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 291
+      }
+    },
+    {
+      "cargo_target": "tests/runtime.rs (target/debug/deps/runtime-dd520e0a2ab4d669)",
+      "path": "target/debug/deps/runtime-dd520e0a2ab4d669",
+      "sha256": "e8851e9de96424703996f558d8ad3be385be95efddc5aea459a985f8d41f99c9",
+      "size_bytes": 72287800,
+      "counts": {
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.08,
+        "line": 307
+      }
+    },
+    {
+      "cargo_target": "tests/sensors.rs (target/debug/deps/sensors-22753fa3849eccdf)",
+      "path": "target/debug/deps/sensors-22753fa3849eccdf",
+      "sha256": "209515b3ec50dd0f6f92e652f71c01226bd651cbb52d0cc9a2148163b44122c0",
+      "size_bytes": 4406744,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 318
+      }
+    },
+    {
+      "cargo_target": "tests/speech.rs (target/debug/deps/speech-55b56f49ce2140e5)",
+      "path": "target/debug/deps/speech-55b56f49ce2140e5",
+      "sha256": "6a855b479ddab76375cbddd4bfcb8d793d9e2b2a9750e695c9a4640cc82dbeb1",
+      "size_bytes": 2151736,
+      "counts": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 335
+      }
+    },
+    {
+      "cargo_target": "tests/storage.rs (target/debug/deps/storage-5ebf4dc9e02b42a7)",
+      "path": "target/debug/deps/storage-5ebf4dc9e02b42a7",
+      "sha256": "fa7de038bccaec2ad1bcfef1e05b5eb786aa1146987824d5a331e4cf9c8190f5",
+      "size_bytes": 11516792,
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 350
+      }
+    },
+    {
+      "cargo_target": "unittests src/lib.rs (target/debug/deps/alia_proto-75635b6e4ebd7d81)",
+      "path": "target/debug/deps/alia_proto-75635b6e4ebd7d81",
+      "sha256": "7b29fb5a6235a112040ccf2721263eb7fcdcf2ad603a04b30a3894d2c3da20ba",
+      "size_bytes": 1695672,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 361
+      }
+    },
+    {
+      "cargo_target": "unittests src/lib.rs (target/debug/deps/alia_server-928ea6d47fbd3e06)",
+      "path": "target/debug/deps/alia_server-928ea6d47fbd3e06",
+      "sha256": "ec1953ec4b8cc60721305fa3f9c91bb0e1fb3b00c1070db0d13a126db8ca187f",
+      "size_bytes": 100617504,
+      "counts": {
+        "passed": 313,
+        "failed": 0,
+        "ignored": 3,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 17.35,
+        "line": 693
+      }
+    },
+    {
+      "cargo_target": "unittests src/main.rs (target/debug/deps/alia_server-faa1cc4b700aaa82)",
+      "path": "target/debug/deps/alia_server-faa1cc4b700aaa82",
+      "sha256": "595dbe2ad43da1ba2a0f3dae8113569e0ab5ae26d85bf60b689d0206d6323cb6",
+      "size_bytes": 1004592,
+      "counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 699
+      }
+    },
+    {
+      "cargo_target": "tests/appraisal_provenance.rs (target/debug/deps/appraisal_provenance-0507233754636ffd)",
+      "path": "target/debug/deps/appraisal_provenance-0507233754636ffd",
+      "sha256": "bf0370cffe54cb366b4464e411a9e3738e1ca515b13629677ea66011fd8b9ad2",
+      "size_bytes": 33806568,
+      "counts": {
+        "passed": 20,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 5.38,
+        "line": 725
+      }
+    },
+    {
+      "cargo_target": "tests/body_delivery.rs (target/debug/deps/body_delivery-d10d49daf0542a0e)",
+      "path": "target/debug/deps/body_delivery-d10d49daf0542a0e",
+      "sha256": "01f424007fe6966ef676fff720a147e7d5e772c04d13df19084546e09561d124",
+      "size_bytes": 24230848,
+      "counts": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.45,
+        "line": 738
+      }
+    },
+    {
+      "cargo_target": "tests/cache_context.rs (target/debug/deps/cache_context-83cf4ff3bdfa0646)",
+      "path": "target/debug/deps/cache_context-83cf4ff3bdfa0646",
+      "sha256": "343d398c17ce3c6f3bd1434baf5645f74e32fe4b8d6e702cedbd70e89b8c1bc9",
+      "size_bytes": 36027232,
+      "counts": {
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 4.03,
+        "line": 760
+      }
+    },
+    {
+      "cargo_target": "tests/channel_registry.rs (target/debug/deps/channel_registry-edbdd8b640bc9709)",
+      "path": "target/debug/deps/channel_registry-edbdd8b640bc9709",
+      "sha256": "a1816d96827376699c08329e09f70c1acb2260793874d5f1d377e28544c0c646",
+      "size_bytes": 3554128,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 770
+      }
+    },
+    {
+      "cargo_target": "tests/config.rs (target/debug/deps/config-54795c7965d17393)",
+      "path": "target/debug/deps/config-54795c7965d17393",
+      "sha256": "cbcc7a1f09298e6c1ab24c885b020da5664ea6ee35d02fb8c8a42a3fe07f1c71",
+      "size_bytes": 8483624,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 780
+      }
+    },
+    {
+      "cargo_target": "tests/context_lease.rs (target/debug/deps/context_lease-3dd09768489e62f7)",
+      "path": "target/debug/deps/context_lease-3dd09768489e62f7",
+      "sha256": "33fa90c367c62875f0ab1a48ec4a63c8168929fb1df4b6d26bb9320a5386246d",
+      "size_bytes": 25379328,
+      "counts": {
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 3.69,
+        "line": 812
+      }
+    },
+    {
+      "cargo_target": "tests/delivery_repository.rs (target/debug/deps/delivery_repository-3adff1cc673a0022)",
+      "path": "target/debug/deps/delivery_repository-3adff1cc673a0022",
+      "sha256": "a0ef7a804a117fee6e3df943bb1b8d9a82cf02f3709f8fe369ecaffd75823928",
+      "size_bytes": 24353832,
+      "counts": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 2.79,
+        "line": 833
+      }
+    },
+    {
+      "cargo_target": "tests/delivery_service.rs (target/debug/deps/delivery_service-9a84ac7128ae81cf)",
+      "path": "target/debug/deps/delivery_service-9a84ac7128ae81cf",
+      "sha256": "544dd0ae7a5d7d3d44cf86d57b045c5307bdc9b99d6fe8a6a69dfa043c618998",
+      "size_bytes": 27966960,
+      "counts": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 12.63,
+        "line": 851
+      }
+    },
+    {
+      "cargo_target": "tests/delivery_text.rs (target/debug/deps/delivery_text-daf5dcc5076d676b)",
+      "path": "target/debug/deps/delivery_text-daf5dcc5076d676b",
+      "sha256": "09b4d9826b928ccc096acc9203354e4c535b083d0d218538aa571ef6d127b4d1",
+      "size_bytes": 23663696,
+      "counts": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.16,
+        "line": 863
+      }
+    },
+    {
+      "cargo_target": "tests/delivery_text_service.rs (target/debug/deps/delivery_text_service-e45de231299e347f)",
+      "path": "target/debug/deps/delivery_text_service-e45de231299e347f",
+      "sha256": "ced375df41edc3f9ca66c168242993e3896e1bb598fee3d702b2f4a5974c87eb",
+      "size_bytes": 27097304,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.04,
+        "line": 873
+      }
+    },
+    {
+      "cargo_target": "tests/duplex_playback.rs (target/debug/deps/duplex_playback-e65e790efe7810e2)",
+      "path": "target/debug/deps/duplex_playback-e65e790efe7810e2",
+      "sha256": "32a8c0f51c9df30ea343e4f1bc5bc821882f93547515aec23b888051e0dc2a59",
+      "size_bytes": 111367904,
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 13.79,
+        "line": 888
+      }
+    },
+    {
+      "cargo_target": "tests/easy_turn_live.rs (target/debug/deps/easy_turn_live-8891eac56b97a9e6)",
+      "path": "target/debug/deps/easy_turn_live-8891eac56b97a9e6",
+      "sha256": "8d71b90ae9f3273e93adfde5df5d4434c3456fd458310bfae732713d802fd4ba",
+      "size_bytes": 12914912,
+      "counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 895
+      }
+    },
+    {
+      "cargo_target": "tests/embedded_channel.rs (target/debug/deps/embedded_channel-0d5e9c9bd8d2209c)",
+      "path": "target/debug/deps/embedded_channel-0d5e9c9bd8d2209c",
+      "sha256": "bbadeb4b12951b95dbf5485b49186e432255f835babc1dd3de7bee084eaa508d",
+      "size_bytes": 3602800,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 904
+      }
+    },
+    {
+      "cargo_target": "tests/execution_repository.rs (target/debug/deps/execution_repository-35f1ff93700e7fe3)",
+      "path": "target/debug/deps/execution_repository-35f1ff93700e7fe3",
+      "sha256": "6389361dd7b380e4595a067013bb5735f6e25736dc6763775512295b864cb98d",
+      "size_bytes": 22882424,
+      "counts": {
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 3.01,
+        "line": 929
+      }
+    },
+    {
+      "cargo_target": "tests/execution_service.rs (target/debug/deps/execution_service-45b91b434c738c31)",
+      "path": "target/debug/deps/execution_service-45b91b434c738c31",
+      "sha256": "c6269e97c0975c206a1b3251de33f5f7dc1609e838414ffc0e7a4c3166532c1c",
+      "size_bytes": 40801632,
+      "counts": {
+        "passed": 30,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 20.08,
+        "line": 965
+      }
+    },
+    {
+      "cargo_target": "tests/expression_abi.rs (target/debug/deps/expression_abi-c905467329aa5dd7)",
+      "path": "target/debug/deps/expression_abi-c905467329aa5dd7",
+      "sha256": "e372a97892273d29a045f6b76fd87e9ba8388d935efe6effba3d67cb01a8ca44",
+      "size_bytes": 3587568,
+      "counts": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 973
+      }
+    },
+    {
+      "cargo_target": "tests/expression_appraisal.rs (target/debug/deps/expression_appraisal-fcb8cef5c581d980)",
+      "path": "target/debug/deps/expression_appraisal-fcb8cef5c581d980",
+      "sha256": "6856f353b5e6bc32d16bc6de756bc1198cb530765e5544080e4a8013684f2f76",
+      "size_bytes": 1379880,
+      "counts": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 981
+      }
+    },
+    {
+      "cargo_target": "tests/expression_eval.rs (target/debug/deps/expression_eval-54ada7b5bd230ab2)",
+      "path": "target/debug/deps/expression_eval-54ada7b5bd230ab2",
+      "sha256": "ccf026f98060bcba9527f63a852154915557af6369b438358bf2fca5e52b37c8",
+      "size_bytes": 13397216,
+      "counts": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 994
+      }
+    },
+    {
+      "cargo_target": "tests/expression_regulation.rs (target/debug/deps/expression_regulation-6a376b12a5ca59e5)",
+      "path": "target/debug/deps/expression_regulation-6a376b12a5ca59e5",
+      "sha256": "eb63b3f13938e549d30fc5af810e8f574098426fc84238bee48e365f6ead3d52",
+      "size_bytes": 1132040,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1001
+      }
+    },
+    {
+      "cargo_target": "tests/expression_trace.rs (target/debug/deps/expression_trace-1c46175c0240257c)",
+      "path": "target/debug/deps/expression_trace-1c46175c0240257c",
+      "sha256": "4ceef4ed49e180944e43db903397d53e60f2740f737f8b640a02c904eaa18537",
+      "size_bytes": 3659744,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1008
+      }
+    },
+    {
+      "cargo_target": "tests/ingress_identity.rs (target/debug/deps/ingress_identity-9c7353a112800235)",
+      "path": "target/debug/deps/ingress_identity-9c7353a112800235",
+      "sha256": "f69fbe631a39ecbbc58c689555b321692f3d3e0dfda6144a21824a12fd2be3b6",
+      "size_bytes": 14905808,
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1023
+      }
+    },
+    {
+      "cargo_target": "tests/llm.rs (target/debug/deps/llm-3f6a034648073a7e)",
+      "path": "target/debug/deps/llm-3f6a034648073a7e",
+      "sha256": "2e99fcbbd713f53141eca2ab02fafb49b57bdf62d27daa6b1206bd49e6b1e597",
+      "size_bytes": 1320744,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1030
+      }
+    },
+    {
+      "cargo_target": "tests/llm_providers.rs (target/debug/deps/llm_providers-176472c4e4c4d3b2)",
+      "path": "target/debug/deps/llm_providers-176472c4e4c4d3b2",
+      "sha256": "249ef269c23882c9ecca28d5f449c9375de7dee8fb3df2ed495509bde22dde7f",
+      "size_bytes": 21324928,
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.98,
+        "line": 1041
+      }
+    },
+    {
+      "cargo_target": "tests/memory.rs (target/debug/deps/memory-67fde73a58eb74ad)",
+      "path": "target/debug/deps/memory-67fde73a58eb74ad",
+      "sha256": "70917dc6e4eb59c7dddf31bb5e2f17fdd62573fb81c1d95fc6f17372d2f42172",
+      "size_bytes": 24208792,
+      "counts": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.6,
+        "line": 1060
+      }
+    },
+    {
+      "cargo_target": "tests/memory_capture.rs (target/debug/deps/memory_capture-a559733a9bcfad9d)",
+      "path": "target/debug/deps/memory_capture-a559733a9bcfad9d",
+      "sha256": "3a0b6180f8fe5966dd712077c2bafb5f88701ece62d3b70ab76be181294e1573",
+      "size_bytes": 25970176,
+      "counts": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.26,
+        "line": 1072
+      }
+    },
+    {
+      "cargo_target": "tests/memory_embedding.rs (target/debug/deps/memory_embedding-58968eb6ba1e24d7)",
+      "path": "target/debug/deps/memory_embedding-58968eb6ba1e24d7",
+      "sha256": "0308768d74ee3ad770ff3cc0af132de5545d75475258b8fb076154c0b83f1890",
+      "size_bytes": 25087600,
+      "counts": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 4.97,
+        "line": 1091
+      }
+    },
+    {
+      "cargo_target": "tests/memory_embedding_provenance.rs (target/debug/deps/memory_embedding_provenance-11e16f14887bbbac)",
+      "path": "target/debug/deps/memory_embedding_provenance-11e16f14887bbbac",
+      "sha256": "ff60b9d7f61edb145003c3d7baa472962adf4f754cb486913eb6be6225ea3ffb",
+      "size_bytes": 33528688,
+      "counts": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 2.7,
+        "line": 1104
+      }
+    },
+    {
+      "cargo_target": "tests/memory_message_pins.rs (target/debug/deps/memory_message_pins-6f7529ca265a1cd2)",
+      "path": "target/debug/deps/memory_message_pins-6f7529ca265a1cd2",
+      "sha256": "bcc91c4b2f5ab4190245a59e66bb1802a48cae7ceddd48e4c288b075a03c85e5",
+      "size_bytes": 24103240,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.19,
+        "line": 1113
+      }
+    },
+    {
+      "cargo_target": "tests/memory_privacy.rs (target/debug/deps/memory_privacy-b37ac199e58af3d2)",
+      "path": "target/debug/deps/memory_privacy-b37ac199e58af3d2",
+      "sha256": "7b21bb457b3524d6efe130fb0e7199de454277a85811a9cae73fee246fecbbee",
+      "size_bytes": 25552816,
+      "counts": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 5.71,
+        "line": 1150
+      }
+    },
+    {
+      "cargo_target": "tests/migrations.rs (target/debug/deps/migrations-b3621f90461c6169)",
+      "path": "target/debug/deps/migrations-b3621f90461c6169",
+      "sha256": "3fc1fa63fe8b990e3ffd7a069c06f852f8a5209053b45f9f97b373032fdc06e9",
+      "size_bytes": 17092296,
+      "counts": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.55,
+        "line": 1163
+      }
+    },
+    {
+      "cargo_target": "tests/output_control.rs (target/debug/deps/output_control-8ba3a676b3ecff0a)",
+      "path": "target/debug/deps/output_control-8ba3a676b3ecff0a",
+      "sha256": "5231da88e099702ab880ac552ad56b6f9400ac8191e7c495b14e25b809f9d5dd",
+      "size_bytes": 35820496,
+      "counts": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 5.55,
+        "line": 1182
+      }
+    },
+    {
+      "cargo_target": "tests/output_lifecycle.rs (target/debug/deps/output_lifecycle-aa192ae027f9d120)",
+      "path": "target/debug/deps/output_lifecycle-aa192ae027f9d120",
+      "sha256": "563640cddf79cfb80cbf9df9e13191b282e4c8505b4d6963df1968dd5fd243cd",
+      "size_bytes": 27321632,
+      "counts": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 7.91,
+        "line": 1199
+      }
+    },
+    {
+      "cargo_target": "tests/persona.rs (target/debug/deps/persona-a06afe1f23861c29)",
+      "path": "target/debug/deps/persona-a06afe1f23861c29",
+      "sha256": "2045cf431d53eed4bd02fb62df20c6b112321c97303f3fb73d9175eb19c911ad",
+      "size_bytes": 19159752,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1206
+      }
+    },
+    {
+      "cargo_target": "tests/pipeline.rs (target/debug/deps/pipeline-7acbdd43f886e030)",
+      "path": "target/debug/deps/pipeline-7acbdd43f886e030",
+      "sha256": "da66a205204114120f70a94d4c503dd52d26b3e7b8712d75240fb2ede5fbe08f",
+      "size_bytes": 2554440,
+      "counts": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1229
+      }
+    },
+    {
+      "cargo_target": "tests/pipeline_tools.rs (target/debug/deps/pipeline_tools-5e930ee7d016aa84)",
+      "path": "target/debug/deps/pipeline_tools-5e930ee7d016aa84",
+      "sha256": "812a42d57be62309727d964f41335e189311102446d31a04e56411c1a0f1ff46",
+      "size_bytes": 2237424,
+      "counts": {
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1249
+      }
+    },
+    {
+      "cargo_target": "tests/plugin_storage.rs (target/debug/deps/plugin_storage-c205c5898e1fa487)",
+      "path": "target/debug/deps/plugin_storage-c205c5898e1fa487",
+      "sha256": "66ec84cef540475de4f0fb7b67add1f471929572c8233bc013d279a85cb64a01",
+      "size_bytes": 19461840,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.15,
+        "line": 1259
+      }
+    },
+    {
+      "cargo_target": "tests/provider_adapters.rs (target/debug/deps/provider_adapters-854386d4c6d8ecee)",
+      "path": "target/debug/deps/provider_adapters-854386d4c6d8ecee",
+      "sha256": "23766fc10864cb1ff990054105ac574859b01e47e0848c076f8e4cfee8cabd82",
+      "size_bytes": 7796848,
+      "counts": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.99,
+        "line": 1271
+      }
+    },
+    {
+      "cargo_target": "tests/registry.rs (target/debug/deps/registry-8ff9c153ee64a624)",
+      "path": "target/debug/deps/registry-8ff9c153ee64a624",
+      "sha256": "f3d47eabe71fc7ff6739f0717df15332252bfc81c63a277dc33b039490eff12d",
+      "size_bytes": 1093672,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1278
+      }
+    },
+    {
+      "cargo_target": "tests/router.rs (target/debug/deps/router-47c3a5dcbfe994d5)",
+      "path": "target/debug/deps/router-47c3a5dcbfe994d5",
+      "sha256": "217ea2b7680a9811352e81172f224efcdd40df3bc3ce1700f2ee36ef9781abe2",
+      "size_bytes": 2095000,
+      "counts": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1296
+      }
+    },
+    {
+      "cargo_target": "tests/rules.rs (target/debug/deps/rules-ed91635bccca9219)",
+      "path": "target/debug/deps/rules-ed91635bccca9219",
+      "sha256": "2c025ebdcf30798d2f6d1e768877452b734aec964c9b122560269119a56afec6",
+      "size_bytes": 15432216,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1303
+      }
+    },
+    {
+      "cargo_target": "tests/scheduler.rs (target/debug/deps/scheduler-1fe2409168401c8e)",
+      "path": "target/debug/deps/scheduler-1fe2409168401c8e",
+      "sha256": "93814ccefb9afa7cdbcf6f6f695ea3ee4f5cb8002763bd534936146429643390",
+      "size_bytes": 1233288,
+      "counts": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1310
+      }
+    },
+    {
+      "cargo_target": "tests/sensors.rs (target/debug/deps/sensors-9b068e28a69aaec1)",
+      "path": "target/debug/deps/sensors-9b068e28a69aaec1",
+      "sha256": "ff4006b27c4b693c4ce1536b1fe4964b92ca51d8aa7601c607b5bad0d5dc3634",
+      "size_bytes": 18228952,
+      "counts": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1324
+      }
+    },
+    {
+      "cargo_target": "tests/server_background.rs (target/debug/deps/server_background-29085910a40b8ae6)",
+      "path": "target/debug/deps/server_background-29085910a40b8ae6",
+      "sha256": "4174cd1e315f15d246e891db24c196c18c85620934f6505787c0071cf3be30e7",
+      "size_bytes": 32761856,
+      "counts": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.06,
+        "line": 1343
+      }
+    },
+    {
+      "cargo_target": "tests/server_runtime.rs (target/debug/deps/server_runtime-1dc044b93c32fdc1)",
+      "path": "target/debug/deps/server_runtime-1dc044b93c32fdc1",
+      "sha256": "1aedd1db8e5188e4463b31e6246a464fd64f2c46dc4dfea051be9874cc589654",
+      "size_bytes": 122117136,
+      "counts": {
+        "passed": 53,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 72.8,
+        "line": 1408
+      }
+    },
+    {
+      "cargo_target": "tests/settings.rs (target/debug/deps/settings-9b8958a0ef51c2d2)",
+      "path": "target/debug/deps/settings-9b8958a0ef51c2d2",
+      "sha256": "78e1daac1bcb522dbc06d15abe3df9d79480733d5d36428defd564c7c5625ab9",
+      "size_bytes": 10824344,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1417
+      }
+    },
+    {
+      "cargo_target": "tests/skills.rs (target/debug/deps/skills-32ca41b459986b8e)",
+      "path": "target/debug/deps/skills-32ca41b459986b8e",
+      "sha256": "bbfcec0906ae37c7450283147c50016abb68dafd3f5ad990a1d13367cee944e2",
+      "size_bytes": 3708280,
+      "counts": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1434
+      }
+    },
+    {
+      "cargo_target": "tests/tools.rs (target/debug/deps/tools-6ef525e6fff7f02f)",
+      "path": "target/debug/deps/tools-6ef525e6fff7f02f",
+      "sha256": "5a2147958e6058cfd61ac59880a8e9e4f197bcd56d3a272d3060084a389c1392",
+      "size_bytes": 24585480,
+      "counts": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1455
+      }
+    },
+    {
+      "cargo_target": "tests/voice_stream_live.rs (target/debug/deps/voice_stream_live-c9c58e99893cd189)",
+      "path": "target/debug/deps/voice_stream_live-c9c58e99893cd189",
+      "sha256": "31448d2f2d86b9a635c063e79c878d03320971bde2e9db5a1efb1fbc512031e1",
+      "size_bytes": 40933712,
+      "counts": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1462
+      }
+    },
+    {
+      "cargo_target": "unittests src/lib.rs (target/debug/deps/alia_transport-8475d21e9fe09f28)",
+      "path": "target/debug/deps/alia_transport-8475d21e9fe09f28",
+      "sha256": "858f4c34de8b0adb77db6f16936ab74d9a3ce87902088faab757957f41829cf0",
+      "size_bytes": 7338656,
+      "counts": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.05,
+        "line": 1471
+      }
+    },
+    {
+      "cargo_target": "tests/transport.rs (target/debug/deps/transport-7dba3defe0bc5cf5)",
+      "path": "target/debug/deps/transport-7dba3defe0bc5cf5",
+      "sha256": "14cbedb939222b09b99489a948021d2d49778d2c64e55ef6530c4fb1510a2a56",
+      "size_bytes": 2325448,
+      "counts": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1481
+      }
+    }
+  ],
+  "pty": {
+    "path": "target/debug/deps/alia_server-2d382a543686adec",
+    "sha256": "a57510f862912e120a3ccc44fe1719a22a26fe73fa2027acf6c6c986c6be9424",
+    "size_bytes": 100618352,
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0
+  }
+}

@@ -1,0 +1,859 @@
+{
+  "recorded_at": "2026-10-04T11:00:55.616919+00:00",
+  "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+  "source_manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+  "scope": "Current task evidence files only. Raw logs, scripts, snapshots and binaries remain under ignored run/. Selected small immutable copies and finalized JSON summaries are versioned. This is an integrity index, not execution of commands, artifact reproducibility, or a complete dependency/model inventory. Private runtime keys, databases and configurations are not copied; their relevant safe summaries live in linux-summary.json.",
+  "raw_evidence_file_count": 118,
+  "raw_evidence": [
+    {
+      "path": "run/validation-20261004/audio-readiness-notes.md",
+      "size_bytes": 7370,
+      "sha256": "f4d0a11c541cfc7b11d6d8bfec45f1859d15730aa6c5398b93f1fa699fd6e588"
+    },
+    {
+      "path": "run/validation-20261004/baseline-source-manifest.json",
+      "size_bytes": 102612,
+      "sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b"
+    },
+    {
+      "path": "run/validation-20261004/build-input-inventory.json",
+      "size_bytes": 18807,
+      "sha256": "7780a90d5c31dc9b82d0eb3c15ba251d82d8e9fab1d4b5cdde945c00c257b712",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/build-input-inventory.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/committed-source-verification.json",
+      "size_bytes": 659,
+      "sha256": "f7c845bac388d3e68c09949dcbdcc81b56be9788d07d77f65c5b6b05ae2839c0",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/committed-source-verification.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/delivery-audit.json",
+      "size_bytes": 7679,
+      "sha256": "ee258989f53f0b9b36127db1eca08058cdaf0a96af5655d9eeafaa06258acd03",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/delivery-audit.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/duplex-playback-review-v1",
+      "size_bytes": 111367904,
+      "sha256": "32a8c0f51c9df30ea343e4f1bc5bc821882f93547515aec23b888051e0dc2a59"
+    },
+    {
+      "path": "run/validation-20261004/duplex-playback-v4-retained",
+      "size_bytes": 107330192,
+      "sha256": "e529ff72ad2e1805040a07291cf152f1625b6c38c9aea4400ba35a801d6fe087"
+    },
+    {
+      "path": "run/validation-20261004/final-source-manifest-v1.json",
+      "size_bytes": 102737,
+      "sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/final-source-manifest-v1.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/format-v1-result.json",
+      "size_bytes": 588,
+      "sha256": "ae6445e1c7e07f4b549830176184dc66e75eb77b2d165077264206d3df2cee46",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/format-v1-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/format-v1.log",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-embedded-elf.log",
+      "size_bytes": 5003,
+      "sha256": "508f64767000d72ab9ed50cce623d454f0ccbed52db27c61c097f0ac0b2834b7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-embedded-file.log",
+      "size_bytes": 254,
+      "sha256": "249648a40431b646608fc312a4d1ef2aa6d9f3d931e768c6c47f05e94cb17fc2"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-embedded-ldd.log",
+      "size_bytes": 1069,
+      "sha256": "2d853c4ee200bc8813d1518012b538b07133fa04db6672e404278e36c0b4e7d5"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-server-elf.log",
+      "size_bytes": 4914,
+      "sha256": "dee5767d8aee6fcfa07d96697671e9cdfa9651e709644adaac32d2aac1724674"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-server-file.log",
+      "size_bytes": 247,
+      "sha256": "9a8c7fc590f563e84ab75b3e4b08f08303236f8bb3be79098d2f59e68403f8a7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/alia-server-ldd.log",
+      "size_bytes": 449,
+      "sha256": "c16fcc4eb096752bd9a4c34c75b1e48a1c22f46a37637f964078510db5b757c5"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/cache-clone.json",
+      "size_bytes": 341,
+      "sha256": "f51bbd255709ad7e4e2509d3fa86b66c0fe432515d730d4b30353d835791b44b"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/cache-clone.log",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/cache-layout-correction.json",
+      "size_bytes": 286,
+      "sha256": "914c65a12ab26649e245c415e4b141506eb4d42e010df5fad169a81f872e71f2"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/curl-version.json",
+      "size_bytes": 228,
+      "sha256": "0f7dec7a7d01d4a6ac0e21b257aeabe3aa508d0bb7d0bd5ccbb6985a7715c7d7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/curl-version.log",
+      "size_bytes": 580,
+      "sha256": "5c57feca70c9ac67a88a039ef368c61a90477e222ffbd77f6dfa0f039f1ec62e"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-create.json",
+      "size_bytes": 1589,
+      "sha256": "923c8ed5b3f0d19494562461d3f2e63a21e129f54728e2583034a5cb476e4573"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-create.log",
+      "size_bytes": 65,
+      "sha256": "cb63f59574567fd3d5b194cefb73c00600d7dca590cc2038b4e13600f1726e44"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-final-state.json",
+      "size_bytes": 247,
+      "sha256": "a3236bf3ad9a96835663966c35d392cc2ea23a193c8e2aca7fd55afd70946d53",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-docker-final-state.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-final-state.log",
+      "size_bytes": 225,
+      "sha256": "5f248f722fc10d2a945e71edb2ad75886d0cfb92ddf5108a4fddebbd8797ac77"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-start.json",
+      "size_bytes": 200,
+      "sha256": "8a6c9851060cef3f8643cd083c8d61c6ec8aca180b78c08f0b26fe4a849baf0b"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-start.log",
+      "size_bytes": 30,
+      "sha256": "b6749df89ce0895e29d199b22e45c4436495b7b9c4e9579f2e3fed2f7a239a84"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-stop.json",
+      "size_bytes": 228,
+      "sha256": "7e6d9319de188bc7ce357fac424de2c8cd7827eb0dab0442f03e190d0d4905b5"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/docker-stop.log",
+      "size_bytes": 85,
+      "sha256": "54c3a4b6eba594fceb3da62456eb964473fee60713eb93859c05fbeff002abc1"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-features.command.json",
+      "size_bytes": 718,
+      "sha256": "25d856e98012b781d8042ff8749e54c19c04d54be6460d4413681f9b4197da00"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-features.log",
+      "size_bytes": 140175,
+      "sha256": "0a36b0db1b2572fc8e3867f042e1212ce20220a7893dc9702a83e475c1021269"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-features.result.json",
+      "size_bytes": 879,
+      "sha256": "87ec261efb5ddad99267ee0631f8b0e3bddc51f1a77ede65a674ac9bc112bd19"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-release.command.json",
+      "size_bytes": 721,
+      "sha256": "7a0277fa9cb74b8059a42a7ff7ad089fa2121f08ef6095b09c5816509a437409"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-release.log",
+      "size_bytes": 4685,
+      "sha256": "0035b241593022103d93d883fb092dd6b608d83a8dbc30145a86c8aff5b8c3e5"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-release.result.json",
+      "size_bytes": 957,
+      "sha256": "fd1db1a371d0db9392f420602aff106e0e195f050d63280a7eb44797fea4a304",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-embedded-release.result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol-counts.json",
+      "size_bytes": 5725,
+      "sha256": "1f0bc81153e14eb0ca388142b2512477893aea4bce90a8d80cf1f58745004f18",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-embedded-runtime-protocol-counts.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol-counts.txt",
+      "size_bytes": 1854,
+      "sha256": "2f9d18eeff4ef82789974b80ec50e3d3983a54bb09df64d4fba674d87d76eaa0"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol.command.json",
+      "size_bytes": 832,
+      "sha256": "1a470d79fa05b7f32dde73fce6a6394e6a185708ac3df917c6f229c9199231d7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol.log",
+      "size_bytes": 24137,
+      "sha256": "3a8fad393c9843d3dec25f0dcc2bb906ca4d0baf97d27badcf9c0cf795399474"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol.result.json",
+      "size_bytes": 1069,
+      "sha256": "afeefc38b4558bd78bfd64b395633e3b4b38364aa020b642f63b760bf491ced9",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-embedded-runtime-protocol.result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/feature-metadata.command.json",
+      "size_bytes": 698,
+      "sha256": "80778616f8616e9d0a520ffc2f45c1ad6309e741f7ef80cd496d8875c05094aa"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/feature-metadata.log",
+      "size_bytes": 2569588,
+      "sha256": "3012551f8fd740d5beaaec8b7a63e3a69ce0bdeb38f350066146b5bbec0d2201"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/feature-metadata.result.json",
+      "size_bytes": 858,
+      "sha256": "19b4d13b653afddc89b8ee9df22827e6672e346b9429f28043c0d94d690f2ace"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/feature-summary.json",
+      "size_bytes": 1247,
+      "sha256": "9f2cff419642da7ac16ef04258a2cb3cdf4f4f310b0b7320720009acc43b5a16",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-feature-summary.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-archive-download.json",
+      "size_bytes": 578,
+      "sha256": "52a37555a4494a82e9ebc3921e665f63172bf8cd905c4c7858fe46962204c825"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-archive-download.log",
+      "size_bytes": 950,
+      "sha256": "87d6fec093973f1ac6bcaf9b8367eeda43f83271086d8d05cea3089e345ca5c3"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-archive-search.json",
+      "size_bytes": 345,
+      "sha256": "4c8d578a4740e8a9027d4162556347129e2504d26dd7d750bc6a24794aa42b70"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-archive-search.log",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-inputs-after.json",
+      "size_bytes": 316,
+      "sha256": "8f73d9c59ca2f9cf0b3ffb4278c9dd39f329b16593035fe0ec50952cb955da2d",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-native-inputs-after.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-linked-symbols.json",
+      "size_bytes": 732,
+      "sha256": "43f279f498ddafa8965fbc879ec2a7eacf08294ec272c1d9be51dc5c4215b618",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-native-linked-symbols.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-linked-symbols.log",
+      "size_bytes": 131,
+      "sha256": "a3dcb661a52a3acc014c4c519c3723479369e4c1ba13c28e16ab287d8fb15257",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-native-linked-symbols.log",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-versions.json",
+      "size_bytes": 278,
+      "sha256": "c0bfcfb52efda6c98880addca73976a5182fd47d165b32be544e3d6679b49033"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/native-versions.log",
+      "size_bytes": 21,
+      "sha256": "d94e6bc931aafe1e4a4c0b7b9cad504aa40f4b88d8e60a76c8eb989800f6d036"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/preparation-status.json",
+      "size_bytes": 263,
+      "sha256": "da85ca7e222d3d53c332412b509676be990f4998c81240a5400c40730b6b1f49"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/prepare-source.py",
+      "size_bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/protobuf-version.json",
+      "size_bytes": 230,
+      "sha256": "c96113bb9ed1ed4c2c024a9b7d378f2f6112cf49955b8d3a568584da78062dbf"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/protobuf-version.log",
+      "size_bytes": 18,
+      "sha256": "5d8e8ea015f9d39d174f30332765f0edeb50e00689dc792907c56d56ea637d22"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-artifacts-after.json",
+      "size_bytes": 276,
+      "sha256": "da9f499b5262cead92ceb2b8a9bf1582f29b58fc2280820e6aadb1e2e3dcf33f",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-release-artifacts-after.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-artifacts.json",
+      "size_bytes": 3605,
+      "sha256": "407afd9dddf631f77120d21f8732a6c12009739c97a5548bbb26860049a16e46",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-release-artifacts.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke-summary.json",
+      "size_bytes": 2974,
+      "sha256": "a16207b54477d439754f83a5a9de00a767460e5207cf601d2b71a5e68a50bdd8",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-release-smoke-summary.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.command.json",
+      "size_bytes": 652,
+      "sha256": "b8c67ca15677af815d4e13b06840ae63008e8daf7c84c7338b1d859b4a24bf8a"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.log",
+      "size_bytes": 40,
+      "sha256": "7fd09bb8073c124aad944b2af5638da7834918b0a62181ffebeed7349114bd59"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.py",
+      "size_bytes": 10482,
+      "sha256": "32d34b34f939661bfc51c9d4ba1c693f572157f6cbf7b6f5f674849a247025a0"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.result.json",
+      "size_bytes": 888,
+      "sha256": "7123fe94e47f9e697d250949833aa7c5cadd132d0517b6b2cb75512ad26cc6bb",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-release-smoke.result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/result-summary.json",
+      "size_bytes": 20136,
+      "sha256": "6bb1423a7c4c9ee6cc5aa4cd804ab0057436137e9d8c500fce657cda7e832f02"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/run-stage.py",
+      "size_bytes": 3005,
+      "sha256": "f02b5d668651c22e5fd19c3cf462c490d88688cfb904a8e27ce0a857bc58c34b"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/rustc.json",
+      "size_bytes": 223,
+      "sha256": "9b2dce8ac3fb962adcb0949c718e3ae672f21f565bf1eebb974a922989b4b953"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/rustc.log",
+      "size_bytes": 197,
+      "sha256": "9e52f76a6e81c8cce82c76c2ee87a3c9999e56d92106b19142416460b9d2c727"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/selected-environment.json",
+      "size_bytes": 380,
+      "sha256": "6d21ffe88246c271e364b8085a4ec92b9608e5aa7635398d8b12d3ca178fa4cf",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-selected-environment.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-features.command.json",
+      "size_bytes": 716,
+      "sha256": "327e3e096ba11005412d5a535b4d36d8c63eb40c666792271523bc95d89301a5"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-features.log",
+      "size_bytes": 208961,
+      "sha256": "2e5d9ebb8a5b40305f96116dfb60a3385a8431b20071dc7fb68f9691de09d72f"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-features.result.json",
+      "size_bytes": 877,
+      "sha256": "5e8e66e56b659e0ee64d203698c99cee68b273188edfc5ae4e46d7fdddad9732"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-release.command.json",
+      "size_bytes": 719,
+      "sha256": "31a193e7b5626dc698d9a5e052065f4834b2fbce6e4180b3a579add0c40aa8b9"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-release.log",
+      "size_bytes": 10432,
+      "sha256": "b8c2d14b2c894a727b1df5a4c8a88e27054b892a8158b32dee0aaf47becf5725"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-release.result.json",
+      "size_bytes": 882,
+      "sha256": "adc40ef6483ff29931263818a734bf1e2f988d500ebd814493c3405f63995389",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-server-release.result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol-counts.json",
+      "size_bytes": 5710,
+      "sha256": "b9700a3367a5e4a4aaf2c2bf9e50bd0e5b00c68b359ddfa433d3e29e55c48a5c",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-server-runtime-protocol-counts.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol-counts.txt",
+      "size_bytes": 2552,
+      "sha256": "015ade349db88212c695e55a521d819f5df456808aa206d073b17805ca9b19d7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.command.json",
+      "size_bytes": 787,
+      "sha256": "1e3c7ea2f0d44bf8cf298dca6ca36703e79049ab91eb1b1f45d2298fc5a68064"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.log",
+      "size_bytes": 41244,
+      "sha256": "b9f6a17b5bbd68e50e78b53f53cc19c4b53ad94e39db950125ec1e4e378bd973"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.result.json",
+      "size_bytes": 1025,
+      "sha256": "a0676be286a47ac6fc3204f5632ec946c24d296261d8521864f5273b0021e8e3",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-server-runtime-protocol.result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/smoke-schema-create.json",
+      "size_bytes": 148,
+      "sha256": "fa777652090cfef79c5c39931d22051b2ecd323c0796cd8cb5934476b13eaacf"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/smoke-schema-create.log",
+      "size_bytes": 14,
+      "sha256": "185d73c49badd0f588a9427d2faf8d7b6a1d27e98a490aef920f65667d9feaf6"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/smoke-schema-drop.json",
+      "size_bytes": 369,
+      "sha256": "11423de5dfd5108ad558a0c8532c35dbe19c4cc1f856703f8054aa877440e96b"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/smoke-schema-drop.log",
+      "size_bytes": 6249,
+      "sha256": "f3f64eb5b0f06cea9757c9beccf050f1c38f0d1ce1044a7620d3fd767bb14d6e"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-after-container.json",
+      "size_bytes": 263,
+      "sha256": "9c5fd5dff71f61247ede5b8041cb6259522f53850f8bc01fe647cc7ed40dea11"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-after-container.log",
+      "size_bytes": 33382,
+      "sha256": "85bbf2c02ec2c541cf609aef479e5fb67c0425a4971e75117a6d6e6b00e14633"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-after-host.json",
+      "size_bytes": 93,
+      "sha256": "33e601ef77f6a6b4a9eb74dc98b9244460efa8c4342b84fb0f7ed7b3fab3fec4",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-source-after-host.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-before-container.json",
+      "size_bytes": 210,
+      "sha256": "40d6e0cf9b8d06fd20d3d08eab60f0b38f3857ad6275741f7567c79527e39fab"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-before-container.log",
+      "size_bytes": 33382,
+      "sha256": "85bbf2c02ec2c541cf609aef479e5fb67c0425a4971e75117a6d6e6b00e14633"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-manifest.json",
+      "size_bytes": 102737,
+      "sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source-prepared.json",
+      "size_bytes": 421,
+      "sha256": "96a18046b2397a64183d7d164b9289e46ec112ab529ccb8901ef123f808533ea"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/source.sha256",
+      "size_bytes": 72628,
+      "sha256": "40f1ee3c76e84d5fabda96443388c6a62efde9b72174bdd5e3221bcb57cc4ddb"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/state.json",
+      "size_bytes": 290,
+      "sha256": "a383046585746ba84867fc655be00798bce106c7f5d547cfc9faaaf20c27dbc4"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/state.log",
+      "size_bytes": 368,
+      "sha256": "1222861a4b6ddeed547c80d1ff35de348a92ce1c93555100ad7617fe0e9a72a7"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/task-pg-after-counts.json",
+      "size_bytes": 56,
+      "sha256": "612360d5ce49a6f35b87c81c258937fa4e21815a468a84cbeb9464da0a7025c4",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/linux-task-pg-after-counts.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/task-pg-after.json",
+      "size_bytes": 629,
+      "sha256": "acf4db36be8d43e270f0121f1d6b6a52318b124657a6a7deaad00d9a90686584"
+    },
+    {
+      "path": "run/validation-20261004/linux-arm64-v1/evidence/task-pg-after.log",
+      "size_bytes": 52,
+      "sha256": "949b40c3482e5f37e56d4abd4c4760629ec1a619324d66a7102bc40b89866d13"
+    },
+    {
+      "path": "run/validation-20261004/linux-preflight/dpkg-status",
+      "size_bytes": 395722,
+      "sha256": "6579be1c2533e33bb41e76bf655150dafa7cab4b96fa388f0299fce6496f72d5"
+    },
+    {
+      "path": "run/validation-20261004/linux-preflight/readiness.json",
+      "size_bytes": 4386,
+      "sha256": "24af85bb4d9e80526d06f0155a38b5fa18239a2ada0d4d792b1711ff99e1ad6b"
+    },
+    {
+      "path": "run/validation-20261004/macos-test-binaries.json",
+      "size_bytes": 33809,
+      "sha256": "f6d57dcf893321a6d121e8523d0f9cbc6b04171698b6b085b2832113e98d064e",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/macos-test-binaries.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/paired-diagnostic-v1-result.json",
+      "size_bytes": 603,
+      "sha256": "7a66987ca686342b375fd4e30749edaa5bf37e7697819d7ae7e1cdb8028c2570",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/paired-diagnostic-v1-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/paired-diagnostic-v1.log",
+      "size_bytes": 2751,
+      "sha256": "0e166e80ddfbdb7c9fc353e019125b7d3c067a194db3ca3e7048d36206b4f8da",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/paired-diagnostic-v1.log",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/paired-review-v1-binary.json",
+      "size_bytes": 1755,
+      "sha256": "5e50e3523f5d8e881218bce55ac8e1b1caa978196c830ab5181b2819d4da193e",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/paired-review-v1-binary.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/pty-v1-result.json",
+      "size_bytes": 809,
+      "sha256": "948761cec443ee3290e49864985a233621ad5947111196221d517ba4aeb8c1b3",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/pty-v1-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/pty-v1.log",
+      "size_bytes": 1561,
+      "sha256": "51eb791f0918ca826ba04cef6b5ccce8194e30de253684d51baec20de3f808ab",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/pty-v1.log",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/resource-cleanup.json",
+      "size_bytes": 5011,
+      "sha256": "32535b23dfd596a10ed227085024476bf53cf4881f533dc65a10dc76843bdc31",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/resource-cleanup.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/run_pty_stage.py",
+      "size_bytes": 2937,
+      "sha256": "c149757e608838b62f42161831986b825aa8fce1384b71e91c27963569f990b8"
+    },
+    {
+      "path": "run/validation-20261004/run_stage.py",
+      "size_bytes": 2923,
+      "sha256": "776db8c18438dfa2c91b39202010bcdb9dba957cf8cd04725f274eb552a4c864"
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-01-result.json",
+      "size_bytes": 605,
+      "sha256": "a3e0fc98295657580a6f0116cd8ff22a538f8843ae0d36100e87602a8ac21806",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/v01-baseline-01-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-01.log",
+      "size_bytes": 900,
+      "sha256": "49e55f944ac9b897b999b9b2f7754893d80ff024d6261c46449fec2cd60689c6"
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-02-result.json",
+      "size_bytes": 605,
+      "sha256": "97c0835ec67b85f3a241baa7207673327faded8a03a4b5e1d5e52981b3dd08e8",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/v01-baseline-02-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-02.log",
+      "size_bytes": 900,
+      "sha256": "494d96745daee711f21cd892fed8440bc67c96fe5aa57b1889d61a9e4a03c99f"
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-03-result.json",
+      "size_bytes": 605,
+      "sha256": "2ae4852aef769a6abf2a804f620ef84e5be36f1b4bdb101e1b42f4bd8c233740",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/v01-baseline-03-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/v01-baseline-03.log",
+      "size_bytes": 900,
+      "sha256": "abe438bddee927995136b2ea86db3bafbc4b575e46f7bd708ed1e1ad9fe08928"
+    },
+    {
+      "path": "run/validation-20261004/workspace-v1-counts.json",
+      "size_bytes": 44078,
+      "sha256": "7c0dcb7374a13a5427609492bdaee9e4270acbd3d0d4c39fdc7b15b2743aa6c3",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/workspace-v1-counts.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/workspace-v1-counts.txt",
+      "size_bytes": 9212,
+      "sha256": "30f838cb91527e24c18086b9dd1f50f29da61dbc8245de4316072abbc21d4c6d"
+    },
+    {
+      "path": "run/validation-20261004/workspace-v1-result.json",
+      "size_bytes": 605,
+      "sha256": "2d028069a1c33b34e34686b6b322b0f09c3c7129d26d17e8c4ffa4def2cfdc3c",
+      "archived_copy": "docs/refactor/handoffs/2026-10-04/workspace-v1-result.json",
+      "copy_matches_original": true
+    },
+    {
+      "path": "run/validation-20261004/workspace-v1.log",
+      "size_bytes": 109996,
+      "sha256": "beb8172f600b72fdc923552809e19683f20c277be06c3b8eaef853052915ab47"
+    }
+  ],
+  "versioned_evidence_file_count": 37,
+  "versioned_evidence": [
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/build-input-inventory.json",
+      "size_bytes": 18807,
+      "sha256": "7780a90d5c31dc9b82d0eb3c15ba251d82d8e9fab1d4b5cdde945c00c257b712"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/committed-source-verification.json",
+      "size_bytes": 659,
+      "sha256": "f7c845bac388d3e68c09949dcbdcc81b56be9788d07d77f65c5b6b05ae2839c0"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/delivery-audit.json",
+      "size_bytes": 7679,
+      "sha256": "ee258989f53f0b9b36127db1eca08058cdaf0a96af5655d9eeafaa06258acd03"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/final-source-manifest-v1.json",
+      "size_bytes": 102737,
+      "sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/format-v1-result.json",
+      "size_bytes": 588,
+      "sha256": "ae6445e1c7e07f4b549830176184dc66e75eb77b2d165077264206d3df2cee46"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-docker-final-state.json",
+      "size_bytes": 247,
+      "sha256": "a3236bf3ad9a96835663966c35d392cc2ea23a193c8e2aca7fd55afd70946d53"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-embedded-release.result.json",
+      "size_bytes": 957,
+      "sha256": "fd1db1a371d0db9392f420602aff106e0e195f050d63280a7eb44797fea4a304"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-embedded-runtime-protocol-counts.json",
+      "size_bytes": 5725,
+      "sha256": "1f0bc81153e14eb0ca388142b2512477893aea4bce90a8d80cf1f58745004f18"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-embedded-runtime-protocol.result.json",
+      "size_bytes": 1069,
+      "sha256": "afeefc38b4558bd78bfd64b395633e3b4b38364aa020b642f63b760bf491ced9"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-feature-summary.json",
+      "size_bytes": 1247,
+      "sha256": "9f2cff419642da7ac16ef04258a2cb3cdf4f4f310b0b7320720009acc43b5a16"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-native-inputs-after.json",
+      "size_bytes": 316,
+      "sha256": "8f73d9c59ca2f9cf0b3ffb4278c9dd39f329b16593035fe0ec50952cb955da2d"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-native-linked-symbols.json",
+      "size_bytes": 732,
+      "sha256": "43f279f498ddafa8965fbc879ec2a7eacf08294ec272c1d9be51dc5c4215b618"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-native-linked-symbols.log",
+      "size_bytes": 131,
+      "sha256": "a3dcb661a52a3acc014c4c519c3723479369e4c1ba13c28e16ab287d8fb15257"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-release-artifacts-after.json",
+      "size_bytes": 276,
+      "sha256": "da9f499b5262cead92ceb2b8a9bf1582f29b58fc2280820e6aadb1e2e3dcf33f"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-release-artifacts.json",
+      "size_bytes": 3605,
+      "sha256": "407afd9dddf631f77120d21f8732a6c12009739c97a5548bbb26860049a16e46"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-release-smoke-summary.json",
+      "size_bytes": 2974,
+      "sha256": "a16207b54477d439754f83a5a9de00a767460e5207cf601d2b71a5e68a50bdd8"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-release-smoke.result.json",
+      "size_bytes": 888,
+      "sha256": "7123fe94e47f9e697d250949833aa7c5cadd132d0517b6b2cb75512ad26cc6bb"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-selected-environment.json",
+      "size_bytes": 380,
+      "sha256": "6d21ffe88246c271e364b8085a4ec92b9608e5aa7635398d8b12d3ca178fa4cf"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-server-release.result.json",
+      "size_bytes": 882,
+      "sha256": "adc40ef6483ff29931263818a734bf1e2f988d500ebd814493c3405f63995389"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-server-runtime-protocol-counts.json",
+      "size_bytes": 5710,
+      "sha256": "b9700a3367a5e4a4aaf2c2bf9e50bd0e5b00c68b359ddfa433d3e29e55c48a5c"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-server-runtime-protocol.result.json",
+      "size_bytes": 1025,
+      "sha256": "a0676be286a47ac6fc3204f5632ec946c24d296261d8521864f5273b0021e8e3"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-source-after-host.json",
+      "size_bytes": 93,
+      "sha256": "33e601ef77f6a6b4a9eb74dc98b9244460efa8c4342b84fb0f7ed7b3fab3fec4"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-summary.json",
+      "size_bytes": 20558,
+      "sha256": "71d8f08769e62c3cdd6ec897cfea7304b3109818678ad3ff95aae82ce333a800"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/linux-task-pg-after-counts.json",
+      "size_bytes": 56,
+      "sha256": "612360d5ce49a6f35b87c81c258937fa4e21815a468a84cbeb9464da0a7025c4"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/macos-test-binaries.json",
+      "size_bytes": 33809,
+      "sha256": "f6d57dcf893321a6d121e8523d0f9cbc6b04171698b6b085b2832113e98d064e"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/paired-diagnostic-v1-result.json",
+      "size_bytes": 603,
+      "sha256": "7a66987ca686342b375fd4e30749edaa5bf37e7697819d7ae7e1cdb8028c2570"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/paired-diagnostic-v1.log",
+      "size_bytes": 2751,
+      "sha256": "0e166e80ddfbdb7c9fc353e019125b7d3c067a194db3ca3e7048d36206b4f8da"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/paired-review-v1-binary.json",
+      "size_bytes": 1755,
+      "sha256": "5e50e3523f5d8e881218bce55ac8e1b1caa978196c830ab5181b2819d4da193e"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/pty-v1-result.json",
+      "size_bytes": 809,
+      "sha256": "948761cec443ee3290e49864985a233621ad5947111196221d517ba4aeb8c1b3"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/pty-v1.log",
+      "size_bytes": 1561,
+      "sha256": "51eb791f0918ca826ba04cef6b5ccce8194e30de253684d51baec20de3f808ab"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/resource-cleanup.json",
+      "size_bytes": 5011,
+      "sha256": "32535b23dfd596a10ed227085024476bf53cf4881f533dc65a10dc76843bdc31"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/v01-baseline-01-result.json",
+      "size_bytes": 605,
+      "sha256": "a3e0fc98295657580a6f0116cd8ff22a538f8843ae0d36100e87602a8ac21806"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/v01-baseline-02-result.json",
+      "size_bytes": 605,
+      "sha256": "97c0835ec67b85f3a241baa7207673327faded8a03a4b5e1d5e52981b3dd08e8"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/v01-baseline-03-result.json",
+      "size_bytes": 605,
+      "sha256": "2ae4852aef769a6abf2a804f620ef84e5be36f1b4bdb101e1b42f4bd8c233740"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/validation-summary.json",
+      "size_bytes": 13199,
+      "sha256": "987bb28a7a158282ecce316825902221567b2c2c91502192e63a3e20990452f6"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/workspace-v1-counts.json",
+      "size_bytes": 44078,
+      "sha256": "7c0dcb7374a13a5427609492bdaee9e4270acbd3d0d4c39fdc7b15b2743aa6c3"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-04/workspace-v1-result.json",
+      "size_bytes": 605,
+      "sha256": "2d028069a1c33b34e34686b6b322b0f09c3c7129d26d17e8c4ffa4def2cfdc3c"
+    }
+  ],
+  "historical_index_audit": "delivery-audit.json (51 R01 and 36 R04 original artifacts checked without overwrite)",
+  "model_checkpoint_rehashed_this_round": false
+}

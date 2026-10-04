@@ -1,0 +1,104 @@
+{
+  "started_at": "2026-10-04T10:42:55.102864+00:00",
+  "scope": "Linux container release binaries; no acoustic model, device or binding mutation",
+  "configuration_sha256": {
+    "server.toml": "5191dc00d00beb3201a5d0208abb2a47351c6e1e6c1fecf8a9651387d96ee0ae",
+    "embedded.toml": "f989e46262d8e77d7404e5ddcbcaac5cdc6733120a38000ff2feb3402b933ee6"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "health_http_status": 200,
+      "health_overall": "ok",
+      "module_health": {
+        "rule_engine": "healthy",
+        "stt": "healthy",
+        "scheduler": "healthy",
+        "conversation": "healthy",
+        "insights": "healthy",
+        "memory": "healthy",
+        "llm.major": "healthy",
+        "tools": "healthy",
+        "cache": "healthy",
+        "tts": "healthy",
+        "router": "healthy",
+        "embedding": "healthy",
+        "skills": "healthy",
+        "persona": "healthy",
+        "llm.minor": "healthy"
+      },
+      "persisted_account_login": false,
+      "same_private_keys": true,
+      "companion_mode": "shadow",
+      "unchanged_policy_revision": true,
+      "device_status_online": true,
+      "unknown_telemetry_null": true,
+      "public_binding_status_grpc": 0,
+      "device_unbound": true,
+      "anonymous_observe_control_grpc": 16,
+      "server_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0036
+      },
+      "embedded_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0028
+      },
+      "all_three_listeners_closed": true
+    },
+    {
+      "round": 2,
+      "health_http_status": 200,
+      "health_overall": "ok",
+      "module_health": {
+        "llm.minor": "healthy",
+        "conversation": "healthy",
+        "stt": "healthy",
+        "scheduler": "healthy",
+        "persona": "healthy",
+        "embedding": "healthy",
+        "cache": "healthy",
+        "llm.major": "healthy",
+        "skills": "healthy",
+        "insights": "healthy",
+        "router": "healthy",
+        "tools": "healthy",
+        "memory": "healthy",
+        "rule_engine": "healthy",
+        "tts": "healthy"
+      },
+      "persisted_account_login": true,
+      "same_private_keys": true,
+      "companion_mode": "shadow",
+      "unchanged_policy_revision": true,
+      "device_status_online": true,
+      "unknown_telemetry_null": true,
+      "public_binding_status_grpc": 0,
+      "device_unbound": true,
+      "anonymous_observe_control_grpc": 16,
+      "server_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0039
+      },
+      "embedded_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0073
+      },
+      "all_three_listeners_closed": true
+    }
+  ],
+  "exit_code": 0,
+  "finished_at": "2026-10-04T10:42:56.165352+00:00",
+  "remaining_smoke_processes": 0,
+  "cleanup_forced_kills": 0,
+  "process_exit_codes": [
+    0,
+    0,
+    0,
+    0
+  ]
+}

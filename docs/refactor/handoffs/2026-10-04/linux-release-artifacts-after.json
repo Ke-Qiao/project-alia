@@ -1,0 +1,8 @@
+{
+  "checked_at": "2026-10-04T10:49:46.010521+00:00",
+  "sha256": {
+    "alia-server": "f6dba03d98b473413bfdf29d9c002718956741716a9919bc8265d361d0a5effc",
+    "alia-embedded": "e8179ef176b38a91af8cad7dd4a67fc8209284f9676682a7e23ae9205673fb10"
+  },
+  "matches_initial": true
+}

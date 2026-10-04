@@ -1,0 +1,18 @@
+{
+  "command": [
+    "run/validation-20261004/duplex-playback-v4-retained",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-04T10:08:39.393370+00:00",
+  "finished_at": "2026-10-04T10:08:59.080611+00:00",
+  "elapsed_seconds": 19.69,
+  "exit_code": 0,
+  "source_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

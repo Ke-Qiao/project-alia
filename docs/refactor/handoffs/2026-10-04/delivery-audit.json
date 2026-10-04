@@ -1,0 +1,160 @@
+{
+  "checked_at": "2026-10-04T10:03:58.641762+00:00",
+  "branch": "codex/architecture-refactor",
+  "head": "8c1742287b75720a2530711ce78c447679369884",
+  "initial_status": "",
+  "historical_runs_not_reexecuted": true,
+  "sources": [
+    {
+      "scope": "R01",
+      "commit": "a79cb1f0b2c45847dce561dfde549f4318a1312a",
+      "manifest": "docs/refactor/handoffs/2026-09-28/final-source-manifest-v1.json",
+      "manifest_sha256": "58c76e82adf71fed96fa6b113f51185412dd3bd0619a3db747835f3d81accd4a",
+      "inputs": 630,
+      "commit_mismatches": [],
+      "current_workspace_differences": [
+        "packages/alia-server/src/api/companion.rs",
+        "packages/alia-server/src/api/devices.rs",
+        "packages/alia-server/src/bootstrap/mod.rs",
+        "packages/alia-server/src/bootstrap/runtime.rs",
+        "packages/alia-server/src/bootstrap/setup.rs",
+        "packages/alia-server/src/config.rs",
+        "packages/alia-server/src/modules/companion/repository.rs",
+        "packages/alia-server/src/modules/companion/types.rs",
+        "packages/alia-server/src/oobe/bootstrap.rs",
+        "packages/alia-server/src/oobe/routes.rs",
+        "packages/alia-server/src/openapi.rs",
+        "packages/alia-server/src/providers/llm/openai.rs",
+        "packages/alia-server/tests/duplex_playback/companion.rs",
+        "packages/alia-server/tests/server_runtime.rs",
+        "packages/alia-server/tests/server_runtime/companion.rs"
+      ]
+    },
+    {
+      "scope": "R04",
+      "commit": "8f5bb83f4a313723428abf854c1e663b159c6c45",
+      "manifest": "docs/refactor/handoffs/2026-09-28-r04/final-source-manifest-v4.json",
+      "manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+      "inputs": 633,
+      "commit_mismatches": [],
+      "current_workspace_differences": []
+    }
+  ],
+  "post_source_commit_changes": [
+    "docs/operations/companion.md",
+    "docs/operations/local-development.md",
+    "docs/operations/server-embedded.md",
+    "docs/refactor/checklists/management.md",
+    "docs/refactor/checklists/next-round.md",
+    "docs/refactor/deferred.md",
+    "docs/refactor/delivery-api.md",
+    "docs/refactor/handoffs/2026-09-28-r04/README.md",
+    "docs/refactor/handoffs/2026-09-28-r04/api.md",
+    "docs/refactor/handoffs/2026-09-28-r04/committed-source-verification.json",
+    "docs/refactor/handoffs/2026-09-28-r04/device-health.md",
+    "docs/refactor/handoffs/2026-09-28-r04/final-source-manifest-v4.json",
+    "docs/refactor/handoffs/2026-09-28-r04/format-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/health-refusal-v2-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/linux-arm64-v4-environment.json",
+    "docs/refactor/handoffs/2026-09-28-r04/linux-arm64-v4-result-summary.json",
+    "docs/refactor/handoffs/2026-09-28-r04/linux-arm64-v4-stopped.json",
+    "docs/refactor/handoffs/2026-09-28-r04/mac-embedded-no-default-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/mac-server-no-default-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/models-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/paired-one-v3-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/paired-workspace-binary-v3-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/pg-cleanup.json",
+    "docs/refactor/handoffs/2026-09-28-r04/preliminary-failures.json",
+    "docs/refactor/handoffs/2026-09-28-r04/pty-v4-observation.txt",
+    "docs/refactor/handoffs/2026-09-28-r04/pty-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+    "docs/refactor/handoffs/2026-09-28-r04/runtime.md",
+    "docs/refactor/handoffs/2026-09-28-r04/server-lib-v1-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/server-lib-v2-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/setup.md",
+    "docs/refactor/handoffs/2026-09-28-r04/validation-summary.json",
+    "docs/refactor/handoffs/2026-09-28-r04/workspace-v3-counts.json",
+    "docs/refactor/handoffs/2026-09-28-r04/workspace-v3-result.json",
+    "docs/refactor/handoffs/2026-09-28-r04/workspace-v4-counts.json",
+    "docs/refactor/handoffs/2026-09-28-r04/workspace-v4-result.json",
+    "docs/refactor/handoffs/2026-09-28/r04-api.md",
+    "docs/refactor/handoffs/2026-09-28/r04-device-health.md",
+    "docs/refactor/handoffs/2026-09-28/r04-oobe.md",
+    "docs/refactor/plan.md",
+    "docs/refactor/progress.md",
+    "docs/refactor/resume-checkpoint-2026-09-28.md",
+    "docs/refactor/resume-state-2026-09-28.json"
+  ],
+  "historical_evidence_hashes": [
+    {
+      "scope": "R01",
+      "checked": 51,
+      "mismatched": [],
+      "missing": []
+    },
+    {
+      "scope": "R04",
+      "checked": 36,
+      "mismatched": [],
+      "missing": []
+    }
+  ],
+  "R04_log_recount": {
+    "totals": {
+      "passed": 1053,
+      "failed": 0,
+      "ignored": 5,
+      "measured": 0,
+      "filtered_out": 0
+    },
+    "parse_issues": [],
+    "unique_printed_names": 1058,
+    "duplicate_lines": [
+      [
+        "unittests src/lib.rs (target/debug/deps/alia_server-928ea6d47fbd3e06)",
+        "module::lifecycle::tests::panicked_stop_retains_owner_and_dependencies_as_incomplete"
+      ]
+    ],
+    "ignored": [
+      {
+        "target": "unittests src/lib.rs (target/debug/deps/alia_server-928ea6d47fbd3e06)",
+        "test": "bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      },
+      {
+        "target": "unittests src/lib.rs (target/debug/deps/alia_server-928ea6d47fbd3e06)",
+        "test": "channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      },
+      {
+        "target": "unittests src/lib.rs (target/debug/deps/alia_server-928ea6d47fbd3e06)",
+        "test": "channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal",
+        "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+      },
+      {
+        "target": "tests/easy_turn_live.rs (target/debug/deps/easy_turn_live-8891eac56b97a9e6)",
+        "test": "official_audio_through_production_rust_adapter",
+        "reason": "requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16"
+      },
+      {
+        "target": "tests/voice_stream_live.rs (target/debug/deps/voice_stream_live-c9c58e99893cd189)",
+        "test": "official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait",
+        "reason": "requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL"
+      }
+    ],
+    "log_sha256": "c1dd568908b9157061d13fd4d8713375c25fe0ca5ee57c48132e263674521d19",
+    "additional_pty_evidence": "live PTY result metadata plus manually recorded observation; raw redirected transcript was not retained",
+    "additional_model_evidence": "models-v4.log contains two named passing targets"
+  },
+  "available_paired_binary": {
+    "path": "target/debug/deps/duplex_playback-e65e790efe7810e2",
+    "sha256": "e529ff72ad2e1805040a07291cf152f1625b6c38c9aea4400ba35a801d6fe087",
+    "bytes": 107330192,
+    "matches_original_v3_recorded_sha": false,
+    "note": "Path was reused by V4 compilation; original V3 binary is not proven retained. Existing binary is inventoried separately and cannot be called the original V3 artifact."
+  },
+  "task_document": {
+    "path": "/Users/ke-qiao/Desktop/Alia_R01_R04_Review_and_Next_Sprint_2026-10-04.md",
+    "sha256": "af38f76e00122eb09b6d5c033688fbb159c1bbc8ab68f07292e0833c43d2b9ad"
+  }
+}

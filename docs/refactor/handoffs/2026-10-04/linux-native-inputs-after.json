@@ -1,0 +1,6 @@
+{
+  "copied_archive_exists": true,
+  "expected_sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+  "actual_sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+  "sherpa_sys_build_script_sha256": "6e45edebae2256484f0c061e931feec9f04ceee61f6119f4f233e0f7b3779df7"
+}

@@ -1,0 +1,162 @@
+{
+  "started_at": "2026-10-04T10:53:32.422625+00:00",
+  "scope": "Stop only the new task PostgreSQL container; retained containers inspected without mutation. No user database queries or retained model service probes.",
+  "before": [
+    {
+      "name": "alia-review-20261004-db",
+      "id": "616068ade5a1ed5276bff7c7221b4d26f4b30241828f35c2ca80bb812da63ac5",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": true,
+      "status": "running",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-04T10:07:52.853987823Z",
+      "finished_at": "0001-01-01T00:00:00Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "alia-review-linux-20261004-v1",
+      "id": "69b859362770e29ef53aa5a6188bdfe05158513c033dc649837186c486eb04f9",
+      "image_id": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "running": false,
+      "status": "exited",
+      "exit_code": 137,
+      "oom_killed": false,
+      "started_at": "2026-10-04T10:10:45.745987956Z",
+      "finished_at": "2026-10-04T10:49:47.32155606Z",
+      "port_bindings": {}
+    },
+    {
+      "name": "alia-refactor-test-db",
+      "id": "25ca66db858eebcd46aaf3a723f5b0377b4b739d45a236d4fef533bffb1b8c9a",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": false,
+      "status": "exited",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-09-28T06:28:18.516902455Z",
+      "finished_at": "2026-10-03T11:40:19.375101874Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "32768"
+          }
+        ]
+      }
+    },
+    {
+      "name": "alia-postgres",
+      "id": "905470a16802dc61557468b390956507f2d30f113e897943213c83663cb81743",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": true,
+      "status": "running",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-04T05:48:10.159730833Z",
+      "finished_at": "2026-10-03T11:40:19.36400908Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "",
+            "HostPort": "5433"
+          }
+        ]
+      }
+    }
+  ],
+  "task_db_final_counts": {
+    "non_public_schemas": 0,
+    "other_connections": 0
+  },
+  "stop": {
+    "command": [
+      "docker",
+      "stop",
+      "--time",
+      "15",
+      "alia-review-20261004-db"
+    ],
+    "exit_code": 0
+  },
+  "after": [
+    {
+      "name": "alia-review-20261004-db",
+      "id": "616068ade5a1ed5276bff7c7221b4d26f4b30241828f35c2ca80bb812da63ac5",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": false,
+      "status": "exited",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-04T10:07:52.853987823Z",
+      "finished_at": "2026-10-04T10:53:32.844964277Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "alia-review-linux-20261004-v1",
+      "id": "69b859362770e29ef53aa5a6188bdfe05158513c033dc649837186c486eb04f9",
+      "image_id": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "running": false,
+      "status": "exited",
+      "exit_code": 137,
+      "oom_killed": false,
+      "started_at": "2026-10-04T10:10:45.745987956Z",
+      "finished_at": "2026-10-04T10:49:47.32155606Z",
+      "port_bindings": {}
+    },
+    {
+      "name": "alia-refactor-test-db",
+      "id": "25ca66db858eebcd46aaf3a723f5b0377b4b739d45a236d4fef533bffb1b8c9a",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": false,
+      "status": "exited",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-09-28T06:28:18.516902455Z",
+      "finished_at": "2026-10-03T11:40:19.375101874Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": "32768"
+          }
+        ]
+      }
+    },
+    {
+      "name": "alia-postgres",
+      "id": "905470a16802dc61557468b390956507f2d30f113e897943213c83663cb81743",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "running": true,
+      "status": "running",
+      "exit_code": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-04T05:48:10.159730833Z",
+      "finished_at": "2026-10-03T11:40:19.36400908Z",
+      "port_bindings": {
+        "5432/tcp": [
+          {
+            "HostIp": "",
+            "HostPort": "5433"
+          }
+        ]
+      }
+    }
+  ],
+  "retained_container_states_unchanged": true,
+  "finished_at": "2026-10-04T10:53:33.043302+00:00"
+}

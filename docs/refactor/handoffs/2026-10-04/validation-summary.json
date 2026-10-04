@@ -1,0 +1,399 @@
+{
+  "date": "2026-10-04",
+  "status": "completed_bounded_followup",
+  "branch": "codex/architecture-refactor",
+  "base_head": "8c1742287b75720a2530711ce78c447679369884",
+  "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+  "source_manifest": {
+    "path": "docs/refactor/handoffs/2026-10-04/final-source-manifest-v1.json",
+    "inputs": 633,
+    "sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0"
+  },
+  "macos": {
+    "workspace": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--offline"
+      ],
+      "started_at": "2026-10-04T10:25:18.793760+00:00",
+      "finished_at": "2026-10-04T10:34:20.556286+00:00",
+      "elapsed_seconds": 541.76,
+      "exit_code": 0,
+      "source_manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "counts": {
+      "passed": 1062,
+      "failed": 0,
+      "ignored": 5,
+      "measured": 0,
+      "filtered_out": 0
+    },
+    "pty": {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--lib",
+        "--locked",
+        "--offline",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "inherited_real_pty": {
+        "0": true,
+        "1": true,
+        "2": true
+      },
+      "started_at": "2026-10-04T10:34:52.769730+00:00",
+      "finished_at": "2026-10-04T10:35:25.713721+00:00",
+      "elapsed_seconds": 32.94,
+      "exit_code": 0,
+      "source_manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "1 (explicit PTY libtest argument; environment unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "unique_passed_current_source": 1065,
+    "actual_easy_turn_current_source": "not executed; historical results only",
+    "paired_diagnostic": {
+      "command": [
+        "run/validation-20261004/duplex-playback-review-v1",
+        "--nocapture"
+      ],
+      "started_at": "2026-10-04T10:35:45.312171+00:00",
+      "finished_at": "2026-10-04T10:36:03.044367+00:00",
+      "elapsed_seconds": 17.73,
+      "exit_code": 0,
+      "source_manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "format": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "started_at": "2026-10-04T10:36:28.772997+00:00",
+      "finished_at": "2026-10-04T10:36:29.546384+00:00",
+      "elapsed_seconds": 0.77,
+      "exit_code": 0,
+      "source_manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "retained_binary_identity": "macos-test-binaries.json"
+  },
+  "v01": {
+    "status": "open_not_reproduced_root_cause_unknown",
+    "historical_failing_v3_binary_retained": false,
+    "baseline_v4_binary_sha256": "e529ff72ad2e1805040a07291cf152f1625b6c38c9aea4400ba35a801d6fe087",
+    "baseline_runs": [
+      {
+        "command": [
+          "run/validation-20261004/duplex-playback-v4-retained",
+          "--nocapture"
+        ],
+        "started_at": "2026-10-04T10:08:39.393370+00:00",
+        "finished_at": "2026-10-04T10:08:59.080611+00:00",
+        "elapsed_seconds": 19.69,
+        "exit_code": 0,
+        "source_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+        "source_drift": [],
+        "build_jobs": 2,
+        "rust_min_stack": "unset",
+        "rust_test_threads": "default (unset)",
+        "rust_backtrace": "unset",
+        "docs_rs": "unset",
+        "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+      },
+      {
+        "command": [
+          "run/validation-20261004/duplex-playback-v4-retained",
+          "--nocapture"
+        ],
+        "started_at": "2026-10-04T10:10:47.678015+00:00",
+        "finished_at": "2026-10-04T10:11:02.986274+00:00",
+        "elapsed_seconds": 15.31,
+        "exit_code": 0,
+        "source_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+        "source_drift": [],
+        "build_jobs": 2,
+        "rust_min_stack": "unset",
+        "rust_test_threads": "default (unset)",
+        "rust_backtrace": "unset",
+        "docs_rs": "unset",
+        "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+      },
+      {
+        "command": [
+          "run/validation-20261004/duplex-playback-v4-retained",
+          "--nocapture"
+        ],
+        "started_at": "2026-10-04T10:11:03.042225+00:00",
+        "finished_at": "2026-10-04T10:11:18.495992+00:00",
+        "elapsed_seconds": 15.45,
+        "exit_code": 0,
+        "source_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+        "source_drift": [],
+        "build_jobs": 2,
+        "rust_min_stack": "unset",
+        "rust_test_threads": "default (unset)",
+        "rust_backtrace": "unset",
+        "docs_rs": "unset",
+        "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+      }
+    ],
+    "unique_baseline_tests": 9,
+    "baseline_executions": 27,
+    "current_diagnostic_capture": {
+      "snapshot_wait_ms": [
+        7,
+        5,
+        3
+      ],
+      "prepare_wait_ms": [
+        3,
+        1,
+        1
+      ],
+      "admit_wait_ms": [
+        66,
+        51,
+        50
+      ],
+      "server_utc_deadline_remaining_ms": [
+        1924,
+        1939,
+        1955
+      ],
+      "admission_outcomes": [
+        "fresh",
+        "fresh",
+        "fresh"
+      ],
+      "bounded_sample_not_latency_distribution": true,
+      "parallel_observations_not_case_correlated": true
+    }
+  },
+  "linux": {
+    "status": "passed_default_release_link_and_non_hardware_runtime",
+    "handoff": "linux.md",
+    "summary": "linux-summary.json",
+    "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+    "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+    "default_features": true,
+    "release_artifacts": {
+      "alia-server": {
+        "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-server",
+        "sha256": "f6dba03d98b473413bfdf29d9c002718956741716a9919bc8265d361d0a5effc",
+        "size_bytes": 46020472
+      },
+      "alia-embedded": {
+        "path": "run/validation-20261004/linux-arm64-v1/cache/target/release/alia-embedded",
+        "sha256": "e8179ef176b38a91af8cad7dd4a67fc8209284f9676682a7e23ae9205673fb10",
+        "size_bytes": 50408280
+      }
+    },
+    "stages": [
+      {
+        "stage": "server-release",
+        "command": [
+          "cargo",
+          "build",
+          "-p",
+          "alia-server",
+          "--release",
+          "--locked",
+          "--offline",
+          "-j2"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 184.857,
+        "started_at": "2026-10-04T10:37:29.966505+00:00",
+        "finished_at": "2026-10-04T10:40:34.823527+00:00",
+        "source_drift": [],
+        "log": "run/validation-20261004/linux-arm64-v1/evidence/server-release.log",
+        "log_sha256": "b8c2d14b2c894a727b1df5a4c8a88e27054b892a8158b32dee0aaf47becf5725"
+      },
+      {
+        "stage": "embedded-release",
+        "command": [
+          "cargo",
+          "build",
+          "-p",
+          "alia-embedded",
+          "--release",
+          "--locked",
+          "--offline",
+          "-j2"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 85.59,
+        "started_at": "2026-10-04T10:40:44.886566+00:00",
+        "finished_at": "2026-10-04T10:42:10.476611+00:00",
+        "source_drift": [],
+        "log": "run/validation-20261004/linux-arm64-v1/evidence/embedded-release.log",
+        "log_sha256": "0035b241593022103d93d883fb092dd6b608d83a8dbc30145a86c8aff5b8c3e5"
+      },
+      {
+        "stage": "release-smoke",
+        "command": [
+          "python3",
+          "/evidence/release-smoke.py"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 1.135,
+        "started_at": "2026-10-04T10:42:55.040440+00:00",
+        "finished_at": "2026-10-04T10:42:56.175901+00:00",
+        "source_drift": [],
+        "log": "run/validation-20261004/linux-arm64-v1/evidence/release-smoke.log",
+        "log_sha256": "7fd09bb8073c124aad944b2af5638da7834918b0a62181ffebeed7349114bd59"
+      },
+      {
+        "stage": "server-runtime-protocol",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "alia-server",
+          "--lib",
+          "--test",
+          "server_runtime",
+          "--test",
+          "duplex_playback",
+          "--locked",
+          "--offline",
+          "-j2"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 219.742,
+        "started_at": "2026-10-04T10:43:29.358488+00:00",
+        "finished_at": "2026-10-04T10:47:09.100850+00:00",
+        "source_drift": [],
+        "log": "run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.log",
+        "log_sha256": "b9f6a17b5bbd68e50e78b53f53cc19c4b53ad94e39db950125ec1e4e378bd973"
+      },
+      {
+        "stage": "embedded-runtime-protocol",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "alia-embedded",
+          "--lib",
+          "--test",
+          "config",
+          "--test",
+          "identity",
+          "--test",
+          "binding",
+          "--test",
+          "runtime",
+          "--locked",
+          "--offline",
+          "-j2"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 61.408,
+        "started_at": "2026-10-04T10:47:25.139864+00:00",
+        "finished_at": "2026-10-04T10:48:26.547794+00:00",
+        "source_drift": [],
+        "log": "run/validation-20261004/linux-arm64-v1/evidence/embedded-runtime-protocol.log",
+        "log_sha256": "3a8fad393c9843d3dec25f0dcc2bb906ca4d0baf97d27badcf9c0cf795399474"
+      }
+    ],
+    "tests": {
+      "unique_passed": 578,
+      "failed": 0,
+      "ignored": 3,
+      "target_count": 8,
+      "counting_rule": "last outer libtest summary per Cargo target, separate package/target identity; no duplicate reruns added"
+    },
+    "release_smoke": {
+      "rounds": 2,
+      "exit_code": 0,
+      "all_release_process_exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "forced_kills": 0,
+      "remaining_processes": 0,
+      "default_shadow_preserved": true,
+      "scope": "Linux ARM64 native container; default build features; noop runtime smoke plus existing mock/protocol fixtures. Not a Pi, acoustic, physical actuator, external-model or full Linux workspace acceptance."
+    }
+  },
+  "hardware": {
+    "current_pi_access": "not established",
+    "ssh_issued": false,
+    "recording_or_playback": false,
+    "real_motion_commands": false,
+    "rounds_remaining": [
+      "R02",
+      "R03",
+      "R05",
+      "R06"
+    ]
+  },
+  "policies": {
+    "default_shadow_unchanged": true,
+    "production_config_or_binding_changed": false,
+    "new_dependency_or_platform": false,
+    "user_database_5433_used": false
+  },
+  "resource_cleanup": {
+    "status": "completed",
+    "record": "resource-cleanup.json",
+    "new_task_containers_stopped": true,
+    "task_db_final_counts": {
+      "non_public_schemas": 0,
+      "other_connections": 0
+    },
+    "retained_container_states_unchanged": true,
+    "retained_model_services": "not probed or modified; current health is not asserted",
+    "exclusive_validation_window": null
+  },
+  "updated_at": "2026-10-04T10:57:48.768211+00:00",
+  "committed_source_verification": "committed-source-verification.json",
+  "evidence_index": "runtime-evidence-index.json",
+  "current_scope_checklist": {
+    "delivery_identity_and_test_mapping": "complete",
+    "v01_bounded_investigation": "complete; issue remains open",
+    "linux_default_release_and_runtime": "complete",
+    "r04_bounded_review_and_confirmed_gap_fixes": "complete",
+    "r02_r03_software_preparation": "complete; hardware and integration exits remain open",
+    "source_commit_and_input_match": "complete",
+    "resource_stop_and_handoff_archive": "complete"
+  }
+}

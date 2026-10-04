@@ -1,6 +1,6 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-09-28。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
+更新：2026-10-04。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
 
 ## 配置与启动
 
@@ -14,6 +14,8 @@ ALIA_EMBEDDED_CONFIG_PATH=/absolute/path/embedded.toml cargo run -p alia-embedde
 未找到 Server 配置时进入 OOBE；配置已存在但不能加载时会报错退出，不自动改写成样例。stdin/stdout 都是交互终端时，输入 `c` 再按 Enter 可生成主文件加 `.d` 的完整布局，该操作拒绝覆盖已有主文件或分片树。
 
 setup 固定监听 `127.0.0.1:3000`，此时尚未使用主配置的 Server 端口，不在局域网广播未认证的配置写入口。远程机器可使用 SSH 隧道；无交互终端时使用 HTTP setup。两个配置操作均为 POST：`generate-config` 返回 `{template: TOML字符串}`，`save-config` 接受 `{config: TOML字符串, path?: 目标主文件路径}`。`path` 指向 **Server 所在机器**的文件系统；省略时先采用该进程的 `ALIA_CONFIG_PATH`，然后按 CLI 默认路径选择。
+
+setup 只接受 `127.0.0.1`、`localhost` 或 `[::1]` 的 Host；浏览器带 Origin 时必须与 `http://Host` 精确一致，否则返回 403。保存必须使用 JSON Content-Type，错误媒体类型返回 415。无 Origin 的本地 curl/SSH 隧道按现有方式工作；不要把入口放到任意域名的反向代理后。该策略约束浏览器来源，仍信任本机操作者，文件可写范围由服务账户权限决定。
 
 HTTP 模板是包含所需分片内容的完整单文件，不会额外创建 `.d`；已有目标 `.d` 仍按普通加载规则覆盖主文件。保存前校验实际有效的 role/profile 引用，成功后退出 setup 并按配置启动 Server。以下命令需要 `jq`，可在第二个终端执行：
 
@@ -33,6 +35,8 @@ curl --fail --silent --show-error \
 ```
 
 `save-config` 的正常 JSON 响应包含 `success`、`path`，失败时另有 `error`。配置验证或保存失败也可能返回 HTTP 200，因此必须检查 `success`；仅用 `curl --fail` 不够。失败不会发送 ConfigReady，setup 继续等待修正后的请求；成功响应排空后 setup 关闭，其端点不作为常驻管理 API。准备阶段的 `/health` 返回 `status: "setup"`，不是模块健康结果；启动完成后使用配置中的实际 Server 地址和端口。
+
+同一 setup 进程只有一次成功完成：并发 HTTP/CLI 的输家返回失败且不写第二份配置；取消后，即使已接收请求随后才补齐 body，也不会发布。base 文件按原子方式发布，但父目录和 CLI 分片树尚未完整同步落盘，不能承诺断电后的目录持久性；也不能同时让其它进程修改正在校验的 fragments/symlink。详细边界见 [本次 setup 审查](../refactor/handoffs/2026-10-04/runtime.md)。
 
 配置语义有效不等于数据库、模型或硬件已在线。先准备独立 PostgreSQL/pgvector 和选择的 [模型服务](model-services.md)，再核对 `/health`；不要以 HTTP 200 或非空 API key 判断所有 Provider 可用。
 

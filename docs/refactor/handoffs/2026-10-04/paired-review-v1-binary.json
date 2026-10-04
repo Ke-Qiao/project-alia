@@ -1,0 +1,11 @@
+{
+  "source_binary": "target/debug/deps/duplex_playback-e65e790efe7810e2",
+  "preserved_binary": "run/validation-20261004/duplex-playback-review-v1",
+  "sha256": "32a8c0f51c9df30ea343e4f1bc5bc821882f93547515aec23b888051e0dc2a59",
+  "bytes": 111367904,
+  "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+  "built_by": "workspace-v1",
+  "file": "/Users/ke-qiao/Developer/project-alia/run/validation-20261004/duplex-playback-review-v1: Mach-O 64-bit executable arm64\n",
+  "dependencies": "/Users/ke-qiao/Developer/project-alia/run/validation-20261004/duplex-playback-review-v1:\n\t/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 2100.43.0)\n\t/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (compatibility version 300.0.0, current version 5026.5.4)\n\t/System/Library/Frameworks/AudioUnit.framework/Versions/A/AudioUnit (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio (compatibility version 1.0.0, current version 1.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 5026.5.4)\n\t/System/Library/Frameworks/SystemConfiguration.framework/Versions/A/SystemConfiguration (compatibility version 1.0.0, current version 1405.120.5)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 1.0.0, current version 61901.120.67)\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0, current version 7.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1356.0.0)\n",
+  "host": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n"
+}

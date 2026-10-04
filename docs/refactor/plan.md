@@ -1,5 +1,7 @@
 # Project Alia 首轮重构计划
 
+**2026-10-04：本轮有界补缺口已完成，六轮仍为 2/6。** 源码 `010f7aa` 与冻结的 633 项输入逐项一致；交付身份、原始日志及 5 个 ignored 已核对。macOS workspace **1062/0/5**、真实 PTY **3**，本轮为 **1065 个不同 macOS 通过用例**，真实 Easy-Turn 两项本轮未重跑；Linux ARM64 两端默认 features release/link、两轮实际 PG/HTTP/gRPC 启停和重启通过，必要 8 目标 **578/0/3**，与 macOS 分开计数。补采集连续性/KWS reset、setup 单次完成/来源/关闭边界和真实 gRPC 拒绝证据；V01 未复现，根因继续开放，默认 shadow 不变。两个本轮容器已停止。AEC/声学、资产内容签名/控制板反馈、health 聚合/目录持久性和实机长期出口已保留。详见 [当前检查点](resume-checkpoint-2026-10-04.md)、[四份 HANDOFF 与证据](handoffs/2026-10-04/README.md) 及 [R01—R06 checklist](checklists/next-round.md)。以下旧日期段落仅为历史。
+
 **2026-09-28：R01与R04均已完成，后续轮次为2/6。** R01源码 `a79cb1f`（CP7/7），R04源码 `8f5bb83`（管理4/4及统一验收完成）。R04冻结633输入逐项与提交一致，workspace1053/0/5、真实PTY3、实际Easy-Turn2，合计1058 unique macOS；macOS/Linux ARM64两端no-default all-targets与fmt通过，Linux仅编译。首次V3旧配对超时根因未定，保留V01；下一步依H01—H05推进AEC、执行器及Mac+Pi实机验收，其他Server平台按明确目标推进。详见 [恢复入口](resume-checkpoint-2026-09-28.md)、[R04 checklist](checklists/management.md)及 [本包四份HANDOFF](handoffs/2026-09-28-r04/README.md)。以下旧日期段落仅为历史。
 
 **2026-09-26 当前状态：DU11 已完成，暂停纵向整合 11/11。** 合并 `948b3c4`，605 个输入与最终 V2 一致，未重跑相同源码的验证。当前进入 R01 Companion shadow/回放与受约束主动表达，三名 subagent 分别梳理策略状态、投递接线、回放与故障验证；详细步骤见 [Companion checklist](checklists/companion.md)。下方 9 月 23 日暂停状态作为历史保留。

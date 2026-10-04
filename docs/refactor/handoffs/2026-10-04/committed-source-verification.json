@@ -1,0 +1,21 @@
+{
+  "recorded_at": "2026-10-04T10:56:32.787619+00:00",
+  "source_commit": "010f7aa5ae2c39a5c90c7f22979391a6b1bbbf23",
+  "baseline_head": "8c1742287b75720a2530711ce78c447679369884",
+  "manifest_path": "run/validation-20261004/final-source-manifest-v1.json",
+  "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+  "input_count": 633,
+  "commit_mismatches": [],
+  "worktree_mismatches": [],
+  "extra_committed_inputs": [],
+  "missing_committed_inputs": [],
+  "extra_worktree_inputs": [],
+  "missing_worktree_inputs": [],
+  "scope_exclusions": [
+    "docs/",
+    "run/",
+    ".codex/",
+    ".agents/"
+  ],
+  "verified": true
+}

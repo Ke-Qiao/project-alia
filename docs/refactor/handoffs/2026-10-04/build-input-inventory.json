@@ -1,0 +1,431 @@
+{
+  "manifest": "final-source-manifest-v1.json",
+  "input_count": 633,
+  "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+  "groups": {
+    "cargo_manifests_and_lock": [
+      {
+        "path": "Cargo.lock",
+        "sha256": "845d709734b382d24baaec28bd9d69a524e92c4b41366184de02f0ef7a322dfc"
+      },
+      {
+        "path": "Cargo.toml",
+        "sha256": "28484da1cb21ab9fc5e8e1fa589f68ed4e3c632561a79c03782b95d088b3f8dc"
+      },
+      {
+        "path": "crates/alia-core/Cargo.toml",
+        "sha256": "f19e56a2c9ec7ac5758c22d8cd04ab46ba874d1d96056af510ff022947172e32"
+      },
+      {
+        "path": "crates/proto/Cargo.toml",
+        "sha256": "370177d822a59f683c0b0cc4841926874155616742a5c8877f1ebf62b3da122c"
+      },
+      {
+        "path": "crates/transport/Cargo.toml",
+        "sha256": "0920367c8f7344ff21fc1638234b914e0984f507cc8324a89690f68520c4ad55"
+      },
+      {
+        "path": "packages/alia-embedded/Cargo.toml",
+        "sha256": "e0547b3a76e2f5a78f054ce8a38cfc51d2454c6a681713e03ee7c114db48d6bf"
+      },
+      {
+        "path": "packages/alia-server/Cargo.lock",
+        "sha256": "03692a5468e1eba16158e660b7aa96ed10f12f31e5b8237939f55154ba3efcd5"
+      },
+      {
+        "path": "packages/alia-server/Cargo.toml",
+        "sha256": "6a0f930cd1881678925ccf154dcfcfc2f9208f6c1e5192af2e02dd89be8679f2"
+      }
+    ],
+    "configuration_and_embedded_resources": [
+      {
+        "path": "config/direct_response.example/cancel/config.json",
+        "sha256": "49c6771027e469eb14028739eb8626f9fff58e03b6859846ca44e2a0c8aaeae3"
+      },
+      {
+        "path": "config/direct_response.example/error/config.json",
+        "sha256": "5cce72c4f11e7b9987d9daf98b9c75ba39c5322cce69e3074643cfa35da3befe"
+      },
+      {
+        "path": "config/direct_response.example/error/error.wav",
+        "sha256": "24e241024303d7da397d6a42b02fa9cba225d3ede34465d62d9698a5bd45549d"
+      },
+      {
+        "path": "config/direct_response.example/fallback/config.json",
+        "sha256": "6bcc655ba6885fcbd7efa5705d429765da3ccb3fed057b154ff4d5d721967fb1"
+      },
+      {
+        "path": "config/direct_response.example/listening-continue/config.json",
+        "sha256": "c5e7a7703740579d15572625774e9db3000de6a3761af54cc6d8cacdd409400e"
+      },
+      {
+        "path": "config/direct_response.example/listening-start/config.json",
+        "sha256": "a62d181a2b5b4a4dac539729daafd43c887c342af4b0493b94e050e87f4d4c10"
+      },
+      {
+        "path": "config/direct_response.example/thinking/config.json",
+        "sha256": "7270a5100c3199675ac4e1ea2682e407eabca1edb9a08ac89542f8a22a494ee0"
+      },
+      {
+        "path": "config/direct_response.example/thinking/thinking.wav",
+        "sha256": "6e9184e6ec2f6fa8ac76d7076ee982855241fce7f0752824d1e7c5b6907c2f4c"
+      },
+      {
+        "path": "config/direct_response.example/wakeword/config.json",
+        "sha256": "23fa1286deb32d9939710d03a699043b73a40f1efae3675581c84dec68059e94"
+      },
+      {
+        "path": "config/embedded.example.toml",
+        "sha256": "826a9125661c8a47ecbb5b09e9a346527793ada49b6e3d4936953513d43bb0d6"
+      },
+      {
+        "path": "config/server.example.d/README.md",
+        "sha256": "2533c4f8df479acd375da2cf771f32db543f96ec059bc18bf66acb86b60845fd"
+      },
+      {
+        "path": "config/server.example.d/plugins/home_assistant.toml",
+        "sha256": "524ad3b99d94a7c62a4d856267d4bdbda15b9a9341f105fe83e2ca3ad36a744c"
+      },
+      {
+        "path": "config/server.example.d/policies/affect.toml",
+        "sha256": "e8b3c4f3d46a982bcf985f18290456e96079c807cff307bc2d914408ae476d1e"
+      },
+      {
+        "path": "config/server.example.d/policies/cache.toml",
+        "sha256": "e77a477073044edd385b243893eb8bc20c8f6014ddda3bd658e40b7b7c5a2ff4"
+      },
+      {
+        "path": "config/server.example.d/policies/conversation.toml",
+        "sha256": "ab97343c656df21beff23d45d328fb02a2a1daece82306c8f559842e20934b6c"
+      },
+      {
+        "path": "config/server.example.d/policies/expression.toml",
+        "sha256": "f8125552e7918216a08002a9829e186b0a9c3930398f7776f54172564c37c987"
+      },
+      {
+        "path": "config/server.example.d/policies/insights.toml",
+        "sha256": "8f01e640022f0c4b3e5c9069879d1ed153e477e4742c80fe75be12ac9171249f"
+      },
+      {
+        "path": "config/server.example.d/policies/memory.toml",
+        "sha256": "d1b50a80d7e5d4feaccdf6c4158be519752bcc4c89c8a4f347570880edcb5a54"
+      },
+      {
+        "path": "config/server.example.d/policies/regulation.toml",
+        "sha256": "6d72b0a52c8fa32906bb02e7ce2e8b2b7898e1771ec85ebcf3262b34cd47b790"
+      },
+      {
+        "path": "config/server.example.d/policies/routing.toml",
+        "sha256": "a089ca472467e55fc0c22ca5d8629fe8bf5e37ab86af11fdab7da4f35a996124"
+      },
+      {
+        "path": "config/server.example.d/policies/rules.toml",
+        "sha256": "4c966db7c61d54d1dc913a1eb9b537de9c8d670e66b755b3c0c2a31cea5c67c8"
+      },
+      {
+        "path": "config/server.example.d/policies/scheduler.toml",
+        "sha256": "0f35a4c79fb02e2998625c74c55c434ff147f921d2dd2d4b6d132a570a37e19b"
+      },
+      {
+        "path": "config/server.example.d/policies/tools.toml",
+        "sha256": "5fab31237fc7faf969645fa3492a3e72e5a65496f9d3279692bf5153cb672ef1"
+      },
+      {
+        "path": "config/server.example.d/policies/transcript_correction.toml",
+        "sha256": "986dc9667991d0f97bbcd19cc4b57247e9486643c46c374eb776b02b775294d4"
+      },
+      {
+        "path": "config/server.example.d/profiles/expression_styles.toml",
+        "sha256": "690b9f534703e040f78683d578ff7af5f705702d567afd6057ec501086520324"
+      },
+      {
+        "path": "config/server.example.d/profiles/llm.toml",
+        "sha256": "0e994bde28c3cda746aa2c8f68bc985d090251b2f2b251b3f05b30caf3a4be63"
+      },
+      {
+        "path": "config/server.example.d/profiles/voice.default.toml",
+        "sha256": "691c0f6630982fcc0c6041c0770ac5ff73a59cbc3f4e74c893afe360973eec27"
+      },
+      {
+        "path": "config/server.example.d/providers/anthropic.toml",
+        "sha256": "bfb4d32bff52b46d39f219f720c6616047ef63d56efd268c0c64fb2df6a5429e"
+      },
+      {
+        "path": "config/server.example.d/providers/easy_turn.toml",
+        "sha256": "33246230fe40385a414f19d4cccd6800ca5145835e64dbef4c54a9cf2969d982"
+      },
+      {
+        "path": "config/server.example.d/providers/gemini.toml",
+        "sha256": "b10369220cf49fe3c0c3e78caaa20181f5fe322e021c71bdd016077d15a8be36"
+      },
+      {
+        "path": "config/server.example.d/providers/gpt_sovits.toml",
+        "sha256": "278fa831eaf7d09da284c0ab4e7b8f6d64b5fa9a8c8b7310db2de8f6e3ca6012"
+      },
+      {
+        "path": "config/server.example.d/providers/openai.toml",
+        "sha256": "7c58bd098750970a1b98d6aec742bc624753a2acc9c9a4c275f219346c15f10e"
+      },
+      {
+        "path": "config/server.example.d/providers/whisper_cpp.toml",
+        "sha256": "b4016576dffc7a07a05440987a9eb39b837389a7d71c01b462fdcdef59c5b9e1"
+      },
+      {
+        "path": "config/server.example.d/resources/appraisal_lexicons/README.md",
+        "sha256": "1bfa88350a886d7369eea1c15aefefc132de6af7f93220eeebc2c3029d2e3f5f"
+      },
+      {
+        "path": "config/server.example.d/resources/appraisal_lexicons/en.toml",
+        "sha256": "efeed7321993ea4a5d4e536e06fff0a323e5b1c057952f261c85c041e4b67924"
+      },
+      {
+        "path": "config/server.example.d/resources/appraisal_lexicons/zh.toml",
+        "sha256": "c0a9b7d8f4dde19400712f18f97973b5f2356658adaf6c7f6a88a64c76461841"
+      },
+      {
+        "path": "config/server.example.d/resources/cache_policy.toml",
+        "sha256": "2911f42cedcb48d22fa4f38db4cdd47c11b9eaa7af366e3ee93c486b0c0e91a0"
+      },
+      {
+        "path": "config/server.example.d/resources/skills.toml",
+        "sha256": "b91be5a25fdb53898f5d35cda56384311ecaa403189e2d1600545d46356ba0e1"
+      },
+      {
+        "path": "config/server.example.toml",
+        "sha256": "a5e680dd522a522ed7369358f902d08f44a8084f483ba1ae4fdb723077d9e013"
+      }
+    ],
+    "protobuf": [
+      {
+        "path": "crates/proto/proto/audio.proto",
+        "sha256": "872cc6ed8bcbfa841893bbce79699d68621f1f2439c075dc7a8e2bdd85b24b48"
+      },
+      {
+        "path": "crates/proto/proto/binding.proto",
+        "sha256": "5c55be50554826f1da6316ac18a87796da1ba4a6b0a655a132bf6349057916cb"
+      },
+      {
+        "path": "crates/proto/proto/body.proto",
+        "sha256": "439ec590d5049a0045566bcdc369f332d8718e4185d795548754a0844d834527"
+      },
+      {
+        "path": "crates/proto/proto/expression.proto",
+        "sha256": "6de24403e489187d0da44c314886dcd238c06b16201e53b13ef4b97357efee99"
+      },
+      {
+        "path": "crates/proto/proto/playback.proto",
+        "sha256": "eec66e019983b003d347eab46a371ae733a3c0f10888b69cde1eb7a8d3c31261"
+      },
+      {
+        "path": "crates/proto/proto/plugin.proto",
+        "sha256": "7fe7a2caf762c3eae6b12a5fd604dd48b2b49cc43023a3570d719376d9925232"
+      },
+      {
+        "path": "crates/proto/proto/sensor.proto",
+        "sha256": "07328184b72e34c2ea42e16dcc7b6b946b48316e171f79f6299e832a6a4decde"
+      },
+      {
+        "path": "crates/proto/proto/settings.proto",
+        "sha256": "ccd9195950b56b4dbe336c6d66867481c30e0528bcaf7bc3e46374f65c0a4b0d"
+      },
+      {
+        "path": "crates/proto/proto/voice_session.proto",
+        "sha256": "025a9e8bfc36b4fe2b8b06e53d3064af30dac073af00a677c5567431bd2839bb"
+      }
+    ],
+    "build_scripts": [
+      {
+        "path": "crates/proto/build.rs",
+        "sha256": "62af7ae55d3ad8a4e4891c40cb022d06a1d91ab23f49c7142371668afc379756"
+      }
+    ],
+    "database_migrations": [
+      {
+        "path": "packages/alia-server/migrations/m20260507_000001_enable_pgvector.sql",
+        "sha256": "c726ee6fbd50b4dab08aaf76316e8e9332011ffe75ffaf7186bb14181dc35690"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260507_000004_create_llm_cache.sql",
+        "sha256": "92a49a4e590f59c6d349eaba86c521bb81baa6e4cd24b7c8d04ecc29e047fd81"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260507_000005_create_skills_tools.sql",
+        "sha256": "535215487ee8f0bc5ffcd3186df0a89682e8358f9ee08f03277650ed653cef2b"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260508_000001_create_personas.sql",
+        "sha256": "3bb90d7cd82657999e6eaa5cb5febeb7ef3778d9aad30d9267b952894f26d5d4"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260509_000001_create_insight_logs.sql",
+        "sha256": "7f4bf64e7c4dc94e0ab363fd696005f6be392ad0c810345c06e1c4473d8879c4"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260509_000002_create_sensors.sql",
+        "sha256": "7d71f586fcec9ed3a6f7622f98cf99293d514cce3e134b4fc9a6e7de03badea3"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260511_000001_create_chat_sessions.sql",
+        "sha256": "aedfc106deae4921a481143fe2eca70d256e848f5b07aff003f8718c8bb42ace"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260516_000001_normalize_skill_tools.sql",
+        "sha256": "323cc1789a245b361f5dde39a88e8c398a1ce64cbd767017369122878638409c"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260516_000002_create_registry_artifacts.sql",
+        "sha256": "82c5c0c8a6d0a822f1f10f178540cd0b7dbc7537297ffd5b7b647fb4ce14b406"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260517_000001_add_tool_catalog_metadata.sql",
+        "sha256": "d67af7bbc7a03d5c36db3e5a9199ad9ad489ad9f6f448006bf1ef684a6e341b6"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260518_000001_create_conversation_events.sql",
+        "sha256": "5f394de1499b0cb40d3af3305e313876c5b610eb0ff5133b5ae87d787417ce4d"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260518_000002_create_automation.sql",
+        "sha256": "fbb15385618a900db398e35febecf755012eb5b947dd400cadc4c9524d3e46d7"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260518_000003_create_users_auth.sql",
+        "sha256": "fc48508dec8c4a71587fe5866675618e43bcdea31c22cafce534c388e830cc80"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260519_000001_create_expression_appraisal_events.sql",
+        "sha256": "dcef21215b28eed9fc20be7ef569be1f9b79300e32a58d213e9cb4c5a769cf99"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260520_000001_create_memory_runtime.sql",
+        "sha256": "6d2e0f5d804498ecc3c5fcff47e0071c80cc29ccef6867a06fa6eca94b86789e"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260522_000001_create_plugin_storage_records.sql",
+        "sha256": "375db52cdfa38a6db6a63c2a461cef72fa511b994b492d1e126a1a593b2e5626"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260908_000001_create_execution_ledger.sql",
+        "sha256": "ea3d418cb81a435ac684656bc72a97796775f3fdb66c543641573723cc2c9ed7"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260908_000002_memory_privacy.sql",
+        "sha256": "3ed53351906a88c3d18c1f452460070891dab7e53a5102bf9588b1484e9e1111"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260908_000003_source_privacy_epoch.sql",
+        "sha256": "d020ff6394789ed18c6f15ce854a51909c7ba7b9c8236a9eddfcdc0a1b185661"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260908_000004_delivery.sql",
+        "sha256": "bbf9ba1eebcc611043a30325dccabe51c23c6149837f7109c7c784924b80b0e0"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260908_000005_text_delivery.sql",
+        "sha256": "c070bc6fc60b8c4c367b85a7eb671ad1b5a39c3b2c7d81150380bf52318acea2"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260913_000006_body_delivery.sql",
+        "sha256": "ccc891957d9ef6b05a669e80baadf313d2a528a5816a2f43d566b65cd50f152f"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260913_000007_context_lease.sql",
+        "sha256": "07108727655fee5a6948f67b8333ecddec85faf3a67334aac25b9592adbd6f55"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260913_000008_cache_context.sql",
+        "sha256": "1fac6fa5494c00e0fa0466fb8b90980c177d34698d75acd3f1bd5a2de22da987"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260913_000009_memory_embedding_identity.sql",
+        "sha256": "e6cd1d3cd38fe96a04e33328d38b6ec4dbc8fe81dadcc7a04f09d26e24bdcb8b"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260913_000010_appraisal_provenance.sql",
+        "sha256": "e5c9043ef8f2d11b26c9e36adbabfdf46b07af574be43b3f6d4b5ed6d2743170"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260914_000011_appraisal_rebuild.sql",
+        "sha256": "e546f39a0a53a8bc1a04111cb16dbfa73c6df9317c6a4c002346a380aa5f0145"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260920_000012_appraisal_memory_erasure.sql",
+        "sha256": "e0f09282f98abaa4285187ee32e4a7e56b475ce3a2f468c250d7042291cee226"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260920_000013_output_control.sql",
+        "sha256": "a23aa44c48906d6a349fc094c49b6309b7a783ed95a4ac64a4d3064cc4fc6e2e"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260926_000014_companion.sql",
+        "sha256": "ae51a5579732348221b15aa1df135cd35692de4da1319396467545b714e5b0a5"
+      },
+      {
+        "path": "packages/alia-server/migrations/m20260926_000015_companion_live.sql",
+        "sha256": "bf861af4c970afa5139b8eb3636d949796b3715f2e54879c7df7a328dcdab050"
+      }
+    ],
+    "easy_turn_runtime_definition": [
+      {
+        "path": "services/easy-turn/README.md",
+        "sha256": "7e917895c869ec3eed806909dfc6ac0888c6137f9679e4a701fd885e09360fb6"
+      },
+      {
+        "path": "services/easy-turn/VALIDATION.md",
+        "sha256": "7a4bb2b3f30c986c954562b53a6c7b69c829ae7f66053fbcd64e929a75b82fa3"
+      },
+      {
+        "path": "services/easy-turn/pyproject.toml",
+        "sha256": "8b7d80c458c170a531ed2678342e512a158c8346c59942fc9faad228b629f346"
+      },
+      {
+        "path": "services/easy-turn/requirements-macos.lock",
+        "sha256": "b78aadd5979de4f0a5d62929e5cd61b0ca680b4acf306361866d8839acca45c5"
+      }
+    ]
+  },
+  "group_counts": {
+    "cargo_manifests_and_lock": 8,
+    "configuration_and_embedded_resources": 39,
+    "protobuf": 9,
+    "build_scripts": 1,
+    "database_migrations": 31,
+    "easy_turn_runtime_definition": 4
+  },
+  "toolchain": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2\n",
+  "mac_native_archives": [
+    {
+      "path": "run/worktrees/alia-audio-clock-a33ec67/target/sherpa-onnx-prebuilt/sherpa-onnx-v1.13.1-osx-arm64-static-lib.tar.bz2",
+      "bytes": 18568944,
+      "sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    }
+  ],
+  "linux_native_archive": {
+    "version": "sherpa-onnx 1.13.1",
+    "sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+    "bytes": 19167687,
+    "evidence": "linux-arm64-v1/evidence/"
+  },
+  "historical_actual_model": {
+    "source_revision": "fe175eaa8442c9a0834acf29f8640ee74c2aceca",
+    "checkpoint_revision": "7d1f8b06776b575ac22e2fd4aa7913da2f4b8b98",
+    "checkpoint_bytes": 3451801684,
+    "checkpoint_sha256_from_pinned_definition": "1cb535bb0ffe3ffa0ac941bae4898aeb87adef7b88bb58f665af08eded6f6070",
+    "qwen_artifact_manifest": {
+      "source": "Qwen/Qwen2.5-0.5B-Instruct",
+      "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "sha256": {
+        "config.json": "18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45",
+        "generation_config.json": "e558847a8b4402616f1273797b015104dc266fe4b520056fca88823ba8f8ebe6",
+        "model.safetensors": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+        "tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "tokenizer_config.json": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+        "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "merges.txt": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+      }
+    },
+    "current_model_inference_executed": false,
+    "checkpoint_bytes_not_rehashed_this_review": true
+  },
+  "runtime_configuration_note": "Mac tests use existing fixture builders and ephemeral schemas. Linux actual config hashes, feature resolution, binaries and native packages are inventoried in its evidence; no production configuration copied."
+}

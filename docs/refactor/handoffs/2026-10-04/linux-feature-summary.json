@@ -1,0 +1,66 @@
+{
+  "alia-embedded": {
+    "version": "0.1.0",
+    "resolve_features": [
+      "default",
+      "direct-response",
+      "sherpa-onnx",
+      "stt-sherpa",
+      "wakeword-sherpa"
+    ],
+    "declared_default_features": [
+      "wakeword-sherpa",
+      "stt-sherpa",
+      "direct-response"
+    ]
+  },
+  "alia-server": {
+    "version": "0.1.0",
+    "resolve_features": [
+      "channel-embedded",
+      "default",
+      "embed-openai",
+      "insights",
+      "llm-anthropic",
+      "llm-gemini",
+      "llm-openai",
+      "plugin-home-assistant",
+      "stt-whisper",
+      "tools-http",
+      "tts-sovits",
+      "turn-easy"
+    ],
+    "declared_default_features": [
+      "channel-embedded",
+      "llm-openai",
+      "llm-anthropic",
+      "llm-gemini",
+      "stt-whisper",
+      "tts-sovits",
+      "embed-openai",
+      "tools-http",
+      "insights",
+      "plugin-home-assistant",
+      "turn-easy"
+    ]
+  },
+  "sherpa-onnx": {
+    "version": "1.13.1",
+    "resolve_features": [
+      "default",
+      "static"
+    ],
+    "declared_default_features": [
+      "static"
+    ]
+  },
+  "sherpa-onnx-sys": {
+    "version": "1.13.1",
+    "resolve_features": [
+      "static"
+    ],
+    "declared_default_features": [
+      "static"
+    ]
+  }
+}

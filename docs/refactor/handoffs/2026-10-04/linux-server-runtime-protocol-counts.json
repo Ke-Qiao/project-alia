@@ -1,0 +1,216 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/run/validation-20261004/linux-arm64-v1/evidence/server-runtime-protocol.log",
+  "log_sha256": "b9f6a17b5bbd68e50e78b53f53cc19c4b53ad94e39db950125ec1e4e378bd973",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 3,
+  "running_targets": 3,
+  "doctest_targets": 0,
+  "totals": {
+    "passed": 375,
+    "failed": 0,
+    "ignored": 3,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "running_totals": {
+    "passed": 375,
+    "failed": 0,
+    "ignored": 3,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 1,
+  "excluded_nested_totals": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 315
+  },
+  "nested_harness_start_count": 2,
+  "orphan_summaries": [],
+  "cargo_errors": [],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_server-87eed725b54e1b12)",
+      "heading_line": 7,
+      "nonpassing_test_lines": [
+        {
+          "line": 10,
+          "name": "bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        },
+        {
+          "line": 11,
+          "name": "channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        },
+        {
+          "line": 18,
+          "name": "channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        }
+      ],
+      "outer_harness_start": {
+        "line": 9,
+        "selected": 316
+      },
+      "nested_harness_starts": [
+        {
+          "line": 170,
+          "selected": 1
+        }
+      ],
+      "excluded_earlier_summaries": [
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 315,
+          "status": "ok",
+          "seconds": 0.07,
+          "line": 177
+        }
+      ],
+      "counted_summary": {
+        "passed": 313,
+        "failed": 0,
+        "ignored": 3,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 29.56,
+        "line": 337
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-09cdc9574bc937c0)",
+      "heading_line": 339,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 341,
+        "selected": 9
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 25.1,
+        "line": 352
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-d688634c1b44968f)",
+      "heading_line": 354,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 356,
+        "selected": 53
+      },
+      "nested_harness_starts": [
+        {
+          "line": 358,
+          "selected": 1
+        }
+      ],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 53,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 79.66,
+        "line": 417
+      }
+    }
+  ],
+  "run_metadata": {
+    "started": "2026-10-04T10:43:29.358488+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "--test",
+      "server_runtime",
+      "--test",
+      "duplex_playback",
+      "--locked",
+      "--offline",
+      "-j2"
+    ],
+    "container": "alia-review-linux-20261004-v1",
+    "environment": {
+      "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+      "CARGO_HOME": "/cache/cargo",
+      "CARGO_TARGET_DIR": "/cache/target",
+      "CARGO_BUILD_JOBS": "2",
+      "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+      "RUST_TEST_THREADS": "unset",
+      "RUST_MIN_STACK": "unset",
+      "DOCS_RS": "unset"
+    },
+    "manifest_sha256": "a1c7dc3d6787cf2b86144b60c17b5aaaaad65025d1695a1326194c826c8ba0d0",
+    "source_before": {
+      "file_count": 633,
+      "errors": []
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 219.742,
+    "finished": "2026-10-04T10:47:09.100850+00:00",
+    "source_after": {
+      "file_count": 633,
+      "errors": []
+    },
+    "finished_at": "2026-10-04T10:47:09.100850+00:00",
+    "source_drift": []
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "--test",
+      "server_runtime",
+      "--test",
+      "duplex_playback",
+      "--locked",
+      "--offline",
+      "-j2"
+    ],
+    "workspace_requested": false,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "PASSED_RECORDED_RUN"
+}

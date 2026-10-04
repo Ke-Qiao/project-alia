@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "docker",
+    "exec",
+    "alia-review-linux-20261004-v1",
+    "python3",
+    "-c",
+    "import json,subprocess; from pathlib import Path; out=subprocess.check_output(['nm','--defined-only','/cache/target/release/alia-embedded'],text=True); names=['SherpaOnnxCreateKeywordSpotter','SherpaOnnxCreateOfflineRecognizer','SherpaOnnxCreateVoiceActivityDetector']; found={n:any(line.endswith(' '+n) for line in out.splitlines()) for n in names}; Path('/evidence/native-linked-symbols.json').write_text(json.dumps(found,indent=2)+'\\n'); print(json.dumps(found)); assert all(found.values())"
+  ],
+  "started_at": "2026-10-04T10:49:46.018595+00:00",
+  "exit_code": 0,
+  "finished_at": "2026-10-04T10:49:46.142416+00:00"
+}

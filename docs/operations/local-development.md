@@ -120,6 +120,7 @@ path separately before treating a local software run as a hardware result.
 - Enable embedded `audio_debug` only while diagnosing audio; WAV files can grow
   quickly.
 - Use `/health` for aggregated module health. A responding HTTP endpoint is not proof that every provider is ready; inspect `status` and each module.
+- Aggregation currently has no overall deadline, profile deduplication or request concurrency limit; the router may probe the minor LLM again. Keep live probes disabled for routine polling until an explicit diagnostic budget is chosen. The existing 5-second OpenAI probe limit applies to one probe, not the whole endpoint.
 - Use authenticated `/api/v1/settings` to inspect runtime settings; durable policy changes require the documented revision and administrator permissions.
 - Check embedded gRPC settings for volume and direct response state.
 

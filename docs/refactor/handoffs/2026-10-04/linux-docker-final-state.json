@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "docker",
+    "inspect",
+    "alia-review-linux-20261004-v1",
+    "--format",
+    "{{json .State}}"
+  ],
+  "started_at": "2026-10-04T10:49:47.356563+00:00",
+  "exit_code": 0,
+  "finished_at": "2026-10-04T10:49:47.386479+00:00"
+}
