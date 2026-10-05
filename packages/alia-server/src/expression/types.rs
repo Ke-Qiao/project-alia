@@ -443,6 +443,7 @@ pub struct ExpressionStyle {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExpressionExecutionResult {
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -454,11 +455,7 @@ pub struct ExpressionExecutionResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyExecutionEvidence>,
     #[serde(default)]
-    pub completion_acknowledged: bool,
-    #[serde(default)]
     pub action_receipts: Vec<ExpressionActionReceipt>,
-    #[serde(default)]
-    pub executed_actions: Vec<String>,
     #[serde(default)]
     pub skipped_actions: Vec<SkippedExpressionAction>,
     #[serde(default)]
@@ -473,13 +470,11 @@ impl ExpressionExecutionResult {
             command_id: None,
             voice_scope: None,
             body: None,
-            completion_acknowledged: false,
             action_receipts: vec![ExpressionActionReceipt {
                 action: "*".to_string(),
                 status: ExpressionActionStatus::Skipped,
                 reason: Some(reason.clone()),
             }],
-            executed_actions: Vec::new(),
             skipped_actions: vec![SkippedExpressionAction {
                 action: "*".to_string(),
                 reason,
@@ -594,30 +589,16 @@ impl ExpressionExecutionResult {
             command_id: Some(body.command.source_command_id.clone()),
             voice_scope: body.command.scope.voice(),
             body: Some(body),
-            completion_acknowledged: false,
             action_receipts,
-            executed_actions: Vec::new(),
             skipped_actions: Vec::new(),
             safety_modifications: Vec::new(),
         }
     }
 
     pub(crate) fn writer_retired(&self) -> bool {
-        self.body.as_ref().map_or_else(
-            || {
-                !self.action_receipts.is_empty()
-                    && self.action_receipts.iter().all(|receipt| {
-                        matches!(
-                            receipt.status,
-                            ExpressionActionStatus::Completed
-                                | ExpressionActionStatus::Failed
-                                | ExpressionActionStatus::Rejected
-                                | ExpressionActionStatus::Skipped
-                        )
-                    })
-            },
-            BodyExecutionEvidence::writer_retired,
-        )
+        self.body
+            .as_ref()
+            .is_some_and(BodyExecutionEvidence::writer_retired)
     }
 }
 
@@ -628,9 +609,7 @@ pub enum ExpressionActionStatus {
     Started,
     Submitted,
     Cancelled,
-    Completed,
     Failed,
-    TimedOut,
     Unknown,
     Rejected,
     Skipped,

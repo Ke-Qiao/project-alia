@@ -30,7 +30,6 @@ config/
       gpt_sovits.toml
     policies/
       routing.toml
-      transcript_correction.toml
       conversation.toml
       cache.toml
       memory.toml
@@ -57,8 +56,8 @@ Keep these in `server.toml`:
 - database connection and auth key material paths
 - channel topology in `[[channels]]`
 - non-LLM module selection in `[modules]`
-- LLM role binding in `[llm.roles]`, including optional
-  `transcript_correction`
+- LLM role binding in `[llm.roles]`, including optional memory-capture and
+  sentence-expression roles
 
 Do not bury LLM role binding inside provider fragments. Provider fragments
 configure external service connections; `profiles/llm.toml` chooses concrete
@@ -75,7 +74,7 @@ Use fragments for implementation details:
 
 - `providers/*.toml`: OpenAI-compatible, Anthropic, Gemini, whisper.cpp, GPT-SoVITS
 - `profiles/llm.toml`: named chat and embedding model profiles
-- `policies/*.toml`: routing, transcript correction, conversation, cache,
+- `policies/*.toml`: routing, conversation, cache,
   memory, affect, regulation, expression, insights, rules, scheduler, tools
 - `profiles/*.toml`: LLM profiles, voice profile, expression styles, and TTS reference
   parameters
@@ -84,6 +83,18 @@ Use fragments for implementation details:
 - `plugins/*.toml`: future plugin-owned configuration
 
 Relative paths are resolved from the base config file directory.
+
+## Voice Input
+
+VoiceSession v2 is the sole embedded voice ingress. Configure
+`[providers.easy_turn]` on the server for continuous turn inference; the
+provider remains disabled until explicitly enabled. Embedded supplies ordered
+mono 16 kHz capture and VAD evidence. The old utterance upload, local STT
+correction role/policy, and channel interrupt flags have been removed.
+
+Live voice cancellation is owned by the session token, and output Hold/Resume
+uses the registered Playback v3 control contract. Existing duplex/companion
+policies and shadow defaults are unchanged.
 
 ## Runtime Settings
 

@@ -3,6 +3,92 @@ use alia_core::delivery::{SubmissionBoundary, VoiceScope};
 use std::sync::mpsc;
 use std::thread;
 mod control;
+mod mixer;
+
+pub(super) fn test_submission(generation: u64, rate: u32, channels: u32) -> Arc<AudioSubmission> {
+    AudioSubmission::new(
+        PlaybackIdentity {
+            scope: VoiceScope {
+                device_boot_id: uuid::Uuid::from_u128(1),
+                session_id: uuid::Uuid::from_u128(2),
+                generation_epoch: 1,
+            },
+            playback_id: uuid::Uuid::new_v4(),
+            playback_sequence: 1,
+        },
+        generation,
+        rate,
+        SubmissionBackend {
+            instance_id: uuid::Uuid::from_u128(10),
+            boundary: SubmissionBoundary::CpalCallbackBuffer,
+            output_sample_rate_hz: rate,
+            output_channels: channels,
+        },
+    )
+    .unwrap()
+}
+
+// Bounded finite-clip fixture. It exercises the same scoped admission and native
+// owner as streamed production media without requiring a second queue slot for
+// End before the test starts its consumer.
+impl PlaybackSender {
+    fn submit_clip(&self, pcm: &[i16], rate: u32) -> Result<()> {
+        self.submit_clip_if_current(pcm, rate, self.0.0.generation.load(Ordering::Acquire))
+            .map(|_| ())
+    }
+    fn submit_clip_if_current(&self, pcm: &[i16], rate: u32, generation: u64) -> Result<bool> {
+        let shared = &self.0.0;
+        {
+            let mut state = shared.lock();
+            ensure!(!state.closed, "test native runtime closed");
+            if shared.generation.load(Ordering::Acquire) != generation {
+                return Ok(false);
+            }
+            state.backend.get_or_insert(SubmissionBackend {
+                instance_id: uuid::Uuid::from_u128(10),
+                boundary: SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: rate,
+                output_channels: 1,
+            });
+        }
+        let identity = test_submission(generation, rate, 1).identity;
+        let submission = self.open_submission(identity, rate, generation)?;
+        let mut state = shared.lock();
+        let bytes = std::mem::size_of_val(pcm);
+        while !state.closed
+            && submission.is_live()
+            && shared.generation.load(Ordering::Acquire) == generation
+            && (state.media.len() >= shared.capacity
+                || shared.source_bytes.load(Ordering::Acquire) + bytes > MAX_SOURCE_BYTES)
+        {
+            state = shared
+                .changed
+                .wait_timeout(state, Duration::from_millis(2))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        ensure!(!state.closed, "test native runtime closed");
+        if !submission.is_live() || shared.generation.load(Ordering::Acquire) != generation {
+            return Ok(false);
+        }
+        submission.accept(0, pcm.len() as u64)?;
+        submission.accept_end(pcm.len() as u64)?;
+        state.inputs[MixerSource::Voice.index()] = None;
+        state.media.push_back(AudioBlock {
+            pcm: pcm.into(),
+            range: 0..pcm.len(),
+            sample_rate: rate,
+            generation,
+            submission,
+            source: MixerSource::Voice,
+            end: true,
+            reservation: Some(shared.reserve_pcm(bytes)),
+        });
+        drop(state);
+        shared.changed.notify_all();
+        Ok(true)
+    }
+}
 
 fn identified(
     sender: &PlaybackSender,
@@ -222,7 +308,7 @@ fn next(events: &mpsc::Receiver<Event>) -> Event {
 #[test]
 fn full_device_buffer_and_full_media_queue_do_not_delay_stop() {
     let (sender, receiver) = channel(1);
-    sender.play(&[1], 1000).unwrap(); // The only media slot is full.
+    sender.submit_clip(&[1], 8000).unwrap(); // The only media slot is full.
     let (handle, events) = worker(receiver, true);
     assert_eq!(next(&events), Event::Stalled); // The device does not drain.
 
@@ -236,10 +322,10 @@ fn full_device_buffer_and_full_media_queue_do_not_delay_stop() {
 #[test]
 fn stop_discards_queued_media_and_allows_new_playback() {
     let (sender, receiver) = channel(2);
-    sender.play(&[1], 1000).unwrap();
-    sender.play(&[2], 1000).unwrap();
+    sender.submit_clip(&[1], 8000).unwrap();
+    sender.submit_clip(&[2], 8000).unwrap();
     sender.stop();
-    sender.play(&[3, 4], 1000).unwrap();
+    sender.submit_clip(&[3, 4], 8000).unwrap();
 
     let (handle, events) = worker(receiver, false);
     assert_eq!(next(&events), Event::Stopped);
@@ -254,7 +340,7 @@ fn stop_discards_queued_media_and_allows_new_playback() {
 fn stop_invalidates_rendered_audio_and_a_block_already_in_flight() {
     let (sender, receiver) = channel(1);
     let mut buffer = PlaybackBuffer::new(receiver.generation());
-    sender.play(&[1], 1000).unwrap();
+    sender.submit_clip(&[1], 8000).unwrap();
     let Some(PlaybackAction::Play(in_flight)) = receiver.take(true) else {
         panic!("expected submitted audio");
     };
@@ -267,7 +353,7 @@ fn stop_invalidates_rendered_audio_and_a_block_already_in_flight() {
     assert_eq!(buffer.next_sample(), 0);
 
     assert!(matches!(receiver.take(true), Some(PlaybackAction::Stop)));
-    sender.play(&[5], 1000).unwrap();
+    sender.submit_clip(&[5], 8000).unwrap();
     let Some(PlaybackAction::Play(new)) = receiver.take(true) else {
         panic!("expected new-generation audio");
     };
@@ -278,7 +364,7 @@ fn stop_invalidates_rendered_audio_and_a_block_already_in_flight() {
 #[test]
 fn disconnect_shuts_down_without_waiting_for_the_device_to_drain() {
     let (sender, receiver) = channel(1);
-    sender.play(&[1], 1000).unwrap();
+    sender.submit_clip(&[1], 8000).unwrap();
     let (handle, events) = worker(receiver, true);
     assert_eq!(next(&events), Event::Stalled);
     drop(sender);
@@ -303,16 +389,16 @@ fn device_failure_wakes_worker_and_rejects_further_media() {
     fail();
     assert_eq!(next(&events), Event::Stopped);
     handle.join().unwrap().unwrap();
-    assert!(sender.play(&[1], 1000).is_err());
+    assert!(sender.submit_clip(&[1], 8000).is_err());
 }
 
 #[test]
 fn receiver_failure_releases_a_producer_when_the_queue_is_full() {
     let (sender, receiver) = channel(1);
-    sender.play(&[1], 1000).unwrap();
+    sender.submit_clip(&[1], 8000).unwrap();
     let (result_tx, result_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
-        result_tx.send(sender.play(&[2], 1000)).unwrap();
+        result_tx.send(sender.submit_clip(&[2], 8000)).unwrap();
     });
     drop(receiver);
     assert!(
@@ -332,20 +418,20 @@ fn repeated_stop_coalesces_without_a_control_backlog() {
     }
     assert!(matches!(receiver.take(false), Some(PlaybackAction::Stop)));
     assert!(receiver.take(false).is_none());
-    sender.play(&[1], 1000).unwrap();
+    sender.submit_clip(&[1], 8000).unwrap();
     assert!(matches!(receiver.take(true), Some(PlaybackAction::Play(_))));
 }
 
 #[test]
 fn stop_retires_the_remainder_of_a_partly_consumed_clip() {
     let (sender, receiver) = channel(1);
-    sender.play(&vec![1; 1000], 1000).unwrap();
+    sender.submit_clip(&vec![1; 1000], 8000).unwrap();
     let Some(PlaybackAction::Play(first)) = receiver.take(true) else {
         panic!("expected first block");
     };
-    assert_eq!(first.samples(), &[1; 20]);
+    assert_eq!(first.samples(), &[1; 160]);
     sender.stop();
-    sender.play(&[2], 1000).unwrap();
+    sender.submit_clip(&[2], 8000).unwrap();
     assert!(matches!(receiver.take(true), Some(PlaybackAction::Stop)));
     let Some(PlaybackAction::Play(fresh)) = receiver.take(true) else {
         panic!("expected fresh clip");
@@ -360,7 +446,7 @@ fn worker_blocks_preserve_resampling_phase_and_duration() {
     let pcm: Vec<i16> = (0..11025).collect();
     for output_rate in [8000, 48000] {
         let (sender, receiver) = channel(1);
-        sender.play(&pcm, 11025).unwrap();
+        sender.submit_clip(&pcm, 11025).unwrap();
         let mut rendered = Vec::new();
         let mut renderer = Renderer::default();
         while let Some(PlaybackAction::Play(block)) = receiver.take(true) {
@@ -383,12 +469,16 @@ fn submillisecond_device_tail_is_not_idle() {
 fn scoped_media_waiting_for_capacity_cannot_revive_after_stop() {
     let (sender, receiver) = channel(1);
     let generation = sender.begin().unwrap();
-    assert!(sender.play_if_current(&[1], 1000, generation).unwrap());
+    assert!(
+        sender
+            .submit_clip_if_current(&[1], 8000, generation)
+            .unwrap()
+    );
     let producer = sender.clone();
     let (result_tx, result_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
         result_tx
-            .send(producer.play_if_current(&[2], 1000, generation))
+            .send(producer.submit_clip_if_current(&[2], 8000, generation))
             .unwrap();
     });
     assert!(sender.stop_if_current(generation));
@@ -400,7 +490,7 @@ fn scoped_media_waiting_for_capacity_cannot_revive_after_stop() {
             .unwrap()
             .unwrap()
     );
-    assert!(sender.play_if_current(&[3], 1000, fresh).unwrap());
+    assert!(sender.submit_clip_if_current(&[3], 8000, fresh).unwrap());
     assert!(matches!(receiver.take(true), Some(PlaybackAction::Stop)));
     let Some(PlaybackAction::Play(block)) = receiver.take(true) else {
         panic!("fresh media missing")
@@ -421,8 +511,8 @@ fn restarting_a_worker_never_reuses_a_token_or_invalidates_it_from_an_old_drop()
     drop(old_receiver);
     assert!(fresh > old);
     assert_eq!(generation.load(Ordering::Acquire), fresh);
-    assert!(!sender.play_if_current(&[1], 1000, old).unwrap());
-    assert!(sender.play_if_current(&[2], 1000, fresh).unwrap());
+    assert!(!sender.submit_clip_if_current(&[1], 8000, old).unwrap());
+    assert!(sender.submit_clip_if_current(&[2], 8000, fresh).unwrap());
     drop(receiver);
 }
 
@@ -580,7 +670,8 @@ fn finite_block(input: Vec<i16>, rate: u32, generation: u64) -> AudioBlock {
         range: 0..len,
         sample_rate: rate,
         generation,
-        submission: None,
+        submission: test_submission(generation, rate, 1),
+        source: MixerSource::Voice,
         end: true,
         reservation: None,
     }

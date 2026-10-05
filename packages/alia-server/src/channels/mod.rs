@@ -1,7 +1,6 @@
 #[doc(hidden)]
 pub mod adapter;
 pub(crate) mod cli;
-pub(crate) mod dialogue_control_tool;
 #[cfg(feature = "channel-embedded")]
 #[doc(hidden)]
 pub mod embedded;

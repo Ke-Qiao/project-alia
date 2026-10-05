@@ -22,3 +22,5 @@ pub mod vision_debug;
 pub mod volume;
 
 pub use builder::EmbeddedBuilder;
+
+pub(crate) mod mixer;

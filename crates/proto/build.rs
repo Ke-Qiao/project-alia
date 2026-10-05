@@ -4,12 +4,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .compile_protos(
             &[
-                "proto/audio.proto",
                 "proto/voice_session.proto",
                 "proto/playback.proto",
                 "proto/binding.proto",
                 "proto/body.proto",
-                "proto/expression.proto",
                 "proto/plugin.proto",
                 "proto/settings.proto",
                 "proto/sensor.proto",

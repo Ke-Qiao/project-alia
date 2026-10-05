@@ -278,9 +278,9 @@ async fn proto_to_record(
         });
     }
     let audio_variants = write_audio_variants(variants, &variant_audio_dir).await?;
-    if keywords.is_empty() && action.is_none() && audio_variants.is_empty() {
+    if audio_variants.is_empty() {
         return Err(Status::invalid_argument(
-            "direct response requires at least one keyword, action, or audio variant",
+            "direct response cue requires an audio variant",
         ));
     }
 
@@ -359,6 +359,14 @@ async fn write_audio_variants(
     variants: Vec<DirectResponseAudioVariant>,
     audio_dir: &Path,
 ) -> Result<Vec<DirectResponseAudioRecord>, Status> {
+    if variants
+        .iter()
+        .any(|variant| !variant.weight.is_finite() || variant.weight <= 0.0)
+    {
+        return Err(Status::invalid_argument(
+            "cue audio weight must be finite and positive",
+        ));
+    }
     let mut records = Vec::new();
 
     for variant in variants {
@@ -385,11 +393,7 @@ async fn write_audio_variants(
         if !audio_path.trim().is_empty() {
             records.push(DirectResponseAudioRecord {
                 audio_path,
-                weight: if variant.weight <= 0.0 {
-                    1.0
-                } else {
-                    variant.weight
-                },
+                weight: variant.weight,
             });
         }
     }
@@ -408,5 +412,46 @@ fn audio_file_path(audio_dir: &Path, requested: &str) -> PathBuf {
         path.to_path_buf()
     } else {
         audio_dir.join(path)
+    }
+}
+
+#[cfg(test)]
+mod cue_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cue_management_rejects_action_only_and_invalid_weights_before_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let action_only = DirectResponseRule {
+            slug: "cancel".into(),
+            action: "cancel".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            proto_to_record(action_only, directory.path())
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::InvalidArgument
+        );
+        for weight in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let rule = DirectResponseRule {
+                slug: "wakeword".into(),
+                audio_variants: vec![DirectResponseAudioVariant {
+                    audio_path: "sample.wav".into(),
+                    weight,
+                    audio_data: vec![1, 2],
+                }],
+                ..Default::default()
+            };
+            assert_eq!(
+                proto_to_record(rule, directory.path())
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::InvalidArgument
+            );
+        }
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
     }
 }

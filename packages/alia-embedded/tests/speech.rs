@@ -1,110 +1,5 @@
-use std::time::Duration;
-
-use alia_embedded::config::ContinuousDialogueConfig;
-use alia_embedded::module::speech::capture::{
-    SpeechCapture, SpeechCaptureOrigin, SpeechCompletionReason,
-};
-use alia_embedded::module::speech::continuous::ContinuousDialogueState;
-use alia_embedded::module::speech::is_assistant_playback_source;
-use alia_embedded::module::speech::responses::{pcm_duration, read_pcm16_wav_blocking};
-use alia_embedded::module::speech::transport::derive_audio_ingress_endpoint;
-use alia_embedded::module::traits::{VoiceActivityState, WakeWordEvent};
-
-#[test]
-fn vad_capture_waits_for_silence_until_max_duration() {
-    let mut capture = test_capture(true);
-
-    capture.observe_vad(VoiceActivityState::Speech);
-
-    assert_eq!(capture.completion_reason(1_000 + 2_600_000), None);
-    capture.observe_vad(VoiceActivityState::Finished);
-    assert_eq!(
-        capture.completion_reason(1_000 + 2_700_000),
-        Some(SpeechCompletionReason::VadFinished)
-    );
-}
-
-#[test]
-fn vad_capture_does_not_accept_early_finished_segment() {
-    let mut capture = test_capture(true);
-
-    capture.observe_vad(VoiceActivityState::Finished);
-
-    assert_eq!(capture.completion_reason(1_000 + 1_200_000), None);
-    assert_eq!(
-        capture.completion_reason(1_000 + 1_800_000),
-        Some(SpeechCompletionReason::VadFinished)
-    );
-}
-
-#[test]
-fn vad_capture_resumes_after_premature_finished_segment() {
-    let mut capture = test_capture(true);
-
-    capture.observe_vad(VoiceActivityState::Finished);
-    capture.observe_vad(VoiceActivityState::Speech);
-
-    assert_eq!(capture.completion_reason(1_000 + 2_000_000), None);
-}
-
-#[test]
-fn vad_capture_uses_no_speech_timeout_before_speech_starts() {
-    let capture = test_capture(true);
-
-    assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
-    assert_eq!(
-        capture.completion_reason(1_000 + 2_500_000),
-        Some(SpeechCompletionReason::NoSpeechTimeout)
-    );
-}
-
-#[test]
-fn fixed_capture_fallback_uses_post_wake_capture_window() {
-    let capture = test_capture(false);
-
-    assert_eq!(capture.completion_reason(1_000 + 2_400_000), None);
-    assert_eq!(
-        capture.completion_reason(1_000 + 2_500_000),
-        Some(SpeechCompletionReason::FixedWindow)
-    );
-}
-
-#[test]
-fn continuous_dialogue_starts_followup_after_assistant_reply() {
-    let mut state = ContinuousDialogueState::new(ContinuousDialogueConfig {
-        enabled: true,
-        followup_timeout_ms: 10_000,
-        max_followup_turns: 6,
-    });
-
-    state.start_session();
-    state.mark_waiting_for_assistant();
-    state.schedule_followup();
-
-    assert!(state.start_followup_if_scheduled(1_000));
-    assert!(state.is_followup_listening());
-    assert!(!state.expire_if_needed(1_000 + 9_999_000));
-    assert!(state.expire_if_needed(1_000 + 10_000_000));
-    assert!(!state.is_followup_listening());
-}
-
-#[test]
-fn continuous_dialogue_counts_followup_turns() {
-    let mut state = ContinuousDialogueState::new(ContinuousDialogueConfig {
-        enabled: true,
-        followup_timeout_ms: 10_000,
-        max_followup_turns: 1,
-    });
-
-    state.start_session();
-    state.schedule_followup();
-    assert!(state.start_followup_if_scheduled(1_000));
-    state.mark_followup_capture_started();
-    state.schedule_followup();
-
-    assert!(!state.start_followup_if_scheduled(2_000));
-    assert!(!state.is_followup_listening());
-}
+use alia_embedded::module::direct_response_playback::read_pcm16_wav_blocking;
+use alia_embedded::module::speech::transport::derive_voice_endpoint;
 
 #[test]
 fn reads_pcm16_wav() {
@@ -119,49 +14,43 @@ fn reads_pcm16_wav() {
 }
 
 #[test]
-fn computes_pcm_duration() {
-    assert_eq!(
-        pcm_duration(&vec![0; 16_000], 16_000),
-        Some(Duration::from_secs(1))
-    );
-    assert_eq!(pcm_duration(&[], 16_000), None);
-    assert_eq!(pcm_duration(&[0], 0), None);
+fn cue_wav_downmixes_stereo_by_mean_without_clipping() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("stereo.wav");
+    std::fs::write(&path, test_wav(&[1000, -1000, 30_000, 10_000], 16_000, 2)).unwrap();
+    let wav = read_pcm16_wav_blocking(&path).unwrap();
+    assert_eq!(wav.source_channels, 2);
+    assert_eq!(wav.pcm, vec![0, 20_000]);
 }
 
 #[test]
-fn derives_audio_ingress_from_bound_server_endpoint() {
-    let endpoint = derive_audio_ingress_endpoint("http://192.168.1.10:3000").unwrap();
-    assert_eq!(endpoint, "http://192.168.1.10:3001");
-}
-
-#[test]
-fn assistant_playback_source_is_tts_only() {
-    assert!(is_assistant_playback_source("tts"));
-    assert!(!is_assistant_playback_source("wakeword_interrupt"));
-    assert!(!is_assistant_playback_source(
-        "run/direct-responses/wakeword/hello.wav"
-    ));
-}
-
-fn test_capture(vad_enabled: bool) -> SpeechCapture {
-    SpeechCapture::new(
-        wakeword_event(),
-        SpeechCaptureOrigin::Wakeword,
-        16_000,
-        1_000,
-        Duration::from_millis(2_500),
-        Duration::from_millis(1_800),
-        Duration::from_millis(5_000),
-        vad_enabled,
-    )
-}
-
-fn wakeword_event() -> WakeWordEvent {
-    WakeWordEvent {
-        keyword: "HEY_ALIA".to_string(),
-        confidence: 1.0,
-        timestamp_us: 1_000,
+fn cue_wav_rejects_invalid_format_and_unbounded_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("invalid.wav");
+    for (pcm, rate, channels) in [
+        (vec![1], 16_000, 0),
+        (vec![1], 0, 1),
+        (vec![1, 2, 3], 16_000, 2),
+        (vec![0; 16_000 * 5 + 1], 16_000, 1),
+    ] {
+        std::fs::write(&path, test_wav(&pcm, rate, channels)).unwrap();
+        assert!(read_pcm16_wav_blocking(&path).is_err());
     }
+}
+
+#[test]
+fn cue_wav_rejects_oversized_file_before_decoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("oversized.wav");
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(4 * 1024 * 1024 + 1).unwrap();
+    assert!(read_pcm16_wav_blocking(&path).is_err());
+}
+
+#[test]
+fn derives_voice_endpoint_from_bound_server_endpoint() {
+    let endpoint = derive_voice_endpoint("http://192.168.1.10:3000").unwrap();
+    assert_eq!(endpoint, "http://192.168.1.10:3001");
 }
 
 fn test_wav(pcm: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {

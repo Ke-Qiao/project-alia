@@ -41,11 +41,9 @@ impl RetiredOutput {
             );
         } else {
             ensure!(
-                self.generation.is_none()
-                    && self.control.is_none()
-                    && self.observations.is_empty()
+                self.observations.values().all(|lease| lease.local_cue)
                     && request.expected_backend.is_none(),
-                "unregistered native owner cannot prove no native output"
+                "unregistered scope cannot contain remote Response media"
             );
         }
         Ok(())
@@ -109,11 +107,9 @@ impl PlaybackSession {
                 );
             } else {
                 ensure!(
-                    active.generation.is_none()
-                        && active.control.is_none()
-                        && active.observations.is_empty()
+                    active.observations.values().all(|lease| lease.local_cue)
                         && request.expected_backend.is_none(),
-                    "unregistered native owner cannot prove no native output"
+                    "unregistered scope cannot contain remote Response media"
                 );
             }
             let body = match &self.output_fence {
@@ -167,8 +163,8 @@ impl PlaybackSession {
         while !original.quiescent() {
             tokio::time::sleep(std::time::Duration::from_millis(2)).await;
         }
-        let evidence = match &original.registration {
-            Some(registered) => {
+        let evidence = match &original.control {
+            Some(control) => {
                 ensure!(
                     original
                         .control
@@ -176,17 +172,27 @@ impl PlaybackSession {
                         .is_some_and(|control| control.is_retired()),
                     "original native gate was not retired"
                 );
-                let mut leases: Vec<_> = original.observations.values().collect();
+                let mut leases: Vec<_> = original
+                    .observations
+                    .values()
+                    .filter(|lease| !lease.local_cue)
+                    .collect();
                 leases.sort_by_key(|lease| lease.playback_sequence);
                 OutputRetirementEvidence::Settled {
-                    backend: registered.backend.clone(),
+                    backend: control.backend.clone(),
                     progress: leases
                         .into_iter()
                         .map(|lease| lease.submission.next_snapshot())
                         .collect(),
                 }
             }
-            None => OutputRetirementEvidence::NoNativeOwner,
+            None => {
+                ensure!(
+                    original.generation.is_none() && original.observations.is_empty(),
+                    "missing control cannot prove no native owner"
+                );
+                OutputRetirementEvidence::NoNativeOwner
+            }
         };
         let receipt = OutputRetirementReceipt {
             scope: request.scope,

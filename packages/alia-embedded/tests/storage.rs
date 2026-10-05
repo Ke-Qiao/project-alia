@@ -85,6 +85,14 @@ async fn upserts_and_deletes_direct_response_rules() {
     let updated = store.upsert_direct_response(&updated).await.unwrap();
     assert!(!updated.enabled);
 
+    let mut invalid_update = updated.clone();
+    invalid_update.audio_variants.clear();
+    assert!(store.upsert_direct_response(&invalid_update).await.is_err());
+    assert_eq!(
+        store.list_direct_responses(true).await.unwrap(),
+        vec![updated]
+    );
+
     let all = store.list_direct_responses(true).await.unwrap();
     assert_eq!(all.len(), 1);
     let enabled = store.list_direct_responses(false).await.unwrap();
@@ -95,30 +103,49 @@ async fn upserts_and_deletes_direct_response_rules() {
 }
 
 #[tokio::test]
-async fn upserts_action_only_direct_response_rule() {
+async fn rejects_direct_response_records_without_valid_audio() {
     let dir = tempfile::tempdir().unwrap();
     let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
         .await
         .unwrap();
-
-    let inserted = store
-        .upsert_direct_response(&DirectResponseRuleRecord {
-            id: 0,
-            slug: "cancel".to_string(),
-            keywords: vec!["退下".to_string()],
-            audio_variants: Vec::new(),
-            action: Some("cancel".to_string()),
-            enabled: true,
-        })
-        .await
-        .unwrap();
-
-    assert_eq!(inserted.slug, "cancel");
-    assert_eq!(inserted.audio_variants, Vec::new());
-    let rules = store.load_direct_responses().await.unwrap();
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0].audio_variants.len(), 0);
-    assert_eq!(rules[0].action.as_deref(), Some("cancel"));
+    let invalid_audio = [
+        Vec::new(),
+        vec![DirectResponseAudioRecord {
+            audio_path: " ".into(),
+            weight: 1.0,
+        }],
+        vec![DirectResponseAudioRecord {
+            audio_path: "wake.wav".into(),
+            weight: 0.0,
+        }],
+        vec![DirectResponseAudioRecord {
+            audio_path: "wake.wav".into(),
+            weight: -1.0,
+        }],
+        vec![DirectResponseAudioRecord {
+            audio_path: "wake.wav".into(),
+            weight: f32::NAN,
+        }],
+        vec![DirectResponseAudioRecord {
+            audio_path: "wake.wav".into(),
+            weight: f32::INFINITY,
+        }],
+    ];
+    for audio_variants in invalid_audio {
+        let error = store
+            .upsert_direct_response(&DirectResponseRuleRecord {
+                id: 0,
+                slug: "wakeword".into(),
+                keywords: vec!["hey alia".into()],
+                audio_variants,
+                action: Some("wakeword".into()),
+                enabled: true,
+            })
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("finite positive weight"));
+        assert!(store.list_direct_responses(true).await.unwrap().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -163,7 +190,7 @@ async fn imports_direct_response_bundle_and_removes_config() {
 }
 
 #[tokio::test]
-async fn imports_action_only_direct_response_bundle() {
+async fn rejects_action_only_bundle_and_keeps_import_source() {
     let dir = tempfile::tempdir().unwrap();
     let store = EmbeddedStore::open(dir.path().join("embedded-state.sqlite3"))
         .await
@@ -184,14 +211,9 @@ async fn imports_action_only_direct_response_bundle() {
         .import_direct_response_bundles(&dir.path().join("direct_response"))
         .await
         .unwrap();
-    assert_eq!(imported, 1);
-    assert!(!bundle.join("config.json").exists());
-
-    let rules = store.list_direct_responses(true).await.unwrap();
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0].slug, "cancel");
-    assert_eq!(rules[0].audio_variants, Vec::new());
-    assert_eq!(rules[0].action.as_deref(), Some("cancel"));
+    assert_eq!(imported, 0);
+    assert!(bundle.join("config.json").exists());
+    assert!(store.list_direct_responses(true).await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -278,7 +300,7 @@ async fn scans_direct_response_alias_roots() {
 }
 
 #[tokio::test]
-async fn migrates_legacy_audio_path_column_into_variants() {
+async fn rejects_legacy_schema_without_rewriting_stored_audio() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("embedded-state.sqlite3");
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))
@@ -317,7 +339,7 @@ async fn migrates_legacy_audio_path_column_into_variants() {
     .unwrap();
     pool.close().await;
 
-    let store = EmbeddedStore::open(&path).await.unwrap();
+    assert!(EmbeddedStore::open(&path).await.is_err());
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display())).unwrap();
     let pool = SqlitePoolOptions::new()
         .connect_with(options)
@@ -330,12 +352,6 @@ async fn migrates_legacy_audio_path_column_into_variants() {
         .into_iter()
         .map(|row| row.get::<String, _>("name"))
         .collect::<Vec<_>>();
-    assert!(!columns.iter().any(|column| column == "audio_path"));
+    assert!(columns.iter().any(|column| column == "audio_path"));
     pool.close().await;
-
-    let rules = store.list_direct_responses(true).await.unwrap();
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0].audio_variants.len(), 1);
-    assert_eq!(rules[0].audio_variants[0].audio_path, "legacy.wav");
-    assert_eq!(rules[0].audio_variants[0].weight, 1.0);
 }

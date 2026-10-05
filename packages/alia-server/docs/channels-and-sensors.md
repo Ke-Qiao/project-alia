@@ -22,24 +22,19 @@ future chat integrations.
 
 `channel_id` is the stable instance identity and `channel_type` is only the
 adapter category. Runtime routing, conversation history, tools, and delivery
-should use the instance id. A plugin or component channel must not register an
-id that equals another channel's type, or a type that equals another channel's
-id. The registry rejects those ambiguous identities at registration time.
-
-If older embedded clients send `"embedded"` as a channel id, the server resolves
-it as a type alias only when exactly one embedded channel is active.
+use the exact instance id. A channel type is never an alias for an instance,
+even when only one instance is registered.
 
 ## Embedded Channel
 
-The embedded channel talks to `alia-embedded` over gRPC. It currently handles:
+The embedded channel uses VoiceSession v2 for continuous input, Playback v3 for
+scoped PCM and output control, and Body v1 for signed device commands and facts.
+Every media delivery requires an identity; unsupported adapters fail before
+output admission. Local wake cues enter Embedded's scoped mixer directly.
 
-- captured audio upload through the server audio ingress service
-- TTS playback streaming to the device
-- playback stop and active-turn interruption
-- settings and direct response management
-- volume control
-- plugin management
-- sensor discovery, reads, and sensor-specific commands
+The channel also handles settings, cue asset management, volume, plugins and
+sensor discovery/read/commands. These management operations do not grant voice
+or motion output authority.
 
 ## Sensor Registry
 

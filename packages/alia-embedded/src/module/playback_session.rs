@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
 mod capture;
 mod control;
+mod cue;
 mod retirement;
 mod submission;
 pub use capture::CaptureControlBarrier;
@@ -38,6 +39,7 @@ pub struct PlaybackLease {
     pub sample_rate: u32,
     pub submission: Arc<AudioSubmission>,
     generation: u64,
+    local_cue: bool,
 }
 impl PlaybackLease {
     pub fn identity(&self) -> PlaybackIdentity {
@@ -385,7 +387,8 @@ impl PlaybackSession {
         active.initiative_event = Some((capture, context_id));
         Ok(())
     }
-    pub fn begin(
+    #[cfg(test)]
+    pub(crate) fn begin(
         &self,
         scope: &VoiceScope,
         playback_id: &str,
@@ -520,6 +523,7 @@ impl PlaybackSession {
             sample_rate,
             generation,
             submission,
+            local_cue: false,
         };
         active.input = Some(identity);
         active.observations.insert(identity, lease.clone());

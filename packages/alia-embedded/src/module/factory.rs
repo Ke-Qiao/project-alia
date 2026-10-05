@@ -15,7 +15,7 @@ use super::discovery::{BleDiscovery, MdnsDiscovery};
 use super::motion::MotionRuntime;
 use super::noop::*;
 #[cfg(feature = "sherpa-onnx")]
-use super::sherpa::{SherpaOnnxKws, SherpaOnnxStt, SherpaOnnxVad};
+use super::sherpa::{SherpaOnnxKws, SherpaOnnxVad};
 use super::traits::*;
 use super::vision::YuNetFaceTracker;
 use super::vision_debug::VisionDebugHub;
@@ -28,15 +28,6 @@ pub fn create_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine
         "porcupine" => bail!("porcupine wakeword is not implemented"),
         "noop" => Ok(Box::new(NoopWakeWord)),
         other => bail!("unknown wakeword engine: {other}"),
-    }
-}
-
-/// Create the edge STT engine based on config.
-pub fn create_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
-    match config.modules.edge_stt.as_str() {
-        "sherpa_onnx" => create_sherpa_edge_stt(config),
-        "noop" => Ok(Box::new(NoopEdgeStt)),
-        other => bail!("unknown edge_stt engine: {other}"),
     }
 }
 
@@ -66,16 +57,6 @@ fn create_sherpa_wakeword(config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEng
 #[cfg(not(feature = "sherpa-onnx"))]
 fn create_sherpa_wakeword(_config: &EmbeddedConfig) -> Result<Box<dyn WakeWordEngine>> {
     bail!("module wakeword='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
-}
-
-#[cfg(feature = "sherpa-onnx")]
-fn create_sherpa_edge_stt(config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
-    Ok(Box::new(SherpaOnnxStt::new(&config.edge_stt)?))
-}
-
-#[cfg(not(feature = "sherpa-onnx"))]
-fn create_sherpa_edge_stt(_config: &EmbeddedConfig) -> Result<Box<dyn EdgeSttEngine>> {
-    bail!("module edge_stt='sherpa_onnx' requires the alia-embedded 'sherpa-onnx' feature")
 }
 
 #[cfg(feature = "sherpa-onnx")]
@@ -115,15 +96,6 @@ pub fn create_audio_playback(
         ))),
         "noop" => Ok(Box::new(NoopAudioPlayback)),
         other => bail!("unknown audio_playback backend: {other}"),
-    }
-}
-
-/// Create the audio mixer based on config.
-pub fn create_mixer(config: &EmbeddedConfig) -> Result<Box<dyn AudioMixer>> {
-    match config.modules.mixer.as_str() {
-        "priority" => bail!("priority mixer is not implemented; select noop to disable mixing"),
-        "noop" => Ok(Box::new(NoopMixer)),
-        other => bail!("unknown mixer: {other}"),
     }
 }
 

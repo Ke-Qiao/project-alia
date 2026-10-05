@@ -362,6 +362,14 @@ impl PlaybackSink for AlsaPlaybackSink {
         )
     }
 
+    fn source_buffered_ms(&self, source: crate::module::mixer::MixerSource) -> u64 {
+        playback_buffered_ms(
+            self.buffer.source_len(source),
+            self.runtime.output_sample_rate,
+            self.runtime.output_channels,
+        )
+    }
+
     fn enqueue(&mut self, block: AudioBlock) -> Result<()> {
         if !self.buffer.is_current(block.generation) {
             return Ok(());

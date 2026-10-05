@@ -26,24 +26,12 @@ pub trait WakeWordEngine: ModuleLifecycle {
     fn detect(&self, pcm: &[i16]) -> Option<WakeWordEvent>;
 }
 
-// ─── Edge STT Engine ─────────────────────────────────────────────────────────
-
-/// Lightweight on-device STT engine (slot: `edge_stt`).
-///
-/// Used for short utterances (< 5s) after wake word detection.
-/// Returns `None` if confidence is insufficient (fall back to server).
-#[tonic::async_trait]
-pub trait EdgeSttEngine: ModuleLifecycle {
-    /// Transcribe a short audio segment locally.
-    async fn transcribe_short(&self, pcm: &[i16], max_duration_ms: u32) -> Result<Option<String>>;
-}
-
 // ─── Voice Activity Detection ────────────────────────────────────────────────
 
 /// Streaming voice activity state for post-wake command endpointing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceActivityState {
-    /// VAD is not available; callers should use fixed-duration fallback.
+    /// VAD is unavailable; the continuous voice pipeline must reject startup.
     Unavailable,
     /// No active speech is currently detected.
     Silence,
@@ -55,8 +43,8 @@ pub enum VoiceActivityState {
 
 /// Voice activity detector (slot: `vad`).
 ///
-/// Used only for endpointing short post-wake captures. It does not replace
-/// wake-word detection or STT.
+/// Supplies local speech evidence for continuous capture. Server turn detection
+/// and transcription own semantic boundaries.
 pub trait VoiceActivityEngine: ModuleLifecycle {
     /// Reset detector state before a new post-wake command capture.
     fn reset(&self) -> Result<()>;
@@ -72,24 +60,21 @@ pub trait VoiceActivityEngine: ModuleLifecycle {
 
 // ─── Direct Response Engine ──────────────────────────────────────────────────
 
-/// Action to execute when a keyword is matched locally.
+/// Selected local cue asset. `action` is lookup metadata, never a control command.
 #[derive(Debug, Clone)]
 pub struct DirectResponseAction {
     pub audio_path: Option<String>,
     pub action: Option<String>,
 }
 
-/// Keyword-based fast response engine (slot: `direct_response`).
-///
-/// Matches recognized text against local keyword rules; if matched,
-/// bypasses the server LLM path for sub-600ms response.
+/// Local cue asset lookup (slot: `direct_response`).
+/// Selection supplies a bounded clip; playback still requires the active voice scope.
 pub trait DirectResponseEngine: ModuleLifecycle {
-    /// Match input text, returning an action if a keyword hits.
+    /// Resolve a cue for the detected wake keyword. This does not inspect transcripts.
     fn match_keyword(&self, text: &str) -> Option<DirectResponseAction>;
 
-    /// Resolve a named system response such as `wakeword`, `fallback`, or
-    /// `listening_continue`. Missing responses are expected and should be
-    /// handled by callers without failing the speech pipeline.
+    /// Resolve a configured cue alias such as `wakeword`. Missing audio is
+    /// expected and must not fail the speech pipeline.
     fn match_action(&self, _action: &str) -> Option<DirectResponseAction> {
         None
     }
@@ -145,6 +130,17 @@ pub trait AudioPlaybackBackend: ModuleLifecycle {
         anyhow::bail!("backend does not provide playback submission evidence")
     }
 
+    /// Local short cues share the voice scope's native control owner, but have
+    /// an independent source identity and never consume remote sequence numbers.
+    fn open_cue_submission(
+        &self,
+        _identity: alia_core::delivery::PlaybackIdentity,
+        _sample_rate: u32,
+        _generation: u64,
+    ) -> Result<std::sync::Arc<super::playback_session::AudioSubmission>> {
+        anyhow::bail!("backend does not provide scoped cue mixing")
+    }
+
     fn submit_audio(
         &self,
         _submission: &std::sync::Arc<super::playback_session::AudioSubmission>,
@@ -170,20 +166,8 @@ pub trait AudioPlaybackBackend: ModuleLifecycle {
         anyhow::bail!("backend does not provide precise playback cancellation")
     }
 
-    /// Play decoded PCM audio.
-    fn play(&self, pcm: &[i16], sample_rate: u32) -> Result<()>;
-
-    /// Stop current playback.
-    fn stop_playback(&self) -> Result<()>;
-
     /// Start a new scoped output and return its process-local cancellation token.
     fn begin_scoped_playback(&self) -> Result<u64> {
-        anyhow::bail!("scoped playback is not supported by this backend")
-    }
-
-    /// Atomically enqueue only while the expected local generation is current.
-    /// False means cancelled; never relabel old media with a newer generation.
-    fn play_if_current(&self, _pcm: &[i16], _sample_rate: u32, _generation: u64) -> Result<bool> {
         anyhow::bail!("scoped playback is not supported by this backend")
     }
 
@@ -198,38 +182,6 @@ pub trait AudioPlaybackBackend: ModuleLifecycle {
 
     /// Whether the playback device is currently available.
     fn is_available(&self) -> bool;
-}
-
-// ─── Audio Mixer ─────────────────────────────────────────────────────────────
-
-/// Audio source identifier for mixer submissions.
-#[derive(Debug, Clone)]
-pub struct AudioSource {
-    pub id: String,
-    pub pcm: Vec<i16>,
-    pub sample_rate: u32,
-}
-
-/// Priority levels for audio mixing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AudioPriority {
-    /// Background music (lowest)
-    Background = 0,
-    /// Notifications / alerts
-    Notification = 1,
-    /// Direct response local audio
-    DirectResponse = 2,
-    /// TTS conversation response (highest)
-    Tts = 3,
-}
-
-/// Multi-source priority audio mixer (slot: `mixer`).
-pub trait AudioMixer: ModuleLifecycle {
-    /// Submit audio to a priority channel.
-    fn submit(&self, source: AudioSource, priority: AudioPriority) -> Result<()>;
-
-    /// Interrupt all sources below the given priority.
-    fn interrupt_below(&self, priority: AudioPriority) -> Result<()>;
 }
 
 // ─── Face Tracker ────────────────────────────────────────────────────────────

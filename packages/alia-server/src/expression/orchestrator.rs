@@ -22,7 +22,7 @@ struct ActiveExpression {
     plan_id: Uuid,
     plan: serde_json::Value,
     scope: Option<VoiceScope>,
-    response_id: Option<Uuid>,
+    response_id: Uuid,
     priority: ExpressionPriority,
     interruptible: bool,
     command_id: Option<String>,
@@ -44,7 +44,6 @@ impl ActiveExpression {
 
 #[derive(Debug)]
 struct ChannelState {
-    identity: Uuid,
     operation: AsyncMutex<()>,
     active: Mutex<Option<ActiveExpression>>,
 }
@@ -52,7 +51,6 @@ struct ChannelState {
 impl Default for ChannelState {
     fn default() -> Self {
         Self {
-            identity: Uuid::new_v4(),
             operation: AsyncMutex::new(()),
             active: Mutex::new(None),
         }
@@ -125,22 +123,6 @@ pub async fn negotiate_expression_capabilities(
     }
 }
 
-pub async fn execute_expression_plan(
-    orchestrator: &ExpressionOrchestrator,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    plan: &ExpressionPlan,
-) -> ExpressionExecutionResult {
-    execute_expression_plan_phase(
-        orchestrator,
-        channel,
-        target,
-        plan,
-        ExpressionExecutionPhase::Full,
-    )
-    .await
-}
-
 pub async fn cancel_expression_execution(
     orchestrator: &ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
@@ -179,7 +161,7 @@ pub async fn cancel_expression_execution(
         return ExpressionExecutionResult::skipped("original expression owner has already changed");
     }
     let result = cancel_owned(channel, &original, &target.user_id, reason).await;
-    if original.command_id.is_none() || cancellation_retired(&result) {
+    if original.command_id.is_none() || result.writer_retired() {
         if let Some(active) = state
             .active
             .lock()
@@ -243,20 +225,8 @@ async fn cancel_owned(
     }
 }
 
-pub async fn execute_expression_plan_phase(
-    orchestrator: &ExpressionOrchestrator,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    plan: &ExpressionPlan,
-    phase: ExpressionExecutionPhase,
-) -> ExpressionExecutionResult {
-    execute_expression_plan_phase_with_response(orchestrator, channel, target, plan, phase, None)
-        .await
-}
-
-/// Production body dispatch is attached to the same canonical Response as its
-/// speech/text output. The wrapper without an origin remains useful for local
-/// adapter tests; Embedded refuses to send it to a device.
+/// Body dispatch is attached to the same canonical Response as speech/text
+/// output. Missing source authority cannot be replaced by a local identity.
 pub async fn execute_expression_plan_phase_with_response(
     orchestrator: &ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
@@ -265,6 +235,9 @@ pub async fn execute_expression_plan_phase_with_response(
     phase: ExpressionExecutionPhase,
     response_id: Option<Uuid>,
 ) -> ExpressionExecutionResult {
+    let Some(response_id) = response_id.filter(|id| !id.is_nil()) else {
+        return ExpressionExecutionResult::skipped("expression requires a canonical Response");
+    };
     if plan.timeline.is_empty() || !channel.capabilities().hardware_control {
         return ExpressionExecutionResult::skipped("channel has no executable expression timeline");
     }
@@ -288,7 +261,7 @@ pub async fn execute_expression_plan_phase_with_response(
             "adapter has no command-bound expression protocol",
         );
     }
-    refresh_observation(&state, channel, target, &capabilities).await;
+    refresh_observation(&state, channel, target).await;
     let original = state
         .active
         .lock()
@@ -334,7 +307,7 @@ pub async fn execute_expression_plan_phase_with_response(
                 "preempted_by_higher_priority_expression",
             )
             .await;
-            if active.command_id.is_some() && !cancellation_retired(&cancellation) {
+            if active.command_id.is_some() && !cancellation.writer_retired() {
                 return cancellation;
             }
         }
@@ -390,12 +363,7 @@ pub async fn execute_expression_plan_phase_with_response(
     };
     // The plan UUID and phase are immutable. The adapter must bind repeated IDs
     // to identical command payloads; this local layer does not retry commands.
-    let command_id = format!(
-        "{}:{}:{}",
-        response_id.unwrap_or(state.identity),
-        plan.id,
-        phase.label()
-    );
+    let command_id = format!("{}:{}:{}", response_id, plan.id, phase.label());
     params["command_id"] = serde_json::json!(command_id);
     params["voice_scope"] = serde_json::json!(target.voice);
     params["target_user_id"] = serde_json::json!(target.user_id);
@@ -471,10 +439,6 @@ pub async fn execute_expression_plan_phase_with_response(
     };
     result.skipped_actions.extend(skipped_actions);
     result.safety_modifications = safety_modifications(plan);
-    if !result.skipped_actions.is_empty() && result.status == "completed" {
-        result.status = "partial".into();
-        result.completion_acknowledged = false;
-    }
     {
         let mut guard = state
             .active
@@ -496,18 +460,10 @@ pub async fn execute_expression_plan_phase_with_response(
     result
 }
 
-fn cancellation_retired(result: &ExpressionExecutionResult) -> bool {
-    result
-        .body
-        .as_ref()
-        .map_or(result.completion_acknowledged, |body| body.writer_retired())
-}
-
 async fn refresh_observation(
     state: &ChannelState,
     channel: &dyn ChannelAdapter,
     target: &ChannelTarget,
-    capabilities: &ExpressionCapabilitySnapshot,
 ) {
     let original = state
         .active
@@ -518,14 +474,6 @@ async fn refresh_observation(
     else {
         return;
     };
-    if capabilities.adapter != "embedded_body_v1"
-        && !original
-            .results
-            .values()
-            .any(|result| result.body.is_some())
-    {
-        return;
-    }
     let command_id = original.command_id.as_ref().unwrap();
     let output = tokio::time::timeout(OPERATION_TIMEOUT, channel.execute_action(ChannelAction {
         name: "observe_expression".into(), params: serde_json::json!({
@@ -616,8 +564,6 @@ fn validate_result(
         }
         let derived = ExpressionExecutionResult::from_body(body.clone(), expected, cancellation);
         if result.status != derived.status
-            || result.completion_acknowledged
-            || !result.executed_actions.is_empty()
             || result
                 .action_receipts
                 .iter()
@@ -630,76 +576,18 @@ fn validate_result(
         }
         return result;
     }
-    let completed = result
-        .action_receipts
-        .iter()
-        .filter(|receipt| receipt.status == ExpressionActionStatus::Completed)
-        .map(|receipt| receipt.action.clone())
-        .collect::<Vec<_>>();
-    let all_completed = completed.len() == expected.len() && !expected.is_empty();
-    let statuses = result
-        .action_receipts
-        .iter()
-        .map(|receipt| &receipt.status)
-        .collect::<Vec<_>>();
-    let consistent_status = match result.status.as_str() {
-        "completed" => all_completed && result.skipped_actions.is_empty(),
-        "accepted" => statuses
+    // Admission can fail before the durable command receives an identity. That
+    // result remains Unknown and can never retire the original writer.
+    if result.status == "unknown"
+        && result
+            .action_receipts
             .iter()
-            .all(|status| **status == ExpressionActionStatus::Accepted),
-        "started" => {
-            statuses
-                .iter()
-                .any(|status| **status == ExpressionActionStatus::Started)
-                && statuses.iter().all(|status| {
-                    matches!(
-                        status,
-                        ExpressionActionStatus::Accepted
-                            | ExpressionActionStatus::Started
-                            | ExpressionActionStatus::Completed
-                    )
-                })
-        }
-        "failed" => statuses
-            .iter()
-            .all(|status| **status == ExpressionActionStatus::Failed),
-        "rejected" => statuses
-            .iter()
-            .all(|status| **status == ExpressionActionStatus::Rejected),
-        "skipped" => statuses
-            .iter()
-            .all(|status| **status == ExpressionActionStatus::Skipped),
-        "partial" => {
-            !completed.is_empty()
-                && !all_completed
-                && statuses.iter().all(|status| {
-                    matches!(
-                        status,
-                        ExpressionActionStatus::Completed
-                            | ExpressionActionStatus::Failed
-                            | ExpressionActionStatus::Rejected
-                            | ExpressionActionStatus::Skipped
-                    )
-                })
-        }
-        "unknown" => statuses.iter().any(|status| {
-            matches!(
-                status,
-                ExpressionActionStatus::Unknown | ExpressionActionStatus::TimedOut
-            )
-        }),
-        _ => false,
-    };
-    if !consistent_status
-        || result.completion_acknowledged != (result.status == "completed" && all_completed)
-        || (!result.executed_actions.is_empty() && result.executed_actions != completed)
+            .all(|receipt| receipt.status == ExpressionActionStatus::Unknown)
     {
-        return invalid("contradictory expression completion evidence");
+        result
+    } else {
+        invalid("expression acknowledgement has no original body command evidence")
     }
-    let mut result = result;
-    // Keep legacy display fields derived from typed observations, never the reverse.
-    result.executed_actions = completed;
-    result
 }
 
 fn unknown(
@@ -714,13 +602,11 @@ fn unknown(
         command_id,
         voice_scope,
         body: None,
-        completion_acknowledged: false,
         action_receipts: vec![ExpressionActionReceipt {
             action: action.into(),
             status: ExpressionActionStatus::Unknown,
             reason: Some(reason),
         }],
-        executed_actions: Vec::new(),
         skipped_actions: Vec::new(),
         safety_modifications: Vec::new(),
     }
@@ -794,6 +680,10 @@ mod tests {
         ExpressionRuntime, ExpressionSafetyClass, ExpressiveStance, FallbackPolicy,
     };
     use crate::module::ModuleLifecycle;
+    use alia_core::body::{
+        BodyAction, BodyBackend, BodyCommand, BodyCommandIdentity, BodyControlLease, BodyEnd,
+        BodyMotion, BodyPriority, BodyProgress, BodyScope, BodySubmissionBoundary,
+    };
     use async_trait::async_trait;
     use serde_json::{Value, json};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -803,6 +693,8 @@ mod tests {
     struct MockChannel {
         protocol: bool,
         calls: Mutex<Vec<ChannelAction>>,
+        commands: Mutex<BTreeMap<String, BodyCommand>>,
+        observations: Mutex<BTreeMap<String, Value>>,
         mutate: Mutex<Mutate>,
         cancel_mutate: Mutex<Mutate>,
         block_next: AtomicBool,
@@ -815,6 +707,8 @@ mod tests {
             Self {
                 protocol: true,
                 calls: Mutex::new(Vec::new()),
+                commands: Mutex::new(BTreeMap::new()),
+                observations: Mutex::new(BTreeMap::new()),
                 mutate: Mutex::new(|v| v),
                 cancel_mutate: Mutex::new(|v| v),
                 block_next: AtomicBool::new(false),
@@ -852,9 +746,6 @@ mod tests {
                 ..Default::default()
             }
         }
-        async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-            Ok(())
-        }
         async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<Value> {
             if action.name == "expression_capabilities" {
                 return Ok(
@@ -863,15 +754,70 @@ mod tests {
                 );
             }
             self.calls.lock().unwrap().push(action.clone());
+            let source_id = action.params["command_id"].as_str().unwrap().to_owned();
+            if action.name == "observe_expression" {
+                return self
+                    .observations
+                    .lock()
+                    .unwrap()
+                    .get(&source_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("no command observation yet"));
+            }
             if action.name == "cancel_expression" && self.fail_cancel.load(Ordering::SeqCst) {
                 anyhow::bail!("cancel transport failed");
             }
+            let command = if action.name == "cancel_expression" {
+                self.commands.lock().unwrap()[&source_id].clone()
+            } else {
+                let plan: ExpressionPlan = serde_json::from_value(action.params.clone()).unwrap();
+                let scope: VoiceScope =
+                    serde_json::from_value(action.params["voice_scope"].clone()).unwrap();
+                let mut commands = self.commands.lock().unwrap();
+                let command = BodyCommand {
+                    identity: BodyCommandIdentity {
+                        lease: BodyControlLease {
+                            device_boot_id: scope.device_boot_id,
+                            server_instance_id: Uuid::from_u128(1),
+                            generation: 1,
+                        },
+                        sequence: commands.len() as u64 + 1,
+                    },
+                    plan_id: plan.id,
+                    source_command_id: source_id.clone(),
+                    owner_id: Uuid::parse_str(action.params["target_user_id"].as_str().unwrap())
+                        .unwrap(),
+                    scope: BodyScope::Voice { scope },
+                    priority: match plan.priority {
+                        ExpressionPriority::Low => BodyPriority::Low,
+                        ExpressionPriority::Normal => BodyPriority::Normal,
+                        ExpressionPriority::High => BodyPriority::High,
+                    },
+                    interruptible: plan.interruptible,
+                    actions: plan
+                        .timeline
+                        .iter()
+                        .map(|action| BodyAction {
+                            duration_ms: action.duration_ms,
+                            intensity: action.intensity,
+                            motion: match action.action.as_str() {
+                                "small_nod" => BodyMotion::SmallNod,
+                                "small_bow" => BodyMotion::SmallBow,
+                                _ => panic!("unsupported mock action"),
+                            },
+                        })
+                        .collect(),
+                };
+                commands.insert(source_id.clone(), command.clone());
+                command
+            };
             if action.name == "execute_expression" && self.block_next.swap(false, Ordering::SeqCst)
             {
                 self.entered.add_permits(1);
                 self.release.acquire().await.unwrap().forget();
             }
-            let names = if action.name == "cancel_expression" {
+            let cancellation = action.name == "cancel_expression";
+            let names = if cancellation {
                 vec!["cancel_expression".to_owned()]
             } else {
                 action.params["timeline"]
@@ -881,20 +827,60 @@ mod tests {
                     .map(|item| item["action"].as_str().unwrap().to_owned())
                     .collect()
             };
-            let result = json!({"status":"completed", "command_id":action.params["command_id"], "voice_scope":action.params["voice_scope"],
-                "completion_acknowledged":true, "action_receipts":names.iter().map(|name| json!({"action":name,"status":"completed"})).collect::<Vec<_>>(),
-                "executed_actions":names, "skipped_actions":[], "safety_modifications":[]});
-            let mutate = if action.name == "cancel_expression" {
+            let count = command.actions.len() as u32;
+            let progress = BodyProgress {
+                identity: command.identity,
+                receipt_sequence: 1,
+                accepted_actions: count,
+                started_actions: if cancellation { 0 } else { count },
+                submitted_actions: if cancellation { 0 } else { count },
+                submitted_frames: if cancellation { 0 } else { count.into() },
+                partial_frame: None,
+                last_partial_channels: Vec::new(),
+                last_uncertain_channels: Vec::new(),
+                backend: Some(BodyBackend {
+                    instance_id: Uuid::from_u128(2),
+                    boundary: BodySubmissionBoundary::Simulated,
+                    channels: 3,
+                }),
+                writer_quiescent: true,
+                position_confirmed_actions: None,
+                end: Some(if cancellation {
+                    BodyEnd::Cancelled {
+                        reason: "test cancel".into(),
+                    }
+                } else {
+                    BodyEnd::Submitted
+                }),
+            };
+            progress.validate(None, &command).unwrap();
+            let result = serde_json::to_value(ExpressionExecutionResult::from_body(
+                super::super::types::BodyExecutionEvidence {
+                    command,
+                    progress: Some(progress),
+                    unknown_reason: None,
+                },
+                &names,
+                cancellation,
+            ))?;
+            let mutate = if cancellation {
                 *self.cancel_mutate.lock().unwrap()
             } else {
                 *self.mutate.lock().unwrap()
             };
-            Ok(mutate(result))
+            let result = mutate(result);
+            if !cancellation {
+                self.observations
+                    .lock()
+                    .unwrap()
+                    .insert(source_id, result.clone());
+            }
+            Ok(result)
         }
     }
     fn target() -> ChannelTarget {
         ChannelTarget {
-            user_id: "same-user".into(),
+            user_id: Uuid::from_u128(3).to_string(),
             voice: Some(VoiceScope {
                 device_boot_id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
@@ -904,8 +890,12 @@ mod tests {
     }
     fn accepted(mut value: Value) -> Value {
         value["status"] = json!("accepted");
-        value["completion_acknowledged"] = json!(false);
-        value["executed_actions"] = json!([]);
+        let progress = &mut value["body"]["progress"];
+        progress["started_actions"] = json!(0);
+        progress["submitted_actions"] = json!(0);
+        progress["submitted_frames"] = json!(0);
+        progress["writer_quiescent"] = json!(false);
+        progress["end"] = Value::Null;
         for receipt in value["action_receipts"].as_array_mut().unwrap() {
             receipt["status"] = json!("accepted");
         }
@@ -923,16 +913,24 @@ mod tests {
         t: &ChannelTarget,
         p: &ExpressionPlan,
     ) -> ExpressionExecutionResult {
-        execute_expression_plan_phase(o, c, t, p, ExpressionExecutionPhase::SpeechStart).await
+        execute_expression_plan_phase_with_response(
+            o,
+            c,
+            t,
+            p,
+            ExpressionExecutionPhase::SpeechStart,
+            Some(p.id),
+        )
+        .await
     }
 
     #[test]
-    fn completion_defaults_to_unconfirmed_and_local_skip_is_not_device_failure() {
+    fn missing_body_evidence_and_local_skip_cannot_retire_a_writer() {
         let result: ExpressionExecutionResult =
             serde_json::from_value(json!({"status":"accepted"})).unwrap();
-        assert!(!result.completion_acknowledged);
+        assert!(!result.writer_retired());
         let skipped = ExpressionExecutionResult::skipped("unsupported");
-        assert!(!skipped.completion_acknowledged);
+        assert!(!skipped.writer_retired());
         assert_eq!(
             skipped.action_receipts[0].status,
             ExpressionActionStatus::Skipped
@@ -940,12 +938,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_or_legacy_receipts_never_become_completed() {
+    async fn invalid_or_legacy_receipts_never_retire_the_original_writer() {
         let cases: Vec<(&str, Mutate)> = vec![
             ("empty object", |_| json!({})),
             ("non-object", |_| json!(false)),
-            ("wrong field type", |mut v| {
-                v["completion_acknowledged"] = json!("true");
+            ("old completion flag", |mut v| {
+                v["completion_acknowledged"] = json!(true);
                 v
             }),
             ("no command id", |mut v| {
@@ -960,15 +958,15 @@ mod tests {
                 v["voice_scope"]["generation_epoch"] = json!(99);
                 v
             }),
-            ("legacy only", |mut v| {
+            ("no action receipts", |mut v| {
                 v.as_object_mut().unwrap().remove("action_receipts");
                 v
             }),
-            ("completed without acknowledgement", |mut v| {
-                v.as_object_mut().unwrap().remove("completion_acknowledged");
+            ("no body evidence", |mut v| {
+                v.as_object_mut().unwrap().remove("body");
                 v
             }),
-            ("accepted claims completion", |mut v| {
+            ("accepted contradicts submitted facts", |mut v| {
                 v["status"] = json!("accepted");
                 v
             }),
@@ -980,7 +978,7 @@ mod tests {
                 v["action_receipts"][0]["action"] = json!("other");
                 v
             }),
-            ("contradictory legacy actions", |mut v| {
+            ("old executed actions", |mut v| {
                 v["executed_actions"] = json!(["other"]);
                 v
             }),
@@ -989,12 +987,21 @@ mod tests {
                 v["action_receipts"] = json!([]);
                 v
             }),
+            ("forged physical completion", |mut v| {
+                v["body"]["progress"]["position_confirmed_actions"] = json!(1);
+                v
+            }),
+            ("old completed status", |mut v| {
+                v["status"] = json!("completed");
+                v["action_receipts"][0]["status"] = json!("completed");
+                v
+            }),
         ];
         for (name, mutate) in cases {
             let orchestrator = ExpressionOrchestrator::default();
             let channel = MockChannel::new();
             *channel.mutate.lock().unwrap() = mutate;
-            let result = execute_expression_plan(
+            let result = phase(
                 &orchestrator,
                 &channel,
                 &target(),
@@ -1002,8 +1009,72 @@ mod tests {
             )
             .await;
             assert_eq!(result.status, "unknown", "{name}");
-            assert!(!result.completion_acknowledged, "{name}");
-            assert!(result.executed_actions.is_empty(), "{name}");
+            assert!(!result.writer_retired(), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_canonical_response_never_reaches_the_adapter() {
+        let orchestrator = ExpressionOrchestrator::default();
+        let channel = MockChannel::new();
+        for response_id in [None, Some(Uuid::nil())] {
+            let result = execute_expression_plan_phase_with_response(
+                &orchestrator,
+                &channel,
+                &target(),
+                &active_plan(ExpressionPriority::Normal),
+                ExpressionExecutionPhase::Full,
+                response_id,
+            )
+            .await;
+            assert_eq!(result.status, "skipped");
+            assert!(!result.writer_retired());
+        }
+        assert!(channel.calls.lock().unwrap().is_empty());
+        assert!(orchestrator.channels.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn unknown_body_outcome_retires_only_with_original_quiescence_evidence() {
+        for quiescent in [false, true] {
+            let orchestrator = ExpressionOrchestrator::default();
+            let channel = MockChannel::new();
+            *channel.mutate.lock().unwrap() = if quiescent {
+                |mut value| {
+                    value["status"] = json!("unknown");
+                    value["body"]["progress"]["end"] =
+                        json!({"kind":"unknown", "reason":"feedback unavailable"});
+                    value
+                }
+            } else {
+                |mut value| {
+                    value["status"] = json!("unknown");
+                    value["body"]["progress"]["end"] =
+                        json!({"kind":"unknown", "reason":"writer acknowledgement lost"});
+                    value["body"]["progress"]["writer_quiescent"] = json!(false);
+                    value
+                }
+            };
+            let result = phase(
+                &orchestrator,
+                &channel,
+                &target(),
+                &active_plan(ExpressionPriority::Normal),
+            )
+            .await;
+            assert_eq!(result.status, "unknown");
+            assert_eq!(result.writer_retired(), quiescent);
+            assert!(
+                result
+                    .body
+                    .as_ref()
+                    .unwrap()
+                    .progress
+                    .as_ref()
+                    .unwrap()
+                    .position_confirmed_actions
+                    .is_none()
+            );
         }
     }
 
@@ -1017,14 +1088,14 @@ mod tests {
         plan.timeline.push(timeline("post_speech", "small_nod"));
         let result = phase(&orchestrator, &channel, &target, &plan).await;
         assert_eq!(result.status, "accepted");
-        assert!(!result.completion_acknowledged);
-        assert!(result.executed_actions.is_empty());
-        let next = execute_expression_plan_phase(
+        assert!(!result.writer_retired());
+        let next = execute_expression_plan_phase_with_response(
             &orchestrator,
             &channel,
             &target,
             &plan,
             ExpressionExecutionPhase::PostSpeech,
+            Some(plan.id),
         )
         .await;
         assert_eq!(next.status, "skipped");
@@ -1045,10 +1116,10 @@ mod tests {
         )
         .await;
         assert_eq!(result.status, "skipped");
-        assert!(!result.completion_acknowledged);
+        assert!(!result.writer_retired());
         let result =
             cancel_expression_execution(&orchestrator, &channel, &target, "interrupt").await;
-        assert!(!result.completion_acknowledged);
+        assert!(!result.writer_retired());
         assert!(channel.calls.lock().unwrap().is_empty());
     }
 
@@ -1064,9 +1135,23 @@ mod tests {
             timeline("post_speech", "small_nod"),
         ];
         let first = phase(&orchestrator, &channel, &target, &plan).await;
-        assert_eq!(first.status, "completed");
-        assert!(first.completion_acknowledged);
-        assert_eq!(first.executed_actions, vec!["small_nod"]);
+        assert_eq!(first.status, "submitted");
+        assert!(first.writer_retired());
+        assert_eq!(
+            first.action_receipts[0].status,
+            ExpressionActionStatus::Submitted
+        );
+        assert_eq!(
+            first
+                .body
+                .as_ref()
+                .unwrap()
+                .progress
+                .as_ref()
+                .unwrap()
+                .position_confirmed_actions,
+            None
+        );
         assert!(first.skipped_actions.is_empty());
         let repeated = phase(&orchestrator, &channel, &target, &plan).await;
         assert_eq!(first.command_id, repeated.command_id);
@@ -1105,15 +1190,15 @@ mod tests {
             phase(b.orchestrator(), &channel, &target, &low)
                 .await
                 .status,
-            "completed"
+            "submitted"
         );
         let mut other_user = target.clone();
-        other_user.user_id = "other-user".into();
+        other_user.user_id = Uuid::from_u128(4).to_string();
         assert_eq!(
             phase(a.orchestrator(), &channel, &other_user, &low)
                 .await
                 .status,
-            "completed"
+            "submitted"
         );
         assert_eq!(channel.count("execute_expression"), 3);
     }
@@ -1126,17 +1211,31 @@ mod tests {
         channel.block_next.store(true, Ordering::SeqCst);
         let old = active_plan(ExpressionPriority::Low);
         let new = active_plan(ExpressionPriority::High);
-        let first = execute_expression_plan(&orchestrator, &channel, &target, &old);
+        let first = execute_expression_plan_phase_with_response(
+            &orchestrator,
+            &channel,
+            &target,
+            &old,
+            ExpressionExecutionPhase::Full,
+            Some(old.id),
+        );
         let rest = async {
             channel.entered.acquire().await.unwrap().forget();
-            let duplicate = execute_expression_plan(&orchestrator, &channel, &target, &old);
+            let duplicate = execute_expression_plan_phase_with_response(
+                &orchestrator,
+                &channel,
+                &target,
+                &old,
+                ExpressionExecutionPhase::Full,
+                Some(old.id),
+            );
             let next = phase(&orchestrator, &channel, &target, &new);
             channel.release.add_permits(1);
             tokio::join!(duplicate, next)
         };
         let (first, (duplicate, next)) = tokio::join!(first, rest);
         assert_eq!(first.command_id, duplicate.command_id);
-        assert!(next.completion_acknowledged);
+        assert!(next.writer_retired());
         assert_eq!(channel.count("execute_expression"), 2);
         assert_eq!(
             phase(
@@ -1176,7 +1275,7 @@ mod tests {
             let cancelled =
                 cancel_expression_execution(&orchestrator, &channel, &target, "old turn").await;
             assert!(matches!(cancelled.status.as_str(), "unknown" | "accepted"));
-            assert!(!cancelled.completion_acknowledged);
+            assert!(!cancelled.writer_retired());
             let new = phase(
                 &orchestrator,
                 &channel,
@@ -1210,12 +1309,20 @@ mod tests {
         assert_eq!(channel.count("execute_expression"), 1);
         let cancel =
             cancel_expression_execution(&orchestrator, &channel, &target, "caller dropped").await;
-        assert!(cancel.completion_acknowledged);
+        assert_eq!(cancel.status, "cancelled");
+        assert!(cancel.writer_retired());
         let calls = channel.calls.lock().unwrap();
-        assert_eq!(calls[0].params["command_id"], calls[1].params["command_id"]);
+        let cancelled = calls
+            .iter()
+            .find(|call| call.name == "cancel_expression")
+            .unwrap();
+        assert_eq!(
+            calls[0].params["command_id"],
+            cancelled.params["command_id"]
+        );
         assert_eq!(
             calls[0].params["voice_scope"],
-            calls[1].params["voice_scope"]
+            cancelled.params["voice_scope"]
         );
         assert!(
             orchestrator
@@ -1243,10 +1350,11 @@ mod tests {
         )
         .await;
         assert_eq!(result.status, "unknown");
-        assert!(!result.completion_acknowledged);
+        assert!(!result.writer_retired());
         let cancel =
             cancel_expression_execution(&orchestrator, &channel, &target, "timed out").await;
-        assert!(cancel.completion_acknowledged);
+        assert_eq!(cancel.status, "cancelled");
+        assert!(cancel.writer_retired());
         assert_eq!(result.command_id, cancel.command_id);
         assert_eq!(channel.count("execute_expression"), 1);
         assert_eq!(channel.count("cancel_expression"), 1);
@@ -1280,7 +1388,7 @@ mod tests {
         assert!(futures::poll!(&mut late_cancel).is_pending());
         drop(held);
         let (new, cancel) = tokio::join!(new, late_cancel);
-        assert!(new.completion_acknowledged);
+        assert!(new.writer_retired());
         assert_eq!(cancel.status, "skipped");
         assert_eq!(channel.count("cancel_expression"), 1); // exact preemption of the old command only
         assert_eq!(

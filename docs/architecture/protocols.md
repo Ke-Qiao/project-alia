@@ -47,24 +47,30 @@ Important services:
 
 | Service | Hosted by | Purpose |
 | --- | --- | --- |
-| `alia.audio.AudioStream` | Embedded | Server-to-device audio playback, playback stop, direct-response action cues, and bidirectional audio hooks. |
-| `alia.audio.ServerAudioIngress` | Server | Embedded-to-server captured audio upload and active turn interruption. |
+| `alia.voice.v2.VoiceSession` | Server | Authenticated continuous capture, original input identity, VAD evidence, turn decisions and session events. |
+| `alia.playback.v3.Playback` | Embedded | Response-bound output registration, streaming PCM/End, precise fencing, pause/resume and native retirement receipts. |
+| `alia.body.v1.BodyControl` | Embedded | Signed, bounded Body commands and device facts; motion safety remains local. |
 | `alia.settings.EmbeddedSettings` | Embedded | Settings snapshot, volume, and direct response management. |
 | `alia.sensor.EmbeddedSensor` | Embedded | Sensor discovery, reads, and optional sensor commands. |
 | Binding/plugin services | Embedded | Device binding and embedded plugin support. |
 
 ## Audio Control Paths
 
-Audio and control are intentionally separate:
+Capture uses VoiceSession v2. The opening frame and authenticated request metadata
+name the concrete channel instance; channel type aliases and an implicit default
+channel are not accepted. Original boot/session/generation identity stays attached
+to the continuous stream and its resulting output.
 
-- Captured speech is uploaded to the server audio ingress.
-- TTS playback is sent from server to embedded playback.
-- Interrupting an active turn uses a dedicated interrupt RPC.
-- Stopping local playback uses a dedicated playback-control RPC.
-- Server-requested local cues use a generic direct-response action RPC on
-  `AudioStream`; `ServerAudioIngress` is not used for embedded playback.
+Playback v3 registers the canonical Response binding before remote PCM is admitted.
+Chunk receipt, accepted End, native submission and quiescent retirement are distinct
+facts. Control carries the original scope and command identity; a playback Fence
+closes output authority, not the continuous input session. There is no bare stop,
+utterance upload or generic direct-response playback RPC.
 
-This avoids overloading normal audio chunks with control semantics.
+Local wake cues are admitted under the authenticated Ready scope. Embedded mixes
+them at low gain with voice through the same native submission boundary. Their
+progress remains separate from canonical Response progress. Mixing supplies the
+final render-reference PCM; acoustic echo cancellation remains separate work.
 
 ## Protobuf Ownership
 
@@ -79,6 +85,7 @@ Package-specific gRPC details live in:
 
 ## Local Development
 
-For same-machine testing, embedded can run in local-dev binding mode and connect
-to the server over localhost without completing the full binding handshake. This
-is only for development and should not be used for production devices.
+Server and Embedded may run on the same host and use loopback transport. Voice and
+Body still require their current identities and bindings. A no-device software
+smoke can start both processes with noop I/O and motion disabled; it does not
+prove bound voice, AEC or physical actuator behavior.

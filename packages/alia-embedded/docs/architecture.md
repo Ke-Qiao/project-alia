@@ -1,69 +1,78 @@
 # Embedded Architecture
 
-`alia-embedded` is an edge process, not a no-std firmware image. It is written in
-Rust and targets Raspberry Pi/Linux first, while keeping local development on
-macOS and Windows practical where the selected backends are available.
+`alia-embedded` is a Rust edge process for Raspberry Pi 5. `EmbeddedBuilder`
+constructs an instance-local runtime; the binary is a host for that library.
+Local development can use the available backends or explicitly disable audio
+and hardware slots with `noop`. Hardware adapters remain Pi-first.
 
 ## Responsibilities
 
-- keep wake word, endpointing, and immediate audio feedback local
-- capture microphone audio and play speaker output
-- run sherpa-onnx wake word, VAD, and optional edge STT
-- play direct response clips for wake word, cancel, fallback, listening, and thinking cues
-- stream captured utterances to `alia-server`
-- receive server TTS audio streams and play them with interruption support
-- expose settings, binding, plugin, audio, expression, and sensor services over gRPC
-- run local YuNet face tracking and feed face-center targets into native motion
-- store runtime-owned state in SQLite while keeping large assets on disk
+- capture microphone audio, detect the wake word, and produce local VAD evidence
+- open one authenticated `VoiceSession` and continuously upload 16 kHz mono PCM,
+  including while assistant output is playing
+- let the server own turn decisions, recognized input, and response generation
+- admit network playback and local cues under the original boot/session/generation
+- mix conversation and local cues in the native output backend
+- expose scoped playback, signed BodyControl, settings, binding, plugin, and sensor services
+- own local motion, optional face tracking, discovery, and SQLite device state
+
+There is one voice path. Local utterance endpointing, local STT, transcript-based
+cancel matching, follow-up timers, and a second active-turn interrupt RPC have
+been removed. Server-side Easy-Turn remains the turn provider; this does not move
+model inference onto the Pi.
 
 ## Module Slots
 
-Embedded module selection is represented by `EmbeddedConfig.modules` with
-compiled defaults when the config file is missing.
+`EmbeddedConfig.modules` selects implementations. Selected unavailable or unknown
+implementations fail initialization; `noop` explicitly disables a slot.
 
 | Slot | Typical implementation | Purpose |
 | --- | --- | --- |
-| `wakeword` | `sherpa_onnx` | Keyword spotting. |
-| `edge_stt` | `sherpa_onnx` | Local speech recognition for transcript/debug behavior. |
-| `vad` | `sherpa_onnx` | Voice activity detection and endpointing. |
-| `direct_response` | `keyword` | Local response matching and audio playback. |
-| `audio_capture` | `cpal` or ALSA fallback | Microphone input. |
-| `audio_playback` | `cpal` or ALSA fallback | Speaker output. |
-| `mixer` | `priority` | Playback priority and interruption behavior. |
-| `discovery` | `mdns` | Device discovery and binding support. |
-| `face_tracker` | `yunet` | OpenCV YuNet face center tracking for neck motion. |
+| `wakeword` | `sherpa_onnx` | Wake a fresh voice session. |
+| `vad` | `sherpa_onnx` | Activity evidence, without deciding turn completion. |
+| `direct_response` | `keyword` | Resolve an optional wake cue from configured assets. |
+| `audio_capture` | `cpal`, with Linux ALSA backend support | Microphone input. |
+| `audio_playback` | `cpal`, with Linux ALSA backend support | Scoped native output and receipts. |
+| `discovery` | `mdns` | Discovery and binding support. |
+| `face_tracker` | `yunet` | Optional face center tracking. |
+
+Mixing is a fixed part of native playback, not a module slot. It accepts one
+conversation source at gain **1.0** and one local cue at gain **0.2**, clamps the
+sum, and uses the same output frame clock. Local cues retain the authenticated
+Ready scope and native generation. They cannot create a replacement owner;
+Hold suppresses their remaining tail, and retirement cancels both sources.
 
 ## Runtime Lifecycle
 
-1. Load config or compiled defaults.
-2. Open SQLite runtime state.
-3. Restore identity, binding state, volume, and direct response metadata.
-4. Build module context and shared registries.
-5. Start audio capture/playback backends.
-6. Start wake word, VAD, direct response, and speech flow modules.
-7. Start gRPC services on the configured bind address.
-8. Announce discovery for server binding.
+1. Load and validate config; resolve resource paths against its directory.
+2. Open SQLite state, restore binding and runtime settings, and load identity.
+3. Construct instance-local modules and their cleanup owner.
+4. Start output and selected sensor/motion/vision modules.
+5. Start capture, then start the speech worker only if the actual backend is available.
+6. Host gRPC services and discovery under the runtime cancellation owner.
+7. On shutdown, cancel and join speech/network/cue workers, drain services, and
+   stop modules within the configured budget. A deadline returns incomplete cleanup.
+
+A `noop` capture host remains available for service-only use with degraded speech
+health. An available capture backend still requires an available VAD. A live
+session with discontinuous capture, lost binding, full upload queue, or invalid
+remote evidence retires its scope and requires a fresh wake.
 
 ## Storage Boundaries
 
-SQLite stores small structured state:
+SQLite owns small structured state: binding, volume, direct-response metadata,
+and runtime settings. Model files, cue WAVs, plugin bundles, keys, and optional
+audio-debug captures stay on disk. Each library instance requires distinct
+state/key/plugin paths and a non-conflicting bind address.
 
-- binding state
-- volume settings
-- direct response rules and imported metadata
-- future device-local settings that frontend/server can update
+## Evidence and Deferred Work
 
-Disk stores large or user-managed assets:
+Playback receipts distinguish accepted, submitted, and physically presented
+samples. Current CPAL/ALSA boundaries report native submission; they do not prove
+physical speaker presentation or silence. Hardware AEC, measured acoustic duplex
+quality, and general embedded-platform adaptation remain separate work.
 
-- sherpa-onnx models
-- direct response audio files
-- audio debug WAV captures
-- plugin bundles
-- key files and runtime artifacts
-
-## Failure Model
-
-Missing optional assets should log and degrade, not panic. If a component cannot
-initialize, the related channel or feature should be disabled where possible
-while the process keeps running. Concrete sensor modules should report read
-errors through the sensor service instead of crashing the gRPC server.
+The old continuous-dialogue end tool has no replacement yet. A future explicit
+input-session close contract must carry authenticated session ownership and
+acknowledged capture closure. Playback Fence controls output admission and must
+not be treated as proof that microphone upload stopped.

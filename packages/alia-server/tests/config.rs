@@ -144,7 +144,6 @@ fn parses_split_example_config() {
     assert_eq!(config.modules.tts, "gpt_sovits");
     assert_eq!(config.llm.roles.minor, "minor");
     assert_eq!(config.llm.roles.major, "major");
-    assert!(config.llm.roles.transcript_correction.is_none());
     assert!(config.llm.roles.memory_capture.is_none());
     assert_eq!(
         config.llm.roles.sentence_expression.as_deref(),
@@ -202,19 +201,6 @@ fn parses_split_example_config() {
     assert_eq!(config.policies.affect.max_active_appraisal_events, 64);
     assert!(config.policies.regulation.enabled);
     assert_eq!(config.policies.regulation.max_negative_expression, 0.15);
-    assert!(config.policies.transcript_correction.enabled);
-    assert_eq!(
-        config.policies.transcript_correction.provider,
-        "default_llm"
-    );
-    assert_eq!(config.policies.transcript_correction.timeout_sec, 2);
-    assert_eq!(
-        config
-            .policies
-            .transcript_correction
-            .min_confidence_to_replace,
-        0.55
-    );
     assert_eq!(
         config.policies.memory.capture_mode,
         MemoryCaptureMode::LlmSelected

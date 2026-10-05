@@ -108,21 +108,11 @@ impl AudioPlaybackBackend for LocalAudio {
         });
         Ok(true)
     }
-    fn play(&self, _: &[i16], _: u32) -> Result<()> {
-        Ok(())
-    }
-    fn stop_playback(&self) -> Result<()> {
-        self.stops.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
     fn begin_scoped_playback(&self) -> Result<u64> {
         if let Some(control) = self.control.lock().unwrap().take() {
             control.retire(alia_core::playback_control::RetiredReason::Cancelled);
         }
         Ok(self.generation.fetch_add(1, Ordering::SeqCst) + 1)
-    }
-    fn play_if_current(&self, _: &[i16], _: u32, generation: u64) -> Result<bool> {
-        Ok(self.is_playback_current(generation))
     }
     fn stop_if_current(&self, generation: u64) -> Result<bool> {
         if self
@@ -243,6 +233,7 @@ enum Seen {
 }
 
 struct FakeServer {
+    expected_channel_id: String,
     ready_gate: Option<Arc<tokio::sync::Semaphore>>,
     seen: mpsc::Sender<Seen>,
     public_key: Vec<u8>,
@@ -273,8 +264,13 @@ impl VoiceSession for FakeServer {
         )
         .unwrap();
         assert_eq!(
-            request.metadata().get("x-alia-channel-id").unwrap(),
-            CHANNEL_ID
+            request
+                .metadata()
+                .get("x-alia-channel-id")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            self.expected_channel_id
         );
         let mut incoming = request.into_inner();
         let open = incoming.message().await?.unwrap();
@@ -284,7 +280,7 @@ impl VoiceSession for FakeServer {
         assert_eq!(open.protocol_version, VOICE_CONTRACT_VERSION);
         assert!(open.software_hold);
         assert_eq!(open.max_hold_ms, MAX_HOLD_MS);
-        assert_eq!(open.channel_id, CHANNEL_ID);
+        assert_eq!(open.channel_id, self.expected_channel_id);
         let session = Uuid::new_v4().to_string();
         let boot = open.device_boot_id;
         let (output, mut replies) = mpsc::channel(8);
@@ -345,6 +341,18 @@ async fn harness_with_ready_gate(
     audio_capacity: usize,
     ready_gate: Option<Arc<tokio::sync::Semaphore>>,
 ) -> Harness {
+    harness_with_channel_id(
+        audio_capacity,
+        ready_gate,
+        SpeechConfig::default().channel_id,
+    )
+    .await
+}
+async fn harness_with_channel_id(
+    audio_capacity: usize,
+    ready_gate: Option<Arc<tokio::sync::Semaphore>>,
+    channel_id: String,
+) -> Harness {
     let directory = tempfile::tempdir().unwrap();
     let keypair_path = directory.path().join("device.key");
     let keypair = crate::identity::ensure_device_keypair(&keypair_path).unwrap();
@@ -363,10 +371,12 @@ async fn harness_with_ready_gate(
     let subject = embedded_device_auth_subject("test-device", &public_key);
     let shutdown = CancellationToken::new();
     let stop_server = shutdown.clone();
+    let expected_channel_id = channel_id.clone();
     let server = tokio::spawn(async move {
         let incoming = async_stream::stream! { loop { yield listener.accept().await.map(|(stream, _)| stream); } };
         tonic::transport::Server::builder()
             .add_service(VoiceSessionServer::new(FakeServer {
+                expected_channel_id,
                 ready_gate,
                 seen: seen_tx,
                 public_key,
@@ -385,13 +395,15 @@ async fn harness_with_ready_gate(
         event_bus: events.clone(),
         wakeword: local.clone(),
         vad: local.clone(),
+        direct_response: Arc::new(crate::module::noop::NoopDirectResponse),
+        audio_debug: crate::module::audio_debug::AudioDebugRecorder::new(Default::default()),
         playback_session: Arc::new(PlaybackSession::new(local.clone())),
         binding,
         device_id: "test-device".into(),
         keypair_path,
         boot_id: Uuid::new_v4().to_string(),
         config: SpeechConfig {
-            mode: crate::config::SpeechMode::ServerTurn,
+            channel_id,
             pre_roll_ms: 20,
             upload_queue_frames: 8,
         },
@@ -472,6 +484,42 @@ async fn reached(counter: &AtomicU64, count: u64) {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn configured_channel_instance_reaches_open_and_auth_metadata_unchanged() {
+    let Harness {
+        runtime,
+        audio,
+        events: _,
+        local: _,
+        mut seen,
+        shutdown,
+        server,
+        _directory,
+    } = harness_with_channel_id(8, None, "pi-living-room".into()).await;
+    let cancel = runtime.cancel.clone();
+    publish(&audio, 99, 0);
+    let task = tokio::spawn(runtime.run());
+    // FakeServer verifies both metadata and Open against its concrete instance.
+    let Seen::Opened { output, .. } = received(&mut seen).await else {
+        panic!("expected authenticated Open on the configured instance");
+    };
+    assert!(matches!(received(&mut seen).await, Seen::Audio(_)));
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), output.closed())
+        .await
+        .unwrap();
+    drop(output);
+    shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]
@@ -813,12 +861,17 @@ async fn full_upload_queue_cancels_and_joins_without_waiting_for_network() {
         waiting.cancelled().await;
         Ok(())
     });
+    let cue_cancel = cancel.clone();
+    let cue_task = tokio::spawn(async move {
+        cue_cancel.cancelled().await;
+    });
     let mut session = Session {
         playback: Arc::new(PlaybackSession::new(Arc::new(LocalAudio::default()))),
         capture: CaptureControlBarrier::default(),
         tx,
         cancel,
         task,
+        cue_task,
         sequence: 0,
         sample_offset: 0,
     };
@@ -1022,17 +1075,16 @@ fn bounded_pre_roll_and_server_turn_config_survive_runtime_roundtrip() {
     let samples: Vec<i16> = pre_roll.drain().flat_map(|frame| frame.pcm).collect();
     assert_eq!(samples, [vec![1; 80], vec![2; 320]].concat());
     let runtime: crate::config::EmbeddedRuntimeSettings = toml::from_str(
-        "[speech]\nmode = 'server_turn'\npre_roll_ms = 300\nupload_queue_frames = 8",
+        "[speech]\nchannel_id = 'pi-living-room'\npre_roll_ms = 300\nupload_queue_frames = 8",
     )
     .unwrap();
     let mut config = crate::config::EmbeddedConfig::default();
-    assert_eq!(config.speech.mode, crate::config::SpeechMode::Utterance);
     config.apply_runtime_settings(runtime);
     config.speech.validate(&config.audio).unwrap();
     let saved: crate::config::EmbeddedRuntimeSettings =
         toml::from_str(&toml::to_string(&config.runtime_settings()).unwrap()).unwrap();
-    assert_eq!(saved.speech.mode, crate::config::SpeechMode::ServerTurn);
     assert_eq!(saved.speech.pre_roll_ms, 300);
+    assert_eq!(saved.speech.channel_id, "pi-living-room");
     config.audio.capture_channels = 2;
     assert!(config.speech.validate(&config.audio).is_err());
 }
@@ -1048,21 +1100,22 @@ async fn outgoing_waits_for_ready_and_refreshes_without_consuming_capture_sequen
     let counter = minted.clone();
     let stream = capture_stream(
         Uuid::new_v4().to_string(),
+        "pi-living-room".into(),
         rx,
         ready_rx,
         sent.clone(),
         move || {
-            Ok(IngressAuth {
+            Ok(VoiceAuth {
                 token: format!("fresh-{}", counter.fetch_add(1, Ordering::SeqCst) + 1),
             })
         },
         failed,
     );
     tokio::pin!(stream);
-    assert!(matches!(
-        stream.next().await.unwrap().payload,
-        Some(device_frame::Payload::Open(_))
-    ));
+    let Some(device_frame::Payload::Open(open)) = stream.next().await.unwrap().payload else {
+        panic!("expected Open");
+    };
+    assert_eq!(open.channel_id, "pi-living-room");
     audio
         .send(CaptureFrame {
             sequence: 0,
@@ -1443,4 +1496,5 @@ fn paired_output_decision_validates_epoch_and_never_resumes_from_semantic_eviden
 }
 
 mod binding_admission;
+mod cues;
 mod initiative;

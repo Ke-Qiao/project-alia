@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
-use super::audio_ingress::{AdmittedSource, ServerAudioIngressService};
+use super::voice_auth::{AdmittedSource, VoiceIngressAuth};
 use crate::channels::adapter::ChannelAdapter;
 use crate::modules::delivery::{DeliveryService, VoiceOutput};
 use crate::modules::interaction::initiative::VoiceInitiativeHandle;
@@ -44,7 +44,7 @@ struct SessionSlot {
 type Detection = Pin<Box<dyn Future<Output = Result<TurnObservation, DetectionError>> + Send>>;
 
 pub struct VoiceSessionService {
-    auth: ServerAudioIngressService,
+    auth: VoiceIngressAuth,
     detector: Option<Arc<dyn TurnDetector>>,
     input: VoiceInputHandle,
     delivery: Arc<DeliveryService>,
@@ -57,7 +57,7 @@ pub struct VoiceSessionService {
 
 impl VoiceSessionService {
     pub fn new(
-        auth: ServerAudioIngressService,
+        auth: VoiceIngressAuth,
         detector: Option<Arc<dyn TurnDetector>>,
         input: VoiceInputHandle,
         delivery: Arc<DeliveryService>,
@@ -300,7 +300,7 @@ impl VoiceSession for VoiceSessionService {
 /// A stream owns its credential state. Refresh and revalidation run in this
 /// actor, so an old in-flight verification cannot overwrite a newer credential.
 struct SessionCredentials {
-    auth: ServerAudioIngressService,
+    auth: VoiceIngressAuth,
     request: Request<()>,
     channel: String,
     /// Captured once before Ready. Refresh may invalidate, never replace it.
@@ -902,6 +902,20 @@ mod tests {
             "signed_test_device"
         }
     }
+    impl AuthChannel {
+        async fn retire_model_scope(
+            &self,
+            target: &crate::channels::adapter::ChannelTarget,
+            _: &str,
+        ) -> anyhow::Result<()> {
+            assert!(
+                target.voice.is_some_and(|scope| scope.is_valid()),
+                "must stop only original output scope"
+            );
+            Ok(())
+        }
+    }
+
     #[async_trait::async_trait]
     impl crate::channels::adapter::ChannelAdapter for AuthChannel {
         async fn authenticated_source_epochs(
@@ -932,13 +946,7 @@ mod tests {
         fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
             Default::default()
         }
-        async fn send_message(
-            &self,
-            _: &crate::channels::adapter::ChannelTarget,
-            _: &str,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
+
         async fn execute_action(
             &self,
             action: crate::channels::adapter::ChannelAction,
@@ -975,17 +983,7 @@ mod tests {
             self.fences.lock().unwrap().push((scope, close));
             Ok(())
         }
-        async fn stop_current_playback(
-            &self,
-            target: &crate::channels::adapter::ChannelTarget,
-            _: &str,
-        ) -> anyhow::Result<()> {
-            assert!(
-                target.voice.is_some_and(|scope| scope.is_valid()),
-                "must stop only original output scope"
-            );
-            Ok(())
-        }
+
         async fn retire_voice_output(
             &self,
             request: &alia_core::output_control::OutputRetirementRequest,
@@ -1003,7 +1001,7 @@ mod tests {
                     .any(|(scope, close)| *scope == request.scope && !close),
                 "unknown actor output scope"
             );
-            self.stop_current_playback(
+            self.retire_model_scope(
                 &crate::channels::adapter::ChannelTarget {
                     user_id: Uuid::from_u128(7).to_string(),
                     voice: Some(request.scope),
@@ -1034,11 +1032,7 @@ mod tests {
             format!("Bearer {}", token(0)).parse().unwrap(),
         );
         SessionCredentials {
-            auth: ServerAudioIngressService::new(
-                crate::event::EventBus::new(8),
-                channels,
-                "device",
-            ),
+            auth: VoiceIngressAuth::new(channels),
             request,
             channel: "device".into(),
             source: None,

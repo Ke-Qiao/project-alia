@@ -66,17 +66,13 @@ impl PluginStorageService {
         Self { db }
     }
 
-    pub fn scoped(&self, plugin_name: &str) -> anyhow::Result<PluginStorageHandle> {
-        PluginStorageHandle::new(self.db.clone(), plugin_name, None)
-    }
-
     pub fn scoped_with_manifest(
         &self,
         plugin_name: &str,
         manifest: PluginStorageManifest,
     ) -> anyhow::Result<PluginStorageHandle> {
         manifest.validate(plugin_name)?;
-        PluginStorageHandle::new(self.db.clone(), plugin_name, Some(Arc::new(manifest)))
+        PluginStorageHandle::new(self.db.clone(), plugin_name, Arc::new(manifest))
     }
 
     pub async fn usage_for_plugin(&self, plugin_name: &str) -> anyhow::Result<PluginStorageUsage> {
@@ -124,14 +120,14 @@ impl PluginStorageService {
 pub struct PluginStorageHandle {
     db: DatabaseConnection,
     plugin_name: String,
-    manifest: Option<Arc<PluginStorageManifest>>,
+    manifest: Arc<PluginStorageManifest>,
 }
 
 impl PluginStorageHandle {
     fn new(
         db: DatabaseConnection,
         plugin_name: &str,
-        manifest: Option<Arc<PluginStorageManifest>>,
+        manifest: Arc<PluginStorageManifest>,
     ) -> anyhow::Result<Self> {
         let plugin_name = validate_plugin_name(plugin_name)?;
         Ok(Self {
@@ -151,35 +147,27 @@ impl PluginStorageHandle {
         scope: StorageScopeKind,
     ) -> anyhow::Result<CollectionPolicy> {
         let collection = validate_collection_name(collection)?;
-        if let Some(manifest) = &self.manifest {
-            let declared = manifest.collection(&collection).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "plugin '{}' did not declare storage collection '{}'",
-                    self.plugin_name,
-                    collection
-                )
-            })?;
-            if !declared.allows_scope(scope.into()) {
-                anyhow::bail!(
-                    "plugin '{}' collection '{}' does not allow '{}' scope",
-                    self.plugin_name,
-                    collection,
-                    scope.as_str()
-                );
-            }
-            return Ok(CollectionPolicy {
-                schema_version: declared.schema_version,
-                ttl: declared.ttl(),
-                max_record_bytes: declared
-                    .max_record_bytes
-                    .unwrap_or(DEFAULT_MAX_RECORD_BYTES),
-            });
+        let declared = self.manifest.collection(&collection).ok_or_else(|| {
+            anyhow::anyhow!(
+                "plugin '{}' did not declare storage collection '{}'",
+                self.plugin_name,
+                collection
+            )
+        })?;
+        if !declared.allows_scope(scope.into()) {
+            anyhow::bail!(
+                "plugin '{}' collection '{}' does not allow '{}' scope",
+                self.plugin_name,
+                collection,
+                scope.as_str()
+            );
         }
-
         Ok(CollectionPolicy {
-            schema_version: 1,
-            ttl: None,
-            max_record_bytes: DEFAULT_MAX_RECORD_BYTES,
+            schema_version: declared.schema_version,
+            ttl: declared.ttl(),
+            max_record_bytes: declared
+                .max_record_bytes
+                .unwrap_or(DEFAULT_MAX_RECORD_BYTES),
         })
     }
 

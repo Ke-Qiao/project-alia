@@ -22,18 +22,15 @@ grpc_drain_timeout_ms = 1000
 
 # Unavailable/unknown implementations are startup errors. "noop" explicitly disables
 # a slot; library hosts may also inject their own implementations with with_*.
-# The priority mixer is not implemented, so compiled defaults explicitly disable it.
+# Native playback always mixes scoped conversation and local cues at gains 1.0/0.2.
+# There is no separate mixer slot. Set capture/playback to "noop" for a no-audio host.
 [modules]
-mixer = "noop"
 
 # - [identity]
 # - [audio]
 # - [audio_debug]
-# - [edge_stt]
+# - [speech]
 # - [vad]
-# - [interrupt]
-# - [thinking]
-# - [continuous_dialogue]
 # - [direct_response_defaults]
 # - [hmmd_mmwave]
 # - [motion]
@@ -111,24 +108,16 @@ record_playback = true
 capture_segment_ms = 10000
 
 [speech]
-# Pair server_turn with the server's [providers.easy_turn] enabled = true.
-# This mode uploads continuously after wake word, including during playback;
-# VAD supplies activity evidence only. Re-wake after disconnect/overflow.
-# Default when omitted: "utterance" (the existing local endpointing pipeline).
+# Exact [[channels]].id on the bound server; this is not a channel-type alias.
+channel_id = "pi-living-room"
+# The only voice path uses continuous VoiceSession v2 capture after wake word.
+# Pair with the server's [providers.easy_turn] enabled = true.
+# Upload continues during playback; VAD supplies activity evidence only.
 # Requires [audio] capture_sample_rate = 16000 and capture_channels = 1.
-# AEC and stale network playback rejection are not yet validated.
-mode = "server_turn"
+# Disconnect, queue overflow, or invalid evidence ends the session; wake again.
+# Scoped playback rejects stale owners. Hardware AEC/acoustic quality is unverified.
 pre_roll_ms = 200
 upload_queue_frames = 32
-
-[edge_stt]
-language = "zh"
-max_duration_ms = 15000
-# VAD may briefly think an utterance ended while the user is still speaking.
-# Do not accept a VAD endpoint before this minimum capture duration.
-post_wake_min_capture_ms = 1800
-post_wake_capture_ms = 2500
-post_wake_response_delay_ms = 500
 
 [vad]
 model_path = "models/silero-vad/silero_vad.onnx"
@@ -142,26 +131,6 @@ buffer_size_sec = 10.0
 provider = "cpu"
 num_threads = 1
 debug = false
-
-[interrupt]
-interrupt_on_wakeword_during_playback = true
-interrupt_skip_direct_response = true
-interrupt_debounce_ms = 300
-
-[thinking]
-enabled = true
-action = "thinking"
-initial_delay_ms = 1200
-repeat_interval_ms = 3000
-
-[continuous_dialogue]
-# After one wake word, keep listening after each assistant reply so the user can
-# continue without repeating the wake word. Follow-up capture starts only after
-# VAD hears speech; silence just keeps the listening window open until timeout.
-enabled = true
-followup_timeout_ms = 10000
-# 0 means unlimited; a small cap avoids accidentally staying active forever.
-max_followup_turns = 6
 
 [direct_response_defaults]
 audio_dir = "run/direct-responses"

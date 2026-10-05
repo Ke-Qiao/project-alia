@@ -71,8 +71,8 @@ impl OutputRegistration {
     }
 }
 
-/// Exact cleanup intent. An absent binding is only meaningful for a locally
-/// known scope which provably never created a native output owner.
+/// Exact cleanup intent. An absent binding retires a locally known voice scope
+/// before Response registration, including any device-local cue owner.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputRetirementRequest {
     pub scope: VoiceScope,
@@ -129,8 +129,8 @@ impl OutputRetirementReceipt {
             )?,
             OutputRetirementEvidence::Settled { backend, progress } => {
                 require(
-                    expected.binding.is_some(),
-                    "settled native owner has no binding",
+                    expected.binding.is_some() || progress.is_empty(),
+                    "unregistered native owner cannot report Response progress",
                 )?;
                 validate_backend(backend)?;
                 require(

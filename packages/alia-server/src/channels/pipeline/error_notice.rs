@@ -11,8 +11,6 @@ use crate::providers::adapter::{ConversationEventEntry, TtsRequest};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum PipelineErrorStage {
-    Stt,
-    TranscriptCorrection,
     Llm,
     Tts,
     Delivery,
@@ -22,8 +20,6 @@ pub(super) enum PipelineErrorStage {
 impl PipelineErrorStage {
     pub(super) fn code(self) -> &'static str {
         match self {
-            PipelineErrorStage::Stt => "stt",
-            PipelineErrorStage::TranscriptCorrection => "transcript_correction",
             PipelineErrorStage::Llm => "llm",
             PipelineErrorStage::Tts => "tts",
             PipelineErrorStage::Delivery => "delivery",
@@ -33,8 +29,6 @@ impl PipelineErrorStage {
 
     fn zh_summary(self) -> &'static str {
         match self {
-            PipelineErrorStage::Stt => "语音识别没有完成",
-            PipelineErrorStage::TranscriptCorrection => "语音文本校正没有完成",
             PipelineErrorStage::Llm => "生成回复时出错了",
             PipelineErrorStage::Tts => "语音合成没有完成",
             PipelineErrorStage::Delivery => "回复发送没有完成",
@@ -44,10 +38,6 @@ impl PipelineErrorStage {
 
     fn en_summary(self) -> &'static str {
         match self {
-            PipelineErrorStage::Stt => "speech recognition did not complete",
-            PipelineErrorStage::TranscriptCorrection => {
-                "speech transcript correction did not complete"
-            }
             PipelineErrorStage::Llm => "generating the reply failed",
             PipelineErrorStage::Tts => "speech synthesis did not complete",
             PipelineErrorStage::Delivery => "delivering the reply did not complete",
@@ -70,7 +60,6 @@ pub(super) struct PipelineErrorNotice {
 pub(super) enum PipelineErrorDelivery {
     Text,
     Tts,
-    DirectResponse,
     Failed,
     Cancelled,
 }
@@ -253,26 +242,6 @@ pub(super) async fn notify_pipeline_error(
     PipelineErrorNotification { notice, delivery }
 }
 
-pub(super) async fn play_error_direct_response(
-    _channel: &dyn ChannelAdapter,
-    channel_id: &str,
-    user_id: &str,
-    reason: &str,
-    _debug_output: bool,
-    turn: Option<&VoiceTurn>,
-) -> PipelineErrorDelivery {
-    if turn_is_interrupted(turn) {
-        return PipelineErrorDelivery::Cancelled;
-    }
-    tracing::warn!(
-        channel_id,
-        user_id,
-        reason,
-        "local error cue lacks an immutable playback identity; no unscoped output was dispatched"
-    );
-    PipelineErrorDelivery::Failed
-}
-
 pub(super) async fn record_pipeline_error_event(
     modules: &ModuleRegistry,
     channel_id: &str,
@@ -409,16 +378,11 @@ async fn deliver_voice_error_notice(
     debug_output: bool,
     turn: Option<&VoiceTurn>,
 ) -> PipelineErrorDelivery {
+    if turn_is_interrupted(turn) {
+        return PipelineErrorDelivery::Cancelled;
+    }
     if notice.stage == PipelineErrorStage::Tts {
-        return play_error_direct_response(
-            channel,
-            channel_id,
-            user_id,
-            "pipeline_error_tts_failed",
-            debug_output,
-            turn,
-        )
-        .await;
+        return PipelineErrorDelivery::Failed;
     }
 
     debug_component_json(
@@ -455,18 +419,14 @@ async fn deliver_voice_error_notice(
                 channel_type = channel.channel_type(),
                 channel_id = channel.channel_id(),
                 error = %error,
-                "TTS error notice failed; falling back to local direct response"
+                "TTS error notice failed"
             );
             tracing::debug!(error = ?error, "TTS error notice failure details");
-            return play_error_direct_response(
-                channel,
-                channel_id,
-                user_id,
-                "pipeline_error_tts_notice_failed",
-                debug_output,
-                turn,
-            )
-            .await;
+            return if turn_is_interrupted(turn) {
+                PipelineErrorDelivery::Cancelled
+            } else {
+                PipelineErrorDelivery::Failed
+            };
         }
     };
 
@@ -503,15 +463,11 @@ async fn deliver_voice_error_notice(
         },
         Err(error) => {
             log_channel_delivery_failure(channel, error).await;
-            play_error_direct_response(
-                channel,
-                channel_id,
-                user_id,
-                "pipeline_error_audio_delivery_failed",
-                debug_output,
-                turn,
-            )
-            .await
+            if turn_is_interrupted(turn) {
+                PipelineErrorDelivery::Cancelled
+            } else {
+                PipelineErrorDelivery::Failed
+            }
         }
     }
 }
@@ -554,10 +510,10 @@ mod tests {
 
     #[test]
     fn builds_english_notice_for_non_cjk_input() {
-        let notice = build_pipeline_error_notice(PipelineErrorStage::Stt, Some("hello"));
+        let notice = build_pipeline_error_notice(PipelineErrorStage::Llm, Some("hello"));
 
         assert_eq!(notice.user_text, SourceNotice::ProcessingFailedEn.text());
-        assert!(notice.safe_summary.contains("speech recognition"));
+        assert!(notice.safe_summary.contains("generating the reply"));
     }
     #[derive(Default)]
     struct RecordingChannel {
@@ -582,15 +538,23 @@ mod tests {
                 ..Default::default()
             }
         }
-        async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        fn reserve_text(
+            &self,
+            _: &ChannelTarget,
+            _: Uuid,
+        ) -> anyhow::Result<alia_core::text_delivery::TextIdentity> {
             self.effects
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(())
+            anyhow::bail!("unexpected text reservation")
         }
-        async fn send_audio(&self, _: &ChannelTarget, _: AudioPayload) -> anyhow::Result<()> {
+        fn reserve_playback(
+            &self,
+            _: &ChannelTarget,
+            _: Uuid,
+        ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
             self.effects
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(())
+            anyhow::bail!("unexpected playback reservation")
         }
         async fn execute_action(&self, _: ChannelAction) -> anyhow::Result<serde_json::Value> {
             self.effects
@@ -666,7 +630,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_error_does_not_dispatch_direct_response_or_text() {
+    async fn cancelled_error_does_not_dispatch_voice_or_text() {
         let fixture = super::super::integration_tests::Fixture::new(false).await;
         let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
         turn.token.cancel();
@@ -677,8 +641,17 @@ mod tests {
         };
         let notice = build_pipeline_error_notice(PipelineErrorStage::Tts, None);
         assert_eq!(
-            play_error_direct_response(&channel, "test", "user", "failure", false, Some(&turn))
-                .await,
+            deliver_voice_error_notice(
+                &fixture.modules,
+                &channel,
+                &target,
+                "test",
+                "user",
+                &notice,
+                false,
+                Some(&turn),
+            )
+            .await,
             PipelineErrorDelivery::Cancelled
         );
         assert_eq!(

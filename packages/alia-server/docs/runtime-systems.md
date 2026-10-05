@@ -108,30 +108,26 @@ voice pipeline must keep user ids explicit so memory, conversation history,
 settings, tools, and future voiceprint identification can remain multi-user
 safe.
 
-For audio turns, raw STT output is normalized before it enters routing,
-appraisal, cache, conversation history, or memory ingest:
+For audio turns, authenticated continuous capture is the sole input path:
 
 ```text
-AudioInput
-  -> STT raw transcript
-  -> transcript correction
-  -> corrected user text
+VoiceSession v2: ordered capture + local VAD evidence
+  -> server Easy-Turn provider
+  -> owner-bound recognized voice input
   -> router/cache/appraisal/memory
+  -> registered Playback v3 / BodyControl output
 ```
 
-The correction stage uses a structured JSON prompt and is conservative: it may
-fix likely recognition errors, punctuation, and homophones, but it must not
-answer the user or change intent. Risky or ambiguous corrections keep the raw
-text for processing and are recorded in agent history. This means the memory
-system receives the same corrected user text that downstream routing sees,
-while the raw transcript remains available only in trace/debug events.
+The original account, channel, device boot, session, generation, and source
+epochs constrain admission and downstream context. There is no second local
+utterance/STT endpoint or transcript-correction LLM role. The server processes
+the accepted recognized transcript directly. Session-owned cancellation
+supersedes old work and preserves the existing persistence/context safeguards;
+unused channel interrupt policy switches have been removed.
 
-Deployments may configure an optional `llm.roles.transcript_correction` profile
-for this stage. It is disabled by default; when absent, the default correction
-provider falls back to the configured minor LLM and then major LLM.
-Set `[policies.transcript_correction].provider = "transcript_correction_llm"`
-to require the dedicated backend, or `provider = "none"` to trace no correction
-model at all.
+The old `end_continuous_dialogue` tool has been deleted. A future explicit
+input-session close action needs an authenticated owner and acknowledged capture
+closure; Playback Fence alone is only output admission control.
 
 ## Agent History
 

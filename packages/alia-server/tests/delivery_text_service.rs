@@ -31,10 +31,14 @@ struct Channel {
     changed: Arc<Notify>,
     entered: Arc<Semaphore>,
     blocked: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
-    legacy: bool,
+    unobserved: bool,
 }
 impl Channel {
-    fn new(owner: Uuid, blocked: Option<std::sync::mpsc::Receiver<()>>, legacy: bool) -> Arc<Self> {
+    fn new(
+        owner: Uuid,
+        blocked: Option<std::sync::mpsc::Receiver<()>>,
+        unobserved: bool,
+    ) -> Arc<Self> {
         Arc::new(Self {
             owner,
             instance: Uuid::new_v4(),
@@ -46,7 +50,7 @@ impl Channel {
             changed: Default::default(),
             entered: Arc::new(Semaphore::new(0)),
             blocked: Mutex::new(blocked),
-            legacy,
+            unobserved,
         })
     }
 }
@@ -72,30 +76,24 @@ impl ChannelAdapter for Channel {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn reserve_text(
-        &self,
-        _: &ChannelTarget,
-        text_id: Uuid,
-    ) -> anyhow::Result<Option<TextIdentity>> {
-        Ok((!self.legacy).then_some(TextIdentity {
+
+    fn reserve_text(&self, _: &ChannelTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
+        Ok(TextIdentity {
             text_id,
             channel_instance_id: self.instance,
-        }))
+        })
     }
     async fn deliver_text(
         &self,
         _: &ChannelTarget,
-        identity: Option<TextIdentity>,
+        identity: TextIdentity,
         mut input: TextPayloadStream,
         observer: Arc<dyn TextObserver>,
         cancel: CancellationToken,
     ) -> anyhow::Result<TextDeliveryReport> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         observer.start().await?;
-        if let Some(identity) = identity {
+        if !self.unobserved {
             *self.progress.lock().unwrap() = Some(TextProgress {
                 identity,
                 receipt_sequence: 1,
@@ -113,7 +111,7 @@ impl ChannelAdapter for Channel {
             match frame? {
                 TextFrame::Chunk(chunk) => {
                     observer.offered(&chunk).await?;
-                    if self.legacy {
+                    if self.unobserved {
                         self.native_bytes
                             .fetch_add(chunk.text.len(), Ordering::SeqCst);
                         continue;
@@ -171,9 +169,9 @@ impl ChannelAdapter for Channel {
                 }
                 TextFrame::End { chunks, utf8_bytes } => {
                     observer.end(chunks, utf8_bytes).await?;
-                    if self.legacy {
+                    if self.unobserved {
                         return Ok(TextDeliveryReport::unobserved(
-                            "legacy empty ACK is not write evidence",
+                            "unobserved empty ACK is not write evidence",
                         ));
                     }
                     let p = {
@@ -400,7 +398,7 @@ async fn failed_text_offer_never_reaches_native_and_error_eof_never_completes() 
 }
 
 #[tokio::test]
-async fn legacy_ack_is_unknown_without_invented_written_bytes() {
+async fn unobserved_ack_is_unknown_without_invented_written_bytes() {
     with_db(|f| async move {
         let (service, response) = started(&f).await;
         let channel = Channel::new(f.user, None, true);
@@ -410,7 +408,7 @@ async fn legacy_ack_is_unknown_without_invented_written_bytes() {
             .unwrap();
         assert_eq!(record.status, DeliveryStatus::Unknown);
         let text = record.text.unwrap();
-        assert!(text.identity.is_none());
+        assert!(text.identity.is_some());
         assert!(text.progress.is_none());
         assert!(text.end_offered);
         service

@@ -242,7 +242,6 @@ impl Fixture {
         config.llm.roles.major = "noop".into();
         config.llm.roles.default = "noop".into();
         config.llm.roles.embedding = "noop".into();
-        config.llm.roles.transcript_correction = None;
         config.llm.roles.memory_capture = None;
         config.llm.roles.sentence_expression = None;
         config.policies.memory.enabled = false;
@@ -714,16 +713,15 @@ impl alia_server::channels::ChannelAdapter for Probe {
     fn capabilities(&self) -> alia_server::channels::adapter::ChannelCapabilities {
         Default::default()
     }
-    async fn send_message(
+    async fn execute_action(
         &self,
-        _: &alia_server::channels::adapter::ChannelTarget,
-        _: &str,
-    ) -> anyhow::Result<()> {
+        _: alia_server::channels::adapter::ChannelAction,
+    ) -> anyhow::Result<serde_json::Value> {
         anyhow::ensure!(
             self.state.active.load(Ordering::SeqCst) == 1,
             "channel stopped before effect finished"
         );
-        Ok(())
+        Ok(serde_json::json!({"alive": true}))
     }
 }
 
@@ -752,7 +750,7 @@ impl alia_server::providers::adapter::ToolExecutor for EffectProbe {
     async fn execute(
         &self,
         _: serde_json::Value,
-        ctx: &alia_server::providers::adapter::ToolContext,
+        _ctx: &alia_server::providers::adapter::ToolContext,
     ) -> anyhow::Result<alia_server::providers::adapter::ToolResult> {
         self.entered.add_permits(1);
         self.release.acquire().await.unwrap().forget();
@@ -766,13 +764,10 @@ impl alia_server::providers::adapter::ToolExecutor for EffectProbe {
             .await
             .expect("outbound remains registered");
         channel
-            .send_message(
-                &alia_server::channels::adapter::ChannelTarget {
-                    user_id: ctx.user_id.to_string(),
-                    voice: None,
-                },
-                "effect result",
-            )
+            .execute_action(alia_server::channels::adapter::ChannelAction {
+                name: "test_dependency_alive".into(),
+                params: serde_json::json!({}),
+            })
             .await?;
         Ok(alia_server::providers::adapter::ToolResult {
             call_id: String::new(),

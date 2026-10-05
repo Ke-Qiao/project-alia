@@ -19,13 +19,12 @@ pub mod types;
 
 pub use abi::{
     EXPRESSION_PLUGIN_ABI_VERSION, ExpressionPluginCapabilities, ExpressionPluginManifest,
-    ExpressionPluginRequest, ExpressionPluginResponse, ExternalAffectReducerContext,
-    ExternalAppraisalContext, ExternalAppraisalEventDraft, ExternalExpressionPlugin,
+    ExpressionPluginRequest, ExpressionPluginResponse, ExternalAppraisalContext,
+    ExternalAppraisalEventDraft, ExternalExpressionPlugin,
 };
 pub use affect::{
-    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectUserInput, AppraisalDecay,
-    AppraisalDecayKind, AppraisalEvent, AppraisalEvidence, AppraisalScope, AppraisalSource,
-    AppraisalTarget,
+    AffectAssistantResponse, AffectDeltas, AppraisalDecay, AppraisalDecayKind, AppraisalEvent,
+    AppraisalEvidence, AppraisalScope, AppraisalSource, AppraisalTarget,
 };
 pub use appraisal::{
     AppraisalContext, AppraisalEnginePlugin, RuleBasedAppraisalEngine,
@@ -36,14 +35,13 @@ pub use eval::{
     planner_regression_cases,
 };
 pub use extension::{
-    AffectReducerContext, AffectReducerPlugin, ExpressionExtensionRegistry,
-    ExpressionExtensionSummary, ExpressionPlannerPlugin, ExpressionPlanningContext,
-    ExpressionSafetyPolicyPlugin, safety_modification,
+    ExpressionExtensionRegistry, ExpressionExtensionSummary, ExpressionPlannerPlugin,
+    ExpressionPlanningContext, ExpressionSafetyPolicyPlugin, safety_modification,
 };
 pub use runtime::ExpressionRuntime;
 pub use trace::{
-    ExpressionTrace, ExpressionTraceEvent, ExpressionTraceEventSummary, ExpressionTraceIntent,
-    ExpressionTraceObservation, expression_traces_from_events,
+    ExpressionTrace, ExpressionTraceEvent, ExpressionTraceEventSummary,
+    expression_traces_from_events,
 };
 pub use types::{
     AffectAxes, AffectSnapshot, ExpressionActionCapability, ExpressionActionReceipt,

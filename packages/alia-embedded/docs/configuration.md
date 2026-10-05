@@ -1,7 +1,7 @@
 # Embedded Configuration
 
-`alia-embedded` can boot with compiled defaults when `config/embedded.toml` is
-missing. User-editable settings live in the config file; runtime-owned state is
+`alia-embedded` uses compiled defaults when `config/embedded.toml` is
+missing; selected backends still need their build features, models, and devices. User-editable settings live in the config file; runtime-owned state is
 stored in SQLite.
 
 ## Config Path
@@ -24,25 +24,50 @@ The example file is `config/embedded.example.toml`.
 
 | Section | Purpose |
 | --- | --- |
-| `[runtime]` | Provisioning/local-dev mode and runtime behavior. |
+| `[runtime]` | Provisioning state. |
+| `[device_runtime]` | Instance-local bind address, state/plugin paths, and shutdown budgets. |
+| `[dev]` | Explicit development binding bypass. |
 | `[identity]` | Device id, friendly name, keypair path. |
-| `[binding]` | Server binding state and local development auth bypass. |
 | `[modules]` | Module implementation choices. |
 | `[audio]` | Capture/playback backend, devices, rates, buffers, and volume defaults. |
 | `[audio_debug]` | Optional WAV recording for diagnosing capture/playback. |
 | `[wakeword]` | sherpa-onnx keyword spotting model and keyword config. |
-| `[edge_stt]` | Local ASR language, model paths, and timing. |
-| `[vad]` | sherpa-onnx/Silero VAD model and endpoint thresholds. |
-| `[direct_response]` | Local response directory and matching behavior. |
-| `[continuous_dialogue]` | Follow-up listening windows and turn limits. |
+| `[speech]` | Exact Server channel instance ID, VoiceSession pre-roll, and bounded upload queue. |
+| `[vad]` | sherpa-onnx/Silero activity evidence settings. |
+| `[direct_response_defaults]`, `[[direct_response]]` | Cue asset directory and metadata. |
 | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
 | `[motion]` | Native neck mapping, animation assets, expression actions, and serial/PCA9685 servo output. |
 | `[vision]` | OpenCV YuNet camera tracking parameters. |
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 
+## Voice Configuration
+
+`[speech].channel_id` names the exact `[[channels]].id` on the bound server.
+The compiled default `"embedded"` means an actual instance with that name, not a
+channel-type alias. The shipped examples use `"pi-living-room"` on both sides.
+IDs must contain visible ASCII characters without whitespace; invalid values are
+rejected rather than trimmed or converted to another route. Changing this
+setting requires restart. Binding does not choose or rewrite the instance ID.
+
+The other settings are `pre_roll_ms` (default 200) and `upload_queue_frames`
+(default 32). The sole path requires mono 16 kHz capture and an available VAD;
+there is no `mode`, edge STT, local interrupt, thinking, or continuous-dialogue
+section. `[modules]` has no `mixer` or `edge_stt` slot. Native playback always
+mixes scoped voice/cue sources at fixed gains 1.0/0.2.
+
+Set `modules.audio_capture = "noop"` for a service-only host with no microphone.
+The speech worker then stays inactive with degraded health; do not select a
+Noop VAD while claiming real capture is active. Choose `audio_playback = "noop"`
+when output is intentionally disabled. Noop backends do not prove audio readiness.
+
+Production voice also requires the configured server Easy-Turn provider. A
+failed provider or interrupted stream requires a fresh wake, not a fallback to
+local utterance/STT. Current runtime policies and shadow defaults remain unchanged.
+
 ## Runtime State
 
-Runtime-owned state lives under the configured runtime directory, commonly:
+Resource paths are resolved relative to the config file directory. Runtime-owned
+state and cue/debug assets commonly use:
 
 ```text
 run/embedded-state.sqlite3

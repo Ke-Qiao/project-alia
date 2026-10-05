@@ -16,32 +16,11 @@ use super::types::{
     ExpressionSafetyModification, ExpressiveStance,
 };
 
-/// Legacy reducer shape retained so registration can report a clear migration error.
-pub struct AffectReducerContext<'a> {
-    pub channel_id: &'a str,
-    pub user_id: &'a str,
-    pub route: Option<&'a str>,
-}
-
 /// Context passed to expression planning and safety plugins.
 pub struct ExpressionPlanningContext<'a> {
     pub input: &'a ExpressionInput,
     pub affect: &'a AffectSnapshot,
     pub stance: &'a ExpressiveStance,
-}
-
-/// Legacy interface: runtime/registry registration rejects mutable reducers.
-///
-/// Reducers should only adjust the provided snapshot. They must not execute
-/// hardware actions or call LLMs; expensive interpretation belongs before this
-/// point as appraisal events.
-pub trait AffectReducerPlugin: Send + Sync {
-    fn name(&self) -> &str;
-    fn reduce(
-        &self,
-        ctx: &AffectReducerContext<'_>,
-        snapshot: &mut AffectSnapshot,
-    ) -> anyhow::Result<()>;
 }
 
 /// Extension point for modifying a planned expression before safety checks.
@@ -75,7 +54,6 @@ pub trait ExpressionSafetyPolicyPlugin: Send + Sync {
 pub struct ExpressionExtensionSummary {
     pub external_plugins: Vec<String>,
     pub appraisal_engines: Vec<String>,
-    pub reducers: Vec<String>,
     pub planners: Vec<String>,
     pub safety_policies: Vec<String>,
 }
@@ -147,18 +125,6 @@ impl ExpressionExtensionRegistry {
         engines.remove(name).is_some()
     }
 
-    /// Legacy snapshot mutation is closed. Draft interpreters must carry an
-    /// implementation pin and pass the canonical Appraisal input/write gates.
-    pub fn register_reducer(&self, _plugin: Arc<dyn AffectReducerPlugin>) -> anyhow::Result<()> {
-        anyhow::bail!(
-            "mutable affect reducers must migrate to versioned canonical appraisal drafts"
-        )
-    }
-
-    pub fn unregister_reducer(&self, _name: &str) -> bool {
-        false
-    }
-
     pub fn register_planner(&self, plugin: Arc<dyn ExpressionPlannerPlugin>) -> anyhow::Result<()> {
         let name = normalized_name(plugin.name())?;
         let mut planners = self
@@ -208,7 +174,6 @@ impl ExpressionExtensionRegistry {
         ExpressionExtensionSummary {
             external_plugins: keys(&self.external_plugins),
             appraisal_engines: keys(&self.appraisal_engines),
-            reducers: Vec::new(),
             planners: keys(&self.planners),
             safety_policies: keys(&self.safety_policies),
         }
@@ -249,10 +214,6 @@ impl ExpressionExtensionRegistry {
             events.extend(drafts);
         }
         for plugin in values(&self.external_plugins) {
-            anyhow::ensure!(
-                !plugin.manifest().capabilities.affect_reducer,
-                "external snapshot replacement is not a canonical reducer"
-            );
             if !plugin.manifest().capabilities.appraisal_engine {
                 continue;
             }

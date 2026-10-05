@@ -21,18 +21,20 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use super::super::audio_debug::AudioDebugRecorder;
 use super::super::context::{AudioFrame, EventBus, ModuleEvent};
 use super::super::playback_session::{CaptureControlBarrier, PlaybackSession};
-use super::super::traits::{VoiceActivityEngine, VoiceActivityState, WakeWordEngine};
+use super::super::traits::{
+    DirectResponseEngine, VoiceActivityEngine, VoiceActivityState, WakeWordEngine,
+};
 use super::transport::{
-    IngressAuth, attach_ingress_auth, ingress_auth, pcm16_to_le_bytes, voice_connection,
+    VoiceAuth, attach_voice_auth, pcm16_to_le_bytes, voice_auth, voice_connection,
 };
 use crate::binding::{BindingData, BindingManager};
 use crate::config::SpeechConfig;
 
 const SAMPLE_RATE: u32 = 16000;
 const MAX_FRAME_SAMPLES: usize = 1600;
-const CHANNEL_ID: &str = "embedded";
 const AUTH_REFRESH: Duration = Duration::from_secs(120);
 
 pub(super) struct Runtime {
@@ -41,6 +43,8 @@ pub(super) struct Runtime {
     pub event_bus: EventBus,
     pub wakeword: Arc<dyn WakeWordEngine>,
     pub vad: Arc<dyn VoiceActivityEngine>,
+    pub direct_response: Arc<dyn DirectResponseEngine>,
+    pub audio_debug: AudioDebugRecorder,
     pub playback_session: Arc<PlaybackSession>,
     pub binding: Arc<BindingManager>,
     pub device_id: String,
@@ -60,7 +64,7 @@ impl Runtime {
         let mut session: Option<Session> = None;
         let mut pre_roll = PreRoll::new(self.config.pre_roll_ms as usize * 16);
         let mut clock = CaptureClock::default();
-        info!(boot_id = %self.boot_id, "server_turn capture enabled with scoped network playback; hardware AEC remains unverified");
+        info!(boot_id = %self.boot_id, channel_id = %self.config.channel_id, "continuous capture enabled with scoped network playback; hardware AEC remains unverified");
         loop {
             let damage = tokio::select! {
                 biased;
@@ -73,7 +77,9 @@ impl Runtime {
                 } => {
                     // The handle was joined by select; do not poll it again.
                     if let Some(active) = session.take() {
+                        active.cancel.cancel();
                         if let Err(error) = active.playback.retire_capture(&active.capture) { warn!(%error, "retiring completed capture failed"); }
+                        if let Err(error) = active.cue_task.await { warn!(%error, "joining local voice cue failed"); }
                     }
                     match result {
                         Ok(Ok(())) => info!("voice session ended; wake again to reconnect"),
@@ -86,7 +92,6 @@ impl Runtime {
                     Some("network session ended".to_string())
                 }
                 event = self.events.recv() => match event {
-                    Ok(ModuleEvent::ContinuousDialogueEndRequested { reason }) => Some(reason),
                     Ok(ModuleEvent::PlaybackStarted { source }) => {
                         debug!(%source, "playback started; continuous capture remains active");
                         None
@@ -151,11 +156,11 @@ impl Runtime {
                 active.enqueue(captured)?;
             } else if let Some(wake) = self.wakeword.detect(pcm) {
                 self.event_bus.publish(ModuleEvent::WakeWordDetected {
-                    keyword: wake.keyword,
+                    keyword: wake.keyword.clone(),
                     timestamp_us: wake.timestamp_us,
                 });
                 // Store the task before enqueueing so errors always cancel/join it.
-                *session = Some(self.start_session());
+                *session = Some(self.start_session(wake.keyword));
                 let active = session.as_mut().expect("session was just stored");
                 self.event_bus.publish(ModuleEvent::SpeechStart);
                 for frame in pre_roll.drain() {
@@ -169,17 +174,28 @@ impl Runtime {
         Ok(())
     }
 
-    fn start_session(&self) -> Session {
+    fn start_session(&self, wake_keyword: String) -> Session {
         let (tx, rx) = mpsc::channel(self.config.upload_queue_frames);
         let cancel = self.cancel.child_token();
         let binding = self.binding.clone();
         let device_id = self.device_id.clone();
         let keypair_path = self.keypair_path.clone();
         let boot_id = self.boot_id.clone();
+        let channel_id = self.config.channel_id.clone();
         let playback = self.playback_session.clone();
         let capture = CaptureControlBarrier::default();
         let task_capture = capture.clone();
         let task_cancel = cancel.clone();
+        let (cue_ready, cue_scope) = oneshot::channel();
+        let cue_task = tokio::spawn(play_ready_cue(
+            cue_scope,
+            wake_keyword,
+            self.direct_response.clone(),
+            self.playback_session.clone(),
+            self.event_bus.clone(),
+            self.audio_debug.clone(),
+            cancel.clone(),
+        ));
         let task = tokio::spawn(async move {
             let exchange = async {
                 let original = binding.status().await;
@@ -202,7 +218,7 @@ impl Runtime {
                 tokio::select! {
                     biased;
                     result = binding_changed => result,
-                    result = exchange(endpoint, auth, boot_id, rx, playback, task_capture, device_id, keypair_path, binding.clone(), original.clone()) => result,
+                    result = exchange(endpoint, auth, boot_id, channel_id, rx, playback, task_capture, device_id, keypair_path, binding.clone(), original.clone(), cue_ready) => result,
                 }
             };
             let result = tokio::select! {
@@ -218,6 +234,7 @@ impl Runtime {
             tx,
             cancel,
             task,
+            cue_task,
             sequence: 0,
             sample_offset: 0,
         }
@@ -230,6 +247,7 @@ struct Session {
     tx: mpsc::Sender<CaptureFrame>,
     cancel: CancellationToken,
     task: JoinHandle<Result<()>>,
+    cue_task: JoinHandle<()>,
     sequence: u64,
     sample_offset: u64,
 }
@@ -277,7 +295,46 @@ async fn end_session(session: &mut Option<Session>, events: &EventBus) {
             Ok(Err(error)) => warn!(%error, "voice session shutdown failed"),
             Err(error) => warn!(%error, "voice session task join failed"),
         }
+        if let Err(error) = session.cue_task.await {
+            warn!(%error, "joining local voice cue failed");
+        }
         events.publish(ModuleEvent::SpeechEnd);
+    }
+}
+
+/// One bounded local cue per wake. The original authenticated Ready scope is
+/// retained across WAV loading; it can never be replaced with a newer owner.
+/// This worker is joined with its session and never blocks capture or network I/O.
+async fn play_ready_cue(
+    ready: oneshot::Receiver<VoiceScope>,
+    wake_keyword: String,
+    direct_response: Arc<dyn DirectResponseEngine>,
+    playback: Arc<PlaybackSession>,
+    event_bus: EventBus,
+    audio_debug: AudioDebugRecorder,
+    cancel: CancellationToken,
+) {
+    let scope = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return,
+        ready = ready => match ready {
+            Ok(scope) => scope,
+            Err(_) => return,
+        },
+    };
+    let action = direct_response
+        .match_action("wakeword")
+        .or_else(|| direct_response.match_keyword(&wake_keyword));
+    if let Some(action) = action {
+        crate::module::direct_response_playback::play_direct_response(
+            action,
+            playback,
+            scope,
+            event_bus,
+            audio_debug,
+            cancel,
+        )
+        .await;
     }
 }
 
@@ -403,15 +460,16 @@ impl CaptureClock {
 
 fn capture_stream(
     boot_id: String,
+    channel_id: String,
     mut audio: mpsc::Receiver<CaptureFrame>,
     ready: oneshot::Receiver<()>,
     sent: Arc<AtomicU64>,
-    mut renew: impl FnMut() -> Result<IngressAuth> + Send + 'static,
+    mut renew: impl FnMut() -> Result<VoiceAuth> + Send + 'static,
     failed: oneshot::Sender<anyhow::Error>,
 ) -> impl futures::Stream<Item = DeviceFrame> + Send {
     async_stream::stream! {
         yield DeviceFrame { payload: Some(device_frame::Payload::Open(OpenSession {
-            protocol_version: VOICE_CONTRACT_VERSION, device_boot_id: boot_id, channel_id: CHANNEL_ID.to_string(),
+            protocol_version: VOICE_CONTRACT_VERSION, device_boot_id: boot_id, channel_id,
             software_hold: true, max_hold_ms: MAX_HOLD_MS,
             initiative_admission: true,
             initiative_capture_gate_version: alia_core::output_control::INITIATIVE_CAPTURE_GATE_VERSION,
@@ -448,8 +506,9 @@ fn capture_stream(
 
 async fn exchange(
     endpoint: String,
-    auth: IngressAuth,
+    auth: VoiceAuth,
     boot_id: String,
+    channel_id: String,
     audio: mpsc::Receiver<CaptureFrame>,
     playback: Arc<PlaybackSession>,
     capture: CaptureControlBarrier,
@@ -457,16 +516,19 @@ async fn exchange(
     keypair_path: PathBuf,
     binding: Arc<BindingManager>,
     original: BindingData,
+    cue_ready: oneshot::Sender<VoiceScope>,
 ) -> Result<()> {
+    crate::config::validate_speech_channel_id(&channel_id)?;
     let sent = Arc::new(AtomicU64::new(0));
     let (ready_tx, ready_rx) = oneshot::channel();
     let (failed_tx, failed_rx) = oneshot::channel();
     let outgoing = capture_stream(
         boot_id.clone(),
+        channel_id.clone(),
         audio,
         ready_rx,
         sent.clone(),
-        move || ingress_auth(&device_id, &keypair_path),
+        move || voice_auth(&device_id, &keypair_path),
         failed_tx,
     );
     let mut guard = SessionGuard::with_capture(boot_id, playback, capture);
@@ -476,18 +538,26 @@ async fn exchange(
             .max_decoding_message_size(64 * 1024)
             .max_encoding_message_size(64 * 1024);
         let mut request = tonic::Request::new(outgoing);
-        attach_ingress_auth(request.metadata_mut(), &auth, CHANNEL_ID)?;
+        attach_voice_auth(request.metadata_mut(), &auth, &channel_id)?;
         let mut incoming = client.stream(request).await?.into_inner();
         let first = incoming
             .message()
             .await?
             .context("voice stream ended before Ready")?;
+        let cue_scope = VoiceScope {
+            device_boot_id: Uuid::parse_str(&first.device_boot_id)?,
+            session_id: Uuid::parse_str(&first.session_id)?,
+            generation_epoch: first.generation_epoch,
+        };
         guard
             .accept_bound(&binding, &original, first, sent.load(Ordering::Acquire))
             .await?;
         ready_tx
             .send(())
             .map_err(|_| anyhow::anyhow!("voice upload ended during Ready"))?;
+        // Optional local audio can start only after binding and Ready have
+        // established this exact scope. Capture is already free to upload.
+        let _ = cue_ready.send(cue_scope);
         Ok::<_, anyhow::Error>(incoming)
     })
     .await

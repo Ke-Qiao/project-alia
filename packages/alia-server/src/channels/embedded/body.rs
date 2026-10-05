@@ -530,7 +530,6 @@ impl Entry {
             command_id: Some(self.intent.source_id.clone()),
             voice_scope: self.intent.scope.voice(),
             body: None,
-            completion_acknowledged: false,
             action_receipts: names
                 .into_iter()
                 .map(|action| ExpressionActionReceipt {
@@ -544,7 +543,6 @@ impl Entry {
                     ),
                 })
                 .collect(),
-            executed_actions: Vec::new(),
             skipped_actions: Vec::new(),
             safety_modifications: Vec::new(),
         }

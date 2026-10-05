@@ -230,7 +230,7 @@ impl super::PlaybackSession {
             return Ok(registered.clone());
         }
         ensure!(
-            active.input.is_none() && active.observations.is_empty(),
+            active.input.is_none() && active.observations.values().all(|lease| lease.local_cue),
             "output registration must precede media"
         );
         let capture = active
@@ -330,7 +330,11 @@ impl super::PlaybackSession {
                 .apply_playback_control(control, &command.command)?,
             None => return Err(OutputControlError::Unknown.into()),
         };
-        let mut leases = active.observations.values().collect::<Vec<_>>();
+        let mut leases = active
+            .observations
+            .values()
+            .filter(|lease| !lease.local_cue)
+            .collect::<Vec<_>>();
         leases.sort_by_key(|lease| lease.playback_sequence);
         let result = control.with_snapshot(|snapshot| {
             // Snapshot and order assignment share the control mutex. A delayed
@@ -375,7 +379,11 @@ impl super::PlaybackSession {
         if !self.backend.is_playback_current(control.generation) {
             control.retire(RetiredReason::BackendChanged);
         }
-        let mut leases = active.observations.values().collect::<Vec<_>>();
+        let mut leases = active
+            .observations
+            .values()
+            .filter(|lease| !lease.local_cue)
+            .collect::<Vec<_>>();
         leases.sort_by_key(|lease| lease.playback_sequence);
         Ok(control.with_snapshot(|snapshot| PlaybackControlEvidence {
             control: snapshot,
@@ -413,7 +421,7 @@ impl super::PlaybackSession {
         active.control = Some(control.clone());
         self.backend.apply_playback_control(&control, command)
     }
-    fn control_generation(&self, active: &mut super::ActiveSession) -> Result<u64> {
+    pub(super) fn control_generation(&self, active: &mut super::ActiveSession) -> Result<u64> {
         ensure!(
             !active.retired,
             "playback output epoch is permanently retired"

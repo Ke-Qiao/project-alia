@@ -54,6 +54,16 @@ impl ModuleLifecycle for Channel {
         "delivery-test"
     }
 }
+impl Channel {
+    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        assert_eq!(target.user_id, self.owner.to_string());
+        assert_eq!(target.voice, Some(self.scope));
+        // Scope retirement is a separate barrier. Preserve each test's original
+        // exact PlaybackIdentity checkpoint and its injected ACK failure.
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl ChannelAdapter for Channel {
     fn channel_type(&self) -> &'static str {
@@ -72,9 +82,7 @@ impl ChannelAdapter for Channel {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
+
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
         assert_eq!(binding.scope, self.scope);
         let registration = OutputRegistration {
@@ -86,13 +94,7 @@ impl ChannelAdapter for Channel {
         self.registration.set(registration.clone()).unwrap();
         Ok(registration)
     }
-    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        assert_eq!(target.user_id, self.owner.to_string());
-        assert_eq!(target.voice, Some(self.scope));
-        // Scope retirement is a separate barrier. Preserve each test's original
-        // exact PlaybackIdentity checkpoint and its injected ACK failure.
-        Ok(())
-    }
+
     async fn retire_voice_output(
         &self,
         request: &alia_core::output_control::OutputRetirementRequest,
@@ -106,7 +108,7 @@ impl ChannelAdapter for Channel {
             .expect("fixture output was not registered");
         assert_eq!(request.binding, Some(registration.binding));
         assert_eq!(request.expected_backend.as_ref(), Some(&self.backend));
-        self.stop_current_playback(
+        self.retire_model_scope(
             &ChannelTarget {
                 user_id: self.owner.to_string(),
                 voice: Some(self.scope),
@@ -131,12 +133,12 @@ impl ChannelAdapter for Channel {
         &self,
         target: &ChannelTarget,
         playback_id: Uuid,
-    ) -> anyhow::Result<Option<PlaybackIdentity>> {
-        Ok(target.voice.map(|scope| PlaybackIdentity {
-            scope,
+    ) -> anyhow::Result<PlaybackIdentity> {
+        Ok(PlaybackIdentity {
+            scope: target.voice.expect("scoped playback required"),
             playback_id,
             playback_sequence: 1,
-        }))
+        })
     }
     async fn cancel_playback(
         &self,
@@ -169,7 +171,7 @@ impl ChannelAdapter for Channel {
     async fn deliver_audio(
         &self,
         _: &ChannelTarget,
-        identity: Option<PlaybackIdentity>,
+        identity: PlaybackIdentity,
         mut audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
         cancel: CancellationToken,
@@ -194,7 +196,6 @@ impl ChannelAdapter for Channel {
         }
         observer.offered(100).await?;
         self.media.fetch_add(1, Ordering::SeqCst);
-        let identity = identity.unwrap();
         let mut progress = receipt(identity, 1, 60);
         *self.last_progress.lock().unwrap() = Some(progress.clone());
         observer.progress(progress.clone()).await?;

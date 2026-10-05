@@ -1,41 +1,60 @@
 # gRPC Services
 
-`alia-embedded` hosts gRPC services for server control, playback, settings,
-binding, plugin management, expression motion, and sensors. Shared protobuf definitions live in
-`crates/proto/proto/` and generated Rust code lives in `crates/proto`.
+Shared contracts live in `crates/proto/proto/`; `crates/proto` generates the Rust
+bindings. The embedded library hosts services through its runtime builder.
 
 ## Embedded-Hosted Services
 
 | Service | Purpose |
 | --- | --- |
-| `alia.audio.AudioStream` | Server-to-device playback, playback stop, direct-response action cues, audio upload helpers, and audio control hooks. |
-| `alia.settings.EmbeddedSettings` | Settings snapshot, volume, and direct response management. |
-| `alia.binding.DeviceBinding` | Device binding and auth handshake support. |
-| `alia.plugin.PluginManager` | Embedded plugin/package lifecycle control. |
-| `alia.sensor.EmbeddedSensor` | Sensor discovery, reads, and optional sensor commands. |
-| `alia.expression.EmbeddedExpression` | Generic expression capabilities, execution, and cancellation routed to native motion. |
+| `alia.playback.v3.Playback` | Scoped network audio, output registration/retirement, generation fences, independent Hold/Resume control, and native evidence. |
+| `alia.body.v1.BodyControl` | Signed, strict request/reply envelopes for capabilities, session-scoped commands, cancellation, and observations. |
+| `alia.settings.EmbeddedSettings` | Settings, volume, and direct-response asset metadata. |
+| `alia.binding.DeviceBinding` | Binding and authentication handshake. |
+| `alia.plugin.PluginManager` | Embedded plugin/package lifecycle. |
+| `alia.sensor.EmbeddedSensor` | Sensor discovery, reads, and supported commands. |
 
-## Server-Hosted Services Used by Embedded
+There is no generic raw audio stream, direct-response playback RPC, unscoped
+stop RPC, or legacy expression execution service. Local wake cues enter the same
+native playback owner through the in-process scoped cue API.
 
-Embedded sends captured speech and interrupts to server-hosted audio ingress:
+## Server-Hosted Voice Session
 
 | Service | Purpose |
 | --- | --- |
-| `alia.audio.ServerAudioIngress` | Captured utterance upload, sensor-data reports, and active-turn interruption. |
+| `alia.voice.v2.VoiceSession` | Bidirectional `Stream`: Open, continuous capture, auth refresh, Close; server Ready, turn evidence, and initiative admission. |
 
-## Auth
+`speech.channel_id` is sent unchanged in both Open and `x-alia-channel-id`
+metadata. It must equal the bound server's concrete `[[channels]].id`; a channel
+type such as `embedded` is not an alias for another instance.
 
-Production requests are authenticated through binding state and signed tokens.
-Local development can bypass auth only when explicitly configured.
+Embedded sends 16 kHz mono PCM with a contiguous sequence and sample offset.
+VAD is activity evidence only. Ready must match the original device boot and
+negotiated contract before capture may cause output. Later evidence must retain
+its session identity; missing/foreign scope, stale evidence, or binding loss
+retires the session rather than silently adopting a new owner.
 
-## Proto Changes
+Voice decisions are semantic requests. Only the independent Playback control
+contract can establish Held/Resumed evidence. Playback generation Fence and
+output retirement do not themselves establish that the input session closed.
+A server-to-device explicit input-session close command remains a recorded TODO.
 
-When adding or changing a service:
+## Authentication and Evidence
 
-1. Edit the relevant `.proto` file under `crates/proto/proto/`.
-2. Register it in `crates/proto/build.rs`.
-3. Expose the generated module in `crates/proto/src/lib.rs`.
-4. Implement the service in `packages/alia-embedded/src/grpc/` or the
-   appropriate server gRPC module.
-5. Wire the tonic service into the server builder.
-6. Run workspace checks because proto changes affect both Rust codebases.
+Voice admission uses the bound channel/account, signed device token, and current
+privacy/relationship epochs. Tokens refresh during the long-lived stream;
+revocation and binding replacement end admission. Playback uses the original
+scope and registered output binding; BodyControl validates signatures and
+request nonces. Development binding bypass remains explicit configuration.
+
+Current native receipts prove CPAL callback-buffer or ALSA-write submission.
+`presented_samples` stays absent without supporting physical-device evidence.
+No duration estimate or successful gRPC request is a presentation receipt.
+
+## Changing a Contract
+
+1. Edit its `.proto` under `crates/proto/proto/`.
+2. Register generated modules in `crates/proto/build.rs` and `src/lib.rs`.
+3. Implement the service and wire it through the library runtime builder.
+4. Validate both Rust packages and real loopback transport behavior, including
+   incompatible identities, cancellation, and lifecycle cleanup.

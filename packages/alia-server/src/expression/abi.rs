@@ -14,7 +14,6 @@ use super::affect::{
     half_life_for_scope, ttl_for_scope,
 };
 use super::appraisal::AppraisalContext;
-use super::extension::AffectReducerContext;
 use super::types::{
     AffectSnapshot, ExpressionInput, ExpressionIntent, ExpressionPlan,
     ExpressionSafetyModification, ExpressiveStance,
@@ -99,11 +98,10 @@ impl Default for ExpressionPluginSandbox {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExpressionPluginCapabilities {
     #[serde(default)]
     pub appraisal_engine: bool,
-    #[serde(default)]
-    pub affect_reducer: bool,
     #[serde(default)]
     pub intent_planner: bool,
     #[serde(default)]
@@ -117,10 +115,6 @@ pub struct ExpressionPluginCapabilities {
 pub enum ExpressionPluginRequest {
     AppraiseUserInput {
         context: ExternalAppraisalContext,
-    },
-    ReduceAffect {
-        context: ExternalAffectReducerContext,
-        snapshot: AffectSnapshot,
     },
     PlanIntent {
         input: ExpressionInput,
@@ -147,9 +141,6 @@ pub enum ExpressionPluginRequest {
 pub enum ExpressionPluginResponse {
     AppraisalEvents {
         events: Vec<ExternalAppraisalEventDraft>,
-    },
-    AffectSnapshot {
-        snapshot: AffectSnapshot,
     },
     Intent {
         intent: ExpressionIntent,
@@ -185,23 +176,6 @@ impl From<&AppraisalContext<'_>> for ExternalAppraisalContext {
             user_id: ctx.user_id.to_string(),
             user_text: ctx.user_text.to_string(),
             now: ctx.now,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalAffectReducerContext {
-    pub channel_id: String,
-    pub user_id: String,
-    pub route: Option<String>,
-}
-
-impl From<&AffectReducerContext<'_>> for ExternalAffectReducerContext {
-    fn from(ctx: &AffectReducerContext<'_>) -> Self {
-        Self {
-            channel_id: ctx.channel_id.to_string(),
-            user_id: ctx.user_id.to_string(),
-            route: ctx.route.map(str::to_string),
         }
     }
 }
@@ -379,4 +353,36 @@ fn stderr_preview(stderr: &[u8], max_bytes: usize) -> String {
         text.push_str("...");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn plugin_contract_excludes_mutable_snapshot_reducers() {
+        assert!(
+            serde_json::from_value::<ExpressionPluginCapabilities>(json!({"affect_reducer": true}))
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ExpressionPluginRequest>(
+                json!({"type":"reduce_affect", "context":{}, "snapshot":{}})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ExpressionPluginResponse>(
+                json!({"type":"affect_snapshot", "snapshot":{}})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ExpressionPluginResponse>(
+                json!({"type":"appraisal_events", "events":[]})
+            )
+            .is_ok()
+        );
+    }
 }

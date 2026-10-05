@@ -47,17 +47,16 @@ tools to the shared tool registry; they do not swap out the registry.
 
 ## Channels Are Not Providers
 
-Channels are I/O paths, not model providers. A channel owns transport details
-and local interaction behavior:
+Channels are I/O paths, not model providers. A channel owns transport details:
 
 - supported capabilities
 - text/audio delivery
-- hardware/channel actions
-- interruption behavior
-- playback stop behavior
+- typed device output transport
+- scoped interruption and playback control transport
 
-The embedded channel can therefore implement voice-specific semantics without
-making the global pipeline assume every channel is a speaker/microphone device.
+Interaction and Delivery own turn decisions, pause authorization and response
+lifetimes. The embedded adapter carries those contracts to VoiceSession,
+Playback and Body services; it does not create a second turn or output owner.
 
 ## Feature Flags
 
@@ -69,9 +68,13 @@ Cargo features compile optional backend support:
 - embeddings: `embed-openai`
 - built-in HTTP tools: `tools-http`
 - insights: `insights`
+- server turn evidence adapter: `turn-easy`
 
-Embedded features currently cover sherpa-onnx wake word, edge STT, VAD, direct
-responses, audio I/O, settings, and sensor service integration.
+Embedded enables `sherpa-onnx` by default for both wake word and VAD. Its other
+optional backend feature is `vision-opencv`. Continuous VoiceSession, native
+voice/cue mixing, settings and sensor services are compiled independently of
+these model features. Local cues use the configured direct-response metadata;
+there is no separate direct-response feature or mixer module slot.
 
 ## Plugin Direction
 

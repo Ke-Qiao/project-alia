@@ -197,7 +197,6 @@ async fn restart_owned(
         llm: Some(state.modules.llm.clone()),
         minor_llm: Some(state.modules.minor_llm.clone()),
         major_llm: Some(state.modules.major_llm.clone()),
-        transcript_correction_llm: state.modules.transcript_correction_llm.clone(),
         memory_capture_llm: state.modules.memory_capture_llm.clone(),
         sentence_expression_llm: state.modules.sentence_expression_llm.clone(),
         embedding: Some(state.modules.embedding.clone()),
@@ -276,7 +275,7 @@ pub fn routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::channels::adapter::{ChannelCapabilities, ChannelTarget};
+    use crate::channels::adapter::ChannelCapabilities;
     use crate::module::ModuleLifecycle;
     use crate::module::lifecycle::RuntimeTasks;
     use async_trait::async_trait;
@@ -313,9 +312,6 @@ mod tests {
         }
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities::default()
-        }
-        async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-            Ok(())
         }
     }
 

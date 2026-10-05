@@ -169,15 +169,12 @@ async fn resolve_embedded_channel(
         .filter(|value| !value.trim().is_empty())
         .or(ctx.channel_id.as_deref())
     {
-        let (resolved_channel_id, channel) = channels
-            .get_resolved(channel_id)
+        let channel = channels
+            .get(channel_id)
             .await
-            .map_err(|error| {
-                anyhow::anyhow!("embedded channel '{channel_id}' is ambiguous: {error}")
-            })?
             .ok_or_else(|| anyhow::anyhow!("embedded channel '{channel_id}' not found"))?;
         if channel.channel_type() != "embedded" {
-            anyhow::bail!("channel '{resolved_channel_id}' is not an embedded channel");
+            anyhow::bail!("channel '{channel_id}' is not an embedded channel");
         }
         return Ok(channel);
     }

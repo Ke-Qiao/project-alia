@@ -454,60 +454,6 @@ impl SettingsRegistry {
                 schema("Enable Major LLM Routing", "bool", true),
             ),
             (
-                "core.policies.transcript_correction.enabled",
-                json!(config.policies.transcript_correction.enabled),
-                schema("Enable STT Transcript Correction", "bool", true),
-            ),
-            (
-                "core.policies.transcript_correction.apply_to_stt",
-                json!(config.policies.transcript_correction.apply_to_stt),
-                schema("Apply Correction To STT", "bool", true),
-            ),
-            (
-                "core.policies.transcript_correction.provider",
-                json!(config.policies.transcript_correction.provider),
-                schema("Transcript Correction Provider", "string", false),
-            ),
-            (
-                "core.policies.transcript_correction.timeout_sec",
-                json!(config.policies.transcript_correction.timeout_sec),
-                schema("Transcript Correction Timeout", "number", false),
-            ),
-            (
-                "core.policies.transcript_correction.max_input_chars",
-                json!(config.policies.transcript_correction.max_input_chars),
-                schema("Transcript Correction Max Input Chars", "number", false),
-            ),
-            (
-                "core.policies.transcript_correction.min_confidence_to_replace",
-                json!(
-                    config
-                        .policies
-                        .transcript_correction
-                        .min_confidence_to_replace
-                ),
-                schema("Transcript Correction Min Confidence", "number", false),
-            ),
-            (
-                "core.policies.transcript_correction.require_confirmation_on_medium_risk",
-                json!(
-                    config
-                        .policies
-                        .transcript_correction
-                        .require_confirmation_on_medium_risk
-                ),
-                schema(
-                    "Require Confirmation For Risky Transcript Corrections",
-                    "bool",
-                    true,
-                ),
-            ),
-            (
-                "core.policies.transcript_correction.trace_enabled",
-                json!(config.policies.transcript_correction.trace_enabled),
-                schema("Trace STT Transcript Correction", "bool", true),
-            ),
-            (
                 "core.policies.affect.enabled",
                 json!(config.policies.affect.enabled),
                 schema("Enable Affect Runtime", "bool", true),
@@ -1012,11 +958,6 @@ impl SettingsRegistry {
                 "core.llm.roles.major",
                 json!(config.llm.roles.major),
                 schema("Major LLM Profile", "string", true),
-            ),
-            (
-                "core.llm.roles.transcript_correction",
-                json!(config.llm.roles.transcript_correction),
-                schema("Transcript Correction LLM Profile", "string", true),
             ),
             (
                 "core.llm.roles.memory_capture",

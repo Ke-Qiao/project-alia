@@ -83,8 +83,8 @@ impl Payload {
 
 #[derive(Clone, Copy)]
 pub(super) enum MediaIdentity {
-    Audio(Option<PlaybackIdentity>),
-    Text(Option<TextIdentity>),
+    Audio(PlaybackIdentity),
+    Text(TextIdentity),
 }
 impl MediaIdentity {
     pub async fn cancel(
@@ -93,15 +93,14 @@ impl MediaIdentity {
         reason: &str,
     ) -> anyhow::Result<MediaProgress> {
         match self {
-            Self::Audio(Some(id)) => channel
+            Self::Audio(id) => channel
                 .cancel_playback(id, reason)
                 .await
                 .map(MediaProgress::Audio),
-            Self::Text(Some(id)) => channel
+            Self::Text(id) => channel
                 .cancel_text(id, reason)
                 .await
                 .map(MediaProgress::Text),
-            _ => anyhow::bail!("legacy output has no precise cancellation evidence"),
         }
     }
 }

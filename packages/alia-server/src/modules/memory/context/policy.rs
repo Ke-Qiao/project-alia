@@ -15,7 +15,6 @@ use crate::config::{
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ContextPolicy {
-    #[serde(default)]
     pub appraisal: super::AppraisalPolicy,
     pub cache_enabled: bool,
     pub cache_exact_enabled: bool,
@@ -215,24 +214,6 @@ impl ContextPolicyStore {
         seed.validate()?;
         let value = serde_json::to_value(&seed)?;
         self.db.execute(stmt("INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING", vec![value.clone().into(),digest(&value)?.into()])).await?;
-        // One explicit upgrade of the old typed policy representation. Validate
-        // its original digest before adding the newly introduced policy domain.
-        let tx = self.db.begin().await?;
-        let row = tx.query_one(stmt("SELECT version,policy,policy_digest FROM context_policy WHERE singleton FOR UPDATE",vec![])).await?.ok_or_else(||ContextError::Unavailable("context policy missing".into()))?;
-        let stored: serde_json::Value = row.try_get("", "policy")?;
-        if stored.get("appraisal").is_none() {
-            let mut upgraded: ContextPolicy = serde_json::from_value(stored)?;
-            let mut legacy = serde_json::to_value(&upgraded)?;
-            legacy.as_object_mut().unwrap().remove("appraisal");
-            anyhow::ensure!(
-                digest(&legacy)? == row.try_get::<String>("", "policy_digest")?,
-                "legacy context policy digest mismatch"
-            );
-            upgraded.appraisal = seed.appraisal;
-            upgraded.validate()?;
-            write(&tx, row.try_get("", "version")?, &upgraded).await?;
-        }
-        tx.commit().await?;
         self.current().await
     }
     pub async fn current(&self) -> ContextResult<PolicySnapshot> {

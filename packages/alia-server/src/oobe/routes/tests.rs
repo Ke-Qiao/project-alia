@@ -132,7 +132,6 @@ fn assert_example_roles(config: &ServerConfig) {
     for id in [
         "minor",
         "major",
-        "transcript_correction",
         "memory_capture",
         "sentence_expression",
         "embedding",
@@ -179,7 +178,6 @@ async fn missing_role_profiles_leave_original_config_and_setup_state_unchanged()
         "minor",
         "major",
         "default",
-        "transcript_correction",
         "memory_capture",
         "sentence_expression",
         "embedding",
@@ -312,11 +310,7 @@ async fn noop_and_absent_optional_roles_do_not_validate_unused_profiles() {
     for role in ["minor", "major", "default", "embedding"] {
         roles.insert(role.into(), "noop".into());
     }
-    for role in [
-        "transcript_correction",
-        "memory_capture",
-        "sentence_expression",
-    ] {
+    for role in ["memory_capture", "sentence_expression"] {
         roles.remove(role);
     }
     config["profiles"]["llm"]["major"]["provider"] = "unused-missing-provider".into();

@@ -4,12 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["wakeword-sherpa", "stt-sherpa", "direct-response"]
-direct-response = []
+default = ["sherpa-onnx"]
 vision-opencv = ["dep:opencv"]
 sherpa-onnx = ["dep:sherpa-onnx"]
-wakeword-sherpa = ["sherpa-onnx"]
-stt-sherpa = ["sherpa-onnx"]
 
 [dependencies]
 alia-core.workspace = true

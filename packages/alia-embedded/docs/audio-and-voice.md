@@ -1,7 +1,11 @@
 # Audio and Voice
 
-The embedded voice path is optimized for responsiveness. Wake word detection,
-direct responses, VAD endpointing, and playback interruption happen locally.
+The only device voice path opens a continuous `VoiceSession` after wake word.
+Embedded owns capture, VAD evidence, scoped native output, and short local cues.
+The server owns turn decisions and recognized-input processing. Easy-Turn runs
+on the server; enable its configured provider to admit production voice input.
+Set `speech.channel_id` to the exact Server channel instance ID (the examples
+use `pi-living-room`); the same value is required in Open and auth metadata.
 
 ## Voice Loop
 
@@ -10,105 +14,81 @@ sequenceDiagram
     participant Mic
     participant Embedded
     participant Server
-    participant Speaker
-
-    Mic->>Embedded: Continuous audio frames
-    Embedded->>Embedded: Wake word detection
-    Embedded->>Speaker: Optional direct response
-    Embedded->>Embedded: VAD-guided capture
-    Embedded->>Embedded: Optional edge STT
-    Embedded->>Server: Captured utterance
-    Server->>Server: STT, LLM/tool loop, TTS
-    Server->>Embedded: Playback stream
-    Embedded->>Speaker: Buffered playback
+    participant Native as Native output
+    Mic->>Embedded: Continuous 16 kHz mono frames
+    Embedded->>Embedded: Wake word + bounded pre-roll
+    Embedded->>Server: Authenticated VoiceSession Open
+    Server->>Embedded: Ready with original scope
+    Embedded->>Native: Optional scoped wake cue (gain 0.2)
+    loop Session active, including during playback
+        Embedded->>Server: Ordered PCM + VAD evidence
+        Server->>Server: Easy-Turn evidence and turn policy
+    end
+    Server->>Embedded: Registered Playback v3 output (gain 1.0)
+    Embedded->>Native: Mix scoped sources on one output clock
+    Native->>Server: Submission receipts via Playback
 ```
+
+The cue worker waits for an authenticated Ready and runs independently of
+capture and network receive. Each wake admits at most one cue. It keeps the
+original scope while loading the file; cancellation or a changed owner rejects
+late work. Capture uses bounded `try_send`; overload ends the session rather
+than dropping audio and preserving a false contiguous clock.
 
 ## Capture and Playback
 
-The audio layer supports CPAL and a Linux ALSA fallback path. On Raspberry Pi
-audio HATs, capture/playback device behavior may be board-specific. Useful
-settings include:
+CPAL and Linux ALSA backends support explicit device selection, fixed output
+format, capture/playback volume, bounded buffers, and native timing evidence.
+Capture sent to the server is mono 16 kHz; frames include sample offsets and VAD
+activity. Playback sources are converted to the selected fixed native format.
+On shared Pi I2S clocks, the configured playback rate can follow capture at
+startup. Playback never retunes the active capture clock.
 
-- capture device/backend selection
-- playback device/backend selection
-- sample-rate behavior
-- ALSA S32 alignment detection
-- capture and playback volume
-- playback buffer sizing
-- debug WAV recording
+Native playback has exactly two sources: conversation **1.0** and local cue
+**0.2**. The sum is clamped to PCM range. Both retain the original session/control
+and native generation. A cue does not consume remote playback sequence numbers
+or acquire a replacement output owner. There is no configurable mixer slot.
 
-## Wake Word and VAD
+## Local VAD and Cues
 
-sherpa-onnx handles local wake word detection and VAD. VAD controls when
-post-wake capture starts and ends so the system does not cut users off after a
-short pause.
+sherpa-onnx handles wake word and VAD. VAD labels activity but never closes a
+turn, runs a local transcript, or matches a spoken stop phrase. An optional
+`wakeword` action (or the triggering wake keyword) resolves the current cue.
+Metadata lives in SQLite and WAV assets stay on disk. Cue records require a
+nonempty audio path with finite positive weight; action-only records and built-in
+spoken cancel aliases are rejected. Missing cues leave capture running. The
+[current wake cue example](../../../config/direct_response.example/README.md)
+reuses an existing short repository sample. The decoder accepts bounded PCM16 WAV, averages multichannel input to
+mono, and rejects empty/invalid input, clips longer than five seconds, or files
+larger than 4 MiB.
 
-## Direct Responses
+The old thinking timer, follow-up window, transcript-based local cancel, and
+server-requested fallback/direct-response trigger have been removed. New prompt
+uses must be admitted through the same scoped cue path instead of raw playback.
 
-Direct responses are local feedback, not assistant answers. Supported response
-classes include:
+## Pause, Cancellation, and Session Closure
 
-- wake word acknowledgement
-- cancel or stand-down response
-- fallback when server communication fails
-- listening start prompt
-- listening continue prompt
-- thinking cue while waiting for the server
-- error cue when server-side TTS or audio delivery cannot speak a full error
+The server distinguishes temporary yielding from explicit pause through the
+existing Hold/Resume contract. A voice-evidence decision alone is not an applied
+pause receipt. Independent Playback control establishes the actual owner-bound
+software Hold. Cues are ephemeral: Hold suppresses the remaining cue tail, so it
+is not replayed after conversation resumes. Retirement cancels both sources.
 
-All response classes are optional. Missing files should log an error or warning
-and continue the voice flow.
+Network failure, capture discontinuity, queue overflow, binding change, invalid
+session evidence, or runtime shutdown cancels and joins the network and cue
+workers and retires the capture scope. A new connection needs a fresh wake.
+There is no separate wakeword interrupt RPC or local follow-up endpointing path.
 
-The cancel action also has built-in text aliases, including common goodbye and
-stop phrases such as "再见", "别说了", and "结束对话". These built-in aliases
-are action-only and need no audio file, so saying goodbye can end continuous
-dialogue even when the cancel bundle has not been imported.
+A future explicit **input-session close** command remains required for a spoken
+"end conversation" tool. It must acknowledge authenticated capture closure.
+The deleted `end_continuous_dialogue` tool is not mapped to Playback Fence,
+which controls output admission and does not stop microphone upload by itself.
 
-Direct response assets stay on disk. Metadata is imported into SQLite from
-`config.json` bundles under the direct response directory. After successful
-import, the bundle config is removed so repeated boots do not re-import it.
+## Debugging and Limits
 
-The server can request a direct response by generic action name through
-`alia.audio.AudioStream.PlayDirectResponse`. This keeps server logic independent
-from embedded direct-response storage and lets non-embedded channels ignore or
-map the same action differently.
-
-## Interruption
-
-When wake word is detected during playback, embedded should:
-
-1. stop local playback immediately
-2. send an active-turn interrupt to the server
-3. skip the normal wake word direct response by default
-4. start a fresh capture window
-
-This makes barge-in feel natural and avoids speaking over the user.
-
-When captured speech has been uploaded and the device is waiting for server
-reasoning, embedded enters a separate server-turn waiting state. If configured,
-it plays the `thinking` direct response after a short delay and then at a bounded
-interval until TTS starts. A wake word during this waiting state sends
-`wakeword_during_thinking` through the existing active-turn interrupt path and
-starts a new capture immediately.
-
-## Continuous Dialogue
-
-After a successful wake word turn, embedded can keep a bounded follow-up
-listening state active. Users can continue speaking without repeating the wake
-word until the follow-up timeout or turn limit is reached.
-
-The state ends when the user says a local cancel direct response phrase, when it
-times out, when the turn limit is reached, or when the server sends the generic
-`end_continuous_dialogue` channel action. The server action is transported over
-the existing playback-control service and does not change `ServerAudioIngress`.
-
-## Audio Debugging
-
-Enable audio debug WAV capture only while diagnosing problems. The files can
-grow quickly, but they are valuable for verifying:
-
-- raw microphone capture
-- wake word segments
-- post-wake capture
-- playback payloads
-- sample-rate or channel conversion issues
+Optional debug WAVs record selected capture and playback payloads. They may grow
+quickly, so enable them only for a bounded diagnostic run. Native submission
+receipts and local WAV files do not prove physical presentation, silence,
+echo cancellation, or full-duplex acoustic quality. Hardware AEC and device
+measurement remain deferred. Existing server shadow/default policies are
+unchanged by this voice-path cleanup.

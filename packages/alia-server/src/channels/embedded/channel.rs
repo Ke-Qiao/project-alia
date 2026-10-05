@@ -14,17 +14,11 @@ use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
-use futures::StreamExt;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tonic::Request;
 use tonic::transport::Channel;
 
-use alia_proto::audio::audio_stream_client::AudioStreamClient;
-use alia_proto::audio::{
-    AudioChunk, AudioEncoding as ProtoAudioEncoding, PlayAudioRequest, PlayDirectResponseRequest,
-    StopPlaybackRequest,
-};
 use alia_proto::binding::device_binding_client::DeviceBindingClient;
 use alia_proto::body::body_control_client::BodyControlClient;
 use alia_proto::playback::playback_client::PlaybackClient;
@@ -39,10 +33,6 @@ use crate::module::background::{BackgroundStart, OwnedBackground};
 use crate::module::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::sensor::SensorRegistry;
 
-use super::audio::{
-    AUDIO_GRPC_CHUNK_BYTES, AUDIO_STREAM_BACKPRESSURE_CHUNKS, configure_audio_client,
-    normalize_embedded_playback_payload, produce_streaming_audio_chunks,
-};
 use super::auth::auth_request_with_signing_key;
 use super::body::{BodyDeliveryStore, EmbeddedBodyRuntime, SignedBodyClient};
 use super::direct_response::{direct_response_rule_from_json, direct_response_rule_to_json};
@@ -53,8 +43,7 @@ use super::sensor::{
 };
 use super::settings::{required_action_str, set_volume_request_from_json, volume_settings_to_json};
 use crate::channels::adapter::{
-    AudioFormat, AudioPayload, AudioPayloadStream, ChannelAction, ChannelAdapter,
-    ChannelCapabilities, ChannelInterruptConfig, ChannelTarget,
+    AudioPayloadStream, ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
 };
 
 const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
@@ -75,9 +64,6 @@ mod body_pin_tests {
             reconnect_interval_sec: 1,
             reconnect_max_backoff_sec: 1,
             grpc_timeout_sec: 1,
-            voice_turn_interrupt_enabled: true,
-            cancel_streaming_tts_on_interrupt: true,
-            discard_interrupted_turn_history: true,
         }
     }
 
@@ -156,9 +142,6 @@ pub struct EmbeddedChannelConfig {
     pub reconnect_interval_sec: u64,
     pub reconnect_max_backoff_sec: u64,
     pub grpc_timeout_sec: u64,
-    pub voice_turn_interrupt_enabled: bool,
-    pub cancel_streaming_tts_on_interrupt: bool,
-    pub discard_interrupted_turn_history: bool,
 }
 
 impl EmbeddedChannelConfig {
@@ -241,7 +224,6 @@ pub struct EmbeddedChannel {
     account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
     status: Arc<RwLock<ConnectionStatus>>,
-    audio_client: Arc<RwLock<Option<AudioStreamClient<Channel>>>>,
     playback_client: Arc<RwLock<Option<PlaybackClient<Channel>>>>,
     playback_sequence: Arc<AtomicU64>,
     output_bindings: Arc<std::sync::Mutex<HashMap<alia_core::delivery::VoiceScope, CachedOutput>>>,
@@ -281,7 +263,6 @@ impl EmbeddedChannel {
             account_database: None,
             event_bus,
             status: Arc::new(RwLock::new(status)),
-            audio_client: Arc::new(RwLock::new(None)),
             playback_client: Arc::new(RwLock::new(None)),
             playback_sequence: Arc::new(AtomicU64::new(0)),
             output_bindings: Arc::default(),
@@ -570,9 +551,6 @@ impl EmbeddedChannel {
                             .max_encoding_message_size(64 * 1024)
                             .max_decoding_message_size(64 * 1024),
                     );
-                    *self.audio_client.write().await = Some(configure_audio_client(
-                        AudioStreamClient::new(channel.clone()),
-                    ));
                     *self.plugin_client.write().await =
                         Some(PluginManagerClient::new(channel.clone()));
                     let binding_client = DeviceBindingClient::new(channel.clone());
@@ -667,21 +645,7 @@ impl EmbeddedChannel {
             .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
     }
 
-    /// Get an AudioStreamClient, connecting lazily if needed.
-    pub async fn audio_client(&self) -> anyhow::Result<AudioStreamClient<Channel>> {
-        anyhow::ensure!(
-            !self.discovery_cancel.is_cancelled(),
-            "embedded channel is stopping"
-        );
-        if self.audio_client.read().await.is_none() {
-            self.connect().await?;
-        }
-        self.audio_client
-            .read()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("embedded not connected"))
-    }
+    /// Connect the single scoped playback transport lazily.
 
     async fn playback_client(&self) -> anyhow::Result<PlaybackClient<Channel>> {
         anyhow::ensure!(
@@ -936,7 +900,6 @@ impl ModuleLifecycle for EmbeddedChannel {
                 .unregister_read_provider(&embedded_sensor_source(&self.config.id))
                 .await;
         }
-        self.audio_client.write().await.take();
         self.playback_client.write().await.take();
         self.plugin_client.write().await.take();
         self.binding_client.write().await.take();
@@ -976,63 +939,50 @@ impl ChannelAdapter for EmbeddedChannel {
         &self,
         target: &ChannelTarget,
         playback_id: uuid::Uuid,
-    ) -> anyhow::Result<Option<alia_core::delivery::PlaybackIdentity>> {
-        let Some(scope) = target.voice else {
-            return Ok(None);
-        };
+    ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
+        let scope = target
+            .voice
+            .context("embedded playback requires a voice scope")?;
         let identity = alia_core::delivery::PlaybackIdentity {
             scope,
             playback_id,
             playback_sequence: self.next_playback_sequence()?,
         };
         anyhow::ensure!(identity.is_valid(), "invalid playback reservation");
-        Ok(Some(identity))
+        Ok(identity)
     }
 
     async fn deliver_audio(
         &self,
         target: &ChannelTarget,
-        identity: Option<alia_core::delivery::PlaybackIdentity>,
+        identity: alia_core::delivery::PlaybackIdentity,
         audio: AudioPayloadStream,
         observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
         cancel: CancellationToken,
     ) -> anyhow::Result<crate::channels::adapter::AudioDeliveryReport> {
-        if let Some(identity) = identity {
-            anyhow::ensure!(
-                target.voice == Some(identity.scope),
-                "delivery target differs from reserved playback scope"
-            );
-            let binding = self
-                .output_bindings
-                .lock()
-                .unwrap()
-                .get(&identity.scope)
-                .and_then(|cached| cached.registration.as_ref())
-                .context("playback scope has no canonical registered output")?
-                .binding;
-            return super::playback::push(
-                self.playback_client().await?,
-                identity,
-                binding,
-                audio,
-                self.auth_request(())?.metadata().clone(),
-                observer,
-                cancel,
-                Duration::from_secs(5),
-            )
-            .await;
-        }
         anyhow::ensure!(
-            target.voice.is_none(),
-            "scoped playback requires durable identity reservation"
+            target.voice == Some(identity.scope),
+            "delivery target differs from reserved playback scope"
         );
-        tokio::select! {
-            _ = cancel.cancelled() => Ok(crate::channels::adapter::AudioDeliveryReport::unobserved("legacy delivery cancelled without scoped evidence")),
-            result = self.send_audio_stream(target, audio) => {
-                result?;
-                Ok(crate::channels::adapter::AudioDeliveryReport::unobserved("legacy transport has no device submission evidence"))
-            }
-        }
+        let binding = self
+            .output_bindings
+            .lock()
+            .unwrap()
+            .get(&identity.scope)
+            .and_then(|cached| cached.registration.as_ref())
+            .context("playback scope has no canonical registered output")?
+            .binding;
+        super::playback::push(
+            self.playback_client().await?,
+            identity,
+            binding,
+            audio,
+            self.auth_request(())?.metadata().clone(),
+            observer,
+            cancel,
+            Duration::from_secs(5),
+        )
+        .await
     }
 
     async fn cancel_playback(
@@ -1093,139 +1043,7 @@ impl ChannelAdapter for EmbeddedChannel {
             sensors: true,
             hardware_control: true,
             presence: true,
-            conversation_control: true,
         }
-    }
-
-    fn interrupt_config(&self) -> ChannelInterruptConfig {
-        ChannelInterruptConfig {
-            enabled: self.config.voice_turn_interrupt_enabled,
-            cancel_streaming_tts_on_interrupt: self.config.cancel_streaming_tts_on_interrupt,
-            discard_interrupted_turn_history: self.config.discard_interrupted_turn_history,
-        }
-    }
-
-    async fn send_message(&self, _target: &ChannelTarget, msg: &str) -> anyhow::Result<()> {
-        // For the embedded channel, text messages are sent as TTS audio.
-        // The AI pipeline calls send_audio() directly for voice_output channels,
-        // but if text arrives here, we log it (Pi doesn't have a screen).
-        tracing::debug!(
-            channel_id = %self.config.id,
-            msg_len = msg.len(),
-            "embedded channel received text (no display on Pi)"
-        );
-        Ok(())
-    }
-
-    async fn send_audio(&self, target: &ChannelTarget, audio: AudioPayload) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            target.voice.is_none(),
-            "scoped audio must use durable Delivery admission"
-        );
-        let mut client = self.audio_client().await?;
-
-        let encoding = match audio.format {
-            AudioFormat::Opus => ProtoAudioEncoding::Opus as i32,
-            AudioFormat::Pcm16 => ProtoAudioEncoding::PcmS16le as i32,
-            AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
-        };
-
-        let audio = normalize_embedded_playback_payload(audio)?;
-
-        let request = PlayAudioRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            source: "tts".into(),
-            encoding,
-            sample_rate: audio.sample_rate,
-            interrupt_current: false,
-        };
-
-        // Prime the playback session on the embedded node before sending raw PCM bytes.
-        let mut response_stream = client
-            .play_audio(self.auth_request(request)?)
-            .await?
-            .into_inner();
-
-        if let Some(ack) = response_stream.message().await? {
-            tracing::trace!(seq = ack.sequence, "play_audio primed on Pi");
-        }
-
-        let mut upload_client = self.audio_client().await?;
-        let data = audio.data;
-        let chunk_count = data.len().div_ceil(AUDIO_GRPC_CHUNK_BYTES);
-        tracing::debug!(
-            channel_id = %self.config.id,
-            bytes = data.len(),
-            chunks = chunk_count,
-            sample_rate = audio.sample_rate,
-            "uploading embedded playback audio in gRPC chunks"
-        );
-        let upload_stream = async_stream::stream! {
-            for (sequence, bytes) in data.chunks(AUDIO_GRPC_CHUNK_BYTES).enumerate() {
-                yield AudioChunk {
-                opus_data: bytes.to_vec(),
-                sequence: sequence as u64,
-                timestamp_us: chrono::Utc::now().timestamp_micros() as u64,
-                encoding,
-                };
-            }
-        };
-        upload_client
-            .upload_audio(self.auth_request(upload_stream)?)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn send_audio_stream(
-        &self,
-        target: &ChannelTarget,
-        mut audio: AudioPayloadStream,
-    ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            target.voice.is_none(),
-            "scoped audio must use durable Delivery admission"
-        );
-        let Some(first) = audio.next().await else {
-            return Ok(());
-        };
-        let first = normalize_embedded_playback_payload(first?)?;
-        let encoding = match first.format {
-            AudioFormat::Opus => ProtoAudioEncoding::Opus as i32,
-            AudioFormat::Pcm16 | AudioFormat::Wav => ProtoAudioEncoding::PcmS16le as i32,
-        };
-
-        let request = PlayAudioRequest {
-            request_id: uuid::Uuid::new_v4().to_string(),
-            source: "tts".into(),
-            encoding,
-            sample_rate: first.sample_rate,
-            interrupt_current: false,
-        };
-
-        let mut client = self.audio_client().await?;
-        let mut response_stream = client
-            .play_audio(self.auth_request(request)?)
-            .await?
-            .into_inner();
-
-        if let Some(ack) = response_stream.message().await? {
-            tracing::trace!(seq = ack.sequence, "streaming play_audio primed on Pi");
-        }
-
-        let (tx, rx) = mpsc::channel(AUDIO_STREAM_BACKPRESSURE_CHUNKS);
-        let mut upload_client = self.audio_client().await?;
-        let request = self.auth_request(tokio_stream::wrappers::ReceiverStream::new(rx))?;
-        // Structured concurrency: dropping this delivery drops both async halves.
-        // A producer awaiting an upstream stream must not outlive its upload.
-        tokio::try_join!(
-            produce_streaming_audio_chunks(first, audio, tx, encoding),
-            async move {
-                upload_client.upload_audio(request).await?;
-                Ok::<(), anyhow::Error>(())
-            },
-        )?;
-        Ok(())
     }
 
     async fn retire_voice_output(
@@ -1264,31 +1082,6 @@ impl ChannelAdapter for EmbeddedChannel {
         Ok(alia_proto::output_control::decode_retirement_receipt(
             &receipt, request,
         )?)
-    }
-
-    async fn stop_current_playback(
-        &self,
-        target: &ChannelTarget,
-        reason: &str,
-    ) -> anyhow::Result<()> {
-        if let Some(scope) = target.voice {
-            let minimum = alia_core::delivery::VoiceScope {
-                generation_epoch: scope
-                    .generation_epoch
-                    .checked_add(1)
-                    .ok_or_else(|| anyhow::anyhow!("voice epoch exhausted"))?,
-                ..scope
-            };
-            return self.fence_voice(minimum, false, reason).await;
-        }
-        let mut client = self.audio_client().await?;
-        client
-            .stop_playback(self.auth_request(StopPlaybackRequest {
-                request_id: uuid::Uuid::new_v4().to_string(),
-                reason: reason.to_string(),
-            })?)
-            .await?;
-        Ok(())
     }
 
     async fn fence_voice(
@@ -1440,34 +1233,6 @@ impl ChannelAdapter for EmbeddedChannel {
                 let token = required_action_str(&action.params, "token")?;
                 self.verify_audio_ingress_auth(token).await?;
                 Ok(serde_json::json!({ "ok": true }))
-            }
-            "play_direct_response" => {
-                let direct_action = required_action_str(&action.params, "action")?;
-                let interrupt_current = action
-                    .params
-                    .get("interrupt_current")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(true);
-                let reason = action
-                    .params
-                    .get("reason")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("server_requested_direct_response");
-                let mut client = self.audio_client().await?;
-                let resp = client
-                    .play_direct_response(self.auth_request(PlayDirectResponseRequest {
-                        request_id: uuid::Uuid::new_v4().to_string(),
-                        action: direct_action.to_string(),
-                        interrupt_current,
-                        reason: reason.to_string(),
-                    })?)
-                    .await?
-                    .into_inner();
-                Ok(serde_json::json!({
-                    "accepted": resp.accepted,
-                    "played": resp.played,
-                    "message": resp.message,
-                }))
             }
             "list_plugins" => {
                 let mut client = self.plugin_client().await?;
@@ -1865,30 +1630,6 @@ impl ChannelAdapter for EmbeddedChannel {
             "execute_expression" => self.body_runtime.submit(action.params).await,
             "cancel_expression" => self.body_runtime.observe(action.params, true).await,
             "observe_expression" => self.body_runtime.observe(action.params, false).await,
-            "end_continuous_dialogue" => {
-                let reason = action
-                    .params
-                    .get("reason")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|reason| !reason.is_empty())
-                    .unwrap_or("server requested continuous dialogue end");
-                let control_reason = format!("end_continuous_dialogue:{reason}");
-                self.stop_current_playback(
-                    &ChannelTarget {
-                        voice: None,
-                        user_id: String::new(),
-                    },
-                    &control_reason,
-                )
-                .await?;
-                Ok(serde_json::json!({
-                    "ok": true,
-                    "ended": true,
-                    "channel_id": self.config.id.clone(),
-                    "reason": reason,
-                }))
-            }
             "list_direct_responses" => {
                 let mut client = self.settings_client().await?;
                 let resp = client

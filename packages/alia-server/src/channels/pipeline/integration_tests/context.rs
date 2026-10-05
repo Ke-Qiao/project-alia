@@ -33,7 +33,6 @@ async fn generate(fixture: &Fixture, turn: &VoiceTurn, text: &str) -> anyhow::Re
         &fixture.policy.memory,
         Some(turn),
         false,
-        None,
     )
     .await
 }

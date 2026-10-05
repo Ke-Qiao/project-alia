@@ -1,2 +1,2 @@
-pub mod audio_ingress;
+pub mod voice_auth;
 pub mod voice_session;

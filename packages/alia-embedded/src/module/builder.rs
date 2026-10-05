@@ -22,7 +22,6 @@ use super::lifecycle::{
     CancelOnDrop, ModuleCleanup, ModuleLifecycle, ShutdownHandle, initialize, startup_step,
 };
 use super::motion::MotionRuntime;
-use super::noop::NoopEdgeStt;
 use super::playback_session::PlaybackSession;
 use super::registry::EmbeddedModuleRegistry;
 use super::sensor::SensorRegistry;
@@ -33,8 +32,6 @@ use super::volume::{AUDIO_VOLUME_STATE_KEY, AudioVolumeConfig, AudioVolumeState}
 
 mod transport;
 use transport::Connections;
-
-const GRPC_MESSAGE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 /// The assembled embedded node, ready to run.
 pub struct EmbeddedNode {
@@ -109,10 +106,8 @@ impl EmbeddedNode {
     }
 
     async fn run_services(&mut self) -> Result<()> {
-        use alia_proto::audio::audio_stream_server::AudioStreamServer;
         use alia_proto::binding::device_binding_server::DeviceBindingServer;
         use alia_proto::body::body_control_server::BodyControlServer;
-        use alia_proto::expression::embedded_expression_server::EmbeddedExpressionServer;
         use alia_proto::playback::playback_server::PlaybackServer;
         use alia_proto::plugin::plugin_manager_server::PluginManagerServer;
         use alia_proto::sensor::embedded_sensor_server::EmbeddedSensorServer;
@@ -120,20 +115,9 @@ impl EmbeddedNode {
         use tonic::transport::Server;
 
         use crate::grpc::{
-            AudioStreamService, DeviceBindingService, EmbeddedExpressionService,
-            EmbeddedSettingsService, PluginManagerService, SensorService,
+            DeviceBindingService, EmbeddedSettingsService, PluginManagerService, SensorService,
         };
 
-        let audio_svc = AudioStreamServer::new(AudioStreamService::new(
-            self.registry.audio_playback.clone(),
-            self.registry.direct_response.clone(),
-            self.binding_manager.clone(),
-            self.event_bus.clone(),
-            self.audio_debug.clone(),
-            self.config.speech.mode == crate::config::SpeechMode::ServerTurn,
-        ))
-        .max_decoding_message_size(GRPC_MESSAGE_LIMIT_BYTES)
-        .max_encoding_message_size(GRPC_MESSAGE_LIMIT_BYTES);
         let playback_svc = PlaybackServer::new(crate::grpc::PlaybackService::new(
             self.registry.playback_session.clone(),
             self.binding_manager.clone(),
@@ -172,10 +156,6 @@ impl EmbeddedNode {
             self.registry.sensors.clone(),
             self.binding_manager.clone(),
         ));
-        let expression_svc = EmbeddedExpressionServer::new(EmbeddedExpressionService::new(
-            self.binding_manager.clone(),
-            self.registry.motion.clone(),
-        ));
         let body_key = identity::load_device_keypair(&self.config.identity.keypair_path)?;
         let body_svc = BodyControlServer::new(crate::grpc::EmbeddedBodyService::new(
             self.binding_manager.clone(),
@@ -200,13 +180,11 @@ impl EmbeddedNode {
 
         let cancel = self.cancel_token.clone();
         Server::builder()
-            .add_service(audio_svc)
             .add_service(plugin_svc)
             .add_service(binding_svc)
             .add_service(settings_svc)
             .add_service(sensor_svc)
             .add_service(playback_svc)
-            .add_service(expression_svc)
             .add_service(body_svc)
             .serve_with_incoming_shutdown(incoming, async move {
                 cancel.cancelled().await;
@@ -235,12 +213,10 @@ pub struct EmbeddedBuilder {
 
     // Module slot overrides (None = use factory default from config)
     wakeword: Option<Box<dyn WakeWordEngine>>,
-    edge_stt: Option<Box<dyn EdgeSttEngine>>,
     vad: Option<Box<dyn VoiceActivityEngine>>,
     direct_response: Option<Box<dyn DirectResponseEngine>>,
     audio_capture: Option<Box<dyn AudioCaptureBackend>>,
     audio_playback: Option<Box<dyn AudioPlaybackBackend>>,
-    mixer: Option<Box<dyn AudioMixer>>,
     face_tracker: Option<Box<dyn FaceTracker>>,
     discovery: Option<Box<dyn DiscoveryBackend>>,
 }
@@ -254,12 +230,10 @@ impl EmbeddedBuilder {
             config: Arc::new(config),
             cancel_token: CancellationToken::new(),
             wakeword: None,
-            edge_stt: None,
             vad: None,
             direct_response: None,
             audio_capture: None,
             audio_playback: None,
-            mixer: None,
             face_tracker: None,
             discovery: None,
         })
@@ -272,11 +246,6 @@ impl EmbeddedBuilder {
 
     pub fn with_wakeword(mut self, engine: impl WakeWordEngine + 'static) -> Self {
         self.wakeword = Some(Box::new(engine));
-        self
-    }
-
-    pub fn with_edge_stt(mut self, engine: impl EdgeSttEngine + 'static) -> Self {
-        self.edge_stt = Some(Box::new(engine));
         self
     }
 
@@ -297,11 +266,6 @@ impl EmbeddedBuilder {
 
     pub fn with_audio_playback(mut self, backend: impl AudioPlaybackBackend + 'static) -> Self {
         self.audio_playback = Some(Box::new(backend));
-        self
-    }
-
-    pub fn with_mixer(mut self, mixer: impl AudioMixer + 'static) -> Self {
-        self.mixer = Some(Box::new(mixer));
         self
     }
 
@@ -405,12 +369,6 @@ impl EmbeddedBuilder {
             Some(module) => module,
             None => factory::create_wakeword(&config)?,
         });
-        let edge_stt = init!(match self.edge_stt {
-            Some(module) => module,
-            None if config.speech.mode == crate::config::SpeechMode::ServerTurn =>
-                Box::new(NoopEdgeStt) as Box<dyn EdgeSttEngine>,
-            None => factory::create_edge_stt(&config)?,
-        });
         let vad = init!(match self.vad {
             Some(module) => module,
             None => factory::create_vad(&config)?,
@@ -422,10 +380,6 @@ impl EmbeddedBuilder {
         let audio_playback = init!(match self.audio_playback {
             Some(module) => module,
             None => factory::create_audio_playback(&config, volume_state.clone())?,
-        });
-        let mixer = init!(match self.mixer {
-            Some(module) => module,
-            None => factory::create_mixer(&config)?,
         });
         let motion = init!(Box::new(
             MotionRuntime::new_with_boot(config.motion.clone(), device_boot_id)
@@ -520,18 +474,12 @@ impl EmbeddedBuilder {
             ctx.audio_bus.clone(),
             ctx.event_bus.clone(),
             wakeword.clone(),
-            edge_stt.clone(),
             vad.clone(),
             direct_response.clone(),
-            audio_playback.clone(),
             playback_session.clone(),
             device_boot_id,
             binding_manager.clone(),
-            &config.edge_stt,
             &config.speech,
-            &config.interrupt,
-            &config.thinking,
-            &config.continuous_dialogue,
             &config.identity,
             audio_debug.clone(),
             self.cancel_token.clone(),
@@ -542,13 +490,11 @@ impl EmbeddedBuilder {
         });
         let registry = EmbeddedModuleRegistry {
             wakeword,
-            edge_stt,
             vad,
             direct_response,
             audio_capture,
             audio_playback,
             playback_session,
-            mixer,
             speech_pipeline,
             face_tracker,
             vision_debug,

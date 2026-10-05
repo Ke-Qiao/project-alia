@@ -20,13 +20,11 @@ pub struct EmbeddedModuleRegistry {
     pub(crate) cleanup: Arc<ModuleCleanup>,
     // Audio pipeline
     pub wakeword: Arc<dyn WakeWordEngine>,
-    pub edge_stt: Arc<dyn EdgeSttEngine>,
     pub vad: Arc<dyn VoiceActivityEngine>,
     pub direct_response: Arc<dyn DirectResponseEngine>,
     pub audio_capture: Arc<dyn AudioCaptureBackend>,
     pub audio_playback: Arc<dyn AudioPlaybackBackend>,
     pub playback_session: Arc<PlaybackSession>,
-    pub mixer: Arc<dyn AudioMixer>,
     pub speech_pipeline: Arc<SpeechPipeline>,
 
     // Vision
@@ -49,11 +47,9 @@ impl EmbeddedModuleRegistry {
     pub(crate) async fn start(&self, ctx: &super::context::ModuleContext) -> anyhow::Result<()> {
         let cancel = &ctx.cancel_token;
         start_module(self.wakeword.as_ref(), cancel).await?;
-        start_module(self.edge_stt.as_ref(), cancel).await?;
         start_module(self.vad.as_ref(), cancel).await?;
         start_module(self.direct_response.as_ref(), cancel).await?;
         start_module(self.audio_playback.as_ref(), cancel).await?;
-        start_module(self.mixer.as_ref(), cancel).await?;
         start_module(self.motion.as_ref(), cancel).await?;
         start_module(self.face_tracker.as_ref(), cancel).await?;
         start_module(self.vision_debug.as_ref(), cancel).await?;
@@ -61,7 +57,6 @@ impl EmbeddedModuleRegistry {
             start_module(module.as_ref(), cancel).await?;
         }
         start_module(self.audio_capture.as_ref(), cancel).await?;
-        start_module(self.speech_pipeline.as_ref(), cancel).await?;
         anyhow::ensure!(
             !cancel.is_cancelled(),
             "startup cancelled before microphone start"
@@ -69,6 +64,9 @@ impl EmbeddedModuleRegistry {
         self.audio_capture
             .start_capture(&ctx.audio_bus)
             .map_err(|error| error.context("starting microphone capture"))?;
+        if self.audio_capture.is_available() {
+            start_module(self.speech_pipeline.as_ref(), cancel).await?;
+        }
         start_module(self.discovery.as_ref(), cancel).await?;
         Ok(())
     }
@@ -89,7 +87,6 @@ impl EmbeddedModuleRegistry {
     pub async fn health(&self) -> HashMap<&'static str, ModuleHealth> {
         let mut map = HashMap::new();
         map.insert(self.wakeword.name(), self.wakeword.health_check().await);
-        map.insert(self.edge_stt.name(), self.edge_stt.health_check().await);
         map.insert(self.vad.name(), self.vad.health_check().await);
         map.insert(
             self.direct_response.name(),
@@ -103,7 +100,6 @@ impl EmbeddedModuleRegistry {
             self.audio_playback.name(),
             self.audio_playback.health_check().await,
         );
-        map.insert(self.mixer.name(), self.mixer.health_check().await);
         map.insert(
             self.speech_pipeline.name(),
             self.speech_pipeline.health_check().await,

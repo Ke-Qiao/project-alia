@@ -89,8 +89,6 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.wakeword.joiner_path);
     resolve_relative(parent, &mut config.wakeword.tokens_path);
     resolve_relative(parent, &mut config.wakeword.keywords_file);
-    resolve_relative(parent, &mut config.edge_stt.model_path);
-    resolve_relative(parent, &mut config.edge_stt.tokens_path);
     resolve_relative(parent, &mut config.vad.model_path);
     resolve_relative(parent, &mut config.hmmd_mmwave.serial_path);
     resolve_relative(parent, &mut config.motion.neck_config_file);
@@ -142,8 +140,6 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     relativize_path(base, &mut settings.wakeword.joiner_path);
     relativize_path(base, &mut settings.wakeword.tokens_path);
     relativize_path(base, &mut settings.wakeword.keywords_file);
-    relativize_path(base, &mut settings.edge_stt.model_path);
-    relativize_path(base, &mut settings.edge_stt.tokens_path);
     relativize_path(base, &mut settings.vad.model_path);
     relativize_path(base, &mut settings.hmmd_mmwave.serial_path);
     relativize_path(base, &mut settings.motion.neck_config_file);

@@ -6,7 +6,6 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::channels::adapter::ChannelInterruptConfig;
 use crate::modules::memory::context::{ContextBinding, ContextLease, GenerationContext};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -32,7 +31,6 @@ pub(super) struct VoiceTurn {
     /// Outputs and derived writes then share that frozen lease.
     pub(super) context: Arc<Mutex<TurnContext>>,
     pub(super) token: CancellationToken,
-    pub(super) interrupt_config: ChannelInterruptConfig,
     pub(super) voice_scope: Option<VoiceSessionScope>,
     interrupt_state: Arc<StdMutex<VoiceTurnInterruptState>>,
     key: VoiceTurnKey,
@@ -93,24 +91,12 @@ pub(super) struct VoiceTurnInterruption {
 }
 
 impl VoiceTurnRegistry {
-    pub(super) async fn begin(
-        &self,
-        channel_id: String,
-        user_id: String,
-        interrupt_config: ChannelInterruptConfig,
-        token: CancellationToken,
-    ) -> VoiceTurn {
-        self.register(channel_id, user_id, Uuid::new_v4(), interrupt_config, token)
-            .await
-    }
-
     /// Register a response audit identity with the owner's cancellation token.
     pub(super) async fn register(
         &self,
         channel_id: String,
         user_id: String,
         id: Uuid,
-        interrupt_config: ChannelInterruptConfig,
         token: CancellationToken,
     ) -> VoiceTurn {
         let key = VoiceTurnKey {
@@ -129,57 +115,32 @@ impl VoiceTurnRegistry {
             context: Arc::default(),
             key: key.clone(),
             token,
-            interrupt_config,
             voice_scope: None,
             interrupt_state: Arc::new(StdMutex::new(VoiceTurnInterruptState::default())),
         };
 
-        if turn.interrupt_config.enabled {
-            let mut active = self.active.lock().await;
-            if turn.token.is_cancelled() {
-                return turn;
-            }
-            if let Some(previous) = active.insert(
-                key,
-                ActiveVoiceTurn {
-                    token: turn.token.clone(),
-                    interrupt_state: turn.interrupt_state.clone(),
-                },
-            ) {
-                set_interrupt_reason(
-                    &previous.interrupt_state,
-                    "superseded_by_new_voice_turn".to_string(),
-                );
-                previous.token.cancel();
-            }
+        let mut active = self.active.lock().await;
+        if turn.token.is_cancelled() {
+            return turn;
+        }
+        if let Some(previous) = active.insert(
+            key,
+            ActiveVoiceTurn {
+                token: turn.token.clone(),
+                interrupt_state: turn.interrupt_state.clone(),
+            },
+        ) {
+            set_interrupt_reason(
+                &previous.interrupt_state,
+                "superseded_by_new_voice_turn".to_string(),
+            );
+            previous.token.cancel();
         }
 
         turn
     }
 
-    pub(super) async fn interrupt(&self, channel_id: &str, user_id: &str, reason: &str) -> bool {
-        let key = VoiceTurnKey {
-            channel_id: channel_id.to_string(),
-            user_id: user_id.to_string(),
-        };
-        let Some((token, interrupt_state)) = self
-            .active
-            .lock()
-            .await
-            .get(&key)
-            .map(|turn| (turn.token.clone(), turn.interrupt_state.clone()))
-        else {
-            return false;
-        };
-        set_interrupt_reason(&interrupt_state, reason.to_string());
-        token.cancel();
-        true
-    }
-
     pub(super) async fn finish(&self, turn: &VoiceTurn) {
-        if !turn.interrupt_config.enabled {
-            return;
-        }
         let mut active = self.active.lock().await;
         if active
             .get(&turn.key)
@@ -229,7 +190,6 @@ impl VoiceTurn {
             source_event_id: Arc::default(),
             context: Arc::default(),
             token,
-            interrupt_config: ChannelInterruptConfig::default(),
             voice_scope: None,
             interrupt_state: Arc::default(),
             key: VoiceTurnKey {
@@ -320,37 +280,25 @@ fn set_interrupt_reason(state: &Arc<StdMutex<VoiceTurnInterruptState>>, reason: 
 mod tests {
     use super::*;
 
-    fn interrupt_config() -> ChannelInterruptConfig {
-        ChannelInterruptConfig {
-            enabled: true,
-            cancel_streaming_tts_on_interrupt: true,
-            discard_interrupted_turn_history: true,
-        }
-    }
-
     #[tokio::test]
-    async fn explicit_interrupt_records_reason_and_stage() {
+    async fn owner_cancellation_records_interrupted_stage() {
         let registry = VoiceTurnRegistry::default();
         let turn = registry
-            .begin(
+            .register(
                 "embedded".to_string(),
                 "embedded-user".to_string(),
-                interrupt_config(),
+                Uuid::new_v4(),
                 CancellationToken::new(),
             )
             .await;
 
-        assert!(
-            registry
-                .interrupt("embedded", "embedded-user", "wakeword_during_thinking")
-                .await
-        );
+        turn.token.cancel();
         turn.mark_interrupted_stage("llm");
 
         assert_eq!(
             turn.interruption(),
             VoiceTurnInterruption {
-                reason: "wakeword_during_thinking".to_string(),
+                reason: "interrupted".to_string(),
                 stage: "llm",
             }
         );
@@ -360,18 +308,18 @@ mod tests {
     async fn beginning_new_turn_cancels_previous_with_superseded_reason() {
         let registry = VoiceTurnRegistry::default();
         let first = registry
-            .begin(
+            .register(
                 "embedded".to_string(),
                 "embedded-user".to_string(),
-                interrupt_config(),
+                Uuid::new_v4(),
                 CancellationToken::new(),
             )
             .await;
         let _second = registry
-            .begin(
+            .register(
                 "embedded".to_string(),
                 "embedded-user".to_string(),
-                interrupt_config(),
+                Uuid::new_v4(),
                 CancellationToken::new(),
             )
             .await;
@@ -391,7 +339,7 @@ mod tests {
         .await
         .unwrap();
         assert!(result.is_none());
-        assert!(turn_is_interrupted(Some(&turn))); // legacy interrupt policy may be disabled
+        assert!(turn_is_interrupted(Some(&turn)));
     }
 
     #[tokio::test]
@@ -404,7 +352,6 @@ mod tests {
                 "embedded".into(),
                 "user".into(),
                 session_id,
-                interrupt_config(),
                 first_token.clone(),
             )
             .await;
@@ -414,7 +361,6 @@ mod tests {
                 "embedded".into(),
                 "user".into(),
                 session_id,
-                interrupt_config(),
                 second_token.clone(),
             )
             .await;
@@ -422,8 +368,15 @@ mod tests {
         assert_eq!(second.id, session_id);
         assert!(first_token.is_cancelled());
         registry.finish(&first).await;
-        assert!(registry.interrupt("embedded", "user", "barge_in").await);
-        assert!(second_token.is_cancelled());
+        let active = registry.active.lock().await;
+        assert!(Arc::ptr_eq(
+            &active.get(&second.key).unwrap().interrupt_state,
+            &second.interrupt_state,
+        ));
+        assert!(!second_token.is_cancelled());
+        drop(active);
+        registry.finish(&second).await;
+        assert!(registry.active.lock().await.is_empty());
     }
 
     #[tokio::test]
@@ -435,24 +388,21 @@ mod tests {
                 "embedded".into(),
                 "user".into(),
                 Uuid::new_v4(),
-                interrupt_config(),
                 token.clone(),
             )
             .await;
         let stale = CancellationToken::new();
         stale.cancel();
         let old = registry
-            .register(
-                "embedded".into(),
-                "user".into(),
-                Uuid::new_v4(),
-                interrupt_config(),
-                stale,
-            )
+            .register("embedded".into(), "user".into(), Uuid::new_v4(), stale)
             .await;
         registry.finish(&old).await;
         assert!(!token.is_cancelled());
-        assert!(registry.interrupt("embedded", "user", "barge_in").await);
-        assert!(live.token.is_cancelled());
+        let active = registry.active.lock().await;
+        assert!(Arc::ptr_eq(
+            &active.get(&live.key).unwrap().interrupt_state,
+            &live.interrupt_state,
+        ));
+        assert!(!live.token.is_cancelled());
     }
 }

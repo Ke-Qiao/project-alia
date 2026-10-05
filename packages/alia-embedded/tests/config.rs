@@ -5,6 +5,29 @@ use alia_embedded::config::{
 };
 
 #[test]
+fn removed_voice_and_mixer_selectors_are_rejected_instead_of_ignored() {
+    for old in [
+        "[speech]\nmode = 'utterance'",
+        "[speech]\nmode = 'server_turn'",
+        "[modules]\nmixer = 'noop'",
+        "[modules]\nedge_stt = 'noop'",
+        "[continuous_dialogue]\nenabled = true",
+        "[edge_stt]\nmax_duration_ms = 15000",
+    ] {
+        assert!(
+            toml::from_str::<EmbeddedRuntimeSettings>(old).is_err(),
+            "accepted removed selector: {old}"
+        );
+    }
+    let settings = EmbeddedRuntimeSettings::default();
+    assert_eq!(settings.speech.channel_id, "embedded");
+    assert!(settings.speech.validate(&settings.audio).is_ok());
+    let mut invalid_audio = settings.audio;
+    invalid_audio.capture_sample_rate = 48000;
+    assert!(settings.speech.validate(&invalid_audio).is_err());
+}
+
+#[test]
 fn strips_duplicate_config_prefix_when_cwd_is_config_dir() {
     let normalized =
         normalize_config_path_for_cwd(PathBuf::from("config/embedded.toml"), Path::new("config"));
@@ -46,28 +69,6 @@ fn keeps_runtime_asset_dirs_relative_to_runtime_root() {
 }
 
 #[test]
-fn has_post_wake_response_delay_default() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert_eq!(settings.edge_stt.post_wake_response_delay_ms, 700);
-}
-
-#[test]
-fn has_post_wake_min_capture_default() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert_eq!(settings.edge_stt.post_wake_min_capture_ms, 1_800);
-}
-
-#[test]
-fn has_longer_post_wake_capture_limits() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert_eq!(settings.edge_stt.max_duration_ms, 15_000);
-    assert_eq!(settings.vad.max_speech_duration_ms, 15_000);
-}
-
-#[test]
 fn has_vad_model_path_default() {
     let settings = EmbeddedRuntimeSettings::default();
 
@@ -75,34 +76,6 @@ fn has_vad_model_path_default() {
         settings.vad.model_path,
         PathBuf::from("models/silero-vad/silero_vad.onnx")
     );
-}
-
-#[test]
-fn has_interrupt_defaults() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert!(settings.interrupt.interrupt_on_wakeword_during_playback);
-    assert!(settings.interrupt.interrupt_skip_direct_response);
-    assert_eq!(settings.interrupt.interrupt_debounce_ms, 300);
-}
-
-#[test]
-fn has_thinking_defaults() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert!(settings.thinking.enabled);
-    assert_eq!(settings.thinking.action, "thinking");
-    assert_eq!(settings.thinking.initial_delay_ms, 1_200);
-    assert_eq!(settings.thinking.repeat_interval_ms, 3_000);
-}
-
-#[test]
-fn has_continuous_dialogue_defaults() {
-    let settings = EmbeddedRuntimeSettings::default();
-
-    assert!(settings.continuous_dialogue.enabled);
-    assert_eq!(settings.continuous_dialogue.followup_timeout_ms, 10_000);
-    assert_eq!(settings.continuous_dialogue.max_followup_turns, 6);
 }
 
 #[test]
@@ -197,5 +170,48 @@ wakeword = "noop"
 #[test]
 fn shipped_embedded_example_loads_through_the_runtime_loader() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/embedded.example.toml");
-    alia_embedded::config::load_config(&path).expect("shipped embedded example must be usable");
+    let config =
+        alia_embedded::config::load_config(&path).expect("shipped embedded example must be usable");
+    assert_eq!(config.speech.channel_id, "pi-living-room");
+}
+
+#[tokio::test]
+async fn invalid_voice_instance_ids_do_not_replace_runtime_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = alia_embedded::config::EmbeddedConfig {
+        config_path: dir.path().join("embedded.toml"),
+        ..Default::default()
+    };
+    let manager = alia_embedded::settings::EmbeddedSettingsManager::new(&config);
+    manager
+        .update_from_value(serde_json::json!({"speech":{"channel_id":"pi-living-room"}}))
+        .await
+        .unwrap();
+    let persisted = std::fs::read(&config.config_path).unwrap();
+    for channel_id in [
+        "",
+        " ",
+        " embedded",
+        "embedded ",
+        "pi living room",
+        "pi\nroom",
+        "pi\troom",
+        "pi\0room",
+        "客厅",
+    ] {
+        let mut speech = config.speech.clone();
+        speech.channel_id = channel_id.into();
+        assert!(
+            speech.validate(&config.audio).is_err(),
+            "accepted {channel_id:?}"
+        );
+        let patch = serde_json::json!({"speech":{"channel_id":channel_id}});
+        assert!(serde_json::from_value::<EmbeddedRuntimeSettings>(patch.clone()).is_err());
+        assert!(manager.update_from_value(patch).await.is_err());
+        assert_eq!(
+            manager.snapshot(false).await.settings.speech.channel_id,
+            "pi-living-room"
+        );
+        assert_eq!(std::fs::read(&config.config_path).unwrap(), persisted);
+    }
 }

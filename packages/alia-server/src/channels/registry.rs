@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::module::lifecycle::ModuleHealth;
 
-use super::adapter::{ChannelAdapter, ChannelTarget};
+use super::adapter::ChannelAdapter;
 
 /// A registry retains retired entries until shutdown has joined their cleanup.
 /// An old Arc cannot make a stopped entry start again through this registry.
@@ -223,45 +223,6 @@ impl ChannelRegistry {
             .map(|entry| entry.channel.clone())
     }
 
-    pub async fn resolve_id_or_type(&self, id_or_type: &str) -> anyhow::Result<Option<String>> {
-        let requested = id_or_type.trim();
-        if requested.is_empty() {
-            return Ok(None);
-        }
-        let channels = self.channels.read().await;
-        if channels
-            .get(requested)
-            .is_some_and(|entry| !entry.retired.load(Ordering::Acquire))
-        {
-            return Ok(Some(requested.to_string()));
-        }
-        let matches = channels
-            .values()
-            .filter(|entry| {
-                !entry.retired.load(Ordering::Acquire) && entry.channel.channel_type() == requested
-            })
-            .map(|entry| entry.channel.channel_id().to_string())
-            .collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => Ok(None),
-            [id] => Ok(Some(id.clone())),
-            _ => anyhow::bail!(
-                "channel id '{}' matched multiple channels by type; use a concrete channel id",
-                requested
-            ),
-        }
-    }
-
-    pub async fn get_resolved(
-        &self,
-        id_or_type: &str,
-    ) -> anyhow::Result<Option<(String, Arc<dyn ChannelAdapter>)>> {
-        let Some(id) = self.resolve_id_or_type(id_or_type).await? else {
-            return Ok(None);
-        };
-        Ok(self.get(&id).await.map(|channel| (id, channel)))
-    }
-
     pub async fn list(&self) -> Vec<Arc<dyn ChannelAdapter>> {
         self.channels
             .read()
@@ -278,7 +239,7 @@ impl ChannelRegistry {
 
     pub async fn register(&self, channel: Arc<dyn ChannelAdapter>) -> anyhow::Result<()> {
         let id = normalize_channel_identifier(channel.channel_id(), "channel id")?;
-        let channel_type = normalize_channel_identifier(channel.channel_type(), "channel type")?;
+        normalize_channel_identifier(channel.channel_type(), "channel type")?;
         {
             let mut map = self.channels.write().await;
             let _gate = self
@@ -298,12 +259,6 @@ impl ChannelRegistry {
                     id
                 );
             }
-            let active = map
-                .iter()
-                .filter(|(_, entry)| !entry.retired.load(Ordering::Acquire))
-                .map(|(id, entry)| (id.clone(), entry.channel.clone()))
-                .collect();
-            validate_channel_identity_not_ambiguous(&active, &id, &channel_type)?;
             map.insert(
                 id.clone(),
                 Arc::new(ChannelEntry {
@@ -361,27 +316,6 @@ impl ChannelRegistry {
         self.disable(id, "unregistered").await
     }
 
-    pub async fn broadcast(&self, msg: &str) -> anyhow::Result<()> {
-        anyhow::ensure!(!self.is_closing(), "channel registry is stopping");
-        let mut errors = Vec::new();
-        for channel in self.list().await {
-            if let Err(error) = channel
-                .send_message(
-                    &ChannelTarget {
-                        voice: None,
-                        user_id: String::new(),
-                    },
-                    msg,
-                )
-                .await
-            {
-                errors.push(format!("{}: {error:#}", channel.channel_id()));
-            }
-        }
-        anyhow::ensure!(errors.is_empty(), "broadcast failed: {}", errors.join("; "));
-        Ok(())
-    }
-
     /// Every stop is requested before awaiting results, so one stalled channel
     /// cannot prevent another channel's cancellation. Waiters never own handles.
     pub async fn shutdown(&self) -> anyhow::Result<()> {
@@ -435,30 +369,4 @@ fn normalize_channel_identifier(value: &str, label: &str) -> anyhow::Result<Stri
         anyhow::bail!("{label} must not be empty");
     }
     Ok(value.to_string())
-}
-
-fn validate_channel_identity_not_ambiguous(
-    channels: &HashMap<String, Arc<dyn ChannelAdapter>>,
-    new_id: &str,
-    new_type: &str,
-) -> anyhow::Result<()> {
-    for existing in channels.values() {
-        let existing_id = existing.channel_id();
-        let existing_type = existing.channel_type();
-        if new_id == existing_type && new_type != existing_type {
-            anyhow::bail!(
-                "channel id '{}' conflicts with existing channel type '{}'; use a concrete instance id that is not another channel type",
-                new_id,
-                existing_type
-            );
-        }
-        if new_type == existing_id && new_id != existing_id {
-            anyhow::bail!(
-                "channel type '{}' conflicts with existing channel id '{}'; use a channel id that does not shadow a channel type",
-                new_type,
-                existing_id
-            );
-        }
-    }
-    Ok(())
 }

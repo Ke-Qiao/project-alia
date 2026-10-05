@@ -10,17 +10,9 @@ pub struct EmbeddedConfig {
     pub identity: IdentityConfig,
     pub wakeword: WakewordConfig,
     #[serde(default)]
-    pub edge_stt: EdgeSttConfig,
-    #[serde(default)]
     pub speech: SpeechConfig,
     #[serde(default)]
     pub vad: VadConfig,
-    #[serde(default)]
-    pub interrupt: InterruptConfig,
-    #[serde(default)]
-    pub thinking: ThinkingConfig,
-    #[serde(default)]
-    pub continuous_dialogue: ContinuousDialogueConfig,
     pub audio: AudioConfig,
     #[serde(default)]
     pub audio_debug: AudioDebugConfig,
@@ -101,11 +93,10 @@ pub struct DevConfig {
 
 /// Module slot selection: which implementation to use for each pluggable slot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModulesConfig {
     #[serde(default = "default_wakeword_module")]
     pub wakeword: String,
-    #[serde(default = "default_edge_stt_module")]
-    pub edge_stt: String,
     #[serde(default = "default_vad_module")]
     pub vad: String,
     #[serde(default = "default_direct_response_module")]
@@ -114,8 +105,6 @@ pub struct ModulesConfig {
     pub audio_capture: String,
     #[serde(default = "default_audio_playback_module")]
     pub audio_playback: String,
-    #[serde(default = "default_mixer_module")]
-    pub mixer: String,
     #[serde(default = "default_face_tracker_module")]
     pub face_tracker: String,
     #[serde(default = "default_discovery_module")]
@@ -126,12 +115,10 @@ impl Default for ModulesConfig {
     fn default() -> Self {
         Self {
             wakeword: default_wakeword_module(),
-            edge_stt: default_edge_stt_module(),
             vad: default_vad_module(),
             direct_response: default_direct_response_module(),
             audio_capture: default_audio_capture_module(),
             audio_playback: default_audio_playback_module(),
-            mixer: default_mixer_module(),
             face_tracker: default_face_tracker_module(),
             discovery: default_discovery_module(),
         }
@@ -141,9 +128,7 @@ impl Default for ModulesConfig {
 fn default_wakeword_module() -> String {
     "sherpa_onnx".to_string()
 }
-fn default_edge_stt_module() -> String {
-    "sherpa_onnx".to_string()
-}
+
 fn default_vad_module() -> String {
     "sherpa_onnx".to_string()
 }
@@ -156,9 +141,7 @@ fn default_audio_capture_module() -> String {
 fn default_audio_playback_module() -> String {
     "cpal".to_string()
 }
-fn default_mixer_module() -> String {
-    "noop".to_string()
-}
+
 fn default_face_tracker_module() -> String {
     "yunet".to_string()
 }
@@ -265,86 +248,11 @@ fn default_kws_num_threads() -> i32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EdgeSttConfig {
-    #[serde(default = "default_edge_stt_model_path")]
-    pub model_path: PathBuf,
-    #[serde(default = "default_edge_stt_tokens_path")]
-    pub tokens_path: PathBuf,
-    #[serde(default = "default_edge_stt_language")]
-    pub language: String,
-    #[serde(default = "default_sherpa_provider")]
-    pub provider: String,
-    #[serde(default = "default_edge_stt_num_threads")]
-    pub num_threads: i32,
-    #[serde(default = "default_true")]
-    pub use_itn: bool,
-    #[serde(default = "default_edge_stt_max_duration_ms")]
-    pub max_duration_ms: u32,
-    #[serde(default = "default_post_wake_min_capture_ms")]
-    pub post_wake_min_capture_ms: u32,
-    #[serde(default = "default_post_wake_capture_ms")]
-    pub post_wake_capture_ms: u32,
-    #[serde(default = "default_post_wake_response_delay_ms")]
-    pub post_wake_response_delay_ms: u32,
-    #[serde(default)]
-    pub debug: bool,
-}
-
-impl Default for EdgeSttConfig {
-    fn default() -> Self {
-        Self {
-            model_path: default_edge_stt_model_path(),
-            tokens_path: default_edge_stt_tokens_path(),
-            language: default_edge_stt_language(),
-            provider: default_sherpa_provider(),
-            num_threads: default_edge_stt_num_threads(),
-            use_itn: true,
-            max_duration_ms: default_edge_stt_max_duration_ms(),
-            post_wake_min_capture_ms: default_post_wake_min_capture_ms(),
-            post_wake_capture_ms: default_post_wake_capture_ms(),
-            post_wake_response_delay_ms: default_post_wake_response_delay_ms(),
-            debug: false,
-        }
-    }
-}
-
-fn default_edge_stt_model_path() -> PathBuf {
-    PathBuf::from("models/sense-voice/model.int8.onnx")
-}
-fn default_edge_stt_tokens_path() -> PathBuf {
-    PathBuf::from("models/sense-voice/tokens.txt")
-}
-fn default_edge_stt_language() -> String {
-    "auto".to_string()
-}
-fn default_edge_stt_num_threads() -> i32 {
-    2
-}
-fn default_edge_stt_max_duration_ms() -> u32 {
-    15_000
-}
-fn default_post_wake_min_capture_ms() -> u32 {
-    1_800
-}
-fn default_post_wake_capture_ms() -> u32 {
-    2_500
-}
-fn default_post_wake_response_delay_ms() -> u32 {
-    700
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SpeechMode {
-    #[default]
-    Utterance,
-    ServerTurn,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct SpeechConfig {
-    pub mode: SpeechMode,
+    /// Exact Server channel instance ID, never a channel-type alias.
+    #[serde(deserialize_with = "deserialize_speech_channel_id")]
+    pub channel_id: String,
     pub pre_roll_ms: u32,
     pub upload_queue_frames: usize,
 }
@@ -352,7 +260,7 @@ pub struct SpeechConfig {
 impl Default for SpeechConfig {
     fn default() -> Self {
         Self {
-            mode: SpeechMode::Utterance,
+            channel_id: "embedded".into(),
             pre_roll_ms: 200,
             upload_queue_frames: 32,
         }
@@ -361,22 +269,38 @@ impl Default for SpeechConfig {
 
 impl SpeechConfig {
     pub fn validate(&self, audio: &AudioConfig) -> anyhow::Result<()> {
-        if self.mode == SpeechMode::ServerTurn {
-            anyhow::ensure!(
-                audio.capture_sample_rate == 16000 && audio.capture_channels == 1,
-                "server_turn requires 16 kHz mono capture"
-            );
-            anyhow::ensure!(
-                self.pre_roll_ms <= 1000,
-                "speech.pre_roll_ms must be <= 1000"
-            );
-            anyhow::ensure!(
-                (1..=256).contains(&self.upload_queue_frames),
-                "speech.upload_queue_frames must be between 1 and 256"
-            );
-        }
+        validate_speech_channel_id(&self.channel_id)?;
+        anyhow::ensure!(
+            audio.capture_sample_rate == 16000 && audio.capture_channels == 1,
+            "continuous voice requires 16 kHz mono capture"
+        );
+        anyhow::ensure!(
+            self.pre_roll_ms <= 1000,
+            "speech.pre_roll_ms must be <= 1000"
+        );
+        anyhow::ensure!(
+            (1..=256).contains(&self.upload_queue_frames),
+            "speech.upload_queue_frames must be between 1 and 256"
+        );
         Ok(())
     }
+}
+
+pub(crate) fn validate_speech_channel_id(channel_id: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !channel_id.is_empty() && channel_id.bytes().all(|byte| byte.is_ascii_graphic()),
+        "speech.channel_id must be a nonempty visible-ASCII instance ID without whitespace"
+    );
+    Ok(())
+}
+
+fn deserialize_speech_channel_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let channel_id = String::deserialize(deserializer)?;
+    validate_speech_channel_id(&channel_id).map_err(serde::de::Error::custom)?;
+    Ok(channel_id)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,93 +373,6 @@ fn default_vad_buffer_size_sec() -> f32 {
 }
 fn default_vad_num_threads() -> i32 {
     1
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InterruptConfig {
-    #[serde(default = "default_true")]
-    pub interrupt_on_wakeword_during_playback: bool,
-    #[serde(default = "default_true")]
-    pub interrupt_skip_direct_response: bool,
-    #[serde(default = "default_interrupt_debounce_ms")]
-    pub interrupt_debounce_ms: u32,
-}
-
-impl Default for InterruptConfig {
-    fn default() -> Self {
-        Self {
-            interrupt_on_wakeword_during_playback: true,
-            interrupt_skip_direct_response: true,
-            interrupt_debounce_ms: default_interrupt_debounce_ms(),
-        }
-    }
-}
-
-fn default_interrupt_debounce_ms() -> u32 {
-    300
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThinkingConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_thinking_action")]
-    pub action: String,
-    #[serde(default = "default_thinking_initial_delay_ms")]
-    pub initial_delay_ms: u32,
-    #[serde(default = "default_thinking_repeat_interval_ms")]
-    pub repeat_interval_ms: u32,
-}
-
-impl Default for ThinkingConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            action: default_thinking_action(),
-            initial_delay_ms: default_thinking_initial_delay_ms(),
-            repeat_interval_ms: default_thinking_repeat_interval_ms(),
-        }
-    }
-}
-
-fn default_thinking_action() -> String {
-    "thinking".to_string()
-}
-
-fn default_thinking_initial_delay_ms() -> u32 {
-    1_200
-}
-
-fn default_thinking_repeat_interval_ms() -> u32 {
-    3_000
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContinuousDialogueConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_continuous_followup_timeout_ms")]
-    pub followup_timeout_ms: u32,
-    #[serde(default = "default_continuous_max_followup_turns")]
-    pub max_followup_turns: u32,
-}
-
-impl Default for ContinuousDialogueConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            followup_timeout_ms: default_continuous_followup_timeout_ms(),
-            max_followup_turns: default_continuous_max_followup_turns(),
-        }
-    }
-}
-
-fn default_continuous_followup_timeout_ms() -> u32 {
-    10_000
-}
-
-fn default_continuous_max_followup_turns() -> u32 {
-    6
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1171,6 +1008,7 @@ pub struct RuntimeConfigMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub modules: ModulesConfig,
@@ -1187,17 +1025,9 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub audio_debug: AudioDebugConfig,
     #[serde(default)]
-    pub edge_stt: EdgeSttConfig,
-    #[serde(default)]
     pub speech: SpeechConfig,
     #[serde(default)]
     pub vad: VadConfig,
-    #[serde(default)]
-    pub interrupt: InterruptConfig,
-    #[serde(default)]
-    pub thinking: ThinkingConfig,
-    #[serde(default)]
-    pub continuous_dialogue: ContinuousDialogueConfig,
     #[serde(default)]
     pub discovery: DiscoveryConfig,
     #[serde(default)]
@@ -1221,12 +1051,8 @@ impl Default for EmbeddedConfig {
             device_runtime: DeviceRuntimeConfig::default(),
             identity: IdentityConfig::default(),
             wakeword: WakewordConfig::default(),
-            edge_stt: EdgeSttConfig::default(),
             speech: SpeechConfig::default(),
             vad: VadConfig::default(),
-            interrupt: InterruptConfig::default(),
-            thinking: ThinkingConfig::default(),
-            continuous_dialogue: ContinuousDialogueConfig::default(),
             audio: AudioConfig::default(),
             audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
@@ -1251,12 +1077,8 @@ impl EmbeddedConfig {
         self.wakeword = runtime.wakeword;
         self.audio = runtime.audio;
         self.audio_debug = runtime.audio_debug;
-        self.edge_stt = runtime.edge_stt;
         self.speech = runtime.speech;
         self.vad = runtime.vad;
-        self.interrupt = runtime.interrupt;
-        self.thinking = runtime.thinking;
-        self.continuous_dialogue = runtime.continuous_dialogue;
         self.discovery = runtime.discovery;
         self.hmmd_mmwave = runtime.hmmd_mmwave;
         self.motion = runtime.motion;
@@ -1278,12 +1100,8 @@ impl EmbeddedConfig {
             wakeword: self.wakeword.clone(),
             audio: self.audio.clone(),
             audio_debug: self.audio_debug.clone(),
-            edge_stt: self.edge_stt.clone(),
             speech: self.speech.clone(),
             vad: self.vad.clone(),
-            interrupt: self.interrupt.clone(),
-            thinking: self.thinking.clone(),
-            continuous_dialogue: self.continuous_dialogue.clone(),
             discovery: self.discovery.clone(),
             hmmd_mmwave: self.hmmd_mmwave.clone(),
             motion: self.motion.clone(),

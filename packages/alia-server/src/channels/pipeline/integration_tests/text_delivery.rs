@@ -47,7 +47,6 @@ async fn respond(f: &Fixture) {
         &f.channels,
         &f.sensors,
         &EventBus::new(32),
-        &VoiceTurnRegistry::default(),
         CancellationToken::new(),
         false,
         &f.policy.conversation,
@@ -55,7 +54,6 @@ async fn respond(f: &Fixture) {
         &f.policy.cache,
         &f.policy.cache_policy,
         &f.policy.memory,
-        &f.policy.transcript_correction,
     )
     .await
     .unwrap();
@@ -116,10 +114,14 @@ async fn buffered_and_streamed_text_each_commit_one_response_and_source_epoch() 
             assert_eq!(
                 d.status,
                 DeliveryStatus::Unknown,
-                "legacy mock must not invent native write evidence"
+                "memory-only fixture must not invent native write evidence"
             );
             assert!(d.identity.is_none());
             assert!(d.text.as_ref().unwrap().end_offered);
+            let text = d.text.as_ref().unwrap();
+            assert!(text.identity.is_some());
+            assert!(text.progress.as_ref().unwrap().end_accepted);
+            assert!(text.progress.as_ref().unwrap().written_utf8_bytes.is_none());
             let chunks = f
                 .modules
                 .delivery

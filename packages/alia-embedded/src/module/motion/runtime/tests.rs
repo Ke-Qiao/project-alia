@@ -1051,7 +1051,7 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
 }
 
 #[tokio::test]
-async fn face_latest_slot_and_expression_use_one_writer_and_no_unscoped_legacy_path() {
+async fn face_latest_slot_and_expression_use_one_writer() {
     let (runtime, servo) = unstarted();
     runtime.start().await.unwrap();
     assert!(
@@ -1085,11 +1085,6 @@ async fn face_latest_slot_and_expression_use_one_writer_and_no_unscoped_legacy_p
     let command = command(lease, 1);
     let observation = submitted(&runtime, &command).await;
     assert!(runtime.shared.lock().face.is_none());
-    assert!(runtime.execute_expression_json("{}").await.is_err());
-    assert_eq!(
-        runtime.cancel_expression_json("legacy broad cancel").await["status"],
-        "rejected"
-    );
     servo.release();
     assert_eq!(
         terminal(observation, &command).await.end,
@@ -1134,21 +1129,13 @@ async fn global_speed_clock_applies_across_consecutive_command_identities() {
 }
 
 #[tokio::test]
-async fn rollback_before_start_does_not_move_hardware_and_disabled_capabilities_are_truthful() {
+async fn rollback_before_start_does_not_move_hardware_and_disabled_control_is_unavailable() {
     let (runtime, servo) = unstarted();
     runtime.stop().await.unwrap();
     assert_eq!(servo.count(), 0);
     assert!(runtime.start().await.is_err());
     let disabled = MotionRuntime::disabled(MotionConfig::default());
     disabled.start().await.unwrap();
-    let capabilities = disabled.capabilities_json().await;
-    assert_eq!(capabilities["current_state"]["thermal_limit"], false);
-    assert_eq!(capabilities["current_state"]["battery_saver"], false);
-    assert!(capabilities["current_state"]["battery_level"].is_null());
-    assert_eq!(
-        capabilities["receipt_model"]["completion_acknowledged"],
-        false
-    );
     assert!(!disabled.control_state().available);
     disabled.stop().await.unwrap();
 }

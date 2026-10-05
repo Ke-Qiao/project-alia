@@ -311,6 +311,14 @@ impl PlaybackSink for CpalPlaybackSink {
         playback_buffered_ms(buffer.len(), self.sample_rate, self.channels)
     }
 
+    fn source_buffered_ms(&self, source: crate::module::mixer::MixerSource) -> u64 {
+        let buffer = self
+            .buffer
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        playback_buffered_ms(buffer.source_len(source), self.sample_rate, self.channels)
+    }
+
     fn enqueue(&mut self, block: AudioBlock) -> Result<()> {
         let mut rendered = self
             .renderer

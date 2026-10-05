@@ -59,12 +59,7 @@ impl AudioPlaybackBackend for Device {
             .collect();
         Ok(true)
     }
-    fn play(&self, _: &[i16], _: u32) -> Result<()> {
-        unreachable!()
-    }
-    fn stop_playback(&self) -> Result<()> {
-        unreachable!()
-    }
+
     fn is_available(&self) -> bool {
         true
     }
@@ -75,14 +70,7 @@ impl AudioPlaybackBackend for Device {
         self.2.lock().unwrap().clear();
         Ok(state.0)
     }
-    fn play_if_current(&self, pcm: &[i16], _: u32, generation: u64) -> Result<bool> {
-        let mut state = self.0.lock().unwrap();
-        if state.0 != generation {
-            return Ok(false);
-        }
-        state.1.extend_from_slice(pcm);
-        Ok(true)
-    }
+
     fn stop_if_current(&self, generation: u64) -> Result<bool> {
         anyhow::ensure!(
             !self.1.load(std::sync::atomic::Ordering::Acquire),

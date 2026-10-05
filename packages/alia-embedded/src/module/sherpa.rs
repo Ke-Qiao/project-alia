@@ -1,21 +1,18 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use sherpa_onnx::{
-    KeywordSpotter, KeywordSpotterConfig, OfflineRecognizer, OfflineRecognizerConfig,
-    OfflineSenseVoiceModelConfig, OnlineStream, SileroVadModelConfig, VadModelConfig,
+    KeywordSpotter, KeywordSpotterConfig, OnlineStream, SileroVadModelConfig, VadModelConfig,
     VoiceActivityDetector,
 };
 
-use crate::config::{EdgeSttConfig, VadConfig, WakewordConfig};
+use crate::config::{VadConfig, WakewordConfig};
 
 use super::context::ModuleContext;
 use super::lifecycle::ModuleLifecycle;
-use super::traits::{
-    EdgeSttEngine, VoiceActivityEngine, VoiceActivityState, WakeWordEngine, WakeWordEvent,
-};
+use super::traits::{VoiceActivityEngine, VoiceActivityState, WakeWordEngine, WakeWordEvent};
 
 pub struct SherpaOnnxKws {
     state: Mutex<KwsState>,
@@ -117,105 +114,6 @@ impl WakeWordEngine for SherpaOnnxKws {
         }
 
         None
-    }
-}
-
-pub struct SherpaOnnxStt {
-    recognizer: Arc<Mutex<OfflineRecognizer>>,
-    sample_rate: u32,
-    max_duration_ms: u32,
-}
-
-impl SherpaOnnxStt {
-    pub fn new(config: &EdgeSttConfig) -> Result<Self> {
-        validate_file(&config.model_path, "edge STT model")?;
-        validate_file(&config.tokens_path, "edge STT tokens")?;
-
-        let mut recognizer_config = OfflineRecognizerConfig::default();
-        recognizer_config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
-            model: Some(config.model_path.display().to_string()),
-            language: Some(config.language.clone()),
-            use_itn: config.use_itn,
-        };
-        recognizer_config.model_config.tokens = Some(config.tokens_path.display().to_string());
-        recognizer_config.model_config.provider = Some(config.provider.clone());
-        recognizer_config.model_config.num_threads = config.num_threads;
-        recognizer_config.model_config.debug = config.debug;
-
-        let recognizer = OfflineRecognizer::create(&recognizer_config)
-            .ok_or_else(|| anyhow::anyhow!("failed to create sherpa-onnx offline recognizer"))?;
-        tracing::info!("created sherpa-onnx edge STT");
-        tracing::debug!(
-            model = %config.model_path.display(),
-            tokens = %config.tokens_path.display(),
-            language = %config.language,
-            provider = %config.provider,
-            "sherpa-onnx edge STT details"
-        );
-
-        Ok(Self {
-            recognizer: Arc::new(Mutex::new(recognizer)),
-            sample_rate: 16_000,
-            max_duration_ms: config.max_duration_ms,
-        })
-    }
-}
-
-#[tonic::async_trait]
-impl ModuleLifecycle for SherpaOnnxStt {
-    fn name(&self) -> &'static str {
-        "sherpa_onnx_stt"
-    }
-
-    async fn init(&mut self, ctx: &ModuleContext) -> Result<()> {
-        self.sample_rate = ctx.config.audio.capture_sample_rate;
-        Ok(())
-    }
-}
-
-#[tonic::async_trait]
-impl EdgeSttEngine for SherpaOnnxStt {
-    async fn transcribe_short(&self, pcm: &[i16], max_duration_ms: u32) -> Result<Option<String>> {
-        if pcm.is_empty() {
-            return Ok(None);
-        }
-
-        let duration_ms = (pcm.len() as u64 * 1_000) / self.sample_rate.max(1) as u64;
-        let max_duration_ms = max_duration_ms.min(self.max_duration_ms) as u64;
-        let max_samples = ((self.sample_rate.max(1) as u64 * max_duration_ms) / 1_000) as usize;
-        let pcm = if duration_ms > max_duration_ms {
-            tracing::warn!(
-                duration_ms,
-                max_duration_ms,
-                "trimming utterance to local STT limit"
-            );
-            &pcm[..pcm.len().min(max_samples)]
-        } else {
-            pcm
-        };
-        if pcm.is_empty() {
-            return Ok(None);
-        }
-
-        let recognizer = Arc::clone(&self.recognizer);
-        let samples = with_leading_silence(pcm16_to_f32(pcm), self.sample_rate);
-        let sample_rate = self.sample_rate as i32;
-
-        tokio::task::spawn_blocking(move || {
-            let recognizer = recognizer
-                .lock()
-                .map_err(|_| anyhow::anyhow!("sherpa recognizer mutex poisoned"))?;
-            let stream = recognizer.create_stream();
-            stream.accept_waveform(sample_rate, &samples);
-            recognizer.decode(&stream);
-            let result = stream
-                .get_result()
-                .context("sherpa offline recognizer returned no result")?;
-            let text = result.text.trim().to_string();
-            Ok((!text.is_empty()).then_some(text))
-        })
-        .await
-        .context("joining sherpa STT task")?
     }
 }
 
@@ -351,18 +249,6 @@ fn millis_to_seconds(value: u32) -> f32 {
 
 fn pcm16_to_f32(pcm: &[i16]) -> Vec<f32> {
     pcm.iter().map(|sample| *sample as f32 / 32768.0).collect()
-}
-
-fn with_leading_silence(mut samples: Vec<f32>, sample_rate: u32) -> Vec<f32> {
-    if samples.is_empty() || sample_rate == 0 {
-        return samples;
-    }
-
-    let silence_samples = (sample_rate as usize * 200) / 1_000;
-    let mut padded = Vec::with_capacity(silence_samples + samples.len());
-    padded.resize(silence_samples, 0.0);
-    padded.append(&mut samples);
-    padded
 }
 
 fn timestamp_us() -> u64 {

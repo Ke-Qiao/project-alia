@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::channels::ChannelRegistry;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::cli::CliChannel;
-use crate::channels::dialogue_control_tool::EndContinuousDialogueTool;
 #[cfg(feature = "channel-embedded")]
 use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 #[cfg(feature = "channel-embedded")]
@@ -232,7 +231,6 @@ pub fn create_tools_with_sensors(
 ) -> Box<dyn ToolRegistry> {
     tracing::info!("creating core tool registry with sensors (BuiltinToolRegistry)");
     let registry = BuiltinToolRegistry::with_sensors(sensors);
-    registry.register_executor(Arc::new(EndContinuousDialogueTool::new(channels.clone())));
     #[cfg(feature = "channel-embedded")]
     registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
     #[cfg(not(feature = "channel-embedded"))]
@@ -257,9 +255,6 @@ pub fn create_channel(
             reconnect_interval_sec,
             reconnect_max_backoff_sec,
             grpc_timeout_sec,
-            voice_turn_interrupt_enabled,
-            cancel_streaming_tts_on_interrupt,
-            discard_interrupted_turn_history,
             ..
         } => {
             tracing::info!(channel_id = %id, "creating EmbeddedChannel");
@@ -275,9 +270,6 @@ pub fn create_channel(
                     reconnect_interval_sec: *reconnect_interval_sec,
                     reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
                     grpc_timeout_sec: *grpc_timeout_sec,
-                    voice_turn_interrupt_enabled: *voice_turn_interrupt_enabled,
-                    cancel_streaming_tts_on_interrupt: *cancel_streaming_tts_on_interrupt,
-                    discard_interrupted_turn_history: *discard_interrupted_turn_history,
                 },
                 event_bus,
             )))
@@ -334,9 +326,6 @@ mod tests {
             reconnect_interval_sec: 5,
             reconnect_max_backoff_sec: 60,
             grpc_timeout_sec: 10,
-            voice_turn_interrupt_enabled: true,
-            cancel_streaming_tts_on_interrupt: true,
-            discard_interrupted_turn_history: true,
         };
 
         match create_channel(&config, EventBus::new(1)) {

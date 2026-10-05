@@ -894,7 +894,6 @@ mod insights {
             llm: Some(llm),
             minor_llm: None,
             major_llm: None,
-            transcript_correction_llm: None,
             memory_capture_llm: None,
             sentence_expression_llm: None,
             embedding: Some(embedding),

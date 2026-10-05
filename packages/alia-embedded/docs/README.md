@@ -1,9 +1,9 @@
 # alia-embedded Docs
 
 `alia-embedded` is the edge runtime for Raspberry Pi and local development. It
-owns local audio I/O, wake word detection, VAD, edge STT, direct responses,
-binding, discovery, settings, playback, plugin services, and modular sensor
-providers.
+owns local audio I/O, wake word detection, VAD evidence, scoped wake cues,
+binding, discovery, settings, Playback v3, signed BodyControl, plugin services,
+and modular sensor providers. VoiceSession v2 is the only speech input path.
 
 ## Start Here
 
@@ -12,7 +12,7 @@ providers.
 - [Configuration](configuration.md) explains `embedded.toml`, SQLite-backed
   runtime state, local development mode, model paths, and restart boundaries.
 - [Audio and voice](audio-and-voice.md) explains capture/playback, wake word,
-  VAD, direct responses, continuous dialogue, interruption, and debug WAVs.
+  VAD evidence, scoped native mixing, pause/cancellation, and debug WAVs.
 - [Neck motion assets](motion-assets.md) documents migrated neck matrix and
   `.anim` files plus the native animation expression action.
 - [Sensors](sensors.md) explains the embedded `SensorRegistry`, provider model,
@@ -20,7 +20,7 @@ providers.
 - [YuNet vision](vision-yunet.md) covers Raspberry Pi OpenCV setup, model
   placement, runtime checks, and face tracking tuning.
 - [gRPC services](grpc-services.md) summarizes the embedded-hosted services and
-  how they fit with server-hosted audio ingress.
+  how they fit with the server-hosted VoiceSession contract.
 
 ## Boundaries
 

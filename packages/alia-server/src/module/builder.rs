@@ -52,7 +52,6 @@ pub struct ServerBuilder {
     // systems such as memory are built in below, not selected through slots.
     minor_llm: Option<Box<dyn LlmAdapter>>,
     major_llm: Option<Box<dyn LlmAdapter>>,
-    transcript_correction_llm: Option<Box<dyn LlmAdapter>>,
     memory_capture_llm: Option<Box<dyn LlmAdapter>>,
     sentence_expression_llm: Option<Box<dyn LlmAdapter>>,
     stt: Option<Box<dyn SttAdapter>>,
@@ -111,7 +110,6 @@ impl ServerBuilder {
             channels: Vec::new(),
             minor_llm: None,
             major_llm: None,
-            transcript_correction_llm: None,
             memory_capture_llm: None,
             sentence_expression_llm: None,
             stt: None,
@@ -145,11 +143,6 @@ impl ServerBuilder {
 
     pub fn with_major_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
         self.major_llm = Some(Box::new(llm));
-        self
-    }
-
-    pub fn with_transcript_correction_llm(mut self, llm: impl LlmAdapter + 'static) -> Self {
-        self.transcript_correction_llm = Some(Box::new(llm));
         self
     }
 
@@ -310,7 +303,6 @@ impl ServerBuilder {
             self.config.policies.cache.clone(),
             self.config.resources.cache_policy.clone(),
             self.config.policies.memory.clone(),
-            self.config.policies.transcript_correction.clone(),
         );
         let saved_settings = settings
             .all()
@@ -341,7 +333,6 @@ impl ServerBuilder {
             llm: None,
             minor_llm: None,
             major_llm: None,
-            transcript_correction_llm: None,
             memory_capture_llm: None,
             sentence_expression_llm: None,
             embedding: None,
@@ -364,17 +355,6 @@ impl ServerBuilder {
                 factory::create_llm(&self.config, &self.config.llm.roles.major)?
             }
             None => factory::create_llm(&self.config, "noop")?,
-        };
-        let transcript_correction_llm = match self.transcript_correction_llm {
-            Some(llm) => Some(llm),
-            None => self
-                .config
-                .llm
-                .roles
-                .transcript_correction
-                .as_deref()
-                .map(|profile| factory::create_llm(&self.config, profile))
-                .transpose()?,
         };
         let memory_capture_llm = match self.memory_capture_llm {
             Some(llm) => Some(llm),
@@ -492,7 +472,6 @@ impl ServerBuilder {
             llm: None,
             minor_llm: None,
             major_llm: None,
-            transcript_correction_llm: None,
             memory_capture_llm: None,
             sentence_expression_llm: None,
             embedding: None,
@@ -573,14 +552,6 @@ impl ServerBuilder {
         let major_llm = cleanup
             .initialize(major_llm, &ctx, ShutdownPhase::Resources)
             .await?;
-        let transcript_correction_llm = match transcript_correction_llm {
-            Some(module) => Some(
-                cleanup
-                    .initialize(module, &ctx, ShutdownPhase::Resources)
-                    .await?,
-            ),
-            None => None,
-        };
         let memory_capture_llm = match memory_capture_llm {
             Some(module) => Some(
                 cleanup
@@ -606,7 +577,6 @@ impl ServerBuilder {
             llm: Some(default_llm.clone()),
             minor_llm: Some(minor_llm.clone()),
             major_llm: Some(major_llm.clone()),
-            transcript_correction_llm: transcript_correction_llm.clone(),
             memory_capture_llm: memory_capture_llm.clone(),
             sentence_expression_llm: sentence_expression_llm.clone(),
             ..ctx
@@ -812,7 +782,6 @@ impl ServerBuilder {
             llm: default_llm,
             minor_llm,
             major_llm,
-            transcript_correction_llm,
             memory_capture_llm,
             sentence_expression_llm,
             stt,
@@ -850,7 +819,6 @@ impl ServerBuilder {
             self.config.policies.cache.clone(),
             self.config.resources.cache_policy.clone(),
             effective_memory_config,
-            self.config.policies.transcript_correction.clone(),
         )));
 
         let (voice_input, voice_input_rx) = crate::modules::interaction::voice_input::channel();
@@ -915,9 +883,6 @@ impl ServerBuilder {
         tracing::info!("starting modules...");
         start_module(state.modules.minor_llm.as_ref(), &state.cancel_token).await?;
         start_module(state.modules.major_llm.as_ref(), &state.cancel_token).await?;
-        if let Some(llm) = &state.modules.transcript_correction_llm {
-            start_module(llm.as_ref(), &state.cancel_token).await?;
-        }
         if let Some(llm) = &state.modules.memory_capture_llm {
             start_module(llm.as_ref(), &state.cancel_token).await?;
         }

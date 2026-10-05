@@ -799,16 +799,6 @@ impl ScheduledInsights {
                 channel_id,
                 user_id,
                 ..
-            }
-            | ChannelEvent::AudioInput {
-                channel_id,
-                user_id,
-                ..
-            }
-            | ChannelEvent::InterruptActiveTurn {
-                channel_id,
-                user_id,
-                ..
             } => (channel_id, user_id),
             ChannelEvent::SensorData { channel_id, .. }
             | ChannelEvent::StatusChange { channel_id, .. } => {

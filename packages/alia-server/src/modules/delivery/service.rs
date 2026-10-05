@@ -423,9 +423,9 @@ impl DeliveryService {
                     .map_err(|error| {
                         DeliveryError::InvalidInput(format!("reserve playback: {error:#}"))
                     })?;
-                if identity.is_some_and(|id| {
-                    id.playback_id != media_id || Some(id.scope) != input.target.voice
-                }) || (input.target.voice.is_some() && identity.is_none())
+                if !identity.is_valid()
+                    || identity.playback_id != media_id
+                    || Some(identity.scope) != input.target.voice
                 {
                     return Err(DeliveryError::InvalidInput(
                         "reserved playback identity differs from original target".into(),
@@ -440,7 +440,7 @@ impl DeliveryService {
                     .map_err(|error| {
                         DeliveryError::InvalidInput(format!("reserve text: {error:#}"))
                     })?;
-                if identity.is_some_and(|id| id.text_id != media_id || !id.is_valid()) {
+                if identity.text_id != media_id || !identity.is_valid() {
                     return Err(DeliveryError::InvalidInput(
                         "reserved text identity differs from server allocation".into(),
                     ));
@@ -456,7 +456,7 @@ impl DeliveryService {
                         response_id: input.response_id,
                         output_key: input.output_key,
                         content: input.content,
-                        identity,
+                        identity: Some(identity),
                         owner_id: self.instance_id,
                     },
                 ))
@@ -469,7 +469,7 @@ impl DeliveryService {
                         response_id: input.response_id,
                         output_key: input.output_key,
                         content: input.content,
-                        identity,
+                        identity: Some(identity),
                         owner_id: self.instance_id,
                     },
                 ))

@@ -61,7 +61,6 @@ pub struct ModuleContext {
     pub llm: Option<Arc<dyn LlmAdapter>>,
     pub minor_llm: Option<Arc<dyn LlmAdapter>>,
     pub major_llm: Option<Arc<dyn LlmAdapter>>,
-    pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
     pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     /// Embedding adapter for built-in runtimes that need semantic indexing.
@@ -72,7 +71,7 @@ pub struct ModuleContext {
     /// code-backed tool executors here instead of replacing the registry.
     pub tools: Option<Arc<dyn ToolRegistry>>,
     /// Embodied expression runtime. Plugins/components can register appraisal
-    /// engines, affect reducers, expression planners, and safety policies here.
+    /// engines, expression planners, and safety policies here.
     pub expression: Option<Arc<ExpressionRuntime>>,
 }
 

@@ -120,12 +120,6 @@ pub enum ChannelConfig {
         reconnect_max_backoff_sec: u64,
         #[serde(default = "default_grpc_timeout")]
         grpc_timeout_sec: u64,
-        #[serde(default = "default_true")]
-        voice_turn_interrupt_enabled: bool,
-        #[serde(default = "default_true")]
-        cancel_streaming_tts_on_interrupt: bool,
-        #[serde(default = "default_true")]
-        discard_interrupted_turn_history: bool,
     },
     #[serde(rename = "cli")]
     Cli {
@@ -211,8 +205,6 @@ pub struct LlmRolesSection {
     #[serde(default = "default_major_llm_profile")]
     pub major: String,
     #[serde(default)]
-    pub transcript_correction: Option<String>,
-    #[serde(default)]
     pub memory_capture: Option<String>,
     #[serde(default)]
     pub sentence_expression: Option<String>,
@@ -227,7 +219,6 @@ impl Default for LlmRolesSection {
         Self {
             minor: default_minor_llm_profile(),
             major: default_major_llm_profile(),
-            transcript_correction: None,
             memory_capture: None,
             sentence_expression: None,
             default: default_major_llm_profile(),
@@ -697,8 +688,6 @@ pub struct PoliciesSection {
     #[serde(default)]
     pub routing: RoutingPolicySection,
     #[serde(default)]
-    pub transcript_correction: TranscriptCorrectionPolicySection,
-    #[serde(default)]
     pub affect: AffectPolicySection,
     #[serde(default)]
     pub regulation: RegulationPolicySection,
@@ -750,57 +739,6 @@ where
             "policies.duplex.hold_budget_ms must be 1..120000",
         ))
     }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct TranscriptCorrectionPolicySection {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_true")]
-    pub apply_to_stt: bool,
-    #[serde(default = "default_transcript_correction_provider")]
-    pub provider: String,
-    #[serde(default = "default_transcript_correction_timeout")]
-    pub timeout_sec: u64,
-    #[serde(default = "default_transcript_correction_max_input_chars")]
-    pub max_input_chars: usize,
-    #[serde(default = "default_transcript_correction_min_confidence")]
-    pub min_confidence_to_replace: f32,
-    #[serde(default = "default_true")]
-    pub require_confirmation_on_medium_risk: bool,
-    #[serde(default = "default_true")]
-    pub trace_enabled: bool,
-}
-
-impl Default for TranscriptCorrectionPolicySection {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            apply_to_stt: true,
-            provider: default_transcript_correction_provider(),
-            timeout_sec: default_transcript_correction_timeout(),
-            max_input_chars: default_transcript_correction_max_input_chars(),
-            min_confidence_to_replace: default_transcript_correction_min_confidence(),
-            require_confirmation_on_medium_risk: true,
-            trace_enabled: true,
-        }
-    }
-}
-
-fn default_transcript_correction_provider() -> String {
-    "default_llm".to_string()
-}
-
-fn default_transcript_correction_timeout() -> u64 {
-    2
-}
-
-fn default_transcript_correction_max_input_chars() -> usize {
-    500
-}
-
-fn default_transcript_correction_min_confidence() -> f32 {
-    0.55
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2200,11 +2138,6 @@ impl ServerConfig {
             (
                 "default",
                 Some(roles.default.as_str()),
-                LlmProfileKind::Chat,
-            ),
-            (
-                "transcript_correction",
-                roles.transcript_correction.as_deref(),
                 LlmProfileKind::Chat,
             ),
             (

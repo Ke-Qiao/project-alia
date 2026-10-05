@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) enum PipelineInput {
-    Legacy(ChannelEvent),
+    ChannelEvent(ChannelEvent),
     Recognized(RecognizedVoiceInput),
 }
 
@@ -46,16 +46,11 @@ pub(super) async fn process_recognized_voice(
         }),
         user_id: input.user_id.clone(),
     };
-    let mut interrupt_config = channel.interrupt_config();
-    // Cancellation is owned by the live session, even if this adapter does not
-    // support the legacy wakeword interrupt policy.
-    interrupt_config.enabled = true;
     let mut turn = voice_turns
         .register(
             channel_id.clone(),
             input.user_id.clone(),
             input.request_id,
-            interrupt_config,
             input.cancel,
         )
         .await;
@@ -86,7 +81,6 @@ pub(super) async fn process_recognized_voice(
         &policy.cache_policy,
         &policy.memory,
         &turn,
-        None,
     )
     .await;
     voice_turns.finish(&turn).await;
@@ -109,7 +103,6 @@ pub(super) async fn process_voice_response(
     cache_policy: &CachePolicyResourceSection,
     memory_config: &MemorySection,
     turn: &VoiceTurn,
-    correction_trace: Option<TranscriptCorrectionResult>,
 ) -> anyhow::Result<()> {
     let result = match process_text(
         text,
@@ -129,7 +122,6 @@ pub(super) async fn process_voice_response(
         memory_config,
         Some(turn),
         true,
-        correction_trace,
     )
     .await
     {

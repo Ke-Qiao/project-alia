@@ -1,9 +1,7 @@
 //! REST authorization and status mapping, with a controlled channel adapter.
 //! The fixture is not a real device or a claim about gRPC/physical hardware.
 use super::*;
-use alia_server::channels::adapter::{
-    ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
-};
+use alia_server::channels::adapter::{ChannelAction, ChannelAdapter, ChannelCapabilities};
 use reqwest::Method;
 use sea_orm::{DatabaseBackend, Statement};
 use serde_json::{Value, json};
@@ -34,9 +32,7 @@ impl ChannelAdapter for DeviceChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        anyhow::bail!("REST diagnostics cannot send a conversation message")
-    }
+
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<Value> {
         self.calls
             .lock()

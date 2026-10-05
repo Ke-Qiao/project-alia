@@ -1,6 +1,6 @@
 # Project Alia
 
-A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. Runs as a split-brain setup: a server (upper machine) handles AI orchestration, and a Raspberry Pi edge node (lower machine) manages hardware I/O.
+A personal AI assistant system with voice interaction, smart home control, and an extensible plugin architecture. The server owns reasoning and continuous turn detection; the Raspberry Pi node owns continuous capture, scoped mixed playback and hardware safety. They can run on separate hosts or on one machine. Current work prioritizes Server and Embedded; frontend integration is deferred.
 
 ```mermaid
 graph LR
@@ -8,7 +8,8 @@ graph LR
     Server <-->|"gRPC (HTTP/2)<br/>port 50051"| Embedded["alia-embedded<br/>(Tonic, RPi)"]
     Server --- DB[("PostgreSQL<br/>(SeaORM)")]
     Server -.-|"CLI REPL<br/>(rustyline)"| CLI["alia> prompt"]
-    Embedded --- Proc["tokio::process<br/>(Python subprocesses)"]
+    Embedded --- IO["Native audio mixer<br/>Body safety + sensors"]
+    Server --- Turn["Easy-Turn service"]
 ```
 
 ## Packages
@@ -16,7 +17,7 @@ graph LR
 | Package | Description |
 |---------|-------------|
 | [alia-server](packages/alia-server/) | Central server — API, AI pipeline, WebSocket, channel adapters, module orchestration |
-| [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — wake-word, process management, plugin sandbox, gRPC |
+| [alia-embedded](packages/alia-embedded/) | Raspberry Pi edge node — capture/VAD, wake cues, native mixer, Body safety, sensors, gRPC |
 | [alia-frontend](packages/alia-frontend/) | Cross-platform consumer app (React Native / Expo) |
 
 ### Shared Crates
@@ -24,6 +25,7 @@ graph LR
 | Crate | Description |
 |-------|-------------|
 | [proto](crates/proto/) | Shared Protobuf definitions and generated code |
+| [alia-core](crates/alia-core/) | Shared identity, delivery, output-control and Body contracts |
 | [transport](crates/transport/) | Shared transport/auth helpers for server and embedded communication |
 
 ## Prerequisites
@@ -116,7 +118,7 @@ references.
 
 ## Feature Flags (alia-server)
 
-The server uses Cargo feature flags for conditional compilation. All features are enabled by default.
+The server uses Cargo feature flags for conditional compilation. The default set below enables the current server providers and channel. Features select compiled capabilities; configuration selects runtime providers.
 
 | Feature | Description |
 |---------|-------------|
@@ -129,8 +131,10 @@ The server uses Cargo feature flags for conditional compilation. All features ar
 | `embed-openai` | OpenAI embedding backend |
 | `tools-http` | Built-in HTTP/fetch tool support |
 | `insights` | Scheduled insights system |
+| `turn-easy` | Server-side Easy-Turn HTTP adapter |
+| `plugin-home-assistant` | Home Assistant tool plugin |
 
-Build a minimal server (no AI backends, no embedded channel):
+Build without the default feature set:
 
 ```bash
 cargo build -p alia-server --no-default-features
@@ -141,6 +145,9 @@ Build with only specific features:
 ```bash
 cargo build -p alia-server --no-default-features --features "llm-openai,stt-whisper"
 ```
+
+Embedded uses `sherpa-onnx` by default for KWS and VAD; `vision-opencv` is optional.
+Its native mixer and scoped output contracts are always compiled.
 
 ## License
 

@@ -14,24 +14,6 @@ use super::types::{
 const RELATIONSHIP_DELTA_SCALE: f32 = 0.2;
 const RELATIONSHIP_HOMEOSTASIS_SCALE: f32 = 0.15;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AffectObservation {
-    pub snapshot: AffectSnapshot,
-    pub appraisals: Vec<AppraisalEvent>,
-    pub active_event_count: usize,
-    /// Legacy source-free APIs return an admission error and no appraisals.
-    /// Canonical writes return AppraisalReceipt after the database commit.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub persistence_error: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct AffectUserInput<'a> {
-    pub channel_id: &'a str,
-    pub user_id: &'a str,
-    pub user_text: &'a str,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct AffectAssistantResponse<'a> {
     pub channel_id: &'a str,

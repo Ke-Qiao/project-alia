@@ -7,23 +7,22 @@ use crate::config::{
     ExpressionStyleSection, RegulationPolicySection, SentenceExpressionLlmPolicySection,
     ServerConfig,
 };
-use crate::providers::adapter::{MemoryRecallEvent, TtsCapabilities};
+use crate::providers::adapter::TtsCapabilities;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::DatabaseConnection;
 
 use super::abi::{ExternalExpressionPlugin, load_external_expression_plugins};
 use super::affect::{
-    AffectAssistantResponse, AffectDeltas, AffectObservation, AffectUserInput, AppraisalEvent,
-    AppraisalScope, AppraisalSource, AppraisalTarget,
+    AffectAssistantResponse, AffectDeltas, AppraisalEvent, AppraisalScope, AppraisalSource,
+    AppraisalTarget,
 };
 use super::appraisal::{
     AppraisalContext, AppraisalEnginePlugin, RuleBasedAppraisalEngine,
     TextClassifierAppraisalEngine,
 };
 use super::extension::{
-    AffectReducerPlugin, ExpressionExtensionRegistry, ExpressionPlannerPlugin,
-    ExpressionPlanningContext, ExpressionSafetyPolicyPlugin, safety_modification,
-    validate_expression_plan,
+    ExpressionExtensionRegistry, ExpressionPlannerPlugin, ExpressionPlanningContext,
+    ExpressionSafetyPolicyPlugin, safety_modification, validate_expression_plan,
 };
 use super::regulation::regulate_expression;
 use super::types::{
@@ -106,39 +105,6 @@ impl ExpressionRuntime {
         &self.dialogue_policy
     }
 
-    /// Legacy unbound observations cannot mutate canonical state.
-    pub async fn observe_user_input(&self, _input: AffectUserInput<'_>) -> AffectObservation {
-        self.rejected_unbound_observation()
-    }
-    pub async fn observe_assistant_response(
-        &self,
-        _input: AffectAssistantResponse<'_>,
-    ) -> AffectObservation {
-        self.rejected_unbound_observation()
-    }
-    pub async fn observe_memory_recall(
-        &self,
-        _channel_id: &str,
-        _user_id: &str,
-        _events: &[MemoryRecallEvent],
-    ) -> AffectObservation {
-        self.rejected_unbound_observation()
-    }
-    fn rejected_unbound_observation(&self) -> AffectObservation {
-        AffectObservation {
-            snapshot: super::affect::baseline_snapshot(&self.preview_affect),
-            appraisals: Vec::new(),
-            active_event_count: 0,
-            persistence_error: Some(
-                "canonical AppraisalInput is required; nothing was admitted".into(),
-            ),
-        }
-    }
-    /// A source-free preview contains no personal state. Production planning
-    /// uses plan_with_context and its immutable, SQL-validated projection.
-    pub async fn affect_snapshot(&self, _channel_id: &str, _user_id: &str) -> AffectSnapshot {
-        super::affect::baseline_snapshot(&self.preview_affect)
-    }
     pub async fn observe_context_user(
         &self,
         context: &crate::modules::memory::context::ContextService,
@@ -320,23 +286,10 @@ impl ExpressionRuntime {
         self.writer.submit(input, vec![event]).await
     }
 
-    pub fn register_affect_reducer(
-        &self,
-        _plugin: Arc<dyn AffectReducerPlugin>,
-    ) -> anyhow::Result<()> {
-        anyhow::bail!(
-            "mutable affect reducers must migrate to a versioned canonical appraisal interpreter"
-        )
-    }
-
     pub fn register_external_plugin(
         &self,
         plugin: Arc<dyn ExternalExpressionPlugin>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            !plugin.manifest().capabilities.affect_reducer,
-            "external snapshot reducers are not a canonical interpreter"
-        );
         self.extensions.register_external_plugin(plugin)
     }
 
@@ -353,10 +306,6 @@ impl ExpressionRuntime {
 
     pub fn unregister_appraisal_engine(&self, name: &str) -> bool {
         self.extensions.unregister_appraisal_engine(name)
-    }
-
-    pub fn unregister_affect_reducer(&self, name: &str) -> bool {
-        self.extensions.unregister_reducer(name)
     }
 
     pub fn register_expression_planner(
@@ -1696,7 +1645,6 @@ fn risk_rank(safety_class: ExpressionSafetyClass) -> u8 {
 mod tests {
     use super::*;
     use crate::config::{AffectPolicySection, ExpressionStyleSection};
-    use crate::expression::AffectReducerContext;
     use crate::expression::{
         AffectDeltas, AppraisalDecay, AppraisalDecayKind, AppraisalEvent, AppraisalScope,
         AppraisalSource, AppraisalTarget, ExpressionActionCapability, ExpressionAdapterState,
@@ -1882,51 +1830,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unversioned_snapshot_reducer_is_rejected_before_registration() {
-        struct WarmReducer;
-
-        impl AffectReducerPlugin for WarmReducer {
-            fn name(&self) -> &str {
-                "test_warm_reducer"
-            }
-
-            fn reduce(
-                &self,
-                _ctx: &AffectReducerContext<'_>,
-                snapshot: &mut AffectSnapshot,
-            ) -> anyhow::Result<()> {
-                snapshot.affect.valence = 0.48;
-                snapshot.social.trust = 0.82;
-                snapshot.social.familiarity = 0.4;
-                Ok(())
-            }
-        }
-
-        let mut styles = BTreeMap::new();
-        styles.insert("gentle".to_string(), ExpressionStyleSection::default());
-        styles.insert("cheerful".to_string(), ExpressionStyleSection::default());
-        styles.insert("neutral".to_string(), ExpressionStyleSection::default());
-
-        let runtime = ExpressionRuntime {
-            writer: crate::expression::provenance::AppraisalWriter::default(),
-            policy: ExpressionPolicySection::default(),
-            regulation: RegulationPolicySection::default(),
-            preview_affect: AffectPolicySection::default(),
-            styles,
-            dialogue_policy: DialoguePolicyResourceSection::default(),
-            extensions: ExpressionExtensionRegistry::default(),
-            safety_state: ExpressionSafetyRuntimeState::default(),
-            orchestrator: crate::expression::orchestrator::ExpressionOrchestrator::default(),
-        };
-        assert!(
-            runtime
-                .register_affect_reducer(Arc::new(WarmReducer))
-                .is_err()
-        );
-        assert!(runtime.extension_summary().reducers.is_empty());
-    }
-
-    #[tokio::test]
     async fn appraisal_engine_requires_persisted_implementation_approval() {
         struct ClassifierEngine;
 
@@ -1999,15 +1902,6 @@ mod tests {
             .unwrap();
         assert_eq!(drafts.len(), 1);
         assert_eq!(drafts[0].kind, "classifier_warm_signal");
-        let unbound = runtime
-            .observe_user_input(AffectUserInput {
-                channel_id: "cli",
-                user_id: "user",
-                user_text: "normal sentence",
-            })
-            .await;
-        assert!(unbound.persistence_error.is_some());
-        assert!(unbound.appraisals.is_empty());
         assert_eq!(
             runtime.extension_summary().appraisal_engines,
             vec!["test_classifier_appraisal".to_string()]
@@ -2235,7 +2129,7 @@ mod tests {
             .appraise_verified_user_input(&ctx, &approved, StdDuration::from_millis(1))
             .await;
         assert!(result.is_err());
-        let snapshot = runtime.affect_snapshot("cli", "user").await;
+        let snapshot = super::super::affect::baseline_snapshot(&runtime.preview_affect);
         assert_eq!(
             snapshot.affect.valence,
             runtime.preview_affect.baseline_valence

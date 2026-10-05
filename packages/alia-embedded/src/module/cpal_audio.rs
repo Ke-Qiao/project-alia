@@ -315,6 +315,16 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
             .open_submission(identity, sample_rate, generation)
     }
 
+    fn open_cue_submission(
+        &self,
+        identity: PlaybackIdentity,
+        sample_rate: u32,
+        generation: u64,
+    ) -> Result<Arc<AudioSubmission>> {
+        self.active_sender()?
+            .open_cue_submission(identity, sample_rate, generation)
+    }
+
     fn submit_audio(
         &self,
         submission: &Arc<AudioSubmission>,
@@ -349,16 +359,6 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
         self.active_sender()?.begin()
     }
 
-    fn play_if_current(&self, pcm: &[i16], sample_rate: u32, generation: u64) -> Result<bool> {
-        let sender = lock_mutex(&self.runtime, "playback runtime")?
-            .as_ref()
-            .map(|runtime| runtime.sender.clone());
-        match sender {
-            Some(sender) => sender.play_if_current(pcm, sample_rate, generation),
-            None => Ok(false),
-        }
-    }
-
     fn stop_if_current(&self, generation: u64) -> Result<bool> {
         Ok(lock_mutex(&self.runtime, "playback runtime")?
             .as_ref()
@@ -367,20 +367,6 @@ impl AudioPlaybackBackend for CpalAudioPlayback {
 
     fn is_playback_current(&self, generation: u64) -> bool {
         self.generation.load(Ordering::Acquire) == generation
-    }
-
-    fn play(&self, pcm: &[i16], sample_rate: u32) -> Result<()> {
-        if pcm.is_empty() {
-            return Ok(());
-        }
-        self.start_stream()?.play(pcm, sample_rate)
-    }
-
-    fn stop_playback(&self) -> Result<()> {
-        if let Some(runtime) = lock_mutex(&self.runtime, "playback runtime")?.as_ref() {
-            runtime.sender.stop();
-        }
-        Ok(())
     }
 
     fn is_available(&self) -> bool {

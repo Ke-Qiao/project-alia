@@ -204,31 +204,6 @@ fn routes_embedded_mic_volume_to_embedded_volume_tool() {
 }
 
 #[test]
-fn routes_goodbye_to_continuous_dialogue_end_tool() {
-    let selected = rank_and_limit_tools_with_index(
-        vec![
-            tool("get_current_time", "Get the current date and time"),
-            tool(
-                "end_continuous_dialogue",
-                "End continuous dialogue or follow-up listening",
-            ),
-        ],
-        vec![routing_entry(
-            "end_continuous_dialogue",
-            &["goodbye", "再见", "先这样", "停止回答"],
-            "End continuous dialogue when the user says goodbye, stop, cancel, 再见, or 先这样.",
-        )],
-        "再见，先这样吧",
-        1,
-        &[],
-        "embedded",
-    );
-
-    assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].name, "end_continuous_dialogue");
-}
-
-#[test]
 fn routes_search_language_to_fetch_candidate() {
     let selected = rank_and_limit_tools_with_index(
         vec![

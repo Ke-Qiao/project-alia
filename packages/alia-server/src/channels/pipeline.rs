@@ -1,8 +1,8 @@
 //! Channel → AI Pipeline integration.
 //!
 //! Subscribes to `ServerEvent::ChannelInput` on the EventBus, routes each
-//! inbound `ChannelEvent` through: Router → Cache/Skill/LLM → ChannelResponse,
-//! then delivers the response back to the originating channel.
+//! inbound `ChannelEvent` through Router → Cache/Skill/LLM → canonical Response,
+//! then delivers through owned media contracts to the originating channel.
 //!
 //! When the originating channel has `capabilities().streaming == true` and the
 //! route decision is an LLM call, the pipeline uses `chat_stream` and delivers
@@ -18,9 +18,9 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{
-    AudioFormat, AudioPayload, ChannelAdapter, ChannelEvent, ChannelTarget,
-};
+#[cfg(test)]
+use crate::channels::adapter::AudioPayload;
+use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
 use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemoryCaptureMode,
     MemorySection, ToolsSection,
@@ -31,11 +31,12 @@ use crate::module::ModuleRegistry;
 use crate::modules::memory::context::{
     ContextBinding, ContextSource, ContextUse, GenerationContext,
 };
+#[cfg(test)]
+use crate::providers::adapter::AudioEncoding;
 use crate::providers::adapter::{
-    AudioEncoding, CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage,
-    ConversationEventEntry, DEFAULT_ASSISTANT_NAME, DEFAULT_CACHE_SCOPE, LlmAdapter,
-    MemoryContextPack, RouteDecision, RouterInput, SemanticCacheCandidate, ToolDefinition,
-    sanitize_assistant_name,
+    CACHE_METADATA_SCHEMA, CacheEntry, CachedResponse, ChatMessage, ConversationEventEntry,
+    DEFAULT_ASSISTANT_NAME, DEFAULT_CACHE_SCOPE, LlmAdapter, MemoryContextPack, RouteDecision,
+    RouterInput, SemanticCacheCandidate, ToolDefinition, sanitize_assistant_name,
 };
 use crate::providers::sensor::SensorRegistry;
 use crate::settings::values::{
@@ -52,12 +53,11 @@ pub mod memory_capture;
 pub mod streaming;
 mod supervision;
 pub mod tools;
-mod transcript_correction;
 mod turn;
 mod voice;
 use crate::expression::orchestrator::{
-    ExpressionExecutionPhase, cancel_expression_execution,
-    execute_expression_plan_phase_with_response, negotiate_expression_capabilities,
+    ExpressionExecutionPhase, execute_expression_plan_phase_with_response,
+    negotiate_expression_capabilities,
 };
 use crate::expression::{
     ExpressionDeviceContext, ExpressionInput, ExpressionPlan, ExpressionSafetyContext,
@@ -70,9 +70,6 @@ use error_notice::{PipelineErrorStage, notify_pipeline_error};
 use memory_capture::{MemoryCaptureTrace, capture_turn_memory};
 use streaming::*;
 use tools::*;
-use transcript_correction::{
-    TranscriptCorrectionContext, TranscriptCorrectionResult, correct_stt_transcript,
-};
 use turn::*;
 
 const EMPTY_RESPONSE_FALLBACK: &str = "抱歉，我刚才没有生成有效回复，请再试一次。";
@@ -240,7 +237,6 @@ pub struct PipelinePolicies {
     pub cache: CacheSection,
     pub cache_policy: CachePolicyResourceSection,
     pub memory: MemorySection,
-    pub transcript_correction: crate::config::TranscriptCorrectionPolicySection,
 }
 
 pub type SharedPipelinePolicies = Arc<RwLock<PipelinePolicies>>;
@@ -260,7 +256,6 @@ impl PipelinePolicies {
         cache: CacheSection,
         cache_policy: CachePolicyResourceSection,
         memory: MemorySection,
-        transcript_correction: crate::config::TranscriptCorrectionPolicySection,
     ) -> Self {
         Self {
             conversation,
@@ -268,7 +263,6 @@ impl PipelinePolicies {
             cache,
             cache_policy,
             memory,
-            transcript_correction,
         }
     }
 
@@ -431,58 +425,6 @@ impl PipelinePolicies {
             applied
                 .push("core.policies.tools.indexed_search_refresh_missing_embeddings".to_string());
         }
-        if let Some(value) = bool_setting(updates, "core.policies.transcript_correction.enabled") {
-            self.transcript_correction.enabled = value;
-            applied.push("core.policies.transcript_correction.enabled".to_string());
-        }
-        if let Some(value) =
-            bool_setting(updates, "core.policies.transcript_correction.apply_to_stt")
-        {
-            self.transcript_correction.apply_to_stt = value;
-            applied.push("core.policies.transcript_correction.apply_to_stt".to_string());
-        }
-        if let Some(value) = string_setting(updates, "core.policies.transcript_correction.provider")
-        {
-            self.transcript_correction.provider = value;
-            applied.push("core.policies.transcript_correction.provider".to_string());
-        }
-        if let Some(value) = u64_setting(updates, "core.policies.transcript_correction.timeout_sec")
-        {
-            self.transcript_correction.timeout_sec = value.max(1);
-            applied.push("core.policies.transcript_correction.timeout_sec".to_string());
-        }
-        if let Some(value) = usize_setting(
-            updates,
-            "core.policies.transcript_correction.max_input_chars",
-        ) {
-            self.transcript_correction.max_input_chars = value;
-            applied.push("core.policies.transcript_correction.max_input_chars".to_string());
-        }
-        if let Some(value) = f32_setting(
-            updates,
-            "core.policies.transcript_correction.min_confidence_to_replace",
-        ) {
-            self.transcript_correction.min_confidence_to_replace = value.clamp(0.0, 1.0);
-            applied
-                .push("core.policies.transcript_correction.min_confidence_to_replace".to_string());
-        }
-        if let Some(value) = bool_setting(
-            updates,
-            "core.policies.transcript_correction.require_confirmation_on_medium_risk",
-        ) {
-            self.transcript_correction
-                .require_confirmation_on_medium_risk = value;
-            applied.push(
-                "core.policies.transcript_correction.require_confirmation_on_medium_risk"
-                    .to_string(),
-            );
-        }
-        if let Some(value) =
-            bool_setting(updates, "core.policies.transcript_correction.trace_enabled")
-        {
-            self.transcript_correction.trace_enabled = value;
-            applied.push("core.policies.transcript_correction.trace_enabled".to_string());
-        }
 
         applied
     }
@@ -517,7 +459,7 @@ pub fn spawn_pipeline(
             if shutdown.is_cancelled() {
                 break;
             }
-            // The reliable voice receiver keeps its own bounded queue. Legacy
+            // The reliable voice receiver keeps its own bounded queue. Channel
             // broadcast events have a separate bounded, best-effort queue.
             let next = tokio::select! {
                 _ = shutdown.cancelled() => break,
@@ -530,35 +472,21 @@ pub fn spawn_pipeline(
                     }
                 }
                 _ = std::future::ready(()), if tasks.has_capacity() && !pending.is_empty() => {
-                    pending.pop_front().map(voice::PipelineInput::Legacy)
+                    pending.pop_front().map(voice::PipelineInput::ChannelEvent)
                 }
                 event = rx.recv() => {
                     match event {
-                        Ok(ServerEvent::ChannelInput(event @ ChannelEvent::InterruptActiveTurn { .. })) => {
-                            let snapshot = policies.read().await.clone();
-                            // Cancellation is delivered outside the request queue. Adapter
-                            // stop notifications are bounded so they cannot wedge intake.
-                            if tokio::time::timeout(std::time::Duration::from_secs(2), process_event(
-                                event, &modules, &channels, &sensors, &bus, &voice_turns,
-                                shutdown.child_token(), debug_output, &snapshot.conversation,
-                                &snapshot.tools, &snapshot.cache, &snapshot.cache_policy,
-                                &snapshot.memory, &snapshot.transcript_correction,
-                            )).await.is_err() {
-                                tracing::warn!("channel interrupt notification timed out");
-                            }
-                            continue;
-                        }
                         Ok(ServerEvent::ChannelInput(event)) => {
-                            if pending.len() < supervision::LEGACY_QUEUE_CAPACITY {
+                            if pending.len() < supervision::CHANNEL_QUEUE_CAPACITY {
                                 pending.push_back(event);
                             } else {
-                                tracing::warn!(channel_id = channel_event_id(&event), "legacy pipeline input rejected: queue full");
+                                tracing::warn!(channel_id = channel_event_id(&event), "channel input rejected: queue full");
                             }
                             continue;
                         }
                         Ok(_) => continue,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
-                            tracing::warn!(missed, "legacy pipeline event bus lagged");
+                            tracing::warn!(missed, "channel event bus lagged");
                             continue;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -570,7 +498,7 @@ pub fn spawn_pipeline(
             };
             let token = match &input {
                 voice::PipelineInput::Recognized(input) => input.cancel.clone(),
-                voice::PipelineInput::Legacy(_) => shutdown.child_token(),
+                voice::PipelineInput::ChannelEvent(_) => shutdown.child_token(),
             };
             if shutdown.is_cancelled() {
                 token.cancel();
@@ -588,17 +516,16 @@ pub fn spawn_pipeline(
             let worker_token = token.clone();
             tasks.spawn(token, async move {
                 // Policy reads may yield; cancellation must be checked again by
-                // the worker before it touches STT, context, or an LLM.
+                // the worker before it touches context or an LLM.
                 let policy = policies.read().await.clone();
                 let result = match input {
-                    voice::PipelineInput::Legacy(event) => {
+                    voice::PipelineInput::ChannelEvent(event) => {
                         process_event(
                             event,
                             &modules,
                             &channels,
                             &sensors,
                             &bus,
-                            &voice_turns,
                             worker_token,
                             debug_output,
                             &policy.conversation,
@@ -606,7 +533,6 @@ pub fn spawn_pipeline(
                             &policy.cache,
                             &policy.cache_policy,
                             &policy.memory,
-                            &policy.transcript_correction,
                         )
                         .await
                     }
@@ -649,7 +575,6 @@ async fn process_event(
     channels: &ChannelRegistry,
     sensors: &SensorRegistry,
     event_bus: &EventBus,
-    voice_turns: &VoiceTurnRegistry,
     request_cancel: CancellationToken,
     debug_output: bool,
     conversation_config: &ConversationSection,
@@ -657,7 +582,6 @@ async fn process_event(
     cache_config: &CacheSection,
     cache_policy: &CachePolicyResourceSection,
     memory_config: &MemorySection,
-    transcript_correction_config: &crate::config::TranscriptCorrectionPolicySection,
 ) -> anyhow::Result<()> {
     if request_cancel.is_cancelled() {
         return Ok(());
@@ -707,7 +631,6 @@ async fn process_event(
                 memory_config,
                 Some(&turn),
                 true,
-                None,
             )
             .await
             {
@@ -775,271 +698,6 @@ async fn process_event(
             }
             Ok(())
         }
-        ChannelEvent::InterruptActiveTurn {
-            channel_id,
-            user_id,
-            reason,
-        } => {
-            let (channel_id, channel) = match resolve_event_channel(channels, &channel_id).await {
-                Ok(resolved) => resolved,
-                Err(error) => {
-                    tracing::warn!(
-                        requested_channel_id = %channel_id,
-                        user_id,
-                        reason,
-                        error = %error,
-                        "interrupt requested for an unknown channel"
-                    );
-                    return Ok(());
-                }
-            };
-            let interrupted = voice_turns.interrupt(&channel_id, &user_id, &reason).await;
-            if interrupted {
-                tracing::info!(channel_id, user_id, reason, "active voice turn interrupted");
-                if reason == "wakeword_during_thinking" {
-                    debug_component_json(
-                        debug_output,
-                        "thinking_cue",
-                        "interrupt",
-                        &serde_json::json!({
-                            "reason": reason.as_str(),
-                            "channel_id": channel_id.as_str(),
-                            "user_id": user_id.as_str(),
-                        }),
-                        Some((&channel_id, &user_id)),
-                    );
-                }
-                let config = channel.interrupt_config();
-                if config.enabled {
-                    let target = ChannelTarget {
-                        voice: None,
-                        user_id: user_id.clone(),
-                    };
-                    if let Err(error) = channel.stop_current_playback(&target, &reason).await {
-                        tracing::warn!(
-                            channel_type = channel.channel_type(),
-                            channel_id = channel.channel_id(),
-                            error = %error,
-                            "failed to stop channel playback after interrupt"
-                        );
-                        tracing::debug!(error = ?error, "stop playback failure details");
-                    }
-                    let expression_cancel = cancel_expression_execution(
-                        modules.expression.orchestrator(),
-                        channel.as_ref(),
-                        &target,
-                        &reason,
-                    )
-                    .await;
-                    debug_component_text(
-                        debug_output,
-                        "expression",
-                        "cancel",
-                        &serde_json::to_string(&expression_cancel)
-                            .unwrap_or_else(|_| expression_cancel.status),
-                        Some((&channel_id, &user_id)),
-                    );
-                }
-            } else {
-                tracing::debug!(
-                    channel_id,
-                    user_id,
-                    reason,
-                    "interrupt requested but no active voice turn was registered"
-                );
-            }
-            Ok(())
-        }
-        ChannelEvent::AudioInput {
-            channel_id,
-            user_id,
-            audio,
-            source_received_at,
-            source_privacy_epoch,
-            source_relationship_epoch,
-        } => {
-            let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
-            let target = ChannelTarget {
-                voice: None,
-                user_id: user_id.clone(),
-            };
-            let mut turn = voice_turns
-                .begin(
-                    channel_id.clone(),
-                    user_id.clone(),
-                    channel.interrupt_config(),
-                    request_cancel,
-                )
-                .await;
-
-            // STT → Router → LLM → TTS
-            turn.output_channel = Some(channel.clone());
-            turn.received_at = source_received_at;
-            turn.source_privacy_epoch = Some(source_privacy_epoch);
-            turn.source_relationship_epoch = Some(source_relationship_epoch);
-            debug_component_audio(
-                debug_output,
-                "stt",
-                "call",
-                audio.data.len(),
-                Some((&channel_id, &user_id)),
-            );
-            let (stt_audio, stt_encoding) = prepare_audio_for_stt(&audio);
-            let transcription = match cancellable_stage(
-                Some(&turn),
-                "stt",
-                modules.stt.transcribe_result(&stt_audio, stt_encoding),
-            )
-            .await
-            {
-                Ok(Some(transcription)) => transcription,
-                Ok(None) => {
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-                Err(error) => {
-                    notify_pipeline_error(
-                        modules,
-                        channel.as_ref(),
-                        &target,
-                        &channel_id,
-                        &user_id,
-                        PipelineErrorStage::Stt,
-                        None,
-                        Some(&error),
-                        debug_output,
-                        true,
-                        Some(&turn),
-                    )
-                    .await;
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-            };
-            let stt_capabilities = modules.stt.stt_capabilities().await;
-            let transcript = transcription.text.clone();
-            debug_component_text(
-                debug_output,
-                "stt",
-                "result",
-                &transcript,
-                Some((&channel_id, &user_id)),
-            );
-
-            if transcript.trim().is_empty() {
-                debug_component(
-                    debug_output,
-                    "stt",
-                    "empty_result",
-                    Some((&channel_id, &user_id)),
-                );
-                voice_turns.finish(&turn).await;
-                return Ok(());
-            }
-
-            let generation = match cancellable_stage(
-                Some(&turn),
-                "materialize_raw_transcript",
-                ensure_turn_context(modules, &turn, &channel_id, &user_id, &transcript),
-            )
-            .await?
-            {
-                Some(generation) => generation,
-                None => {
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-            };
-            let correction = cancellable_stage(Some(&turn), "transcript_correction", async {
-                let correction_context = build_transcript_correction_context(
-                    modules,
-                    sensors,
-                    &channel_id,
-                    &user_id,
-                    &generation,
-                )
-                .await;
-                let correction = correct_stt_transcript(
-                    &transcription,
-                    &stt_capabilities,
-                    &correction_context,
-                    transcript_correction_config,
-                    transcript_correction_llm(modules, transcript_correction_config),
-                )
-                .await;
-                Ok(correction)
-            })
-            .await;
-            let correction = match correction {
-                Ok(Some(correction)) => correction,
-                Ok(None) => {
-                    voice_turns.finish(&turn).await;
-                    return Ok(());
-                }
-                Err(error) => {
-                    voice_turns.finish(&turn).await;
-                    return Err(error);
-                }
-            };
-            if correction.requires_user_confirmation(transcript_correction_config) {
-                let clarification = correction.clarification_prompt();
-                handle_transcript_correction_confirmation(
-                    modules,
-                    channel.as_ref(),
-                    &target,
-                    &channel_id,
-                    &user_id,
-                    &clarification,
-                    &correction,
-                    debug_output,
-                    Some(&turn),
-                )
-                .await;
-                voice_turns.finish(&turn).await;
-                return Ok(());
-            }
-            let corrected_text = correction
-                .text_for_processing(transcript_correction_config)
-                .to_string();
-            let correction_trace = transcript_correction_config
-                .trace_enabled
-                .then_some(correction.clone());
-            debug_component_json(
-                debug_output,
-                "stt",
-                "correction_detail",
-                &transcript_correction_debug_payload(&correction, &corrected_text),
-                Some((&channel_id, &user_id)),
-            );
-            debug_component_text(
-                debug_output,
-                "stt",
-                "corrected",
-                &corrected_text,
-                Some((&channel_id, &user_id)),
-            );
-
-            let result = voice::process_voice_response(
-                &corrected_text,
-                &user_id,
-                modules,
-                channel.as_ref(),
-                &target,
-                &channel_id,
-                event_bus,
-                debug_output,
-                conversation_config,
-                tools_config,
-                cache_config,
-                cache_policy,
-                memory_config,
-                &turn,
-                correction_trace,
-            )
-            .await;
-            voice_turns.finish(&turn).await;
-            result
-        }
         ChannelEvent::SensorData {
             channel_id,
             sensor_type,
@@ -1068,50 +726,9 @@ async fn process_event(
     }
 }
 
-fn prepare_audio_for_stt(audio: &AudioPayload) -> (Vec<u8>, AudioEncoding) {
-    match audio.format {
-        AudioFormat::Opus => (audio.data.to_vec(), AudioEncoding::Opus),
-        AudioFormat::Wav => (audio.data.to_vec(), AudioEncoding::Wav),
-        AudioFormat::Pcm16 if audio.sample_rate == 16_000 && audio.channels == 1 => {
-            (audio.data.to_vec(), AudioEncoding::Pcm16kMono)
-        }
-        AudioFormat::Pcm16 => (
-            pcm16le_to_wav(&audio.data, audio.sample_rate, audio.channels),
-            AudioEncoding::Wav,
-        ),
-    }
-}
-
-fn pcm16le_to_wav(pcm: &[u8], sample_rate: u32, channels: u16) -> Vec<u8> {
-    let channels = channels.max(1);
-    let sample_rate = sample_rate.max(1);
-    let data_len = pcm.len() as u32;
-    let byte_rate = sample_rate * channels as u32 * 2;
-    let block_align = channels * 2;
-
-    let mut wav = Vec::with_capacity(44 + pcm.len());
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
-    wav.extend_from_slice(b"WAVE");
-    wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&channels.to_le_bytes());
-    wav.extend_from_slice(&sample_rate.to_le_bytes());
-    wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&block_align.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    wav.extend_from_slice(pcm);
-    wav
-}
-
 fn channel_event_id(event: &ChannelEvent) -> Option<&str> {
     match event {
         ChannelEvent::TextMessage { channel_id, .. }
-        | ChannelEvent::AudioInput { channel_id, .. }
-        | ChannelEvent::InterruptActiveTurn { channel_id, .. }
         | ChannelEvent::SensorData { channel_id, .. }
         | ChannelEvent::StatusChange { channel_id, .. } => Some(channel_id),
     }
@@ -1122,8 +739,9 @@ async fn resolve_event_channel(
     channel_id: &str,
 ) -> anyhow::Result<(String, Arc<dyn ChannelAdapter>)> {
     channels
-        .get_resolved(channel_id)
-        .await?
+        .get(channel_id)
+        .await
+        .map(|channel| (channel_id.to_owned(), channel))
         .ok_or_else(|| anyhow::anyhow!("channel '{}' not found for response delivery", channel_id))
 }
 
@@ -1279,7 +897,6 @@ fn process_text<'a>(
     memory_config: &'a MemorySection,
     turn: Option<&'a VoiceTurn>,
     defer_persistence: bool,
-    transcript_correction: Option<TranscriptCorrectionResult>,
 ) -> futures::future::BoxFuture<'a, anyhow::Result<TextResult>> {
     // Keep the generation state machine on the heap across all text and voice
     // callers; nesting it in ingress futures can overflow default worker stacks.
@@ -1288,13 +905,10 @@ fn process_text<'a>(
         if turn_is_interrupted(turn) {
             return Ok(TextResult::interrupted());
         }
-        let raw_text = transcript_correction
-            .as_ref()
-            .map_or(text, |correction| correction.raw_text.as_str());
         let generation = match cancellable_stage(
             turn,
             "materialize_context",
-            ensure_turn_context(modules, admitted_turn, channel_id, user_id, raw_text),
+            ensure_turn_context(modules, admitted_turn, channel_id, user_id, text),
         )
         .await?
         {
@@ -1369,19 +983,6 @@ fn process_text<'a>(
                 }),
             )
             .await;
-        if let Some(correction) = transcript_correction.as_ref()
-            && correction.status != transcript_correction::TranscriptCorrectionStatus::Disabled
-        {
-            trace
-                .record(
-                    modules,
-                    "stt_correction",
-                    "stt",
-                    Some("STT transcript correction completed".to_string()),
-                    transcript_correction_trace_payload(correction, text),
-                )
-                .await;
-        }
         match cancellable_stage(turn, "observe_user_affect_for_turn", async {
             observe_user_affect_for_turn(modules, admitted_turn).await
         })
@@ -2587,291 +2188,6 @@ fn expression_safety_context(
             })
             .map(|limit| limit.clamp(0.0, 1.0)),
     }
-}
-
-fn transcript_correction_llm(
-    modules: &ModuleRegistry,
-    policy: &crate::config::TranscriptCorrectionPolicySection,
-) -> Option<Arc<dyn LlmAdapter>> {
-    match policy.provider.trim() {
-        "transcript_correction_llm" => modules.transcript_correction_llm.clone(),
-        "minor_llm" => Some(modules.minor_llm.clone()),
-        "major_llm" => Some(modules.major_llm.clone()),
-        "default_llm" => {
-            if let Some(llm) = &modules.transcript_correction_llm {
-                Some(llm.clone())
-            } else if modules.minor_llm.name() != "noop_llm" {
-                Some(modules.minor_llm.clone())
-            } else if modules.major_llm.name() != "noop_llm" {
-                Some(modules.major_llm.clone())
-            } else {
-                None
-            }
-        }
-        "none" => None,
-        other => {
-            tracing::warn!(
-                provider = other,
-                "unknown transcript correction provider; falling back to default_llm"
-            );
-            if let Some(llm) = &modules.transcript_correction_llm {
-                Some(llm.clone())
-            } else if modules.minor_llm.name() != "noop_llm" {
-                Some(modules.minor_llm.clone())
-            } else if modules.major_llm.name() != "noop_llm" {
-                Some(modules.major_llm.clone())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-async fn build_transcript_correction_context(
-    modules: &ModuleRegistry,
-    sensors: &SensorRegistry,
-    channel_id: &str,
-    user_id: &str,
-    generation: &GenerationContext,
-) -> TranscriptCorrectionContext {
-    let mut context = TranscriptCorrectionContext::new(channel_id, user_id);
-
-    if let Ok(skills) = modules.skills.list_skills().await {
-        context.active_skill_names = skills
-            .into_iter()
-            .map(|skill| {
-                if skill.display_name.trim().is_empty() {
-                    skill.name
-                } else {
-                    format!("{} ({})", skill.display_name, skill.name)
-                }
-            })
-            .take(24)
-            .collect();
-    }
-
-    if let Ok(sensor_summaries) = sensors.list_sensors().await {
-        let mut known_device_names = Vec::new();
-        let mut room_names = Vec::new();
-        for sensor in sensor_summaries.into_iter().take(48) {
-            push_unique(&mut known_device_names, sensor.display_name.clone(), 48);
-            push_unique(&mut known_device_names, sensor.sensor_id.clone(), 48);
-            for room in inferred_room_names(&sensor.sensor_id, &sensor.display_name) {
-                push_unique(&mut room_names, room, 24);
-            }
-        }
-        context.known_device_names = known_device_names;
-        context.room_names = room_names;
-    }
-
-    context.last_assistant_question = generation
-        .history_messages()
-        .iter()
-        .rev()
-        .find(|message| {
-            message.role == "assistant" && {
-                let text = message.content.trim();
-                text.ends_with('?') || text.ends_with('？')
-            }
-        })
-        .map(|message| message.content.clone());
-
-    context
-}
-
-fn push_unique(values: &mut Vec<String>, value: String, max_len: usize) {
-    let value = value.trim();
-    if value.is_empty() || values.len() >= max_len {
-        return;
-    }
-    if !values.iter().any(|existing| existing == value) {
-        values.push(value.to_string());
-    }
-}
-
-fn inferred_room_names(sensor_id: &str, display_name: &str) -> Vec<String> {
-    let mut rooms = Vec::new();
-    for text in [sensor_id, display_name] {
-        let lower = text.to_ascii_lowercase();
-        for marker in [
-            "kitchen",
-            "living room",
-            "bedroom",
-            "bathroom",
-            "office",
-            "study",
-            "hallway",
-            "garage",
-            "balcony",
-        ] {
-            if lower.contains(marker) {
-                push_unique(&mut rooms, marker.to_string(), 12);
-            }
-        }
-    }
-    rooms
-}
-
-async fn handle_transcript_correction_confirmation(
-    modules: &ModuleRegistry,
-    channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
-    channel_id: &str,
-    user_id: &str,
-    clarification: &str,
-    correction: &TranscriptCorrectionResult,
-    debug_output: bool,
-    turn: Option<&VoiceTurn>,
-) {
-    match modules
-        .conversation
-        .get_or_create_active_session(channel_id, user_id)
-        .await
-    {
-        Ok(session_id) => {
-            let mut trace = AgentTrace::new(session_id);
-            trace
-                .record(
-                    modules,
-                    "stt_correction",
-                    "stt",
-                    Some("STT transcript correction requires confirmation".to_string()),
-                    transcript_correction_trace_payload(correction, &correction.raw_text),
-                )
-                .await;
-            trace
-                .record(
-                    modules,
-                    "correction_confirmation_requested",
-                    "pipeline",
-                    Some("Ambiguous STT correction was paused for user confirmation".to_string()),
-                    serde_json::json!({
-                        "clarification_text": clarification,
-                        "raw_text": correction.raw_text,
-                        "corrected_text": correction.corrected_text,
-                        "risk": correction.risk,
-                    }),
-                )
-                .await;
-            let persisted = async {
-                let turn =
-                    turn.ok_or_else(|| anyhow::anyhow!("clarification has no admitted source"))?;
-                let owner = Uuid::parse_str(user_id)?;
-                let context = turn.generation_context().await?;
-                anyhow::ensure!(
-                    context.source().conversation_id == Some(session_id)
-                        && context.source().owner_id == owner,
-                    "clarification changed original source"
-                );
-                let response_id = delivery::prepare_response(
-                    modules,
-                    Some(turn),
-                    channel_id,
-                    user_id,
-                    Some(session_id),
-                    "clarification",
-                )
-                .await?;
-                modules
-                    .conversation
-                    .commit_response(
-                        owner,
-                        session_id,
-                        response_id,
-                        ChatMessage::new("assistant", clarification),
-                    )
-                    .await?;
-                Ok::<_, anyhow::Error>(())
-            }
-            .await;
-            if let Err(error) = persisted {
-                tracing::warn!(%error,"clarification could not be durably admitted");
-                return;
-            }
-        }
-        Err(error) => {
-            tracing::debug!(error = ?error, "failed to create session for STT correction confirmation");
-            return;
-        }
-    }
-
-    debug_component_text(
-        debug_output,
-        "stt",
-        "clarification",
-        clarification,
-        Some((channel_id, user_id)),
-    );
-    if channel.capabilities().text
-        && let Err(error) = cancellable_stage(
-            turn,
-            "clarification_delivery",
-            delivery::text(modules, target, turn, "text:clarification", clarification),
-        )
-        .await
-    {
-        log_channel_delivery_failure(channel, error).await;
-        return;
-    }
-    if channel.capabilities().voice_output {
-        deliver_tts_audio(
-            modules,
-            channel,
-            target,
-            channel_id,
-            user_id,
-            clarification,
-            None,
-            None,
-            None,
-            None,
-            debug_output,
-            turn,
-        )
-        .await;
-    }
-}
-
-fn transcript_correction_trace_payload(
-    correction: &TranscriptCorrectionResult,
-    text_used: &str,
-) -> serde_json::Value {
-    serde_json::json!({
-        "raw_text": correction.raw_text,
-        "corrected_text": correction.corrected_text,
-        "text_used": text_used,
-        "confidence": correction.confidence,
-        "changed": correction.changed,
-        "corrections": correction.corrections,
-        "ambiguities": correction.ambiguities,
-        "requires_confirmation": correction.requires_confirmation,
-        "clarification_text": correction.clarification_text,
-        "risk": correction.risk,
-        "status": correction.status,
-        "provider": correction.provider,
-        "stt": correction.stt,
-    })
-}
-
-fn transcript_correction_debug_payload(
-    correction: &TranscriptCorrectionResult,
-    text_used: &str,
-) -> serde_json::Value {
-    serde_json::json!({
-        "raw_text": correction.raw_text,
-        "corrected_text": correction.corrected_text,
-        "text_used": text_used,
-        "confidence": correction.confidence,
-        "changed": correction.changed,
-        "corrections": correction.corrections,
-        "ambiguities": correction.ambiguities,
-        "requires_confirmation": correction.requires_confirmation,
-        "risk": correction.risk,
-        "status": correction.status,
-        "provider": correction.provider,
-        "stt_confidence": correction.stt.as_ref().and_then(|stt| stt.confidence),
-        "stt_language": correction.stt.as_ref().and_then(|stt| stt.language.as_deref()),
-    })
 }
 
 async fn execute_expression_and_trace(

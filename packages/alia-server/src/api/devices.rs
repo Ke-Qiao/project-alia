@@ -291,15 +291,14 @@ async fn resolve_embedded_channel(
         auth.is_admin() || channel.owner_user_id() == Some(auth.id)
     };
     if let Some(channel_id) = channel_id {
-        let (resolved_channel_id, channel) = state
+        let channel = state
             .channels
-            .get_resolved(channel_id)
+            .get(channel_id)
             .await
-            .map_err(|error| AppError::Validation(error.to_string()))?
             .ok_or_else(|| AppError::NotFound(format!("channel '{channel_id}' not found")))?;
         if channel.channel_type() != "embedded" {
             return Err(AppError::Validation(format!(
-                "channel '{resolved_channel_id}' is not an embedded channel"
+                "channel '{channel_id}' is not an embedded channel"
             )));
         }
         if !permitted(&channel) {

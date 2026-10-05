@@ -318,6 +318,8 @@ struct NativePlayback {
     entered: Arc<Semaphore>,
     active: Arc<AtomicUsize>,
     stops: Arc<AtomicUsize>,
+    registration: std::sync::OnceLock<OutputRegistration>,
+    retired: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -352,17 +354,84 @@ impl ChannelAdapter for NativePlayback {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
+
+    fn reserve_playback(
+        &self,
+        target: &ChannelTarget,
+        playback_id: Uuid,
+    ) -> anyhow::Result<PlaybackIdentity> {
+        assert!(!self.retired.load(Ordering::SeqCst));
+        assert_eq!(
+            target.voice,
+            Some(self.registration.get().unwrap().binding.scope)
+        );
+        Ok(PlaybackIdentity {
+            scope: target.voice.expect("probe needs an original voice scope"),
+            playback_id,
+            playback_sequence: 1,
+        })
     }
+
+    async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
+        assert!(!self.retired.load(Ordering::SeqCst));
+        let registration = OutputRegistration {
+            binding,
+            backend: SubmissionBackend {
+                instance_id: Uuid::new_v4(),
+                boundary: SubmissionBoundary::CpalCallbackBuffer,
+                output_sample_rate_hz: 48000,
+                output_channels: 1,
+            },
+            maximum_hold_ms: 60000,
+            initiative_capture_gate_version: 0,
+        };
+        self.registration.set(registration.clone()).unwrap();
+        Ok(registration)
+    }
+
+    async fn retire_voice_output(
+        &self,
+        request: &OutputRetirementRequest,
+    ) -> anyhow::Result<OutputRetirementReceipt> {
+        request.validate()?;
+        let registration = self.registration.get().unwrap();
+        assert_eq!(request.scope, registration.binding.scope);
+        assert_eq!(request.binding, Some(registration.binding));
+        assert_eq!(
+            request.expected_backend.as_ref(),
+            Some(&registration.backend)
+        );
+        self.retired.store(true, Ordering::SeqCst);
+        while self.active.load(Ordering::SeqCst) != 0 {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        // This empty-PCM probe owns only a software gate and a blocking call.
+        // It proves those writes settled without inventing media progress or
+        // claiming that an independent precise cancellation completed.
+        let receipt = OutputRetirementReceipt {
+            scope: request.scope,
+            binding: request.binding,
+            evidence: OutputRetirementEvidence::Settled {
+                backend: registration.backend.clone(),
+                progress: vec![],
+            },
+        };
+        receipt.validate(request)?;
+        Ok(receipt)
+    }
+
     async fn deliver_audio(
         &self,
-        _: &ChannelTarget,
-        _: Option<PlaybackIdentity>,
+        target: &ChannelTarget,
+        identity: PlaybackIdentity,
         _: AudioPayloadStream,
         _: Arc<dyn PlaybackObserver>,
         _: CancellationToken,
     ) -> anyhow::Result<AudioDeliveryReport> {
+        assert!(!self.retired.load(Ordering::SeqCst));
+        let scope = self.registration.get().unwrap().binding.scope;
+        assert_eq!(target.voice, Some(scope));
+        assert_eq!(identity.scope, scope);
         let (release, entered, active) = (
             self.release.clone(),
             self.entered.clone(),
@@ -399,16 +468,29 @@ async fn delivery_shutdown_retains_native_owner_channels_and_database_past_both_
         let active = Arc::new(AtomicUsize::new(0));
         let stops = Arc::new(AtomicUsize::new(0));
         let runtime = ServerBuilder::from_config(Arc::new(f.config), CancellationToken::new())
-            .with_channel(NativePlayback { owner, release: release.clone(), entered: entered.clone(), active: active.clone(), stops: stops.clone() })
+            .with_channel(NativePlayback {
+                owner, release: release.clone(), entered: entered.clone(),
+                active: active.clone(), stops: stops.clone(),
+                registration: std::sync::OnceLock::new(),
+                retired: std::sync::atomic::AtomicBool::new(false),
+            })
             .build().await.unwrap();
         let state = runtime.state().clone();
-        let response = draft(&state, owner).await;
+        let scope = VoiceScope {
+            device_boot_id: Uuid::new_v4(), session_id: Uuid::new_v4(), generation_epoch: 1,
+        };
+        let response = draft_with_voice(&state, owner, Some(scope)).await;
+        let response_id = response.response_id;
         let service = state.delivery.clone();
         let channel = state.channels.get("delivery-test").await.unwrap();
+        let _producer = service.begin_voice_output(
+            owner, response.key.request_id, scope, channel.clone(), CancellationToken::new(), None,
+        ).unwrap();
+        _producer.bind(response).await.unwrap();
         let dispatch = tokio::spawn(async move {
             service.deliver_audio(alia_server::modules::delivery::AudioDelivery {
-                response_id: response.response_id, output_key: "native:0".into(), content: json!({"text":"native probe"}),
-                channel, target: ChannelTarget { user_id: owner.to_string(), voice: None },
+                response_id, output_key: "native:0".into(), content: json!({"text":"native probe"}),
+                channel, target: ChannelTarget { user_id: owner.to_string(), voice: Some(scope) },
                 audio: Box::pin(futures::stream::empty()), cancel: CancellationToken::new(),
             }).await
         });
@@ -439,8 +521,6 @@ struct PanicFencePlayback {
     inner: NativePlayback,
     fence_entered: Arc<Semaphore>,
     media_dropped: Arc<AtomicUsize>,
-    registration: std::sync::OnceLock<OutputRegistration>,
-    retired: std::sync::atomic::AtomicBool,
     retirement_finished: Arc<AtomicUsize>,
 }
 
@@ -484,68 +564,19 @@ impl ChannelAdapter for PanicFencePlayback {
         &self,
         target: &ChannelTarget,
         playback_id: Uuid,
-    ) -> anyhow::Result<Option<PlaybackIdentity>> {
-        assert!(!self.retired.load(Ordering::SeqCst));
-        assert_eq!(
-            target.voice,
-            Some(self.registration.get().unwrap().binding.scope)
-        );
-        Ok(Some(PlaybackIdentity {
-            scope: target.voice.expect("probe needs an original voice scope"),
-            playback_id,
-            playback_sequence: 1,
-        }))
-    }
-
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
+    ) -> anyhow::Result<PlaybackIdentity> {
+        self.inner.reserve_playback(target, playback_id)
     }
 
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
-        assert!(!self.retired.load(Ordering::SeqCst));
-        let registration = OutputRegistration {
-            binding,
-            backend: SubmissionBackend {
-                instance_id: Uuid::new_v4(),
-                boundary: SubmissionBoundary::CpalCallbackBuffer,
-                output_sample_rate_hz: 48000,
-                output_channels: 1,
-            },
-            maximum_hold_ms: 60000,
-            initiative_capture_gate_version: 0,
-        };
-        self.registration.set(registration.clone()).unwrap();
-        Ok(registration)
+        self.inner.register_output(binding).await
     }
 
     async fn retire_voice_output(
         &self,
         request: &OutputRetirementRequest,
     ) -> anyhow::Result<OutputRetirementReceipt> {
-        request.validate()?;
-        let registration = self.registration.get().unwrap();
-        assert_eq!(request.scope, registration.binding.scope);
-        assert_eq!(request.binding, Some(registration.binding));
-        assert_eq!(
-            request.expected_backend.as_ref(),
-            Some(&registration.backend)
-        );
-        self.retired.store(true, Ordering::SeqCst);
-        while self.inner.active.load(Ordering::SeqCst) != 0 {
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-        // This empty-PCM probe owns only a software gate and a blocking call.
-        // It proves those writes settled, without inventing media progress or
-        // claiming that the independently panicked precise cancel completed.
-        let receipt = OutputRetirementReceipt {
-            scope: request.scope,
-            binding: request.binding,
-            evidence: OutputRetirementEvidence::Settled {
-                backend: registration.backend.clone(),
-                progress: vec![],
-            },
-        };
-        receipt.validate(request)?;
+        let receipt = self.inner.retire_voice_output(request).await?;
         self.retirement_finished.fetch_add(1, Ordering::SeqCst);
         Ok(receipt)
     }
@@ -553,12 +584,12 @@ impl ChannelAdapter for PanicFencePlayback {
     async fn deliver_audio(
         &self,
         target: &ChannelTarget,
-        identity: Option<PlaybackIdentity>,
+        identity: PlaybackIdentity,
         audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
         cancel: CancellationToken,
     ) -> anyhow::Result<AudioDeliveryReport> {
-        assert!(!self.retired.load(Ordering::SeqCst));
+        assert!(!self.inner.retired.load(Ordering::SeqCst));
         let _drop = MediaDrop(self.media_dropped.clone());
         self.inner
             .deliver_audio(target, identity, audio, observer, cancel)
@@ -632,10 +663,10 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
                     inner: NativePlayback {
                         owner, release: release.clone(), entered: entered.clone(),
                         active: active.clone(), stops: stops.clone(),
+                        registration: std::sync::OnceLock::new(),
+                        retired: std::sync::atomic::AtomicBool::new(false),
                     },
                     fence_entered: fence_entered.clone(), media_dropped: media_dropped.clone(),
-                    registration: std::sync::OnceLock::new(),
-                    retired: std::sync::atomic::AtomicBool::new(false),
                     retirement_finished: retirement_finished.clone(),
                 }).build().await.unwrap();
             let state = runtime.state().clone();

@@ -274,15 +274,10 @@ impl ServerRuntime {
             #[cfg(feature = "channel-embedded")]
             {
                 use crate::grpc::{
-                    audio_ingress::ServerAudioIngressService, voice_session::VoiceSessionService,
+                    voice_auth::VoiceIngressAuth, voice_session::VoiceSessionService,
                 };
-                use alia_proto::audio::server_audio_ingress_server::ServerAudioIngressServer;
                 use alia_proto::voice::voice_session_server::VoiceSessionServer;
-                let auth = ServerAudioIngressService::new(
-                    state.event_bus.clone(),
-                    state.channels.clone(),
-                    "embedded",
-                );
+                let auth = VoiceIngressAuth::new(state.channels.clone());
                 let voice = VoiceSessionService::new(
                     auth.clone(),
                     state.turn_detector.clone(),
@@ -307,10 +302,6 @@ impl ServerRuntime {
                         }
                     };
                     tonic::transport::Server::builder()
-                        .add_service(
-                            ServerAudioIngressServer::new(auth)
-                                .max_decoding_message_size(64 * 1024),
-                        )
                         .add_service(
                             VoiceSessionServer::new(voice).max_decoding_message_size(64 * 1024),
                         )

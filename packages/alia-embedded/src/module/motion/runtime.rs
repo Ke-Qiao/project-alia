@@ -10,7 +10,6 @@ use alia_core::body::{
 };
 use alia_core::delivery::VoiceScope;
 use anyhow::{Context, Result, bail, ensure};
-use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -921,33 +920,6 @@ impl MotionRuntime {
         });
         self.shared.wake.notify_all();
         Ok(true)
-    }
-
-    /// The old JSON RPC has neither immutable identity nor a scoped fence.
-    pub async fn execute_expression_json(&self, _plan_json: &str) -> Result<serde_json::Value> {
-        bail!("scope-free expression execution is disabled; use the signed body v1 contract")
-    }
-
-    pub async fn cancel_expression_json(&self, _reason: &str) -> serde_json::Value {
-        json!({ "status": "rejected", "completion_acknowledged": false, "executed_actions": [], "action_receipts": [], "reason": "scope-free cancellation is disabled; use the original body command identity" })
-    }
-
-    pub async fn capabilities_json(&self) -> serde_json::Value {
-        let state = self.shared.lock();
-        let ready = state.available();
-        json!({
-            "adapter": "embedded_body_v1",
-            "state_source": "owned_body_writer",
-            "capabilities": {
-                "look_at_user": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 1200 },
-                "small_nod": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 900 },
-                "small_bow": { "supported": ready, "max_intensity": 0.35, "max_duration_ms": 1200 },
-                "play_animation": { "supported": ready, "max_intensity": 0.45, "max_duration_ms": 5000 }
-            },
-            "current_state": { "busy": state.active.is_some() || !state.queue.is_empty(), "motion_adapter_registered": ready, "thermal_limit": false, "battery_saver": false, "battery_level": null },
-            "motion_safety": { "soft_start_enabled": self.config.soft_start_enabled, "soft_start_duration_ms": self.config.soft_start_duration_ms, "reset_on_stop": self.config.reset_on_stop, "reset_duration_ms": self.config.reset_duration_ms, "max_servo_speed_deg_per_sec": self.config.max_servo_speed_deg_per_sec },
-            "receipt_model": { "statuses": ["accepted", "submitted", "cancelled", "failed", "unknown", "rejected"], "completion_acknowledged": false, "position_feedback": false }
-        })
     }
 
     pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {

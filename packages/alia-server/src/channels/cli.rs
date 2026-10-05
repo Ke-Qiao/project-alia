@@ -276,35 +276,28 @@ impl ChannelAdapter for CliChannel {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _target: &ChannelTarget, text: &str) -> anyhow::Result<()> {
-        self.output(ConsoleOutput::Message(text.to_owned())).await
-    }
+
     fn reserve_text(
         &self,
         _target: &ChannelTarget,
         text_id: uuid::Uuid,
-    ) -> anyhow::Result<Option<alia_core::text_delivery::TextIdentity>> {
+    ) -> anyhow::Result<alia_core::text_delivery::TextIdentity> {
         ensure!(!text_id.is_nil(), "text identity is empty");
-        Ok(Some(alia_core::text_delivery::TextIdentity {
+        Ok(alia_core::text_delivery::TextIdentity {
             text_id,
             channel_instance_id: self.instance_id,
-        }))
+        })
     }
     async fn deliver_text(
         &self,
         _target: &ChannelTarget,
-        identity: Option<alia_core::text_delivery::TextIdentity>,
+        identity: alia_core::text_delivery::TextIdentity,
         input: super::adapter::TextPayloadStream,
         observer: Arc<dyn super::adapter::TextObserver>,
         cancel: CancellationToken,
     ) -> anyhow::Result<super::adapter::TextDeliveryReport> {
-        self.deliver_owned_text(
-            identity.context("CLI needs an exact text identity")?,
-            input,
-            observer,
-            cancel,
-        )
-        .await
+        self.deliver_owned_text(identity, input, observer, cancel)
+            .await
     }
     async fn cancel_text(
         &self,
@@ -317,16 +310,7 @@ impl ChannelAdapter for CliChannel {
         );
         self.text_writers.cancel(identity, reason).await
     }
-    async fn begin_stream(&self, _target: &ChannelTarget) -> anyhow::Result<()> {
-        self.output(ConsoleOutput::StreamStart).await
-    }
-    async fn send_stream_chunk(&self, _target: &ChannelTarget, text: &str) -> anyhow::Result<()> {
-        self.output(ConsoleOutput::StreamChunk(text.to_owned()))
-            .await
-    }
-    async fn end_stream(&self, _target: &ChannelTarget, _text: &str) -> anyhow::Result<()> {
-        self.output(ConsoleOutput::StreamEnd).await
-    }
+
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("action '{}' not supported by CLI channel", action.name)
     }
@@ -665,15 +649,7 @@ mod tests {
     #[tokio::test]
     async fn output_without_a_running_worker_fails_explicitly() {
         let channel = CliChannel::new("cli", EventBus::new(4));
-        assert!(
-            channel
-                .begin_stream(&ChannelTarget {
-                    voice: None,
-                    user_id: "unlinked-test-channel".to_owned()
-                })
-                .await
-                .is_err()
-        );
+        assert!(channel.output(ConsoleOutput::StreamStart).await.is_err());
         channel.stop().await.unwrap();
     }
 

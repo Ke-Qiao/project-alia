@@ -225,15 +225,8 @@ fn expression_trace_event(event: conversation_event::Model) -> ExpressionTraceEv
     }
 }
 
-fn expression_trace_event_types() -> [&'static str; 6] {
-    [
-        "stt_correction",
-        "affect_user_input",
-        "affect_state",
-        "expression_plan",
-        "tts_provider_adjustments",
-        "sentence_expression_llm",
-    ]
+fn expression_trace_event_types() -> [&'static str; 2] {
+    ["tts_provider_adjustments", "sentence_expression_llm"]
 }
 
 pub fn routes() -> Router<AppState> {

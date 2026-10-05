@@ -1,6 +1,6 @@
 # alia-embedded
 
-Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-word detection, local audio, native expression/motion, YuNet face tracking, plugin sandboxing, sensors, and device binding — all exposed over gRPC to the upper machine (`alia-server`).
+Raspberry Pi 5 edge node for the Alia smart home assistant. The library runtime owns continuous VoiceSession input, wake word and VAD evidence, scoped native playback, local cues, signed BodyControl, optional YuNet face tracking, sensors, plugins, and device binding. Easy-Turn and response generation run in `alia-server`.
 
 ## Prerequisites
 
@@ -13,7 +13,8 @@ Raspberry Pi 5 edge node for the Alia smart home assistant. Manages voice wake-w
 ```
 alia-embedded/
 ├── src/
-│   ├── main.rs             # Entry point & gRPC server bootstrap
+│   ├── main.rs             # CLI host for the library runtime
+│   ├── lib.rs              # Instance-local runtime API
 │   ├── config/             # TOML config types
 │   ├── plugin/             # Plugin registry (install, manifest, sandbox)
 │   ├── binding/            # Device binding state machine
@@ -36,12 +37,12 @@ cargo run -p alia-embedded
 ```
 
 The binary looks for `config/embedded.toml` relative to the workspace root, but it no longer requires the file to exist on first boot.
-If the file is missing, `alia-embedded` starts in provisioning mode, advertises discovery, generates a device keypair, and persists a runtime settings file automatically.
+If the file is missing, compiled defaults select provisioning mode. Selected modules still require their build features, models, and hardware; use explicit `noop` slots for service-only development.
 
 Runtime-owned state now lives separately from the settings file:
 
 - `config/embedded.toml`: user-editable runtime settings
-- `run/embedded-state.sqlite3`: SQLite-backed runtime state and metadata (binding status, direct-response rules)
+- `[device_runtime].state_path`: SQLite state and metadata; default `run/embedded-state.sqlite3`, resolved relative to the config directory
 - Disk directories such as `plugins/`, key files, and future audio asset folders remain file-backed
 
 Or override via environment variable:
@@ -60,7 +61,10 @@ The expected file shape is shown in [config/embedded.example.toml](../../config/
 |---------|---------|
 | `[runtime]` | Provisioning state (`false` means accessory-style OOBE mode) |
 | `[identity]` | Device ID, friendly name, keypair path |
-| `[audio]` | Capture/playback backend selection, device names, Opus params, and Linux ALSA names such as `alsa:plughw:0,0` |
+| `[device_runtime]` | Bind address, instance-local state paths, and cleanup budgets |
+| `[modules]` | Selected backends; `noop` explicitly disables a slot |
+| `[audio]` | Capture/playback devices, mono 16 kHz capture, fixed native output format, and bounded buffers |
+| `[speech]` | Exact Server channel instance ID, continuous VoiceSession pre-roll, and upload queue |
 | `[motion]` | Neck matrix/animation assets, PCA9685/I2C settings, and face-center to rotation tuning |
 | `[vision]` | Camera and OpenCV YuNet face tracker settings |
 | `[discovery]` | mDNS, BLE provisioning, bind security |
@@ -145,16 +149,26 @@ grpcurl -plaintext localhost:50051 list
 1. Define the service in a `.proto` file under `crates/proto/proto/`
 2. Register it in `crates/proto/build.rs` and `crates/proto/src/lib.rs`
 3. Implement the tonic trait in `src/grpc/`
-4. Wire it into `main.rs` via `Server::builder().add_service(...)`
+4. Wire it into the library runtime builder and update contract/lifecycle tests
 
-## Startup Sequence
+## Voice and Runtime Lifecycle
 
-1. Initialize tracing (env-filter)
-2. Load `config/embedded.toml`
-3. Create `PluginRegistry`, scan `plugins/` for manifests
-4. Open `run/embedded-state.sqlite3`
-5. Create `BindingManager`, restore state from SQLite
-6. Build & start gRPC server on `:50051`
+`EmbeddedBuilder` constructs the runtime with instance-local resources and a
+cleanup owner. Capture starts before the speech worker; a Noop capture host
+keeps speech inactive with degraded health. A real capture backend requires an
+available VAD. Shutdown cancels and joins voice/network/cue work before resource
+cleanup completes.
+
+After wake word, authenticated VoiceSession v2 uploads continuously, including
+during playback. Local cues wait for Ready and retain its original scope.
+Native output mixes conversation at gain 1.0 and cues at 0.2. Hold suppresses cue
+tails; scoped retirement cancels both sources. Playback v3 reports native
+submission evidence without claiming physical presentation or AEC validation.
+
+The old utterance RPCs, edge STT path, thinking/follow-up timers, configurable
+mixer slot, and unscoped direct-response/stop controls have been removed. An
+explicit input-session close command is deferred; output Fence does not serve
+as an acknowledged microphone-session close.
 
 ## Architecture
 

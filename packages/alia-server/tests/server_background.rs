@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use alia_server::channels::{
     ChannelRegistry,
-    adapter::{ChannelAdapter, ChannelCapabilities, ChannelTarget},
+    adapter::{ChannelAdapter, ChannelCapabilities},
 };
 use alia_server::module::{ModuleLifecycle, background::OwnedBackground};
 use async_trait::async_trait;
@@ -178,9 +178,6 @@ impl ChannelAdapter for FakeChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -340,9 +337,6 @@ async fn embedded_stop_interrupts_stalled_http2_connect_and_discovery() {
             reconnect_interval_sec: 1,
             reconnect_max_backoff_sec: 1,
             grpc_timeout_sec: 60,
-            voice_turn_interrupt_enabled: true,
-            cancel_streaming_tts_on_interrupt: true,
-            discard_interrupted_turn_history: true,
         },
         EventBus::new(8),
     );
@@ -356,7 +350,7 @@ async fn embedded_stop_interrupts_stalled_http2_connect_and_discovery() {
         .await
         .unwrap()
         .unwrap();
-    assert!(channel.audio_client().await.is_err());
+    assert!(channel.plugin_client().await.is_err());
     assert!(channel.start().await.is_err());
 }
 
@@ -469,9 +463,6 @@ impl ChannelAdapter for PanickingStopChannel {
     }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()
-    }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
     }
 }
 impl Drop for PanickingStopChannel {

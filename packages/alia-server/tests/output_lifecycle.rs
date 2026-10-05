@@ -177,6 +177,24 @@ impl ModuleLifecycle for Device {
         "output-lifecycle-test"
     }
 }
+impl Device {
+    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        assert_eq!(target.user_id, self.owner.to_string());
+        assert_eq!(target.voice, self.scope.get().copied());
+        let mut owner = InFlight {
+            dropped: &self.stop_dropped,
+            finished: false,
+        };
+        self.stop_entered.add_permits(1);
+        if self.block_stop.load(Ordering::SeqCst) {
+            self.stop_release.acquire().await?.forget();
+        }
+        self.stop_finished.fetch_add(1, Ordering::SeqCst);
+        owner.finished = true;
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl ChannelAdapter for Device {
     fn channel_type(&self) -> &'static str {
@@ -195,9 +213,7 @@ impl ChannelAdapter for Device {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        Ok(())
-    }
+
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
         let registration = OutputRegistration {
             binding,
@@ -281,21 +297,7 @@ impl ChannelAdapter for Device {
         receipt.observation_sequence = self.observation.fetch_add(1, Ordering::SeqCst) + 1;
         Ok(receipt)
     }
-    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        assert_eq!(target.user_id, self.owner.to_string());
-        assert_eq!(target.voice, self.scope.get().copied());
-        let mut owner = InFlight {
-            dropped: &self.stop_dropped,
-            finished: false,
-        };
-        self.stop_entered.add_permits(1);
-        if self.block_stop.load(Ordering::SeqCst) {
-            self.stop_release.acquire().await?.forget();
-        }
-        self.stop_finished.fetch_add(1, Ordering::SeqCst);
-        owner.finished = true;
-        Ok(())
-    }
+
     async fn retire_voice_output(
         &self,
         request: &alia_core::output_control::OutputRetirementRequest,
@@ -309,7 +311,7 @@ impl ChannelAdapter for Device {
         if let Some(expected) = &request.expected_backend {
             assert_eq!(expected, &self.backend);
         }
-        self.stop_current_playback(
+        self.retire_model_scope(
             &ChannelTarget {
                 user_id: self.owner.to_string(),
                 voice: Some(request.scope),
@@ -340,18 +342,18 @@ impl ChannelAdapter for Device {
         &self,
         target: &ChannelTarget,
         playback_id: Uuid,
-    ) -> anyhow::Result<Option<PlaybackIdentity>> {
+    ) -> anyhow::Result<PlaybackIdentity> {
         let sequence = self.reservations.fetch_add(1, Ordering::SeqCst) as u64 + 1;
-        Ok(target.voice.map(|scope| PlaybackIdentity {
-            scope,
+        Ok(PlaybackIdentity {
+            scope: target.voice.expect("scoped playback required"),
             playback_id,
             playback_sequence: sequence,
-        }))
+        })
     }
     async fn deliver_audio(
         &self,
         _: &ChannelTarget,
-        identity: Option<PlaybackIdentity>,
+        identity: PlaybackIdentity,
         mut audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
         cancel: CancellationToken,
@@ -363,7 +365,7 @@ impl ChannelAdapter for Device {
             frames += payload?.data.len() as u64 / 2;
         }
         observer.offered(frames).await?;
-        let mut progress = receipt(identity.unwrap(), 1, frames);
+        let mut progress = receipt(identity, 1, frames);
         *self.media_progress.lock().unwrap() = Some(progress.clone());
         observer.progress(progress.clone()).await?;
         self.media_entered.add_permits(1);

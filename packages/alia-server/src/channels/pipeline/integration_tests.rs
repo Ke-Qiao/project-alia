@@ -5,6 +5,8 @@ use crate::module::{ModuleLifecycle, factory};
 use crate::providers::adapter::{
     ConversationBackend, RouterStrategy, SttAdapter, TranscribeChunk, TranscriptionResult,
 };
+use alia_core::delivery::ObservationEnd;
+use alia_core::text_delivery::{TextFrame, TextIdentity, TextProgress};
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
@@ -245,9 +247,28 @@ struct OutputChannel {
     >,
     control_sequence: std::sync::atomic::AtomicU64,
     texts: Mutex<Vec<String>>,
+    text_instance: std::sync::OnceLock<Uuid>,
+    text_progress: Mutex<std::collections::HashMap<Uuid, TextProgress>>,
     audio: Mutex<Vec<AudioPayload>>,
 }
 impl OutputChannel {
+    fn finish_text(
+        &self,
+        identity: TextIdentity,
+        end: ObservationEnd,
+    ) -> anyhow::Result<TextProgress> {
+        let mut writers = self.text_progress.lock().unwrap();
+        let progress = writers
+            .get_mut(&identity.text_id)
+            .ok_or_else(|| anyhow::anyhow!("unknown text writer"))?;
+        anyhow::ensure!(progress.identity == identity, "text owner changed");
+        if progress.observation_end.is_none() {
+            progress.receipt_sequence += 1;
+            progress.observation_end = Some(end);
+        }
+        Ok(progress.clone())
+    }
+
     fn backend(&self) -> alia_core::delivery::SubmissionBackend {
         self.backend
             .get_or_init(|| alia_core::delivery::SubmissionBackend {
@@ -306,14 +327,6 @@ impl ChannelAdapter for OutputChannel {
             initiative_capture_gate_version: 0,
         })
     }
-    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        if let Some(scope) = target.voice {
-            if let Some(control) = self.controls.lock().unwrap().get_mut(&scope) {
-                control.retire(alia_core::playback_control::RetiredReason::Closed);
-            }
-        }
-        Ok(())
-    }
     async fn retire_voice_output(
         &self,
         request: &alia_core::output_control::OutputRetirementRequest,
@@ -327,14 +340,9 @@ impl ChannelAdapter for OutputChannel {
         if let Some(expected) = &request.expected_backend {
             assert_eq!(expected, &self.backend());
         }
-        self.stop_current_playback(
-            &ChannelTarget {
-                user_id: self.owner.unwrap().to_string(),
-                voice: Some(request.scope),
-            },
-            "original pipeline model retired",
-        )
-        .await?;
+        if let Some(control) = self.controls.lock().unwrap().get_mut(&request.scope) {
+            control.retire(alia_core::playback_control::RetiredReason::Closed);
+        }
         // This software-only fixture has no native writes beyond its explicit
         // scope gate. Media observations remain the deliver_audio facts.
         let evidence = if binding.is_some() {
@@ -374,19 +382,19 @@ impl ChannelAdapter for OutputChannel {
         &self,
         target: &ChannelTarget,
         playback_id: Uuid,
-    ) -> anyhow::Result<Option<alia_core::delivery::PlaybackIdentity>> {
-        Ok(target
-            .voice
-            .map(|scope| alia_core::delivery::PlaybackIdentity {
-                scope,
-                playback_id,
-                playback_sequence: self.sequence.fetch_add(1, Ordering::SeqCst) + 1,
-            }))
+    ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
+        Ok(alia_core::delivery::PlaybackIdentity {
+            scope: target
+                .voice
+                .ok_or_else(|| anyhow::anyhow!("playback requires an original voice scope"))?,
+            playback_id,
+            playback_sequence: self.sequence.fetch_add(1, Ordering::SeqCst) + 1,
+        })
     }
     async fn deliver_audio(
         &self,
-        target: &ChannelTarget,
-        identity: Option<alia_core::delivery::PlaybackIdentity>,
+        _: &ChannelTarget,
+        identity: alia_core::delivery::PlaybackIdentity,
         mut audio: crate::channels::adapter::AudioPayloadStream,
         observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
         _: CancellationToken,
@@ -399,15 +407,15 @@ impl ChannelAdapter for OutputChannel {
             let pcm = tts_bytes_to_pcm_payload(payload.data.clone())?;
             frames += pcm.data.len() as u64 / (u64::from(pcm.channels) * 2);
             observer.offered(frames).await?;
-            self.send_audio(target, payload).await?;
+            self.audio.lock().unwrap().push(payload);
         }
-        if identity.unwrap().playback_sequence == 1 {
+        if identity.playback_sequence == 1 {
             if let Some(gate) = &self.first_gate {
                 gate.acquire().await.unwrap().forget();
             }
         }
         let progress = alia_core::delivery::PlaybackProgress {
-            identity: identity.unwrap(),
+            identity,
             receipt_sequence: 1,
             accepted_source_frames: frames,
             submitted_source_frames: Some(frames),
@@ -431,13 +439,114 @@ impl ChannelAdapter for OutputChannel {
             ..Default::default()
         }
     }
-    async fn send_message(&self, _: &ChannelTarget, text: &str) -> anyhow::Result<()> {
-        self.texts.lock().unwrap().push(text.to_owned());
-        Ok(())
+    fn reserve_text(&self, _: &ChannelTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
+        let identity = TextIdentity {
+            text_id,
+            channel_instance_id: *self.text_instance.get_or_init(Uuid::new_v4),
+        };
+        anyhow::ensure!(identity.is_valid(), "invalid text identity");
+        let mut writers = self.text_progress.lock().unwrap();
+        anyhow::ensure!(!writers.contains_key(&text_id), "text identity reused");
+        writers.insert(
+            text_id,
+            TextProgress {
+                identity,
+                receipt_sequence: 0,
+                accepted_utf8_bytes: 0,
+                written_utf8_bytes: None,
+                write_boundary: None,
+                end_accepted: false,
+                observation_end: None,
+            },
+        );
+        Ok(identity)
     }
-    async fn send_audio(&self, _: &ChannelTarget, audio: AudioPayload) -> anyhow::Result<()> {
-        self.audio.lock().unwrap().push(audio);
-        Ok(())
+    async fn deliver_text(
+        &self,
+        _: &ChannelTarget,
+        identity: TextIdentity,
+        mut text: crate::channels::adapter::TextPayloadStream,
+        observer: Arc<dyn crate::channels::adapter::TextObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<crate::channels::adapter::TextDeliveryReport> {
+        use futures::StreamExt;
+        observer.start().await?;
+        let mut buffered = String::new();
+        let mut sequence = 0;
+        loop {
+            let frame = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => break,
+                frame = text.next() => frame,
+            };
+            let Some(frame) = frame else { break };
+            match frame? {
+                TextFrame::Chunk(chunk) => {
+                    anyhow::ensure!(
+                        chunk.sequence == sequence && chunk.utf8_offset == buffered.len() as u64,
+                        "text sequence changed"
+                    );
+                    observer.offered(&chunk).await?;
+                    let mut writers = self.text_progress.lock().unwrap();
+                    let progress = writers.get_mut(&identity.text_id).unwrap();
+                    anyhow::ensure!(
+                        progress.identity == identity && progress.observation_end.is_none(),
+                        "text writer retired"
+                    );
+                    buffered.push_str(&chunk.text);
+                    sequence += 1;
+                    progress.accepted_utf8_bytes = buffered.len() as u64;
+                }
+                TextFrame::End { chunks, utf8_bytes } => {
+                    anyhow::ensure!(
+                        chunks == sequence && utf8_bytes == buffered.len() as u64,
+                        "text End changed"
+                    );
+                    observer.end(chunks, utf8_bytes).await?;
+                    let mut writers = self.text_progress.lock().unwrap();
+                    let progress = writers.get_mut(&identity.text_id).unwrap();
+                    if progress.identity == identity
+                        && progress.observation_end.is_none()
+                        && !cancel.is_cancelled()
+                    {
+                        progress.end_accepted = true;
+                        self.texts.lock().unwrap().push(buffered);
+                    }
+                    break;
+                }
+            }
+        }
+        let progress = self.finish_text(
+            identity,
+            if cancel.is_cancelled() {
+                ObservationEnd::Cancelled {
+                    reason: "original text writer cancelled".into(),
+                }
+            } else {
+                // This fixture records memory acceptance only; it does not write
+                // stdout and cannot manufacture a native write checkpoint.
+                ObservationEnd::Unknown {
+                    reason: "in-memory fixture has no native text write evidence".into(),
+                }
+            },
+        )?;
+        observer.progress(progress.clone()).await?;
+        Ok(crate::channels::adapter::TextDeliveryReport {
+            observation_end: progress.observation_end.clone().unwrap(),
+            progress: Some(progress),
+        })
+    }
+    async fn cancel_text(
+        &self,
+        identity: TextIdentity,
+        reason: &str,
+    ) -> anyhow::Result<TextProgress> {
+        self.finish_text(
+            identity,
+            ObservationEnd::Cancelled {
+                reason: reason.into(),
+            },
+        )
     }
 }
 pub(super) struct Fixture {
@@ -486,7 +595,6 @@ impl Fixture {
             llm: llm.clone(),
             minor_llm: llm.clone(),
             major_llm: llm,
-            transcript_correction_llm: None,
             memory_capture_llm: None,
             sentence_expression_llm: None,
             stt: Arc::new(UnexpectedStt),
@@ -506,7 +614,6 @@ impl Fixture {
             extensions: vec![],
         });
         let mut policy = PipelinePolicies::new(
-            Default::default(),
             Default::default(),
             Default::default(),
             Default::default(),
@@ -665,36 +772,6 @@ async fn prepared_voice_error_before_register_ack_keeps_original_context_and_res
 }
 
 #[tokio::test]
-async fn clarification_session_failure_sends_no_unrecorded_text_or_audio() {
-    let fixture = Fixture::new(false).await;
-    fixture
-        .conversation
-        .fail_session
-        .store(true, Ordering::SeqCst);
-    let correction: TranscriptCorrectionResult = serde_json::from_value(serde_json::json!({
-        "raw_text":"unclear target", "corrected_text":"unclear target", "confidence":0.5,
-        "changed":false,"requires_confirmation":true,"risk":"medium","status":"unchanged","provider":"test"
-    })).unwrap();
-    handle_transcript_correction_confirmation(
-        &fixture.modules,
-        fixture.output.as_ref(),
-        &ChannelTarget {
-            user_id: Uuid::new_v4().to_string(),
-            voice: None,
-        },
-        "test",
-        "unlinked",
-        "Which device?",
-        &correction,
-        false,
-        None,
-    )
-    .await;
-    assert!(fixture.output.texts.lock().unwrap().is_empty());
-    assert!(fixture.output.audio.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
 async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
     for fail_user in [true, false] {
         let fixture = Fixture::new(false).await;
@@ -783,7 +860,6 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
         &fixture.policy.memory,
         Some(&turn),
         true,
-        None,
     )
     .await;
     assert!(result.is_err());

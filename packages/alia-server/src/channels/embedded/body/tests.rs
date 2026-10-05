@@ -543,7 +543,14 @@ async fn first_signed_snapshot_may_already_contain_complete_submission_evidence(
             .receipt_sequence
             > 1
     );
-    assert!(!result.completion_acknowledged);
+    assert_eq!(
+        result
+            .body
+            .as_ref()
+            .and_then(|body| body.progress.as_ref())
+            .and_then(|progress| progress.position_confirmed_actions),
+        None
+    );
     assert!(
         !h.device
             .operations()
@@ -564,7 +571,14 @@ async fn five_second_command_keeps_owned_observation_after_initial_waiter_is_dro
     h.device.release.add_permits(1);
     let result = h.retired(&params).await;
     assert_eq!(result.status, "submitted");
-    assert!(!result.completion_acknowledged);
+    assert_eq!(
+        result
+            .body
+            .as_ref()
+            .and_then(|body| body.progress.as_ref())
+            .and_then(|progress| progress.position_confirmed_actions),
+        None
+    );
     assert!(result.body.as_ref().unwrap().writer_retired());
     assert_eq!(
         result
@@ -604,7 +618,14 @@ async fn lost_submit_ack_is_unknown_and_exact_cancel_never_replays() {
     h.runtime.submit(params.clone()).await.unwrap();
     let result = h.retired(&params).await;
     assert_eq!(result.status, "unknown");
-    assert!(!result.completion_acknowledged);
+    assert_eq!(
+        result
+            .body
+            .as_ref()
+            .and_then(|body| body.progress.as_ref())
+            .and_then(|progress| progress.position_confirmed_actions),
+        None
+    );
     let original = result.body.as_ref().unwrap().command.identity;
     assert!(result.body.as_ref().unwrap().writer_retired());
     let operations = h.device.operations();
@@ -702,7 +723,14 @@ async fn forged_identity_or_position_receipt_is_unknown_and_cannot_retire_the_or
         let result: ExpressionExecutionResult =
             serde_json::from_value(h.runtime.submit(params.clone()).await.unwrap()).unwrap();
         assert_eq!(result.status, "unknown");
-        assert!(!result.completion_acknowledged);
+        assert_eq!(
+            result
+                .body
+                .as_ref()
+                .and_then(|body| body.progress.as_ref())
+                .and_then(|progress| progress.position_confirmed_actions),
+            None
+        );
         assert!(!result.body.as_ref().unwrap().writer_retired());
         h.device.reply_fault.store(0, Ordering::SeqCst);
         let retired = h.retired(&params).await;
@@ -751,7 +779,14 @@ async fn shutdown_waiter_drop_retains_owner_and_dependencies_until_writer_quiesc
     let result = h.retired(&params).await;
     assert_eq!(result.status, "cancelled");
     assert!(result.body.as_ref().unwrap().writer_retired());
-    assert!(!result.completion_acknowledged);
+    assert_eq!(
+        result
+            .body
+            .as_ref()
+            .and_then(|body| body.progress.as_ref())
+            .and_then(|progress| progress.position_confirmed_actions),
+        None
+    );
     h.finish().await;
 }
 
@@ -1041,13 +1076,6 @@ impl crate::channels::adapter::ChannelAdapter for ExpressionChannel {
             ..Default::default()
         }
     }
-    async fn send_message(
-        &self,
-        _: &crate::channels::adapter::ChannelTarget,
-        _: &str,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
     async fn execute_action(
         &self,
         action: crate::channels::adapter::ChannelAction,
@@ -1100,7 +1128,14 @@ async fn orchestrator_refreshes_accepted_body_to_submitted_without_position_comp
     )
     .await;
     assert_eq!(submitted.status, "submitted");
-    assert!(!submitted.completion_acknowledged);
+    assert_eq!(
+        submitted
+            .body
+            .as_ref()
+            .and_then(|body| body.progress.as_ref())
+            .and_then(|progress| progress.position_confirmed_actions),
+        None
+    );
     assert!(submitted.body.as_ref().unwrap().writer_retired());
     assert_eq!(
         h.device

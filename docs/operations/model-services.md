@@ -9,12 +9,11 @@ installation details.
 Embedded uses sherpa-onnx for local audio intelligence:
 
 - wake word keyword spotting
-- edge STT for local transcript/debug behavior
-- Silero VAD through sherpa-onnx for endpointing
+- Silero VAD activity evidence for the continuous capture stream
 
 Model paths are configured in `config/embedded.toml`. The helper script
-`scripts/download-sherpa-models.sh` is intended to populate the common local
-model directories.
+`scripts/download-sherpa-models.sh` populates the KWS and Silero VAD model
+directories. Embedded does not run local STT or choose turn boundaries.
 
 Embedded audio/model behavior is described in
 [alia-embedded audio and voice](../../packages/alia-embedded/docs/audio-and-voice.md).
@@ -34,8 +33,9 @@ timeout_ms = 5000
 max_concurrency = 1
 ```
 
-Start the pinned model service before enabling Embedded `[speech]`
-`mode = "server_turn"`. Preparation, pinned revisions and the service HTTP
+Start the pinned model service before enabling Embedded `[speech].enabled`.
+Continuous VoiceSession is the only device voice path. Preparation, pinned
+revisions and the service HTTP
 contract are documented in the [Easy-Turn service guide](../../services/easy-turn/README.md).
 `/health` confirms readiness and `/v1/capabilities` reports the actual model,
 format and concurrency limits. Readiness alone does not measure first-request
@@ -43,8 +43,8 @@ latency; record initial and subsequent calls separately when assessing load.
 
 Server uses bounded PCM windows to obtain a transcript and Complete,
 Incomplete, Backchannel or WAIT evidence. This is continuous capture with
-windowed inference, not a model-native incremental decoder. In `server_turn`,
-the accepted model transcript goes directly into the recognized voice input
+windowed inference, not a model-native incremental decoder. The accepted model
+transcript goes directly into the recognized voice input
 path and is not sent through a second STT request.
 
 Use matching voice v2 and playback v3 peers. A fresh Backchannel may release a
@@ -66,9 +66,9 @@ provider is configured under:
 config/server.d/providers/whisper_cpp.toml
 ```
 
-For the utterance audio path, the server sends captured audio to this service
-and receives text before routing through the LLM/tool pipeline. Continuous
-`server_turn` uses the Easy-Turn transcript described above instead.
+The authenticated HTTP voice/transcription APIs can use this provider for
+explicit audio requests. Device VoiceSession uses the Easy-Turn transcript
+described above and does not issue a second STT request.
 
 ## Server LLM
 

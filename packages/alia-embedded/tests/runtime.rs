@@ -142,12 +142,6 @@ impl WakeWordEngine for Probe {
     }
 }
 impl AudioPlaybackBackend for Probe {
-    fn play(&self, _: &[i16], _: u32) -> Result<()> {
-        Ok(())
-    }
-    fn stop_playback(&self) -> Result<()> {
-        Ok(())
-    }
     fn is_available(&self) -> bool {
         true
     }
@@ -188,12 +182,10 @@ fn config(dir: &tempfile::TempDir) -> EmbeddedConfig {
     config.config_path = dir.path().join("embedded.toml");
     config.modules = ModulesConfig {
         wakeword: "noop".into(),
-        edge_stt: "noop".into(),
         vad: "noop".into(),
         direct_response: "noop".into(),
         audio_capture: "noop".into(),
         audio_playback: "noop".into(),
-        mixer: "noop".into(),
         face_tracker: "noop".into(),
         discovery: "noop".into(),
     };
@@ -212,7 +204,7 @@ async fn factory_and_partial_init_failure_roll_back_in_reverse_order() {
     let dir = tempfile::tempdir().unwrap();
     let seen = Arc::new(Observed::default());
     let mut cfg = config(&dir);
-    cfg.modules.edge_stt = "missing-engine".into();
+    cfg.modules.vad = "missing-engine".into();
     let error = EmbeddedBuilder::from_config(cfg)
         .await
         .unwrap()
@@ -221,7 +213,7 @@ async fn factory_and_partial_init_failure_roll_back_in_reverse_order() {
         .await
         .err()
         .unwrap();
-    assert!(format!("{error:#}").contains("unknown edge_stt"));
+    assert!(format!("{error:#}").contains("unknown vad"));
     assert_eq!(seen.events(), ["init:wake", "stop:wake"]);
 
     let mut playback = Probe::new("playback", &seen);
@@ -428,86 +420,6 @@ async fn blocking_native_stop_has_bounded_return_and_retains_waitable_completion
     assert!(shutdown.pending_modules().is_empty());
 }
 
-#[tokio::test]
-async fn legacy_upload_without_eof_is_closed_and_workers_join_on_cancel_or_run_drop() {
-    use alia_embedded::module::context::ModuleEvent;
-    use alia_proto::audio::audio_stream_client::AudioStreamClient;
-    use alia_proto::audio::{AudioChunk, AudioEncoding, PlayAudioRequest};
-    use tokio_stream::wrappers::ReceiverStream;
-    for abort in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
-        let seen = Arc::new(Observed::default());
-        let mut cfg = config(&dir);
-        cfg.dev.skip_binding = true;
-        let node = EmbeddedBuilder::from_config(cfg)
-            .await
-            .unwrap()
-            .with_audio_playback(Probe::new("playback", &seen))
-            .build()
-            .await
-            .unwrap();
-        let endpoint = format!("http://{}", node.local_addr());
-        let stop = node.cancel_token.clone();
-        let shutdown = node.shutdown_handle();
-        let mut events = node.event_bus.subscribe();
-        let server = tokio::spawn(node.run());
-        let mut client = AudioStreamClient::connect(endpoint).await.unwrap();
-        let mut start = tonic::Request::new(PlayAudioRequest {
-            request_id: "held-open".into(),
-            source: "tts".into(),
-            encoding: AudioEncoding::PcmS16le as i32,
-            sample_rate: 16000,
-            interrupt_current: false,
-        });
-        start
-            .metadata_mut()
-            .insert("authorization", "Bearer test-dev-binding".parse().unwrap());
-        client.play_audio(start).await.unwrap();
-        let (_sender, receiver) = tokio::sync::mpsc::channel::<AudioChunk>(1);
-        let mut upload = tonic::Request::new(ReceiverStream::new(receiver));
-        upload
-            .metadata_mut()
-            .insert("authorization", "Bearer test-dev-binding".parse().unwrap());
-        let upload = tokio::spawn(async move { client.upload_audio(upload).await });
-        tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if matches!(
-                    events.recv().await.unwrap(),
-                    ModuleEvent::PlaybackStarted { .. }
-                ) {
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-        if abort {
-            server.abort();
-            assert!(server.await.err().unwrap().is_cancelled());
-        } else {
-            stop.cancel();
-            let result = tokio::time::timeout(Duration::from_secs(1), server)
-                .await
-                .unwrap()
-                .unwrap();
-            assert!(format!("{:#}", result.unwrap_err()).contains("gRPC drain deadline"));
-        }
-        tokio::time::timeout(Duration::from_secs(1), shutdown.wait())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(shutdown.pending_modules().is_empty());
-        assert!(!seen.worker_running.load(Ordering::Acquire));
-        assert!(
-            tokio::time::timeout(Duration::from_secs(1), upload)
-                .await
-                .unwrap()
-                .unwrap()
-                .is_err()
-        );
-    }
-}
-
 #[cfg(not(feature = "sherpa-onnx"))]
 #[tokio::test]
 async fn selected_feature_missing_fails_instead_of_becoming_noop() {
@@ -528,7 +440,7 @@ async fn selected_feature_missing_fails_instead_of_becoming_noop() {
 async fn unimplemented_modules_are_errors_but_explicit_disable_is_valid() {
     let dir = tempfile::tempdir().unwrap();
     let mut cfg = config(&dir);
-    cfg.modules.mixer = "priority".into();
+    cfg.modules.wakeword = "porcupine".into();
     let error = EmbeddedBuilder::from_config(cfg)
         .await
         .unwrap()
@@ -536,7 +448,7 @@ async fn unimplemented_modules_are_errors_but_explicit_disable_is_valid() {
         .await
         .err()
         .unwrap();
-    assert!(format!("{error:#}").contains("priority mixer is not implemented"));
+    assert!(format!("{error:#}").contains("porcupine wakeword is not implemented"));
     let mut cfg = config(&dir);
     cfg.modules.face_tracker = "yunet".into();
     cfg.vision.enabled = false;

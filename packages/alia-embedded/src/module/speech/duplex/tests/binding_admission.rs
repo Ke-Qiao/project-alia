@@ -167,6 +167,7 @@ async fn signed_exchange(
         endpoint,
         auth,
         runtime.boot_id.clone(),
+        runtime.config.channel_id.clone(),
         rx,
         runtime.playback_session.clone(),
         capture,
@@ -174,6 +175,7 @@ async fn signed_exchange(
         runtime.keypair_path.clone(),
         runtime.binding.clone(),
         original,
+        oneshot::channel().0,
     ));
     (tx, task)
 }

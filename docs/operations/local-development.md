@@ -70,14 +70,15 @@ applies.
 For local server + embedded testing:
 
 1. Start PostgreSQL.
-2. Start external model services you selected in server config. For continuous
-   `server_turn`, start Easy-Turn on the Server host, including when Embedded runs
+2. Start external model services you selected in server config. For device
+   VoiceSession, start Easy-Turn on the Server host, including when Embedded runs
    on a Pi 5; see [model services](./model-services.md).
 3. Choose the normal device binding flow or, only on a trusted development
    machine, the Embedded `[dev]` binding fields in `config/embedded.toml`.
 4. Run `alia-server`.
 5. Run `alia-embedded`.
-6. In `server_turn` mode, watch the ongoing capture/session and model decisions; wake-word mode is a separate configuration.
+6. Speak the wake word and watch the authenticated Ready, continuous capture,
+   and server turn decisions. Capture remains active during native playback.
 
 Before enabling voice input, register an active Server account through the
 [REST account flow](server-embedded.md#账号与现有管理入口), set the Embedded
@@ -86,11 +87,13 @@ restart Server after this file change. Embedded development binding does not
 assign an account owner or bypass Server voice authorization.
 
 For continuous voice, enable `[providers.easy_turn]` in the Server provider
-fragment and select `mode = "server_turn"` under Embedded `[speech]`. Capture
-must be 16 kHz mono. Build and deploy Server and Embedded together: voice v2
+fragment and `[speech].enabled` in Embedded. The device has one continuous
+VoiceSession path; capture must be 16 kHz mono. Build and deploy Server and
+Embedded together: voice v2
 requires software hold capability and playback v3; old versions are rejected.
-After reconnecting or rebinding, obtain a new voice session instead of reusing
-a retired session identity.
+After reconnecting or rebinding, require a fresh wake and a new voice session.
+An optional wake cue starts only after Ready and uses the same scoped native
+mixer as conversation audio.
 
 Add a Server policy fragment such as `config/server.d/policies/duplex.toml` when
 an explicit hold budget is needed:

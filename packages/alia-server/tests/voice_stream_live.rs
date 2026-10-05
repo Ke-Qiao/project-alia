@@ -35,8 +35,7 @@ use alia_server::channels::ChannelRegistry;
 use alia_server::channels::adapter::{
     ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
 };
-use alia_server::event::EventBus;
-use alia_server::grpc::audio_ingress::ServerAudioIngressService;
+use alia_server::grpc::voice_auth::VoiceIngressAuth;
 use alia_server::grpc::voice_session::VoiceSessionService;
 use alia_server::module::lifecycle::ModuleLifecycle;
 use alia_server::modules::interaction::voice_input;
@@ -152,6 +151,21 @@ impl ModuleLifecycle for TestChannel {
     }
 }
 
+impl TestChannel {
+    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+        let scope = target.voice.expect("stop must name the original scope");
+        let mut output = self.output.lock().unwrap();
+        if let Some(registered) = &mut output.registered {
+            anyhow::ensure!(
+                registered.registration.binding.scope == scope,
+                "wrong stop scope"
+            );
+            registered.control.retire(RetiredReason::Cancelled);
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl ChannelAdapter for TestChannel {
     async fn authenticated_source_epochs(
@@ -193,23 +207,6 @@ impl ChannelAdapter for TestChannel {
         ChannelCapabilities::default()
     }
 
-    async fn send_message(&self, _: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        anyhow::bail!("live smoke must stop at recognized input")
-    }
-
-    async fn stop_current_playback(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
-        let scope = target.voice.expect("stop must name the original scope");
-        let mut output = self.output.lock().unwrap();
-        if let Some(registered) = &mut output.registered {
-            anyhow::ensure!(
-                registered.registration.binding.scope == scope,
-                "wrong stop scope"
-            );
-            registered.control.retire(RetiredReason::Cancelled);
-        }
-        Ok(())
-    }
-
     async fn retire_voice_output(
         &self,
         request: &alia_core::output_control::OutputRetirementRequest,
@@ -240,7 +237,7 @@ impl ChannelAdapter for TestChannel {
                         .is_none_or(|backend| *backend == registered.backend),
                 "original live output or backend changed"
             );
-            self.stop_current_playback(
+            self.retire_model_scope(
                 &ChannelTarget {
                     user_id: self.owner.to_string(),
                     voice: Some(request.scope),
@@ -433,7 +430,7 @@ async fn official_audio(fixture: Fixture) {
         output: Mutex::new(LocalOutput::default()),
     });
     channels.register(device.clone()).await.unwrap();
-    let auth = ServerAudioIngressService::new(EventBus::new(8), channels.clone(), CHANNEL);
+    let auth = VoiceIngressAuth::new(channels.clone());
     let (input, mut recognized) = voice_input::channel();
     let shutdown = CancellationToken::new();
     let _cancel_on_drop = shutdown.clone().drop_guard();

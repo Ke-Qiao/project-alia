@@ -546,7 +546,7 @@ mod tests {
             delivery_channel
                 .deliver_text(
                     &target(),
-                    Some(identity),
+                    identity,
                     input(true),
                     Arc::new(Observer::default()),
                     CancellationToken::new(),
@@ -606,7 +606,7 @@ mod tests {
             let result = channel
                 .deliver_text(
                     &target(),
-                    Some(identity),
+                    identity,
                     input(end),
                     Arc::new(Observer::default()),
                     CancellationToken::new(),
@@ -659,7 +659,7 @@ mod tests {
             channel
                 .deliver_text(
                     &target(),
-                    Some(identity),
+                    identity,
                     input(true),
                     Arc::new(Observer {
                         reject: true,
@@ -693,7 +693,7 @@ mod tests {
             channel
                 .deliver_text(
                     &target(),
-                    Some(wrong),
+                    wrong,
                     input(true),
                     Arc::new(Observer::default()),
                     CancellationToken::new()
@@ -753,7 +753,7 @@ mod tests {
             channel
                 .deliver_text(
                     &target(),
-                    Some(identity),
+                    identity,
                     frames,
                     Arc::new(Observer::default()),
                     CancellationToken::new()
@@ -787,7 +787,7 @@ mod tests {
         let result = channel
             .deliver_text(
                 &target(),
-                Some(identity),
+                identity,
                 input(true),
                 Arc::new(Observer::default()),
                 CancellationToken::new(),

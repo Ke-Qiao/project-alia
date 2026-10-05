@@ -1,121 +1,133 @@
+use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
-use tracing::{debug, error, info};
+use alia_core::delivery::{ObservationEnd, VoiceScope};
+use anyhow::{Context, Result, bail, ensure};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, warn};
 
 use crate::module::audio_debug::AudioDebugRecorder;
 use crate::module::context::{EventBus, ModuleEvent};
-use crate::module::traits::{AudioPlaybackBackend, DirectResponseAction, DirectResponseEngine};
+use crate::module::playback_session::{PlaybackLease, PlaybackSession};
+use crate::module::traits::DirectResponseAction;
 
+const MAX_CUE_SECONDS: usize = 5;
+const MAX_WAV_BYTES: usize = 4 * 1024 * 1024;
+
+struct CueGuard {
+    playback: Arc<PlaybackSession>,
+    lease: PlaybackLease,
+    events: EventBus,
+}
+impl Drop for CueGuard {
+    fn drop(&mut self) {
+        let _ = self
+            .playback
+            .cancel_cue(&self.lease, "local cue worker ended");
+        self.events.publish(ModuleEvent::PlaybackFinished {
+            source: "local-cue".into(),
+        });
+    }
+}
+
+/// A cue may only use the original Ready scope. WAV I/O never creates a new
+/// playback owner; late file completion after cancellation or replacement is
+/// rejected by both this token and PlaybackSession's scoped admission.
 pub async fn play_direct_response(
     action: DirectResponseAction,
-    playback: Arc<dyn AudioPlaybackBackend>,
+    playback: Arc<PlaybackSession>,
+    scope: VoiceScope,
     event_bus: EventBus,
     audio_debug: AudioDebugRecorder,
+    cancel: CancellationToken,
 ) -> bool {
-    if let Some(action_name) = action.action.as_deref() {
-        info!(action = action_name, "direct response action matched");
-    }
-
     let Some(audio_path) = action.audio_path.as_deref() else {
-        if action.action.as_deref().is_some() {
-            debug!(
-                action = action.action.as_deref().unwrap_or("<unspecified>"),
-                "direct response action has no local audio; continuing without playback"
-            );
-        } else {
-            error!("direct response audio is not configured; continuing without playback");
-        }
         return false;
     };
-
-    match read_pcm16_wav(Path::new(audio_path)).await {
-        Ok(wav) => {
-            audio_debug.record_playback("direct-response", &wav.pcm, wav.sample_rate, 1);
-            info!(
-                audio = %audio_path,
-                source_sample_rate = wav.sample_rate,
-                source_channels = wav.source_channels,
-                pcm_samples = wav.pcm.len(),
-                "playing direct response audio"
-            );
-            event_bus.publish(ModuleEvent::PlaybackStarted {
-                source: audio_path.to_string(),
-            });
-            if let Err(error) = playback.play(&wav.pcm, wav.sample_rate) {
-                error!(error = %error, audio = %audio_path, "direct response playback failed");
-                event_bus.publish(ModuleEvent::PlaybackFinished {
-                    source: audio_path.to_string(),
-                });
-                false
-            } else if let Some(duration) = pcm_duration(&wav.pcm, wav.sample_rate) {
-                tokio::time::sleep(duration).await;
-                event_bus.publish(ModuleEvent::PlaybackFinished {
-                    source: audio_path.to_string(),
-                });
-                true
-            } else {
-                event_bus.publish(ModuleEvent::PlaybackFinished {
-                    source: audio_path.to_string(),
-                });
-                true
+    if cancel.is_cancelled() {
+        return false;
+    }
+    let wav = match read_pcm16_wav(Path::new(audio_path)).await {
+        Ok(wav) => wav,
+        Err(error) => {
+            warn!(%error, "local cue WAV rejected");
+            return false;
+        }
+    };
+    if cancel.is_cancelled() {
+        return false;
+    }
+    let lease = match playback.start_cue(&scope, wav.sample_rate) {
+        Ok(lease) => lease,
+        Err(error) => {
+            debug!(%error, "local cue scope is unavailable");
+            return false;
+        }
+    };
+    let guard = CueGuard {
+        playback: playback.clone(),
+        lease: lease.clone(),
+        events: event_bus.clone(),
+    };
+    audio_debug.record_playback("local-cue", &wav.pcm, wav.sample_rate, 1);
+    event_bus.publish(ModuleEvent::PlaybackStarted {
+        source: "local-cue".into(),
+    });
+    let task_cancel = cancel.clone();
+    let producer = tokio::task::spawn_blocking(move || -> Result<bool> {
+        for chunk in wav.pcm.chunks(4096) {
+            if task_cancel.is_cancelled()
+                || lease.submission.is_held()
+                || !playback.enqueue_cue(&lease, chunk)?
+            {
+                return Ok(false);
             }
         }
-        Err(error) => {
-            error!(error = %error, audio = %audio_path, "failed to read direct response audio");
-            false
+        playback.end_cue(&lease)
+    });
+    let mut producer = producer;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
+    let admitted = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            let _ = guard.playback.cancel_cue(&guard.lease, "local cue cancelled");
+            let _ = producer.await;
+            return false;
         }
-    }
-}
-
-pub async fn play_direct_response_action(
-    action: &str,
-    direct_response: Arc<dyn DirectResponseEngine>,
-    playback: Arc<dyn AudioPlaybackBackend>,
-    event_bus: EventBus,
-    audio_debug: AudioDebugRecorder,
-) -> bool {
-    let Some(response) = direct_response.match_action(action) else {
-        error!(
-            action,
-            "direct response is not configured; continuing without playback"
-        );
-        return false;
+        _ = tokio::time::sleep_until(deadline) => {
+            let _ = guard.playback.cancel_cue(&guard.lease, "local cue submission timed out");
+            let _ = producer.await;
+            return false;
+        }
+        result = &mut producer => matches!(result, Ok(Ok(true))),
     };
-    play_direct_response(response, playback, event_bus, audio_debug).await
-}
-
-pub async fn play_direct_response_action_or_keyword(
-    action: &str,
-    keyword: &str,
-    direct_response: Arc<dyn DirectResponseEngine>,
-    playback: Arc<dyn AudioPlaybackBackend>,
-    event_bus: EventBus,
-    audio_debug: AudioDebugRecorder,
-) -> bool {
-    let response = direct_response
-        .match_action(action)
-        .or_else(|| direct_response.match_keyword(keyword));
-    let Some(response) = response else {
-        error!(
-            action,
-            keyword, "direct response is not configured; continuing without playback"
-        );
+    if !admitted {
         return false;
-    };
-    play_direct_response(response, playback, event_bus, audio_debug).await
-}
-
-pub fn pcm_duration(pcm: &[i16], sample_rate: u32) -> Option<Duration> {
-    if pcm.is_empty() || sample_rate == 0 {
-        return None;
     }
-
-    Some(Duration::from_secs_f64(
-        pcm.len() as f64 / sample_rate as f64,
-    ))
+    // The native submission receipt, rather than a duration estimate, ends the
+    // event. A cue is ephemeral: a hold suppresses its remaining tail instead
+    // of emitting a stale notification after the conversation resumes.
+    let result = tokio::time::timeout_at(deadline, async {
+        loop {
+            if guard.lease.submission.is_held() {
+                return false;
+            }
+            if let Some(end) = guard.lease.submission.snapshot(0).observation_end {
+                return matches!(end, ObservationEnd::SubmissionFinished);
+            }
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return false,
+                _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    drop(guard);
+    result
 }
 
 #[derive(Debug)]
@@ -133,7 +145,20 @@ async fn read_pcm16_wav(path: &Path) -> Result<DecodedPcmWav> {
 }
 
 pub fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
-    let data = std::fs::read(path).with_context(|| format!("reading WAV: {}", path.display()))?;
+    ensure!(
+        std::fs::metadata(path)?.is_file(),
+        "cue WAV must be a regular file"
+    );
+    let file = std::fs::File::open(path).context("opening cue WAV")?;
+    ensure!(
+        file.metadata()?.len() <= MAX_WAV_BYTES as u64,
+        "cue WAV exceeds 4 MiB"
+    );
+    let mut data = Vec::new();
+    file.take((MAX_WAV_BYTES + 1) as u64)
+        .read_to_end(&mut data)
+        .context("reading cue WAV")?;
+    ensure!(data.len() <= MAX_WAV_BYTES, "cue WAV exceeds 4 MiB");
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         bail!("{} is not a RIFF/WAVE file", path.display());
     }
@@ -190,25 +215,32 @@ pub fn read_pcm16_wav_blocking(path: &Path) -> Result<DecodedPcmWav> {
     let channels = channels.context("missing WAV channel count")?;
     let sample_rate = sample_rate.context("missing WAV sample rate")?;
     let pcm_bytes = pcm_bytes.context("missing WAV data chunk")?;
-    let samples: Vec<i16> = pcm_bytes
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-
-    if channels <= 1 {
-        return Ok(DecodedPcmWav {
-            pcm: samples,
-            sample_rate,
-            source_channels: channels,
-        });
-    }
-
-    let mono = samples
-        .chunks_exact(channels as usize)
-        .map(|frame| frame[0])
+    ensure!((1..=32).contains(&channels), "invalid cue channel count");
+    ensure!(
+        (8000..=192000).contains(&sample_rate),
+        "invalid cue sample rate"
+    );
+    ensure!(
+        pcm_bytes.len() % (usize::from(channels) * 2) == 0,
+        "incomplete cue PCM frame"
+    );
+    let frames = pcm_bytes.len() / (usize::from(channels) * 2);
+    ensure!(
+        frames > 0 && frames <= sample_rate as usize * MAX_CUE_SECONDS,
+        "cue must contain at most five seconds of audio"
+    );
+    let pcm = pcm_bytes
+        .chunks_exact(usize::from(channels) * 2)
+        .map(|frame| {
+            let sum: i32 = frame
+                .chunks_exact(2)
+                .map(|sample| i32::from(i16::from_le_bytes([sample[0], sample[1]])))
+                .sum();
+            (sum / i32::from(channels)) as i16
+        })
         .collect();
     Ok(DecodedPcmWav {
-        pcm: mono,
+        pcm,
         sample_rate,
         source_channels: channels,
     })

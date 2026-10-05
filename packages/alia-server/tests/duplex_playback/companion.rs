@@ -8,7 +8,7 @@ use alia_proto::voice::{
     voice_session_server::VoiceSessionServer,
 };
 use alia_server::{
-    grpc::{audio_ingress::ServerAudioIngressService, voice_session::VoiceSessionService},
+    grpc::{voice_auth::VoiceIngressAuth, voice_session::VoiceSessionService},
     module::ServerBuilder,
     modules::{
         companion::types::{CompanionMode, CompanionPolicy},
@@ -395,7 +395,7 @@ async fn complete_invitation(scenario: Scenario) {
         config.server.discovery_enabled = false; config.server.shutdown_grace_ms = 5000;
         config.channels.clear(); config.modules.stt="noop".into(); config.modules.tts="noop".into();
         config.llm.roles.minor="noop".into(); config.llm.roles.major="noop".into(); config.llm.roles.default="noop".into(); config.llm.roles.embedding="noop".into();
-        config.llm.roles.transcript_correction=None;config.llm.roles.memory_capture=None;config.llm.roles.sentence_expression=None;
+        config.llm.roles.memory_capture=None;config.llm.roles.sentence_expression=None;
         config.policies.insights.enabled=false;config.plugins.home_assistant.enabled=false;config.providers.easy_turn.enabled=false;
         let tts=FixedTts {calls:Arc::new(AtomicUsize::new(0)),entered:Arc::new(Semaphore::new(0)),release:Arc::new(Semaphore::new(0))};
         let runtime = ServerBuilder::new(Arc::new(config),s.f.db.clone(),EventBus::new(64),CancellationToken::new()).with_tts(tts.clone()).build().await.unwrap();
@@ -406,7 +406,7 @@ async fn complete_invitation(scenario: Scenario) {
         s.channel.binding_client().await.unwrap();
         s.service = state.delivery.clone();
         let stop=CancellationToken::new();
-        let auth=ServerAudioIngressService::new(state.event_bus.clone(),state.channels.clone(),"test-device");
+        let auth=VoiceIngressAuth::new(state.channels.clone());
         let (model_tx,mut model_calls)=mpsc::channel(2);
         let voice=VoiceSessionService::new(auth,Some(Arc::new(ControlledDetector(model_tx))),state.voice_input.clone(),state.delivery.clone(),Duration::from_secs(30),stop.clone(),state.runtime_tasks.clone())
             .with_initiatives(state.voice_initiatives.clone(),state.modules.context.clone());
@@ -431,6 +431,7 @@ async fn complete_invitation(scenario: Scenario) {
             let token=alia_transport::mint_auth_token(&key,&subject,alia_transport::EMBEDDED_INGRESS_SCOPE,Duration::from_secs(60)).unwrap();
             let mut request=Request::new(ReceiverStream::new(rx));
             request.metadata_mut().insert("authorization",format!("Bearer {token}").parse().unwrap());
+            request.metadata_mut().insert("x-alia-channel-id", "test-device".parse().unwrap());
             let mut client=VoiceSessionClient::connect(endpoint).await.unwrap();
             stage="open voice stream";
             let mut events=client.stream(request).await.unwrap().into_inner();

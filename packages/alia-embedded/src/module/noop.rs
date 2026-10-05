@@ -9,29 +9,6 @@ use super::context::AudioBus;
 use super::lifecycle::ModuleLifecycle;
 use super::traits::*;
 
-// ─── NoopEdgeStt ─────────────────────────────────────────────────────────────
-
-/// Noop edge STT: always returns None, forcing all speech to the server path.
-pub struct NoopEdgeStt;
-
-#[tonic::async_trait]
-impl ModuleLifecycle for NoopEdgeStt {
-    fn name(&self) -> &'static str {
-        "noop_edge_stt"
-    }
-}
-
-#[tonic::async_trait]
-impl EdgeSttEngine for NoopEdgeStt {
-    async fn transcribe_short(
-        &self,
-        _pcm: &[i16],
-        _max_duration_ms: u32,
-    ) -> Result<Option<String>> {
-        Ok(None)
-    }
-}
-
 // ─── NoopVad ─────────────────────────────────────────────────────────────────
 
 /// Noop VAD: reports unavailable so speech capture uses fixed-duration fallback.
@@ -164,38 +141,8 @@ impl ModuleLifecycle for NoopAudioPlayback {
 }
 
 impl AudioPlaybackBackend for NoopAudioPlayback {
-    fn play(&self, _pcm: &[i16], _sample_rate: u32) -> Result<()> {
-        Ok(())
-    }
-
-    fn stop_playback(&self) -> Result<()> {
-        Ok(())
-    }
-
     fn is_available(&self) -> bool {
         false
-    }
-}
-
-// ─── NoopMixer ───────────────────────────────────────────────────────────────
-
-/// Noop mixer: accepts submissions but does no mixing.
-pub struct NoopMixer;
-
-#[tonic::async_trait]
-impl ModuleLifecycle for NoopMixer {
-    fn name(&self) -> &'static str {
-        "noop_mixer"
-    }
-}
-
-impl AudioMixer for NoopMixer {
-    fn submit(&self, _source: AudioSource, _priority: AudioPriority) -> Result<()> {
-        Ok(())
-    }
-
-    fn interrupt_below(&self, _priority: AudioPriority) -> Result<()> {
-        Ok(())
     }
 }
 

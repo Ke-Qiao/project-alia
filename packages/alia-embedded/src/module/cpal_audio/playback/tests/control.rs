@@ -256,6 +256,14 @@ impl AudioPlaybackBackend for LocalBackend {
     ) -> Result<Arc<AudioSubmission>> {
         self.0.open_submission(id, rate, generation)
     }
+    fn open_cue_submission(
+        &self,
+        id: PlaybackIdentity,
+        rate: u32,
+        generation: u64,
+    ) -> Result<Arc<AudioSubmission>> {
+        self.0.open_cue_submission(id, rate, generation)
+    }
     fn submit_audio(&self, s: &Arc<AudioSubmission>, offset: u64, pcm: &[i16]) -> Result<bool> {
         self.0.submit(s, offset, pcm, false)
     }
@@ -273,13 +281,6 @@ impl AudioPlaybackBackend for LocalBackend {
     }
     fn is_playback_current(&self, generation: u64) -> bool {
         self.0.0.0.generation.load(Ordering::Acquire) == generation
-    }
-    fn play(&self, _: &[i16], _: u32) -> Result<()> {
-        unreachable!()
-    }
-    fn stop_playback(&self) -> Result<()> {
-        self.0.stop();
-        Ok(())
     }
     fn is_available(&self) -> bool {
         true
@@ -664,7 +665,8 @@ fn retained_source_and_rendered_bytes_are_bounded_even_when_count_capacity_is_la
                 cursor: 0,
                 channels: 1,
                 generation,
-                submission: None,
+                submission: test_submission(generation, 16000, 1),
+                source: MixerSource::Voice,
                 output_write: None
             })
             .is_err()
@@ -995,4 +997,286 @@ fn initiative_register_then_speech_before_start_retains_original_media_for_cpal_
         assert_eq!(lease.identity().scope, scope);
         session.close(&scope).unwrap();
     }
+}
+
+#[tokio::test]
+async fn ready_cue_precedes_response_registration_without_consuming_remote_identity_or_progress() {
+    use crate::module::playback_session::CaptureControlBarrier;
+    use alia_core::output_control::*;
+    let (sender, receiver) = channel(8);
+    receiver.set_backend(SubmissionBackend {
+        instance_id: uuid::Uuid::new_v4(),
+        boundary: SubmissionBoundary::CpalCallbackBuffer,
+        output_sample_rate_hz: 16000,
+        output_channels: 2,
+    });
+    let session = PlaybackSession::new(Arc::new(LocalBackend(sender.clone())));
+    let scope = VoiceScope {
+        device_boot_id: uuid::Uuid::new_v4(),
+        session_id: uuid::Uuid::new_v4(),
+        generation_epoch: 1,
+    };
+    let capture = CaptureControlBarrier::default();
+    session
+        .activate_with_capture(&scope, capture.clone(), 3000)
+        .unwrap();
+    session
+        .accept_capture(&capture, 0, false, || Ok(()))
+        .unwrap();
+    let cue = session.start_cue(&scope, 16000).unwrap();
+    session.enqueue_cue(&cue, &[5000, 5000, 5000]).unwrap();
+    session.end_cue(&cue).unwrap();
+    let native_generation = cue.submission.generation;
+    let original_control = cue.submission.control().unwrap().clone();
+    let binding = OutputBinding {
+        scope,
+        response_id: uuid::Uuid::new_v4(),
+        context_id: uuid::Uuid::new_v4(),
+        server_instance_id: uuid::Uuid::new_v4(),
+        initiative_capture: None,
+    };
+    let registered = session.register_output(&binding).unwrap();
+    let voice = session
+        .begin_bound(&binding, &uuid::Uuid::new_v4().to_string(), 1, 16000)
+        .unwrap();
+    assert_eq!(voice.submission.generation, native_generation);
+    assert!(Arc::ptr_eq(
+        voice.submission.control().unwrap(),
+        &original_control
+    ));
+    session.enqueue(&voice, &[10000, 20000, 30000]).unwrap();
+    session.end(&voice).unwrap();
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    assert_eq!(buffer.next_sample(), 11000);
+    assert_eq!(buffer.next_sample(), 11000);
+    let command = BoundControlCommand {
+        binding,
+        expected_backend: registered.backend.clone(),
+        command: ControlCommand {
+            scope,
+            hold_id: uuid::Uuid::new_v4(),
+            command_id: uuid::Uuid::new_v4(),
+            sequence: 1,
+            action: ControlAction::Pause {
+                reason: HoldReason::ExplicitWait,
+                through_sequence: 0,
+                budget_ms: 3000,
+            },
+        },
+    };
+    let receipt = session.apply_bound_control(&command).unwrap();
+    assert_eq!(receipt.progress.len(), 1);
+    assert_eq!(receipt.progress[0].identity, voice.identity());
+    assert_eq!(receipt.progress[0].submitted_source_frames, Some(1));
+    assert_eq!(cue.submission.snapshot(1).submitted_source_frames, Some(1));
+    assert_eq!(buffer.next_sample(), 0);
+    let request = OutputRetirementRequest {
+        scope,
+        binding: Some(binding),
+        expected_backend: Some(registered.backend),
+    };
+    session.retire_output(&request).unwrap();
+    let retired = session.observe_output_retirement(&request).await.unwrap();
+    let OutputRetirementEvidence::Settled { progress, .. } = retired.evidence else {
+        panic!("native owner missing");
+    };
+    assert_eq!(progress.len(), 1);
+    assert_eq!(progress[0].identity, voice.identity());
+    for source in [&cue, &voice] {
+        assert!(matches!(
+            source.submission.snapshot(2).observation_end,
+            Some(ObservationEnd::Cancelled { .. })
+        ));
+        assert!(source.submission.begin_output().is_none());
+    }
+    assert!(session.start_cue(&scope, 16000).is_err());
+    session.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn cue_only_retirement_proves_original_native_settled_owner_and_retries_cannot_touch_replacement()
+ {
+    use crate::module::playback_session::CaptureControlBarrier;
+    use alia_core::output_control::*;
+    let (sender, receiver) = channel(8);
+    receiver.set_backend(SubmissionBackend {
+        instance_id: uuid::Uuid::new_v4(),
+        boundary: SubmissionBoundary::CpalCallbackBuffer,
+        output_sample_rate_hz: 16000,
+        output_channels: 2,
+    });
+    let session = PlaybackSession::new(Arc::new(LocalBackend(sender.clone())));
+    let scope = VoiceScope {
+        device_boot_id: uuid::Uuid::new_v4(),
+        session_id: uuid::Uuid::new_v4(),
+        generation_epoch: 1,
+    };
+    let capture = CaptureControlBarrier::default();
+    session
+        .activate_with_capture(&scope, capture.clone(), 3000)
+        .unwrap();
+    session
+        .accept_capture(&capture, 0, false, || Ok(()))
+        .unwrap();
+    let cue = session.start_cue(&scope, 16000).unwrap();
+    session.enqueue_cue(&cue, &[5000, 5000]).unwrap();
+    session.end_cue(&cue).unwrap();
+    let original_backend = cue.submission.backend.clone();
+    let mut buffer = PlaybackBuffer::new(receiver.generation());
+    render_pending(&receiver, &mut Renderer::default(), &mut buffer);
+    assert_eq!(buffer.next_sample(), 1000);
+    assert_eq!(buffer.next_sample(), 1000);
+    let request = OutputRetirementRequest {
+        scope,
+        binding: None,
+        expected_backend: None,
+    };
+    session.retire_output(&request).unwrap();
+    let receipt = session.observe_output_retirement(&request).await.unwrap();
+    assert_eq!(
+        receipt.evidence,
+        OutputRetirementEvidence::Settled {
+            backend: original_backend,
+            progress: vec![]
+        }
+    );
+    assert!(matches!(
+        cue.submission.snapshot(1).observation_end,
+        Some(ObservationEnd::Cancelled { .. })
+    ));
+    assert_eq!(buffer.next_sample(), 0);
+    let replacement = VoiceScope {
+        session_id: uuid::Uuid::new_v4(),
+        ..scope
+    };
+    let fresh_capture = CaptureControlBarrier::default();
+    session
+        .activate_with_capture(&replacement, fresh_capture.clone(), 3000)
+        .unwrap();
+    session
+        .accept_capture(&fresh_capture, 0, false, || Ok(()))
+        .unwrap();
+    let fresh = session.start_cue(&replacement, 16000).unwrap();
+    session.enqueue_cue(&fresh, &[10000]).unwrap();
+    session.end_cue(&fresh).unwrap();
+    session.retire_output(&request).unwrap();
+    assert_eq!(
+        session.observe_output_retirement(&request).await.unwrap(),
+        receipt
+    );
+    assert!(fresh.submission.is_live());
+    assert!(session.start_cue(&scope, 16000).is_err());
+    session.close(&replacement).unwrap();
+    session.stop().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn local_cue_deadline_cancels_and_joins_a_producer_blocked_by_full_native_queue() {
+    use crate::module::{
+        audio_debug::AudioDebugRecorder,
+        context::{EventBus, ModuleEvent},
+        direct_response_playback::play_direct_response,
+        playback_session::CaptureControlBarrier,
+        traits::DirectResponseAction,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bounded-cue.wav");
+    let mut wav = Vec::from(&b"RIFF"[..]);
+    let samples = 8192u32;
+    wav.extend_from_slice(&(36 + samples * 2).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&16000u32.to_le_bytes());
+    wav.extend_from_slice(&32000u32.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(samples * 2).to_le_bytes());
+    wav.resize(wav.len() + samples as usize * 2, 0);
+    std::fs::write(&path, wav).unwrap();
+    let (sender, receiver) = channel(1);
+    receiver.set_backend(SubmissionBackend {
+        instance_id: uuid::Uuid::new_v4(),
+        boundary: SubmissionBoundary::CpalCallbackBuffer,
+        output_sample_rate_hz: 16000,
+        output_channels: 2,
+    });
+    let session = Arc::new(PlaybackSession::new(Arc::new(LocalBackend(sender.clone()))));
+    let scope = VoiceScope {
+        device_boot_id: uuid::Uuid::new_v4(),
+        session_id: uuid::Uuid::new_v4(),
+        generation_epoch: 1,
+    };
+    let capture = CaptureControlBarrier::default();
+    session
+        .activate_with_capture(&scope, capture.clone(), 3000)
+        .unwrap();
+    session
+        .accept_capture(&capture, 0, false, || Ok(()))
+        .unwrap();
+    let events = EventBus::new(8);
+    let mut received = events.subscribe();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut task = tokio::spawn(play_direct_response(
+        DirectResponseAction {
+            audio_path: Some(path.to_string_lossy().into_owned()),
+            action: None,
+        },
+        session.clone(),
+        scope,
+        events,
+        AudioDebugRecorder::new(Default::default()),
+        cancel.clone(),
+    ));
+    assert!(matches!(
+        received.recv().await.unwrap(),
+        ModuleEvent::PlaybackStarted { .. }
+    ));
+    let wall_limit = std::time::Instant::now() + Duration::from_secs(2);
+    let cue = loop {
+        let cue = sender
+            .0
+            .0
+            .lock()
+            .submissions
+            .values()
+            .find_map(|(s, source)| {
+                (*source == MixerSource::LocalCue)
+                    .then(|| s.upgrade())
+                    .flatten()
+            });
+        if let Some(cue) = cue.filter(|s| s.accepted() == 4096) {
+            break cue;
+        }
+        assert!(
+            std::time::Instant::now() < wall_limit,
+            "cue producer did not fill its first queue slot"
+        );
+        tokio::task::yield_now().await;
+    };
+    assert!(!task.is_finished());
+    tokio::time::advance(Duration::from_secs(8)).await;
+    tokio::time::resume();
+    let result = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
+    if result.is_err() {
+        cancel.cancel();
+        let _ = task.await;
+        panic!("cue deadline did not cover blocked submission");
+    }
+    assert!(!result.unwrap().unwrap());
+    assert!(matches!(
+        cue.snapshot(1).observation_end,
+        Some(ObservationEnd::Cancelled { .. })
+    ));
+    assert_eq!(cue.snapshot(2).submitted_source_frames, Some(0));
+    assert!(cue.output_quiescent());
+    assert!(matches!(
+        received.recv().await.unwrap(),
+        ModuleEvent::PlaybackFinished { .. }
+    ));
+    assert!(sender.0.0.lock().media.is_empty());
+    session.stop().await.unwrap();
 }

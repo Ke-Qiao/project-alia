@@ -13,7 +13,6 @@ env = { PYTHONIOENCODING = "utf-8" }
 
 [capabilities]
 appraisal_engine = true
-affect_reducer = false
 intent_planner = false
 plan_transformer = false
 safety_policy = false

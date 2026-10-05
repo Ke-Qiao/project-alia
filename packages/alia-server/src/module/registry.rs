@@ -19,7 +19,6 @@ pub struct ModuleRegistry {
     pub llm: Arc<dyn LlmAdapter>,
     pub minor_llm: Arc<dyn LlmAdapter>,
     pub major_llm: Arc<dyn LlmAdapter>,
-    pub transcript_correction_llm: Option<Arc<dyn LlmAdapter>>,
     pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
     pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
     pub stt: Arc<dyn SttAdapter>,
@@ -67,12 +66,6 @@ impl ModuleRegistry {
         let mut results = HashMap::new();
         results.insert("llm.minor".to_string(), self.minor_llm.health_check().await);
         results.insert("llm.major".to_string(), self.major_llm.health_check().await);
-        if let Some(llm) = &self.transcript_correction_llm {
-            results.insert(
-                "llm.transcript_correction".to_string(),
-                llm.health_check().await,
-            );
-        }
         if let Some(llm) = &self.memory_capture_llm {
             results.insert("llm.memory_capture".to_string(), llm.health_check().await);
         }
@@ -116,9 +109,6 @@ impl ModuleRegistry {
                 .as_deref()
                 .map(|module| module as &dyn ModuleLifecycle),
             self.sentence_expression_llm
-                .as_deref()
-                .map(|module| module as &dyn ModuleLifecycle),
-            self.transcript_correction_llm
                 .as_deref()
                 .map(|module| module as &dyn ModuleLifecycle),
             self.memory_capture_llm

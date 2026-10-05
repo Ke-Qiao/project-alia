@@ -120,146 +120,32 @@ impl EmbeddedStore {
         .execute(&self.pool)
         .await
         .context("ensuring direct_responses table")?;
-        self.ensure_direct_response_columns().await?;
-        self.migrate_direct_responses_drop_audio_path().await?;
+        self.validate_direct_response_schema().await?;
         self.ensure_direct_response_indexes().await?;
-        self.assign_missing_direct_response_slugs().await?;
 
         Ok(())
     }
 
-    async fn ensure_direct_response_columns(&self) -> Result<()> {
-        let rows = sqlx::query("PRAGMA table_info(direct_responses)")
+    async fn validate_direct_response_schema(&self) -> Result<()> {
+        let columns = sqlx::query("PRAGMA table_info(direct_responses)")
             .fetch_all(&self.pool)
-            .await
-            .context("reading direct_responses table info")?;
-        let has_audio_variants = rows
-            .iter()
-            .any(|row| row.get::<String, _>("name") == "audio_variants_json");
-        let has_slug = rows
-            .iter()
-            .any(|row| row.get::<String, _>("name") == "slug");
-
-        if !has_audio_variants {
-            sqlx::query(
-                r#"
-                ALTER TABLE direct_responses
-                ADD COLUMN audio_variants_json TEXT NOT NULL DEFAULT '[]'
-                "#,
-            )
-            .execute(&self.pool)
-            .await
-            .context("adding direct_responses.audio_variants_json")?;
-        }
-        if !has_slug {
-            sqlx::query(
-                r#"
-                ALTER TABLE direct_responses
-                ADD COLUMN slug TEXT NOT NULL DEFAULT ''
-                "#,
-            )
-            .execute(&self.pool)
-            .await
-            .context("adding direct_responses.slug")?;
-        }
-
-        Ok(())
-    }
-
-    async fn migrate_direct_responses_drop_audio_path(&self) -> Result<()> {
-        let rows = sqlx::query("PRAGMA table_info(direct_responses)")
-            .fetch_all(&self.pool)
-            .await
-            .context("reading direct_responses table info before migration")?;
-        let has_audio_path = rows
-            .iter()
-            .any(|row| row.get::<String, _>("name") == "audio_path");
-        if !has_audio_path {
-            return Ok(());
-        }
-
-        let rows = sqlx::query(
-            r#"
-            SELECT id, slug, keywords_json, audio_path, audio_variants_json, action, enabled, updated_at
-            FROM direct_responses
-            ORDER BY id ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .context("loading legacy direct responses for audio_path migration")?;
-
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("starting direct_responses migration")?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE direct_responses_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slug TEXT NOT NULL DEFAULT '',
-                keywords_json TEXT NOT NULL,
-                audio_variants_json TEXT NOT NULL DEFAULT '[]',
-                action TEXT,
-                enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            "#,
-        )
-        .execute(&mut *tx)
-        .await
-        .context("creating direct_responses_new")?;
-
-        for row in rows {
-            let audio_path = row.get::<String, _>("audio_path");
-            let variants_json = row
-                .try_get::<String, _>("audio_variants_json")
-                .unwrap_or_else(|_| "[]".to_string());
-            let mut variants: Vec<DirectResponseAudioRecord> =
-                serde_json::from_str(&variants_json).unwrap_or_default();
-            if variants.is_empty() && !audio_path.trim().is_empty() {
-                variants.push(DirectResponseAudioRecord {
-                    audio_path,
-                    weight: 1.0,
-                });
-            }
-            let variants_json =
-                serde_json::to_string(&variants).context("serializing migrated audio variants")?;
-
-            sqlx::query(
-                r#"
-                INSERT INTO direct_responses_new
-                    (id, slug, keywords_json, audio_variants_json, action, enabled, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                "#,
-            )
-            .bind(row.get::<i64, _>("id"))
-            .bind(row.try_get::<String, _>("slug").unwrap_or_default())
-            .bind(row.get::<String, _>("keywords_json"))
-            .bind(variants_json)
-            .bind(row.get::<Option<String>, _>("action"))
-            .bind(row.get::<i64, _>("enabled"))
-            .bind(row.get::<String, _>("updated_at"))
-            .execute(&mut *tx)
-            .await
-            .context("copying direct response into migrated table")?;
-        }
-
-        sqlx::query("DROP TABLE direct_responses")
-            .execute(&mut *tx)
-            .await
-            .context("dropping legacy direct_responses table")?;
-        sqlx::query("ALTER TABLE direct_responses_new RENAME TO direct_responses")
-            .execute(&mut *tx)
-            .await
-            .context("renaming migrated direct_responses table")?;
-
-        tx.commit()
-            .await
-            .context("committing direct_responses audio_path migration")?;
-        tracing::info!("migrated direct_responses table to remove audio_path column");
+            .await?
+            .into_iter()
+            .map(|row| row.get::<String, _>("name"))
+            .collect::<Vec<_>>();
+        anyhow::ensure!(
+            columns
+                == [
+                    "id",
+                    "slug",
+                    "keywords_json",
+                    "audio_variants_json",
+                    "action",
+                    "enabled",
+                    "updated_at"
+                ],
+            "unsupported direct_responses schema; use a fresh embedded state database"
+        );
         Ok(())
     }
 
@@ -274,47 +160,6 @@ impl EmbeddedStore {
         .execute(&self.pool)
         .await
         .context("ensuring direct_responses slug index")?;
-        Ok(())
-    }
-
-    async fn assign_missing_direct_response_slugs(&self) -> Result<()> {
-        let rows = sqlx::query("SELECT id, slug, keywords_json, action FROM direct_responses")
-            .fetch_all(&self.pool)
-            .await
-            .context("loading direct response slugs")?;
-
-        let mut used = HashSet::new();
-        for row in &rows {
-            let slug = row.get::<String, _>("slug");
-            if !slug.trim().is_empty() {
-                used.insert(slug);
-            }
-        }
-
-        for row in rows {
-            let id = row.get::<i64, _>("id");
-            let slug = row.get::<String, _>("slug");
-            if !slug.trim().is_empty() {
-                continue;
-            }
-            let keywords_json = row.get::<String, _>("keywords_json");
-            let keywords: Vec<String> = serde_json::from_str(&keywords_json).unwrap_or_default();
-            let action = row.get::<Option<String>, _>("action");
-            let desired = action
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .or_else(|| keywords.first().map(String::as_str))
-                .unwrap_or("direct-response");
-            let slug = unique_slug(desired, &mut used);
-
-            sqlx::query("UPDATE direct_responses SET slug = ? WHERE id = ?")
-                .bind(&slug)
-                .bind(id)
-                .execute(&self.pool)
-                .await
-                .with_context(|| format!("assigning slug '{slug}' to direct response {id}"))?;
-        }
-
         Ok(())
     }
 
@@ -424,6 +269,10 @@ impl EmbeddedStore {
         let keywords_json =
             serde_json::to_string(&rule.keywords).context("serializing keywords")?;
         let audio_variants = normalize_audio_variants(rule);
+        anyhow::ensure!(
+            !audio_variants.is_empty(),
+            "direct response cue requires an audio path with a finite positive weight"
+        );
         let audio_variants_json =
             serde_json::to_string(&audio_variants).context("serializing audio variants")?;
         let slug = if sanitize_slug(&rule.slug).is_empty() {
@@ -593,9 +442,6 @@ impl EmbeddedStore {
             .filter(|keyword| !keyword.trim().is_empty())
             .collect::<Vec<_>>();
         let action = import.action.filter(|action| !action.trim().is_empty());
-        if keywords.is_empty() && action.is_none() && audio_variants.is_empty() {
-            anyhow::bail!("direct response import requires a keyword, action, or audio variant");
-        }
 
         let id = existing
             .as_ref()
@@ -897,10 +743,14 @@ fn default_weight() -> f32 {
 fn normalize_audio_variants(rule: &DirectResponseRuleRecord) -> Vec<DirectResponseAudioRecord> {
     rule.audio_variants
         .iter()
-        .filter(|variant| !variant.audio_path.trim().is_empty())
+        .filter(|variant| {
+            !variant.audio_path.trim().is_empty()
+                && variant.weight.is_finite()
+                && variant.weight > 0.0
+        })
         .map(|variant| DirectResponseAudioRecord {
             audio_path: variant.audio_path.clone(),
-            weight: variant.weight.max(0.0),
+            weight: variant.weight,
         })
         .collect::<Vec<_>>()
 }

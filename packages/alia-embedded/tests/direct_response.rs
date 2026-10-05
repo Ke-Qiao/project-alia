@@ -40,7 +40,7 @@ fn supports_weighted_audio_variants() {
 }
 
 #[test]
-fn supports_action_only_response() {
+fn ignores_action_only_rule_without_audio() {
     let matcher = KeywordMatcher::new(&[DirectResponseConfig {
         slug: "cancel".to_string(),
         keywords: vec!["退下".to_string()],
@@ -49,38 +49,32 @@ fn supports_action_only_response() {
         action: Some("cancel".to_string()),
     }]);
 
-    let action = matcher.match_keyword("退下").unwrap();
-    assert_eq!(action.audio_path, None);
-    assert_eq!(action.action.as_deref(), Some("cancel"));
-    let action = matcher.match_action("cancel").unwrap();
-    assert_eq!(action.audio_path, None);
-    assert_eq!(action.action.as_deref(), Some("cancel"));
+    assert!(matcher.match_keyword("退下").is_none());
+    assert!(matcher.match_action("cancel").is_none());
 }
 
 #[test]
-fn includes_builtin_cancel_aliases_without_config() {
+fn empty_configuration_does_not_invent_cancel_controls() {
     let matcher = KeywordMatcher::new(&[]);
 
     for text in ["再见", "别说了", "结束对话", "goodbye", "stop talking"] {
-        let action = matcher.match_keyword(text).unwrap();
-        assert_eq!(action.audio_path, None);
-        assert_eq!(action.action.as_deref(), Some("cancel"));
+        assert!(matcher.match_keyword(text).is_none());
     }
 }
 
 #[test]
-fn configured_rules_take_precedence_over_builtin_cancel_aliases() {
+fn configured_cue_alias_resolves_only_its_audio_metadata() {
     let matcher = KeywordMatcher::new(&[DirectResponseConfig {
-        slug: "custom-bye".to_string(),
-        keywords: vec!["再见".to_string()],
-        audio: PathBuf::from("bye.wav"),
+        slug: "custom-wake".to_string(),
+        keywords: vec!["你好阿利亚".to_string()],
+        audio: PathBuf::from("hello.wav"),
         audio_variants: Vec::new(),
-        action: Some("custom_bye".to_string()),
+        action: Some("wakeword".to_string()),
     }]);
 
-    let action = matcher.match_keyword("再见").unwrap();
-    assert_eq!(action.audio_path.as_deref(), Some("bye.wav"));
-    assert_eq!(action.action.as_deref(), Some("custom_bye"));
+    let action = matcher.match_action("wakeword").unwrap();
+    assert_eq!(action.audio_path.as_deref(), Some("hello.wav"));
+    assert_eq!(action.action.as_deref(), Some("wakeword"));
 }
 
 #[test]
@@ -99,14 +93,36 @@ fn ignores_keyword_only_rule_without_audio_or_action() {
 #[test]
 fn resolves_named_response_by_slug() {
     let matcher = KeywordMatcher::new(&[DirectResponseConfig {
-        slug: "listening-continue".to_string(),
+        slug: "wake-cue".to_string(),
         keywords: Vec::new(),
-        audio: PathBuf::from("continue.wav"),
+        audio: PathBuf::from("wake.wav"),
         audio_variants: Vec::new(),
         action: None,
     }]);
 
-    let action = matcher.match_action("listening_continue").unwrap();
-    assert_eq!(action.audio_path.as_deref(), Some("continue.wav"));
-    assert_eq!(action.action.as_deref(), Some("listening-continue"));
+    let action = matcher.match_action("wake_cue").unwrap();
+    assert_eq!(action.audio_path.as_deref(), Some("wake.wav"));
+    assert_eq!(action.action.as_deref(), Some("wake-cue"));
+}
+
+#[test]
+fn ignores_audio_variants_without_valid_path_or_weight() {
+    for (audio, weight) in [
+        (PathBuf::new(), 1.0),
+        (PathBuf::from(" "), 1.0),
+        (PathBuf::from("wake.wav"), 0.0),
+        (PathBuf::from("wake.wav"), -1.0),
+        (PathBuf::from("wake.wav"), f32::NAN),
+        (PathBuf::from("wake.wav"), f32::INFINITY),
+    ] {
+        let matcher = KeywordMatcher::new(&[DirectResponseConfig {
+            slug: "wakeword".into(),
+            keywords: vec!["hey alia".into()],
+            audio: PathBuf::new(),
+            audio_variants: vec![DirectResponseAudioConfig { audio, weight }],
+            action: Some("wakeword".into()),
+        }]);
+        assert!(matcher.match_keyword("hey alia").is_none());
+        assert!(matcher.match_action("wakeword").is_none());
+    }
 }

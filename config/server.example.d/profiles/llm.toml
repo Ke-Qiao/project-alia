@@ -22,17 +22,6 @@ stop_sequences = []
 tool_choice = "auto"
 json_mode = false
 
-[profiles.llm.transcript_correction]
-provider = "gemini"
-kind = "chat"
-model = "gemini-2.5-flash"
-max_output_tokens = 256
-temperature = 0.0
-top_p = 1.0
-stop_sequences = []
-tool_choice = "auto"
-json_mode = false
-
 [profiles.llm.memory_capture]
 provider = "gemini"
 kind = "chat"

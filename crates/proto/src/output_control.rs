@@ -832,6 +832,25 @@ mod tests {
         };
         let mut wire = encode_retirement_receipt(&value);
         assert_eq!(decode_retirement_receipt(&wire, &request).unwrap(), value);
+        // A cue can create the scope's native owner before Response registration.
+        // Its settled gate is real output evidence, never NoNativeOwner.
+        let cue_request = OutputRetirementRequest {
+            scope: request.scope,
+            binding: None,
+            expected_backend: None,
+        };
+        let cue_receipt = OutputRetirementReceipt {
+            binding: None,
+            ..value.clone()
+        };
+        assert_eq!(
+            decode_retirement_receipt(&encode_retirement_receipt(&cue_receipt), &cue_request)
+                .unwrap(),
+            cue_receipt
+        );
+        let mut other_scope = cue_request.clone();
+        other_scope.scope.session_id = Uuid::new_v4();
+        assert!(cue_receipt.validate(&other_scope).is_err());
         if let Some(wire::retire_output_receipt::Evidence::Settled(settled)) = &mut wire.evidence {
             settled.native_writes_quiescent = false;
         }

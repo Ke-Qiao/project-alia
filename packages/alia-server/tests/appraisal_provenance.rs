@@ -377,7 +377,7 @@ async fn privacy_clear_erases_projections_and_rejects_their_output_authority() {
 }
 
 #[tokio::test]
-async fn same_identity_different_draft_and_unbound_legacy_calls_do_not_write() {
+async fn same_identity_different_draft_does_not_write() {
     with_db(|f| async move {
         let service = f.service();
         let runtime = f.runtime().await;
@@ -391,16 +391,6 @@ async fn same_identity_different_draft_and_unbound_legacy_calls_do_not_write() {
             .unwrap();
         drafts[0].deltas.trust += 0.01;
         assert!(runtime.submit_appraisal(input, drafts).await.is_err());
-        assert_eq!(f.records().await, 1);
-        let old = runtime
-            .observe_user_input(alia_server::expression::AffectUserInput {
-                channel_id: "appraisal-device",
-                user_id: &f.owner.to_string(),
-                user_text: "thank you",
-            })
-            .await;
-        assert!(old.persistence_error.is_some());
-        assert!(old.appraisals.is_empty());
         assert_eq!(f.records().await, 1);
         runtime.shutdown().await.unwrap();
     })
@@ -660,43 +650,56 @@ async fn unrelated_forget_does_not_reauthorize_or_hide_independent_committed_mem
 }
 
 #[tokio::test]
-async fn legacy_policy_shape_is_verified_and_upgraded_once_without_overwriting_db_settings() {
+async fn initialization_preserves_current_policy_and_rejects_unsupported_or_damaged_rows() {
+    async fn snapshot(db: &DatabaseConnection) -> serde_json::Value {
+        db.query_one(sql(
+            "SELECT jsonb_build_object('version',version,'policy',policy,'policy_digest',policy_digest,'updated_at',updated_at) AS snapshot FROM context_policy WHERE singleton",
+            vec![],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "snapshot")
+        .unwrap()
+    }
+
     with_db(|f| async move {
         let service = f.service();
         let stored = service.policy_store().current().await.unwrap();
-        let mut old = serde_json::to_value(&stored.policy).unwrap();
-        old.as_object_mut().unwrap().remove("appraisal");
-        let digest = evidence_digest(&old).unwrap();
-        f.db.execute(sql(
-            "UPDATE context_policy SET policy=$1,policy_digest=$2 WHERE singleton",
-            vec![old.clone().into(), digest.into()],
-        ))
-        .await
-        .unwrap();
+        let before = snapshot(&f.db).await;
         let mut seed = stored.policy.clone();
         seed.max_memory_results = 1;
         seed.appraisal.affect.baseline_trust = 0.37;
-        let upgraded = service.initialize_policy(seed.clone()).await.unwrap();
-        assert_eq!(upgraded.version, stored.version + 1);
-        assert_eq!(
-            upgraded.policy.max_memory_results,
-            stored.policy.max_memory_results
-        );
-        assert_eq!(upgraded.policy.appraisal.affect.baseline_trust, 0.37);
-        seed.appraisal.affect.baseline_trust = 0.8;
-        let restarted = service.initialize_policy(seed).await.unwrap();
-        assert_eq!(restarted.version, upgraded.version);
-        assert_eq!(restarted.policy, upgraded.policy);
-        f.db.execute(sql(
-            "UPDATE context_policy SET policy=$1,policy_digest=repeat('0',64) WHERE singleton",
-            vec![old.into()],
-        ))
-        .await
-        .unwrap();
-        assert!(
-            service.initialize_policy(stored.policy).await.is_err(),
-            "damaged old digest must never be refreshed"
-        );
+        assert_ne!(seed, stored.policy);
+        let restarted = service.initialize_policy(seed.clone()).await.unwrap();
+        assert_eq!(restarted.version, stored.version);
+        assert_eq!(restarted.policy, stored.policy);
+        assert_eq!(snapshot(&f.db).await, before);
+
+        let current = serde_json::to_value(&stored.policy).unwrap();
+        let mut old = current.clone();
+        old.as_object_mut().unwrap().remove("appraisal");
+        let old_digest = evidence_digest(&old).unwrap();
+        for (policy, digest, expected_error) in [
+            (old, old_digest, "missing field `appraisal`"),
+            (current, "0".repeat(64), "context policy digest mismatch"),
+        ] {
+            f.db.execute(sql(
+                "UPDATE context_policy SET policy=$1,policy_digest=$2 WHERE singleton",
+                vec![policy.into(), digest.into()],
+            ))
+            .await
+            .unwrap();
+            let rejected = snapshot(&f.db).await;
+            let error = service.initialize_policy(seed.clone()).await.unwrap_err();
+            assert!(error.to_string().contains(expected_error), "{error:#}");
+            assert!(service.policy_store().current().await.is_err());
+            assert_eq!(
+                snapshot(&f.db).await,
+                rejected,
+                "rejection must not repair or replace stored policy"
+            );
+        }
     })
     .await;
 }

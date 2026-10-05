@@ -6,9 +6,7 @@ use alia_server::expression::{
     ExpressionCapabilitySnapshot, ExpressionInput, ExpressionRuntime, RuleBasedAppraisalEngine,
     TextClassifierAppraisalEngine, appraisal_regression_cases, planner_regression_cases,
 };
-use alia_server::providers::adapter::{
-    MemoryAffectHint, MemoryContextPack, MemoryRecallEvent, MemorySnippet, TtsCapabilities,
-};
+use alia_server::providers::adapter::{MemoryContextPack, MemorySnippet, TtsCapabilities};
 use std::collections::BTreeMap;
 
 #[tokio::test]
@@ -259,39 +257,6 @@ async fn planner_uses_memory_boundaries_to_reduce_motion_intensity() {
         .await;
 
     assert!(plan.timeline.iter().all(|action| action.intensity <= 0.45));
-}
-
-#[tokio::test]
-async fn unbound_memory_recall_cannot_change_affect() {
-    let runtime = test_runtime();
-    let before = runtime.affect_snapshot("cli", "memory_user").await;
-    let observation = runtime
-        .observe_memory_recall(
-            "cli",
-            "memory_user",
-            &[MemoryRecallEvent {
-                memory_id: "mem_preference".to_string(),
-                memory_kind: "preference".to_string(),
-                content: "The user prefers direct engineering answers.".to_string(),
-                confidence: 1.0,
-                salience: 1.0,
-                affect_hint: MemoryAffectHint {
-                    valence_delta: Some(1.0),
-                    arousal_delta: Some(1.0),
-                    trust_delta: Some(1.0),
-                    engagement_delta: Some(1.0),
-                    frustration_risk_delta: Some(-1.0),
-                },
-                evidence_memory_ids: vec!["mem_preference".to_string()],
-                source_event_ids: Vec::new(),
-            }],
-        )
-        .await;
-
-    assert!(observation.appraisals.is_empty());
-    assert!(observation.persistence_error.is_some());
-    assert_eq!(observation.snapshot.affect.valence, before.affect.valence);
-    assert_eq!(observation.snapshot.social.trust, before.social.trust);
 }
 
 fn test_runtime() -> ExpressionRuntime {

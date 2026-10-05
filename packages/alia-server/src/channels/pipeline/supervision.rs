@@ -5,7 +5,7 @@ use tokio::task::{Id, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 pub(super) const MAX_CONCURRENT_REQUESTS: usize = 4;
-pub(super) const LEGACY_QUEUE_CAPACITY: usize = 8;
+pub(super) const CHANNEL_QUEUE_CAPACITY: usize = 8;
 
 /// Owns every running request, including those draining dispatched tools.
 #[derive(Default)]
