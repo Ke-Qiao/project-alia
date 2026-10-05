@@ -1,0 +1,176 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/run/validation-20261006-cleanup/linux-arm64-v3/evidence/platform-libs.log",
+  "log_sha256": "70b93d2146ff6b6b2777a9c505e60c5460eaa2f2851bfd6e60a0488f5a43f8c5",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 3,
+  "running_targets": 3,
+  "doctest_targets": 0,
+  "totals": {
+    "passed": 220,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "running_totals": {
+    "passed": 220,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 0,
+  "excluded_nested_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "nested_harness_start_count": 0,
+  "orphan_summaries": [],
+  "cargo_errors": [],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_core-097f325396a2d417)",
+      "heading_line": 6,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 8,
+        "selected": 31
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 41
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_embedded-97bc99c246a1f687)",
+      "heading_line": 43,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 46,
+        "selected": 184
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 184,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 25.57,
+        "line": 232
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_proto-585214648fcd93b0)",
+      "heading_line": 234,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 236,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 243
+      }
+    }
+  ],
+  "run_metadata": {
+    "started": "2026-10-05T19:56:27.086254+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-core",
+      "-p",
+      "alia-proto",
+      "-p",
+      "alia-embedded",
+      "--lib",
+      "--locked",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "container": "alia-cleanup-linux-20261006-v3",
+    "environment": {
+      "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+      "CARGO_HOME": "/cache/cargo",
+      "CARGO_TARGET_DIR": "/cache/target",
+      "CARGO_BUILD_JOBS": "2",
+      "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+      "RUST_TEST_THREADS": "unset",
+      "RUST_MIN_STACK": "unset",
+      "DOCS_RS": "unset"
+    },
+    "manifest_sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0",
+    "source_before": {
+      "file_count": 619,
+      "errors": []
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 41.299,
+    "finished": "2026-10-05T19:57:08.385536+00:00",
+    "source_after": {
+      "file_count": 619,
+      "errors": []
+    },
+    "finished_at": "2026-10-05T19:57:08.385536+00:00",
+    "source_drift": []
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-core",
+      "-p",
+      "alia-proto",
+      "-p",
+      "alia-embedded",
+      "--lib",
+      "--locked",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "workspace_requested": false,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "PASSED_RECORDED_RUN"
+}

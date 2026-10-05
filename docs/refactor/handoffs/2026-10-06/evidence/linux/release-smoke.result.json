@@ -1,0 +1,32 @@
+{
+  "started": "2026-10-05T20:04:24.568572+00:00",
+  "command": [
+    "python3",
+    "/evidence/release-smoke.py"
+  ],
+  "container": "alia-cleanup-linux-20261006-v3",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0",
+  "source_before": {
+    "file_count": 619,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 1.561,
+  "finished": "2026-10-05T20:04:26.130153+00:00",
+  "source_after": {
+    "file_count": 619,
+    "errors": []
+  },
+  "finished_at": "2026-10-05T20:04:26.130153+00:00",
+  "source_drift": []
+}

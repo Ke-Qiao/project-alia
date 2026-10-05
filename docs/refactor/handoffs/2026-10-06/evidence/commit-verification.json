@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-10-05T20:06:30.476303+00:00",
+  "source_commit": "4434be4992e4c23381ff911e8bc50e24a69dc881",
+  "source_manifest_sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0",
+  "file_count": 619,
+  "git_tree_paths_equal_manifest": true,
+  "git_blobs_match_manifest": true,
+  "mismatches": [],
+  "baseline": "9a94d146a0a03aea55e182b301d872c6edd0b168",
+  "change_summary": "157 files, +4154 / -9590 lines; no new dependencies"
+}

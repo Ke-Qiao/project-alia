@@ -1,0 +1,34 @@
+Log: /Users/ke-qiao/Developer/project-alia/run/validation-20261006-cleanup/linux-arm64-v3/evidence/server-targets.log
+SHA-256: eb373ca6162b128e9c0dd5ccc8df584dbe26bcfc32211bc54854eaa315abf868
+Assessment: PASSED_RECORDED_RUN
+Targets: 11 Running + 0 Doc-tests
+Counted outer totals: {"passed": 449, "failed": 0, "ignored": 3, "measured": 0, "filtered_out": 0}
+Excluded nested summaries: 1; totals: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 315}
+Extra nested harness starts: 2
+Earlier summaries are excluded, not added to passed / filtered totals.
+
+Recorded invocation: {"command": ["cargo", "test", "-p", "alia-server", "--lib", "--test", "appraisal_provenance", "--test", "channel_registry", "--test", "delivery_service", "--test", "delivery_text_service", "--test", "duplex_playback", "--test", "body_delivery", "--test", "output_control", "--test", "output_lifecycle", "--test", "server_runtime", "--test", "plugin_storage", "--locked", "--offline", "--no-fail-fast"], "workspace_requested": false, "all_features_requested": false, "default_features_disabled": false, "explicit_features": [], "target_argument": null, "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"}
+Cargo exit code: 0
+
+line	status	passed	failed	ignored	measured	filtered	target
+337	ok	313	0	3	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_server-87eed725b54e1b12)
+  EXCLUDED nested summary line 189: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 315, "status": "ok", "seconds": 0.07, "line": 189}
+  Nested harness start line 170: 1 selected; child may exit intentionally without a summary
+  Observed ignored line 10: bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 13: channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 19: channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal; requires a real PTY; run with --ignored --nocapture --test-threads=1
+363	ok	20	0	0	0	0	Running tests/appraisal_provenance.rs (/cache/target/debug/deps/appraisal_provenance-a400b5ceca7ffbc1)
+376	ok	7	0	0	0	0	Running tests/body_delivery.rs (/cache/target/debug/deps/body_delivery-fc8349271751d462)
+385	ok	3	0	0	0	0	Running tests/channel_registry.rs (/cache/target/debug/deps/channel_registry-1cd1962946c4b4f3)
+403	ok	12	0	0	0	0	Running tests/delivery_service.rs (/cache/target/debug/deps/delivery_service-0ef4ddc676b4620f)
+413	ok	4	0	0	0	0	Running tests/delivery_text_service.rs (/cache/target/debug/deps/delivery_text_service-66be8e7f2199d45a)
+428	ok	9	0	0	0	0	Running tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-09cdc9574bc937c0)
+447	ok	13	0	0	0	0	Running tests/output_control.rs (/cache/target/debug/deps/output_control-795a3938d62cb567)
+464	ok	11	0	0	0	0	Running tests/output_lifecycle.rs (/cache/target/debug/deps/output_lifecycle-bd4fb741e3b87630)
+474	ok	4	0	0	0	0	Running tests/plugin_storage.rs (/cache/target/debug/deps/plugin_storage-581724ae8907c2ad)
+539	ok	53	0	0	0	0	Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-d688634c1b44968f)
+  Nested harness start line 480: 1 selected; child may exit intentionally without a summary
+
+Limits: sequential Cargo log required; nested Cargo Running headings or interleaved
+independent Cargo invocations require separate logs. Test lines may include child output;
+only outer summaries contribute counts. No sidecar means overall run completion is unconfirmed.

@@ -1,0 +1,44 @@
+{
+  "phase": "cleanup_complete",
+  "source_commit": "4434be4992e4c23381ff911e8bc50e24a69dc881",
+  "branch": "codex/architecture-refactor",
+  "cleanup_completed": 10,
+  "cleanup_total": 10,
+  "next_rounds_completed": 2,
+  "next_rounds_total": 6,
+  "manifest_sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0",
+  "frozen_files": 619,
+  "macos_workspace": {
+    "passed": 1051,
+    "failed": 0,
+    "ignored": 5
+  },
+  "macos_real_pty": {
+    "passed": 3,
+    "failed": 0
+  },
+  "macos_embedded_no_default": {
+    "passed": 240,
+    "failed": 0,
+    "ignored": 0
+  },
+  "linux_targeted": {
+    "passed": 669,
+    "failed": 0,
+    "ignored": 3,
+    "full_workspace": false
+  },
+  "real_model_tests_rerun": false,
+  "task_resources": "stopped",
+  "user_database_5433": "not accessed",
+  "next": [
+    "R02 AEC and real acoustics",
+    "R03 hardware feedback and asset signing",
+    "V01 bounded root-cause investigation",
+    "R04 management follow-ups",
+    "R05 real deployment and soak",
+    "R06 only specified platforms",
+    "authenticated input-session closure",
+    "frontend/general embedded/edge model deferred"
+  ]
+}

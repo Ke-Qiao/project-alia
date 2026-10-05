@@ -1,0 +1,120 @@
+{
+  "checked_at": "2026-10-05T20:05:13.358481+00:00",
+  "task_database": {
+    "remaining_task_schemas": 0,
+    "other_database_connections": 0
+  },
+  "steps": [
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "1",
+        "alia-cleanup-linux-20261006-v3"
+      ],
+      "exit_code": 0,
+      "stdout": "Flag --time has been deprecated, use --timeout instead\nalia-cleanup-linux-20261006-v3\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "10",
+        "alia-cleanup-20261006-db"
+      ],
+      "exit_code": 0,
+      "stdout": "Flag --time has been deprecated, use --timeout instead\nalia-cleanup-20261006-db\n",
+      "stderr": ""
+    }
+  ],
+  "containers": [
+    {
+      "name": "/alia-cleanup-linux-20261006-v2",
+      "id": "372d14771aad092fa0c971fc24764cd2302ec99bdbe49d37ea2dc1a555939e47",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 137,
+        "Error": "",
+        "StartedAt": "2026-10-05T19:32:45.452123473Z",
+        "FinishedAt": "2026-10-05T19:40:29.266193192Z"
+      },
+      "ports": {}
+    },
+    {
+      "name": "/alia-cleanup-linux-20261006-v3",
+      "id": "5b61a1d13a6a7dd8598e8dc27aaf669ff69a9715426c579b2da4bd1f1d51951c",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 137,
+        "Error": "",
+        "StartedAt": "2026-10-05T19:44:10.317915852Z",
+        "FinishedAt": "2026-10-05T20:05:12.69279696Z"
+      },
+      "ports": {}
+    },
+    {
+      "name": "/alia-cleanup-20261006-db",
+      "id": "3476eac59436a408472e7edeb19f8c440957f84424ba4e82e6d9eca3fa1d0f79",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-05T19:09:19.781746567Z",
+        "FinishedAt": "2026-10-05T20:05:13.267925588Z"
+      },
+      "ports": {}
+    },
+    {
+      "name": "/alia-postgres",
+      "id": "905470a16802dc61557468b390956507f2d30f113e897943213c83663cb81743",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 396,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-04T05:48:10.159730833Z",
+        "FinishedAt": "2026-10-03T11:40:19.36400908Z"
+      },
+      "ports": {
+        "5432/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "5433"
+          },
+          {
+            "HostIp": "::",
+            "HostPort": "5433"
+          }
+        ]
+      }
+    }
+  ],
+  "user_database_5433": "not connected to or modified; container status inspected only",
+  "idle_holder_exit_note": "Linux holder sleep infinity is explicitly stopped; its forced exit is separate from the four smoke processes, all of which exited 0 with no forced kill."
+}

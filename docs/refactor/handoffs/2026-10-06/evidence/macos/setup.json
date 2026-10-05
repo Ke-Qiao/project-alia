@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-10-05T19:13:36.273436+00:00",
+  "source_base": "9a94d146a0a03aea55e182b301d872c6edd0b168",
+  "task_database_container": "alia-cleanup-20261006-db",
+  "task_database_port": 32769,
+  "linux_image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+  "cache_source": "run/validation-20261004/linux-arm64-v1/cache",
+  "cache_copy": "APFS copy-on-write cp -cR; original unchanged",
+  "user_database_5433": "not accessed"
+}

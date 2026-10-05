@@ -1,0 +1,116 @@
+{
+  "started_at": "2026-10-05T20:04:24.613681+00:00",
+  "scope": "Linux container release binaries; no acoustic model, device or binding mutation",
+  "configuration_sha256": {
+    "server.toml": "cad80377a5c084a1d0c21276582a2e2b1c930f8ce504475bd8e9f285db1c1dd4",
+    "embedded.toml": "77add13c70b8b09ba6040eba212df3bf9fdeaf58a43c8b2d521fb5454c0bf469"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "health_http_status": 200,
+      "health_overall": "ok",
+      "module_health": {
+        "scheduler": "healthy",
+        "rule_engine": "healthy",
+        "llm.minor": "healthy",
+        "conversation": "healthy",
+        "insights": "healthy",
+        "tools": "healthy",
+        "skills": "healthy",
+        "cache": "healthy",
+        "llm.major": "healthy",
+        "embedding": "healthy",
+        "persona": "healthy",
+        "tts": "healthy",
+        "stt": "healthy",
+        "router": "healthy",
+        "memory": "healthy"
+      },
+      "persisted_account_login": false,
+      "same_private_keys": true,
+      "companion_mode": "shadow",
+      "unchanged_policy_revision": true,
+      "device_status_online": true,
+      "unknown_telemetry_null": true,
+      "public_binding_status_grpc": 0,
+      "device_unbound": true,
+      "anonymous_observe_control_grpc": 16,
+      "removed_rpc_grpc_codes": {
+        "/alia.audio.AudioStream/StopPlayback": 12,
+        "/alia.audio.AudioStream/PlayDirectResponse": 12,
+        "/alia.expression.EmbeddedExpression/GetCapabilities": 12,
+        "/alia.audio.ServerAudioIngress/InterruptActiveTurn": 12
+      },
+      "server_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0105
+      },
+      "embedded_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.006
+      },
+      "all_three_listeners_closed": true
+    },
+    {
+      "round": 2,
+      "health_http_status": 200,
+      "health_overall": "ok",
+      "module_health": {
+        "tts": "healthy",
+        "llm.major": "healthy",
+        "persona": "healthy",
+        "memory": "healthy",
+        "tools": "healthy",
+        "scheduler": "healthy",
+        "insights": "healthy",
+        "cache": "healthy",
+        "llm.minor": "healthy",
+        "rule_engine": "healthy",
+        "router": "healthy",
+        "stt": "healthy",
+        "skills": "healthy",
+        "embedding": "healthy",
+        "conversation": "healthy"
+      },
+      "persisted_account_login": true,
+      "same_private_keys": true,
+      "companion_mode": "shadow",
+      "unchanged_policy_revision": true,
+      "device_status_online": true,
+      "unknown_telemetry_null": true,
+      "public_binding_status_grpc": 0,
+      "device_unbound": true,
+      "anonymous_observe_control_grpc": 16,
+      "removed_rpc_grpc_codes": {
+        "/alia.audio.AudioStream/StopPlayback": 12,
+        "/alia.audio.AudioStream/PlayDirectResponse": 12,
+        "/alia.expression.EmbeddedExpression/GetCapabilities": 12,
+        "/alia.audio.ServerAudioIngress/InterruptActiveTurn": 12
+      },
+      "server_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0194
+      },
+      "embedded_shutdown": {
+        "exit_code": 0,
+        "signal": "SIGTERM",
+        "elapsed_seconds": 0.0057
+      },
+      "all_three_listeners_closed": true
+    }
+  ],
+  "exit_code": 0,
+  "finished_at": "2026-10-05T20:04:26.109992+00:00",
+  "remaining_smoke_processes": 0,
+  "cleanup_forced_kills": 0,
+  "process_exit_codes": [
+    0,
+    0,
+    0,
+    0
+  ]
+}

@@ -1,0 +1,367 @@
+{
+  "source_commit": "4434be4992e4c23381ff911e8bc50e24a69dc881",
+  "manifest_sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0",
+  "scope": "Final v3 plus immutable failed v1/v2 evidence; private smoke config and DB contents excluded. See cleanup record for test coverage.",
+  "files": [
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 466,
+      "sha256": "d3a91822d054bc9850300ec3da0cb42cc90fc190ab2990b6a3be6d9ce1ae8a1b"
+    },
+    {
+      "path": "evidence/linux/binaries.command.json",
+      "bytes": 1117,
+      "sha256": "ac2eae002ac1e815ef6e34bbf160cdd5912d5f5f660ebc50ba28e2503c47b579"
+    },
+    {
+      "path": "evidence/linux/binaries.json",
+      "bytes": 2412,
+      "sha256": "496378f1f4aa641357518e5ad53f4345276ee6782e195cbbf6d0d781cf69600b"
+    },
+    {
+      "path": "evidence/linux/binaries.log",
+      "bytes": 2358,
+      "sha256": "b38ac6172df5eec72efa1fe0289b47211cef057a9f18a0781376d4b805f75b1c"
+    },
+    {
+      "path": "evidence/linux/binaries.result.json",
+      "bytes": 1353,
+      "sha256": "5033e0451b342638769fe50407364b790fcec1635c680718af729a4c6f7fac0b"
+    },
+    {
+      "path": "evidence/linux/docker-create-args.json",
+      "bytes": 1412,
+      "sha256": "c1dc29543a44ddfa046efde35c13e5f5d504ed908eb10cae9d539825339aa7e3"
+    },
+    {
+      "path": "evidence/linux/docker-create.json",
+      "bytes": 1625,
+      "sha256": "1deeb61a459dc00935b7bf3cddbbbbc241bea6c36a501286a7f7f096ff21e0c2"
+    },
+    {
+      "path": "evidence/linux/environment.command.json",
+      "bytes": 1233,
+      "sha256": "fd537708edfe20b4606e9a1459d333d83f8c2bfc1a7ed58b87cbc01d377b0d5b"
+    },
+    {
+      "path": "evidence/linux/environment.json",
+      "bytes": 4064,
+      "sha256": "e4c0d6a2c6699b72934317e0c286c8b66d525bd556677cd82f0ba5978a7b6a5b"
+    },
+    {
+      "path": "evidence/linux/environment.log",
+      "bytes": 3768,
+      "sha256": "d413bbbd3258cccd7d68a7f224b7d8ebb65c29026063522173eb81913edf80db"
+    },
+    {
+      "path": "evidence/linux/environment.result.json",
+      "bytes": 1468,
+      "sha256": "2e55d1ee1662ee0cab407abac3e0355bd9e444646dc2527266087851f052b470"
+    },
+    {
+      "path": "evidence/linux/no-default.command.json",
+      "bytes": 773,
+      "sha256": "18f8ac2233f088534e3781f0615abe0748a303457f5c81ef5c72d04dd4594042"
+    },
+    {
+      "path": "evidence/linux/no-default.log",
+      "bytes": 391,
+      "sha256": "4fefc31a5738fa7b6fabfda7cc25bd5d962fda52bde4f011c565705cf04c2e68"
+    },
+    {
+      "path": "evidence/linux/no-default.result.json",
+      "bytes": 1010,
+      "sha256": "7d6bc69c7b73e1b402e143126c6a004c0b96a2746411a4e002707ed71ec307a6"
+    },
+    {
+      "path": "evidence/linux/platform-libs-counts.json",
+      "bytes": 4484,
+      "sha256": "1116c4fc75a2c12814af2876af87196761a8071500de973eedb4fbefdbab035c"
+    },
+    {
+      "path": "evidence/linux/platform-libs-counts.txt",
+      "bytes": 1639,
+      "sha256": "80ac3598550eaf65e747a2a94003e329d427caaf921e2c5005ac4333f7864f38"
+    },
+    {
+      "path": "evidence/linux/platform-libs.command.json",
+      "bytes": 783,
+      "sha256": "c99ebcf85a1f1f6c73483e9b45d1cef772b02778dd2441afa01204c208616e88"
+    },
+    {
+      "path": "evidence/linux/platform-libs.log",
+      "bytes": 25696,
+      "sha256": "70b93d2146ff6b6b2777a9c505e60c5460eaa2f2851bfd6e60a0488f5a43f8c5"
+    },
+    {
+      "path": "evidence/linux/platform-libs.result.json",
+      "bytes": 1020,
+      "sha256": "bfaf2e93ee39f2cc8ab9984d556403a9fa6a6d287757157c83ac117b751b66ca"
+    },
+    {
+      "path": "evidence/linux/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/linux/release-smoke-summary.json",
+      "bytes": 3543,
+      "sha256": "ffd33183774bf59b7151eeafd4beadaf0fb1d6fbb96069c56bb990d4d158452b"
+    },
+    {
+      "path": "evidence/linux/release-smoke.command.json",
+      "bytes": 653,
+      "sha256": "581b36d7a1437956bd4b7cdc1eb71226528eda3fb498554589e043245704bfba"
+    },
+    {
+      "path": "evidence/linux/release-smoke.log",
+      "bytes": 40,
+      "sha256": "7fd09bb8073c124aad944b2af5638da7834918b0a62181ffebeed7349114bd59"
+    },
+    {
+      "path": "evidence/linux/release-smoke.py",
+      "bytes": 11082,
+      "sha256": "18936cb1fbfc791d38ddc54331157f8ea1c6c8728b08b310ff16b36e4e0c3e55"
+    },
+    {
+      "path": "evidence/linux/release-smoke.result.json",
+      "bytes": 889,
+      "sha256": "e2b793340b337a781e236781f2cf5327408dbcea55666b3b073fefa9dc6c4e2a"
+    },
+    {
+      "path": "evidence/linux/release.command.json",
+      "bytes": 740,
+      "sha256": "e2a22df3e6794ea1eb769e2cb2f82913e2c15f98ef3a8680454fa052590dd219"
+    },
+    {
+      "path": "evidence/linux/release.log",
+      "bytes": 2688,
+      "sha256": "d4e5e4892577124474d2d00d2c33e6bf0a0fb2688a01f7830d4bc634ced562af"
+    },
+    {
+      "path": "evidence/linux/release.result.json",
+      "bytes": 978,
+      "sha256": "f7e55aa4733cf86732f9c631af4506c09f0b936d174b27551ee21525cb6a63c8"
+    },
+    {
+      "path": "evidence/linux/run-linux-v3.py",
+      "bytes": 2801,
+      "sha256": "2e4a0006d8f54e5ad18cc1e529ae160e55948534c05bec7beaa337b82f1f55ca"
+    },
+    {
+      "path": "evidence/linux/run-stage.py",
+      "bytes": 3007,
+      "sha256": "7fb861787216f0e7761abf5e1b19ee5d8487417631abdeb48c522584897f51ee"
+    },
+    {
+      "path": "evidence/linux/server-targets-counts.json",
+      "bytes": 11079,
+      "sha256": "644f33dc3ed86b9c4f6072c39b888af6d4d3deb79b23aed65b2e756469c6cf1e"
+    },
+    {
+      "path": "evidence/linux/server-targets-counts.txt",
+      "bytes": 3709,
+      "sha256": "fdf10c7d0c821182d15adefb624f40f5bae8a466eadced81b73ea8e116a8abe7"
+    },
+    {
+      "path": "evidence/linux/server-targets.command.json",
+      "bytes": 1105,
+      "sha256": "f503b3fbc9e3b4551b387100250a16168333ea6ca3596e0e1fc81b5e5509fde4"
+    },
+    {
+      "path": "evidence/linux/server-targets.log",
+      "bytes": 48671,
+      "sha256": "eb373ca6162b128e9c0dd5ccc8df584dbe26bcfc32211bc54854eaa315abf868"
+    },
+    {
+      "path": "evidence/linux/server-targets.result.json",
+      "bytes": 1343,
+      "sha256": "fe9407128a4c8dec783711d15e7f2b1d1e82fcc70b4b6e5fdbbdf21f55ab3587"
+    },
+    {
+      "path": "evidence/linux/smoke-schema-cleanup.json",
+      "bytes": 6393,
+      "sha256": "cf3fa1e99eba11cdb2e0b8ceba63977ba0e4878661fb0b94f83926c233a50bac"
+    },
+    {
+      "path": "evidence/linux/source-manifest.json",
+      "bytes": 100205,
+      "sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0"
+    },
+    {
+      "path": "evidence/linux/source.sha256",
+      "bytes": 70979,
+      "sha256": "ae0f1189921fefbf19a91320a95ac862b800f181a0c2ceacd9d915a25958a1c6"
+    },
+    {
+      "path": "evidence/macos/baseline-source-manifest.json",
+      "bytes": 101215,
+      "sha256": "54f581c768daa9193a05cc2c7cbf7491eb04d9249d00320476ef866d5b68a5c6"
+    },
+    {
+      "path": "evidence/macos/check-v3-result.json",
+      "bytes": 626,
+      "sha256": "18abc5128de6dea51736bdae0fba9dc747b2bd8031cd269fc10504a1f921d7e6"
+    },
+    {
+      "path": "evidence/macos/check-v3.log",
+      "bytes": 263,
+      "sha256": "1d84d4283d1e0d22ef25534356da9fbf1c413c626497b9a361fef216c9c27e43"
+    },
+    {
+      "path": "evidence/macos/embedded-no-default-v3-counts.json",
+      "bytes": 9501,
+      "sha256": "97dfa0dfdf931be7570592cec56e8f2389aa14405d2c89b3d05ee3aabce8138f"
+    },
+    {
+      "path": "evidence/macos/embedded-no-default-v3-counts.txt",
+      "bytes": 2400,
+      "sha256": "8026613361471e3cac368dd82326e3987c84f54b296792168ae1137fb2c6bc85"
+    },
+    {
+      "path": "evidence/macos/embedded-no-default-v3-result.json",
+      "bytes": 645,
+      "sha256": "10559a0a99e6a154a6854704edbb05a011718eccbee700256b35c7b40b1e3395"
+    },
+    {
+      "path": "evidence/macos/embedded-no-default-v3.log",
+      "bytes": 26845,
+      "sha256": "184a9bc44886b5d0819db9f1468de4a355bb0ccc5217dcf4cab859b78bc28da0"
+    },
+    {
+      "path": "evidence/macos/format-v3-result.json",
+      "bytes": 588,
+      "sha256": "8bdadf84ee43d85daa998dc88d730192987b85c7a9d119c361ec023dd1fbf9e1"
+    },
+    {
+      "path": "evidence/macos/format-v3.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/macos/host-environment.json",
+      "bytes": 1339,
+      "sha256": "946cb63cf2515caa8995e8466344fd1cab3654465f2e56029c9c1d277d1b59dd"
+    },
+    {
+      "path": "evidence/macos/pty-v3-counts.json",
+      "bytes": 3060,
+      "sha256": "43e086624480890122f21b9f6c26591401b3f7274fbcb4414a8f318e53ecfbb6"
+    },
+    {
+      "path": "evidence/macos/pty-v3-counts.txt",
+      "bytes": 1392,
+      "sha256": "76d1aa06e9a7a163ad9ff6c43023da5e8aa8baf1e4fca8b312e9c94647d69caf"
+    },
+    {
+      "path": "evidence/macos/pty-v3-result.json",
+      "bytes": 809,
+      "sha256": "c464ae7775c2749776f9fa5e46cd73cb1f1ae054e38f1627d355fa80139b6d14"
+    },
+    {
+      "path": "evidence/macos/pty-v3.log",
+      "bytes": 1646,
+      "sha256": "9707567f0a0317b422f434ac9ac534722de42028a7467ef3d149c2723ea68b2d"
+    },
+    {
+      "path": "evidence/macos/run_pty_stage.py",
+      "bytes": 2938,
+      "sha256": "60eb8b260a09fcc47047050c494c6624325bc4727e8a8ee6f230b3652ed6fd57"
+    },
+    {
+      "path": "evidence/macos/run_stage.py",
+      "bytes": 2924,
+      "sha256": "3858f1fe4feaa33c6674ced72833fba9cfa44fce452f6afd92dda26a5f224c27"
+    },
+    {
+      "path": "evidence/macos/server-no-default-v3-result.json",
+      "bytes": 665,
+      "sha256": "967dde27285ed1f1af255b43d4d74bd7f331ca1a74f11782260b83645f51a241"
+    },
+    {
+      "path": "evidence/macos/server-no-default-v3.log",
+      "bytes": 347,
+      "sha256": "d318e91e0605e3fddf24ee7d55f21e678c4ae2c1c0fe5e24bd93fc843157deef"
+    },
+    {
+      "path": "evidence/macos/setup.json",
+      "bytes": 467,
+      "sha256": "fba19bc59bb407d6ba079a5c836e2c42ac4d66d1a7d96237da7b4169da8c8ebf"
+    },
+    {
+      "path": "evidence/macos/source-v2-manifest.json",
+      "bytes": 100205,
+      "sha256": "d98fe82367ee7acc0c2ff53213b346ef4704b4f158249af473dc56fb781fe97c"
+    },
+    {
+      "path": "evidence/macos/source-v3-manifest.json",
+      "bytes": 100205,
+      "sha256": "a5264bb79689db17b84934389094fea9a26945c3a5be5e56e81e067f876f03a0"
+    },
+    {
+      "path": "evidence/macos/workspace-v1-counts.json",
+      "bytes": 44942,
+      "sha256": "a34af7f1e6cec99f58308f35a7d734ec2155bf2fda099af88068cae74d2ad3bb"
+    },
+    {
+      "path": "evidence/macos/workspace-v1-counts.txt",
+      "bytes": 9580,
+      "sha256": "2afabb3595635c464ef78f0e039aef5d2f9212340adcfa771d44ff6fc75ab8a8"
+    },
+    {
+      "path": "evidence/macos/workspace-v1-result.json",
+      "bytes": 613,
+      "sha256": "9917665fe6b5ed24d805b91077140fae9e807dd42b44a4b09f358caac092aec1"
+    },
+    {
+      "path": "evidence/macos/workspace-v1.log",
+      "bytes": 112724,
+      "sha256": "131eebca130cec2ac0fec86669fe7cd20a5d7ea0fa05f7c22d5ceb4b17c114d8"
+    },
+    {
+      "path": "evidence/macos/workspace-v2-counts.json",
+      "bytes": 44382,
+      "sha256": "54c8108b22ed4123d2a1d9fbde15bcf3125d641194b42c9e72d3a41364ab784c"
+    },
+    {
+      "path": "evidence/macos/workspace-v2-counts.txt",
+      "bytes": 9474,
+      "sha256": "6af51b343231ecc813f46d4070b3ae2aa029746f806372a964ecdf038483b13d"
+    },
+    {
+      "path": "evidence/macos/workspace-v2-result.json",
+      "bytes": 629,
+      "sha256": "8717d43e12c1b32665ced024579676a46ec4c84f037c72c6ff9767a149ea57bc"
+    },
+    {
+      "path": "evidence/macos/workspace-v2.log",
+      "bytes": 112305,
+      "sha256": "366afadabe7656a12568651890581e0de333482e03cff1f496312144f3ac7f0c"
+    },
+    {
+      "path": "evidence/macos/workspace-v3-counts.json",
+      "bytes": 43551,
+      "sha256": "62c401c8aa8f3c0b99e0854706fdfcb7576a7257f2e90c23a6d80c2c3479f78d"
+    },
+    {
+      "path": "evidence/macos/workspace-v3-counts.txt",
+      "bytes": 9129,
+      "sha256": "838e90f6f5a1a0e52471a9633da81fb3ca2e630a588ab87c9ab9f345e08f87c8"
+    },
+    {
+      "path": "evidence/macos/workspace-v3-result.json",
+      "bytes": 627,
+      "sha256": "071c26796a060e3d3e558341df0b514ee84a8b908b3796ae1ac67cfaaef8c9a4"
+    },
+    {
+      "path": "evidence/macos/workspace-v3.log",
+      "bytes": 109892,
+      "sha256": "06b9acb3c61fe4e3101ced20f8b3fbf0f1676f90efcbfaaa6a08f10adc180b7d"
+    },
+    {
+      "path": "evidence/resource-cleanup.json",
+      "bytes": 3302,
+      "sha256": "1282327a7bedc94ad4ff4d374772b8a3a1f02dd94c59197c9e76e14c4953631e"
+    }
+  ]
+}

@@ -1,10 +1,12 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-更新：2026-10-04。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
+更新：2026-10-06。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
 
 2026-10-04 有界补缺口已完成，源码 `010f7aa`；交付身份、V01 调查、当前 Linux 默认 build/run 及 R02/R03 前置见 [本轮交接](../handoffs/2026-10-04/README.md) 和 [恢复入口](../resume-checkpoint-2026-10-04.md)。以下新增勾选只关闭具体软件前置，不增加完成轮数。
+
+2026-10-06 清理已完成，源码 `4434be4`，独立 [清理 checklist 10/10](cleanup-2026-10-06.md)。旧语音/动作入口与无身份回退已删除，实际两路 mixer / scoped cue 已接入并完成当前 macOS/Linux 验证；mixer 不等于 AEC，本轮不增加六轮完成数。恢复从 [当前检查点](../resume-checkpoint-2026-10-06.md) 开始。
 
 ## R01 · Companion shadow、回放与受约束主动表达
 
@@ -15,6 +17,8 @@
 - [x] 记录确定性回放结果、代码提交和真实输出边界，完成独立验收。
 
 ## R02 · AEC、音频时钟映射与双讲
+
+- [x] 语音/短提示实际混音与最终 post-mix reference、各源取消/暂停/短写证据；macOS/Linux 离线验证通过，见 [audio HANDOFF](../handoffs/2026-10-06/HANDOFF-audio.md)。
 
 - [x] 核对真实 render/reference/capture/wake/VAD 顺序、既有依赖和离线 fixture；补 native continuity 消费与 KWS reset，当前 macOS/Linux 回归通过，见 [audio HANDOFF](../handoffs/2026-10-04/audio.md)。
 - [ ] 固定 H02/H03 的 Pi 系统、采集/播放设备、采样格式及物理布局。
