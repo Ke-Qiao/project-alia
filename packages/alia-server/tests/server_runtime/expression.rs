@@ -358,15 +358,40 @@ async fn appraisal_ack_deadline_reports_unknown_and_clear_fences_the_original_id
             .await
             .unwrap();
         let (lock, key) = block_appraisal(&f.db, "INSERT").await;
-        let write = submit(state.modules.expression.clone(), input.clone());
+        let first = submit(state.modules.expression.clone(), input.clone());
         wait_statement_blocked(&f.db, key).await;
+        // The first write occupies the worker. Queue the same immutable input
+        // so this caller's acknowledgement deadline starts before its own
+        // worker/SQL deadlines, rather than racing all three at the same time.
+        let write = submit(state.modules.expression.clone(), input.clone());
         let error = tokio::time::timeout(Duration::from_secs(3), write)
             .await
             .unwrap()
             .unwrap()
             .unwrap_err();
-        assert!(error.to_string().contains("acknowledgement"));
-        assert!(error.to_string().contains(&input.id().to_string()));
+        assert!(
+            error.to_string().contains("acknowledgement"),
+            "queued appraisal must report lost acknowledgement: {error:#}"
+        );
+        assert!(
+            error.to_string().contains(&input.id().to_string()),
+            "unknown acknowledgement lost the original appraisal identity: {error:#}"
+        );
+        let first_error = tokio::time::timeout(Duration::from_secs(3), first)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        // PostgreSQL may cancel the first blocked statement before Tokio's
+        // deadline wins. Both are legitimate errors, never a committed result.
+        let first_message = first_error.to_string();
+        assert!(
+            (first_message.contains("acknowledgement")
+                && first_message.contains(&input.id().to_string()))
+                || (first_error.downcast_ref::<sea_orm::DbErr>().is_some()
+                    && first_message.contains("statement timeout")),
+            "unexpected first appraisal outcome: {first_error:#}"
+        );
         lock.rollback().await.unwrap();
         let clear = state
             .modules
