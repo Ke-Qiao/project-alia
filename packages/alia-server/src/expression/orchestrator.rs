@@ -679,7 +679,7 @@ mod tests {
     use crate::expression::{
         ExpressionRuntime, ExpressionSafetyClass, ExpressiveStance, FallbackPolicy,
     };
-    use crate::module::ModuleLifecycle;
+    use crate::modules::platform::lifecycle::ModuleLifecycle;
     use alia_core::body::{
         BodyAction, BodyBackend, BodyCommand, BodyCommandIdentity, BodyControlLease, BodyEnd,
         BodyMotion, BodyPriority, BodyProgress, BodyScope, BodySubmissionBoundary,

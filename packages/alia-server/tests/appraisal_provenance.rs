@@ -1,4 +1,5 @@
 //! Real PostgreSQL ownership, revocation and projection behavior.
+use alia_server::modules::memory::{MemoryNode, MemoryWriteOrigin};
 use alia_server::{
     config::{ConversationSection, MemorySection, ServerConfig},
     expression::{ExpressionRuntime, rule_based_user_appraisals},
@@ -397,22 +398,22 @@ async fn same_identity_different_draft_does_not_write() {
     .await;
 }
 
-async fn memory(f: &Fixture) -> alia_server::providers::memory::AliaMemory {
-    let memory = alia_server::providers::memory::AliaMemory::new();
+async fn memory(f: &Fixture) -> alia_server::modules::memory::MemoryService {
+    let memory = alia_server::modules::memory::MemoryService::new();
     memory
         .attach_runtime_for_test(f.db.clone(), None, MemorySection::default())
         .await
         .unwrap();
     memory
 }
-fn node(content: &str) -> alia_server::providers::adapter::MemoryNode {
-    alia_server::providers::adapter::MemoryNode::new("preference", "preference", content, 0.9)
+fn node(content: &str) -> alia_server::modules::memory::MemoryNode {
+    alia_server::modules::memory::MemoryNode::new("preference", "preference", content, 0.9)
         .with_runtime_fields("preference", "user", 0.9, 0.9, "internal")
 }
 
 #[tokio::test]
 async fn relationship_clear_is_idempotent_and_erases_only_its_owner_derived_memories() {
-    use alia_server::providers::adapter::{MemoryBackend, MemoryWriteOrigin, RetrievalOpts};
+    use alia_server::modules::memory::{MemoryWriteOrigin, RetrievalOpts};
     with_db(|f| async move {
         let service = f.service();
         let runtime = f.runtime().await;
@@ -503,7 +504,7 @@ async fn relationship_clear_is_idempotent_and_erases_only_its_owner_derived_memo
 
 #[tokio::test]
 async fn appraisal_cannot_rewrite_an_ancestor_memory_it_consumed() {
-    use alia_server::providers::adapter::{MemoryBackend, MemoryPatch, MemoryWriteOrigin};
+    use alia_server::modules::memory::{MemoryPatch, MemoryWriteOrigin};
     with_db(|f| async move {
         let memory = memory(&f).await;
         let service = f.service();
@@ -554,9 +555,7 @@ async fn appraisal_cannot_rewrite_an_ancestor_memory_it_consumed() {
 
 #[tokio::test]
 async fn committed_child_is_excluded_after_parent_revision_private_or_expiry_change() {
-    use alia_server::providers::adapter::{
-        MemoryBackend, MemoryListOpts, MemoryPatch, RetrievalOpts,
-    };
+    use alia_server::modules::memory::{MemoryListOpts, MemoryPatch, RetrievalOpts};
     for change in ["revision", "private", "expired"] {
         with_db(move |f| async move {
             let memory = memory(&f).await;
@@ -635,7 +634,7 @@ async fn committed_child_is_excluded_after_parent_revision_private_or_expiry_cha
 
 #[tokio::test]
 async fn unrelated_forget_does_not_reauthorize_or_hide_independent_committed_memory() {
-    use alia_server::providers::adapter::{MemoryBackend, RetrievalOpts};
+    use alia_server::modules::memory::RetrievalOpts;
     with_db(|f|async move {
         let memory=memory(&f).await;let source=f.source("original tea preference").await;
         let mut write=memory.write_snapshot(f.owner).await.unwrap();write.source_event_ids=vec![source.source_event_id.unwrap()];
@@ -794,8 +793,8 @@ async fn global_nan_and_private_draft_evidence_cannot_acquire_authority() {
 mod privacy_erasure {
     use super::*;
     use alia_server::{
-        module::ModuleLifecycle,
-        providers::{adapter::*, memory::AliaMemory},
+        modules::{memory::MemoryService, platform::lifecycle::ModuleLifecycle},
+        providers::adapter::*,
     };
     use async_trait::async_trait;
     use serde_json::json;
@@ -855,7 +854,7 @@ mod privacy_erasure {
     #[derive(Clone)]
     struct ErasureFixture {
         base: Fixture,
-        memory: Arc<AliaMemory>,
+        memory: Arc<MemoryService>,
         runtime: Arc<ExpressionRuntime>,
     }
     struct Memories {
@@ -1076,7 +1075,7 @@ mod privacy_erasure {
             .unwrap();
             let f = ErasureFixture {
                 base,
-                memory: Arc::new(AliaMemory::new()),
+                memory: Arc::new(MemoryService::new()),
                 runtime: Arc::new(ExpressionRuntime::from_config(&config)),
             };
             let result = AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(30), async {

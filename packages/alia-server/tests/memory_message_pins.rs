@@ -1,16 +1,14 @@
 //! Canonical Memory retains the source facts it actually admitted.
 use alia_server::{
     config::{ConversationSection, MemorySection},
-    module::lifecycle::ModuleLifecycle,
     modules::{
-        memory::{context::*, source::capture_source_epochs},
-        platform::migrations,
+        memory::{
+            MemoryNode, MemoryPatch, MemoryService, RetrievalOpts, context::*,
+            source::capture_source_epochs,
+        },
+        platform::{lifecycle::ModuleLifecycle, migrations},
     },
-    providers::{
-        adapter::{MemoryBackend, MemoryNode, MemoryPatch, RetrievalOpts},
-        embedding::NoopEmbedding,
-        memory::AliaMemory,
-    },
+    providers::embedding::NoopEmbedding,
 };
 use futures::FutureExt;
 use sea_orm::{
@@ -31,7 +29,7 @@ struct Fixture {
     schema: String,
     owner: Uuid,
     session: Uuid,
-    memory: Arc<AliaMemory>,
+    memory: Arc<MemoryService>,
 }
 impl Fixture {
     async fn new() -> Self {
@@ -67,7 +65,7 @@ impl Fixture {
             schema,
             owner: Uuid::new_v4(),
             session: Uuid::new_v4(),
-            memory: Arc::new(AliaMemory::new()),
+            memory: Arc::new(MemoryService::new()),
         };
         let setup = AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(45), async {
             migrations::run(&fixture.db).await.unwrap();

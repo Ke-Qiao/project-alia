@@ -9,11 +9,11 @@ use sea_orm::EntityTrait;
 use serde::Serialize;
 
 use crate::auth::AuthUser;
+use crate::bootstrap::factory;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::registry::DisabledChannelInfo;
 use crate::error::{AppError, Result};
-use crate::module::factory;
-use crate::module::lifecycle::ModuleContext;
+use crate::modules::platform::lifecycle::ModuleContext;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -276,8 +276,8 @@ pub fn routes() -> Router<AppState> {
 mod tests {
     use super::*;
     use crate::channels::adapter::ChannelCapabilities;
-    use crate::module::ModuleLifecycle;
-    use crate::module::lifecycle::RuntimeTasks;
+    use crate::modules::platform::lifecycle::ModuleLifecycle;
+    use crate::modules::platform::lifecycle::RuntimeTasks;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::sync::Notify;

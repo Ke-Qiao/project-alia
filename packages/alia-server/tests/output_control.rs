@@ -19,12 +19,14 @@ use alia_server::modules::delivery::{
 use alia_server::{
     config::{MemorySection, ServerConfig},
     expression::ExpressionRuntime,
-    module::ModuleLifecycle,
-    modules::memory::{
-        context::{ContextEvidence, ContextSource},
-        source::capture_source_epochs,
+    modules::{
+        memory::{
+            MemoryService,
+            context::{ContextEvidence, ContextSource},
+            source::capture_source_epochs,
+        },
+        platform::lifecycle::ModuleLifecycle,
     },
-    providers::{adapter::MemoryBackend, memory::AliaMemory},
 };
 use delivery_support::*;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, TransactionTrait};
@@ -551,7 +553,7 @@ async fn resume_waits_for_committing_revocation_and_never_refreshes_original_con
 async fn resume_authority_locks_are_held_until_the_intent_commit() {
     for kind in ["policy", "memory_clear", "relationship_clear", "cancel"] {
         with_db(|f|async move {
-        let memory=Arc::new(AliaMemory::new());
+        let memory=Arc::new(MemoryService::new());
         memory.attach_runtime_for_test(f.db.clone(),None,MemorySection::default()).await.unwrap();
         let (reg,pause)=if kind=="relationship_clear" {
             let reg=relationship_registration(&f).await;

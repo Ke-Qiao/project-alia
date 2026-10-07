@@ -37,8 +37,8 @@ use alia_server::channels::adapter::{
 };
 use alia_server::grpc::voice_auth::VoiceIngressAuth;
 use alia_server::grpc::voice_session::VoiceSessionService;
-use alia_server::module::lifecycle::ModuleLifecycle;
 use alia_server::modules::interaction::voice_input;
+use alia_server::modules::platform::lifecycle::ModuleLifecycle;
 use alia_server::modules::{
     delivery::{
         DeliveryService,
@@ -443,7 +443,7 @@ async fn official_audio(fixture: Fixture) {
         delivery.clone(),
         Duration::from_secs(60),
         shutdown.clone(),
-        std::sync::Arc::new(alia_server::module::lifecycle::RuntimeTasks::default()),
+        std::sync::Arc::new(alia_server::modules::platform::lifecycle::RuntimeTasks::default()),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let grpc_endpoint = format!("http://{}", listener.local_addr().unwrap());

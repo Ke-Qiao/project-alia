@@ -4,9 +4,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{repository::*, *};
-use crate::providers::adapter::{
-    ChatMessage, GraphSnippet, RetrievalOpts, memory_context_pack_from_nodes,
-};
+use crate::modules::memory::{GraphSnippet, RetrievalOpts, memory_context_pack_from_nodes};
+use crate::providers::adapter::ChatMessage;
 
 impl ContextService {
     pub async fn materialize(
@@ -101,7 +100,7 @@ impl ContextService {
         .await
         .map_err(|_| ContextError::Unavailable("context query admission timed out".into()))??;
         let vector = if reads_memory {
-            crate::providers::memory::simple::embedding::query_for_policy(
+            crate::modules::memory::service::embedding::query_for_policy(
                 &self.db,
                 self.embedding.as_ref(),
                 &policy,
@@ -142,7 +141,7 @@ impl ContextService {
         let mut remaining = policy.policy.max_memory_chars;
         let mut nodes = Vec::new();
         if reads_memory {
-            let candidates = crate::providers::memory::simple::retrieve_context_nodes(
+            let candidates = crate::modules::memory::service::retrieve_context_nodes(
                 &tx,
                 source.owner_id,
                 query,
@@ -155,7 +154,8 @@ impl ContextService {
                 if node.sensitive
                     || node.visibility == "private_runtime"
                     || (policy.policy.sensitive_filter_enabled
-                        && crate::memory_policy::detect_sensitive_memory(&node.content).is_some())
+                        && crate::modules::memory::policy::detect_sensitive_memory(&node.content)
+                            .is_some())
                 {
                     continue;
                 }
@@ -247,9 +247,9 @@ impl ContextService {
                 let source_label = projection["source"].as_str().unwrap_or_default();
                 let target_label = projection["target"].as_str().unwrap_or_default();
                 if policy.policy.sensitive_filter_enabled
-                    && [source_label, target_label]
-                        .iter()
-                        .any(|v| crate::memory_policy::detect_sensitive_memory(v).is_some())
+                    && [source_label, target_label].iter().any(|v| {
+                        crate::modules::memory::policy::detect_sensitive_memory(v).is_some()
+                    })
                 {
                     continue;
                 }
@@ -619,7 +619,7 @@ async fn validate_materialization_source(
 pub(super) fn materialized_payload(context: &GenerationContext) -> Value {
     json!({"source_text":context.source_text,"memory":context.memory,"prior_memory":context.prior_memory,"history":context.history.iter().map(|m|json!({"id":m.id,"role":m.message.role,"content":m.message.content})).collect::<Vec<_>>(),"memory_prompt":context.memory_prompt,"extensions":context.extensions})
 }
-fn render_memory(pack: &crate::providers::adapter::MemoryContextPack) -> String {
+fn render_memory(pack: &crate::modules::memory::MemoryContextPack) -> String {
     let mut sections = Vec::new();
     for (title, snippets) in [
         ("Preferences", &pack.user_preferences),

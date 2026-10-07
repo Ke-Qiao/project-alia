@@ -1,10 +1,11 @@
 //! Real PostgreSQL and runtime-owned Insights; only LLM inference is controlled.
 use super::*;
 use alia_server::event::ServerEvent;
-use alia_server::providers::adapter::{
-    ChatMessage, InsightPhase, InsightTask, LlmAdapter, MemoryListOpts, MemoryNode,
-};
 use alia_server::state::AppState;
+use alia_server::{
+    modules::memory::{MemoryListOpts, MemoryNode},
+    providers::adapter::{ChatMessage, InsightPhase, InsightTask, LlmAdapter},
+};
 use sea_orm::{DatabaseBackend, Statement};
 
 #[derive(Clone)]

@@ -1,10 +1,11 @@
 # Architecture Overview
 
-Project Alia is a personal AI assistant split across a central server and
-embedded edge nodes. The server owns Context, Interaction, Execution, Delivery,
-state, model-provider selection, and user-facing APIs. Embedded nodes own local
+Project Alia uses a Rust server modular monolith and an embedded realtime voice
+runtime. The server owns canonical Memory and Context, Interaction, Companion,
+Execution, Delivery, persistence, model selection, and APIs. Embedded owns local
 audio I/O, wake word detection, scoped cues, device binding, and native playback.
-The existing frontend app is outside the current Server and Pi 5 refactor scope.
+The current targets are a macOS server and Raspberry Pi 5 with 8 GB RAM;
+existing Linux ARM64 validation supports the server portability work.
 
 Detailed package docs live beside the packages:
 
@@ -13,57 +14,83 @@ Detailed package docs live beside the packages:
 
 ```mermaid
 graph LR
-    Frontend["alia-frontend<br/>Expo / React Native"] <-->|"REST + WebSocket"| Server["alia-server<br/>Axum / Rust"]
-    CLI["CLI channel"] <-->|"Channel events"| Server
-    Server <-->|"VoiceSession / Playback / Body"| Embedded["alia-embedded<br/>Rust edge node"]
-    Server --- Postgres[("PostgreSQL<br/>SeaORM")]
-    Server -.-> LLM["LLM providers<br/>OpenAI-compatible / Anthropic / Gemini"]
-    Server -.-> STT["STT provider<br/>whisper.cpp"]
-    Server -.-> Turn["Turn evidence<br/>Easy-Turn"]
-    Server -.-> TTS["TTS provider<br/>GPT-SoVITS"]
-    Server -.-> Memory["Alia memory<br/>privacy / relationship / retrieval"]
+    Frontend["Existing frontend<br/>deferred from this refactor"] <-->|"REST + WebSocket"| Ingress
+    CLI["CLI channel"] <--> Ingress
+    subgraph Server["alia-server: modular monolith"]
+        Ingress["API / channels"] <--> Interaction
+        Interaction <--> Memory["Memory / Context"]
+        Interaction <--> Execution
+        Interaction --> Delivery
+        Bootstrap["Bootstrap assembly"] -.-> Interaction
+    end
+    Ingress <-->|"VoiceSession v2"| Embedded["alia-embedded<br/>Pi 5 voice runtime"]
+    Delivery <-->|"Playback v3 / Body v1"| Embedded
+    Memory --- Postgres[("PostgreSQL")]
+    Execution --- Postgres
+    Delivery --- Postgres
+    Interaction -.-> Models["LLM / TTS / embedding<br/>provider services"]
+    Ingress -.-> STT["Server STT provider"]
+    Ingress -.-> Turn["Server Easy-Turn<br/>turn evidence"]
     Embedded --- LocalModels["sherpa-onnx<br/>wake word / VAD"]
     Embedded --- Audio["Microphone / speaker"]
 ```
+
+The diagram shows ownership and main contracts, not every call. Companion uses the same
+Context and Delivery authorization rather than creating a separate output path.
+Memory is an internal canonical service; external embedding or extraction
+models only supply inputs to it.
 
 ## Packages
 
 | Path | Role |
 | --- | --- |
-| `packages/alia-server` | Main server, API, AI pipeline, channel adapters, module lifecycle, provider adapters, registry, scheduler, tools, and persistence. |
-| `packages/alia-embedded` | Edge runtime for Pi or local dev, including continuous capture, wake word, VAD evidence, scoped voice/cue mixing, typed Body execution, binding, discovery, and sensors. |
-| `packages/alia-frontend` | Expo/React Native application for user-facing UI, settings, onboarding, and runtime control. |
-| `crates/proto` | Shared protobuf definitions and generated Rust code for gRPC services. |
-| `crates/transport` | Shared transport/auth helpers used across server and embedded communication. |
+| `packages/alia-server` | Bootstrap, domain services, API and channel adapters, provider integrations, registries, and PostgreSQL persistence. |
+| `packages/alia-embedded` | Continuous capture, wake word, VAD evidence, scoped voice/cue mixing, typed Body execution, binding, discovery, and sensors. |
+| `packages/alia-frontend` | Existing Expo/React Native UI; web/iOS/Android improvements are deferred. |
+| `crates/alia-core` | Shared types and contracts for the server and embedded runtime. |
+| `crates/proto` | Shared protobuf definitions and generated gRPC code. |
+| `crates/transport` | Shared transport/auth helpers. |
 
 ## Runtime Responsibilities
 
-- The server accepts recognized turns through Context and Interaction, executes
-  skills/tools with owned effects, and sends responses through Delivery. Easy-Turn
-  supplies bounded turn evidence; server policy decides response and pause actions.
-- Embedded nodes open a continuous VoiceSession after wake word and keep uploading
-  ordered PCM plus VAD evidence during playback. Voice and short local cues share
-  the original scoped native control owner and one output frame clock.
-- The frontend is not in the hot voice path. It manages settings, devices,
-  conversations, plugins, and observability.
-- Model services are external providers behind adapters. The core runtime should
-  be able to swap them without rewriting pipeline logic.
+- Interaction owns bounded input supervision, turns, cancellation, generation,
+  tool coordination, and response persistence. Bootstrap supplies explicit
+  service dependencies. Channel adapters own transport rather than a parallel
+  conversation pipeline.
+- Memory owns stored memories, provenance, privacy transitions, retrieval
+  projections, Context leases, and completed-turn capture. Policy determines
+  recall/capture eligibility; it does not replace canonical storage with a
+  provider or no-op backend.
+- Execution records authorized tool effects; Delivery records canonical response
+  and media facts. Generation success, transport acceptance, and physical
+  completion remain different facts.
+- Easy-Turn stays server-side and supplies bounded evidence. Server policy
+  decides turn transitions, temporary yield, and explicit pause/resume.
+- Embedded opens a continuous VoiceSession after wake word and keeps uploading
+  ordered PCM plus VAD evidence during playback. Voice and low-gain local cues
+  share the scoped native output owner and frame clock. This mixer is not AEC.
+- The frontend manages settings, devices, conversations, and observability; it
+  is not required in the realtime voice path.
 
-## Design Direction
+## Current Migration And Remaining Work
 
-- Keep provider selection explicit. The `[modules]` section in server config
-  chooses active provider adapters; provider files configure those adapters.
-  Core registries and state machines are fixed services extended through
-  registration APIs.
-- Keep transport details in channel adapters. Shared Interaction and Delivery
-  services own turn, pause, cancellation and response contracts; adapters carry
-  those contracts to the original authenticated device scope.
-- Prefer streaming where it improves perceived latency. The pipeline supports
-  streaming LLM output, streaming TTS, and streamed channel audio delivery.
-- Degrade instead of crashing. Provider failures should disable or skip the
-  affected module/channel path where possible, while leaving the process alive.
-- Treat plugins as future first-class owners. Tools, skills, settings, and
-  dependencies are registered with ownership metadata so removal can be safe.
-- Keep sensors in one server-visible plane. Embedded owns concrete sensor
-  providers, while the server mirrors definitions/readings into the shared
-  sensor registry for tools, scheduler, rules, and frontend APIs.
+The 2026-10-08 migration moves Memory out of `providers`, replaces the old
+`channels/pipeline` owner with Interaction use cases, and places service
+assembly in `bootstrap` with lifecycle/task ownership in `modules/platform`.
+The old paths have no compatibility facade. Default Shadow and persisted
+policies remain unchanged.
+
+This is a completed ownership slice, not the end of the architecture refactor.
+Fixed conversation, cache, persona, router, skills, insights, and sensor services
+still live under `providers`, and some non-Memory contracts remain grouped in
+`providers/adapter.rs`. Context/Companion/Delivery transaction boundaries and
+the broad startup `ModuleContext` need separate review. See the
+[server architecture](../../packages/alia-server/docs/architecture.md) and
+[current checklist](../refactor/checklists/layering-2026-10-08.md) for precise
+ownership and validation status.
+
+Future edge model execution and deploying server plus embedded on one machine
+remain possible directions, not completed deployment modes. This round adds no
+new Cargo feature, dependency, process, platform, model runtime, or hardware
+action. Generic embedded adaptation, frontend improvements, acoustic AEC and
+physical Body validation remain deferred as recorded in the refactor handoffs.

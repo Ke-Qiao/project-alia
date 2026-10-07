@@ -22,8 +22,8 @@ use super::adapter::{
     ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelEvent, ChannelTarget,
 };
 use crate::event::{EventBus, ServerEvent};
-use crate::module::ModuleLifecycle;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth};
+use crate::modules::platform::lifecycle::ModuleLifecycle;
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::adapter::ConversationBackend;
 
 mod text;

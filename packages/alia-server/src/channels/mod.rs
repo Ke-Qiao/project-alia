@@ -6,10 +6,7 @@ pub(crate) mod cli;
 pub mod embedded;
 #[cfg(feature = "channel-embedded")]
 pub(crate) mod embedded_volume_tool;
-#[doc(hidden)]
-pub mod pipeline;
 pub(crate) mod registry;
 
 pub use adapter::ChannelAdapter;
-pub use pipeline::{PipelinePolicies, SharedPipelinePolicies, spawn_pipeline};
 pub use registry::ChannelRegistry;

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::providers::adapter::{MemoryContextPack, TtsCapabilities};
+use crate::{modules::memory::MemoryContextPack, providers::adapter::TtsCapabilities};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AffectAxes {

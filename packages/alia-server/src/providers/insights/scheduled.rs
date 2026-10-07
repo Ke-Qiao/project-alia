@@ -7,6 +7,7 @@
 //! - Scheduler: habit_detection_schedule → Phase 4 (habit detection) via AutomationScheduler
 //! - Manual trigger via API
 
+use crate::modules::memory::MemoryService;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -29,16 +30,20 @@ use crate::channels::adapter::ChannelEvent;
 use crate::config::InsightsSection;
 use crate::entity::{chat_session, insight_log};
 use crate::event::{EventBus, ServerEvent};
-use crate::memory_policy::detect_sensitive_memory;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::modules::memory::context::{ContextError, ContextService, ContextUse};
-use crate::providers::adapter::{
-    CACHE_METADATA_SCHEMA, CacheBackend, CacheCas, CacheReview, CacheWork, CachedResponse,
-    ChatMessage, EmbeddingAdapter, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
-    LlmAdapter, MemoryBackend, MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch,
-    MemoryWriteContext, MemoryWriteOrigin, ScheduleConfig, ScheduledTask, SchedulerBackend,
-};
+use crate::modules::memory::policy::detect_sensitive_memory;
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::scheduler::ConditionRegistry;
+use crate::{
+    modules::memory::{
+        MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch, MemoryWriteContext, MemoryWriteOrigin,
+    },
+    providers::adapter::{
+        CACHE_METADATA_SCHEMA, CacheBackend, CacheCas, CacheReview, CacheWork, CachedResponse,
+        ChatMessage, EmbeddingAdapter, InsightPhase, InsightStatus, InsightStrategy, InsightTask,
+        LlmAdapter, ScheduleConfig, ScheduledTask, SchedulerBackend,
+    },
+};
 
 /// Well-known task name prefix for insights cron tasks
 const TASK_NAME_REFLECTION: &str = "insight_reflection";
@@ -192,11 +197,11 @@ pub struct ScheduledInsights {
     config: Arc<Mutex<Option<InsightsSection>>>,
     db: Mutex<Option<DatabaseConnection>>,
     llm: Mutex<Option<Arc<dyn LlmAdapter>>>,
-    memory: Mutex<Option<Arc<dyn MemoryBackend>>>,
+    memory: Mutex<Option<Arc<MemoryService>>>,
     cache_review: Mutex<CacheReviewRuntime>,
     event_bus: Mutex<Option<EventBus>>,
     cancel_token: Mutex<Option<CancellationToken>>,
-    background: crate::module::background::OwnedBackground,
+    background: crate::modules::platform::background::OwnedBackground,
     scheduler_task_gate: Mutex<()>,
     scheduler: Mutex<Option<Arc<dyn SchedulerBackend>>>,
     condition_registry: Mutex<Option<Arc<ConditionRegistry>>>,
@@ -219,7 +224,7 @@ impl ScheduledInsights {
             cache_review: Mutex::new(CacheReviewRuntime::default()),
             event_bus: Mutex::new(None),
             cancel_token: Mutex::new(None),
-            background: crate::module::background::OwnedBackground::default(),
+            background: crate::modules::platform::background::OwnedBackground::default(),
             scheduler_task_gate: Mutex::new(()),
             scheduler: Mutex::new(None),
             condition_registry: Mutex::new(None),
@@ -260,7 +265,7 @@ impl ScheduledInsights {
         db: &DatabaseConnection,
         event_bus: &EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         user: InsightUserContext,
         phase: &InsightPhase,
@@ -367,7 +372,7 @@ impl ScheduledInsights {
     async fn run_phase(
         db: &DatabaseConnection,
         llm: Option<Arc<dyn LlmAdapter>>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         phase: &InsightPhase,
         user: &InsightUserContext,
@@ -476,7 +481,7 @@ impl ScheduledInsights {
         db: DatabaseConnection,
         event_bus: EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,
         enabled: Arc<AtomicBool>,
@@ -526,7 +531,7 @@ impl ScheduledInsights {
         db: &DatabaseConnection,
         event_bus: &EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         event: &ServerEvent,
         enabled: &AtomicBool,
@@ -733,7 +738,7 @@ impl ScheduledInsights {
         db: DatabaseConnection,
         event_bus: EventBus,
         llm: Option<Arc<dyn LlmAdapter>>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         cache_review: CacheReviewRuntime,
         cancel_token: CancellationToken,
         enabled: Arc<AtomicBool>,
@@ -967,7 +972,7 @@ impl ScheduledInsights {
 
     async fn extract_memories_from_recent_conversation(
         db: &DatabaseConnection,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         message_limit: u64,
@@ -1060,7 +1065,7 @@ impl ScheduledInsights {
 
     async fn consolidate_memories(
         db: &DatabaseConnection,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         limit: u32,
@@ -1151,7 +1156,7 @@ impl ScheduledInsights {
     }
 
     async fn apply_consolidation_response(
-        memory: &dyn MemoryBackend,
+        memory: &MemoryService,
         context: &MemoryWriteContext,
         memories: &[MemoryNode],
         user: &InsightUserContext,
@@ -1253,7 +1258,7 @@ impl ScheduledInsights {
 
     async fn reflect_on_user_context(
         db: &DatabaseConnection,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         memory_limit: u32,
@@ -1355,7 +1360,7 @@ impl ScheduledInsights {
 
     async fn detect_habits_from_context(
         db: &DatabaseConnection,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         memory_limit: u32,
@@ -1457,7 +1462,7 @@ impl ScheduledInsights {
     }
 
     async fn store_memory_candidates(
-        memory: &dyn MemoryBackend,
+        memory: &MemoryService,
         user: &InsightUserContext,
         context: &MemoryWriteContext,
         candidates: Vec<MemoryCandidate>,
@@ -2514,7 +2519,7 @@ impl InsightStrategy for ScheduledInsights {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::memory::AliaMemory;
+    use crate::modules::memory::MemoryService;
 
     #[test]
     fn composed_model_labels_retain_each_actual_provider_once() {
@@ -2555,7 +2560,7 @@ mod tests {
     }
 
     async fn consolidate_plan_fixture(
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
         llm: Option<Arc<dyn LlmAdapter>>,
         user: &InsightUserContext,
         limit: u32,
@@ -2801,7 +2806,7 @@ mod tests {
 
     #[tokio::test]
     async fn consolidation_commits_multiple_updates_and_creates_in_one_snapshot() {
-        let memory = Arc::new(AliaMemory::new());
+        let memory = Arc::new(MemoryService::new());
         let user = insight_user();
         let first = memory
             .store(
@@ -2875,7 +2880,7 @@ mod tests {
 
     #[tokio::test]
     async fn candidate_write_after_clear_returns_error_instead_of_zero_created_success() {
-        let memory = AliaMemory::new();
+        let memory = MemoryService::new();
         let user = insight_user();
         let context = memory.write_snapshot(user.user_id).await.unwrap();
         memory.clear(user.user_id).await.unwrap();
@@ -2926,7 +2931,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_later_consolidation_target_leaves_the_entire_plan_unwritten() {
-        let memory = Arc::new(AliaMemory::new());
+        let memory = Arc::new(MemoryService::new());
         let user = insight_user();
         let id = memory
             .store(
@@ -2970,7 +2975,7 @@ mod tests {
 
     #[tokio::test]
     async fn consolidation_retirement_preserves_evidence_and_does_not_advance_privacy_epoch() {
-        let memory = Arc::new(AliaMemory::new());
+        let memory = Arc::new(MemoryService::new());
         let user = insight_user();
         let id = memory
             .store(

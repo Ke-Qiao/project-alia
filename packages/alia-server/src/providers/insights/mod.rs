@@ -4,7 +4,7 @@ mod scheduled;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::module::ModuleLifecycle;
+use crate::modules::platform::lifecycle::ModuleLifecycle;
 use crate::providers::adapter::{InsightPhase, InsightStatus, InsightStrategy, InsightTask};
 
 #[cfg(feature = "insights")]

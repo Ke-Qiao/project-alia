@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::config::HomeAssistantPluginSection;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::plugins::{
     CompiledToolPlugin, PluginStorage, PluginStorageCollection, PluginStorageManifest,
     PluginStorageRetention, PluginStorageScopeKind, PluginToolContext, StorageScope,

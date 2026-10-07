@@ -8,8 +8,8 @@ use alia_proto::voice::{
     voice_session_server::VoiceSessionServer,
 };
 use alia_server::{
+    bootstrap::ServerBuilder,
     grpc::{voice_auth::VoiceIngressAuth, voice_session::VoiceSessionService},
-    module::ServerBuilder,
     modules::{
         companion::types::{CompanionMode, CompanionPolicy},
         interaction::turn_detector::{DetectionError, TurnDetector},

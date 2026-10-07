@@ -1,23 +1,31 @@
+//! Conversation use cases and bounded turn supervision. Channels supply I/O contracts;
+//! this module owns generation, cancellation, context and response orchestration.
+pub mod cache;
+mod context;
+mod debug;
+mod delivery;
+mod dialogue_policy;
+mod error_notice;
+mod expression;
+mod generation;
 pub mod initiative;
+#[cfg(test)]
+mod integration_tests;
+pub mod llm;
+pub mod persistence;
+pub mod policy;
+pub mod prompt;
+mod runtime;
+mod services;
+pub mod streaming;
+mod supervision;
+pub mod tools;
+mod trace;
+mod turn;
 pub mod turn_detector;
+mod voice;
 pub mod voice_input;
 
-use crate::config::EasyTurnSection;
-use std::sync::Arc;
-use turn_detector::TurnDetector;
-
-pub fn build_turn_detector(
-    config: &EasyTurnSection,
-) -> anyhow::Result<Option<Arc<dyn TurnDetector>>> {
-    if !config.enabled {
-        return Ok(None);
-    }
-    #[cfg(feature = "turn-easy")]
-    {
-        Ok(Some(Arc::new(
-            crate::adapters::easy_turn::EasyTurnDetector::new(config)?,
-        )))
-    }
-    #[cfg(not(feature = "turn-easy"))]
-    anyhow::bail!("Easy-Turn is configured but this binary was built without the turn-easy feature")
-}
+pub use policy::{InteractionPolicies, SharedInteractionPolicies};
+pub use runtime::spawn_interaction;
+pub use services::InteractionServices;

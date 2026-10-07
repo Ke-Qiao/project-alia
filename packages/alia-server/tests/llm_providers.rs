@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use alia_server::bootstrap::factory::{create_embedding, create_llm};
 use alia_server::config::{
     LlmProfileKind, LlmProfileSection, LlmProviderProfileRef, LlmProviderProfileSection,
     LlmRequestOptionsSection, OpenAiApiFamily, OpenAiProviderSection, ServerConfig,
 };
-use alia_server::module::factory::{create_embedding, create_llm};
 
 #[test]
 fn creates_provider_neutral_llm_adapters() {

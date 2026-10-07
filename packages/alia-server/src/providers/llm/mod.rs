@@ -33,7 +33,7 @@ use async_trait::async_trait;
 use futures::Stream;
 use futures::stream;
 
-use crate::module::ModuleLifecycle;
+use crate::modules::platform::lifecycle::ModuleLifecycle;
 use crate::providers::adapter::{
     AudioEncoding, ChatMessage, LlmAdapter, LlmCapabilities, SttAdapter, TranscribeChunk,
     TtsAdapter,

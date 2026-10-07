@@ -1,7 +1,7 @@
 //! Authentication/source admission checks; transport coverage lives in voice_stream_live.
 use super::*;
 use crate::channels::adapter::{ChannelAction, ChannelCapabilities};
-use crate::module::ModuleLifecycle;
+use crate::modules::platform::lifecycle::ModuleLifecycle;
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::time::Duration;

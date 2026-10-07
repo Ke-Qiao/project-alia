@@ -1,4 +1,5 @@
 //! Real PostgreSQL tests of both projection gates against canonical source closures.
+use alia_server::modules::memory::{MemoryNode, MemoryPatch, MemoryWriteOrigin, RetrievalOpts};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -14,12 +15,11 @@ use std::{
 use alia_server::{
     config::{MemorySection, ServerConfig},
     expression::ExpressionRuntime,
-    module::ModuleLifecycle,
     modules::{
-        memory::{context::*, source::capture_source_epochs},
-        platform::migrations,
+        memory::{MemoryService, context::*, source::capture_source_epochs},
+        platform::{lifecycle::ModuleLifecycle, migrations},
     },
-    providers::{adapter::*, embedding::NoopEmbedding, memory::AliaMemory},
+    providers::{adapter::*, embedding::NoopEmbedding},
 };
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -167,7 +167,7 @@ struct Fixture {
     schema: String,
     owner: Uuid,
     session: Uuid,
-    memory: Arc<AliaMemory>,
+    memory: Arc<MemoryService>,
     expression: Arc<ExpressionRuntime>,
     probe: Arc<Probe>,
 }
@@ -209,7 +209,7 @@ impl Fixture {
             schema,
             owner: Uuid::new_v4(),
             session: Uuid::new_v4(),
-            memory: Arc::new(AliaMemory::new()),
+            memory: Arc::new(MemoryService::new()),
             expression: Arc::new(ExpressionRuntime::from_config(&config)),
             probe: Arc::new(Probe::new(dimensions)),
         };

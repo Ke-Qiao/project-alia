@@ -16,7 +16,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::ServerConfig;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     AudioEncoding, SttAdapter, SttCapabilities, TranscribeChunk, TranscriptionResult,
     TranscriptionSegment, TranscriptionWord,

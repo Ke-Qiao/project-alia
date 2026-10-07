@@ -9,7 +9,7 @@ use futures::Stream;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::module::ModuleLifecycle;
+use crate::modules::platform::lifecycle::ModuleLifecycle;
 pub use crate::providers::tts::audio_budget::AudioBuffer;
 
 /// Channel capabilities — declares what I/O a channel supports.

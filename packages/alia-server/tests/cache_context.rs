@@ -779,12 +779,16 @@ async fn replacement_rollback_keeps_previous_reviewed_content_and_vector() {
 #[cfg(feature = "insights")]
 mod insights {
     use super::*;
+    use alia_server::modules::memory::MemoryNode;
     use alia_server::{
         config::{MemoryCaptureMode, ServerConfig},
         event::EventBus,
-        module::{ModuleLifecycle, lifecycle::ModuleContext},
+        modules::{
+            memory::MemoryService,
+            platform::lifecycle::{ModuleContext, ModuleLifecycle},
+        },
         plugins::PluginStorageService,
-        providers::{insights::ScheduledInsights, memory::AliaMemory, sensor::SensorRegistry},
+        providers::{insights::ScheduledInsights, sensor::SensorRegistry},
         registry::ArtifactRegistry,
         settings::SettingsRegistry,
     };
@@ -869,7 +873,7 @@ mod insights {
         f: &Fixture,
         llm: Arc<HeldReviewer>,
         embedding: Arc<CountingEmbedding>,
-        memory: Option<Arc<dyn MemoryBackend>>,
+        memory: Option<Arc<MemoryService>>,
     ) -> Arc<ScheduledInsights> {
         let mut config = ServerConfig::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -939,8 +943,8 @@ mod insights {
         }).await;
     }
 
-    async fn memory(f: &Fixture) -> Arc<AliaMemory> {
-        let memory = Arc::new(AliaMemory::new());
+    async fn memory(f: &Fixture) -> Arc<MemoryService> {
+        let memory = Arc::new(MemoryService::new());
         memory
             .attach_runtime_for_test(f.db.clone(), None, MemorySection::default())
             .await

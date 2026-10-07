@@ -1,7 +1,7 @@
 //! Flat canonical roots for stored memories. A memory retains the evidence of
 //! actual Appraisal inputs without acquiring an unrelated generation context.
 use super::{repository::*, *};
-use crate::providers::adapter::MemoryWriteContext;
+use crate::modules::memory::MemoryWriteContext;
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, DatabaseTransaction};
 use serde_json::{Value, json};

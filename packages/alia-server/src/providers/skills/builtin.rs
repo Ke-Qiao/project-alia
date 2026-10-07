@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use super::markdown;
 use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
 };

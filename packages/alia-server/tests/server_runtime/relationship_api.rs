@@ -2,8 +2,8 @@
 use super::*;
 use alia_server::modules::memory::context::{ContextSource, GenerationContext};
 use alia_server::modules::memory::source::capture_source_epochs;
-use alia_server::providers::adapter::{ChatMessage, MemoryNode};
 use alia_server::state::AppState;
+use alia_server::{modules::memory::MemoryNode, providers::adapter::ChatMessage};
 use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
 use serde_json::{Value, json};
 

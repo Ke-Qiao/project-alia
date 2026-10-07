@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::entity::{persona, user_active_persona, user_persona_override};
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     Persona, PersonaProvider, RenderedPersonaPrompt, sanitize_assistant_name,
 };

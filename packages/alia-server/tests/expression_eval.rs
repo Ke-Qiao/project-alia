@@ -6,7 +6,10 @@ use alia_server::expression::{
     ExpressionCapabilitySnapshot, ExpressionInput, ExpressionRuntime, RuleBasedAppraisalEngine,
     TextClassifierAppraisalEngine, appraisal_regression_cases, planner_regression_cases,
 };
-use alia_server::providers::adapter::{MemoryContextPack, MemorySnippet, TtsCapabilities};
+use alia_server::{
+    modules::memory::{MemoryContextPack, MemorySnippet},
+    providers::adapter::TtsCapabilities,
+};
 use std::collections::BTreeMap;
 
 #[tokio::test]

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use alia_server::channels::ChannelRegistry;
 use alia_server::channels::adapter::{ChannelAdapter, ChannelCapabilities};
-use alia_server::module::lifecycle::ModuleLifecycle;
+use alia_server::modules::platform::lifecycle::ModuleLifecycle;
 use async_trait::async_trait;
 
 struct TestChannel {

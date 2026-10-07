@@ -2,7 +2,7 @@ use super::*;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::module::background::OwnedBackground;
+use crate::modules::platform::background::OwnedBackground;
 use alia_proto::body::body_control_server::{BodyControl, BodyControlServer};
 use alia_transport::{DEFAULT_AUTH_MAX_SKEW, EMBEDDED_CONTROL_SCOPE, verify_auth_token};
 use serde_json::{Value, json};
@@ -1056,7 +1056,7 @@ fn typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_
 struct ExpressionChannel(EmbeddedBodyRuntime);
 
 #[async_trait]
-impl crate::module::ModuleLifecycle for ExpressionChannel {
+impl crate::modules::platform::lifecycle::ModuleLifecycle for ExpressionChannel {
     fn name(&self) -> &'static str {
         "body-expression-test"
     }

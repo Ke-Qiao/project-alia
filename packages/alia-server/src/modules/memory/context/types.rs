@@ -2,7 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::providers::adapter::{ChatMessage, MemoryContextPack};
+use crate::modules::memory::MemoryContextPack;
+use crate::providers::adapter::ChatMessage;
 
 pub const MAX_CONTEXT_BYTES: usize = 128 * 1024;
 pub const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
@@ -241,10 +242,10 @@ impl ContextLease {
     }
     pub fn memory_write_context(
         &self,
-        mut snapshot: crate::providers::adapter::MemoryWriteContext,
-        origin: crate::providers::adapter::MemoryWriteOrigin,
-    ) -> ContextResult<crate::providers::adapter::MemoryWriteContext> {
-        use crate::providers::adapter::MemoryWriteOrigin;
+        mut snapshot: crate::modules::memory::MemoryWriteContext,
+        origin: crate::modules::memory::MemoryWriteOrigin,
+    ) -> ContextResult<crate::modules::memory::MemoryWriteContext> {
+        use crate::modules::memory::MemoryWriteOrigin;
         let usage = match origin {
             MemoryWriteOrigin::Manual => ContextUse::ManualMemoryWrite,
             MemoryWriteOrigin::Automatic => ContextUse::AutomaticMemoryWrite,
@@ -323,7 +324,7 @@ pub struct GenerationContext {
 pub struct CapturedMemoryContext {
     pub(super) lease: ContextLease,
     pub(super) messages: Vec<ContextHistoryMessage>,
-    pub(super) memories: Vec<crate::providers::adapter::MemoryNode>,
+    pub(super) memories: Vec<crate::modules::memory::MemoryNode>,
 }
 impl CapturedMemoryContext {
     pub fn lease(&self) -> &ContextLease {
@@ -332,7 +333,7 @@ impl CapturedMemoryContext {
     pub fn messages(&self) -> &[ContextHistoryMessage] {
         &self.messages
     }
-    pub fn memories(&self) -> &[crate::providers::adapter::MemoryNode] {
+    pub fn memories(&self) -> &[crate::modules::memory::MemoryNode] {
         &self.memories
     }
 }

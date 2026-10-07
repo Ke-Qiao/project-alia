@@ -15,8 +15,8 @@ use uuid::Uuid;
 use super::action::{ActionRegistry, capture_action_sources};
 use super::condition::{ConditionContext, ConditionRegistry};
 use crate::event::{EventBus, ServerEvent};
-use crate::module::background::OwnedBackground;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::background::OwnedBackground;
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, EventSubscription, ScheduleConfig, ScheduledTask, SchedulerBackend, TaskFilter,
     TaskPatch,

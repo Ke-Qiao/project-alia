@@ -2,16 +2,16 @@
 //! never a successful early return. Each database case owns a random schema.
 use alia_server::{
     config::MemorySection,
-    module::ModuleLifecycle,
-    modules::platform::migrations,
-    providers::{
-        MemoryBackend,
-        adapter::{
-            EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, MemoryBatch, MemoryListOpts,
-            MemoryNode, MemoryPatch, MemoryWriteContext, ProfiledEmbeddings, RetrievalOpts,
-            embedding_text_digest,
+    modules::{
+        memory::{
+            MemoryBatch, MemoryListOpts, MemoryNode, MemoryPatch, MemoryService,
+            MemoryWriteContext, RetrievalOpts,
         },
-        memory::AliaMemory,
+        platform::{lifecycle::ModuleLifecycle, migrations},
+    },
+    providers::adapter::{
+        EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
+        embedding_text_digest,
     },
 };
 use async_trait::async_trait;
@@ -67,8 +67,8 @@ impl TestDatabase {
         }
         fixture
     }
-    async fn memory(&self, embedding: Option<Arc<dyn EmbeddingAdapter>>) -> Arc<AliaMemory> {
-        let memory = Arc::new(AliaMemory::new());
+    async fn memory(&self, embedding: Option<Arc<dyn EmbeddingAdapter>>) -> Arc<MemoryService> {
+        let memory = Arc::new(MemoryService::new());
         memory
             .attach_runtime_for_test(self.db.clone(), embedding, MemorySection::default())
             .await
@@ -131,7 +131,7 @@ fn node(content: &str) -> MemoryNode {
     MemoryNode::new("core", "fact", content, 0.8)
         .with_runtime_fields("semantic", "user", 0.8, 0.7, "internal")
 }
-async fn derived(memory: &AliaMemory, user: Uuid, source: &str, content: &str) -> String {
+async fn derived(memory: &MemoryService, user: Uuid, source: &str, content: &str) -> String {
     let original = memory.get(user, source).await.unwrap().unwrap();
     let mut context = memory.write_snapshot(user).await.unwrap();
     context
@@ -140,7 +140,7 @@ async fn derived(memory: &AliaMemory, user: Uuid, source: &str, content: &str) -
     memory.store_guarded(&context, node(content)).await.unwrap()
 }
 
-async fn selected_context(memory: &AliaMemory, user: Uuid, ids: &[&str]) -> MemoryWriteContext {
+async fn selected_context(memory: &MemoryService, user: Uuid, ids: &[&str]) -> MemoryWriteContext {
     let mut context = memory.write_snapshot(user).await.unwrap();
     for id in ids {
         let item = memory.get(user, id).await.unwrap().unwrap();
@@ -162,7 +162,7 @@ fn batch_update(id: &str, revision: i64, content: &str) -> (String, MemoryPatch)
     )
 }
 
-async fn atomic_batch_and_lineage_contract(memory: &AliaMemory, user: Uuid) {
+async fn atomic_batch_and_lineage_contract(memory: &MemoryService, user: Uuid) {
     let source = memory
         .store(user, node("original source before replacement metadata"))
         .await
@@ -248,7 +248,7 @@ async fn atomic_batch_and_lineage_contract(memory: &AliaMemory, user: Uuid) {
     );
 }
 
-async fn exact_forget_selection_contract(memory: &AliaMemory, user: Uuid) {
+async fn exact_forget_selection_contract(memory: &MemoryService, user: Uuid) {
     let first = memory
         .store(user, node("selected first fact"))
         .await
@@ -361,7 +361,7 @@ async fn exact_forget_selection_contract(memory: &AliaMemory, user: Uuid) {
     );
 }
 
-async fn invalid_batch_contract(memory: &AliaMemory, user: Uuid, other: Uuid) {
+async fn invalid_batch_contract(memory: &MemoryService, user: Uuid, other: Uuid) {
     let existing = memory
         .store(user, node("unchanged valid source"))
         .await
@@ -543,7 +543,7 @@ async fn batch_update_keeps_old_conversation_sources_and_adds_new_verified_sourc
 
 #[tokio::test]
 async fn memory_mode_atomic_batches_and_exact_forget_match_persistent_contract() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     atomic_batch_and_lineage_contract(&memory, Uuid::new_v4()).await;
     exact_forget_selection_contract(&memory, Uuid::new_v4()).await;
     invalid_batch_contract(&memory, Uuid::new_v4(), Uuid::new_v4()).await;
@@ -1035,7 +1035,7 @@ async fn source_admission_is_bounded_by_the_privacy_lock_and_current_account() {
 
 #[tokio::test]
 async fn ram_epoch_rejects_old_sources_without_wall_clock_comparisons() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user = Uuid::new_v4();
     let mut original = memory.write_snapshot(user).await.unwrap();
     original.source_received_at += chrono::Duration::days(1);
@@ -1700,7 +1700,7 @@ async fn older_embedding_cannot_overwrite_the_corrected_revision() {
 
 #[tokio::test]
 async fn memory_mode_enforces_owner_epoch_revision_and_dependency_cascade() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user = Uuid::new_v4();
     let other = Uuid::new_v4();
     let id = memory.store(user, node("source")).await.unwrap();

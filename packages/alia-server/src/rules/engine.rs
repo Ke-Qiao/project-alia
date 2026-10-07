@@ -11,8 +11,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::event::{EventBus, ServerEvent};
-use crate::module::background::OwnedBackground;
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::background::OwnedBackground;
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, AutomationRule, RuleAction, RuleEvaluator, RuleFilter, RulePatch,
 };

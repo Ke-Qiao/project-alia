@@ -2,15 +2,14 @@
 //! Missing infrastructure fails; no in-memory lease substitute is permitted.
 use alia_server::{
     config::{ConversationSection, MemorySection},
-    modules::{memory::context::*, platform::migrations},
-    providers::{
-        adapter::{MemoryBackend, MemoryWriteOrigin},
-        embedding::NoopEmbedding,
-        memory::AliaMemory,
+    modules::{
+        memory::{MemoryService, MemoryWriteOrigin, context::*},
+        platform::migrations,
     },
+    providers::embedding::NoopEmbedding,
 };
 use alia_server::{
-    module::ModuleLifecycle,
+    modules::platform::lifecycle::ModuleLifecycle,
     providers::adapter::{
         EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
         embedding_text_digest,
@@ -89,8 +88,8 @@ impl Fixture {
     fn service(&self) -> ContextService {
         ContextService::new(self.db.clone(), Arc::new(NoopEmbedding))
     }
-    async fn memory_backend(&self) -> AliaMemory {
-        let memory = AliaMemory::new();
+    async fn memory_backend(&self) -> MemoryService {
+        let memory = MemoryService::new();
         memory
             .attach_runtime_for_test(self.db.clone(), None, MemorySection::default())
             .await
@@ -565,7 +564,7 @@ async fn memory_binding_copies_graph_and_historical_user_roots() {
                 .contains(&source.source_event_id.unwrap())
         );
         assert_eq!(bound.source_received_at, source.source_received_at);
-        let fixture = AliaMemory::new();
+        let fixture = MemoryService::new();
         assert!(
             fixture
                 .bind_context(bound, context.lease().id(), MemoryWriteOrigin::Ai)
@@ -1094,7 +1093,7 @@ async fn memory_extension_retains_all_previously_read_material_and_roots() {
 #[tokio::test]
 async fn postgres_memory_write_enforces_current_policy_without_ram_projection() {
     with_db(|f| async move {
-        use alia_server::providers::adapter::{MemoryBatch, MemoryNode, MemoryPatch};
+        use alia_server::modules::memory::{MemoryBatch, MemoryNode, MemoryPatch};
         let service = f.service();
         let backend = f.memory_backend().await;
         let mut current = service.policy_store().current().await.unwrap();
@@ -1205,7 +1204,7 @@ async fn graph_depth_and_consolidation_flag_are_real_persistent_policy() {
 #[tokio::test]
 async fn memory_search_options_only_narrow_policy_and_empty_layers_do_not_expand() {
     with_db(|f| async move {
-        use alia_server::providers::adapter::RetrievalOpts;
+        use alia_server::modules::memory::RetrievalOpts;
         let service = f.service();
         f.item("alpha one").await;
         f.item("alpha two").await;
@@ -1307,7 +1306,7 @@ async fn source_clock_skew_never_changes_capture_epoch_authority() {
 async fn profiled_embedding_reads_matching_memory_vector_in_the_context_snapshot() {
     with_db(|f| async move {
         let (service, adapter) = gated_service(&f).await;
-        let memory = alia_server::providers::memory::AliaMemory::new();
+        let memory = alia_server::modules::memory::MemoryService::new();
         memory
             .attach_runtime_for_test(
                 f.db.clone(),
@@ -1321,7 +1320,7 @@ async fn profiled_embedding_reads_matching_memory_vector_in_the_context_snapshot
         let id = memory
             .store(
                 f.owner,
-                alia_server::providers::adapter::MemoryNode::new(
+                alia_server::modules::memory::MemoryNode::new(
                     "core",
                     "fact",
                     "no lexical match",

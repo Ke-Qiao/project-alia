@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use alia_server::providers::adapter::{MemoryBackend, ToolContext, ToolDefinition, ToolExecutor};
-use alia_server::providers::memory::simple::AliaMemory;
+use alia_server::modules::memory::MemoryService;
+use alia_server::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor};
 #[cfg(feature = "tools-http")]
 use alia_server::tools::builtin::FetchUrl;
 use alia_server::tools::builtin::{
@@ -210,7 +210,7 @@ fn test_parse_openai_tool_call() {
 
 #[tokio::test]
 async fn memory_store_and_search_use_memory_system() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let memory: Arc<MemoryService> = Arc::new(MemoryService::new());
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
@@ -265,7 +265,7 @@ async fn memory_store_and_search_use_memory_system() {
 
 #[tokio::test]
 async fn memory_store_blocks_sensitive_chat_memory() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let memory: Arc<MemoryService> = Arc::new(MemoryService::new());
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
@@ -308,7 +308,7 @@ async fn memory_store_blocks_sensitive_chat_memory() {
 
 #[tokio::test]
 async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
-    let memory = Arc::new(AliaMemory::new());
+    let memory = Arc::new(MemoryService::new());
     let store = MemoryStore::new(Some(memory.clone()));
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
@@ -359,7 +359,7 @@ async fn old_memory_tool_cannot_recreate_or_update_memories_after_clear() {
 
 #[tokio::test]
 async fn ai_memory_tool_requires_a_persisted_source_message() {
-    let memory = Arc::new(AliaMemory::new());
+    let memory = Arc::new(MemoryService::new());
     let store = MemoryStore::new(Some(memory.clone()));
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
@@ -395,7 +395,7 @@ async fn ai_memory_tool_requires_a_persisted_source_message() {
 
 #[tokio::test]
 async fn memory_forget_deletes_matching_memory() {
-    let memory: Arc<dyn MemoryBackend> = Arc::new(AliaMemory::new());
+    let memory: Arc<MemoryService> = Arc::new(MemoryService::new());
     let user_id = Uuid::new_v4();
     let epoch = memory.write_snapshot(user_id).await.unwrap().privacy_epoch;
     let ctx = ToolContext {
@@ -444,8 +444,8 @@ async fn memory_forget_deletes_matching_memory() {
 
 #[tokio::test]
 async fn memory_forget_batch_has_one_privacy_transition_and_rejects_old_request() {
-    use alia_server::providers::adapter::MemoryNode;
-    let memory = Arc::new(AliaMemory::new());
+    use alia_server::modules::memory::MemoryNode;
+    let memory = Arc::new(MemoryService::new());
     let user_id = Uuid::new_v4();
     for content in [
         "The user drinks green tea",

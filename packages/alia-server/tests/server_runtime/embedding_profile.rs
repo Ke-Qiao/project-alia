@@ -1,7 +1,8 @@
 //! Settings transitions must make a new Memory vector space usable immediately.
 use super::*;
-use alia_server::providers::adapter::{
-    EmbeddingProfile, MemoryNode, MemoryPatch, RetrievalOpts, embedding_text_digest,
+use alia_server::{
+    modules::memory::{MemoryNode, MemoryPatch, RetrievalOpts},
+    providers::adapter::{EmbeddingProfile, embedding_text_digest},
 };
 use axum::{Json, Router, extract::Path, extract::State, routing::post};
 use sea_orm::{DatabaseBackend, Statement};

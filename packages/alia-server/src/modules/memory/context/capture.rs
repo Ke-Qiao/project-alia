@@ -1,5 +1,6 @@
 use super::{repository::*, *};
-use crate::providers::adapter::{ChatMessage, MemoryWriteContext, MemoryWriteOrigin};
+use crate::modules::memory::{MemoryWriteContext, MemoryWriteOrigin};
+use crate::providers::adapter::ChatMessage;
 use sea_orm::{ConnectionTrait, IsolationLevel, TransactionTrait};
 use serde_json::json;
 use uuid::Uuid;
@@ -127,7 +128,7 @@ impl ContextService {
         let mut memories = Vec::new();
         for (id, revision) in selected {
             let id = Uuid::parse_str(&id)?;
-            let memory = crate::providers::memory::simple::context_node(&tx, snapshot.user_id, id)
+            let memory = crate::modules::memory::service::context_node(&tx, snapshot.user_id, id)
                 .await?
                 .ok_or_else(|| {
                     ContextError::Revoked("capture memory source is unavailable".into())

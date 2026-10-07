@@ -2,7 +2,6 @@
 //! Dropping a Reserve reply models unknown acknowledgement, not actual playback.
 use super::*;
 use crate::{
-    module::ModuleLifecycle,
     modules::{
         companion::{
             live::{
@@ -13,6 +12,7 @@ use crate::{
         },
         delivery::repository::DeliveryRepository,
         interaction::initiative::{Request as VoiceRequest, VoiceOpportunity},
+        platform::lifecycle::ModuleLifecycle,
     },
     providers::{
         conversation::database::DatabaseConversationBackend,

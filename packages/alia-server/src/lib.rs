@@ -13,8 +13,6 @@ pub mod event;
 pub mod expression;
 #[cfg(feature = "channel-embedded")]
 pub mod grpc;
-pub mod memory_policy;
-pub mod module;
 pub mod modules;
 pub mod oobe;
 pub mod openapi;

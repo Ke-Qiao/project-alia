@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::auth::AuthUser;
 use crate::config::MemoryCaptureMode;
 use crate::error::{AppError, Result};
-use crate::memory_policy::{
+use crate::modules::memory::policy::{
     detect_sensitive_memory, normalize_memory_layer, normalize_memory_layers,
 };
-use crate::providers::adapter::{
+use crate::modules::memory::{
     MemoryCapabilities, MemoryConsolidationResult, MemoryContextPack, MemoryExplanation,
     MemoryExport, MemoryListOpts, MemoryNode, MemoryPatch, MemorySuppressedExplanation,
     RetrievalOpts,
@@ -499,7 +499,7 @@ async fn get_memory_privacy(
     State(state): State<AppState>,
     _auth: AuthUser,
 ) -> Result<Json<MemoryPrivacyResponse>> {
-    let memory = state.pipeline_policies.read().await.memory.clone();
+    let memory = state.interaction_policies.read().await.memory.clone();
     let capabilities = state.modules.memory.memory_capabilities().await;
     Ok(Json(memory_privacy_response(&memory, &capabilities)))
 }
@@ -554,7 +554,7 @@ async fn update_memory_privacy(
     if !updates.is_empty() {
         state.settings.batch_update(&updates).await;
         state
-            .pipeline_policies
+            .interaction_policies
             .write()
             .await
             .apply_settings(&updates);
@@ -563,7 +563,7 @@ async fn update_memory_privacy(
         }
     }
 
-    let memory = state.pipeline_policies.read().await.memory.clone();
+    let memory = state.interaction_policies.read().await.memory.clone();
     let capabilities = state.modules.memory.memory_capabilities().await;
     Ok(Json(memory_privacy_response(&memory, &capabilities)))
 }
@@ -574,7 +574,7 @@ async fn get_memory_audit(
     Query(query): Query<MemoryListQuery>,
 ) -> Result<Json<MemoryAuditResponse>> {
     let capabilities = state.modules.memory.memory_capabilities().await;
-    let memory = state.pipeline_policies.read().await.memory.clone();
+    let memory = state.interaction_policies.read().await.memory.clone();
     let memories = state
         .modules
         .memory
@@ -712,7 +712,7 @@ fn normalize_layer(layer: &str) -> String {
 
 fn merge_direct_memory_metadata(
     metadata: serde_json::Value,
-    sensitive: Option<&crate::memory_policy::SensitiveMemoryMatch>,
+    sensitive: Option<&crate::modules::memory::policy::SensitiveMemoryMatch>,
 ) -> serde_json::Value {
     let mut metadata = if metadata.is_object() {
         metadata

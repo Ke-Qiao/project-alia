@@ -7,8 +7,8 @@ use alia_core::delivery::{
 };
 use alia_core::output_control::{OutputBinding, OutputRegistration};
 use alia_server::channels::adapter::*;
-use alia_server::module::ModuleLifecycle;
 use alia_server::modules::delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*};
+use alia_server::modules::platform::lifecycle::ModuleLifecycle;
 use async_trait::async_trait;
 use delivery_support::*;
 use futures::StreamExt;

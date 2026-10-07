@@ -2,7 +2,7 @@ pub mod multi_layer;
 
 use async_trait::async_trait;
 
-use crate::module::ModuleLifecycle;
+use crate::modules::platform::lifecycle::ModuleLifecycle;
 use crate::providers::adapter::{RouteDecision, RouterInput, RouterStrategy};
 
 pub use multi_layer::MultiLayerRouter;

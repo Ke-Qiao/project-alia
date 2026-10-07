@@ -28,7 +28,7 @@ struct SettingsUpdateResponse {
     applied: Vec<String>,
     requires_restart: Vec<String>,
     ignored_runtime: Vec<String>,
-    module_reports: Vec<crate::module::registry::ModuleSettingsApplyReport>,
+    module_reports: Vec<crate::bootstrap::registry::ModuleSettingsApplyReport>,
     errors: Vec<String>,
 }
 
@@ -221,7 +221,7 @@ async fn update_settings(
         }
 
         let pipeline_applied = state
-            .pipeline_policies
+            .interaction_policies
             .write()
             .await
             .apply_settings(&hot_updates);

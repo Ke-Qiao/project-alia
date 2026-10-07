@@ -52,8 +52,8 @@ async fn durable_input_provenance_preserves_time_owner_and_atomicity() {
 
         // Admission is the causal boundary. An old source still preserves the
         // user's original message if it reaches persistence after clear.
-        use crate::providers::{adapter::MemoryBackend, memory::AliaMemory};
-        let memory = AliaMemory::new();
+        use crate::modules::memory::MemoryService;
+        let memory = MemoryService::new();
         memory.attach_runtime_for_test(db.clone(), None, Default::default()).await.unwrap();
         assert!(memory.clear(owner).await.is_err());
         db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,

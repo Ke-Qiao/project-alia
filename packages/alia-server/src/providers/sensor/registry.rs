@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::module::background::OwnedBackground;
+use crate::modules::platform::background::OwnedBackground;
 use crate::registry::{ArtifactRef, ArtifactRegistry};
 
 /// Metadata describing a registered sensor.

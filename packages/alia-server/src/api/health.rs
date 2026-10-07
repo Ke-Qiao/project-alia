@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
-use crate::module::lifecycle::ModuleHealth;
+use crate::modules::platform::lifecycle::ModuleHealth;
 use crate::state::AppState;
 
 #[derive(Serialize, ToSchema)]

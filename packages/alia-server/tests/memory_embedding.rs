@@ -1,4 +1,5 @@
 //! Canonical Memory -> actual request profile -> SQL projection, using real PG.
+use alia_server::modules::memory::{MemoryNode, MemoryPatch, RetrievalOpts};
 use std::{
     collections::BTreeMap,
     future::Future,
@@ -12,12 +13,14 @@ use std::{
 
 use alia_server::{
     config::MemorySection,
-    module::ModuleLifecycle,
     modules::{
-        memory::context::{ContextPolicy, ContextPolicyStore},
-        platform::migrations,
+        memory::{
+            MemoryService,
+            context::{ContextPolicy, ContextPolicyStore},
+        },
+        platform::{lifecycle::ModuleLifecycle, migrations},
     },
-    providers::{adapter::*, memory::AliaMemory},
+    providers::adapter::*,
 };
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -157,7 +160,7 @@ struct Fixture {
     admin: DatabaseConnection,
     db: DatabaseConnection,
     schema: String,
-    memory: Arc<AliaMemory>,
+    memory: Arc<MemoryService>,
     probe: Arc<Probe>,
     owner: Uuid,
 }
@@ -183,7 +186,7 @@ impl Fixture {
             admin,
             db,
             schema,
-            memory: Arc::new(AliaMemory::new()),
+            memory: Arc::new(MemoryService::new()),
             probe: Probe::new(),
             owner: Uuid::new_v4(),
         };
@@ -522,7 +525,7 @@ async fn stopping_rebuild_joins_inference_and_restart_repairs_missing_projection
         assert_eq!(f.probe.active.load(Ordering::SeqCst), 0);
         assert_eq!(f.count().await, 0);
         *f.probe.mode.write().await = Mode::Normal;
-        let restarted = AliaMemory::new();
+        let restarted = MemoryService::new();
         restarted
             .attach_runtime_for_test(
                 f.db.clone(),
@@ -572,7 +575,7 @@ async fn restart_with_uncommitted_profile_sends_no_embedding_requests() {
             .unwrap();
         let calls = f.probe.calls.load(Ordering::SeqCst);
         *f.probe.profile.write().await = Some(profile(1536, "uncommitted-runtime-model"));
-        let restarted = AliaMemory::new();
+        let restarted = MemoryService::new();
         restarted
             .attach_runtime_for_test(
                 f.db.clone(),

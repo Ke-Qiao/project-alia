@@ -1,8 +1,8 @@
 use std::pin::Pin;
 
 use alia_server::expression::{ProsodyControls, SpeechExpression};
-use alia_server::module::ModuleLifecycle;
-use alia_server::module::lifecycle::ModuleHealth;
+use alia_server::modules::platform::lifecycle::ModuleHealth;
+use alia_server::modules::platform::lifecycle::ModuleLifecycle;
 use alia_server::providers::adapter::{
     AudioEncoding, SttAdapter, TranscribeChunk, TranscriptionResult, TtsCapabilities,
     TtsLatencyClass, TtsProsodyLimits, TtsRequest,

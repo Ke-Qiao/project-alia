@@ -28,9 +28,9 @@ use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
 use crate::auth::load_server_keypair;
 use crate::event::{EventBus, ServerEvent};
-use crate::module::ModuleLifecycle;
-use crate::module::background::{BackgroundStart, OwnedBackground};
-use crate::module::lifecycle::{ModuleContext, ModuleHealth};
+use crate::modules::platform::background::{BackgroundStart, OwnedBackground};
+use crate::modules::platform::lifecycle::ModuleLifecycle;
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
 use crate::providers::sensor::SensorRegistry;
 
 use super::auth::auth_request_with_signing_key;

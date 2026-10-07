@@ -67,7 +67,7 @@ impl ContextPolicy {
             sensitive_filter_enabled: memory.sensitive_filter_enabled,
             paused_until,
             active_embedding_profile: None,
-            retrieval_layers: crate::memory_policy::normalize_memory_layers(
+            retrieval_layers: crate::modules::memory::policy::normalize_memory_layers(
                 memory.retrieval_layers.clone(),
             ),
             max_memory_chars: memory.max_injected_memory_chars.clamp(256, 12_000),

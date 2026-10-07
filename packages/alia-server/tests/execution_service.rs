@@ -6,11 +6,11 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use alia_server::config::ToolsSection;
-use alia_server::module::lifecycle::ModuleHealth;
 use alia_server::modules::execution::repository::ExecutionRepository;
 use alia_server::modules::execution::types::{EffectRecord, EffectStatus, ExecutionError};
 use alia_server::modules::execution::{ExecutionService, ExecutionToolRegistry};
 use alia_server::modules::memory::context::{ContextPolicy, ContextService, ContextSource};
+use alia_server::modules::platform::lifecycle::ModuleHealth;
 use alia_server::modules::platform::migrations;
 use alia_server::providers::adapter::{
     ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
@@ -525,12 +525,11 @@ async fn queued_ai_memory_tool_cannot_survive_clear_when_server_clock_is_behind(
 }
 
 async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
-    use alia_server::providers::adapter::MemoryBackend;
-    use alia_server::providers::memory::AliaMemory;
+    use alia_server::modules::memory::MemoryService;
     use alia_server::tools::builtin::MemoryStore;
 
     with_fixture(false, 5, 0, move |f| async move {
-        let memory = Arc::new(AliaMemory::new());
+        let memory = Arc::new(MemoryService::new());
         memory.attach_runtime_for_test(f.db.clone(), None, Default::default()).await.unwrap();
         let memory_tool = Arc::new(MemoryStore::new(Some(memory.clone())));
         let definition = memory_tool.definition();
@@ -601,12 +600,11 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
 
 #[tokio::test]
 async fn ai_memory_tool_validates_persisted_source_owner_and_epoch_in_postgres() {
-    use alia_server::providers::adapter::MemoryBackend;
-    use alia_server::providers::memory::AliaMemory;
+    use alia_server::modules::memory::MemoryService;
     use alia_server::tools::builtin::MemoryStore;
 
     with_fixture(false, 5, 0, |f| async move {
-        let memory = Arc::new(AliaMemory::new());
+        let memory = Arc::new(MemoryService::new());
         memory.attach_runtime_for_test(f.db.clone(), None, Default::default()).await.unwrap();
         let store = MemoryStore::new(Some(memory.clone()));
         let session = Uuid::new_v4();

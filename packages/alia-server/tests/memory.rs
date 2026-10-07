@@ -1,11 +1,13 @@
-use alia_server::providers::MemoryBackend;
-use alia_server::providers::adapter::{
-    EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, MemoryListOpts, MemoryNode, MemoryPatch,
-    ProfiledEmbeddings, RetrievalOpts, embedding_text_digest,
+use alia_server::{
+    modules::memory::{MemoryListOpts, MemoryNode, MemoryPatch, RetrievalOpts},
+    providers::adapter::{
+        EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
+        embedding_text_digest,
+    },
 };
-use alia_server::providers::memory::NoopMemory;
-use alia_server::providers::memory::simple::AliaMemory;
-use alia_server::{config::MemorySection, module::ModuleLifecycle};
+
+use alia_server::modules::memory::MemoryService;
+use alia_server::{config::MemorySection, modules::platform::lifecycle::ModuleLifecycle};
 use async_trait::async_trait;
 use futures::FutureExt;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseBackend, Statement};
@@ -14,11 +16,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
-// ── AliaMemory ───────────────────────────────────────────────────────
+// ── MemoryService ───────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_store_and_retrieve() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     let node = MemoryNode::new("core", "fact", "User likes coffee", 0.8).with_runtime_fields(
@@ -43,7 +45,7 @@ async fn test_store_and_retrieve() {
 
 #[tokio::test]
 async fn test_update_and_delete() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     let node = MemoryNode::new("core", "fact", "original content", 0.5);
@@ -84,7 +86,7 @@ async fn test_update_and_delete() {
 
 #[tokio::test]
 async fn test_list_get_and_clear() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     let first = memory
@@ -131,22 +133,17 @@ async fn test_list_get_and_clear() {
 
 #[tokio::test]
 async fn memory_capabilities_describe_built_in_store() {
-    let simple = AliaMemory::new();
+    let simple = MemoryService::new();
     let simple_caps = simple.memory_capabilities().await;
     assert_eq!(simple_caps.abi_version, 1);
     assert!(simple_caps.supports_store);
     assert!(simple_caps.supports_layer_filters);
     assert!(simple_caps.supports_similarity_threshold);
-
-    let noop = NoopMemory;
-    let noop_caps = noop.memory_capabilities().await;
-    assert!(!noop_caps.supports_store);
-    assert!(!noop_caps.supports_retrieve);
 }
 
 #[tokio::test]
 async fn context_pack_suppresses_sensitive_and_private_memories() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     memory
@@ -184,7 +181,7 @@ async fn context_pack_suppresses_sensitive_and_private_memories() {
 
 #[tokio::test]
 async fn memory_runtime_normalizes_evidence_topics_and_retrieval_trace() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     let id = memory
@@ -237,7 +234,7 @@ async fn memory_runtime_normalizes_evidence_topics_and_retrieval_trace() {
 
 #[tokio::test]
 async fn hidden_memory_can_be_explained_and_deleted() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
     let mut hidden = MemoryNode::new("core", "fact", "Internal safety note.", 0.6)
         .with_runtime_fields("semantic", "user", 0.8, 0.6, "private_runtime");
@@ -270,7 +267,7 @@ async fn hidden_memory_can_be_explained_and_deleted() {
 
 #[tokio::test]
 async fn visible_memory_is_not_reported_as_suppressed() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
     let id = memory
         .store(
@@ -297,7 +294,7 @@ async fn visible_memory_is_not_reported_as_suppressed() {
 
 #[tokio::test]
 async fn repeated_preference_is_consolidated_in_memory_runtime() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
     let first = MemoryNode::new(
         "preference",
@@ -329,7 +326,7 @@ async fn repeated_preference_is_consolidated_in_memory_runtime() {
 
 #[tokio::test]
 async fn background_consolidation_dedupes_promotes_demotes_and_reframes_affective_memory() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     memory
@@ -415,7 +412,7 @@ async fn background_consolidation_dedupes_promotes_demotes_and_reframes_affectiv
 
 #[tokio::test]
 async fn memory_user_controls_delete_by_topic_kind_and_export_hidden_reasons() {
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     let user_id = Uuid::new_v4();
 
     let mut project = MemoryNode::new(
@@ -500,7 +497,7 @@ async fn postgres_pgvector_memory_runtime_round_trips_embedding_vector_and_graph
         "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Memory runtime test','not-a-login-hash','user','active')",
         vec![user_id.into(),format!("{user_id}@memory-runtime.test").into()],
     )).await.unwrap();
-    let memory = AliaMemory::new();
+    let memory = MemoryService::new();
     memory
         .attach_runtime_for_test(
             db.clone(),

@@ -50,7 +50,7 @@ pub struct VoiceSessionService {
     delivery: Arc<DeliveryService>,
     hold_budget: Duration,
     shutdown: CancellationToken,
-    runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
+    runtime_tasks: Arc<crate::modules::platform::lifecycle::RuntimeTasks>,
     sessions: Sessions,
     initiatives: Option<(VoiceInitiativeHandle, Arc<ContextService>)>,
 }
@@ -63,7 +63,7 @@ impl VoiceSessionService {
         delivery: Arc<DeliveryService>,
         hold_budget: Duration,
         shutdown: CancellationToken,
-        runtime_tasks: Arc<crate::module::lifecycle::RuntimeTasks>,
+        runtime_tasks: Arc<crate::modules::platform::lifecycle::RuntimeTasks>,
     ) -> Self {
         Self {
             auth,
@@ -897,7 +897,7 @@ mod tests {
             }
         }
     }
-    impl crate::module::ModuleLifecycle for AuthChannel {
+    impl crate::modules::platform::lifecycle::ModuleLifecycle for AuthChannel {
         fn name(&self) -> &'static str {
             "signed_test_device"
         }

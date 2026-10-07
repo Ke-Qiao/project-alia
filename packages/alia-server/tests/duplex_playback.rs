@@ -25,8 +25,10 @@ use alia_server::{
         embedded::{EmbeddedChannel, EmbeddedChannelConfig},
     },
     event::EventBus,
-    module::{ModuleLifecycle as ServerLifecycle, lifecycle::ModuleContext},
-    modules::delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
+    modules::{
+        delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
+        platform::lifecycle::{ModuleContext, ModuleLifecycle as ServerLifecycle},
+    },
     plugins::PluginStorageService,
     providers::{sensor::SensorRegistry, tts::audio_budget::ResponseAudioBudget},
     registry::ArtifactRegistry,

@@ -17,11 +17,13 @@ use alia_core::{
 };
 use alia_server::{
     channels::adapter::*,
-    module::ModuleLifecycle,
-    modules::delivery::{
-        AudioDelivery, DeliveryService, OutputProducer,
-        repository::control::{ControlCommandStatus, OutputControlStatus},
-        types::*,
+    modules::{
+        delivery::{
+            AudioDelivery, DeliveryService, OutputProducer,
+            repository::control::{ControlCommandStatus, OutputControlStatus},
+            types::*,
+        },
+        platform::lifecycle::ModuleLifecycle,
     },
     providers::tts::audio_budget::ResponseAudioBudget,
 };

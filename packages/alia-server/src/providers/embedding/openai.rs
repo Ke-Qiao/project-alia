@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::{LlmProfileKind, LlmProviderProfileRef, ServerConfig};
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
     embedding_model_dimension, embedding_text_digest,

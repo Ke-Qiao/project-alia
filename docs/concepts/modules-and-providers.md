@@ -13,7 +13,7 @@ Package-specific module details live in:
 
 | Term | Meaning |
 | --- | --- |
-| Core service | A fixed runtime subsystem with shared invariants, such as pipeline orchestration, tools, skills, rules, scheduler, settings, sensors, and dependency ownership. |
+| Core service | A fixed runtime subsystem with shared invariants, such as Interaction, Memory, Execution, Delivery, tools, skills, rules, scheduler, settings, sensors, and dependency ownership. |
 | Provider | A replaceable adapter selected by config, such as OpenAI-compatible LLM, Anthropic, Gemini, whisper.cpp, or GPT-SoVITS. |
 | Channel | A multi-instance I/O path, such as embedded gRPC or CLI. |
 | Extension | Plugin/component code that registers tools, skills, settings, conditions, actions, sensors, prompt/context sections, or health checks. |
@@ -21,12 +21,15 @@ Package-specific module details live in:
 
 ## Provider Selection
 
-Only provider adapters are selected in `[modules]`. Provider configuration is
-split into fragment files under `server.d/`.
+STT/TTS provider adapters are selected in `[modules]`. LLM and embedding roles
+in `[llm.roles]` refer to named `[profiles.llm.*]` entries. Provider configuration
+is split into fragment files under `server.d/`. Memory is built in and has no
+provider selection slot.
 
 This keeps these decisions separate:
 
-- "Which external/provider adapter should run?" belongs in `[modules]`.
+- "Which external/provider adapter should run?" belongs in the relevant
+  `[modules]` selection or named LLM/embedding role and profile.
 - "How is that implementation configured?" belongs in provider/policy/profile
   fragments.
 - "How do tools, skills, scheduler conditions, rules, sensors, and settings
@@ -38,12 +41,39 @@ The server defines provider traits for LLM, STT, TTS, embeddings, and tool
 execution.
 
 Provider implementations should be boring adapters: translate Alia's internal
-types into provider calls, return normalized results, and avoid owning pipeline
-policy.
+types into provider calls, return normalized results, and avoid owning
+Interaction policy.
 
 Core services still use traits internally where it helps testing and lifecycle
 management, but they are not public replacement slots. For example, plugins add
 tools to the shared tool registry; they do not swap out the registry.
+
+## Directory Ownership
+
+Bootstrap builds the runtime and aggregate `ModuleRegistry`. Platform owns
+shared lifecycle and task cleanup. Interaction receives `InteractionServices`,
+an explicit set of the domain services and provider contracts its use cases
+need, rather than the aggregate registry. Concrete Easy-Turn construction also
+belongs to Bootstrap.
+
+`modules/memory::MemoryService` owns canonical memory behavior. Memory types,
+privacy rules, retrieval projections, and completed-turn capture live with that
+service. Disabling model recall leaves storage and erasure available. There is
+no replaceable `MemoryBackend`, `NoopMemory`, or compatibility re-export under
+`providers/memory`.
+
+The former `channels/pipeline` orchestration now lives in
+`modules/interaction`: bounded input supervision, turns, context assembly,
+generation, streaming, and persistence. The retired `module` directory has
+also been removed; its assembly code is in `bootstrap`, and its lifecycle and
+background ownership are in `modules/platform`.
+
+Directory names do not yet prove all architectural boundaries are complete.
+Conversation, cache, persona, router, skills, insights, and sensor services are
+fixed core implementations still located under `providers`. Non-Memory domain
+contracts remain in `providers/adapter.rs`, and `ModuleContext` remains a broad
+initialization bundle. These are recorded follow-up work, not newly exposed
+provider replacement slots.
 
 ## Channels Are Not Providers
 

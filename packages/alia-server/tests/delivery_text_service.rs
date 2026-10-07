@@ -2,8 +2,10 @@ mod delivery_support;
 use alia_core::{delivery::ObservationEnd, text_delivery::*};
 use alia_server::{
     channels::adapter::*,
-    module::ModuleLifecycle,
-    modules::delivery::{DeliveryService, TextDelivery, types::*},
+    modules::{
+        delivery::{DeliveryService, TextDelivery, types::*},
+        platform::lifecycle::ModuleLifecycle,
+    },
 };
 use async_trait::async_trait;
 use delivery_support::*;

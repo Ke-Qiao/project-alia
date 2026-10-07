@@ -9,7 +9,7 @@ use alia_server::channels::{
     ChannelRegistry,
     adapter::{ChannelAdapter, ChannelCapabilities},
 };
-use alia_server::module::{ModuleLifecycle, background::OwnedBackground};
+use alia_server::modules::platform::{background::OwnedBackground, lifecycle::ModuleLifecycle};
 use async_trait::async_trait;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;

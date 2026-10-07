@@ -10,10 +10,10 @@ use sea_orm::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::modules::memory::context::{
     ContextError, ContextEvidence, ContextService, ContextUse, PolicySnapshot, evidence_digest,
 };
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::*;
 use crate::providers::embedding::profile_store::ensure_profile;
 
@@ -24,7 +24,7 @@ const SNAPSHOT: &str = "SELECT to_jsonb(c) || jsonb_build_object('version',jsonb
 #[derive(Default)]
 pub struct DbCache {
     db: Option<DatabaseConnection>,
-    background: crate::module::background::OwnedBackground,
+    background: crate::modules::platform::background::OwnedBackground,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
 

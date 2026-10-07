@@ -20,7 +20,7 @@ use super::audio_budget::{
 };
 use super::http_body::{ERROR_BODY_BYTES, check_length, error_body, read_body};
 use crate::config::{ExpressionStyleSection, ServerConfig, VoiceProfileSection};
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     TtsAdapter, TtsCapabilities, TtsProsodyLimits, TtsProviderAdjustment, TtsRequest,
 };

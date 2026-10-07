@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput,
     sanitize_assistant_name,

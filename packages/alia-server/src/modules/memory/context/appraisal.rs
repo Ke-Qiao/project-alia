@@ -18,7 +18,7 @@ macro_rules! ensure_current {
 use crate::expression::{
     AffectSnapshot, AppraisalEvent, AppraisalScope, AppraisalSource, RelationshipProfile,
 };
-use crate::providers::adapter::MemoryRecallEvent;
+use crate::modules::memory::MemoryRecallEvent;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

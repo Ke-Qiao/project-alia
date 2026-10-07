@@ -3,16 +3,17 @@ use futures::FutureExt;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use std::pin::Pin;
 
-use alia_server::channels::pipeline::memory_capture::{
-    MemoryCandidateAction, MemoryCaptureStatus, capture_turn_memory_with_backends,
-};
-use alia_server::channels::pipeline::{CacheWrite, PendingTextPersistence};
 use alia_server::config::{MemoryCaptureMode, MemorySection};
-use alia_server::module::ModuleLifecycle;
-use alia_server::providers::adapter::{
-    ChatMessage, LlmAdapter, LlmResponse, MemoryBackend, MemoryListOpts,
+use alia_server::modules::memory::MemoryService;
+use alia_server::modules::memory::capture::CaptureTurn;
+use alia_server::modules::memory::capture::{
+    MemoryCandidateAction, MemoryCaptureStatus, capture_turn_memory_with_model,
 };
-use alia_server::providers::memory::AliaMemory;
+use alia_server::modules::platform::lifecycle::ModuleLifecycle;
+use alia_server::{
+    modules::memory::MemoryListOpts,
+    providers::adapter::{ChatMessage, LlmAdapter, LlmResponse},
+};
 use async_trait::async_trait;
 use futures::Stream;
 use futures::stream;
@@ -81,7 +82,7 @@ static CAPTURE_DATABASE_CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::
 
 async fn with_capture_fixture<F, Fut>(test: F)
 where
-    F: FnOnce(AliaMemory, PendingTextPersistence) -> Fut,
+    F: FnOnce(MemoryService, CaptureTurn) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     let _slot = CAPTURE_DATABASE_CASES.acquire().await.unwrap();
@@ -136,12 +137,12 @@ where
         tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant',$3)",[assistant.into(),session.into(),answer.into()])).await.unwrap();
         tx.commit().await.unwrap();
-        let memory = AliaMemory::new();
+        let memory = MemoryService::new();
         memory.attach_runtime_for_test(db.clone(),None,memory_config()).await.unwrap();
-        let pending = PendingTextPersistence {
-            context:generation.lease().binding(),source_received_at:received_at,source_privacy_epoch:0,source_event_id:Some(source),
-            response_id:response.response_id,session_id:session,user_id:owner,user_id_text:owner.to_string(),
-            query_text:query.into(),response_text:answer.into(),channel_id:"test-channel".into(),cache_write:None::<CacheWrite>,
+        let pending = CaptureTurn {
+            context:generation.lease().binding(),source_privacy_epoch:0,
+            session_id:session,user_id:owner,user_id_text:owner.to_string(),
+            query_text:query.into(),response_text:answer.into(),channel_id:"test-channel".into(),
         };
         tokio::time::timeout(std::time::Duration::from_secs(15),test(memory,pending)).await.unwrap();
     }).catch_unwind().await;
@@ -188,8 +189,7 @@ async fn pending_turn_received_before_clear_cannot_be_extracted_later() {
         let llm = StaticLlm::new(
             r#"{"memories":[{"content":"用户喜欢咖啡","importance":0.9,"confidence":0.9}]}"#,
         );
-        let trace =
-            capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
         assert_eq!(trace.status, MemoryCaptureStatus::Skipped);
         assert_eq!(
             trace.reason.as_deref(),
@@ -217,7 +217,7 @@ async fn deletion_while_extractor_is_waiting_rejects_its_late_result() {
         let release = std::sync::Arc::new(tokio::sync::Notify::new());
         llm.gate = Some((entered.clone(), release.clone()));
         let config = memory_config();
-        let capture = capture_turn_memory_with_backends(&llm, &memory, &pending, &config);
+        let capture = capture_turn_memory_with_model(&llm, &memory, &pending, &config);
         let forget = async {
             entered.notified().await;
             memory.clear(user_id).await.unwrap();
@@ -266,8 +266,7 @@ async fn llm_selected_capture_stores_only_high_confidence_durable_memories() {
         ]}"#,
         );
 
-        let trace =
-            capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.candidates, 2);
@@ -301,8 +300,7 @@ async fn llm_selected_capture_does_not_store_when_model_returns_no_memories() {
         let user_id = pending.user_id;
         let llm = StaticLlm::new(r#"{"memories":[]}"#);
 
-        let trace =
-            capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.candidates, 0);
@@ -336,8 +334,7 @@ async fn llm_selected_capture_blocks_sensitive_memories() {
         ]}"#,
         );
 
-        let trace =
-            capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
 
         assert_eq!(trace.status, MemoryCaptureStatus::Completed);
         assert_eq!(trace.stored, 0);
@@ -366,7 +363,7 @@ async fn llm_selected_capture_updates_existing_preference_memory() {
         memory
             .store(
                 user_id,
-                alia_server::providers::adapter::MemoryNode::new(
+                alia_server::modules::memory::MemoryNode::new(
                     "preference",
                     "preference",
                     "The user prefers detailed replies.",
@@ -390,8 +387,7 @@ async fn llm_selected_capture_updates_existing_preference_memory() {
         ]}"#,
         );
 
-        let trace =
-            capture_turn_memory_with_backends(&llm, &memory, &pending, &memory_config()).await;
+        let trace = capture_turn_memory_with_model(&llm, &memory, &pending, &memory_config()).await;
 
         assert_eq!(trace.stored, 1);
         assert_eq!(

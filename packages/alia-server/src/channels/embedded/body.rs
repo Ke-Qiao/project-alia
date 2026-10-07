@@ -24,9 +24,9 @@ use uuid::Uuid;
 
 use super::auth::auth_request_with_signing_key;
 use crate::expression::types::{BodyExecutionEvidence, ExpressionExecutionResult};
-use crate::module::background::BackgroundStart;
 use crate::modules::body_delivery::BodyDeliveryRepository;
 pub use crate::modules::body_delivery::{BodyDeliveryOrigin, BodyDeliveryRecord, BodyDispatch};
+use crate::modules::platform::background::BackgroundStart;
 
 const MAX_SOURCES: usize = 256;
 const MAX_OWNERS: usize = 32;

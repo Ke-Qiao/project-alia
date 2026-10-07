@@ -20,7 +20,7 @@ use utoipa_scalar::{Scalar, Servable};
 use crate::auth::ensure_server_keypair;
 use crate::config::ServerConfig;
 use crate::discovery::{ServerDiscoveryAdvertisement, ServerDiscoveryAnnouncement};
-use crate::module::lifecycle::{
+use crate::modules::platform::lifecycle::{
     RuntimeCleanup, RuntimeTasks, ShutdownHandle, ShutdownPhase, startup_step,
 };
 use crate::state::AppState;

@@ -11,6 +11,7 @@
 //! ## Plugin Tools
 //! Plugins can register custom tools at runtime.
 
+use crate::modules::memory::MemoryService;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 #[cfg(feature = "tools-http")]
@@ -32,19 +33,22 @@ use uuid::Uuid;
 
 use crate::entity::{registry_artifact, registry_dependency, skill_preferred_tool, tool};
 use crate::event::{EventBus, ServerEvent};
-use crate::memory_policy::{
+use crate::modules::memory::policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
     normalize_memory_layer,
 };
-use crate::module::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{
-    MemoryBackend, MemoryListOpts, MemoryNode, PreparedTool, RetrievalOpts, ScheduleConfig,
-    ScheduledTask, SchedulerBackend, ToolCall, ToolContext, ToolDefinition, ToolExecutor,
-    ToolRegistry, ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
-};
+use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
 use crate::providers::sensor::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
+use crate::{
+    modules::memory::{MemoryListOpts, MemoryNode, RetrievalOpts},
+    providers::adapter::{
+        PreparedTool, ScheduleConfig, ScheduledTask, SchedulerBackend, ToolCall, ToolContext,
+        ToolDefinition, ToolExecutor, ToolRegistry, ToolResult, ToolRoutingEmbedding,
+        ToolRoutingIndexEntry,
+    },
+};
 
 const FETCH_DEFAULT_MAX_BYTES: usize = 64 * 1024;
 const FETCH_HARD_MAX_BYTES: usize = 1024 * 1024;
@@ -249,7 +253,7 @@ pub struct BuiltinToolRegistry {
     /// Unified artifact/dependency graph manager.
     artifacts: Option<Arc<ArtifactRegistry>>,
     /// Memory backend used by memory_search and memory_store built-in tools.
-    memory: Option<Arc<dyn MemoryBackend>>,
+    memory: Option<Arc<MemoryService>>,
     /// Scheduler backend used by schedule_task.
     scheduler: Option<Arc<dyn SchedulerBackend>>,
 }
@@ -1080,11 +1084,11 @@ impl ToolExecutor for Calculate {
 
 /// Search user's memory
 pub struct MemorySearch {
-    memory: Option<Arc<dyn MemoryBackend>>,
+    memory: Option<Arc<MemoryService>>,
 }
 
 impl MemorySearch {
-    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+    pub fn new(memory: Option<Arc<MemoryService>>) -> Self {
         Self { memory }
     }
 }
@@ -1209,11 +1213,11 @@ impl ToolExecutor for MemorySearch {
 
 /// Store information to memory
 pub struct MemoryStore {
-    memory: Option<Arc<dyn MemoryBackend>>,
+    memory: Option<Arc<MemoryService>>,
 }
 
 impl MemoryStore {
-    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+    pub fn new(memory: Option<Arc<MemoryService>>) -> Self {
         Self { memory }
     }
 }
@@ -1344,11 +1348,11 @@ impl ToolExecutor for MemoryStore {
 
 /// Delete information from memory when the user explicitly asks to forget it.
 pub struct MemoryForget {
-    memory: Option<Arc<dyn MemoryBackend>>,
+    memory: Option<Arc<MemoryService>>,
 }
 
 impl MemoryForget {
-    pub fn new(memory: Option<Arc<dyn MemoryBackend>>) -> Self {
+    pub fn new(memory: Option<Arc<MemoryService>>) -> Self {
         Self { memory }
     }
 }
@@ -1478,7 +1482,7 @@ impl ToolExecutor for MemoryForget {
 }
 
 async fn upsert_tool_memory(
-    memory: &dyn MemoryBackend,
+    memory: &MemoryService,
     ctx: &ToolContext,
     incoming: &MemoryNode,
 ) -> anyhow::Result<&'static str> {
@@ -1522,9 +1526,9 @@ async fn upsert_tool_memory(
 }
 
 async fn tool_memory_context(
-    memory: &dyn MemoryBackend,
+    memory: &MemoryService,
     ctx: &ToolContext,
-) -> anyhow::Result<crate::providers::adapter::MemoryWriteContext> {
+) -> anyhow::Result<crate::modules::memory::MemoryWriteContext> {
     let source_epoch = ctx
         .source_privacy_epoch
         .context("memory tool requires a trusted source privacy epoch")?;
@@ -1541,11 +1545,7 @@ async fn tool_memory_context(
             .context_id
             .context("AI memory tool requires original context lineage")?;
         context = memory
-            .bind_context(
-                context,
-                id,
-                crate::providers::adapter::MemoryWriteOrigin::Ai,
-            )
+            .bind_context(context, id, crate::modules::memory::MemoryWriteOrigin::Ai)
             .await?;
         anyhow::ensure!(
             context.source_received_at.timestamp_micros()
@@ -1559,7 +1559,7 @@ async fn tool_memory_context(
             "AI memory tool source differs from its original context"
         );
     } else if ctx.source == "scheduler" {
-        context.origin = crate::providers::adapter::MemoryWriteOrigin::Maintenance;
+        context.origin = crate::modules::memory::MemoryWriteOrigin::Maintenance;
     }
     // Even a duplicate/no-op result must validate its actual source. This read
     // check does not replace guarded commit's atomic validation after selection.
@@ -1743,7 +1743,7 @@ fn parse_memory_layers(value: Option<&serde_json::Value>) -> anyhow::Result<Opti
 }
 
 async fn retrieve_memory_by_terms(
-    memory: &dyn MemoryBackend,
+    memory: &MemoryService,
     user_id: Uuid,
     query: &str,
     opts: &RetrievalOpts,

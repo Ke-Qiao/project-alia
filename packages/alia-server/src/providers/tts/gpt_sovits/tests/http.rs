@@ -333,7 +333,7 @@ async fn small_wav_buffered_and_fragmented_pitch_stream_keep_bytes_and_owner() {
         .unwrap();
     assert_eq!(&*audio, &source);
     assert_eq!(audio.owner(), budget.owner());
-    let pcm = crate::channels::pipeline::streaming::tts_bytes_to_pcm_payload(audio.into_buffer())
+    let pcm = crate::modules::interaction::streaming::tts_bytes_to_pcm_payload(audio.into_buffer())
         .unwrap();
     assert_eq!(&*pcm.data, &source[44..]);
     assert_eq!(budget.reserved_bytes(), source.len());

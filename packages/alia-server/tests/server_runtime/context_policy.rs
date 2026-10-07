@@ -4,7 +4,10 @@ use serde_json::json;
 #[tokio::test]
 async fn disabled_memory_still_erases_and_can_be_hot_enabled_then_restarted() {
     use alia_server::modules::memory::context::{ContextBinding, ContextUse};
-    use alia_server::providers::adapter::{CacheEntry, ChatMessage, MemoryNode};
+    use alia_server::{
+        modules::memory::MemoryNode,
+        providers::adapter::{CacheEntry, ChatMessage},
+    };
     with_fixture(|mut f| async move {
         assert!(!f.config.policies.memory.enabled);
         f.config.policies.cache.enabled = true;
@@ -458,7 +461,7 @@ async fn policy_patch_commits_before_ram_and_requires_current_admin_and_version(
         assert_eq!(response.status(), 200);
         let tag = response.headers()["etag"].to_str().unwrap().to_owned();
         let initial = state.modules.context.policy_store().current().await.unwrap();
-        let before = state.pipeline_policies.read().await.conversation.max_context_messages;
+        let before = state.interaction_policies.read().await.conversation.max_context_messages;
         let next = if before == 8 { 9 } else { 8 };
         let change = json!({"core.policies.conversation.max_context_messages":next});
         assert_eq!(client.patch(&url).bearer_auth(&user).json(&change).send().await.unwrap().status(), 403);
@@ -467,7 +470,7 @@ async fn policy_patch_commits_before_ram_and_requires_current_admin_and_version(
         let failed = client.patch(&url).bearer_auth(&admin).header("if-match", &tag).json(&change).send().await.unwrap();
         assert_eq!(failed.status(), 503);
         assert!(!failed.text().await.unwrap().contains("injected"));
-        assert_eq!(state.pipeline_policies.read().await.conversation.max_context_messages, before);
+        assert_eq!(state.interaction_policies.read().await.conversation.max_context_messages, before);
         assert_eq!(state.settings.get("core.policies.conversation.max_context_messages").await, Some(json!(before)));
         assert_eq!(state.modules.context.policy_store().current().await.unwrap().version, initial.version);
         state.db.execute_unprepared("DROP TRIGGER fail_context_policy ON context_policy; DROP FUNCTION fail_context_policy()").await.unwrap();
@@ -475,12 +478,12 @@ async fn policy_patch_commits_before_ram_and_requires_current_admin_and_version(
         assert_eq!(success.status(), 200);
         let result: serde_json::Value = success.json().await.unwrap();
         assert_eq!(result["context_policy_version"], initial.version+1);
-        assert_eq!(state.pipeline_policies.read().await.conversation.max_context_messages, next);
+        assert_eq!(state.interaction_policies.read().await.conversation.max_context_messages, next);
         assert_eq!(client.patch(&url).bearer_auth(&admin).header("if-match", &tag).json(&json!({"core.policies.memory.capture_mode":"none"})).send().await.unwrap().status(), 409);
         stop.cancel();
         tokio::time::timeout(Duration::from_secs(5), serving).await.unwrap().unwrap().unwrap();
         let restarted = f.builder().build().await.unwrap();
-        assert_eq!(restarted.state().pipeline_policies.read().await.conversation.max_context_messages, next);
+        assert_eq!(restarted.state().interaction_policies.read().await.conversation.max_context_messages, next);
         restarted.shutdown().await.unwrap();
     }).await;
 }

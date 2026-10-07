@@ -14,7 +14,7 @@ use uuid::Uuid;
 use super::repository::ExecutionRepository;
 use super::types::*;
 use crate::config::ToolsSection;
-use crate::module::lifecycle::ModuleHealth;
+use crate::modules::platform::lifecycle::ModuleHealth;
 use crate::providers::adapter::{
     PreparedTool, ToolCall, ToolContext, ToolDefinition, ToolRegistry, ToolResult,
 };

@@ -9,7 +9,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::module::lifecycle::ModuleHealth;
+use crate::modules::platform::lifecycle::ModuleHealth;
 
 use super::adapter::ChannelAdapter;
 

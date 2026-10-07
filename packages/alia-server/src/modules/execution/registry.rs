@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::ExecutionService;
-use crate::module::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
     ToolRoutingIndexEntry,
