@@ -1,0 +1,16 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.55s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-2d382a543686adec)
+
+running 3 tests
+test bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ok
+test channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown ... [1G[2Kalia> 
+[1G[2Kalia> 
+ok
+test channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal ... [1G[2Kalia> [1G[2Kalia: 你好
+[1G[2Kalia> 
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 315 filtered out; finished in 0.32s
+
+{"command": ["cargo", "test", "-p", "alia-server", "--lib", "--locked", "--offline", "--", "--ignored", "--nocapture", "--test-threads=1"], "inherited_real_pty": {"0": true, "1": true, "2": true}, "started_at": "2026-10-07T19:22:07.705985+00:00", "finished_at": "2026-10-07T19:22:29.399659+00:00", "elapsed_seconds": 21.69, "exit_code": 0, "source_manifest_sha256": "7900e3c771864992562374a4bb8de47d54b1eba014fdf3c9a641afc0ab3dd7dc", "source_drift": [], "build_jobs": 2, "rust_min_stack": "unset", "rust_test_threads": "1 (explicit PTY libtest argument; environment unset)", "rust_backtrace": "unset", "docs_rs": "unset", "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"}

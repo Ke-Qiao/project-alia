@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-10-07T19:39:23.979550+00:00",
+  "source_commit": "978af9c942da42aa3cd98182cde3dafa6a6e33be",
+  "manifest_sha256": "ccfaa7981fc7062dfeb43e568e52af038915064a2187352e0891980afc6fcbd3",
+  "input_count": 630,
+  "matching_git_blobs": 630,
+  "mismatches": [],
+  "extra_git_inputs": [],
+  "missing_git_inputs": [],
+  "source_commit_scope": "08c54be architecture refactor plus 978af9c test fixture correction; V4 changes no production code from V3"
+}

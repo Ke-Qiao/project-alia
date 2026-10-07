@@ -1,0 +1,55 @@
+{
+  "phase": "layering_complete",
+  "branch": "codex/architecture-refactor",
+  "implementation_commit": "08c54be3cca92afecccf36d8c85324909a0ce925",
+  "source_commit": "978af9c942da42aa3cd98182cde3dafa6a6e33be",
+  "layering_completed": 8,
+  "layering_total": 8,
+  "next_layering_completed": 0,
+  "next_layering_total": 4,
+  "next_rounds_completed": 2,
+  "next_rounds_total": 6,
+  "manifest_sha256": "ccfaa7981fc7062dfeb43e568e52af038915064a2187352e0891980afc6fcbd3",
+  "frozen_files": 630,
+  "matching_git_blobs": 630,
+  "macos_workspace": {
+    "passed": 1053,
+    "failed": 0,
+    "ignored": 5
+  },
+  "macos_real_pty": {
+    "passed": 3,
+    "failed": 0
+  },
+  "linux_server_package": {
+    "passed": 771,
+    "failed": 0,
+    "ignored": 5,
+    "full_workspace": false
+  },
+  "server_no_default_all_targets": {
+    "macos": true,
+    "linux_arm64": true
+  },
+  "linux_server_release_link": true,
+  "real_model_tests_rerun": false,
+  "linux_standalone_deployment_smoke_rerun": false,
+  "task_resources": "stopped",
+  "user_database_5433": "not accessed",
+  "source_v3_v4_changed_inputs": [
+    "packages/alia-server/tests/server_runtime/expression.rs"
+  ],
+  "prior_linux_v3": {
+    "passed": 770,
+    "failed": 1,
+    "ignored": 5,
+    "preserved": true
+  },
+  "next": [
+    "L09 Conversation then fixed core and contracts; see checklists/layering-next.md",
+    "L10 narrow ModuleContext",
+    "L11 cross-domain transaction ownership",
+    "L12 outbound contract and audio budget ownership"
+  ],
+  "deferred": "deferred.md; R01–R06 remains 2/6"
+}

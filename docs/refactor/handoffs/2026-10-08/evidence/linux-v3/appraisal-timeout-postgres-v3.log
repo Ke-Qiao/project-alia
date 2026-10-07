@@ -1,0 +1,4 @@
+2026-10-07T19:29:58.612142280Z 2026-10-07 19:29:58.611 UTC [3389] ERROR:  canceling statement due to statement timeout
+2026-10-07T19:29:58.612224447Z 2026-10-07 19:29:58.611 UTC [3389] CONTEXT:  SQL statement "SELECT pg_advisory_xact_lock(1312879623)"
+2026-10-07T19:29:58.612231947Z 	PL/pgSQL function hold_appraisal_mutation() line 1 at PERFORM
+2026-10-07T19:29:58.612248946Z 2026-10-07 19:29:58.611 UTC [3389] STATEMENT:  INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy_digest,source_event_id,source_privacy_epoch,source_relationship_epoch,source_received_at,input_digest,result_digest,source_fact,events,roots,roots_digest,effective_at,valid_until) VALUES($1,$2,$3,$4,$5,'alia.appraisal',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)

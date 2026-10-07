@@ -1,0 +1,57 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 58.55s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-2d382a543686adec)
+
+running 49 tests
+test modules::interaction::error_notice::tests::builds_english_notice_for_non_cjk_input ... ok
+test modules::interaction::dialogue_policy::tests::classifies_user_semantics ... ok
+test modules::interaction::dialogue_policy::tests::preserves_cache_minimality ... ok
+test modules::interaction::dialogue_policy::tests::uses_configured_phrase_lists ... ok
+test modules::interaction::error_notice::tests::builds_chinese_notice_without_raw_error ... ok
+test modules::interaction::initiative::tests::replacement_keeps_new_mailbox_and_rejects_old_scope ... ok
+test modules::interaction::initiative::tests::dropping_reservation_waiter_cancels_original_request ... ok
+test modules::interaction::initiative::tests::reservation_timeout_cancels_original_without_enqueuing_a_retry ... ok
+test modules::interaction::error_notice::tests::cancelled_error_does_not_dispatch_voice_or_text ... ok
+test modules::interaction::integration_tests::failed_user_source_prevents_model_and_tool_processing ... ok
+test modules::interaction::error_notice::tests::unadmitted_error_notice_never_starts_tts_or_side_effects ... ok
+test modules::interaction::integration_tests::incomplete_history_does_not_publish_completion_or_memory_capture ... ok
+test modules::interaction::integration_tests::context::corrected_transcript_keeps_the_single_persisted_raw_source_and_lease ... ok
+test modules::interaction::integration_tests::memory_search::memory_search_required_role_is_enforced_before_reading ... ok
+test modules::interaction::prompt::tests::llm_messages_do_not_add_interruption_prompt_for_completed_pair ... ok
+test modules::interaction::prompt::tests::llm_messages_explain_unanswered_user_history_tail ... ok
+test modules::interaction::prompt::tests::stt_context_prompt_warns_about_transcription_uncertainty ... ok
+test modules::interaction::prompt::tests::tts_prompt_for_chinese_requires_speakable_plain_text ... ok
+test modules::interaction::prompt::tests::tts_prompt_for_unknown_language_keeps_general_speech_rules ... ok
+test modules::interaction::streaming::tests::cheerful_override_needs_high_confidence_when_baseline_is_serious ... ok
+test modules::interaction::streaming::tests::parses_sentence_expression_patch_from_fenced_batch ... ok
+test modules::interaction::streaming::tests::prosody_delta_respects_volume_and_night_caps ... ok
+test modules::interaction::supervision::tests::admission_is_bounded_until_completed_tasks_are_joined ... ok
+test modules::interaction::supervision::tests::cancelled_admission_never_polls_request ... ok
+test modules::interaction::supervision::tests::shutdown_waits_for_dispatched_effect_fact_after_cancellation ... ok
+test modules::interaction::tools::tests::cosine_similarity_scores_parallel_vectors_highest ... ok
+test modules::interaction::tools::tests::tool_routing_text_contains_indexable_metadata ... ok
+test modules::interaction::turn::tests::beginning_new_turn_cancels_previous_with_superseded_reason ... ok
+test modules::interaction::turn::tests::cancelled_stage_never_polls_even_a_ready_future ... ok
+test modules::interaction::turn::tests::finishing_old_generation_does_not_unregister_current_session ... ok
+test modules::interaction::turn::tests::late_cancelled_input_does_not_supersede_live_generation ... ok
+test modules::interaction::turn::tests::owner_cancellation_records_interrupted_stage ... ok
+test modules::interaction::integration_tests::memory_search::memory_search_confirmation_exposes_only_pending_execution_fact ... ok
+test modules::interaction::integration_tests::memory_search::response_freeze_prevents_even_authorized_memory_search_dispatch ... ok
+test modules::interaction::integration_tests::prepared_voice_error_before_register_ack_keeps_original_context_and_response ... ok
+test modules::interaction::integration_tests::memory_search::empty_or_invalid_memory_search_filter_never_widens_the_read ... ok
+test modules::interaction::integration_tests::memory_search::terminal_execution_appraisal_rejects_foreign_source_and_late_fact_change ... ok
+test modules::interaction::integration_tests::memory_search::disabled_memory_search_cannot_read_through_a_stale_tool_list ... ok
+test modules::interaction::integration_tests::memory_search::successful_memory_search_reads_canonical_sql_with_limits_and_retains_prior_roots ... ok
+test modules::interaction::integration_tests::recognized_speech_reaches_llm_and_shared_text_tts_without_stt ... ok
+test modules::interaction::integration_tests::saturated_voice_queue_rejects_overflow_and_skips_cancelled_input ... ok
+test modules::interaction::integration_tests::sentence_delivery_presynthesizes_bounded_fragments_under_one_response ... ok
+test modules::interaction::integration_tests::sentence_tts_failure_is_not_committed_as_success_or_replayed ... ok
+test modules::interaction::integration_tests::sentence_hold_retains_in_flight_result_and_defers_next_tts ... ok
+test modules::interaction::integration_tests::text_delivery::broken_model_stream_keeps_partial_chunks_without_success_end_or_assistant_history ... ok
+test modules::interaction::integration_tests::text_delivery::a_large_provider_chunk_splits_only_at_utf8_boundaries_under_one_delivery ... ok
+test modules::interaction::integration_tests::cache::exact_and_semantic_hits_share_one_response_exit_and_keep_revocable_source_lineage ... ok
+test modules::interaction::integration_tests::context::clear_or_policy_change_during_model_call_rejects_old_output_and_allows_a_new_turn ... ok
+test modules::interaction::integration_tests::text_delivery::buffered_and_streamed_text_each_commit_one_response_and_source_epoch ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 268 filtered out; finished in 9.82s
+

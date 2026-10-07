@@ -1,0 +1,38 @@
+{
+  "recorded_at": "2026-10-07T19:49:03.808467+00:00",
+  "database": "alia_layering_20261008",
+  "role": "alia_test",
+  "remaining_test_schemas": [],
+  "other_database_connections": 0,
+  "task_containers": [
+    {
+      "name": "alia-layering-linux-20261008-v2",
+      "id": "59fda9b500b09a33625ab63c4d7a0d4c2fed936d61a11a2a06453cd8b9fdf05d",
+      "running": false,
+      "status": "exited",
+      "finished_at": "2026-10-07T19:49:03.698487078Z"
+    },
+    {
+      "name": "alia-layering-linux-20261008-v1",
+      "id": "242a30220f8f5c26c21fd812b42062c85d357b659dfc47dc96f2aae5134d865a",
+      "running": false,
+      "status": "exited",
+      "finished_at": "2026-10-07T19:35:32.560997847Z"
+    },
+    {
+      "name": "alia-layering-20261008-db",
+      "id": "7e194358e5000347dca2277c61de652de362551dc36a1ef854d2244a13596623",
+      "running": false,
+      "status": "exited",
+      "finished_at": "2026-10-07T19:48:54.103804909Z"
+    }
+  ],
+  "linux_processes_before_stop": [
+    "      1 sleep",
+    "   6718 ps"
+  ],
+  "remaining_task_processes": [],
+  "macos_process_check": "ps -axo pid=,comm=; no cargo/rustc/alia-server/alia-embedded or workspace target process",
+  "user_database_5433": "not accessed; no user service or configuration modified",
+  "retained": "ignored same-task build cache, source snapshots, native archive and evidence; containers stopped, not removed"
+}

@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-10-07T19:25:49.485073+00:00",
+  "source_commit": "08c54be3cca92afecccf36d8c85324909a0ce925",
+  "manifest_sha256": "7900e3c771864992562374a4bb8de47d54b1eba014fdf3c9a641afc0ab3dd7dc",
+  "input_count": 630,
+  "matching_git_blobs": 630,
+  "mismatches": [],
+  "extra_git_inputs": [],
+  "missing_git_inputs": [],
+  "source_commit_scope": "Server refactor, ownership guard and current architecture docs; no dependency, feature, protocol or embedded code change"
+}

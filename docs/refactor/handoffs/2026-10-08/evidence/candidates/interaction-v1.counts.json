@@ -1,0 +1,112 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/docs/refactor/handoffs/2026-10-08/evidence/candidates/interaction-v1.log",
+  "log_sha256": "2d7d1d0aaee810e783c786548a92f8207249880a9685a45bdf2ddf5d3fa46283",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 1,
+  "running_targets": 1,
+  "doctest_targets": 0,
+  "totals": {
+    "passed": 49,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 268
+  },
+  "running_totals": {
+    "passed": 49,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 268
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 0,
+  "excluded_nested_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "nested_harness_start_count": 0,
+  "orphan_summaries": [],
+  "cargo_errors": [],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (target/debug/deps/alia_server-2d382a543686adec)",
+      "heading_line": 3,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 5,
+        "selected": 49
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 49,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 268,
+        "status": "ok",
+        "seconds": 9.82,
+        "line": 56
+      }
+    }
+  ],
+  "run_metadata": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "modules::interaction",
+      "--locked",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "started_at": "2026-10-07T19:07:31.318025+00:00",
+    "finished_at": "2026-10-07T19:08:42.612911+00:00",
+    "elapsed_seconds": 71.29,
+    "exit_code": 0,
+    "source_manifest_sha256": "ffc896d1e31dd24cbb8cdcb5505247c951daa95f18d96412966743912b572e1e",
+    "source_drift": [],
+    "build_jobs": 2,
+    "rust_min_stack": "unset",
+    "rust_test_threads": "default (unset)",
+    "rust_backtrace": "unset",
+    "docs_rs": "unset",
+    "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "modules::interaction",
+      "--locked",
+      "--offline",
+      "--no-fail-fast"
+    ],
+    "workspace_requested": false,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "PASSED_RECORDED_RUN"
+}

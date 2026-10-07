@@ -1,0 +1,122 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/docs/refactor/handoffs/2026-10-08/evidence/candidates/cache-cancel-red-v2.log",
+  "log_sha256": "9db53a9bf3aef2ab48fb1c34c0c8c3693cfa7fa0b20b2cb90ed2b197530871c4",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 1,
+  "running_targets": 1,
+  "doctest_targets": 0,
+  "totals": {
+    "passed": 0,
+    "failed": 1,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 317
+  },
+  "running_totals": {
+    "passed": 0,
+    "failed": 1,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 317
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 0,
+  "excluded_nested_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "nested_harness_start_count": 0,
+  "orphan_summaries": [],
+  "cargo_errors": [
+    {
+      "line": 24,
+      "text": "error: test failed, to rerun pass `-p alia-server --lib`"
+    }
+  ],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (target/debug/deps/alia_server-2d382a543686adec)",
+      "heading_line": 3,
+      "nonpassing_test_lines": [
+        {
+          "line": 6,
+          "name": "modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit",
+          "status": "FAILED",
+          "reason": null
+        }
+      ],
+      "outer_harness_start": {
+        "line": 5,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 317,
+        "status": "FAILED",
+        "seconds": 3.78,
+        "line": 22
+      }
+    }
+  ],
+  "run_metadata": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "cancelled_cache_lookup_preserves_user_source_and_terminal_audit",
+      "--locked",
+      "--offline"
+    ],
+    "started_at": "2026-10-07T19:09:59.382004+00:00",
+    "finished_at": "2026-10-07T19:10:29.533340+00:00",
+    "elapsed_seconds": 30.15,
+    "exit_code": 101,
+    "source_manifest_sha256": "a4ff199a858e6075df0f3c0f7f83f3db61ef5fa8faf29d9dc1b42beac831960e",
+    "source_drift": [],
+    "build_jobs": 2,
+    "rust_min_stack": "unset",
+    "rust_test_threads": "default (unset)",
+    "rust_backtrace": "unset",
+    "docs_rs": "unset",
+    "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "cancelled_cache_lookup_preserves_user_source_and_terminal_audit",
+      "--locked",
+      "--offline"
+    ],
+    "workspace_requested": false,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "FAILED"
+}

@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.53s
+     Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-d688634c1b44968f)
+
+running 1 test
+test expression::appraisal_ack_deadline_reports_unknown_and_clear_fences_the_original_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in 17.12s
+

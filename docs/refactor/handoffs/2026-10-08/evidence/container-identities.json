@@ -1,0 +1,79 @@
+{
+  "recorded_at": "2026-10-07T19:26:43.630356+00:00",
+  "task_containers": [
+    {
+      "name": "/alia-layering-20261008-db",
+      "id": "7e194358e5000347dca2277c61de652de362551dc36a1ef854d2244a13596623",
+      "image_id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "configured_image": "pgvector/pgvector:pg17",
+      "platform": "linux",
+      "created": "2026-10-07T18:51:21.695342363Z",
+      "network_mode": "bridge",
+      "ports": {
+        "5432/tcp": [
+          {
+            "HostIp": "127.0.0.1",
+            "HostPort": ""
+          }
+        ]
+      },
+      "mounts": [
+        {
+          "type": "volume",
+          "source": "/var/lib/docker/volumes/33e12c1af061ffa49226deef429ea35fd8c4cba55f6a935a7fba97c0a05d8fe4/_data",
+          "destination": "/var/lib/postgresql/data",
+          "writable": true
+        }
+      ]
+    },
+    {
+      "name": "/alia-layering-linux-20261008-v1",
+      "id": "242a30220f8f5c26c21fd812b42062c85d357b659dfc47dc96f2aae5134d865a",
+      "image_id": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "configured_image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "platform": "linux",
+      "created": "2026-10-07T19:12:48.750417781Z",
+      "network_mode": "container:7e194358e5000347dca2277c61de652de362551dc36a1ef854d2244a13596623",
+      "ports": {},
+      "mounts": [
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/.cargo/registry",
+          "destination": "/cache/cargo/registry",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261008-layering/linux-arm64-v1/source",
+          "destination": "/workspace",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261008-layering/linux-arm64-v1/native",
+          "destination": "/native",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261008-layering/linux-arm64-v1/evidence",
+          "destination": "/evidence",
+          "writable": true
+        },
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261008-layering/linux-arm64-v1/runtime",
+          "destination": "/runtime",
+          "writable": true
+        },
+        {
+          "type": "bind",
+          "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261008-layering/linux-arm64-v1/cache",
+          "destination": "/cache",
+          "writable": true
+        }
+      ]
+    }
+  ],
+  "notes": "Task resources only. Private environment and user-container configuration omitted."
+}

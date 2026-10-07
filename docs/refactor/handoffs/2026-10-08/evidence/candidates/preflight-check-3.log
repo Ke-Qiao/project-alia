@@ -1,0 +1,10 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+error[E0433]: cannot find type `MemoryWriteOrigin` in this scope
+   --> packages/alia-server/tests/appraisal_provenance.rs:903:21
+    |
+903 |                     MemoryWriteOrigin::Automatic,
+    |                     ^^^^^^^^^^^^^^^^^ use of undeclared type `MemoryWriteOrigin`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `alia-server` (test "appraisal_provenance") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

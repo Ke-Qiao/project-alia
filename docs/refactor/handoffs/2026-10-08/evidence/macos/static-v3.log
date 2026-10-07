@@ -1,0 +1,6 @@
+RUN ['cargo', 'fmt', '--all', '--', '--check']
+RUN ['python3', 'scripts/check-server-boundaries.py', '--self-test']
+Server boundary checker self-test passed
+RUN ['python3', 'scripts/check-server-boundaries.py']
+Server ownership boundaries passed
+RUN ['git', 'diff', '--check']

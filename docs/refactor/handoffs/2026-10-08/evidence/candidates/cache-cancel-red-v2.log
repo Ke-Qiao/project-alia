@@ -1,0 +1,24 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.51s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-2d382a543686adec)
+
+running 1 test
+test modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit ... FAILED
+
+failures:
+
+---- modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit stdout ----
+
+thread 'modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit' (6579750) panicked at packages/alia-server/src/modules/interaction/integration_tests/cache.rs:395:13:
+assertion `left == right` failed: cache cancellation lost the terminal interruption audit
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    modules::interaction::integration_tests::cache::cancelled_cache_lookup_preserves_user_source_and_terminal_audit
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 317 filtered out; finished in 3.78s
+
+error: test failed, to rerun pass `-p alia-server --lib`
