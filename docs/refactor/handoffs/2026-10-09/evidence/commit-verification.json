@@ -1,0 +1,9 @@
+{
+  "source_commit": "ffd7af19dccb8db28f16c5091e09265d4c5bbd32",
+  "manifest_sha256": "2a06adad2d01d3faee0d369576a907af61d23918f18e5d956a05556dcf0923e5",
+  "input_count": 637,
+  "matching_git_blobs": 637,
+  "mismatches": [],
+  "extra_git_inputs": [],
+  "missing_git_inputs": []
+}

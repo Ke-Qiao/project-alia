@@ -1,0 +1,22 @@
+{
+  "command": [
+    "docker",
+    "run",
+    "-d",
+    "--pull=never",
+    "--name",
+    "alia-l09-20261009-db",
+    "-e",
+    "POSTGRES_USER=alia_test",
+    "-e",
+    "POSTGRES_PASSWORD=alia_test",
+    "-e",
+    "POSTGRES_DB=alia_l09_20261009",
+    "-p",
+    "127.0.0.1::5432",
+    "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3"
+  ],
+  "container_id": "3fc6d601197325e04f33d1c1b140e7058f2cf884963720eae6194cd764f1cba0",
+  "published": "127.0.0.1:32771",
+  "created_at": "2026-10-08T19:35:25.208829+00:00"
+}

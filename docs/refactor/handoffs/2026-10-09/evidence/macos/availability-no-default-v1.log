@@ -1,0 +1,10 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.74s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-7c82adf58cee78bf)
+
+running 2 tests
+test modules::platform::insights::service::tests::availability_tests::enabling_insights_without_the_feature_is_rejected ... ok
+test modules::platform::insights::service::tests::availability_tests::policy_disabled_service_remains_inert_and_healthy ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 211 filtered out; finished in 0.00s
+

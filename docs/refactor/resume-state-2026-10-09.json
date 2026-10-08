@@ -1,0 +1,64 @@
+{
+  "phase": "l09_complete",
+  "branch": "codex/architecture-refactor",
+  "source_commit": "ffd7af19dccb8db28f16c5091e09265d4c5bbd32",
+  "baseline_commit": "b9ff6e0",
+  "l09_completed": 10,
+  "l09_total": 10,
+  "next_layering_completed": 1,
+  "next_layering_total": 4,
+  "next_rounds_completed": 2,
+  "next_rounds_total": 6,
+  "manifest_sha256": "2a06adad2d01d3faee0d369576a907af61d23918f18e5d956a05556dcf0923e5",
+  "frozen_files": 637,
+  "matching_git_blobs": 637,
+  "macos_workspace": {
+    "passed": 1056,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "macos_real_pty": {
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 318
+  },
+  "macos_no_default_availability": {
+    "passed": 2,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 211
+  },
+  "linux_server_package": {
+    "passed": 774,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "linux_full_workspace": false,
+  "server_no_default_all_targets": {
+    "macos": true,
+    "linux_arm64": true
+  },
+  "linux_server_release_link": true,
+  "real_model_tests_rerun": false,
+  "linux_standalone_deployment_smoke_rerun": false,
+  "task_resources": "stopped",
+  "user_database_5433": "not accessed",
+  "reset_card": {
+    "authorized": true,
+    "used": false
+  },
+  "next": [
+    "L10 narrow ModuleContext using actual consumers",
+    "L11 cross-domain atomic transaction ownership",
+    "L12 outbound contract and audio budget ownership"
+  ],
+  "remaining_software_gap": "Existing Skills HTTP CRUD reload TODOs; plugin reload preserved",
+  "deferred": "deferred.md; R01–R06 remains 2/6"
+}

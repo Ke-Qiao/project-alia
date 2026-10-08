@@ -1,0 +1,8 @@
+{
+  "command": [
+    "python3",
+    "scripts/check-server-boundaries.py"
+  ],
+  "exit_code": 0,
+  "script_sha256": "d56406430baf15f562029444ec1c40a6ad35964619cc56345077489e4a2edd2f"
+}

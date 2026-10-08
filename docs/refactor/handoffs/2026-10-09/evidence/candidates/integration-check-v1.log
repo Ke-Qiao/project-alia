@@ -1,0 +1,61 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+warning: unused import: `routing::RouterService`
+  --> packages/alia-server/src/modules/interaction/integration_tests.rs:18:68
+   |
+18 | use crate::modules::interaction::{conversation::ConversationStore, routing::RouterService};
+   |                                                                    ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `RouteDecision` and `RouterInput`
+  --> packages/alia-server/src/modules/interaction/integration_tests.rs:25:19
+   |
+25 |         routing::{RouteDecision, RouterInput},
+   |                   ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: `alia-server` (lib test) generated 2 warnings (run `cargo fix --lib -p alia-server --tests` to apply 2 suggestions)
+error[E0599]: no method named `get_or_create_active_session` found for struct `std::sync::Arc<ConversationService>` in the current scope
+   --> packages/alia-server/tests/duplex_playback/companion.rs:319:10
+    |
+316 |       let conversation = state
+    |  ________________________-
+317 | |         .modules
+318 | |         .conversation
+319 | |         .get_or_create_active_session("test-device", &owner.to_string())
+    | |_________-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `ConversationStore` which provides `get_or_create_active_session` is implemented but not in scope; perhaps you want to import it
+    |
+  4 + use alia_server::modules::interaction::conversation::ConversationStore;
+    |
+help: there is a method `create_session` with a similar name
+    |
+319 -         .get_or_create_active_session("test-device", &owner.to_string())
+319 +         .create_session("test-device", &owner.to_string())
+    |
+
+error[E0599]: no method named `append_sourced_message` found for struct `std::sync::Arc<ConversationService>` in the current scope
+   --> packages/alia-server/tests/duplex_playback/companion.rs:327:10
+    |
+324 |       let source = state
+    |  __________________-
+325 | |         .modules
+326 | |         .conversation
+327 | |         .append_sourced_message(
+    | |_________-^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `append_message` with a similar name, but with different arguments
+   --> packages/alia-server/src/modules/interaction/conversation/mod.rs:43:5
+    |
+ 43 |     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `ConversationStore` which provides `append_sourced_message` is implemented but not in scope; perhaps you want to import it
+    |
+  4 + use alia_server::modules::interaction::conversation::ConversationStore;
+    |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `alia-server` (test "duplex_playback") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

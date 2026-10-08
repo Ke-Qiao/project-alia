@@ -1,0 +1,11 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+warning: unused variable: `service`
+    --> packages/alia-server/tests/context_lease.rs:1293:13
+     |
+1293 |         let service=f.service();let backend=f.memory_backend().await;
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_service`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `alia-server` (test "context_lease") generated 1 warning (run `cargo fix --test "context_lease" -p alia-server` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 26.20s

@@ -1,0 +1,9 @@
+{
+  "baseline": "b9ff6e0",
+  "checks": {
+    "memory_use_case_body_preserved_except_ownership_and_static_capture": true,
+    "cache_review_authorization_cas_owned_embedding_preserved": true,
+    "context_capture_transaction_body_preserved": true,
+    "sensor_registry_implementation_preserved": true
+  }
+}

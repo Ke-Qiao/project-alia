@@ -1,0 +1,16 @@
+{
+  "baseline": "b9ff6e04075ae16bbc23ba6f904610d82f973c5b",
+  "scope": "Conversation and Cache owned files only; no Cargo or database execution",
+  "checks": {
+    "conversation_implementation_unchanged_except_type_names_and_imports": true,
+    "cache_implementation_unchanged_except_type_names_and_imports": true,
+    "conversation_provenance_test_preserved": true,
+    "cache_policy_helpers_unchanged": true,
+    "cache_contracts_preserved_with_domain_owned_port": true,
+    "conversation_nine_methods_explicitly_required": true,
+    "domain_ports_do_not_extend_lifecycle": true,
+    "old_owned_directories_removed": true
+  },
+  "passed": 8,
+  "failed": 0
+}
