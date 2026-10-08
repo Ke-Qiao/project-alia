@@ -664,10 +664,13 @@ async fn capture_materializes_canonical_rows_and_has_no_output_authority() {
             source.source_event_id.unwrap()
         ))
         .await;
-        let captured = service
-            .materialize_memory_capture(&snapshot, MemoryWriteOrigin::Automatic)
-            .await
-            .unwrap();
+        let captured = ContextService::materialize_memory_capture(
+            &f.db,
+            &snapshot,
+            MemoryWriteOrigin::Automatic,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             captured.messages()[0].message().content,
             "canonical current message"
@@ -707,10 +710,13 @@ async fn capture_materializes_canonical_rows_and_has_no_output_authority() {
                 .memory_write_context(snapshot.clone(), MemoryWriteOrigin::Maintenance)
                 .is_err()
         );
-        let maintenance = service
-            .materialize_memory_capture(&snapshot, MemoryWriteOrigin::Maintenance)
-            .await
-            .unwrap();
+        let maintenance = ContextService::materialize_memory_capture(
+            &f.db,
+            &snapshot,
+            MemoryWriteOrigin::Maintenance,
+        )
+        .await
+        .unwrap();
         service
             .validate(
                 &maintenance.lease().binding(),
@@ -732,10 +738,13 @@ async fn capture_materializes_canonical_rows_and_has_no_output_authority() {
         ))
         .await;
         assert!(
-            service
-                .materialize_memory_capture(&snapshot, MemoryWriteOrigin::Automatic)
-                .await
-                .is_err()
+            ContextService::materialize_memory_capture(
+                &f.db,
+                &snapshot,
+                MemoryWriteOrigin::Automatic
+            )
+            .await
+            .is_err()
         );
         assert!(
             service
@@ -1192,12 +1201,12 @@ async fn graph_depth_and_consolidation_flag_are_real_persistent_policy() {
         let second=service.materialize(f.source("alpha").await,"alpha").await.unwrap();assert_eq!(second.memory().graph_context.len(),2);
         assert!(second.lease().dependencies().iter().any(|r|matches!(r,ContextEvidence::Memory{id,..} if *id==beta)));
         let backend=f.memory_backend().await;let mut snapshot=backend.write_snapshot(f.owner).await.unwrap();snapshot.source_memories=vec![(alpha.to_string(),1)];
-        let capture=service.materialize_memory_capture(&snapshot,MemoryWriteOrigin::Maintenance).await.unwrap();
+        let capture=ContextService::materialize_memory_capture(&f.db, &snapshot,MemoryWriteOrigin::Maintenance).await.unwrap();
         let mut disabled=next.policy;disabled.consolidation_enabled=false;
         service.policy_store().replace(next.version,disabled).await.unwrap();
         assert!(service.validate(&capture.lease().binding(),ContextUse::MemoryMaintenance).await.is_err());
         let mut snapshot=backend.write_snapshot(f.owner).await.unwrap();snapshot.source_memories=vec![(alpha.to_string(),1)];
-        assert!(service.materialize_memory_capture(&snapshot,MemoryWriteOrigin::Maintenance).await.is_err());
+        assert!(ContextService::materialize_memory_capture(&f.db, &snapshot,MemoryWriteOrigin::Maintenance).await.is_err());
     }).await;
 }
 
@@ -1281,22 +1290,22 @@ async fn memory_search_options_only_narrow_policy_and_empty_layers_do_not_expand
 #[tokio::test]
 async fn source_clock_skew_never_changes_capture_epoch_authority() {
     with_db(|f|async move {
-        let service=f.service();let backend=f.memory_backend().await;
+        let backend=f.memory_backend().await;
         let old=f.source("source clock is ahead").await;
         let row=f.db.query_one(stmt("UPDATE chat_messages SET source_received_at=clock_timestamp()+interval '1 hour' WHERE id=$1 RETURNING source_received_at",vec![old.source_event_id.into()])).await.unwrap().unwrap();
         let ahead=row.try_get::<chrono::DateTime<Utc>>("","source_received_at").unwrap();
         let mut snapshot=backend.write_snapshot(f.owner).await.unwrap();snapshot.source_event_ids=vec![old.source_event_id.unwrap()];snapshot.exact_source_received_at=Some((old.source_event_id.unwrap(),ahead));
         assert!(ahead>snapshot.source_received_at);
-        let captured=service.materialize_memory_capture(&snapshot,MemoryWriteOrigin::Automatic).await.unwrap();
+        let captured=ContextService::materialize_memory_capture(&f.db, &snapshot,MemoryWriteOrigin::Automatic).await.unwrap();
         assert_eq!(captured.messages()[0].id(),old.source_event_id.unwrap());
         let mut wrong=snapshot.clone();wrong.exact_source_received_at=Some((old.source_event_id.unwrap(),old.source_received_at));
-        assert!(service.materialize_memory_capture(&wrong,MemoryWriteOrigin::Automatic).await.is_err());
+        assert!(ContextService::materialize_memory_capture(&f.db, &wrong,MemoryWriteOrigin::Automatic).await.is_err());
         backend.clear(f.owner).await.unwrap();
-        assert!(service.materialize_memory_capture(&snapshot,MemoryWriteOrigin::Automatic).await.is_err());
+        assert!(ContextService::materialize_memory_capture(&f.db, &snapshot,MemoryWriteOrigin::Automatic).await.is_err());
         let new=f.source("fresh expression after clear").await;
         f.sql(&format!("UPDATE chat_messages SET source_received_at=clock_timestamp()+interval '1 hour' WHERE id='{}'",new.source_event_id.unwrap())).await;
         let mut fresh=backend.write_snapshot(f.owner).await.unwrap();fresh.source_event_ids=vec![new.source_event_id.unwrap()];
-        let captured=service.materialize_memory_capture(&fresh,MemoryWriteOrigin::Automatic).await.unwrap();
+        let captured=ContextService::materialize_memory_capture(&f.db, &fresh,MemoryWriteOrigin::Automatic).await.unwrap();
         assert_eq!(captured.lease().source().source_privacy_epoch,old.source_privacy_epoch+1);
         assert_eq!(captured.messages()[0].id(),new.source_event_id.unwrap());
     }).await;

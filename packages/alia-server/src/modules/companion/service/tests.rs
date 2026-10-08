@@ -3,9 +3,9 @@ use crate::{
     modules::{
         companion::live::tests::with_fixture,
         delivery::{DeliveryService, repository::DeliveryRepository},
-        interaction::initiative::Request,
+        interaction::{conversation::ConversationService, initiative::Request},
     },
-    providers::{conversation::DatabaseConversationBackend, tts::NoopTts},
+    providers::tts::NoopTts,
 };
 
 #[tokio::test]
@@ -22,7 +22,7 @@ async fn same_channel_has_one_outstanding_snapshot_and_close_drains_its_original
                 delivery,
                 // No opportunity is released. Any accidental output path would
                 // encounter this deliberately uninitialized conversation backend.
-                conversation: Arc::new(DatabaseConversationBackend::new()),
+                conversation: Arc::new(ConversationService::new()),
                 tts: Arc::new(NoopTts),
             }),
         );

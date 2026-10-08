@@ -8,20 +8,21 @@ use sea_orm::{
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::{ConversationEventEntry, ConversationStore};
 use crate::entity::{chat_message, chat_session, conversation_event};
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{ChatMessage, ConversationBackend, ConversationEventEntry};
+use crate::providers::adapter::ChatMessage;
 
 #[cfg(test)]
 mod tests;
 
-pub struct DatabaseConversationBackend {
+pub struct ConversationService {
     db: Option<DatabaseConnection>,
     // In-memory tracker for the active session ID per channel_id + user_id.
     active_sessions: Arc<RwLock<HashMap<String, Uuid>>>,
 }
 
-impl DatabaseConversationBackend {
+impl ConversationService {
     pub fn new() -> Self {
         Self {
             db: None,
@@ -32,7 +33,7 @@ impl DatabaseConversationBackend {
     fn db(&self) -> anyhow::Result<&DatabaseConnection> {
         self.db
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("DatabaseConversationBackend not initialized"))
+            .ok_or_else(|| anyhow::anyhow!("ConversationService not initialized"))
     }
 
     fn session_key(channel_id: &str, user_id: &str) -> String {
@@ -41,14 +42,14 @@ impl DatabaseConversationBackend {
 }
 
 #[async_trait]
-impl ModuleLifecycle for DatabaseConversationBackend {
+impl ModuleLifecycle for ConversationService {
     fn name(&self) -> &'static str {
         "database_conversation"
     }
 
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.db = Some(ctx.db.clone());
-        tracing::info!("DatabaseConversationBackend initialized");
+        tracing::info!("ConversationService initialized");
         Ok(())
     }
 
@@ -63,7 +64,7 @@ impl ModuleLifecycle for DatabaseConversationBackend {
 }
 
 #[async_trait]
-impl ConversationBackend for DatabaseConversationBackend {
+impl ConversationStore for ConversationService {
     async fn get_or_create_active_session(
         &self,
         channel_id: &str,

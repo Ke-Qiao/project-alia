@@ -9,16 +9,17 @@ use tokio_util::sync::CancellationToken;
 use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
+use crate::modules::platform::sensors::SensorRegistry;
 use crate::plugins::{
     PluginStorage, PluginStorageManifest, PluginStorageService, PluginToolContext,
 };
-use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, LlmAdapter, SchedulerBackend, ToolRegistry,
-};
-use crate::providers::sensor::SensorRegistry;
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::{ActionRegistry, ConditionRegistry};
 use crate::settings::SettingsRegistry;
+use crate::{
+    modules::interaction::{cache::CacheService, conversation::ConversationService},
+    providers::adapter::{EmbeddingAdapter, LlmAdapter, SchedulerBackend, ToolRegistry},
+};
 
 /// Health status of a module
 #[derive(Debug, Clone)]
@@ -52,7 +53,7 @@ pub struct ModuleContext {
     /// Action registry shared by scheduled tasks, event rules, and plugins.
     pub actions: Option<Arc<ActionRegistry>>,
     /// Conversation backend for managing sessions (available to channels).
-    pub conversation: Option<Arc<dyn ConversationBackend>>,
+    pub conversation: Option<Arc<ConversationService>>,
     /// Canonical Memory service for tools/components initialized after memory.
     pub memory: Option<Arc<crate::modules::memory::MemoryService>>,
     /// Default LLM and concrete minor/major handles for modules that run
@@ -65,7 +66,7 @@ pub struct ModuleContext {
     /// Embedding adapter for built-in runtimes that need semantic indexing.
     pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
     /// Cache backend for modules that review or maintain cache entries.
-    pub cache: Option<Arc<dyn CacheBackend>>,
+    pub cache: Option<Arc<CacheService>>,
     /// Unified executable tool registry. Plugins/components should register
     /// code-backed tool executors here instead of replacing the registry.
     pub tools: Option<Arc<dyn ToolRegistry>>,

@@ -6,7 +6,9 @@ use super::debug::{debug_component_json, log_channel_delivery_failure};
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
 use crate::modules::memory::context::{ContextSource, SourceNotice};
-use crate::providers::adapter::{ConversationEventEntry, TtsRequest};
+use crate::{
+    modules::interaction::conversation::ConversationEventEntry, providers::adapter::TtsRequest,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

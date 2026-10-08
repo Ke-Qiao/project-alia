@@ -20,11 +20,14 @@ use crate::{
             AudioDelivery, DeliveryService,
             types::{DeliveryStatus, ResponseRecord},
         },
-        interaction::initiative::{VoiceInitiativeHandle, VoiceInitiativeRequest},
+        interaction::{
+            conversation::ConversationStore,
+            initiative::{VoiceInitiativeHandle, VoiceInitiativeRequest},
+        },
         memory::context::{ContextBinding, ContextService, ContextUse},
     },
     providers::{
-        adapter::{ChatMessage, ConversationBackend, TtsAdapter, TtsRequest},
+        adapter::{ChatMessage, TtsAdapter, TtsRequest},
         tts::audio_budget::ResponseAudioBudget,
     },
 };
@@ -38,7 +41,7 @@ const CLEANUP_BUDGET: Duration = Duration::from_secs(2);
 pub(crate) struct LiveOutputs {
     pub context: Arc<ContextService>,
     pub delivery: Arc<DeliveryService>,
-    pub conversation: Arc<dyn ConversationBackend>,
+    pub conversation: Arc<dyn ConversationStore>,
     pub tts: Arc<dyn TtsAdapter>,
 }
 

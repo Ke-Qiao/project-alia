@@ -4,3 +4,6 @@ pub mod background;
 pub mod identity;
 pub mod lifecycle;
 pub mod migrations;
+
+pub mod insights;
+pub mod sensors;

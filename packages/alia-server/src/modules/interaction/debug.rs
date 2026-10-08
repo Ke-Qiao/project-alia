@@ -1,6 +1,7 @@
 use crate::channels::adapter::ChannelAdapter;
-use crate::providers::adapter::{
-    ChatMessage, LlmToolCall, RouteDecision, ToolDefinition, ToolResult,
+use crate::{
+    modules::interaction::routing::RouteDecision,
+    providers::adapter::{ChatMessage, LlmToolCall, ToolDefinition, ToolResult},
 };
 use serde_json::Value;
 
@@ -27,7 +28,6 @@ pub(super) async fn log_channel_delivery_failure(
 
 pub(super) fn route_decision_name(decision: &RouteDecision) -> &'static str {
     match decision {
-        RouteDecision::CacheHit { .. } => "cache_hit",
         RouteDecision::Skill { .. } => "skill",
         RouteDecision::MinorLlm { .. } => "minor_llm",
         RouteDecision::MajorLlm { .. } => "major_llm",

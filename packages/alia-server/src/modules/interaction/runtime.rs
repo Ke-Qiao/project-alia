@@ -14,7 +14,7 @@ use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
 };
 use crate::event::{EventBus, ServerEvent};
-use crate::providers::sensor::SensorRegistry;
+use crate::modules::platform::sensors::SensorRegistry;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -293,7 +293,7 @@ pub(super) async fn process_event(
         } => {
             let (channel_id, _channel) = resolve_event_channel(channels, &channel_id).await?;
             // Ingest sensor data into the registry
-            use crate::providers::sensor::SensorReading;
+            use crate::modules::platform::sensors::SensorReading;
             let sensor_id = format!("{}:{}", channel_id, sensor_type);
             let reading = SensorReading {
                 sensor_id: sensor_id.clone(),

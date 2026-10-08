@@ -4,13 +4,18 @@ use crate::modules::delivery::{
     repository::DeliveryRepository,
     types::{DeliveryMedium, NewResponse, ResponseKey, ResponseStatus},
 };
+use crate::modules::interaction::cache::CacheService;
 use crate::modules::memory::context::{ContextEvidence, ContextService, ContextSource, ContextUse};
-use crate::providers::adapter::{
-    CACHE_METADATA_SCHEMA, CacheBackend, CacheCas, CacheEntry, CacheReview, CachedResponse,
-    DEFAULT_CACHE_SCOPE, EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
-    embedding_text_digest,
+use crate::{
+    modules::interaction::cache::{
+        CACHE_METADATA_SCHEMA, CacheCas, CacheEntry, CacheReview, CacheStore, CachedResponse,
+        DEFAULT_CACHE_SCOPE,
+    },
+    providers::adapter::{
+        EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
+        embedding_text_digest,
+    },
 };
-use crate::providers::cache::DbCache;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use serde_json::json;
 
@@ -72,7 +77,7 @@ async fn seed_cache(f: &mut Fixture, semantic: bool) -> (CachedResponse, Uuid) {
     let mut policy = current.policy.with_cache(&f.policy.cache).unwrap();
     policy.cache_embedding_profile_id = Some(FixedEmbedding::profile().id().unwrap());
     store.replace(current.version, policy).await.unwrap();
-    let cache = Arc::new(DbCache::with_database(db.clone()));
+    let cache = Arc::new(CacheService::with_database(db.clone()));
     let services = Arc::get_mut(&mut f.modules).unwrap();
     services.cache = cache.clone();
     services.embedding = Arc::new(FixedEmbedding);
@@ -256,13 +261,9 @@ struct BlockedCache {
     entered: Arc<tokio::sync::Notify>,
     semantic: bool,
 }
-impl ModuleLifecycle for BlockedCache {
-    fn name(&self) -> &'static str {
-        "blocked-cache"
-    }
-}
+
 #[async_trait]
-impl CacheBackend for BlockedCache {
+impl CacheStore for BlockedCache {
     async fn get(&self, _: Uuid, _: &str, _: &str) -> anyhow::Result<Option<CachedResponse>> {
         if self.semantic {
             return Ok(None);
@@ -280,7 +281,7 @@ impl CacheBackend for BlockedCache {
         _: &EmbeddingProfile,
         _: &EmbeddingVector,
         _: usize,
-    ) -> anyhow::Result<Vec<crate::providers::adapter::SemanticCacheCandidate>> {
+    ) -> anyhow::Result<Vec<crate::modules::interaction::cache::SemanticCacheCandidate>> {
         assert!(self.semantic, "semantic cache is disabled in this case");
         self.entered.notify_one();
         std::future::pending().await
@@ -303,7 +304,7 @@ impl CacheBackend for BlockedCache {
     async fn authorize_work(
         &self,
         _: &CachedResponse,
-        _: crate::providers::adapter::CacheWork,
+        _: crate::modules::interaction::cache::CacheWork,
     ) -> anyhow::Result<bool> {
         panic!("request must not authorize cache review")
     }

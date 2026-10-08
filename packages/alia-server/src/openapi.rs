@@ -97,10 +97,10 @@ use crate::api;
         api::users::UserResponse,
         api::users::UpdateUserRequest,
         // Sensors
-        crate::providers::sensor::SensorDefinition,
-        crate::providers::sensor::SensorReading,
-        crate::providers::sensor::SensorSummary,
-        crate::providers::sensor::SensorQuery,
+        crate::modules::platform::sensors::SensorDefinition,
+        crate::modules::platform::sensors::SensorReading,
+        crate::modules::platform::sensors::SensorSummary,
+        crate::modules::platform::sensors::SensorQuery,
         api::sensors::RegisterSensorRequest,
         api::sensors::IngestRequest,
         // Skills

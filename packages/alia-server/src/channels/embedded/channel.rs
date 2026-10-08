@@ -31,7 +31,7 @@ use crate::event::{EventBus, ServerEvent};
 use crate::modules::platform::background::{BackgroundStart, OwnedBackground};
 use crate::modules::platform::lifecycle::ModuleLifecycle;
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
-use crate::providers::sensor::SensorRegistry;
+use crate::modules::platform::sensors::SensorRegistry;
 
 use super::auth::auth_request_with_signing_key;
 use super::body::{BodyDeliveryStore, EmbeddedBodyRuntime, SignedBodyClient};

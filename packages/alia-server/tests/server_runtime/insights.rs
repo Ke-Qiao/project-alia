@@ -3,8 +3,11 @@ use super::*;
 use alia_server::event::ServerEvent;
 use alia_server::state::AppState;
 use alia_server::{
-    modules::memory::{MemoryListOpts, MemoryNode},
-    providers::adapter::{ChatMessage, InsightPhase, InsightTask, LlmAdapter},
+    modules::{
+        memory::{MemoryListOpts, MemoryNode},
+        platform::insights::{InsightPhase, InsightTask},
+    },
+    providers::adapter::{ChatMessage, LlmAdapter},
 };
 use sea_orm::{DatabaseBackend, Statement};
 

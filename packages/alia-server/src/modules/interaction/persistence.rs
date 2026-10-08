@@ -8,7 +8,10 @@ use crate::config::MemorySection;
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::memory::capture::{CaptureTurn, MemoryCaptureTrace, capture_turn_memory};
 use crate::modules::memory::context::ContextBinding;
-use crate::providers::adapter::{CacheEntry, ChatMessage, ConversationEventEntry};
+use crate::{
+    modules::interaction::{cache::CacheEntry, conversation::ConversationEventEntry},
+    providers::adapter::ChatMessage,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]

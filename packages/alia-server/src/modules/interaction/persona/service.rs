@@ -1,6 +1,6 @@
-//! Template-based Persona Provider
+//! Persona resource and prompt service
 //!
-//! Implements PersonaProvider using Handlebars for system prompt template rendering.
+//! Uses Handlebars for system prompt template rendering.
 //! Loads personas from database, supports per-user overrides and active persona selection.
 
 use std::sync::Arc;
@@ -11,11 +11,9 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOr
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::{Persona, RenderedPersonaPrompt, sanitize_assistant_name};
 use crate::entity::{persona, user_active_persona, user_persona_override};
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{
-    Persona, PersonaProvider, RenderedPersonaPrompt, sanitize_assistant_name,
-};
 
 /// Default system prompt template with Handlebars variables
 const DEFAULT_SYSTEM_PROMPT: &str = r#"You are {{persona_name}}, a warm and capable personal assistant for everyday life, smart-home control, and voice-first interaction.
@@ -35,13 +33,13 @@ const DEFAULT_SYSTEM_PROMPT: &str = r#"You are {{persona_name}}, a warm and capa
 Respond naturally in the language the user is using when it is clear. Keep voice responses short unless the user asks for a longer answer.
 "#;
 
-/// Template-based Persona Provider backed by PostgreSQL
-pub struct TemplatePersona {
+/// Persona resource and prompt service backed by PostgreSQL
+pub struct PersonaService {
     handlebars: Arc<RwLock<Handlebars<'static>>>,
     db: Option<DatabaseConnection>,
 }
 
-impl TemplatePersona {
+impl PersonaService {
     pub fn new() -> Self {
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(false);
@@ -163,14 +161,14 @@ fn render_persona_prompt(
     })
 }
 
-impl Default for TemplatePersona {
+impl Default for PersonaService {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl ModuleLifecycle for TemplatePersona {
+impl ModuleLifecycle for PersonaService {
     fn name(&self) -> &'static str {
         "template"
     }
@@ -192,12 +190,10 @@ impl ModuleLifecycle for TemplatePersona {
             }
             tracing::info!(
                 count = personas.len(),
-                "TemplatePersona loaded personas from database"
+                "PersonaService loaded personas from database"
             );
         } else {
-            tracing::warn!(
-                "TemplatePersona: failed to load personas from database, using defaults"
-            );
+            tracing::warn!("PersonaService: failed to load personas from database, using defaults");
         }
 
         Ok(())
@@ -208,9 +204,12 @@ impl ModuleLifecycle for TemplatePersona {
     }
 }
 
-#[async_trait]
-impl PersonaProvider for TemplatePersona {
-    async fn get_effective_persona(&self, user_id: Uuid) -> anyhow::Result<Persona> {
+impl PersonaService {
+    pub async fn render_system_prompt(&self, user_id: Uuid) -> anyhow::Result<String> {
+        Ok(self.render_prompt(user_id).await?.system_prompt)
+    }
+
+    pub async fn get_effective_persona(&self, user_id: Uuid) -> anyhow::Result<Persona> {
         let Some(db) = &self.db else {
             return Ok(Self::default_persona());
         };
@@ -230,7 +229,7 @@ impl PersonaProvider for TemplatePersona {
         Ok(Self::merge_persona(&persona_model, user_override.as_ref()))
     }
 
-    async fn render_prompt(&self, user_id: Uuid) -> anyhow::Result<RenderedPersonaPrompt> {
+    pub async fn render_prompt(&self, user_id: Uuid) -> anyhow::Result<RenderedPersonaPrompt> {
         let persona = self.get_effective_persona(user_id).await?;
         let handlebars = self.handlebars.read().await;
         render_persona_prompt(&handlebars, persona)

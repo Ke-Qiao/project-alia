@@ -38,7 +38,7 @@ use crate::modules::memory::policy::{
     normalize_memory_layer,
 };
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::sensor::SensorRegistry;
+use crate::modules::platform::sensors::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
 use crate::{

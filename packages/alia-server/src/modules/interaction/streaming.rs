@@ -28,11 +28,11 @@ use crate::expression::{
     ExpressionPlan, ExpressionSafetyContext, ExpressionUserState, SpeechExpression,
 };
 use crate::modules::memory::MemoryContextPack;
-use crate::providers::adapter::{
-    ChatMessage, ConversationBackend, ConversationEventEntry, LlmAdapter, TtsAdapter,
-    TtsCapabilities, TtsRequest,
-};
 use crate::providers::tts::audio_budget::{MAX_PCM_PAYLOAD_BYTES, ResponseAudioBudget};
+use crate::{
+    modules::interaction::conversation::{ConversationEventEntry, ConversationStore},
+    providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter, TtsCapabilities, TtsRequest},
+};
 use uuid::Uuid;
 
 use super::error_notice::InteractionErrorStage;
@@ -46,7 +46,7 @@ pub(super) struct TtsTraceContext {
     session_id: Uuid,
     turn_id: Uuid,
     sequence: Arc<AtomicI32>,
-    conversation: Arc<dyn ConversationBackend>,
+    conversation: Arc<dyn ConversationStore>,
 }
 
 impl TtsTraceContext {

@@ -6,10 +6,18 @@ use serde_json::Value;
 
 use crate::expression::ExpressionRuntime;
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{
-    CacheBackend, ConversationBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter,
-    PersonaProvider, RouterStrategy, RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter,
-    ToolRegistry, TtsAdapter,
+use crate::{
+    modules::{
+        interaction::{
+            cache::CacheService, conversation::ConversationService, persona::PersonaService,
+            routing::RouterService, skills::SkillRegistry,
+        },
+        platform::insights::InsightService,
+    },
+    providers::adapter::{
+        EmbeddingAdapter, LlmAdapter, RuleEvaluator, SchedulerBackend, SttAdapter, ToolRegistry,
+        TtsAdapter,
+    },
 };
 
 /// Runtime module registry — read-only after construction, shared via Arc
@@ -25,15 +33,15 @@ pub struct ModuleRegistry {
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
     // Intelligence core
-    pub conversation: Arc<dyn ConversationBackend>,
+    pub conversation: Arc<ConversationService>,
     pub memory: Arc<crate::modules::memory::MemoryService>,
     pub context: Arc<crate::modules::memory::context::ContextService>,
     pub companion: Arc<crate::modules::companion::CompanionService>,
-    pub cache: Arc<dyn CacheBackend>,
-    pub skills: Arc<dyn SkillProvider>,
-    pub persona: Arc<dyn PersonaProvider>,
-    pub insights: Arc<dyn InsightStrategy>,
-    pub router: Arc<dyn RouterStrategy>,
+    pub cache: Arc<CacheService>,
+    pub skills: Arc<SkillRegistry>,
+    pub persona: Arc<PersonaService>,
+    pub insights: Arc<InsightService>,
+    pub router: Arc<RouterService>,
     // Infrastructure
     pub rule_engine: Arc<dyn RuleEvaluator>,
     pub scheduler: Arc<dyn SchedulerBackend>,

@@ -1,6 +1,9 @@
 use alia_server::channels::adapter::AudioBuffer;
 use alia_server::channels::adapter::AudioFormat;
 use alia_server::config::{CachePolicyResourceSection, CacheSection};
+use alia_server::modules::interaction::cache::{
+    CACHE_METADATA_SCHEMA, CacheStatus, CacheVersion, CachedResponse,
+};
 use alia_server::modules::interaction::streaming::{
     pcm16_silence_payload, tts_bytes_to_pcm_payload,
 };
@@ -12,9 +15,6 @@ use alia_server::modules::interaction::{
     prompt::{RuntimePromptContext, render_runtime_context_system_prompt},
 };
 use alia_server::modules::memory::context::ContextBinding;
-use alia_server::providers::adapter::{
-    CACHE_METADATA_SCHEMA, CacheStatus, CacheVersion, CachedResponse,
-};
 use uuid::Uuid;
 
 fn cached_fixture() -> CachedResponse {
@@ -120,8 +120,8 @@ fn pipeline_cache_entry_uses_default_lookup_scope() {
         response_text: "hi".to_string(),
         channel_id: "test-channel".to_string(),
         cache_write: Some(CacheWrite {
-            scope: alia_server::providers::adapter::DEFAULT_CACHE_SCOPE.to_string(),
-            metadata: serde_json::json!({"schema": alia_server::providers::adapter::CACHE_METADATA_SCHEMA}),
+            scope: alia_server::modules::interaction::cache::DEFAULT_CACHE_SCOPE.to_string(),
+            metadata: serde_json::json!({"schema": alia_server::modules::interaction::cache::CACHE_METADATA_SCHEMA}),
             ttl_seconds: 3600,
             store_embedding: false,
         }),
@@ -130,7 +130,7 @@ fn pipeline_cache_entry_uses_default_lookup_scope() {
     let entry = cache_entry_for_pending(&pending).unwrap();
     assert_eq!(
         entry.scope,
-        alia_server::providers::adapter::DEFAULT_CACHE_SCOPE
+        alia_server::modules::interaction::cache::DEFAULT_CACHE_SCOPE
     );
     assert_eq!(entry.query_text, "hello");
     assert_eq!(entry.response_text, "hi");

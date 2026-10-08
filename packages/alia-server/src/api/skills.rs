@@ -302,7 +302,7 @@ async fn create_skill(
         .await
         .map_err(crate::error::AppError::Database)?;
 
-    // TODO: trigger skills reload in SkillProvider module
+    // TODO: trigger skills reload in SkillRegistry module
 
     Ok(Json(skill_response(&state.db, result).await?))
 }
@@ -378,7 +378,7 @@ async fn update_skill(
         .await
         .map_err(crate::error::AppError::Database)?;
 
-    // TODO: trigger skills reload in SkillProvider module
+    // TODO: trigger skills reload in SkillRegistry module
 
     Ok(Json(skill_response(&state.db, result).await?))
 }
@@ -420,7 +420,7 @@ async fn delete_skill(
         .await
         .map_err(crate::error::AppError::Database)?;
 
-    // TODO: trigger skills reload in SkillProvider module
+    // TODO: trigger skills reload in SkillRegistry module
 
     Ok(Json(serde_json::json!({"success": true})))
 }

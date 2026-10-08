@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::auth::AuthUser;
 use crate::entity::insight_log;
 use crate::error::Result;
-use crate::providers::adapter::InsightPhase;
+use crate::modules::platform::insights::InsightPhase;
 use crate::state::AppState;
 
 #[derive(Serialize)]

@@ -1,9 +1,13 @@
+//! Response-cache ownership, storage, admission and reuse policy.
+mod store;
+mod types;
+
+pub use store::{CacheService, response_digest};
+pub use types::*;
+
 use super::prompt::preview_for_prompt;
 use super::services::InteractionServices;
 use crate::config::{CachePolicyResourceSection, CacheSection};
-use crate::providers::adapter::{
-    CACHE_METADATA_SCHEMA, CachedResponse, DEFAULT_CACHE_SCOPE, SemanticCacheCandidate,
-};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -239,3 +243,5 @@ pub(super) fn guess_text_language(text: &str) -> &'static str {
 
 const CACHE_STATUS_ACTIVE: &str = "active";
 const CACHE_STATUS_PENDING_INSIGHTS_REVIEW: &str = "pending_insights_review";
+
+pub(crate) mod review;

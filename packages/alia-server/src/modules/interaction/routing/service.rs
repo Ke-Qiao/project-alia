@@ -15,11 +15,10 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{
-    ChatMessage, LlmAdapter, RouteDecision, RouterInput, RouterStrategy, ToolSelectionInput,
-    sanitize_assistant_name,
-};
+use super::super::persona::sanitize_assistant_name;
+use super::{RouteDecision, RouterInput, ToolSelectionInput};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::providers::adapter::{ChatMessage, LlmAdapter};
 use crate::settings::values::{bool_setting, u64_setting};
 
 #[derive(Debug, Deserialize)]
@@ -293,14 +292,30 @@ fn tool_selection_prompt(assistant_name: &str) -> String {
     render_assistant_prompt(TOOL_SELECTION_PROMPT_TEMPLATE, assistant_name)
 }
 
-#[derive(Default)]
-pub struct MultiLayerRouter {
-    state: Arc<RwLock<Option<RouterState>>>,
+pub struct RouterService {
+    state: RwLock<RouterState>,
 }
 
-impl MultiLayerRouter {
-    pub fn new() -> Self {
-        Self::default()
+impl RouterService {
+    pub fn new(
+        config: RouterConfig,
+        minor_llm: Option<Arc<dyn LlmAdapter>>,
+    ) -> anyhow::Result<Self> {
+        if !config.minor_llm_enabled && !config.major_llm_enabled {
+            anyhow::bail!(
+                "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must be true"
+            );
+        }
+        tracing::info!(
+            timeout_sec = config.timeout_sec,
+            minor_llm = config.minor_llm_enabled,
+            major_llm = config.major_llm_enabled,
+            mode = ?config.llm_mode(),
+            "RouterService initialized"
+        );
+        Ok(Self {
+            state: RwLock::new(RouterState { config, minor_llm }),
+        })
     }
 
     async fn classify(
@@ -438,44 +453,13 @@ impl MultiLayerRouter {
 }
 
 #[async_trait]
-impl ModuleLifecycle for MultiLayerRouter {
+impl ModuleLifecycle for RouterService {
     fn name(&self) -> &'static str {
         "multi_layer"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let routing = &ctx.config.policies.routing;
-        if !routing.minor_llm_enabled && !routing.major_llm_enabled {
-            anyhow::bail!(
-                "invalid routing policy: at least one of minor_llm_enabled or major_llm_enabled must be true"
-            );
-        }
-
-        let config = RouterConfig {
-            timeout_sec: routing.timeout_sec,
-            minor_llm_enabled: routing.minor_llm_enabled,
-            major_llm_enabled: routing.major_llm_enabled,
-        };
-        tracing::info!(
-            timeout_sec = config.timeout_sec,
-            minor_llm = config.minor_llm_enabled,
-            major_llm = config.major_llm_enabled,
-            mode = ?config.llm_mode(),
-            "MultiLayerRouter initialized"
-        );
-
-        *self.state.write().await = Some(RouterState {
-            config,
-            minor_llm: ctx.minor_llm.clone(),
-        });
-        Ok(())
-    }
-
     async fn health_check(&self) -> ModuleHealth {
         let state = self.state.read().await;
-        let Some(state) = state.as_ref() else {
-            return ModuleHealth::Unhealthy("not initialized".to_string());
-        };
         if matches!(state.config.llm_mode(), LlmMode::MajorOnly) {
             return ModuleHealth::Healthy;
         }
@@ -493,9 +477,7 @@ impl ModuleLifecycle for MultiLayerRouter {
         updates: &BTreeMap<String, Value>,
     ) -> anyhow::Result<Vec<String>> {
         let mut state_guard = self.state.write().await;
-        let Some(state) = state_guard.as_mut() else {
-            return Ok(Vec::new());
-        };
+        let state = &mut *state_guard;
 
         let mut next = state.config.clone();
         let mut applied = Vec::new();
@@ -523,16 +505,9 @@ impl ModuleLifecycle for MultiLayerRouter {
     }
 }
 
-#[async_trait]
-impl RouterStrategy for MultiLayerRouter {
-    async fn route(&self, input: &RouterInput) -> anyhow::Result<RouteDecision> {
-        let state = self
-            .state
-            .read()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
+impl RouterService {
+    pub async fn route(&self, input: &RouterInput) -> anyhow::Result<RouteDecision> {
+        let state = self.state.read().await.clone();
         let mode = state.config.llm_mode();
 
         let Some(minor_llm) = state.minor_llm else {
@@ -552,17 +527,11 @@ impl RouterStrategy for MultiLayerRouter {
         }
     }
 
-    async fn select_tool_candidates(
+    pub async fn select_tool_candidates(
         &self,
         input: &ToolSelectionInput,
     ) -> anyhow::Result<Option<Vec<String>>> {
-        let state = self
-            .state
-            .read()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("router not initialized"))?;
+        let state = self.state.read().await.clone();
         let Some(minor_llm) = state.minor_llm else {
             return Ok(None);
         };
@@ -610,6 +579,86 @@ pub fn parse_tool_selection_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn concrete_router_preserves_major_only_and_atomic_policy_updates() {
+        let config = RouterConfig {
+            timeout_sec: 1,
+            minor_llm_enabled: false,
+            major_llm_enabled: true,
+        };
+        assert!(
+            RouterService::new(
+                RouterConfig {
+                    major_llm_enabled: false,
+                    ..config.clone()
+                },
+                None,
+            )
+            .is_err()
+        );
+        let router = RouterService::new(config, None).unwrap();
+        let input = RouterInput {
+            text: "你好".into(),
+            user_id: uuid::Uuid::nil(),
+            conversation_context: Vec::new(),
+            assistant_name: "玲珑".into(),
+        };
+        assert_eq!(router.name(), "multi_layer");
+        assert!(matches!(router.health_check().await, ModuleHealth::Healthy));
+        let RouteDecision::MajorLlm { system_prompt } = router.route(&input).await.unwrap() else {
+            panic!("major-only mode must use the major model");
+        };
+        assert!(system_prompt.unwrap().contains("玲珑"));
+        assert!(
+            router
+                .select_tool_candidates(&ToolSelectionInput {
+                    text: input.text.clone(),
+                    channel_id: "test".into(),
+                    assistant_name: input.assistant_name.clone(),
+                    candidates: Vec::new(),
+                    max_tools: 1,
+                })
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let invalid = BTreeMap::from([
+            ("core.policies.routing.timeout_sec".into(), Value::from(9)),
+            (
+                "core.policies.routing.major_llm_enabled".into(),
+                Value::from(false),
+            ),
+        ]);
+        assert!(router.apply_settings(&invalid).await.is_err());
+        assert_eq!(router.state.read().await.config.timeout_sec, 1);
+        assert!(matches!(
+            router.route(&input).await.unwrap(),
+            RouteDecision::MajorLlm { .. }
+        ));
+        let minor_only = BTreeMap::from([
+            (
+                "core.policies.routing.minor_llm_enabled".into(),
+                Value::from(true),
+            ),
+            (
+                "core.policies.routing.major_llm_enabled".into(),
+                Value::from(false),
+            ),
+        ]);
+        assert_eq!(router.apply_settings(&minor_only).await.unwrap().len(), 2);
+        assert!(matches!(
+            router.health_check().await,
+            ModuleHealth::Degraded(_)
+        ));
+        assert!(matches!(
+            router.route(&input).await.unwrap(),
+            RouteDecision::MinorLlm {
+                escalation_prompt: None,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn both_mode_classification_prompt_preserves_route_boundaries() {

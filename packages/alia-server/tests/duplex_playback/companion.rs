@@ -7,6 +7,7 @@ use alia_proto::voice::{
     self, device_frame, session_event, voice_session_client::VoiceSessionClient,
     voice_session_server::VoiceSessionServer,
 };
+use alia_server::modules::interaction::conversation::ConversationStore;
 use alia_server::{
     bootstrap::ServerBuilder,
     grpc::{voice_auth::VoiceIngressAuth, voice_session::VoiceSessionService},

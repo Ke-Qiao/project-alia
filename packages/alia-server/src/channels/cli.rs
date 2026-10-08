@@ -22,9 +22,9 @@ use super::adapter::{
     ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelEvent, ChannelTarget,
 };
 use crate::event::{EventBus, ServerEvent};
+use crate::modules::interaction::conversation::ConversationStore;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
-use crate::providers::adapter::ConversationBackend;
 
 mod text;
 
@@ -100,7 +100,7 @@ pub struct CliChannel {
     account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
     cancel_token: Option<CancellationToken>,
-    conversation: Option<Arc<dyn ConversationBackend>>,
+    conversation: Option<Arc<dyn ConversationStore>>,
     worker: Mutex<Option<ConsoleWorker>>,
     output: RwLock<Option<mpsc::Sender<ConsoleOutput>>>,
 }
@@ -149,7 +149,10 @@ impl ModuleLifecycle for CliChannel {
     async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
         self.account_database = Some(ctx.db.clone());
         self.cancel_token = Some(ctx.cancel_token.clone());
-        self.conversation = ctx.conversation.clone();
+        self.conversation = ctx
+            .conversation
+            .clone()
+            .map(|service| service as Arc<dyn ConversationStore>);
         Ok(())
     }
 
@@ -354,7 +357,7 @@ fn run_console(
     channel_id: &str,
     owner_user_id: Option<&str>,
     account_database: Option<&sea_orm::DatabaseConnection>,
-    conversation: Option<&dyn ConversationBackend>,
+    conversation: Option<&dyn ConversationStore>,
     runtime: &tokio::runtime::Handle,
     cancel: &CancellationToken,
     parent: &CancellationToken,
@@ -570,7 +573,7 @@ async fn admit_console_source(
 }
 
 async fn session_command(
-    conversation: Option<&dyn ConversationBackend>,
+    conversation: Option<&dyn ConversationStore>,
     channel_id: &str,
     user_id: &str,
     input: &str,

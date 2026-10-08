@@ -33,8 +33,12 @@ use crate::config::{
 };
 use crate::event::EventBus;
 use crate::expression::{ExpressionInput, ExpressionPlan};
-use crate::providers::adapter::{
-    ChatMessage, DEFAULT_CACHE_SCOPE, LlmAdapter, RouteDecision, RouterInput,
+use crate::{
+    modules::interaction::{
+        cache::DEFAULT_CACHE_SCOPE,
+        routing::{RouteDecision, RouterInput},
+    },
+    providers::adapter::{ChatMessage, LlmAdapter},
 };
 use uuid::Uuid;
 
@@ -608,11 +612,8 @@ async fn route_response(
         .await;
 
     let routed = match decision {
-        RouteDecision::CacheHit { .. } => {
-            anyhow::bail!("router cache response has no immutable cache identity");
-        }
         RouteDecision::Skill { skill_name } => {
-            let skill_match = crate::providers::adapter::SkillMatch {
+            let skill_match = crate::modules::interaction::skills::SkillMatch {
                 name: skill_name,
                 confidence: 1.0,
             };

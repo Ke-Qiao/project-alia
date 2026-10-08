@@ -3,12 +3,13 @@
 use alia_server::{
     config::{ConversationSection, MemorySection},
     modules::{
+        interaction::cache::*,
         memory::context::{
             ContextPolicy, ContextService, ContextSource, ContextUse, GenerationContext,
         },
         platform::migrations,
     },
-    providers::{adapter::*, cache::DbCache, embedding::NoopEmbedding},
+    providers::{adapter::*, embedding::NoopEmbedding},
 };
 use futures::FutureExt;
 use sea_orm::{
@@ -25,7 +26,7 @@ static CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 struct Fixture {
     admin: DatabaseConnection,
     db: DatabaseConnection,
-    cache: Arc<DbCache>,
+    cache: Arc<CacheService>,
     context: Arc<ContextService>,
     user: Uuid,
     schema: String,
@@ -78,7 +79,7 @@ impl Fixture {
         let context = Arc::new(ContextService::new(db.clone(), Arc::new(NoopEmbedding)));
         let f = Self {
             admin,
-            cache: Arc::new(DbCache::with_database(db.clone())),
+            cache: Arc::new(CacheService::with_database(db.clone())),
             db,
             context,
             user: Uuid::new_v4(),
@@ -601,13 +602,13 @@ async fn clear_blocks_late_jobs_and_physically_erases_text_and_vectors_atomicall
         f.db.execute_unprepared("CREATE FUNCTION deny_cache_erase() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected erase failure'; END $$; CREATE TRIGGER deny_cache_erase BEFORE DELETE ON llm_cache FOR EACH ROW EXECUTE FUNCTION deny_cache_erase()").await.unwrap();
         let tx=f.db.begin().await.unwrap();
         tx.execute(sql("UPDATE memory_privacy_state SET privacy_epoch=privacy_epoch+1 WHERE user_id=$1",vec![f.user.into()])).await.unwrap();
-        assert!(DbCache::purge_owner_in_transaction(&tx,f.user).await.is_err());tx.rollback().await.unwrap();
+        assert!(CacheService::purge_owner_in_transaction(&tx,f.user).await.is_err());tx.rollback().await.unwrap();
         assert!(f.cache.get(f.user,"default","private").await.unwrap().is_some());
         assert_eq!(f.count("llm_cache_embeddings").await,1);
         f.db.execute_unprepared("DROP TRIGGER deny_cache_erase ON llm_cache").await.unwrap();
         let tx=f.db.begin().await.unwrap();
         tx.execute(sql("UPDATE memory_privacy_state SET privacy_epoch=privacy_epoch+1 WHERE user_id=$1",vec![f.user.into()])).await.unwrap();
-        assert_eq!(DbCache::purge_owner_in_transaction(&tx,f.user).await.unwrap(),1);tx.commit().await.unwrap();
+        assert_eq!(CacheService::purge_owner_in_transaction(&tx,f.user).await.unwrap(),1);tx.commit().await.unwrap();
         assert_eq!(f.count("llm_cache").await,0);assert_eq!(f.count("llm_cache_embeddings").await,0);
         assert!(f.cache.put(old_entry).await.is_err());
         assert_eq!(f.cache.fill_embedding(&active,&p,&vector(&p,"private")).await.unwrap(),CacheCas::Stale);
@@ -634,7 +635,7 @@ async fn missing_context_table_fails_without_resolving_any_public_application_ta
         f.db.execute_unprepared("ALTER TABLE context_leases RENAME TO held_context_leases")
             .await
             .unwrap();
-        let fault = DbCache::with_database(isolated.clone());
+        let fault = CacheService::with_database(isolated.clone());
         assert!(fault.get(f.user, "default", "query").await.is_err());
         f.db.execute_unprepared("ALTER TABLE held_context_leases RENAME TO context_leases")
             .await
@@ -785,10 +786,13 @@ mod insights {
         event::EventBus,
         modules::{
             memory::MemoryService,
-            platform::lifecycle::{ModuleContext, ModuleLifecycle},
+            platform::{
+                insights::{InsightPhase, InsightService},
+                lifecycle::{ModuleContext, ModuleLifecycle},
+                sensors::SensorRegistry,
+            },
         },
         plugins::PluginStorageService,
-        providers::{insights::ScheduledInsights, sensor::SensorRegistry},
         registry::ArtifactRegistry,
         settings::SettingsRegistry,
     };
@@ -874,7 +878,7 @@ mod insights {
         llm: Arc<HeldReviewer>,
         embedding: Arc<CountingEmbedding>,
         memory: Option<Arc<MemoryService>>,
-    ) -> Arc<ScheduledInsights> {
+    ) -> Arc<InsightService> {
         let mut config = ServerConfig::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../config/server.example.toml"),
@@ -905,7 +909,7 @@ mod insights {
             tools: None,
             expression: None,
         };
-        let mut service = ScheduledInsights::new();
+        let mut service = InsightService::new(true).unwrap();
         service.init(&context).await.unwrap();
         Arc::new(service)
     }

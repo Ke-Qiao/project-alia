@@ -10,7 +10,7 @@ impl ContextService {
     /// must build its model prompt from these returned rows, never an earlier
     /// unvalidated copy. IDs/revisions select inputs; they cannot supply content.
     pub async fn materialize_memory_capture(
-        &self,
+        db: &DatabaseConnection,
         snapshot: &MemoryWriteContext,
         origin: MemoryWriteOrigin,
     ) -> ContextResult<CapturedMemoryContext> {
@@ -41,8 +41,7 @@ impl ContextService {
         {
             return Err(ContextError::BoundsExceeded.into());
         }
-        let tx = self
-            .db
+        let tx = db
             .begin_with_config(Some(IsolationLevel::RepeatableRead), None)
             .await?;
         tx.execute(stmt("SET LOCAL statement_timeout='2s'", vec![]))

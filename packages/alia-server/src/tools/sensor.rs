@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
-use crate::providers::sensor::{
+use crate::modules::platform::sensors::{
     SensorFreshnessPolicy, SensorReadMode, SensorRegistry, SensorStalePolicy,
 };
+use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
 
 /// Tool: read the latest value from a sensor.
 pub struct SensorReadTool {

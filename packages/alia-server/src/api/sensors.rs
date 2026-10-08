@@ -8,7 +8,9 @@ use utoipa::ToSchema;
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::event::ServerEvent;
-use crate::providers::sensor::{SensorDefinition, SensorQuery, SensorReading, SensorSummary};
+use crate::modules::platform::sensors::{
+    SensorDefinition, SensorQuery, SensorReading, SensorSummary,
+};
 use crate::state::AppState;
 
 // ── List all sensors ────────────────────────────────────────────────────

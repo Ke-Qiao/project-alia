@@ -9,20 +9,13 @@ use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
 use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
 use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderKind, ServerConfig};
 use crate::event::EventBus;
+use crate::modules::platform::sensors::SensorRegistry;
 use crate::providers::adapter::{
-    CacheBackend, EmbeddingAdapter, InsightStrategy, LlmAdapter, PersonaProvider, RouterStrategy,
-    RuleEvaluator, SchedulerBackend, SkillProvider, SttAdapter, ToolRegistry, TtsAdapter,
+    EmbeddingAdapter, LlmAdapter, RuleEvaluator, SchedulerBackend, SttAdapter, ToolRegistry,
+    TtsAdapter,
 };
-use crate::providers::cache::DbCache;
 use crate::providers::embedding::NoopEmbedding;
-use crate::providers::insights::NoopInsights;
-#[cfg(feature = "insights")]
-use crate::providers::insights::ScheduledInsights;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::providers::persona::TemplatePersona;
-use crate::providers::router::MultiLayerRouter;
-use crate::providers::sensor::SensorRegistry;
-use crate::providers::skills::BuiltinSkills;
 use crate::rules::EventRuleEngine;
 use crate::scheduler::{ActionRegistry, AutomationScheduler, ConditionRegistry};
 use crate::tools::BuiltinToolRegistry;
@@ -180,44 +173,6 @@ pub fn create_embedding(
     }
 }
 
-pub fn create_cache() -> Box<dyn CacheBackend> {
-    tracing::info!("creating core cache backend (DbCache)");
-    Box::new(DbCache::new())
-}
-
-pub fn create_skills() -> Box<dyn SkillProvider> {
-    tracing::info!("creating core skill registry (BuiltinSkills)");
-    Box::new(BuiltinSkills::new())
-}
-
-pub fn create_persona() -> Box<dyn PersonaProvider> {
-    tracing::info!("creating core persona provider (TemplatePersona)");
-    Box::new(TemplatePersona::new())
-}
-
-pub fn create_insights(enabled: bool) -> anyhow::Result<Box<dyn InsightStrategy>> {
-    if !enabled {
-        tracing::info!("insights disabled by policy");
-        return Ok(Box::new(NoopInsights));
-    }
-
-    #[cfg(feature = "insights")]
-    {
-        tracing::info!("creating core insights strategy (ScheduledInsights)");
-        return Ok(Box::new(ScheduledInsights::new()));
-    }
-
-    #[cfg(not(feature = "insights"))]
-    {
-        anyhow::bail!("enabled insights require feature 'insights'")
-    }
-}
-
-pub fn create_router() -> Box<dyn RouterStrategy> {
-    tracing::info!("creating core router strategy (multi_layer)");
-    Box::new(MultiLayerRouter::new())
-}
-
 pub fn create_rule_engine() -> Box<dyn RuleEvaluator> {
     tracing::info!("creating core rule engine (EventRuleEngine)");
     Box::new(EventRuleEngine::new())
@@ -307,7 +262,7 @@ mod tests {
     fn adapters_require_explicit_valid_selection() {
         assert!(create_stt("noop").is_ok());
         assert!(create_tts("noop").is_ok());
-        assert!(create_insights(false).is_ok());
+        assert!(crate::modules::platform::insights::InsightService::new(false).is_ok());
         assert!(create_stt("whispr").is_err());
         assert!(create_tts("sovit").is_err());
         #[cfg(not(feature = "stt-whisper"))]
@@ -315,7 +270,7 @@ mod tests {
         #[cfg(not(feature = "tts-sovits"))]
         assert!(create_tts("sovits").is_err());
         #[cfg(not(feature = "insights"))]
-        assert!(create_insights(true).is_err());
+        assert!(crate::modules::platform::insights::InsightService::new(true).is_err());
     }
 
     #[cfg(not(feature = "channel-embedded"))]

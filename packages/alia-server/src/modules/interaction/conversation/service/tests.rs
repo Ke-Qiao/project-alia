@@ -21,7 +21,7 @@ async fn durable_input_provenance_preserves_time_owner_and_atomicity() {
     let db = Database::connect(options).await.unwrap();
     let result = AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(30), async {
         crate::modules::platform::migrations::run(&db).await.unwrap();
-        let mut backend = DatabaseConversationBackend::new();
+        let mut backend = ConversationService::new();
         backend.db = Some(db.clone());
         let owner = Uuid::new_v4();
         use crate::modules::platform::identity::require_active_owner;

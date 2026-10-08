@@ -27,10 +27,13 @@ use alia_server::{
     event::EventBus,
     modules::{
         delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
-        platform::lifecycle::{ModuleContext, ModuleLifecycle as ServerLifecycle},
+        platform::{
+            lifecycle::{ModuleContext, ModuleLifecycle as ServerLifecycle},
+            sensors::SensorRegistry,
+        },
     },
     plugins::PluginStorageService,
-    providers::{sensor::SensorRegistry, tts::audio_budget::ResponseAudioBudget},
+    providers::tts::audio_budget::ResponseAudioBudget,
     registry::ArtifactRegistry,
     settings::SettingsRegistry,
 };

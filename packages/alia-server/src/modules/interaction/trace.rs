@@ -1,5 +1,5 @@
 use super::services::InteractionServices;
-use crate::providers::adapter::ConversationEventEntry;
+use crate::modules::interaction::conversation::ConversationEventEntry;
 use std::sync::Arc;
 use uuid::Uuid;
 

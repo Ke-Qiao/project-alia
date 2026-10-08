@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use alia_server::bootstrap::ShutdownIncomplete;
 use alia_server::config::ServerConfig;
 use alia_server::event::EventBus;
+use alia_server::modules::interaction::{cache::CacheStore, conversation::ConversationStore};
 use alia_server::modules::platform::lifecycle::ModuleContext;
 use alia_server::{bootstrap::ServerBuilder, modules::platform::lifecycle::ModuleLifecycle};
 use async_trait::async_trait;

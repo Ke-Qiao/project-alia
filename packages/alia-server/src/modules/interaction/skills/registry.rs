@@ -1,6 +1,6 @@
-//! Builtin Skills Provider
+//! Skill registry
 //!
-//! DB-backed skill provider that loads skill definitions from PostgreSQL.
+//! DB-backed skill registry that loads skill definitions from PostgreSQL.
 //! On first init, seeds default built-in skills if the table is empty.
 //! Supports keyword-based intent matching with priority-based conflict resolution.
 //!
@@ -23,11 +23,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::markdown;
+use super::{PluginSkillDefinition, SkillInfo, SkillMatch, SkillResolution};
 use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{
-    PluginSkillDefinition, SkillInfo, SkillMatch, SkillProvider, SkillResolution,
-};
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_SKILL};
 
 const OBSOLETE_BUILTIN_SKILLS: &[&str] =
@@ -53,8 +51,8 @@ pub struct LoadedSkill {
     pub priority: i32,
 }
 
-/// DB-backed skills provider
-pub struct BuiltinSkills {
+/// DB-backed skill registry
+pub struct SkillRegistry {
     db: Option<DatabaseConnection>,
     /// In-memory skill index (loaded from DB)
     skills: Arc<RwLock<HashMap<String, LoadedSkill>>>,
@@ -66,13 +64,13 @@ pub struct BuiltinSkills {
     artifacts: Option<Arc<ArtifactRegistry>>,
 }
 
-impl Default for BuiltinSkills {
+impl Default for SkillRegistry {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BuiltinSkills {
+impl SkillRegistry {
     pub fn new() -> Self {
         Self {
             db: None,
@@ -86,13 +84,13 @@ impl BuiltinSkills {
     fn db(&self) -> anyhow::Result<&DatabaseConnection> {
         self.db
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("BuiltinSkills not initialized"))
+            .ok_or_else(|| anyhow::anyhow!("SkillRegistry not initialized"))
     }
 
     fn artifacts(&self) -> anyhow::Result<&ArtifactRegistry> {
         self.artifacts
             .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("BuiltinSkills not initialized"))
+            .ok_or_else(|| anyhow::anyhow!("SkillRegistry not initialized"))
     }
 
     /// Load all enabled skills from DB into memory
@@ -378,7 +376,7 @@ impl BuiltinSkills {
 }
 
 #[async_trait]
-impl ModuleLifecycle for BuiltinSkills {
+impl ModuleLifecycle for SkillRegistry {
     fn name(&self) -> &'static str {
         "builtin_skills"
     }
@@ -418,9 +416,8 @@ impl ModuleLifecycle for BuiltinSkills {
     }
 }
 
-#[async_trait]
-impl SkillProvider for BuiltinSkills {
-    async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>> {
+impl SkillRegistry {
+    pub async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>> {
         let skills = self.skills.read().await;
 
         // Find best matching skill, using priority to break ties
@@ -456,7 +453,7 @@ impl SkillProvider for BuiltinSkills {
         }
     }
 
-    async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
+    pub async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
         let skills = self.skills.read().await;
 
         let loaded = match skills.get(&skill.name) {
@@ -474,12 +471,12 @@ impl SkillProvider for BuiltinSkills {
         })
     }
 
-    async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {
+    pub async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {
         let skills = self.skills.read().await;
         Ok(skills.values().map(|s| s.info.clone()).collect())
     }
 
-    async fn register_plugin_skill(
+    pub async fn register_plugin_skill(
         &self,
         plugin_name: &str,
         def: PluginSkillDefinition,
@@ -551,7 +548,7 @@ impl SkillProvider for BuiltinSkills {
         Ok(())
     }
 
-    async fn unregister_plugin_skills(&self, plugin_name: &str) -> anyhow::Result<u64> {
+    pub async fn unregister_plugin_skills(&self, plugin_name: &str) -> anyhow::Result<u64> {
         let db = self.db()?;
         let tx = db.begin().await?;
         let artifacts = self

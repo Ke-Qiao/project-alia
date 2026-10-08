@@ -15,13 +15,14 @@ use crate::channels::ChannelRegistry;
 use crate::channels::adapter::AudioPayload;
 use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
 use crate::event::EventBus;
+use crate::modules::interaction::conversation::ConversationStore;
 use crate::modules::memory::context::ContextBinding;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::providers::adapter::{
-    ChatMessage, ConversationEventEntry, LlmAdapter, RouteDecision, RouterInput,
+use crate::modules::platform::sensors::SensorRegistry;
+use crate::{
+    modules::interaction::conversation::ConversationEventEntry,
+    providers::adapter::{ChatMessage, LlmAdapter},
 };
-use crate::providers::adapter::{ConversationBackend, RouterStrategy};
-use crate::providers::sensor::SensorRegistry;
 use alia_core::delivery::ObservationEnd;
 use alia_core::text_delivery::{TextFrame, TextIdentity, TextProgress};
 use async_trait::async_trait;
@@ -52,13 +53,9 @@ struct Conversation {
     fail_user: AtomicBool,
     fail_assistant: AtomicBool,
 }
-impl ModuleLifecycle for Conversation {
-    fn name(&self) -> &'static str {
-        "test_conversation"
-    }
-}
+
 #[async_trait]
-impl ConversationBackend for Conversation {
+impl ConversationStore for Conversation {
     async fn get_or_create_active_session(
         &self,
         channel: &str,
@@ -210,20 +207,6 @@ impl LlmAdapter for ObservedLlm {
         _: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
         panic!("test channel is buffered");
-    }
-}
-struct DirectRouter;
-impl ModuleLifecycle for DirectRouter {
-    fn name(&self) -> &'static str {
-        "test_router"
-    }
-}
-#[async_trait]
-impl RouterStrategy for DirectRouter {
-    async fn route(&self, _: &RouterInput) -> anyhow::Result<RouteDecision> {
-        Ok(RouteDecision::MajorLlm {
-            system_prompt: None,
-        })
     }
 }
 #[derive(Default)]
@@ -592,10 +575,20 @@ impl Fixture {
             embedding: Arc::new(crate::providers::embedding::NoopEmbedding),
             conversation: conversation.clone(),
             memory: Arc::new(crate::modules::memory::MemoryService::new()),
-            cache: Arc::new(crate::providers::cache::DbCache::new()),
-            skills: Arc::new(crate::providers::skills::BuiltinSkills::new()),
-            persona: Arc::new(crate::providers::persona::TemplatePersona::new()),
-            router: Arc::new(DirectRouter),
+            cache: Arc::new(crate::modules::interaction::cache::CacheService::new()),
+            skills: Arc::new(crate::modules::interaction::skills::SkillRegistry::new()),
+            persona: Arc::new(crate::modules::interaction::persona::PersonaService::new()),
+            router: Arc::new(
+                super::routing::RouterService::new(
+                    super::routing::RouterConfig {
+                        timeout_sec: 1,
+                        minor_llm_enabled: false,
+                        major_llm_enabled: true,
+                    },
+                    None,
+                )
+                .unwrap(),
+            ),
             tools: Arc::new(crate::tools::BuiltinToolRegistry::new()),
             expression: Arc::new(crate::expression::ExpressionRuntime::from_config(&config)),
         });

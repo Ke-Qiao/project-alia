@@ -16,17 +16,25 @@ use crate::config::ServerConfig;
 use crate::event::EventBus;
 use crate::expression::ExpressionRuntime;
 use crate::modules::interaction::{InteractionPolicies, InteractionServices, spawn_interaction};
+use crate::modules::interaction::{
+    cache::CacheService,
+    conversation::ConversationService,
+    persona::PersonaService,
+    routing::{RouterConfig, RouterService},
+    skills::SkillRegistry,
+};
+use crate::modules::platform::insights::InsightService;
 use crate::modules::platform::lifecycle::{
     ModuleContext, ModuleHealth, ModuleLifecycle, RuntimeCleanup, ShutdownPhase, start_module,
     startup_step,
 };
+use crate::modules::platform::sensors::{SensorRegistry, SensorRegistryConfig};
 use crate::plugins::PluginStorageService;
 #[cfg(feature = "plugin-home-assistant")]
 use crate::plugins::home_assistant::HomeAssistantPlugin;
 use crate::providers::adapter::{
-    ConversationBackend, EmbeddingAdapter, LlmAdapter, SttAdapter, ToolRegistry, TtsAdapter,
+    EmbeddingAdapter, LlmAdapter, SttAdapter, ToolRegistry, TtsAdapter,
 };
-use crate::providers::sensor::{SensorRegistry, SensorRegistryConfig};
 use crate::registry::ArtifactRegistry;
 use crate::scheduler::ConditionRegistry;
 use crate::scheduler::action::{
@@ -390,15 +398,13 @@ impl ServerBuilder {
             Some(embedding) => embedding,
             None => factory::create_embedding(&self.config, &self.config.llm.roles.embedding)?,
         };
-        let conversation: Box<dyn ConversationBackend> =
-            Box::new(crate::providers::conversation::DatabaseConversationBackend::new());
+        let conversation = Box::new(ConversationService::new());
         // Memory is a canonical service; recall policy never disables storage or erasure.
         let memory = Box::new(crate::modules::memory::MemoryService::new());
-        let cache = factory::create_cache();
-        let skills = factory::create_skills();
-        let persona = factory::create_persona();
-        let insights = factory::create_insights(self.config.policies.insights.enabled)?;
-        let router = factory::create_router();
+        let cache = Box::new(CacheService::new());
+        let skills = Box::new(SkillRegistry::new());
+        let persona = Box::new(PersonaService::new());
+        let insights = Box::new(InsightService::new(self.config.policies.insights.enabled)?);
         let rule_engine = factory::create_rule_engine();
 
         // Build condition registry with built-in evaluators
@@ -710,6 +716,15 @@ impl ServerBuilder {
         let persona = cleanup
             .initialize(persona, &ctx, ShutdownPhase::Resources)
             .await?;
+        let routing = &ctx.config.policies.routing;
+        let router = Box::new(RouterService::new(
+            RouterConfig {
+                timeout_sec: routing.timeout_sec,
+                minor_llm_enabled: routing.minor_llm_enabled,
+                major_llm_enabled: routing.major_llm_enabled,
+            },
+            ctx.minor_llm.clone(),
+        )?);
         let router = cleanup
             .initialize(router, &ctx, ShutdownPhase::Resources)
             .await?;

@@ -1,8 +1,8 @@
-use alia_server::providers::SkillInfo;
-use alia_server::providers::skills::builtin::{
-    BuiltinSkills, LoadedSkill, builtin_skill_preferred_tools, builtin_skill_seeds,
+use alia_server::modules::interaction::skills::SkillInfo;
+use alia_server::modules::interaction::skills::markdown::parse_skill_file;
+use alia_server::modules::interaction::skills::registry::{
+    LoadedSkill, SkillRegistry, builtin_skill_preferred_tools, builtin_skill_seeds,
 };
-use alia_server::providers::skills::markdown::parse_skill_file;
 
 // ── builtin seeds ──────────────────────────────────────────────────────
 
@@ -77,15 +77,15 @@ fn home_assistant_light_skill_matches_list_and_control_intents() {
     };
 
     assert!(
-        BuiltinSkills::calculate_match_score("能看到我home assistant里的灯吗？", &skill) > 0.3,
+        SkillRegistry::calculate_match_score("能看到我home assistant里的灯吗？", &skill) > 0.3,
         "should confidently match Home Assistant light lookup intent"
     );
     assert!(
-        BuiltinSkills::calculate_match_score("那帮我把这盏灯打开", &skill) > 0.3,
+        SkillRegistry::calculate_match_score("那帮我把这盏灯打开", &skill) > 0.3,
         "should confidently match contextual light control intent"
     );
     assert!(
-        BuiltinSkills::calculate_match_score("开灯", &skill) > 0.0,
+        SkillRegistry::calculate_match_score("开灯", &skill) > 0.0,
         "short light commands should at least score as a light intent"
     );
 }
@@ -119,15 +119,15 @@ fn embedded_volume_skill_matches_simplified_and_traditional_mic_volume() {
     };
 
     assert!(
-        BuiltinSkills::calculate_match_score("把麦克风的声音调整到5", &skill) > 0.0,
+        SkillRegistry::calculate_match_score("把麦克风的声音调整到5", &skill) > 0.0,
         "should match simplified Chinese mic volume intent"
     );
     assert!(
-        BuiltinSkills::calculate_match_score("把麥克風的聲音調整到5", &skill) > 0.0,
+        SkillRegistry::calculate_match_score("把麥克風的聲音調整到5", &skill) > 0.0,
         "should match traditional Chinese mic volume intent"
     );
     assert!(
-        BuiltinSkills::calculate_match_score("把麦克風的聲音調整到5", &skill) > 0.0,
+        SkillRegistry::calculate_match_score("把麦克風的聲音調整到5", &skill) > 0.0,
         "should match mixed simplified/traditional mic volume intent"
     );
 }
@@ -148,10 +148,10 @@ fn test_match_scoring() {
         priority: 0,
     };
 
-    let score = BuiltinSkills::calculate_match_score("please set a timer", &skill);
+    let score = SkillRegistry::calculate_match_score("please set a timer", &skill);
     assert!(score > 0.0, "should match timer intent");
 
-    let score = BuiltinSkills::calculate_match_score("I feel good today", &skill);
+    let score = SkillRegistry::calculate_match_score("I feel good today", &skill);
     assert_eq!(score, 0.0, "should not match irrelevant text");
 }
 

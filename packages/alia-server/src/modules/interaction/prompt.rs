@@ -3,7 +3,10 @@ use super::services::InteractionServices;
 use crate::modules::memory::MemoryContextPack;
 use crate::modules::memory::context::GenerationContext;
 use crate::modules::memory::policy::memory_prompt_line;
-use crate::providers::adapter::{ChatMessage, DEFAULT_ASSISTANT_NAME, sanitize_assistant_name};
+use crate::{
+    modules::interaction::persona::{DEFAULT_ASSISTANT_NAME, sanitize_assistant_name},
+    providers::adapter::ChatMessage,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]

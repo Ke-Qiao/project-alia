@@ -29,3 +29,8 @@ pub mod voice_input;
 pub use policy::{InteractionPolicies, SharedInteractionPolicies};
 pub use runtime::spawn_interaction;
 pub use services::InteractionServices;
+
+pub mod conversation;
+pub mod persona;
+pub mod routing;
+pub mod skills;

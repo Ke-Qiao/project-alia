@@ -10,11 +10,15 @@ use sea_orm::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::types::{
+    CACHE_METADATA_SCHEMA, CacheCas, CacheEntry, CacheReview, CacheStatus, CacheStore, CacheWork,
+    CachedResponse, SemanticCacheCandidate,
+};
 use crate::modules::memory::context::{
     ContextError, ContextEvidence, ContextService, ContextUse, PolicySnapshot, evidence_digest,
 };
 use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::*;
+use crate::providers::adapter::{EmbeddingProfile, EmbeddingVector, embedding_text_digest};
 use crate::providers::embedding::profile_store::ensure_profile;
 
 const MAX_TEXT: usize = 256 * 1024;
@@ -22,13 +26,13 @@ const MAX_METADATA: usize = 32 * 1024;
 const SNAPSHOT: &str = "SELECT to_jsonb(c) || jsonb_build_object('version',jsonb_build_object('cache_id',c.id,'revision',c.revision,'context_id',c.context_id),'owner_id',c.user_id,'query_digest',c.query_hash) AS record FROM llm_cache c ";
 
 #[derive(Default)]
-pub struct DbCache {
+pub struct CacheService {
     db: Option<DatabaseConnection>,
     background: crate::modules::platform::background::OwnedBackground,
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
 
-impl DbCache {
+impl CacheService {
     pub fn new() -> Self {
         Self::default()
     }
@@ -207,7 +211,7 @@ fn vector_text(vector: &EmbeddingVector) -> String {
 }
 
 #[async_trait]
-impl ModuleLifecycle for DbCache {
+impl ModuleLifecycle for CacheService {
     fn name(&self) -> &'static str {
         "db"
     }
@@ -250,7 +254,7 @@ impl ModuleLifecycle for DbCache {
 }
 
 #[async_trait]
-impl CacheBackend for DbCache {
+impl CacheStore for CacheService {
     async fn get(
         &self,
         owner: Uuid,

@@ -1,10 +1,9 @@
-use alia_server::providers::adapter::PersonaProvider;
-use alia_server::providers::persona::template::TemplatePersona;
+use alia_server::modules::interaction::persona::PersonaService;
 use uuid::Uuid;
 
 #[tokio::test]
 async fn test_render_system_prompt() {
-    let persona = TemplatePersona::new();
+    let persona = PersonaService::new();
 
     let result = persona.render_system_prompt(Uuid::new_v4()).await.unwrap();
 

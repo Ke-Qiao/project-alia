@@ -9,11 +9,14 @@ use super::debug::{
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
 use crate::config::ToolsSection;
-use crate::providers::adapter::{
-    ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolCall, ToolCandidateInfo, ToolContext,
-    ToolDefinition, ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry, ToolSelectionInput,
-};
 use crate::registry::is_plugin_source;
+use crate::{
+    modules::interaction::routing::{ToolCandidateInfo, ToolSelectionInput},
+    providers::adapter::{
+        ChatMessage, LlmAdapter, LlmResponse, LlmToolCall, ToolCall, ToolContext, ToolDefinition,
+        ToolResult, ToolRoutingEmbedding, ToolRoutingIndexEntry,
+    },
+};
 
 const TEXT_TOOL_CALL_SCHEMA: &str = "alia.tool_calls.v1";
 const MAX_TEXT_TOOL_CALLS: usize = 8;

@@ -10,11 +10,11 @@ use alia_server::channels::embedded::{
     embedded_sensor_public_id, embedded_sensor_remote_id, ingest_embedded_sensor_reading,
     mirror_embedded_sensor_definitions,
 };
-use alia_server::providers::adapter::{ToolContext, ToolExecutor};
-use alia_server::providers::sensor::{
+use alia_server::modules::platform::sensors::{
     SensorDefinition, SensorQuery, SensorReadProvider, SensorReading, SensorRegistry,
     SensorRegistryConfig,
 };
+use alia_server::providers::adapter::{ToolContext, ToolExecutor};
 use alia_server::scheduler::condition::{ConditionContext, ConditionEvaluator, ConditionRegistry};
 use alia_server::scheduler::evaluators::SensorConditionEvaluator;
 use alia_server::tools::sensor::{SensorListTool, SensorReadTool};

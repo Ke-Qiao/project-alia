@@ -302,7 +302,7 @@ async fn close_and_register_race_cannot_escape_shutdown_snapshot() {
 
 #[tokio::test]
 async fn sensor_cleanup_is_joined_and_cannot_restart() {
-    use alia_server::providers::sensor::{SensorRegistry, SensorRegistryConfig};
+    use alia_server::modules::platform::sensors::{SensorRegistry, SensorRegistryConfig};
     let registry = SensorRegistry::new(SensorRegistryConfig::default());
     let parent = CancellationToken::new();
     registry.spawn_cleanup_loop(parent.clone()).await.unwrap();

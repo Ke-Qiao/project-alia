@@ -5,8 +5,8 @@ use serde_json::json;
 async fn disabled_memory_still_erases_and_can_be_hot_enabled_then_restarted() {
     use alia_server::modules::memory::context::{ContextBinding, ContextUse};
     use alia_server::{
-        modules::memory::MemoryNode,
-        providers::adapter::{CacheEntry, ChatMessage},
+        modules::{interaction::cache::CacheEntry, memory::MemoryNode},
+        providers::adapter::ChatMessage,
     };
     with_fixture(|mut f| async move {
         assert!(!f.config.policies.memory.enabled);

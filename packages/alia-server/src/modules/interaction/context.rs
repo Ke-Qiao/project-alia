@@ -1,7 +1,7 @@
 use super::services::InteractionServices;
 use super::turn::VoiceTurn;
 use crate::modules::memory::context::{ContextSource, ContextUse, GenerationContext};
-use crate::providers::adapter::{CachedResponse, ChatMessage};
+use crate::{modules::interaction::cache::CachedResponse, providers::adapter::ChatMessage};
 use uuid::Uuid;
 
 pub(super) async fn ensure_turn_context(

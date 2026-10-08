@@ -11,15 +11,15 @@ use crate::{
             types::{CompanionMode, CompanionPolicy},
         },
         delivery::repository::DeliveryRepository,
-        interaction::initiative::{Request as VoiceRequest, VoiceOpportunity},
+        interaction::{
+            conversation::ConversationService,
+            initiative::{Request as VoiceRequest, VoiceOpportunity},
+        },
         platform::lifecycle::ModuleLifecycle,
     },
-    providers::{
-        conversation::database::DatabaseConversationBackend,
-        tts::{
-            NoopTts,
-            audio_budget::{EncodedAudio, TtsAudioStream},
-        },
+    providers::tts::{
+        NoopTts,
+        audio_budget::{EncodedAudio, TtsAudioStream},
     },
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, Value};
@@ -68,7 +68,7 @@ fn runner(
         // No output work is admitted in these failure paths, so no supervisor
         // needs starting. The real SQL repository remains installed.
         delivery: DeliveryService::new(DeliveryRepository::new(f.db.clone()), &stop),
-        conversation: Arc::new(DatabaseConversationBackend::new()),
+        conversation: Arc::new(ConversationService::new()),
         tts: Arc::new(CountedNoopTts(calls.clone())),
     };
     (LiveRunner::new(live, voice, outputs, stop), calls)
