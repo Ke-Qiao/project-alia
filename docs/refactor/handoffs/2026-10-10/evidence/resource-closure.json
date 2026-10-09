@@ -1,0 +1,32 @@
+{
+  "recorded_at": "2026-10-09T19:28:55.141088+00:00",
+  "remaining_test_schemas": [],
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-l10-linux-20261010-v1": {
+      "id": "d8b396eb888602e51914322b9a4cee16db63e1e1a7450b4fdb62bf7051692e05",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-09T19:28:49.195339455Z"
+    },
+    "alia-l10-linux-20261010-v2": {
+      "id": "fc3b772935583aadec5a358b63bf0adc579a09ff5b4e728e1df8eb4dfa64c906",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-09T19:28:54.334883622Z"
+    },
+    "alia-l10-20261010-db": {
+      "id": "240b8909726044b0585c86278592edcc3444f97e06037e41dfc4fd80f063e195",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-09T19:28:55.027627372Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

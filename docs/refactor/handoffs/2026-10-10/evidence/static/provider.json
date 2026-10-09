@@ -1,0 +1,103 @@
+{
+  "baseline": "cb19992",
+  "checks": [
+    {
+      "path": "packages/alia-server/src/providers/llm/openai.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/openai.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/openai.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/anthropic.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/anthropic.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/anthropic.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/gemini.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/gemini.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/llm/gemini.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/openai.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/openai.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/embedding/openai.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/stt/whisper.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/stt/whisper.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/stt/whisper.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+      "check": "health_hotsettings_protocol_unchanged",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+      "check": "global_context_and_server_config_absent",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+      "check": "init_is_argument_free",
+      "passed": true
+    },
+    {
+      "path": "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+      "check": "weight_http_and_response_budget_unchanged",
+      "passed": true
+    }
+  ],
+  "passed": 19,
+  "total": 19,
+  "cargo_run": false
+}

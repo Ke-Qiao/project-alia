@@ -1,0 +1,8 @@
+{
+  "changed_paths": [
+    "packages/alia-server/tests/server_runtime.rs"
+  ],
+  "unchanged_inputs": 636,
+  "production_source_identical": true,
+  "reason": "No-feature admission regression must inspect Runtime aggregated startup error; init signal and active worker assertions unchanged."
+}

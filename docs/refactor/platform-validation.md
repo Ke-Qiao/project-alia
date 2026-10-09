@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-10：L10 初始化依赖清理 10/10，L09—L12 2/4，六轮仍 2/6。** 源码 `4519e75`，V2 637/637 输入匹配。macOS workspace **1058/0/5**、PTY **3/0**、无默认 availability **2/0**、提前准入 **1/0**；Linux ARM64 Server **776/0/5**、无默认和 release/native link 通过。全局初始化参数包和三个固定工厂删除，默认 Shadow/政策保持；资源已关闭。见 [当前检查点](resume-checkpoint-2026-10-10.md)、[最终验证](layering-2026-10-10.md#最终验证与证据)、[L11—L12](checklists/layering-next.md)。以下为历史记录。
+
 **2026-10-09：L09 固定核心分层 10/10，L09—L12 1/4，六轮仍 2/6。** 源码 `ffd7af1`，V1 637 输入逐项匹配。Interaction 拥有 Conversation/Cache/Router/Persona/Skills，Platform 拥有 Insights 调度/Sensors；Memory maintenance 与 Cache review 归各自领域。macOS workspace **1056/0/5**、PTY **3/0**、无默认 availability **2/0**；Linux ARM64 Server **774/0/5**、无默认与 release/link 通过。默认 Shadow 和政策保持，任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-09.md)、[最终验证](layering-2026-10-09.md#最终验证与证据)、[L10—L12](checklists/layering-next.md)。以下为历史记录。
 
 **2026-10-08：目录与依赖分层本轮 8/8，后续分层 0/4，六轮仍 2/6。** 实现 `08c54be`、最终源码 `978af9c`，V4 630 个输入逐项匹配。Memory 固定核心迁入模块；旧 Pipeline 拆为 Interaction 用例；Bootstrap / Platform 分离装配和生命周期。macOS workspace **1053/0/5**、PTY **3**；Linux ARM64 Server 全包 **771/0/5**、默认 release/native link 与无默认检查通过。V3 Linux 原失败及 V4 仅测试夹具修正分别保留。默认 Shadow 和政策不变；本轮任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-08.md)、[最终验证](layering-2026-10-08.md#最终验证与证据)、[后续 L09—L12](checklists/layering-next.md)。以下为历史记录。

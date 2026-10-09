@@ -1,0 +1,5 @@
+{
+  "cases": 4,
+  "passed": 4,
+  "scope": "adjacent early start accepted; nested child preserved; intervening output and count mismatch rejected"
+}

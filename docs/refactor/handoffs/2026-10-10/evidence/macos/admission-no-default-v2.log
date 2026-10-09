@@ -1,0 +1,9 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.64s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-30539a4d05c0a4d3)
+
+running 1 test
+test unavailable_insights_fail_before_tts_initialization ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.41s
+

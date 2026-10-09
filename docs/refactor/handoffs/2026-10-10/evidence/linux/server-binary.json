@@ -1,0 +1,7 @@
+{
+  "name": "alia-server",
+  "bytes": 45367648,
+  "sha256": "5fde7c6a08a015a218cb948afcab31aadd0e0b57352750f46619d91db9912fd9",
+  "file": "/cache/target/release/alia-server: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=8d8d881d9626f93ccdaf2d292830239f947583f6, for GNU/Linux 3.7.0, not stripped\n",
+  "ldd": "\tlinux-vdso.so.1 (0x0000ffffb4ccc000)\n\tlibssl.so.3 => /lib/aarch64-linux-gnu/libssl.so.3 (0x0000ffffb2b00000)\n\tlibcrypto.so.3 => /lib/aarch64-linux-gnu/libcrypto.so.3 (0x0000ffffb26a0000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffb2660000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffb25b0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffb2400000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffb4c90000)\n"
+}

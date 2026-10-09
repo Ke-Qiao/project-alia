@@ -1,0 +1,44 @@
+{
+  "baseline": "cb19992",
+  "audit": "domain lifecycle dependency migration",
+  "checks": [
+    {
+      "path": "packages/alia-server/src/modules/interaction/conversation/service.rs",
+      "existing_behavior_from": "#[async_trait]\nimpl ConversationStore",
+      "unchanged": true,
+      "module_context_absent": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/cache/store.rs",
+      "existing_behavior_from": "    async fn start(&self)",
+      "unchanged": true,
+      "module_context_absent": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/persona/service.rs",
+      "existing_behavior_from": "    pub async fn render_system_prompt",
+      "unchanged": true,
+      "module_context_absent": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/interaction/skills/registry.rs",
+      "existing_behavior_from": "    pub async fn match_skill",
+      "unchanged": true,
+      "module_context_absent": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/memory/service.rs",
+      "existing_behavior_from": "    async fn start(&self)",
+      "unchanged": true,
+      "module_context_absent": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/platform/insights/service.rs",
+      "existing_behavior_from": "    async fn start(&self)",
+      "unchanged": true,
+      "module_context_absent": true
+    }
+  ],
+  "checks_passed": 6,
+  "cargo_or_database_executed": false
+}

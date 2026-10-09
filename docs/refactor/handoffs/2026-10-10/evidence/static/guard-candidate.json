@@ -1,0 +1,41 @@
+{
+  "baseline": "cb19992",
+  "script": "scripts/check-server-boundaries.py",
+  "sha256_before": "07c9330452ac47f918b2e6ccb3926b5b2db33cab65aab6436d71f625e42db6cf",
+  "sha256_after": "07c9330452ac47f918b2e6ccb3926b5b2db33cab65aab6436d71f625e42db6cf",
+  "script_unchanged_during_checks": true,
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "scripts/check-server-boundaries.py",
+        "--self-test"
+      ],
+      "exit_code": 0,
+      "stdout": "Server boundary checker self-test passed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/check-server-boundaries.py"
+      ],
+      "exit_code": 1,
+      "stdout": "src/api/channels.rs:16: retired symbol/path ModuleContext\ntests/cache_context.rs:791: retired symbol/path ModuleContext\ntests/duplex_playback.rs:31: retired symbol/path ModuleContext\ntests/execution_service.rs:536: retired symbol/path ModuleContext\ntests/server_runtime.rs:13: retired symbol/path ModuleContext\ntests/server_runtime.rs:139: lifecycle init must use pre-bound dependencies\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "scripts/check-server-boundaries.py"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "cargo_run": false
+}

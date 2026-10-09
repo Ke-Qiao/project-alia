@@ -1,0 +1,33 @@
+{
+  "started": "2026-10-09T19:19:30.946565+00:00",
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess,json,hashlib\nfrom pathlib import Path\ncommands=[['rustc','-Vv'],['uname','-sm'],['protoc','--version'],['pkg-config','--modversion','alsa','dbus-1','openssl'],['ldd','--version']]\nrecords=[]\nfor command in commands:\n r=subprocess.run(command,capture_output=True,text=True);r.check_returncode();records.append(dict(command=command,exit_code=r.returncode,stdout=r.stdout,stderr=r.stderr))\nPath('/evidence/environment.json').write_text(json.dumps(records,indent=2)+'\\n')\nprint(json.dumps(records))\n"
+  ],
+  "container": "alia-l10-linux-20261010-v2",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "d361dad3057717c4efb08b62ef8d98084754b276e420d0c2f842923a0e0f3e41",
+  "source_before": {
+    "file_count": 637,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 0.339,
+  "finished": "2026-10-09T19:19:31.285571+00:00",
+  "source_after": {
+    "file_count": 637,
+    "errors": []
+  },
+  "finished_at": "2026-10-09T19:19:31.285571+00:00",
+  "source_drift": []
+}

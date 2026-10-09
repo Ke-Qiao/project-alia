@@ -1,0 +1,19 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess; commands=[[\"cargo\",\"fmt\",\"--all\",\"--check\"],[\"python3\",\"scripts/check-server-boundaries.py\",\"--self-test\"],[\"python3\",\"scripts/check-server-boundaries.py\"],[\"git\",\"diff\",\"--check\"]]; [subprocess.run(c,check=True) for c in commands]"
+  ],
+  "started_at": "2026-10-09T19:00:46.160225+00:00",
+  "finished_at": "2026-10-09T19:00:47.350612+00:00",
+  "elapsed_seconds": 1.19,
+  "exit_code": 0,
+  "source_manifest_sha256": "58e3f974e45f4dd0f7b66304918dd956d79df0ab64bcba9a333951916ba6f657",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}
