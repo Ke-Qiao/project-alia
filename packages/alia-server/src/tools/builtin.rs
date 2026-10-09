@@ -37,7 +37,7 @@ use crate::modules::memory::policy::{
     detect_sensitive_memory, memory_content_equivalent, memory_merge_key, merge_memory_patch,
     normalize_memory_layer,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::modules::platform::sensors::SensorRegistry;
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_TOOL, is_plugin_source};
 use crate::tools::sensor::{SensorListTool, SensorReadTool};
@@ -247,7 +247,7 @@ pub struct BuiltinToolRegistry {
     /// plugins all live here; DB rows are only the discoverable catalog.
     executors: Arc<RwLock<ExecutorCatalog>>,
     /// Event bus for publishing tool events
-    event_bus: tokio::sync::Mutex<Option<EventBus>>,
+    event_bus: Option<EventBus>,
     /// DB connection for persisting plugin tools
     db: Option<DatabaseConnection>,
     /// Unified artifact/dependency graph manager.
@@ -262,7 +262,7 @@ impl BuiltinToolRegistry {
     pub fn new() -> Self {
         Self {
             executors: Arc::default(),
-            event_bus: tokio::sync::Mutex::new(None),
+            event_bus: None,
             db: None,
             artifacts: None,
             memory: None,
@@ -270,12 +270,28 @@ impl BuiltinToolRegistry {
         }
     }
 
-    /// Create with sensor registry integration (sensor_read + sensor_list tools).
-    pub fn with_sensors(sensors: Arc<SensorRegistry>) -> Self {
-        let this = Self::new();
-        this.register_executor(Arc::new(SensorReadTool::new(sensors.clone())));
-        this.register_executor(Arc::new(SensorListTool::new(sensors)));
-        this
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        event_bus: EventBus,
+        artifacts: Arc<ArtifactRegistry>,
+        memory: Option<Arc<MemoryService>>,
+        scheduler: Option<Arc<dyn SchedulerBackend>>,
+    ) -> Self {
+        Self {
+            db: Some(db),
+            event_bus: Some(event_bus),
+            artifacts: Some(artifacts),
+            memory,
+            scheduler,
+            ..Self::new()
+        }
+    }
+
+    /// Register sensor_read and sensor_list against the shared sensor plane.
+    pub fn with_sensors(self, sensors: Arc<SensorRegistry>) -> Self {
+        self.register_executor(Arc::new(SensorReadTool::new(sensors.clone())));
+        self.register_executor(Arc::new(SensorListTool::new(sensors)));
+        self
     }
 
     fn register_builtins(&self) {
@@ -476,12 +492,7 @@ impl ModuleLifecycle for BuiltinToolRegistry {
         "builtin_tools"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        *self.event_bus.lock().await = Some(ctx.event_bus.clone());
-        self.db = Some(ctx.db.clone());
-        self.artifacts = Some(ctx.artifacts.clone());
-        self.memory = ctx.memory.clone();
-        self.scheduler = ctx.scheduler.clone();
+    async fn init(&mut self) -> anyhow::Result<()> {
         self.remove_obsolete_builtin_tools()
             .await
             .context("removing obsolete built-in tools")?;
@@ -538,7 +549,7 @@ impl ToolRegistry for BuiltinToolRegistry {
         let tool_name = call.tool_name.clone();
 
         // Publish start event
-        if let Some(event_bus) = self.event_bus.lock().await.as_ref() {
+        if let Some(event_bus) = self.event_bus.as_ref() {
             event_bus.publish(ServerEvent::ToolCallStarted {
                 call_id: call_id.clone(),
                 tool_name: tool_name.clone(),
@@ -564,7 +575,7 @@ impl ToolRegistry for BuiltinToolRegistry {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         // Publish completion event
-        if let Some(event_bus) = self.event_bus.lock().await.as_ref() {
+        if let Some(event_bus) = self.event_bus.as_ref() {
             event_bus.publish(ServerEvent::ToolCallCompleted {
                 call_id: call_id.clone(),
                 tool_name,

@@ -8,12 +8,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::config::HomeAssistantPluginSection;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::plugins::{
     CompiledToolPlugin, PluginStorage, PluginStorageCollection, PluginStorageManifest,
-    PluginStorageRetention, PluginStorageScopeKind, PluginToolContext, StorageScope,
+    PluginStorageRetention, PluginStorageScopeKind, PluginStorageService, PluginToolContext,
+    StorageScope,
 };
-use crate::providers::adapter::{ToolContext, ToolDefinition, ToolExecutor, ToolResult};
+use crate::providers::adapter::{
+    ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult,
+};
 
 const PLUGIN_NAME: &str = "home_assistant";
 const LIST_LIGHTS_TOOL: &str = "home_assistant_list_lights";
@@ -26,14 +29,25 @@ const LIGHT_CACHE_SCHEMA: &str = "alia.home_assistant.light_cache.v1";
 const CONFIG_SCHEMA: &str = "alia.home_assistant.config.v1";
 const DEFAULT_CACHE_TTL_SEC: u64 = 300;
 
-#[derive(Default)]
 pub struct HomeAssistantPlugin {
+    config: HomeAssistantPluginSection,
+    storage: Arc<PluginStorageService>,
+    tools: Arc<dyn ToolRegistry>,
     runtime: Option<HomeAssistantRuntimeConfig>,
 }
 
 impl HomeAssistantPlugin {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(
+        config: HomeAssistantPluginSection,
+        storage: Arc<PluginStorageService>,
+        tools: Arc<dyn ToolRegistry>,
+    ) -> Self {
+        Self {
+            config,
+            storage,
+            tools,
+            runtime: None,
+        }
     }
 
     fn manifest(cache_ttl_sec: u64) -> PluginStorageManifest {
@@ -66,13 +80,17 @@ impl ModuleLifecycle for HomeAssistantPlugin {
         "home_assistant_plugin"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let runtime = HomeAssistantRuntimeConfig::from_config(&ctx.config.plugins.home_assistant)?;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let runtime = HomeAssistantRuntimeConfig::from_config(&self.config)?;
         self.runtime = Some(runtime);
-        let plugin_ctx = ctx.plugin_tool_context(
-            PLUGIN_NAME,
-            <Self as CompiledToolPlugin>::storage_manifest(self),
-        )?;
+        let plugin_ctx = PluginToolContext {
+            plugin_name: PLUGIN_NAME.to_string(),
+            storage: Arc::new(self.storage.scoped_with_manifest(
+                PLUGIN_NAME,
+                <Self as CompiledToolPlugin>::storage_manifest(self),
+            )?),
+            tools: self.tools.clone(),
+        };
         <Self as CompiledToolPlugin>::register(self, plugin_ctx).await
     }
 

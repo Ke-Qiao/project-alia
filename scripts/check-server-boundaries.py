@@ -49,9 +49,9 @@ RETIRED_SYMBOLS = (
     "spawn_pipeline", "ConversationBackend", "DatabaseConversationBackend", "CacheBackend",
     "DbCache", "RouterStrategy", "MultiLayerRouter", "PassthroughRouter", "DirectRouter",
     "PersonaProvider", "TemplatePersona", "SkillProvider", "BuiltinSkills", "InsightStrategy",
-    "ScheduledInsights", "NoopInsights",
+    "ScheduledInsights", "NoopInsights", "ModuleContext",
 )
-FIXED_FACTORIES = "memory|conversation|cache|router|persona|skills|insights|sensor"
+FIXED_FACTORIES = "memory|conversation|cache|router|persona|skills|insights|sensor|rule_engine|scheduler|tools_with_sensors"
 OLD_SYMBOLS = re.compile(
     r"\b(?:" + "|".join(RETIRED_SYMBOLS) + r")\b"
     r"|\b(?:crate|alia_server)::module\b"
@@ -80,6 +80,34 @@ CAPTURE_DEPENDENCY = re.compile(r"\b(?:channels|PendingTextPersistence|Interacti
 DOMAIN_TYPE_DEPENDENCY = re.compile(
     r"\b(?:sea_orm|tonic)\b|\b(?:providers|adapters|entity)\s*::"
 )
+# These implementations now bind explicit dependencies before lifecycle initialization.
+NARROW_INITIALIZATION_FILES = (
+    "src/modules/platform/lifecycle.rs",
+    "src/modules/platform/insights/service.rs",
+    "src/modules/memory/service.rs",
+    "src/modules/interaction/conversation/service.rs",
+    "src/modules/interaction/cache/store.rs",
+    "src/modules/interaction/routing/service.rs",
+    "src/modules/interaction/persona/service.rs",
+    "src/modules/interaction/skills/registry.rs",
+    "src/providers/llm/openai.rs",
+    "src/providers/llm/anthropic.rs",
+    "src/providers/llm/gemini.rs",
+    "src/providers/embedding/openai.rs",
+    "src/providers/stt/whisper.rs",
+    "src/providers/tts/gpt_sovits.rs",
+    "src/rules/engine.rs",
+    "src/scheduler/cron.rs",
+    "src/tools/builtin.rs",
+    "src/channels/cli.rs",
+    "src/channels/embedded/channel.rs",
+    "src/plugins/home_assistant.rs",
+)
+SERVER_CONFIG_DEPENDENCY = re.compile(r"\bServerConfig\b")
+# init is the server lifecycle hook, including test implementations; an argument
+# would reintroduce the initialization locator even if its type were renamed.
+INIT_SIGNATURE = re.compile(r"\bfn\s+init\s*(?:<[^(){};]*>)?\s*\(([^)]*)\)")
+BOUND_INIT_RECEIVER = re.compile(r"\s*&\s*mut\s+self\s*,?\s*")
 
 
 def check(server: Path) -> list[str]:
@@ -99,6 +127,15 @@ def check(server: Path) -> list[str]:
             if match:
                 line = text.count("\n", 0, match.start()) + 1
                 errors.append(f"{relative}:{line}: retired symbol/path {match.group()}")
+            for match in INIT_SIGNATURE.finditer(text):
+                if not BOUND_INIT_RECEIVER.fullmatch(match.group(1)):
+                    line = text.count("\n", 0, match.start()) + 1
+                    errors.append(f"{relative}:{line}: lifecycle init must use pre-bound dependencies")
+            if relative in NARROW_INITIALIZATION_FILES:
+                match = SERVER_CONFIG_DEPENDENCY.search(text)
+                if match:
+                    line = text.count("\n", 0, match.start()) + 1
+                    errors.append(f"{relative}:{line}: initialization depends on global ServerConfig")
             if relative == "src/bootstrap/factory.rs":
                 match = FIXED_FACTORY_DECLARATION.search(text)
                 if match:
@@ -176,17 +213,26 @@ def self_test() -> None:
         for symbol in RETIRED_SYMBOLS:
             fixture.write_text(f"type Retired = {symbol};")
             assert any("retired symbol/path" in error for error in check(server)), symbol
+        for invalid in (
+            "pub struct ModuleContext {}",
+            "use crate::modules::platform::lifecycle::ModuleContext as Dependencies;",
+            "pub use crate::modules::platform::lifecycle::{ModuleContext};",
+        ):
+            fixture.write_text(invalid)
+            assert any("retired symbol/path" in error for error in check(server)), invalid
         for owner in ("conversation", "cache", "router", "persona", "skills", "insights", "sensor"):
             fixture.write_text(f"use crate::providers::{owner}::Service;")
             assert any("retired symbol/path" in error for error in check(server)), owner
+        for owner in FIXED_FACTORIES.split("|"):
             fixture.write_text(f"let core = factory::create_{owner}();")
             assert any("retired symbol/path" in error for error in check(server)), owner
         fixture.write_text("fn use_ports(_: &dyn ConversationStore, _: &dyn CacheStore, _: &dyn SensorReadProvider, _: &dyn LlmAdapter) {}")
         assert not check(server)
         fixture.write_text("")
         factory = server / "src/bootstrap/factory.rs"
-        factory.write_text("pub fn create_cache() -> CacheService {}")
-        assert any("fixed core factory" in error for error in check(server))
+        for owner in FIXED_FACTORIES.split("|"):
+            factory.write_text(f"pub fn create_{owner}() {{}}")
+            assert any("fixed core factory" in error for error in check(server)), owner
         factory.write_text("pub fn create_llm() -> Box<dyn LlmAdapter> {}")
         api = server / "src/api/personas.rs"
         api.parent.mkdir(parents=True)
@@ -238,6 +284,44 @@ def self_test() -> None:
             domain_types.write_text(invalid)
             assert any("domain value depends on infrastructure" in error for error in check(server)), invalid
         domain_types.write_text("")
+        assert not check(server)
+        lifecycle = server / "src/modules/platform/lifecycle.rs"
+        for invalid in (
+            "pub trait ModuleLifecycle { async fn init(&mut self, deps: &Dependencies); }",
+            "pub trait ModuleLifecycle { async fn init(&mut self, config: &RenamedConfig); }",
+            "pub trait ModuleLifecycle { async fn init<T>(&mut self, deps: T); }",
+        ):
+            lifecycle.write_text(invalid)
+            assert any("lifecycle init must use pre-bound" in error for error in check(server)), invalid
+        lifecycle.write_text("pub trait ModuleLifecycle { async fn init(&mut self); }")
+        fixture.write_text("async fn init(\n    &mut self,\n    deps: &RenamedInitializationBundle,\n) {}")
+        assert any("lifecycle init must use pre-bound" in error for error in check(server))
+        fixture.write_text("async fn init(&mut self,) {}")
+        assert not check(server)
+        fixture.write_text("")
+        for relative in NARROW_INITIALIZATION_FILES:
+            module = server / relative
+            module.parent.mkdir(parents=True, exist_ok=True)
+            for invalid in (
+                "use crate::config::ServerConfig as Dependencies;",
+                "pub fn new(config: &crate::config::ServerConfig) -> Self {}",
+                "struct Service { config: Arc<ServerConfig> }",
+            ):
+                module.write_text(invalid)
+                assert any("initialization depends on global ServerConfig" in error for error in check(server)), (relative, invalid)
+            module.write_text("pub fn new(config: &NarrowProviderSection) -> Self {} async fn init(&mut self) {}")
+            assert not check(server), relative
+            module.write_text("")
+        for relative in (
+            "src/bootstrap/factory.rs",
+            "src/modules/memory/context/policy.rs",
+            "src/modules/memory/context/appraisal_policy.rs",
+            "src/providers/adapter.rs",
+            "tests/config_fixture.rs",
+        ):
+            allowed = server / relative
+            allowed.parent.mkdir(parents=True, exist_ok=True)
+            allowed.write_text("fn from_server_config(config: &crate::config::ServerConfig) {}")
         assert not check(server)
         fixture.unlink()
         assert any("canonical owner is missing" in error for error in check(server))

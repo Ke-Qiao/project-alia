@@ -2,24 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
-
-use crate::config::ServerConfig;
-use crate::event::EventBus;
-use crate::expression::ExpressionRuntime;
-use crate::modules::platform::sensors::SensorRegistry;
-use crate::plugins::{
-    PluginStorage, PluginStorageManifest, PluginStorageService, PluginToolContext,
-};
-use crate::registry::ArtifactRegistry;
-use crate::scheduler::{ActionRegistry, ConditionRegistry};
-use crate::settings::SettingsRegistry;
-use crate::{
-    modules::interaction::{cache::CacheService, conversation::ConversationService},
-    providers::adapter::{EmbeddingAdapter, LlmAdapter, SchedulerBackend, ToolRegistry},
-};
 
 /// Health status of a module
 #[derive(Debug, Clone)]
@@ -29,81 +13,14 @@ pub enum ModuleHealth {
     Unhealthy(String),
 }
 
-/// Shared context provided to modules during initialization (dependency injection)
-pub struct ModuleContext {
-    pub db: DatabaseConnection,
-    pub config: Arc<ServerConfig>,
-    pub event_bus: EventBus,
-    pub cancel_token: CancellationToken,
-    pub settings: SettingsRegistry,
-    /// Shared artifact graph for registering ownership/dependencies.
-    pub artifacts: Arc<ArtifactRegistry>,
-    /// Server-owned plugin-private document storage. Plugin runtimes should
-    /// request scoped handles from this service instead of using `db`.
-    pub plugin_storage: Arc<PluginStorageService>,
-    /// Shared sensor plane. Plugins/components should register and ingest
-    /// sensors here so tools, rules, scheduler, and frontend APIs see the same
-    /// readings. Plugins that need live tracking can also subscribe to
-    /// `event_bus` and watch `ServerEvent::SensorDataIngested`.
-    pub sensors: Arc<SensorRegistry>,
-    /// Scheduler reference, available for modules initialized after the scheduler.
-    pub scheduler: Option<Arc<dyn SchedulerBackend>>,
-    /// Condition registry for registering/evaluating task conditions.
-    pub conditions: Option<Arc<ConditionRegistry>>,
-    /// Action registry shared by scheduled tasks, event rules, and plugins.
-    pub actions: Option<Arc<ActionRegistry>>,
-    /// Conversation backend for managing sessions (available to channels).
-    pub conversation: Option<Arc<ConversationService>>,
-    /// Canonical Memory service for tools/components initialized after memory.
-    pub memory: Option<Arc<crate::modules::memory::MemoryService>>,
-    /// Default LLM and concrete minor/major handles for modules that run
-    /// background reasoning, such as insights.
-    pub llm: Option<Arc<dyn LlmAdapter>>,
-    pub minor_llm: Option<Arc<dyn LlmAdapter>>,
-    pub major_llm: Option<Arc<dyn LlmAdapter>>,
-    pub memory_capture_llm: Option<Arc<dyn LlmAdapter>>,
-    pub sentence_expression_llm: Option<Arc<dyn LlmAdapter>>,
-    /// Embedding adapter for built-in runtimes that need semantic indexing.
-    pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
-    /// Cache backend for modules that review or maintain cache entries.
-    pub cache: Option<Arc<CacheService>>,
-    /// Unified executable tool registry. Plugins/components should register
-    /// code-backed tool executors here instead of replacing the registry.
-    pub tools: Option<Arc<dyn ToolRegistry>>,
-    /// Embodied expression runtime. Plugins/components can register appraisal
-    /// engines, expression planners, and safety policies here.
-    pub expression: Option<Arc<ExpressionRuntime>>,
-}
-
-impl ModuleContext {
-    pub fn plugin_tool_context(
-        &self,
-        plugin_name: &str,
-        storage_manifest: PluginStorageManifest,
-    ) -> anyhow::Result<PluginToolContext> {
-        let Some(tools) = self.tools.clone() else {
-            anyhow::bail!("tool registry is not available for plugin '{plugin_name}'");
-        };
-        let storage: Arc<dyn PluginStorage> = Arc::new(
-            self.plugin_storage
-                .scoped_with_manifest(plugin_name, storage_manifest)?,
-        );
-        Ok(PluginToolContext {
-            plugin_name: plugin_name.to_string(),
-            storage,
-            tools,
-        })
-    }
-}
-
 /// Base trait for all pluggable modules
 #[async_trait]
 pub trait ModuleLifecycle: Send + Sync {
     /// Module identifier (used in logs and config references)
     fn name(&self) -> &'static str;
 
-    /// Initialize: receive shared context, establish connections, load resources
-    async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
+    /// Initialize pre-bound dependencies after rollback ownership is registered.
+    async fn init(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -404,10 +321,10 @@ impl RuntimeCleanup {
     pub(crate) async fn initialize<T: ModuleLifecycle + ?Sized + 'static>(
         &self,
         module: Box<T>,
-        ctx: &ModuleContext,
+        cancel: &CancellationToken,
         phase: ShutdownPhase,
     ) -> Result<Arc<T>> {
-        self.initialize_owned(module, ctx, phase)
+        self.initialize_owned(module, cancel, phase)
             .await
             .map(|(module, _)| module)
     }
@@ -415,7 +332,7 @@ impl RuntimeCleanup {
     pub(crate) async fn initialize_owned<T: ModuleLifecycle + ?Sized + 'static>(
         &self,
         module: Box<T>,
-        ctx: &ModuleContext,
+        cancel: &CancellationToken,
         phase: ShutdownPhase,
     ) -> Result<(Arc<T>, Arc<std::sync::atomic::AtomicBool>)> {
         enum Slot<T: ?Sized> {
@@ -448,9 +365,9 @@ impl RuntimeCleanup {
             unreachable!()
         };
         startup_step(
-            &ctx.cancel_token,
+            cancel,
             &format!("initializing module {name}"),
-            module.init(ctx),
+            module.init(),
         )
         .await?;
         // No await occurs during this move; the mutex keeps cleanup out until

@@ -22,20 +22,14 @@ use alia_proto::playback::{
 use alia_server::{
     channels::{
         adapter::*,
-        embedded::{EmbeddedChannel, EmbeddedChannelConfig},
+        embedded::{EmbeddedChannel, EmbeddedChannelConfig, EmbeddedRuntimeDependencies},
     },
     event::EventBus,
     modules::{
         delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
-        platform::{
-            lifecycle::{ModuleContext, ModuleLifecycle as ServerLifecycle},
-            sensors::SensorRegistry,
-        },
+        platform::{lifecycle::ModuleLifecycle as ServerLifecycle, sensors::SensorRegistry},
     },
-    plugins::PluginStorageService,
     providers::tts::audio_budget::ResponseAudioBudget,
-    registry::ArtifactRegistry,
-    settings::SettingsRegistry,
 };
 use delivery_support::{Fixture, with_db};
 use futures::FutureExt;
@@ -511,30 +505,6 @@ impl Runtime {
         config.server.id = "server".into();
         config.auth.server_keypair_path = key_path;
         let events = EventBus::new(16);
-        let ctx = ModuleContext {
-            db: f.db.clone(),
-            config: Arc::new(config),
-            event_bus: events.clone(),
-            cancel_token: CancellationToken::new(),
-            settings: SettingsRegistry::new(),
-            artifacts: Arc::new(ArtifactRegistry::new(f.db.clone())),
-            plugin_storage: Arc::new(PluginStorageService::new(f.db.clone())),
-            sensors: Arc::new(SensorRegistry::new(Default::default())),
-            scheduler: None,
-            conditions: None,
-            actions: None,
-            conversation: None,
-            memory: None,
-            llm: None,
-            minor_llm: None,
-            major_llm: None,
-            memory_capture_llm: None,
-            sentence_expression_llm: None,
-            embedding: None,
-            cache: None,
-            tools: None,
-            expression: None,
-        };
         let mut channel = EmbeddedChannel::new(
             EmbeddedChannelConfig {
                 id: "test-device".into(),
@@ -554,8 +524,14 @@ impl Runtime {
                 grpc_timeout_sec: 30,
             },
             events,
-        );
-        channel.init(&ctx).await.unwrap();
+        )
+        .with_runtime(EmbeddedRuntimeDependencies {
+            db: f.db.clone(),
+            sensors: Arc::new(SensorRegistry::new(Default::default())),
+            server: config.server,
+            server_keypair_path: config.auth.server_keypair_path,
+        });
+        channel.init().await.unwrap();
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
         service.start().await.unwrap();
         Self {

@@ -25,7 +25,7 @@ use uuid::Uuid;
 use super::markdown;
 use super::{PluginSkillDefinition, SkillInfo, SkillMatch, SkillResolution};
 use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_SKILL};
 
 const OBSOLETE_BUILTIN_SKILLS: &[&str] =
@@ -78,6 +78,19 @@ impl SkillRegistry {
             min_confidence: 0.3,
             skills_dir: None,
             artifacts: None,
+        }
+    }
+
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        artifacts: Arc<ArtifactRegistry>,
+        skills_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            db: Some(db),
+            artifacts: Some(artifacts),
+            skills_dir,
+            ..Self::new()
         }
     }
 
@@ -381,15 +394,7 @@ impl ModuleLifecycle for SkillRegistry {
         "builtin_skills"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.db = Some(ctx.db.clone());
-        self.artifacts = Some(ctx.artifacts.clone());
-        self.skills_dir = ctx
-            .config
-            .resources
-            .skills_dir
-            .as_ref()
-            .map(|d| ctx.config.resolve_path(d));
+    async fn init(&mut self) -> anyhow::Result<()> {
         self.seed_defaults().await?;
 
         // Sync markdown skill files into DB (if configured)

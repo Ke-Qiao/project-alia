@@ -17,7 +17,7 @@ use super::types::{
 use crate::modules::memory::context::{
     ContextError, ContextEvidence, ContextService, ContextUse, PolicySnapshot, evidence_digest,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{EmbeddingProfile, EmbeddingVector, embedding_text_digest};
 use crate::providers::embedding::profile_store::ensure_profile;
 
@@ -40,6 +40,15 @@ impl CacheService {
         Self {
             db: Some(db),
             ..Self::default()
+        }
+    }
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        cancel_token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            cancel_token: Some(cancel_token),
+            ..Self::with_database(db)
         }
     }
     fn db(&self) -> anyhow::Result<&DatabaseConnection> {
@@ -215,9 +224,7 @@ impl ModuleLifecycle for CacheService {
     fn name(&self) -> &'static str {
         "db"
     }
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.db = Some(ctx.db.clone());
-        self.cancel_token = Some(ctx.cancel_token.clone());
+    async fn init(&mut self) -> anyhow::Result<()> {
         self.cleanup_expired(256).await?;
         Ok(())
     }

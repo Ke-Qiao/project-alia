@@ -3,5 +3,5 @@
 mod service;
 mod types;
 
-pub use service::InsightService;
+pub use service::{InsightDependencies, InsightService};
 pub use types::{InsightPhase, InsightStatus, InsightTask};

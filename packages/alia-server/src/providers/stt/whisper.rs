@@ -15,8 +15,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::ServerConfig;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::config::WhisperCppProviderSection;
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     AudioEncoding, SttAdapter, SttCapabilities, TranscribeChunk, TranscriptionResult,
     TranscriptionSegment, TranscriptionWord,
@@ -89,13 +89,13 @@ struct WhisperConfig {
 }
 
 impl WhisperCppStt {
-    pub fn new() -> Self {
+    pub fn new(provider: &WhisperCppProviderSection) -> Self {
         Self {
             client: Client::new(),
             config: Arc::new(RwLock::new(WhisperConfig {
-                endpoint: "http://localhost:8080".to_string(),
+                endpoint: provider.endpoint.clone(),
                 language: "auto".to_string(),
-                request_timeout_sec: 30,
+                request_timeout_sec: provider.request_timeout_sec,
             })),
         }
     }
@@ -152,24 +152,14 @@ impl WhisperCppStt {
     }
 }
 
-impl Default for WhisperCppStt {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for WhisperCppStt {
     fn name(&self) -> &'static str {
         "whisper"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-
-        let mut config = self.config.write().await;
-        config.endpoint = server_config.providers.whisper_cpp.endpoint.clone();
-        config.request_timeout_sec = server_config.providers.whisper_cpp.request_timeout_sec;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let config = self.config.read().await;
 
         tracing::info!(endpoint = %config.endpoint, "Whisper STT initialized");
         Ok(())

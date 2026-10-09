@@ -6,13 +6,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::config::RulesSection;
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::platform::background::OwnedBackground;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, AutomationRule, RuleAction, RuleEvaluator, RuleFilter, RulePatch,
 };
@@ -27,47 +28,49 @@ struct RuleState {
 
 pub struct EventRuleEngine {
     background: OwnedBackground,
+    initialized: bool,
     rules: Arc<RwLock<HashMap<Uuid, RuleState>>>,
-    event_bus: Mutex<Option<EventBus>>,
-    db: Mutex<Option<DatabaseConnection>>,
-    cancel_token: Mutex<Option<CancellationToken>>,
-    conditions: Mutex<Option<Arc<ConditionRegistry>>>,
-    actions: Mutex<Option<Arc<ActionRegistry>>>,
-    max_rules_per_user: Mutex<u32>,
+    event_bus: Option<EventBus>,
+    db: Option<DatabaseConnection>,
+    cancel_token: Option<CancellationToken>,
+    conditions: Arc<ConditionRegistry>,
+    actions: Arc<ActionRegistry>,
+    max_rules_per_user: u32,
 }
 
 impl EventRuleEngine {
-    pub fn new() -> Self {
-        Self {
-            background: OwnedBackground::default(),
-            rules: Arc::new(RwLock::new(HashMap::new())),
-            event_bus: Mutex::new(None),
-            db: Mutex::new(None),
-            cancel_token: Mutex::new(None),
-            conditions: Mutex::new(None),
-            actions: Mutex::new(None),
-            max_rules_per_user: Mutex::new(50),
-        }
-    }
-
     pub fn with_registries(
         conditions: Arc<ConditionRegistry>,
         actions: Arc<ActionRegistry>,
     ) -> Self {
         Self {
             background: OwnedBackground::default(),
+            initialized: false,
             rules: Arc::new(RwLock::new(HashMap::new())),
-            event_bus: Mutex::new(None),
-            db: Mutex::new(None),
-            cancel_token: Mutex::new(None),
-            conditions: Mutex::new(Some(conditions)),
-            actions: Mutex::new(Some(actions)),
-            max_rules_per_user: Mutex::new(50),
+            event_bus: None,
+            db: None,
+            cancel_token: None,
+            conditions,
+            actions,
+            max_rules_per_user: 50,
         }
     }
 
-    async fn db(&self) -> Option<DatabaseConnection> {
-        self.db.lock().await.clone()
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        event_bus: EventBus,
+        cancel_token: CancellationToken,
+        config: RulesSection,
+        conditions: Arc<ConditionRegistry>,
+        actions: Arc<ActionRegistry>,
+    ) -> Self {
+        Self {
+            db: Some(db),
+            event_bus: Some(event_bus),
+            cancel_token: Some(cancel_token),
+            max_rules_per_user: config.max_rules_per_user,
+            ..Self::with_registries(conditions, actions)
+        }
     }
 
     async fn event_loop(
@@ -203,62 +206,42 @@ impl EventRuleEngine {
     }
 }
 
-impl Default for EventRuleEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for EventRuleEngine {
     fn name(&self) -> &'static str {
         "event_rule_engine"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        *self.db.lock().await = Some(ctx.db.clone());
-        *self.event_bus.lock().await = Some(ctx.event_bus.clone());
-        *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
-        *self.conditions.lock().await = ctx.conditions.clone();
-        *self.actions.lock().await = ctx.actions.clone();
-        *self.max_rules_per_user.lock().await = ctx.config.policies.rules.max_rules_per_user;
-        let loaded = load_rules_from_db(&ctx.db).await?;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("rule engine database not configured"))?;
+        let loaded = load_rules_from_db(db).await?;
         *self.rules.write().await = loaded;
+        self.initialized = true;
         tracing::info!("EventRuleEngine initialized");
         Ok(())
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(self.initialized, "rule engine not initialized");
         let parent = self
             .cancel_token
-            .lock()
-            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("rule engine not initialized"))?;
         let mut background = self.background.begin_start(&parent).await?;
         let event_bus = self
             .event_bus
-            .lock()
-            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("rule engine not initialized"))?;
         let cancel_token = background.token();
-        let conditions = self
-            .conditions
-            .lock()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("rule engine missing condition registry"))?;
-        let actions = self
-            .actions
-            .lock()
-            .await
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("rule engine missing action registry"))?;
+        let conditions = self.conditions.clone();
+        let actions = self.actions.clone();
         let rules = self.rules.clone();
         let db = self
-            .db()
-            .await
+            .db
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("rule engine database not initialized"))?;
 
         background.spawn_loop(
@@ -284,9 +267,7 @@ impl RuleEvaluator for EventRuleEngine {
     async fn evaluate(&self, event: &ServerEvent) -> anyhow::Result<Vec<RuleAction>> {
         let event_json = serde_json::to_value(event).unwrap_or_default();
         let ctx = ConditionContext::new(Some(event_json.clone()));
-        let Some(conditions) = self.conditions.lock().await.clone() else {
-            return Ok(Vec::new());
-        };
+        let conditions = &self.conditions;
         let rules = self.rules.read().await;
         let mut out = Vec::new();
 
@@ -322,7 +303,7 @@ impl RuleEvaluator for EventRuleEngine {
 
     async fn create_rule(&self, rule: AutomationRule) -> anyhow::Result<Uuid> {
         let id = rule.id;
-        let max_rules_per_user = *self.max_rules_per_user.lock().await;
+        let max_rules_per_user = self.max_rules_per_user;
         if max_rules_per_user > 0 {
             let rules = self.rules.read().await;
             let count = rules
@@ -333,8 +314,8 @@ impl RuleEvaluator for EventRuleEngine {
                 anyhow::bail!("max rules per user exceeded");
             }
         }
-        if let Some(db) = self.db().await {
-            upsert_rule(&db, &rule).await?;
+        if let Some(db) = &self.db {
+            upsert_rule(db, &rule).await?;
         }
         self.rules.write().await.insert(
             id,
@@ -371,8 +352,8 @@ impl RuleEvaluator for EventRuleEngine {
         }
         let rule = state.rule.clone();
         drop(rules);
-        if let Some(db) = self.db().await {
-            upsert_rule(&db, &rule).await?;
+        if let Some(db) = &self.db {
+            upsert_rule(db, &rule).await?;
         }
         Ok(())
     }
@@ -383,7 +364,7 @@ impl RuleEvaluator for EventRuleEngine {
             .await
             .remove(&rule_id)
             .ok_or_else(|| anyhow::anyhow!("rule not found: {rule_id}"))?;
-        if let Some(db) = self.db().await {
+        if let Some(db) = &self.db {
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM automation_rules WHERE id = $1::uuid",

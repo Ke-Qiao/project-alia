@@ -13,7 +13,6 @@ use crate::bootstrap::factory;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::registry::DisabledChannelInfo;
 use crate::error::{AppError, Result};
-use crate::modules::platform::lifecycle::ModuleContext;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -168,7 +167,15 @@ async fn restart_owned(
     }
 
     let channel_type = config.channel_type();
-    let mut channel = match factory::create_channel(&config, state.event_bus.clone()) {
+    let mut channel = match factory::create_channel(
+        &config,
+        state.event_bus.clone(),
+        state.db.clone(),
+        state.cancel_token.clone(),
+        state.modules.conversation.clone(),
+        state.sensors.clone(),
+        &state.config,
+    ) {
         Ok(channel) => channel,
         Err(error) => {
             state
@@ -180,35 +187,11 @@ async fn restart_owned(
             )));
         }
     };
-    let ctx = ModuleContext {
-        db: state.db.clone(),
-        config: state.config.clone(),
-        event_bus: state.event_bus.clone(),
-        cancel_token: state.cancel_token.clone(),
-        settings: state.settings.clone(),
-        artifacts: state.artifacts.clone(),
-        plugin_storage: state.plugin_storage.clone(),
-        sensors: state.sensors.clone(),
-        scheduler: Some(state.modules.scheduler.clone()),
-        conditions: Some(state.conditions.clone()),
-        actions: Some(state.actions.clone()),
-        conversation: Some(state.modules.conversation.clone()),
-        memory: Some(state.modules.memory.clone()),
-        llm: Some(state.modules.llm.clone()),
-        minor_llm: Some(state.modules.minor_llm.clone()),
-        major_llm: Some(state.modules.major_llm.clone()),
-        memory_capture_llm: state.modules.memory_capture_llm.clone(),
-        sentence_expression_llm: state.modules.sentence_expression_llm.clone(),
-        embedding: Some(state.modules.embedding.clone()),
-        cache: Some(state.modules.cache.clone()),
-        tools: Some(state.modules.tools.clone()),
-        expression: Some(state.modules.expression.clone()),
-    };
 
     let initialized = tokio::select! {
         biased;
         _ = state.cancel_token.cancelled() => Err(anyhow::anyhow!("channel initialization cancelled")),
-        result = AssertUnwindSafe(channel.init(&ctx)).catch_unwind() => match result {
+        result = AssertUnwindSafe(channel.init()).catch_unwind() => match result {
             Ok(result) => result,
             Err(_) => Err(anyhow::anyhow!("channel initialization panicked")),
         },

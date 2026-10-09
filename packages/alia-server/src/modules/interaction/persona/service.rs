@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::{Persona, RenderedPersonaPrompt, sanitize_assistant_name};
 use crate::entity::{persona, user_active_persona, user_persona_override};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 
 /// Default system prompt template with Handlebars variables
 const DEFAULT_SYSTEM_PROMPT: &str = r#"You are {{persona_name}}, a warm and capable personal assistant for everyday life, smart-home control, and voice-first interaction.
@@ -51,6 +51,13 @@ impl PersonaService {
         Self {
             handlebars: Arc::new(RwLock::new(handlebars)),
             db: None,
+        }
+    }
+
+    pub fn with_database(db: DatabaseConnection) -> Self {
+        Self {
+            db: Some(db),
+            ..Self::new()
         }
     }
 
@@ -173,13 +180,16 @@ impl ModuleLifecycle for PersonaService {
         "template"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.db = Some(ctx.db.clone());
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("persona is not initialized"))?;
 
         // Pre-register templates from all enabled personas
         if let Ok(personas) = persona::Entity::find()
             .filter(persona::Column::Enabled.eq(true))
-            .all(&ctx.db)
+            .all(db)
             .await
         {
             let mut hb = self.handlebars.write().await;

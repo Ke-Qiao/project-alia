@@ -266,15 +266,23 @@ mod lifecycle_tests {
             Arc::new(ConditionRegistry::new()),
             Arc::new(ActionRegistry::new()),
         ));
-        let insights = InsightService::new(true).unwrap();
         let mut config = InsightsSection::default();
         config.enabled = true;
         config.habit_detection_schedule = "invalid cron".into();
-        *insights.config.lock().await = Some(config);
-        *insights.db.lock().await = Some(DatabaseConnection::Disconnected);
-        *insights.event_bus.lock().await = Some(EventBus::new(8));
-        *insights.cancel_token.lock().await = Some(CancellationToken::new());
-        *insights.scheduler.lock().await = Some(scheduler.clone());
+        let mut insights = InsightService::with_runtime(InsightDependencies {
+            config,
+            db: DatabaseConnection::Disconnected,
+            event_bus: EventBus::new(8),
+            cancel_token: CancellationToken::new(),
+            llm: None,
+            memory: None,
+            cache: None,
+            embedding: None,
+            scheduler: Some(scheduler.clone()),
+            conditions: None,
+        })
+        .unwrap();
+        insights.init().await.unwrap();
         assert!(insights.start().await.is_err());
         assert_eq!(
             scheduler
@@ -304,7 +312,21 @@ mod availability_tests {
 
     #[tokio::test]
     async fn policy_disabled_service_remains_inert_and_healthy() {
-        let service = InsightService::new(false).unwrap();
+        let mut service = InsightService::with_runtime(InsightDependencies {
+            config: InsightsSection::default(),
+            db: DatabaseConnection::Disconnected,
+            event_bus: EventBus::new(8),
+            cancel_token: CancellationToken::new(),
+            llm: None,
+            memory: None,
+            cache: None,
+            embedding: None,
+            scheduler: None,
+            conditions: None,
+        })
+        .unwrap();
+        service.init().await.unwrap();
+        assert!(service.initialization.is_none());
         let owner = Uuid::new_v4();
         assert_eq!(service.name(), "noop");
         assert!(matches!(

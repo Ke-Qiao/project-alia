@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::config::{LlmProfileKind, LlmProviderProfileRef, ServerConfig};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::config::{LlmProfileKind, LlmProfileSection, OpenAiProviderSection};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     EmbeddingAdapter, EmbeddingProfile, EmbeddingVector, ProfiledEmbeddings,
     embedding_model_dimension, embedding_text_digest,
@@ -61,23 +61,31 @@ struct OpenAiEmbedConfig {
 }
 
 impl OpenAiEmbedding {
-    pub fn new() -> Self {
-        Self::for_profile("embedding")
-    }
-
-    pub fn for_profile(profile_id: impl Into<String>) -> Self {
-        Self {
+    pub fn new(
+        profile_id: impl Into<String>,
+        profile: &LlmProfileSection,
+        provider: &OpenAiProviderSection,
+    ) -> anyhow::Result<Self> {
+        let profile_id = profile_id.into();
+        anyhow::ensure!(
+            profile.kind == LlmProfileKind::Embedding,
+            "LLM profile '{}' is not an OpenAI embedding profile",
+            profile_id
+        );
+        Ok(Self {
             client: Client::new(),
             request_timeout: Duration::from_secs(30),
-            profile_id: profile_id.into(),
+            profile_id,
             config: Arc::new(RwLock::new(OpenAiEmbedConfig {
-                provider_id: "openai".to_string(),
-                api_key: String::new(),
-                base_url: "https://api.openai.com/v1".to_string(),
-                model: "text-embedding-3-small".to_string(),
-                dimension: 1536,
+                provider_id: profile.provider.clone(),
+                api_key: provider.api_key.clone(),
+                base_url: provider.base_url.clone(),
+                model: profile.model.clone(),
+                dimension: profile
+                    .dimensions
+                    .unwrap_or_else(|| openai_embedding_dimension(&profile.model)),
             })),
-        }
+        })
     }
 }
 
@@ -156,46 +164,14 @@ fn openai_embedding_dimension(model: &str) -> usize {
     embedding_model_dimension(model)
 }
 
-impl Default for OpenAiEmbedding {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for OpenAiEmbedding {
     fn name(&self) -> &'static str {
         "openai_embedding"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.kind != LlmProfileKind::Embedding {
-            anyhow::bail!(
-                "LLM profile '{}' is not an OpenAI embedding profile",
-                self.profile_id
-            );
-        }
-        let LlmProviderProfileRef::OpenAi(provider) =
-            server_config.llm_provider_profile(&profile.provider)?
-        else {
-            anyhow::bail!(
-                "LLM profile '{}' provider '{}' is not OpenAI-compatible",
-                self.profile_id,
-                profile.provider
-            );
-        };
-
-        let mut config = self.config.write().await;
-        config.provider_id = profile.provider.clone();
-        config.api_key = provider.api_key.clone();
-        config.base_url = provider.base_url.clone();
-        config.model = profile.model.clone();
-        config.dimension = profile
-            .dimensions
-            .unwrap_or_else(|| openai_embedding_dimension(&config.model));
-
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let config = self.config.read().await;
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured for embedding");
         }
@@ -360,6 +336,17 @@ mod tests {
         requests: Arc<Mutex<Vec<Value>>>,
         hold: bool,
     }
+    fn test_embedding() -> OpenAiEmbedding {
+        OpenAiEmbedding::new(
+            "embedding",
+            crate::config::ProfilesSection::default()
+                .llm_profile("embedding")
+                .unwrap(),
+            &OpenAiProviderSection::default(),
+        )
+        .unwrap()
+    }
+
     async fn response(State(state): State<Endpoint>, Json(request): Json<Value>) -> Response {
         state.requests.lock().await.push(request.clone());
         state.entered.notify_one();
@@ -417,7 +404,7 @@ mod tests {
         (format!("http://{address}"), stop, task)
     }
     async fn adapter(endpoint: &str) -> Arc<OpenAiEmbedding> {
-        let adapter = Arc::new(OpenAiEmbedding::new());
+        let adapter = Arc::new(test_embedding());
         {
             let mut config = adapter.config.write().await;
             config.base_url = endpoint.into();
@@ -610,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn identified_settings_reject_wrong_types_and_leave_configuration_unchanged() {
-        let adapter = OpenAiEmbedding::new();
+        let adapter = test_embedding();
         let original = adapter
             .preview_profile_settings(&BTreeMap::new())
             .await

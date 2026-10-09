@@ -27,7 +27,7 @@ use crate::modules::memory::{
     MemoryListOpts, MemoryNode, MemoryPatch, MemorySuppressedExplanation, MemoryWriteContext,
     RetrievalOpts, SuppressedMemory, memory_context_pack_from_nodes,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::EmbeddingAdapter;
 
 const DEFAULT_TENANT_ID: Uuid = Uuid::nil();
@@ -137,6 +137,7 @@ impl Default for RuntimeDiagnostics {
 
 /// Built-in Memory Runtime.
 pub struct MemoryService {
+    initialization: Option<MemoryInitialization>,
     memories: Arc<RwLock<UserMemories>>,
     memory_write: Mutex<()>,
     privacy_states: RwLock<HashMap<Uuid, MemoryWriteContext>>,
@@ -149,9 +150,18 @@ pub struct MemoryService {
     cancel_token: RwLock<tokio_util::sync::CancellationToken>,
 }
 
+struct MemoryInitialization {
+    db: DatabaseConnection,
+    embedding: Option<Arc<dyn EmbeddingAdapter>>,
+    config: MemorySection,
+    policy: crate::modules::memory::context::ContextPolicy,
+    cancel_token: tokio_util::sync::CancellationToken,
+}
+
 impl MemoryService {
     pub fn new() -> Self {
         Self {
+            initialization: None,
             memories: Arc::new(RwLock::new(HashMap::new())),
             memory_write: Mutex::new(()),
             privacy_states: RwLock::new(HashMap::new()),
@@ -162,6 +172,25 @@ impl MemoryService {
             diagnostics: Arc::new(RwLock::new(RuntimeDiagnostics::default())),
             projection: Arc::new(embedding_worker::ProjectionRuntime::default()),
             cancel_token: RwLock::new(tokio_util::sync::CancellationToken::new()),
+        }
+    }
+
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        embedding: Option<Arc<dyn EmbeddingAdapter>>,
+        config: MemorySection,
+        policy: crate::modules::memory::context::ContextPolicy,
+        cancel_token: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        Self {
+            initialization: Some(MemoryInitialization {
+                db,
+                embedding,
+                config,
+                policy,
+                cancel_token,
+            }),
+            ..Self::new()
         }
     }
 
@@ -1645,24 +1674,59 @@ impl Default for MemoryService {
     }
 }
 
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn configured_persistence_is_not_published_before_policy_initialization() {
+        let config = MemorySection::default();
+        let policy = crate::modules::memory::context::ContextPolicy::from_config(
+            &config,
+            &crate::config::ConversationSection::default(),
+        )
+        .unwrap();
+        let mut memory = MemoryService::with_runtime(
+            DatabaseConnection::Disconnected,
+            None,
+            config,
+            policy,
+            tokio_util::sync::CancellationToken::new(),
+        );
+        assert!(memory.db().await.is_none());
+        assert!(memory.init().await.is_err());
+        assert!(memory.db().await.is_none());
+        assert_eq!(memory.diagnostics.read().await.persistence, "memory");
+        memory.stop().await.unwrap();
+    }
+}
+
 #[async_trait]
 impl ModuleLifecycle for MemoryService {
     fn name(&self) -> &'static str {
         "alia_memory_runtime"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let mut policy =
-            crate::modules::memory::context::ContextPolicy::from_server_config(&ctx.config)?;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let MemoryInitialization {
+            db,
+            embedding,
+            config,
+            mut policy,
+            cancel_token,
+        } = self
+            .initialization
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("memory initialization dependencies are not bound"))?;
         policy.active_embedding_profile =
-            Self::register_actual_profile(&ctx.db, ctx.embedding.as_deref()).await?;
-        crate::modules::memory::context::ContextPolicyStore::new(ctx.db.clone())
+            Self::register_actual_profile(&db, embedding.as_deref()).await?;
+        crate::modules::memory::context::ContextPolicyStore::new(db.clone())
             .initialize_or_load(policy)
             .await?;
-        *self.config.write().await = Self::from_config(&ctx.config.policies.memory);
-        *self.embedding.write().await = ctx.embedding.clone();
-        *self.db.write().await = Some(ctx.db.clone());
-        *self.cancel_token.write().await = ctx.cancel_token.clone();
+        *self.config.write().await = Self::from_config(&config);
+        *self.embedding.write().await = embedding;
+        *self.db.write().await = Some(db);
+        *self.cancel_token.write().await = cancel_token;
         self.diagnostics.write().await.persistence = "postgres".to_string();
         self.refresh_embedding_health().await;
         Ok(())

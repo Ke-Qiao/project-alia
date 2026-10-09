@@ -12,9 +12,9 @@ use serde_json::{Map, Value, json};
 use tokio::sync::RwLock;
 
 use crate::config::{
-    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, ServerConfig,
+    GeminiProviderSection, LlmProfileKind, LlmProfileSection, LlmRequestOptionsSection,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
 };
@@ -143,23 +143,29 @@ struct GeminiConfig {
 }
 
 impl GeminiLlm {
-    pub fn new() -> Self {
-        Self::for_profile("minor")
-    }
-
-    pub fn for_profile(profile_id: impl Into<String>) -> Self {
-        Self {
+    pub fn new(
+        profile_id: impl Into<String>,
+        profile: &LlmProfileSection,
+        provider: &GeminiProviderSection,
+    ) -> anyhow::Result<Self> {
+        let profile_id = profile_id.into();
+        anyhow::ensure!(
+            profile.kind == LlmProfileKind::Chat,
+            "LLM profile '{}' is not a Gemini chat profile",
+            profile_id
+        );
+        Ok(Self {
             client: Client::new(),
-            profile_id: profile_id.into(),
+            profile_id,
             config: Arc::new(RwLock::new(GeminiConfig {
-                provider_id: "gemini".to_string(),
-                api_key: String::new(),
-                base_url: "https://generativelanguage.googleapis.com/v1beta".to_string(),
-                model: "gemini-2.5-flash".to_string(),
-                request: LlmRequestOptionsSection::default(),
-                health_probe_enabled: false,
+                provider_id: profile.provider.clone(),
+                api_key: provider.api_key.clone(),
+                base_url: provider.base_url.clone(),
+                model: profile.model.clone(),
+                request: profile.request.clone(),
+                health_probe_enabled: provider.health_probe_enabled,
             })),
-        }
+        })
     }
 
     async fn chat_internal(
@@ -246,43 +252,14 @@ impl GeminiLlm {
     }
 }
 
-impl Default for GeminiLlm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for GeminiLlm {
     fn name(&self) -> &'static str {
         "gemini"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.kind != LlmProfileKind::Chat {
-            anyhow::bail!(
-                "LLM profile '{}' is not a Gemini chat profile",
-                self.profile_id
-            );
-        }
-        let LlmProviderProfileRef::Gemini(provider) =
-            server_config.llm_provider_profile(&profile.provider)?
-        else {
-            anyhow::bail!(
-                "LLM profile '{}' provider '{}' is not a Gemini provider",
-                self.profile_id,
-                profile.provider
-            );
-        };
-        let mut config = self.config.write().await;
-        config.provider_id = profile.provider.clone();
-        config.api_key = provider.api_key.clone();
-        config.base_url = provider.base_url.clone();
-        config.model = profile.model.clone();
-        config.request = profile.request.clone();
-        config.health_probe_enabled = provider.health_probe_enabled;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let config = self.config.read().await;
         if config.api_key.is_empty() {
             tracing::warn!("Gemini API key not configured");
         }

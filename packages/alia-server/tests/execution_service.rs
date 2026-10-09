@@ -533,7 +533,7 @@ async fn queued_memory_after_clear_case(source_clock_offset: chrono::Duration) {
         memory.attach_runtime_for_test(f.db.clone(), None, Default::default()).await.unwrap();
         let memory_tool = Arc::new(MemoryStore::new(Some(memory.clone())));
         let definition = memory_tool.definition();
-        // This fixture intentionally has no ModuleContext on the raw registry;
+        // This fixture intentionally leaves the raw registry dependencies unbound;
         // create the same database catalog row that normal builder init seeds.
         f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO tools(name,description,parameters,source,require_confirmation,enabled) VALUES($1,$2,$3,'builtin',false,true)",

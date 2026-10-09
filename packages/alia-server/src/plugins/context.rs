@@ -8,9 +8,8 @@ use super::storage::PluginStorage;
 
 /// Scoped capabilities handed to compiled-in LLM tool plugins.
 ///
-/// This is intentionally narrower than `ModuleContext`: built-in components
-/// keep their normal database repositories, while tool plugins receive only
-/// the storage namespace and tool registry they need.
+/// Tool plugins receive only their storage namespace and the executable tool
+/// registry; built-in components keep their own database repositories.
 #[derive(Clone)]
 pub struct PluginToolContext {
     pub plugin_name: String,

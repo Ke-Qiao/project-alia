@@ -19,8 +19,8 @@ use super::audio_budget::{
     TtsAudioStream,
 };
 use super::http_body::{ERROR_BODY_BYTES, check_length, error_body, read_body};
-use crate::config::{ExpressionStyleSection, ServerConfig, VoiceProfileSection};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::config::{ExpressionStyleSection, GptSovitsProviderSection, VoiceProfileSection};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     TtsAdapter, TtsCapabilities, TtsProsodyLimits, TtsProviderAdjustment, TtsRequest,
 };
@@ -136,27 +136,44 @@ struct SovitsVoiceProfile {
 }
 
 impl GptSovitsTts {
-    pub fn new() -> Self {
+    pub fn new(
+        provider: &GptSovitsProviderSection,
+        default_voice: &str,
+        voice_profiles: &BTreeMap<String, VoiceProfileSection>,
+        expression_styles: &BTreeMap<String, ExpressionStyleSection>,
+    ) -> Self {
+        let voice_config = voice_profiles
+            .get(default_voice)
+            .cloned()
+            .unwrap_or_default();
+        if voice_config.provider != "gpt_sovits" {
+            tracing::warn!(
+                provider = %voice_config.provider,
+                "default voice profile is not configured for GPT-SoVITS; applying shared voice fields anyway"
+            );
+        }
+        let default_profile = SovitsVoiceProfile::from_voice_config(&voice_config);
+        let mut voice_profiles = voice_profiles
+            .iter()
+            .map(|(name, profile)| (name.clone(), SovitsVoiceProfile::from_voice_config(profile)))
+            .collect::<BTreeMap<_, _>>();
+        voice_profiles
+            .entry(default_voice.to_owned())
+            .or_insert_with(|| default_profile.clone());
         Self {
             client: Client::new(),
             config: Arc::new(RwLock::new(SovitsConfig {
-                endpoint: "http://localhost:9880".to_string(),
-                default_voice: "default".to_string(),
-                default_profile: SovitsVoiceProfile::default(),
-                voice_profiles: BTreeMap::new(),
-                expression_styles: BTreeMap::new(),
-                prosody_limits: SovitsProsodyLimits::default(),
-                sample_rate_pitch_fallback_enabled: false,
-                request_timeout_sec: 60,
-                stream_idle_timeout_sec: 10,
+                endpoint: provider.endpoint.clone(),
+                default_voice: default_voice.to_owned(),
+                default_profile,
+                voice_profiles,
+                expression_styles: expression_styles.clone(),
+                prosody_limits: SovitsProsodyLimits::from_provider_config(provider),
+                sample_rate_pitch_fallback_enabled: provider.sample_rate_pitch_fallback_enabled,
+                request_timeout_sec: provider.request_timeout_sec,
+                stream_idle_timeout_sec: provider.stream_idle_timeout_sec,
             })),
         }
-    }
-}
-
-impl Default for GptSovitsTts {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -766,44 +783,8 @@ impl ModuleLifecycle for GptSovitsTts {
         "gpt_sovits"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-        let provider_config = &server_config.providers.gpt_sovits;
-        let voice_config = server_config.profiles.default_voice_profile();
-        if voice_config.provider != "gpt_sovits" {
-            tracing::warn!(
-                provider = %voice_config.provider,
-                "default voice profile is not configured for GPT-SoVITS; applying shared voice fields anyway"
-            );
-        }
-
-        let configured = {
-            let mut config = self.config.write().await;
-            config.endpoint = provider_config.endpoint.clone();
-            config.default_voice = server_config.profiles.default_voice.clone();
-            config.default_profile = SovitsVoiceProfile::from_voice_config(&voice_config);
-            config.voice_profiles = server_config
-                .profiles
-                .voice
-                .iter()
-                .map(|(name, profile)| {
-                    (name.clone(), SovitsVoiceProfile::from_voice_config(profile))
-                })
-                .collect();
-            let default_voice = config.default_voice.clone();
-            let default_profile = config.default_profile.clone();
-            config
-                .voice_profiles
-                .entry(default_voice)
-                .or_insert(default_profile);
-            config.expression_styles = server_config.profiles.expression_styles.clone();
-            config.prosody_limits = SovitsProsodyLimits::from_provider_config(provider_config);
-            config.sample_rate_pitch_fallback_enabled =
-                provider_config.sample_rate_pitch_fallback_enabled;
-            config.request_timeout_sec = provider_config.request_timeout_sec;
-            config.stream_idle_timeout_sec = provider_config.stream_idle_timeout_sec;
-            config.clone()
-        };
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let configured = self.config.read().await.clone();
 
         if let Err(error) = configure_remote_weights(&self.client, &configured).await {
             tracing::warn!(

@@ -1,24 +1,20 @@
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
-use crate::channels::ChannelRegistry;
 use crate::channels::adapter::ChannelAdapter;
 use crate::channels::cli::CliChannel;
 #[cfg(feature = "channel-embedded")]
-use crate::channels::embedded::{EmbeddedChannel, EmbeddedChannelConfig};
-#[cfg(feature = "channel-embedded")]
-use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
-use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderKind, ServerConfig};
-use crate::event::EventBus;
-use crate::modules::platform::sensors::SensorRegistry;
-use crate::providers::adapter::{
-    EmbeddingAdapter, LlmAdapter, RuleEvaluator, SchedulerBackend, SttAdapter, ToolRegistry,
-    TtsAdapter,
+use crate::channels::embedded::{
+    EmbeddedChannel, EmbeddedChannelConfig, EmbeddedRuntimeDependencies,
 };
+use crate::config::{ChannelConfig, LlmProfileKind, LlmProviderProfileRef, ServerConfig};
+use crate::event::EventBus;
+use crate::modules::interaction::conversation::ConversationStore;
+use crate::modules::platform::sensors::SensorRegistry;
+use crate::providers::adapter::{EmbeddingAdapter, LlmAdapter, SttAdapter, TtsAdapter};
 use crate::providers::embedding::NoopEmbedding;
 use crate::providers::llm::{NoopLlm, NoopStt, NoopTts};
-use crate::rules::EventRuleEngine;
-use crate::scheduler::{ActionRegistry, AutomationScheduler, ConditionRegistry};
-use crate::tools::BuiltinToolRegistry;
 
 pub fn create_turn_detector(
     config: &crate::config::EasyTurnSection,
@@ -59,8 +55,8 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
         anyhow::bail!("LLM profile '{profile_id}' is not a chat profile");
     }
     let provider = config.llm_provider_profile(&profile.provider)?;
-    match provider.kind() {
-        LlmProviderKind::OpenAi => {
+    match provider {
+        LlmProviderProfileRef::OpenAi(_provider) => {
             #[cfg(feature = "llm-openai")]
             {
                 tracing::info!(
@@ -68,14 +64,14 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
                     provider = %profile.provider,
                     "creating LLM adapter (OpenAI)"
                 );
-                Ok(Box::new(OpenAiLlm::for_profile(profile_id)))
+                Ok(Box::new(OpenAiLlm::new(profile_id, profile, _provider)?))
             }
             #[cfg(not(feature = "llm-openai"))]
             {
                 anyhow::bail!("profile '{profile_id}' requires feature 'llm-openai'")
             }
         }
-        LlmProviderKind::Anthropic => {
+        LlmProviderProfileRef::Anthropic(_provider) => {
             #[cfg(feature = "llm-anthropic")]
             {
                 tracing::info!(
@@ -83,14 +79,14 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
                     provider = %profile.provider,
                     "creating LLM adapter (Anthropic)"
                 );
-                Ok(Box::new(AnthropicLlm::for_profile(profile_id)))
+                Ok(Box::new(AnthropicLlm::new(profile_id, profile, _provider)?))
             }
             #[cfg(not(feature = "llm-anthropic"))]
             {
                 anyhow::bail!("profile '{profile_id}' requires feature 'llm-anthropic'")
             }
         }
-        LlmProviderKind::Gemini => {
+        LlmProviderProfileRef::Gemini(_provider) => {
             #[cfg(feature = "llm-gemini")]
             {
                 tracing::info!(
@@ -98,24 +94,26 @@ pub fn create_llm(config: &ServerConfig, profile_id: &str) -> anyhow::Result<Box
                     provider = %profile.provider,
                     "creating LLM adapter (Gemini)"
                 );
-                Ok(Box::new(GeminiLlm::for_profile(profile_id)))
+                Ok(Box::new(GeminiLlm::new(profile_id, profile, _provider)?))
             }
             #[cfg(not(feature = "llm-gemini"))]
             {
                 anyhow::bail!("profile '{profile_id}' requires feature 'llm-gemini'")
             }
         }
-        LlmProviderKind::Noop => {
+        LlmProviderProfileRef::Noop => {
             tracing::info!(profile = profile_id, "creating LLM adapter (noop)");
             Ok(Box::new(NoopLlm))
         }
     }
 }
 
-pub fn create_stt(name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {
+pub fn create_stt(_config: &ServerConfig, name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {
     match name {
         #[cfg(feature = "stt-whisper")]
-        "whisper" | "whisper_cpp" => Ok(Box::new(WhisperCppStt::new())),
+        "whisper" | "whisper_cpp" => {
+            Ok(Box::new(WhisperCppStt::new(&_config.providers.whisper_cpp)))
+        }
         #[cfg(not(feature = "stt-whisper"))]
         "whisper" | "whisper_cpp" => anyhow::bail!("STT '{name}' requires feature 'stt-whisper'"),
         "noop" => Ok(Box::new(NoopStt)),
@@ -123,10 +121,15 @@ pub fn create_stt(name: &str) -> anyhow::Result<Box<dyn SttAdapter>> {
     }
 }
 
-pub fn create_tts(name: &str) -> anyhow::Result<Box<dyn TtsAdapter>> {
+pub fn create_tts(_config: &ServerConfig, name: &str) -> anyhow::Result<Box<dyn TtsAdapter>> {
     match name {
         #[cfg(feature = "tts-sovits")]
-        "gpt_sovits" | "sovits" => Ok(Box::new(GptSovitsTts::new())),
+        "gpt_sovits" | "sovits" => Ok(Box::new(GptSovitsTts::new(
+            &_config.providers.gpt_sovits,
+            &_config.profiles.default_voice,
+            &_config.profiles.voice,
+            &_config.profiles.expression_styles,
+        ))),
         #[cfg(not(feature = "tts-sovits"))]
         "gpt_sovits" | "sovits" => anyhow::bail!("TTS '{name}' requires feature 'tts-sovits'"),
         "noop" => Ok(Box::new(NoopTts)),
@@ -147,8 +150,8 @@ pub fn create_embedding(
         anyhow::bail!("LLM profile '{profile_id}' is not an embedding profile");
     }
     let provider = config.llm_provider_profile(&profile.provider)?;
-    match provider.kind() {
-        LlmProviderKind::OpenAi => {
+    match provider {
+        LlmProviderProfileRef::OpenAi(_provider) => {
             #[cfg(feature = "embed-openai")]
             {
                 tracing::info!(
@@ -156,53 +159,33 @@ pub fn create_embedding(
                     provider = %profile.provider,
                     "creating embedding adapter (OpenAI)"
                 );
-                Ok(Box::new(OpenAiEmbedding::for_profile(profile_id)))
+                Ok(Box::new(OpenAiEmbedding::new(
+                    profile_id, profile, _provider,
+                )?))
             }
             #[cfg(not(feature = "embed-openai"))]
             {
                 anyhow::bail!("profile '{profile_id}' requires feature 'embed-openai'")
             }
         }
-        LlmProviderKind::Noop => {
+        LlmProviderProfileRef::Noop => {
             tracing::info!(profile = profile_id, "creating embedding adapter (noop)");
             Ok(Box::new(NoopEmbedding))
         }
-        LlmProviderKind::Anthropic | LlmProviderKind::Gemini => {
+        LlmProviderProfileRef::Anthropic(_) | LlmProviderProfileRef::Gemini(_) => {
             anyhow::bail!("profile '{profile_id}' selects an unsupported embedding provider")
         }
     }
 }
 
-pub fn create_rule_engine() -> Box<dyn RuleEvaluator> {
-    tracing::info!("creating core rule engine (EventRuleEngine)");
-    Box::new(EventRuleEngine::new())
-}
-
-pub fn create_scheduler(
-    conditions: Arc<ConditionRegistry>,
-    actions: Arc<ActionRegistry>,
-) -> Box<dyn SchedulerBackend> {
-    tracing::info!("creating core scheduler (AutomationScheduler)");
-    Box::new(AutomationScheduler::with_registries(conditions, actions))
-}
-
-/// Create tools with sensor registry integration (includes sensor_read + sensor_list).
-pub fn create_tools_with_sensors(
-    sensors: Arc<SensorRegistry>,
-    channels: Arc<ChannelRegistry>,
-) -> Box<dyn ToolRegistry> {
-    tracing::info!("creating core tool registry with sensors (BuiltinToolRegistry)");
-    let registry = BuiltinToolRegistry::with_sensors(sensors);
-    #[cfg(feature = "channel-embedded")]
-    registry.register_executor(Arc::new(EmbeddedVolumeTool::new(channels)));
-    #[cfg(not(feature = "channel-embedded"))]
-    let _ = channels;
-    Box::new(registry)
-}
-
 pub fn create_channel(
     config: &ChannelConfig,
     event_bus: EventBus,
+    db: DatabaseConnection,
+    cancel: CancellationToken,
+    conversation: Arc<dyn ConversationStore>,
+    _sensors: Arc<SensorRegistry>,
+    _server_config: &ServerConfig,
 ) -> anyhow::Result<Box<dyn ChannelAdapter>> {
     match config {
         #[cfg(feature = "channel-embedded")]
@@ -220,21 +203,29 @@ pub fn create_channel(
             ..
         } => {
             tracing::info!(channel_id = %id, "creating EmbeddedChannel");
-            Ok(Box::new(EmbeddedChannel::new(
-                EmbeddedChannelConfig {
-                    id: id.clone(),
-                    owner_user_id: *owner_user_id,
-                    expected_device_id: expected_device_id.clone(),
-                    expected_device_public_key: expected_device_public_key.clone(),
-                    endpoint: endpoint.clone(),
-                    discovery_service_name: discovery_service_name.clone(),
-                    discovery_timeout_sec: *discovery_timeout_sec,
-                    reconnect_interval_sec: *reconnect_interval_sec,
-                    reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
-                    grpc_timeout_sec: *grpc_timeout_sec,
-                },
-                event_bus,
-            )))
+            Ok(Box::new(
+                EmbeddedChannel::new(
+                    EmbeddedChannelConfig {
+                        id: id.clone(),
+                        owner_user_id: *owner_user_id,
+                        expected_device_id: expected_device_id.clone(),
+                        expected_device_public_key: expected_device_public_key.clone(),
+                        endpoint: endpoint.clone(),
+                        discovery_service_name: discovery_service_name.clone(),
+                        discovery_timeout_sec: *discovery_timeout_sec,
+                        reconnect_interval_sec: *reconnect_interval_sec,
+                        reconnect_max_backoff_sec: *reconnect_max_backoff_sec,
+                        grpc_timeout_sec: *grpc_timeout_sec,
+                    },
+                    event_bus,
+                )
+                .with_runtime(EmbeddedRuntimeDependencies {
+                    db,
+                    sensors: _sensors,
+                    server: _server_config.server.clone(),
+                    server_keypair_path: _server_config.auth.server_keypair_path.clone(),
+                }),
+            ))
         }
         #[cfg(not(feature = "channel-embedded"))]
         ChannelConfig::Embedded { id, .. } => {
@@ -248,7 +239,9 @@ pub fn create_channel(
         } => {
             tracing::info!(channel_id = %id, "creating CliChannel");
             Ok(Box::new(
-                CliChannel::new(id.clone(), event_bus).with_owner_user_id(*owner_user_id),
+                CliChannel::new(id.clone(), event_bus)
+                    .with_owner_user_id(*owner_user_id)
+                    .with_runtime(db, cancel, conversation),
             ))
         }
     }
@@ -260,15 +253,17 @@ mod tests {
 
     #[test]
     fn adapters_require_explicit_valid_selection() {
-        assert!(create_stt("noop").is_ok());
-        assert!(create_tts("noop").is_ok());
+        let config: ServerConfig =
+            toml::from_str(include_str!("../../../../config/server.example.toml")).unwrap();
+        assert!(create_stt(&config, "noop").is_ok());
+        assert!(create_tts(&config, "noop").is_ok());
         assert!(crate::modules::platform::insights::InsightService::new(false).is_ok());
-        assert!(create_stt("whispr").is_err());
-        assert!(create_tts("sovit").is_err());
+        assert!(create_stt(&config, "whispr").is_err());
+        assert!(create_tts(&config, "sovit").is_err());
         #[cfg(not(feature = "stt-whisper"))]
-        assert!(create_stt("whisper").is_err());
+        assert!(create_stt(&config, "whisper").is_err());
         #[cfg(not(feature = "tts-sovits"))]
-        assert!(create_tts("sovits").is_err());
+        assert!(create_tts(&config, "sovits").is_err());
         #[cfg(not(feature = "insights"))]
         assert!(crate::modules::platform::insights::InsightService::new(true).is_err());
     }
@@ -290,7 +285,17 @@ mod tests {
             grpc_timeout_sec: 10,
         };
 
-        match create_channel(&config, EventBus::new(1)) {
+        let server_config: ServerConfig =
+            toml::from_str(include_str!("../../../../config/server.example.toml")).unwrap();
+        match create_channel(
+            &config,
+            EventBus::new(1),
+            DatabaseConnection::Disconnected,
+            CancellationToken::new(),
+            Arc::new(crate::modules::interaction::conversation::ConversationService::new()),
+            Arc::new(SensorRegistry::new(Default::default())),
+            &server_config,
+        ) {
             Ok(_) => panic!("embedded channel creation should fail without channel-embedded"),
             Err(error) => assert!(error.to_string().contains("channel-embedded")),
         }

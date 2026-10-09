@@ -787,14 +787,10 @@ mod insights {
         modules::{
             memory::MemoryService,
             platform::{
-                insights::{InsightPhase, InsightService},
-                lifecycle::{ModuleContext, ModuleLifecycle},
-                sensors::SensorRegistry,
+                insights::{InsightDependencies, InsightPhase, InsightService},
+                lifecycle::ModuleLifecycle,
             },
         },
-        plugins::PluginStorageService,
-        registry::ArtifactRegistry,
-        settings::SettingsRegistry,
     };
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -885,32 +881,20 @@ mod insights {
         )
         .unwrap();
         config.policies.insights.enabled = true;
-        let context = ModuleContext {
+        let mut service = InsightService::with_runtime(InsightDependencies {
+            config: config.policies.insights,
             db: f.db.clone(),
-            config: Arc::new(config),
             event_bus: EventBus::new(32),
             cancel_token: CancellationToken::new(),
-            settings: SettingsRegistry::new(),
-            artifacts: Arc::new(ArtifactRegistry::new(f.db.clone())),
-            plugin_storage: Arc::new(PluginStorageService::new(f.db.clone())),
-            sensors: Arc::new(SensorRegistry::new(Default::default())),
             scheduler: None,
             conditions: None,
-            actions: None,
-            conversation: None,
             memory,
             llm: Some(llm),
-            minor_llm: None,
-            major_llm: None,
-            memory_capture_llm: None,
-            sentence_expression_llm: None,
             embedding: Some(embedding),
             cache: Some(f.cache.clone()),
-            tools: None,
-            expression: None,
-        };
-        let mut service = InsightService::new(true).unwrap();
-        service.init(&context).await.unwrap();
+        })
+        .unwrap();
+        service.init().await.unwrap();
         Arc::new(service)
     }
 

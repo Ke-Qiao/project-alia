@@ -9,8 +9,10 @@ use crate::modules::interaction::cache::review::{
 };
 use crate::modules::memory::MemoryService;
 use crate::modules::memory::maintenance::{self, MemoryMaintenanceUser};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
-use crate::providers::adapter::{LlmAdapter, ScheduleConfig, ScheduledTask, SchedulerBackend};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::providers::adapter::{
+    EmbeddingAdapter, LlmAdapter, ScheduleConfig, ScheduledTask, SchedulerBackend,
+};
 use crate::providers::llm::response::join_model_labels;
 use crate::scheduler::ConditionRegistry;
 use async_trait::async_trait;
@@ -65,6 +67,7 @@ struct InsightState {
 }
 
 pub struct InsightService {
+    initialization: Option<InsightDependencies>,
     disabled: bool,
     config: Arc<Mutex<Option<InsightsSection>>>,
     db: Mutex<Option<DatabaseConnection>>,
@@ -86,13 +89,32 @@ pub struct InsightService {
     state: Arc<Mutex<InsightState>>,
 }
 
+pub struct InsightDependencies {
+    pub config: InsightsSection,
+    pub db: DatabaseConnection,
+    pub event_bus: EventBus,
+    pub cancel_token: CancellationToken,
+    pub llm: Option<Arc<dyn LlmAdapter>>,
+    pub memory: Option<Arc<MemoryService>>,
+    pub cache: Option<Arc<dyn crate::modules::interaction::cache::CacheStore>>,
+    pub embedding: Option<Arc<dyn EmbeddingAdapter>>,
+    pub scheduler: Option<Arc<dyn SchedulerBackend>>,
+    pub conditions: Option<Arc<ConditionRegistry>>,
+}
+
 impl InsightService {
-    pub fn new(enabled: bool) -> anyhow::Result<Self> {
+    pub(crate) fn check_available(enabled: bool) -> anyhow::Result<()> {
         anyhow::ensure!(
             !enabled || cfg!(feature = "insights"),
             "enabled insights require feature 'insights'"
         );
+        Ok(())
+    }
+
+    pub fn new(enabled: bool) -> anyhow::Result<Self> {
+        Self::check_available(enabled)?;
         Ok(Self {
+            initialization: None,
             disabled: !enabled,
             config: Arc::new(Mutex::new(None)),
             db: Mutex::new(None),
@@ -118,6 +140,14 @@ impl InsightService {
                 conditions_override: None,
             })),
         })
+    }
+
+    pub fn with_runtime(dependencies: InsightDependencies) -> anyhow::Result<Self> {
+        let mut service = Self::new(dependencies.config.enabled)?;
+        if !service.disabled {
+            service.initialization = Some(dependencies);
+        }
+        Ok(service)
     }
 
     async fn bounded_phase<T>(
@@ -942,11 +972,15 @@ impl ModuleLifecycle for InsightService {
         "scheduled"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
+    async fn init(&mut self) -> anyhow::Result<()> {
         if self.disabled {
             return Ok(());
         }
-        let insights_config = ctx.config.policies.insights.clone();
+        let dependencies = self
+            .initialization
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("insights initialization dependencies are not bound"))?;
+        let insights_config = dependencies.config;
 
         self.enabled
             .store(insights_config.enabled, Ordering::Relaxed);
@@ -955,24 +989,17 @@ impl ModuleLifecycle for InsightService {
         ));
 
         *self.config.lock().await = Some(insights_config);
-        *self.db.lock().await = Some(ctx.db.clone());
-        *self.llm.lock().await = ctx
-            .major_llm
-            .clone()
-            .or_else(|| ctx.llm.clone())
-            .or_else(|| ctx.minor_llm.clone());
-        *self.memory.lock().await = ctx.memory.clone();
+        *self.db.lock().await = Some(dependencies.db);
+        *self.llm.lock().await = dependencies.llm;
+        *self.memory.lock().await = dependencies.memory;
         *self.cache_review.lock().await = CacheReviewRuntime {
-            cache: ctx
-                .cache
-                .clone()
-                .map(|service| service as Arc<dyn crate::modules::interaction::cache::CacheStore>),
-            embedding: ctx.embedding.clone(),
+            cache: dependencies.cache,
+            embedding: dependencies.embedding,
         };
-        *self.event_bus.lock().await = Some(ctx.event_bus.clone());
-        *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
-        *self.scheduler.lock().await = ctx.scheduler.clone();
-        *self.condition_registry.lock().await = ctx.conditions.clone();
+        *self.event_bus.lock().await = Some(dependencies.event_bus);
+        *self.cancel_token.lock().await = Some(dependencies.cancel_token);
+        *self.scheduler.lock().await = dependencies.scheduler;
+        *self.condition_registry.lock().await = dependencies.conditions;
 
         tracing::info!("InsightService initialized");
         Ok(())

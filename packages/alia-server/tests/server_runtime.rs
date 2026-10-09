@@ -10,7 +10,6 @@ use alia_server::bootstrap::ShutdownIncomplete;
 use alia_server::config::ServerConfig;
 use alia_server::event::EventBus;
 use alia_server::modules::interaction::{cache::CacheStore, conversation::ConversationStore};
-use alia_server::modules::platform::lifecycle::ModuleContext;
 use alia_server::{bootstrap::ServerBuilder, modules::platform::lifecycle::ModuleLifecycle};
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -130,14 +129,17 @@ impl Probe {
             worker: tokio::sync::Mutex::new(None),
         }
     }
+    fn with_database(self, db: DatabaseConnection) -> Self {
+        *self.state.db.lock().unwrap() = Some(db);
+        self
+    }
 }
 #[async_trait]
 impl ModuleLifecycle for Probe {
     fn name(&self) -> &'static str {
         self.name
     }
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        *self.state.db.lock().unwrap() = Some(ctx.db.clone());
+    async fn init(&mut self) -> anyhow::Result<()> {
         self.state
             .log
             .lock()
@@ -189,6 +191,26 @@ impl ModuleLifecycle for Probe {
         self.state.stopped.add_permits(1);
         anyhow::ensure!(!self.fail_stop, "injected stop failure after worker join");
         Ok(())
+    }
+}
+
+#[cfg(not(feature = "insights"))]
+#[async_trait]
+impl alia_server::providers::adapter::TtsAdapter for Probe {
+    async fn synthesize_request(
+        &self,
+        _: &alia_server::providers::adapter::TtsRequest,
+        _: alia_server::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<alia_server::providers::tts::audio_budget::EncodedAudio> {
+        anyhow::bail!("runtime initialization probe must not synthesize audio")
+    }
+
+    async fn synthesize_stream_request(
+        &self,
+        _: &alia_server::providers::adapter::TtsRequest,
+        _: alia_server::providers::tts::audio_budget::ResponseAudioBudget,
+    ) -> anyhow::Result<alia_server::providers::tts::audio_budget::TtsAudioStream> {
+        anyhow::bail!("runtime initialization probe must not synthesize audio")
     }
 }
 
@@ -310,12 +332,12 @@ async fn partial_init_and_start_failures_stop_workers_once_in_reverse_order() {
             let log = Arc::new(Mutex::new(Vec::new()));
             let first = ProbeState::new(log.clone());
             let second = ProbeState::new(log.clone());
-            let mut failing = Probe::new("second", second.clone());
+            let mut failing = Probe::new("second", second.clone()).with_database(f.db.clone());
             failing.fail_init = fail_init;
             failing.fail_start = !fail_init;
             let result = f
                 .builder()
-                .with_extension(Probe::new("first", first.clone()))
+                .with_extension(Probe::new("first", first.clone()).with_database(f.db.clone()))
                 .with_extension(failing)
                 .build()
                 .await;
@@ -405,7 +427,7 @@ async fn cancelling_or_dropping_build_future_rolls_back_partial_init() {
                 EventBus::new(64),
                 parent.clone(),
             )
-            .with_extension(Probe::new("blocked_init", state.clone()));
+            .with_extension(Probe::new("blocked_init", state.clone()).with_database(f.db.clone()));
             let startup = build.start_build();
             let handle = startup.shutdown_handle();
             let task = tokio::spawn(startup.wait());
@@ -445,6 +467,7 @@ async fn native_stop_deadline_keeps_owner_and_pool_until_actual_completion() {
             .await
             .unwrap();
         let pool = runtime.state().db.clone();
+        *state.db.lock().unwrap() = Some(pool.clone());
         let handle = runtime.shutdown_handle();
         let started = Instant::now();
         let error = runtime.shutdown().await.unwrap_err();
@@ -475,10 +498,30 @@ async fn native_stop_deadline_keeps_owner_and_pool_until_actual_completion() {
     .await;
 }
 
+async fn owned_pool_connections(admin: &DatabaseConnection, application: &str) -> i64 {
+    use sea_orm::{DatabaseBackend, Statement};
+    admin
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM pg_stat_activity WHERE application_name = $1",
+            vec![application.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "count")
+        .unwrap()
+}
+
 #[tokio::test]
 async fn failed_startup_returns_pending_handle_until_native_rollback_finishes() {
     with_fixture(|mut f| async move {
         f.config.server.shutdown_grace_ms = 30;
+        let application = format!("rollback_{}", Uuid::new_v4().simple());
+        f.config
+            .database
+            .url
+            .push_str(&format!("&application_name={application}"));
         let gate = Arc::new(NativeGate::default());
         let _release = ReleaseOnDrop(gate.clone());
         let mut state = ProbeState::new(Arc::default());
@@ -509,8 +552,10 @@ async fn failed_startup_returns_pending_handle_until_native_rollback_finishes() 
                 .iter()
                 .any(|error| error.contains("injected init failure"))
         );
-        let pool = state.db.lock().unwrap().clone().unwrap();
-        pool.execute_unprepared("SELECT 1").await.unwrap();
+        assert!(
+            owned_pool_connections(&f.admin, &application).await > 0,
+            "owned pool stays connected while rollback is pending"
+        );
         gate.release();
         assert!(
             handle.wait().await.is_err(),
@@ -519,7 +564,13 @@ async fn failed_startup_returns_pending_handle_until_native_rollback_finishes() 
         assert!(handle.is_finished());
         assert_eq!(state.active.load(Ordering::SeqCst), 0);
         assert_eq!(state.stops.load(Ordering::SeqCst), 1);
-        assert!(pool.execute_unprepared("SELECT 1").await.is_err());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while owned_pool_connections(&f.admin, &application).await != 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("owned pool closes after rollback joins");
     })
     .await;
 }
@@ -539,6 +590,8 @@ async fn joined_stop_error_does_not_skip_remaining_cleanup_or_become_success() {
             .await
             .unwrap();
         let pool = runtime.state().db.clone();
+        *first.db.lock().unwrap() = Some(pool.clone());
+        *second.db.lock().unwrap() = Some(pool.clone());
         let handle = runtime.shutdown_handle();
         let error = runtime.shutdown().await.unwrap_err();
         assert!(format!("{error:#}").contains("injected stop failure"));
@@ -642,7 +695,7 @@ async fn dropping_run_closes_listeners_and_drains_owned_tasks_without_cancelling
             EventBus::new(64),
             parent.clone(),
         )
-        .with_extension(Probe::new("running", state.clone()))
+        .with_extension(Probe::new("running", state.clone()).with_database(f.db.clone()))
         .build()
         .await
         .unwrap();
@@ -674,6 +727,29 @@ async fn dropping_run_closes_listeners_and_drains_owned_tasks_without_cancelling
     .await;
 }
 
+#[cfg(not(feature = "insights"))]
+#[tokio::test]
+async fn unavailable_insights_fail_before_tts_initialization() {
+    with_fixture(|mut f| async move {
+        f.config.policies.insights.enabled = true;
+        let state = ProbeState::new(Arc::default());
+        let error = f
+            .builder()
+            .with_tts(Probe::new("uninitialized_tts", state.clone()))
+            .build()
+            .await
+            .err()
+            .expect("enabled insights must require the insights feature");
+        assert!(
+            format!("{error:#}").contains("enabled insights require feature 'insights'"),
+            "{error:#}"
+        );
+        assert_eq!(state.initialized.available_permits(), 0);
+        assert_eq!(state.active.load(Ordering::SeqCst), 0);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn occupied_listener_and_invalid_factory_fail_before_module_initialization() {
     with_fixture(|mut f| async move {
@@ -682,7 +758,7 @@ async fn occupied_listener_and_invalid_factory_fail_before_module_initialization
         f.config.server.port = occupied.local_addr().unwrap().port();
         assert!(
             f.builder()
-                .with_extension(Probe::new("unused", state.clone()))
+                .with_extension(Probe::new("unused", state.clone()).with_database(f.db.clone()))
                 .build()
                 .await
                 .is_err()
@@ -693,7 +769,7 @@ async fn occupied_listener_and_invalid_factory_fail_before_module_initialization
         f.config.modules.stt = "nonexistent-provider".into();
         assert!(
             f.builder()
-                .with_extension(Probe::new("unused", state.clone()))
+                .with_extension(Probe::new("unused", state.clone()).with_database(f.db.clone()))
                 .build()
                 .await
                 .is_err()
@@ -792,6 +868,8 @@ async fn dispatched_execution_retains_outbound_plugin_and_database_until_receipt
             .with_extension(Probe::new("plugin", plugin.clone()))
             .with_channel(Probe::new("outbound", outbound.clone())).build().await.unwrap();
         let state = runtime.state().clone();
+        *plugin.db.lock().unwrap() = Some(state.db.clone());
+        *outbound.db.lock().unwrap() = Some(state.db.clone());
         let release = Arc::new(Semaphore::new(0)); let entered = Arc::new(Semaphore::new(0));
         state.modules.tools.register_tool_executor("builtin", Arc::new(EffectProbe { release: release.clone(), entered: entered.clone(), channels: state.channels.clone(), plugin: plugin.clone() })).await.unwrap();
         let user = Uuid::new_v4();

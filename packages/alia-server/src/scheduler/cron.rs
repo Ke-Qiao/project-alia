@@ -14,9 +14,10 @@ use uuid::Uuid;
 
 use super::action::{ActionRegistry, capture_action_sources};
 use super::condition::{ConditionContext, ConditionRegistry};
+use crate::config::SchedulerSection;
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::platform::background::OwnedBackground;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ActionContext, EventSubscription, ScheduleConfig, ScheduledTask, SchedulerBackend, TaskFilter,
     TaskPatch,
@@ -79,17 +80,18 @@ enum ActionMessage {
 
 pub struct AutomationScheduler {
     background: OwnedBackground,
+    initialized: bool,
     tasks: Arc<RwLock<HashMap<Uuid, TaskState>>>,
     subscriptions: Arc<RwLock<HashMap<Uuid, SubscriptionState>>>,
     action_tx: Mutex<Option<mpsc::Sender<ActionMessage>>>,
-    cancel_token: Mutex<Option<CancellationToken>>,
-    event_bus: Mutex<Option<EventBus>>,
-    db: Mutex<Option<DatabaseConnection>>,
-    tick_interval_sec: Mutex<u64>,
-    task_timeout_sec: Mutex<u64>,
-    max_tasks_per_user: Mutex<u32>,
-    max_subscriptions_per_user: Mutex<u32>,
-    max_concurrent_actions: Mutex<u32>,
+    cancel_token: Option<CancellationToken>,
+    event_bus: Option<EventBus>,
+    db: Option<DatabaseConnection>,
+    tick_interval_sec: u64,
+    task_timeout_sec: u64,
+    max_tasks_per_user: u32,
+    max_subscriptions_per_user: u32,
+    max_concurrent_actions: u32,
     conditions: Arc<ConditionRegistry>,
     actions: Arc<ActionRegistry>,
 }
@@ -101,24 +103,42 @@ impl AutomationScheduler {
     ) -> Self {
         Self {
             background: OwnedBackground::default(),
+            initialized: false,
             tasks: Arc::new(RwLock::new(HashMap::new())),
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             action_tx: Mutex::new(None),
-            cancel_token: Mutex::new(None),
-            event_bus: Mutex::new(None),
-            db: Mutex::new(None),
-            tick_interval_sec: Mutex::new(1),
-            task_timeout_sec: Mutex::new(30),
-            max_tasks_per_user: Mutex::new(100),
-            max_subscriptions_per_user: Mutex::new(50),
-            max_concurrent_actions: Mutex::new(5),
+            cancel_token: None,
+            event_bus: None,
+            db: None,
+            tick_interval_sec: 1,
+            task_timeout_sec: 30,
+            max_tasks_per_user: 100,
+            max_subscriptions_per_user: 50,
+            max_concurrent_actions: 5,
             conditions,
             actions,
         }
     }
 
-    async fn db(&self) -> Option<DatabaseConnection> {
-        self.db.lock().await.clone()
+    pub fn with_runtime(
+        db: DatabaseConnection,
+        event_bus: EventBus,
+        cancel_token: CancellationToken,
+        config: SchedulerSection,
+        conditions: Arc<ConditionRegistry>,
+        actions: Arc<ActionRegistry>,
+    ) -> Self {
+        Self {
+            db: Some(db),
+            event_bus: Some(event_bus),
+            cancel_token: Some(cancel_token),
+            tick_interval_sec: config.tick_interval_sec.max(1),
+            task_timeout_sec: config.task_timeout_sec.max(1),
+            max_tasks_per_user: config.max_tasks_per_user,
+            max_subscriptions_per_user: config.max_subscriptions_per_user,
+            max_concurrent_actions: config.max_concurrent_tasks.max(1),
+            ..Self::with_registries(conditions, actions)
+        }
     }
 
     async fn tick_loop(
@@ -550,30 +570,23 @@ impl ModuleLifecycle for AutomationScheduler {
         "automation_scheduler"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        *self.db.lock().await = Some(ctx.db.clone());
-        *self.cancel_token.lock().await = Some(ctx.cancel_token.clone());
-        *self.event_bus.lock().await = Some(ctx.event_bus.clone());
-        *self.tick_interval_sec.lock().await =
-            ctx.config.policies.scheduler.tick_interval_sec.max(1);
-        *self.task_timeout_sec.lock().await = ctx.config.policies.scheduler.task_timeout_sec.max(1);
-        *self.max_tasks_per_user.lock().await = ctx.config.policies.scheduler.max_tasks_per_user;
-        *self.max_subscriptions_per_user.lock().await =
-            ctx.config.policies.scheduler.max_subscriptions_per_user;
-        *self.max_concurrent_actions.lock().await =
-            ctx.config.policies.scheduler.max_concurrent_tasks.max(1);
-        let (tasks, subscriptions) = load_scheduler_state_from_db(&ctx.db).await?;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("scheduler database not configured"))?;
+        let (tasks, subscriptions) = load_scheduler_state_from_db(db).await?;
         *self.tasks.write().await = tasks;
         *self.subscriptions.write().await = subscriptions;
+        self.initialized = true;
         tracing::info!("AutomationScheduler initialized");
         Ok(())
     }
 
     async fn start(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(self.initialized, "scheduler not initialized");
         let parent = self
             .cancel_token
-            .lock()
-            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("scheduler not initialized"))?;
         let mut background = self.background.begin_start(&parent).await?;
@@ -583,17 +596,15 @@ impl ModuleLifecycle for AutomationScheduler {
 
         let event_bus = self
             .event_bus
-            .lock()
-            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("scheduler not initialized"))?;
         let db = self
-            .db()
-            .await
+            .db
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("scheduler database not initialized"))?;
-        let tick_interval_sec = *self.tick_interval_sec.lock().await;
-        let task_timeout_sec = *self.task_timeout_sec.lock().await;
-        let max_concurrent_actions = *self.max_concurrent_actions.lock().await;
+        let tick_interval_sec = self.tick_interval_sec;
+        let task_timeout_sec = self.task_timeout_sec;
+        let max_concurrent_actions = self.max_concurrent_actions;
         let semaphore = Arc::new(Semaphore::new(max_concurrent_actions as usize));
 
         background.spawn_loop(
@@ -652,7 +663,7 @@ impl ModuleLifecycle for AutomationScheduler {
 impl SchedulerBackend for AutomationScheduler {
     async fn create_task(&self, task: ScheduledTask) -> anyhow::Result<Uuid> {
         let id = task.id;
-        let max_tasks_per_user = *self.max_tasks_per_user.lock().await;
+        let max_tasks_per_user = self.max_tasks_per_user;
         if max_tasks_per_user > 0 {
             let tasks = self.tasks.read().await;
             let count = tasks
@@ -663,8 +674,8 @@ impl SchedulerBackend for AutomationScheduler {
                 anyhow::bail!("max tasks per user exceeded");
             }
         }
-        if let Some(db) = self.db().await {
-            upsert_task(&db, &task).await?;
+        if let Some(db) = &self.db {
+            upsert_task(db, &task).await?;
         }
         self.tasks.write().await.insert(id, TaskState::new(task)?);
         Ok(id)
@@ -693,8 +704,8 @@ impl SchedulerBackend for AutomationScheduler {
         }
         let task = state.task.clone();
         drop(tasks);
-        if let Some(db) = self.db().await {
-            upsert_task(&db, &task).await?;
+        if let Some(db) = &self.db {
+            upsert_task(db, &task).await?;
         }
         Ok(())
     }
@@ -704,7 +715,7 @@ impl SchedulerBackend for AutomationScheduler {
         // Stop local dispatch immediately; failed durable deletion stays an
         // error and can be retried even after this local entry is removed.
         self.tasks.write().await.remove(&task_id);
-        if let Some(db) = self.db().await {
+        if let Some(db) = &self.db {
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM scheduled_tasks WHERE id = $1::uuid",
@@ -764,7 +775,7 @@ impl SchedulerBackend for AutomationScheduler {
 
     async fn subscribe_event(&self, sub: EventSubscription) -> anyhow::Result<Uuid> {
         let id = sub.id;
-        let max_subscriptions_per_user = *self.max_subscriptions_per_user.lock().await;
+        let max_subscriptions_per_user = self.max_subscriptions_per_user;
         if max_subscriptions_per_user > 0 {
             let subs = self.subscriptions.read().await;
             let count = subs
@@ -775,8 +786,8 @@ impl SchedulerBackend for AutomationScheduler {
                 anyhow::bail!("max subscriptions per user exceeded");
             }
         }
-        if let Some(db) = self.db().await {
-            upsert_subscription(&db, &sub).await?;
+        if let Some(db) = &self.db {
+            upsert_subscription(db, &sub).await?;
         }
         self.subscriptions.write().await.insert(
             id,
@@ -794,7 +805,7 @@ impl SchedulerBackend for AutomationScheduler {
             .await
             .remove(&sub_id)
             .ok_or_else(|| anyhow::anyhow!("subscription not found: {sub_id}"))?;
-        if let Some(db) = self.db().await {
+        if let Some(db) = &self.db {
             db.execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM event_subscriptions WHERE id = $1::uuid",

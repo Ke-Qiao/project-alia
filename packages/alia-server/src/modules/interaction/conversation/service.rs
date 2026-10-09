@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::{ConversationEventEntry, ConversationStore};
 use crate::entity::{chat_message, chat_session, conversation_event};
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::ChatMessage;
 
 #[cfg(test)]
@@ -27,6 +27,13 @@ impl ConversationService {
         Self {
             db: None,
             active_sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn with_database(db: DatabaseConnection) -> Self {
+        Self {
+            db: Some(db),
+            ..Self::new()
         }
     }
 
@@ -47,8 +54,8 @@ impl ModuleLifecycle for ConversationService {
         "database_conversation"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.db = Some(ctx.db.clone());
+    async fn init(&mut self) -> anyhow::Result<()> {
+        self.db()?;
         tracing::info!("ConversationService initialized");
         Ok(())
     }

@@ -15,9 +15,10 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::{
-    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, OpenAiApiFamily, ServerConfig,
+    LlmProfileKind, LlmProfileSection, LlmRequestOptionsSection, OpenAiApiFamily,
+    OpenAiProviderSection,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
 };
@@ -249,24 +250,30 @@ struct OpenAiConfig {
 }
 
 impl OpenAiLlm {
-    pub fn new() -> Self {
-        Self::for_profile("major")
-    }
-
-    pub fn for_profile(profile_id: impl Into<String>) -> Self {
-        Self {
+    pub fn new(
+        profile_id: impl Into<String>,
+        profile: &LlmProfileSection,
+        provider: &OpenAiProviderSection,
+    ) -> anyhow::Result<Self> {
+        let profile_id = profile_id.into();
+        anyhow::ensure!(
+            profile.kind == LlmProfileKind::Chat,
+            "LLM profile '{}' is not an OpenAI chat profile",
+            profile_id
+        );
+        Ok(Self {
             client: Client::new(),
-            profile_id: profile_id.into(),
+            profile_id,
             config: Arc::new(RwLock::new(OpenAiConfig {
-                provider_id: "openai".to_string(),
-                api_key: String::new(),
-                base_url: "https://api.openai.com/v1".to_string(),
-                model: "gpt-4o".to_string(),
-                api_family: OpenAiApiFamily::ChatCompletions,
-                request: LlmRequestOptionsSection::default(),
-                health_probe_enabled: false,
+                provider_id: profile.provider.clone(),
+                api_key: provider.api_key.clone(),
+                base_url: provider.base_url.clone(),
+                model: profile.model.clone(),
+                api_family: provider.api_family,
+                request: profile.request.clone(),
+                health_probe_enabled: provider.health_probe_enabled,
             })),
-        }
+        })
     }
 
     async fn chat_internal(
@@ -368,46 +375,14 @@ impl OpenAiLlm {
     }
 }
 
-impl Default for OpenAiLlm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for OpenAiLlm {
     fn name(&self) -> &'static str {
         "openai"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.kind != LlmProfileKind::Chat {
-            anyhow::bail!(
-                "LLM profile '{}' is not an OpenAI chat profile",
-                self.profile_id
-            );
-        }
-        let LlmProviderProfileRef::OpenAi(provider) =
-            server_config.llm_provider_profile(&profile.provider)?
-        else {
-            anyhow::bail!(
-                "LLM profile '{}' provider '{}' is not OpenAI-compatible",
-                self.profile_id,
-                profile.provider
-            );
-        };
-
-        let mut config = self.config.write().await;
-        config.provider_id = profile.provider.clone();
-        config.api_key = provider.api_key.clone();
-        config.base_url = provider.base_url.clone();
-        config.model = profile.model.clone();
-        config.api_family = provider.api_family;
-        config.request = profile.request.clone();
-        config.health_probe_enabled = provider.health_probe_enabled;
-
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let config = self.config.read().await;
         if config.api_key.is_empty() {
             tracing::warn!("OpenAI API key not configured");
         }
@@ -909,10 +884,21 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    fn test_llm() -> OpenAiLlm {
+        OpenAiLlm::new(
+            "major",
+            crate::config::ProfilesSection::default()
+                .llm_profile("major")
+                .unwrap(),
+            &OpenAiProviderSection::default(),
+        )
+        .unwrap()
+    }
+
     #[tokio::test]
     async fn health_probe_default_disabled_and_missing_key_do_not_connect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let llm = OpenAiLlm::for_profile("major");
+        let llm = test_llm();
         {
             let mut config = llm.config.write().await;
             assert!(!config.health_probe_enabled);
@@ -939,7 +925,7 @@ mod tests {
     async fn health_probe_preserves_http_status_without_disclosing_request_or_body() {
         for status in ["200 OK", "401 Unauthorized", "404 Not Found"] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let llm = OpenAiLlm::for_profile("major");
+            let llm = test_llm();
             {
                 let mut config = llm.config.write().await;
                 config.api_key = "local-health-secret".into();
@@ -1031,7 +1017,7 @@ mod tests {
         .unwrap()
         .unwrap_err();
         assert_eq!(refused.kind(), std::io::ErrorKind::ConnectionRefused);
-        let mut llm = OpenAiLlm::for_profile("major");
+        let mut llm = test_llm();
         llm.client = Client::builder().unix_socket(path).build().unwrap();
         {
             let mut config = llm.config.write().await;

@@ -18,6 +18,97 @@ use std::{
 use tokio::{net::TcpListener, sync::Notify, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+#[tokio::test]
+async fn remote_weights_wait_for_init_and_setup_failure_is_nonfatal() {
+    use axum::{
+        extract::{Path, Query},
+        http::StatusCode,
+        routing::get,
+    };
+    use tokio::sync::Mutex;
+
+    for reject_sovits in [false, true] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let provider = GptSovitsProviderSection {
+            endpoint: format!("http://{}/tts", listener.local_addr().unwrap()),
+            request_timeout_sec: 2,
+            ..Default::default()
+        };
+        let voices = BTreeMap::from([(
+            "test-voice".into(),
+            VoiceProfileSection {
+                provider_specific: BTreeMap::from([
+                    (
+                        "gpt_weights_path".into(),
+                        serde_json::json!("mock-gpt.ckpt"),
+                    ),
+                    (
+                        "sovits_weights_path".into(),
+                        serde_json::json!("mock-sovits.pth"),
+                    ),
+                ]),
+                ..Default::default()
+            },
+        )]);
+        let mut tts = GptSovitsTts::new(&provider, "test-voice", &voices, &BTreeMap::new());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err()
+        );
+
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let recorded = calls.clone();
+        let router = Router::new().route(
+            "/{path}",
+            get(
+                move |Path(path): Path<String>, Query(query): Query<BTreeMap<String, String>>| {
+                    let recorded = recorded.clone();
+                    async move {
+                        let reject = reject_sovits && path == "set_sovits_weights";
+                        recorded
+                            .lock()
+                            .await
+                            .push((path, query["weights_path"].clone()));
+                        if reject {
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        } else {
+                            StatusCode::OK
+                        }
+                    }
+                },
+            ),
+        );
+        let stop = CancellationToken::new();
+        let shutdown = stop.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(shutdown.cancelled_owned())
+                .await
+                .unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(5), tts.init())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            *calls.lock().await,
+            vec![
+                ("set_gpt_weights".to_string(), "mock-gpt.ckpt".to_string()),
+                (
+                    "set_sovits_weights".to_string(),
+                    "mock-sovits.pth".to_string()
+                ),
+            ]
+        );
+        stop.cancel();
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
 struct Peer {
     tts: Arc<GptSovitsTts>,
     seen: Arc<Notify>,
@@ -65,13 +156,17 @@ impl Peer {
                 .await
                 .unwrap();
         });
-        let tts = Arc::new(GptSovitsTts::new());
-        {
-            let mut config = tts.config.write().await;
-            config.endpoint = endpoint;
-            config.request_timeout_sec = 15;
-            config.stream_idle_timeout_sec = 1;
-        }
+        let tts = Arc::new(GptSovitsTts::new(
+            &GptSovitsProviderSection {
+                endpoint,
+                request_timeout_sec: 15,
+                stream_idle_timeout_sec: 1,
+                ..Default::default()
+            },
+            "default",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        ));
         Self {
             tts,
             seen,

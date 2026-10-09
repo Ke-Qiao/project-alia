@@ -10,6 +10,8 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::JwtKeys;
 use crate::bootstrap::factory;
 use crate::bootstrap::registry::ModuleRegistry;
+#[cfg(feature = "channel-embedded")]
+use crate::channels::embedded_volume_tool::EmbeddedVolumeTool;
 use crate::channels::{ChannelAdapter, ChannelRegistry};
 use crate::config::MemorySection;
 use crate::config::ServerConfig;
@@ -23,10 +25,9 @@ use crate::modules::interaction::{
     routing::{RouterConfig, RouterService},
     skills::SkillRegistry,
 };
-use crate::modules::platform::insights::InsightService;
+use crate::modules::platform::insights::{InsightDependencies, InsightService};
 use crate::modules::platform::lifecycle::{
-    ModuleContext, ModuleHealth, ModuleLifecycle, RuntimeCleanup, ShutdownPhase, start_module,
-    startup_step,
+    ModuleHealth, ModuleLifecycle, RuntimeCleanup, ShutdownPhase, start_module, startup_step,
 };
 use crate::modules::platform::sensors::{SensorRegistry, SensorRegistryConfig};
 use crate::plugins::PluginStorageService;
@@ -36,6 +37,8 @@ use crate::providers::adapter::{
     EmbeddingAdapter, LlmAdapter, SttAdapter, ToolRegistry, TtsAdapter,
 };
 use crate::registry::ArtifactRegistry;
+use crate::rules::EventRuleEngine;
+use crate::scheduler::AutomationScheduler;
 use crate::scheduler::ConditionRegistry;
 use crate::scheduler::action::{
     ActionRegistry, EmitEventActionExecutor, LogActionExecutor, NoopActionExecutor,
@@ -47,6 +50,7 @@ use crate::scheduler::evaluators::{
 };
 use crate::settings::SettingsRegistry;
 use crate::state::AppState;
+use crate::tools::BuiltinToolRegistry;
 
 pub struct ServerBuilder {
     config: Arc<ServerConfig>,
@@ -324,31 +328,6 @@ impl ServerBuilder {
             .attach_artifacts(artifact_registry.clone())
             .await;
 
-        let base_ctx = ModuleContext {
-            db: db.clone(),
-            config: self.config.clone(),
-            event_bus: self.event_bus.clone(),
-            cancel_token: self.cancel_token.clone(),
-            settings: settings.clone(),
-            artifacts: artifact_registry.clone(),
-            plugin_storage: plugin_storage.clone(),
-            sensors: sensor_registry.clone(),
-            scheduler: None,
-            conditions: None,
-            actions: None,
-            conversation: None,
-            memory: None,
-            llm: None,
-            minor_llm: None,
-            major_llm: None,
-            memory_capture_llm: None,
-            sentence_expression_llm: None,
-            embedding: None,
-            cache: None,
-            tools: None,
-            expression: None,
-        };
-
         // Create provider adapters from config; core services are fixed below.
         let minor_llm = match self.minor_llm {
             Some(llm) => llm,
@@ -388,24 +367,32 @@ impl ServerBuilder {
         };
         let stt = match self.stt {
             Some(module) => module,
-            None => factory::create_stt(&self.config.modules.stt)?,
+            None => factory::create_stt(&self.config, &self.config.modules.stt)?,
         };
         let tts = match self.tts {
             Some(module) => module,
-            None => factory::create_tts(&self.config.modules.tts)?,
+            None => factory::create_tts(&self.config, &self.config.modules.tts)?,
         };
         let embedding = match self.embedding {
             Some(embedding) => embedding,
             None => factory::create_embedding(&self.config, &self.config.llm.roles.embedding)?,
         };
-        let conversation = Box::new(ConversationService::new());
-        // Memory is a canonical service; recall policy never disables storage or erasure.
-        let memory = Box::new(crate::modules::memory::MemoryService::new());
-        let cache = Box::new(CacheService::new());
-        let skills = Box::new(SkillRegistry::new());
-        let persona = Box::new(PersonaService::new());
-        let insights = Box::new(InsightService::new(self.config.policies.insights.enabled)?);
-        let rule_engine = factory::create_rule_engine();
+        let conversation = Box::new(ConversationService::with_database(db.clone()));
+        let cache = Box::new(CacheService::with_runtime(
+            db.clone(),
+            self.cancel_token.clone(),
+        ));
+        let skills = Box::new(SkillRegistry::with_runtime(
+            db.clone(),
+            artifact_registry.clone(),
+            self.config
+                .resources
+                .skills_dir
+                .as_deref()
+                .map(|path| self.config.resolve_path(path)),
+        ));
+        let persona = Box::new(PersonaService::with_database(db.clone()));
+        InsightService::check_available(self.config.policies.insights.enabled)?;
 
         // Build condition registry with built-in evaluators
         let condition_registry = Arc::new(ConditionRegistry::new());
@@ -435,11 +422,15 @@ impl ServerBuilder {
             )))
             .await;
 
-        let scheduler =
-            factory::create_scheduler(condition_registry.clone(), action_registry.clone());
+        let scheduler = Box::new(AutomationScheduler::with_runtime(
+            db.clone(),
+            self.event_bus.clone(),
+            self.cancel_token.clone(),
+            self.config.policies.scheduler.clone(),
+            condition_registry.clone(),
+            action_registry.clone(),
+        ));
 
-        let tools =
-            factory::create_tools_with_sensors(sensor_registry.clone(), channel_registry.clone());
         let expression_runtime = Arc::new(ExpressionRuntime::from_config(&self.config));
         let expression_owner = expression_runtime.clone();
         cleanup.add(
@@ -458,38 +449,12 @@ impl ServerBuilder {
         // Initialize scheduler early so other modules can reference it
         tracing::info!("initializing modules...");
         let scheduler = cleanup
-            .initialize(scheduler, &base_ctx, ShutdownPhase::Producers)
+            .initialize(scheduler, &self.cancel_token, ShutdownPhase::Producers)
             .await?;
-
-        // Context with scheduler for modules that need it
-        let ctx = ModuleContext {
-            db: db.clone(),
-            config: self.config.clone(),
-            event_bus: self.event_bus.clone(),
-            cancel_token: self.cancel_token.clone(),
-            settings: settings.clone(),
-            artifacts: artifact_registry.clone(),
-            plugin_storage: plugin_storage.clone(),
-            sensors: sensor_registry.clone(),
-            scheduler: Some(scheduler.clone()),
-            conditions: Some(condition_registry.clone()),
-            actions: Some(action_registry.clone()),
-            conversation: None, // Will be populated shortly but usually not needed in other modules init
-            memory: None,
-            llm: None,
-            minor_llm: None,
-            major_llm: None,
-            memory_capture_llm: None,
-            sentence_expression_llm: None,
-            embedding: None,
-            cache: None,
-            tools: None,
-            expression: Some(expression_runtime.clone()),
-        };
 
         // Initialize remaining modules in dependency order
         let embedding_arc = cleanup
-            .initialize(embedding, &ctx, ShutdownPhase::Resources)
+            .initialize(embedding, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let mut policy_seed = crate::modules::memory::context::ContextPolicy::from_config(
             &initial_policies.memory,
@@ -541,28 +506,19 @@ impl ServerBuilder {
             db.clone(),
             embedding_arc.clone(),
         ));
-        let ctx = ModuleContext {
-            config: self.config.clone(),
-            embedding: Some(embedding_arc.clone()),
-            ..ctx
-        };
         let conversation_arc = cleanup
-            .initialize(conversation, &ctx, ShutdownPhase::Resources)
+            .initialize(conversation, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
-        let ctx = ModuleContext {
-            conversation: Some(conversation_arc.clone()),
-            ..ctx
-        };
         let minor_llm = cleanup
-            .initialize(minor_llm, &ctx, ShutdownPhase::Resources)
+            .initialize(minor_llm, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let major_llm = cleanup
-            .initialize(major_llm, &ctx, ShutdownPhase::Resources)
+            .initialize(major_llm, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let memory_capture_llm = match memory_capture_llm {
             Some(module) => Some(
                 cleanup
-                    .initialize(module, &ctx, ShutdownPhase::Resources)
+                    .initialize(module, &self.cancel_token, ShutdownPhase::Resources)
                     .await?,
             ),
             None => None,
@@ -570,7 +526,7 @@ impl ServerBuilder {
         let sentence_expression_llm = match sentence_expression_llm {
             Some(module) => Some(
                 cleanup
-                    .initialize(module, &ctx, ShutdownPhase::Resources)
+                    .initialize(module, &self.cancel_token, ShutdownPhase::Resources)
                     .await?,
             ),
             None => None,
@@ -580,22 +536,21 @@ impl ServerBuilder {
         } else {
             major_llm.clone()
         };
-        let ctx = ModuleContext {
-            llm: Some(default_llm.clone()),
-            minor_llm: Some(minor_llm.clone()),
-            major_llm: Some(major_llm.clone()),
-            memory_capture_llm: memory_capture_llm.clone(),
-            sentence_expression_llm: sentence_expression_llm.clone(),
-            ..ctx
-        };
         let stt = cleanup
-            .initialize(stt, &ctx, ShutdownPhase::Resources)
+            .initialize(stt, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let tts = cleanup
-            .initialize(tts, &ctx, ShutdownPhase::Resources)
+            .initialize(tts, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
+        let memory = Box::new(crate::modules::memory::MemoryService::with_runtime(
+            db.clone(),
+            Some(embedding_arc.clone()),
+            self.config.policies.memory.clone(),
+            crate::modules::memory::context::ContextPolicy::from_server_config(&self.config)?,
+            self.cancel_token.clone(),
+        ));
         let memory_arc = cleanup
-            .initialize(memory, &ctx, ShutdownPhase::Resources)
+            .initialize(memory, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let effective_memory_config = self.config.policies.memory.clone();
         if effective_memory_config.enabled {
@@ -606,20 +561,22 @@ impl ServerBuilder {
             })
             .await?;
         }
-        let memory_for_ctx = Some(memory_arc.clone());
-        let ctx = ModuleContext {
-            memory: memory_for_ctx,
-            ..ctx
-        };
         let cache_arc = cleanup
-            .initialize(cache, &ctx, ShutdownPhase::Resources)
+            .initialize(cache, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
-        let ctx = ModuleContext {
-            cache: Some(cache_arc.clone()),
-            ..ctx
-        };
+        let tools = BuiltinToolRegistry::with_runtime(
+            db.clone(),
+            self.event_bus.clone(),
+            artifact_registry.clone(),
+            Some(memory_arc.clone()),
+            Some(scheduler.clone()),
+        )
+        .with_sensors(sensor_registry.clone());
+        #[cfg(feature = "channel-embedded")]
+        tools.register_executor(Arc::new(EmbeddedVolumeTool::new(channel_registry.clone())));
+        let tools = Box::new(tools);
         let raw_tools = cleanup
-            .initialize(tools, &ctx, ShutdownPhase::Resources)
+            .initialize(tools, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let execution = crate::modules::execution::ExecutionService::new(
             crate::modules::execution::repository::ExecutionRepository::new(db.clone()),
@@ -678,10 +635,6 @@ impl ServerBuilder {
                 Ok(())
             }
         });
-        let ctx = ModuleContext {
-            tools: Some(tools_arc.clone()),
-            ..ctx
-        };
         action_registry
             .register(Arc::new(ToolCallActionExecutor::new(tools_arc.clone())))
             .await;
@@ -696,7 +649,11 @@ impl ServerBuilder {
 
         #[cfg(feature = "plugin-home-assistant")]
         if self.config.plugins.home_assistant.enabled {
-            configured_extensions.push(Box::new(HomeAssistantPlugin::new()));
+            configured_extensions.push(Box::new(HomeAssistantPlugin::new(
+                self.config.plugins.home_assistant.clone(),
+                plugin_storage.clone(),
+                tools_arc.clone(),
+            )));
         }
         #[cfg(not(feature = "plugin-home-assistant"))]
         anyhow::ensure!(
@@ -706,33 +663,53 @@ impl ServerBuilder {
         for ext in configured_extensions {
             extensions.push(
                 cleanup
-                    .initialize(ext, &ctx, ShutdownPhase::Resources)
+                    .initialize(ext, &self.cancel_token, ShutdownPhase::Resources)
                     .await?,
             );
         }
         let skills = cleanup
-            .initialize(skills, &ctx, ShutdownPhase::Resources)
+            .initialize(skills, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
         let persona = cleanup
-            .initialize(persona, &ctx, ShutdownPhase::Resources)
+            .initialize(persona, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
-        let routing = &ctx.config.policies.routing;
+        let routing = &self.config.policies.routing;
         let router = Box::new(RouterService::new(
             RouterConfig {
                 timeout_sec: routing.timeout_sec,
                 minor_llm_enabled: routing.minor_llm_enabled,
                 major_llm_enabled: routing.major_llm_enabled,
             },
-            ctx.minor_llm.clone(),
+            Some(minor_llm.clone()),
         )?);
         let router = cleanup
-            .initialize(router, &ctx, ShutdownPhase::Resources)
+            .initialize(router, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
+        let insights = Box::new(InsightService::with_runtime(InsightDependencies {
+            config: self.config.policies.insights.clone(),
+            db: db.clone(),
+            event_bus: self.event_bus.clone(),
+            cancel_token: self.cancel_token.clone(),
+            llm: Some(major_llm.clone()),
+            memory: Some(memory_arc.clone()),
+            cache: Some(cache_arc.clone()),
+            embedding: Some(embedding_arc.clone()),
+            scheduler: Some(scheduler.clone()),
+            conditions: Some(condition_registry.clone()),
+        })?);
         let insights = cleanup
-            .initialize(insights, &ctx, ShutdownPhase::Producers)
+            .initialize(insights, &self.cancel_token, ShutdownPhase::Producers)
             .await?;
+        let rule_engine = Box::new(EventRuleEngine::with_runtime(
+            db.clone(),
+            self.event_bus.clone(),
+            self.cancel_token.clone(),
+            self.config.policies.rules.clone(),
+            condition_registry.clone(),
+            action_registry.clone(),
+        ));
         let rule_engine = cleanup
-            .initialize(rule_engine, &ctx, ShutdownPhase::Producers)
+            .initialize(rule_engine, &self.cancel_token, ShutdownPhase::Producers)
             .await?;
         let channels = channel_registry.clone();
         cleanup.add("channels", ShutdownPhase::Channels, move || {
@@ -754,13 +731,31 @@ impl ServerBuilder {
                 tracing::info!(channel_id = ch_cfg.id(), "channel disabled, skipping");
                 continue;
             }
-            let channel = factory::create_channel(ch_cfg, self.event_bus.clone())?;
-            register_initialized_channel(channel, &ctx, channel_registry.as_ref(), &cleanup)
-                .await?;
+            let channel = factory::create_channel(
+                ch_cfg,
+                self.event_bus.clone(),
+                db.clone(),
+                self.cancel_token.clone(),
+                conversation_arc.clone(),
+                sensor_registry.clone(),
+                &self.config,
+            )?;
+            register_initialized_channel(
+                channel,
+                &self.cancel_token,
+                channel_registry.as_ref(),
+                &cleanup,
+            )
+            .await?;
         }
         for channel in self.channels {
-            register_initialized_channel(channel, &ctx, channel_registry.as_ref(), &cleanup)
-                .await?;
+            register_initialized_channel(
+                channel,
+                &self.cancel_token,
+                channel_registry.as_ref(),
+                &cleanup,
+            )
+            .await?;
         }
 
         let voice_initiatives =
@@ -1042,12 +1037,12 @@ async fn verify_memory_health(
 
 async fn register_initialized_channel(
     channel: Box<dyn ChannelAdapter>,
-    ctx: &ModuleContext,
+    cancel: &CancellationToken,
     registry: &ChannelRegistry,
     cleanup: &RuntimeCleanup,
 ) -> anyhow::Result<()> {
     let (channel, transferred) = cleanup
-        .initialize_owned(channel, ctx, ShutdownPhase::Channels)
+        .initialize_owned(channel, cancel, ShutdownPhase::Channels)
         .await?;
     registry.register(channel).await?;
     transferred.store(true, std::sync::atomic::Ordering::Release);

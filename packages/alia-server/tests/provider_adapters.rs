@@ -70,7 +70,7 @@ async fn stt_minimal_result_and_capabilities_are_provider_neutral() {
 #[cfg(feature = "stt-whisper")]
 #[tokio::test]
 async fn whisper_capabilities_match_verbose_json_metadata() {
-    let stt = WhisperCppStt::new();
+    let stt = WhisperCppStt::new(&alia_server::config::WhisperCppProviderSection::default());
     let capabilities = stt.stt_capabilities().await;
 
     assert_eq!(capabilities.provider, "whisper");

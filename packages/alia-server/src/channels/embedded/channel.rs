@@ -27,10 +27,11 @@ use alia_proto::sensor::embedded_sensor_client::EmbeddedSensorClient;
 use alia_proto::settings::embedded_settings_client::EmbeddedSettingsClient;
 
 use crate::auth::load_server_keypair;
+use crate::config::ServerSection;
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::platform::background::{BackgroundStart, OwnedBackground};
+use crate::modules::platform::lifecycle::ModuleHealth;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
 use crate::modules::platform::sensors::SensorRegistry;
 
 use super::auth::auth_request_with_signing_key;
@@ -217,10 +218,19 @@ struct CachedOutput {
     registration: Option<alia_core::output_control::OutputRegistration>,
 }
 
+#[derive(Clone)]
+pub struct EmbeddedRuntimeDependencies {
+    pub db: sea_orm::DatabaseConnection,
+    pub sensors: Arc<SensorRegistry>,
+    pub server: ServerSection,
+    pub server_keypair_path: std::path::PathBuf,
+}
+
 /// Channel adapter connecting to alia-embedded (Raspberry Pi) via gRPC.
 #[derive(Clone)]
 pub struct EmbeddedChannel {
     config: EmbeddedChannelConfig,
+    runtime: Option<EmbeddedRuntimeDependencies>,
     account_database: Option<sea_orm::DatabaseConnection>,
     event_bus: EventBus,
     status: Arc<RwLock<ConnectionStatus>>,
@@ -260,6 +270,7 @@ impl EmbeddedChannel {
         let body_runtime = EmbeddedBodyRuntime::new(config.id.clone());
         Self {
             config,
+            runtime: None,
             account_database: None,
             event_bus,
             status: Arc::new(RwLock::new(status)),
@@ -284,6 +295,11 @@ impl EmbeddedChannel {
             default_server_name: "alia-server".to_string(),
             default_server_endpoint: String::new(),
         }
+    }
+
+    pub fn with_runtime(mut self, runtime: EmbeddedRuntimeDependencies) -> Self {
+        self.runtime = Some(runtime);
+        self
     }
 
     async fn resolve_endpoint(&self) -> anyhow::Result<Option<String>> {
@@ -838,29 +854,34 @@ impl ModuleLifecycle for EmbeddedChannel {
         "embedded-channel"
     }
 
-    async fn init(&mut self, _ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.account_database = Some(_ctx.db.clone());
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let runtime = self
+            .runtime
+            .clone()
+            .context("embedded channel runtime dependencies not configured")?;
+        self.account_database = Some(runtime.db.clone());
         let body_delivery =
-            crate::modules::body_delivery::BodyDeliveryRepository::new(_ctx.db.clone());
+            crate::modules::body_delivery::BodyDeliveryRepository::new(runtime.db.clone());
         body_delivery.recover_expired().await?;
         self.set_body_delivery_store(Arc::new(body_delivery)).await;
-        *self.sensor_registry.write().await = Some(_ctx.sensors.clone());
-        let keypair = load_server_keypair(&_ctx.config.auth.server_keypair_path)?;
+        *self.sensor_registry.write().await = Some(runtime.sensors.clone());
+        let keypair = load_server_keypair(&runtime.server_keypair_path)?;
         self.server_public_key = keypair.public_key_bytes().to_vec();
         self.signing_key = Some(keypair.signing_key().clone());
-        self.default_server_id = _ctx.config.server.id.clone();
-        self.default_server_name = format!("alia-server@{}", _ctx.config.server.host);
+        self.default_server_id = runtime.server.id.clone();
+        self.default_server_name = format!("alia-server@{}", runtime.server.host);
         self.default_server_endpoint = default_server_endpoint_for_embedded(
-            &_ctx.config.server.host,
-            _ctx.config.server.port,
-            _ctx.config.server.public_endpoint.as_deref(),
+            &runtime.server.host,
+            runtime.server.port,
+            runtime.server.public_endpoint.as_deref(),
         );
         let signing_key = self
             .signing_key
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("server signing key not initialized"))?
             .clone();
-        _ctx.sensors
+        runtime
+            .sensors
             .register_read_provider(Arc::new(EmbeddedSensorReadProvider {
                 channel_id: self.config.id.clone(),
                 source: embedded_sensor_source(&self.config.id),

@@ -23,8 +23,8 @@ use super::adapter::{
 };
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::interaction::conversation::ConversationStore;
+use crate::modules::platform::lifecycle::ModuleHealth;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth};
 
 mod text;
 
@@ -121,6 +121,18 @@ impl CliChannel {
         }
     }
 
+    pub fn with_runtime(
+        mut self,
+        db: sea_orm::DatabaseConnection,
+        cancel_token: CancellationToken,
+        conversation: Arc<dyn ConversationStore>,
+    ) -> Self {
+        self.account_database = Some(db);
+        self.cancel_token = Some(cancel_token);
+        self.conversation = Some(conversation);
+        self
+    }
+
     pub fn with_owner_user_id(mut self, owner_user_id: Option<uuid::Uuid>) -> Self {
         self.owner_user_id = owner_user_id.filter(|id| !id.is_nil());
         self
@@ -144,16 +156,6 @@ impl CliChannel {
 impl ModuleLifecycle for CliChannel {
     fn name(&self) -> &'static str {
         "cli-channel"
-    }
-
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        self.account_database = Some(ctx.db.clone());
-        self.cancel_token = Some(ctx.cancel_token.clone());
-        self.conversation = ctx
-            .conversation
-            .clone()
-            .map(|service| service as Arc<dyn ConversationStore>);
-        Ok(())
     }
 
     async fn start(&self) -> anyhow::Result<()> {

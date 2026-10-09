@@ -12,9 +12,9 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::config::{
-    LlmProfileKind, LlmProviderProfileRef, LlmRequestOptionsSection, ServerConfig,
+    AnthropicProviderSection, LlmProfileKind, LlmProfileSection, LlmRequestOptionsSection,
 };
-use crate::modules::platform::lifecycle::{ModuleContext, ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
     ChatMessage, LlmAdapter, LlmCapabilities, LlmResponse, LlmToolCall, ToolDefinition,
 };
@@ -107,24 +107,30 @@ struct AnthropicConfig {
 }
 
 impl AnthropicLlm {
-    pub fn new() -> Self {
-        Self::for_profile("major")
-    }
-
-    pub fn for_profile(profile_id: impl Into<String>) -> Self {
-        Self {
+    pub fn new(
+        profile_id: impl Into<String>,
+        profile: &LlmProfileSection,
+        provider: &AnthropicProviderSection,
+    ) -> anyhow::Result<Self> {
+        let profile_id = profile_id.into();
+        anyhow::ensure!(
+            profile.kind == LlmProfileKind::Chat,
+            "LLM profile '{}' is not an Anthropic chat profile",
+            profile_id
+        );
+        Ok(Self {
             client: Client::new(),
-            profile_id: profile_id.into(),
+            profile_id,
             config: Arc::new(RwLock::new(AnthropicConfig {
-                provider_id: "anthropic".to_string(),
-                api_key: String::new(),
-                base_url: "https://api.anthropic.com/v1".to_string(),
-                model: "claude-sonnet-4-20250514".to_string(),
-                version: "2023-06-01".to_string(),
-                request: LlmRequestOptionsSection::default(),
-                health_probe_enabled: false,
+                provider_id: profile.provider.clone(),
+                api_key: provider.api_key.clone(),
+                base_url: provider.base_url.clone(),
+                model: profile.model.clone(),
+                version: provider.version.clone(),
+                request: profile.request.clone(),
+                health_probe_enabled: provider.health_probe_enabled,
             })),
-        }
+        })
     }
 
     async fn chat_internal(
@@ -227,44 +233,14 @@ impl AnthropicLlm {
     }
 }
 
-impl Default for AnthropicLlm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
 impl ModuleLifecycle for AnthropicLlm {
     fn name(&self) -> &'static str {
         "anthropic"
     }
 
-    async fn init(&mut self, ctx: &ModuleContext) -> anyhow::Result<()> {
-        let server_config: &ServerConfig = &ctx.config;
-        let profile = server_config.profiles.llm_profile(&self.profile_id)?;
-        if profile.kind != LlmProfileKind::Chat {
-            anyhow::bail!(
-                "LLM profile '{}' is not an Anthropic chat profile",
-                self.profile_id
-            );
-        }
-        let LlmProviderProfileRef::Anthropic(provider) =
-            server_config.llm_provider_profile(&profile.provider)?
-        else {
-            anyhow::bail!(
-                "LLM profile '{}' provider '{}' is not an Anthropic provider",
-                self.profile_id,
-                profile.provider
-            );
-        };
-        let mut config = self.config.write().await;
-        config.provider_id = profile.provider.clone();
-        config.api_key = provider.api_key.clone();
-        config.base_url = provider.base_url.clone();
-        config.model = profile.model.clone();
-        config.version = provider.version.clone();
-        config.request = profile.request.clone();
-        config.health_probe_enabled = provider.health_probe_enabled;
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let config = self.config.read().await;
         if config.api_key.is_empty() {
             tracing::warn!("Anthropic API key not configured");
         }
