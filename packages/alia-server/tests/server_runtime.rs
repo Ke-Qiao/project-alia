@@ -76,6 +76,9 @@ mod devices;
 #[path = "server_runtime/skills.rs"]
 mod skills;
 
+#[path = "server_runtime/classifier.rs"]
+mod classifier;
+
 #[cfg(feature = "llm-openai")]
 #[path = "server_runtime/health.rs"]
 mod health;

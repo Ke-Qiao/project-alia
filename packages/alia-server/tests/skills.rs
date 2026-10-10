@@ -60,6 +60,7 @@ fn home_assistant_light_skill_matches_list_and_control_intents() {
         .map(|value| value.as_str().unwrap().to_string())
         .collect::<Vec<_>>();
     let skill = LoadedSkill {
+        id: uuid::Uuid::new_v4(),
         info: SkillInfo {
             name: "home_assistant_lights".into(),
             display_name: "Home Assistant Lights".into(),
@@ -105,6 +106,7 @@ fn embedded_volume_skill_matches_simplified_and_traditional_mic_volume() {
         .map(|value| value.as_str().unwrap().to_string())
         .collect::<Vec<_>>();
     let skill = LoadedSkill {
+        id: uuid::Uuid::new_v4(),
         info: SkillInfo {
             name: "embedded_volume_control".into(),
             display_name: "Embedded Volume".into(),
@@ -135,6 +137,7 @@ fn embedded_volume_skill_matches_simplified_and_traditional_mic_volume() {
 #[test]
 fn test_match_scoring() {
     let skill = LoadedSkill {
+        id: uuid::Uuid::new_v4(),
         info: SkillInfo {
             name: "test".into(),
             display_name: "Test".into(),

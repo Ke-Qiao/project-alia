@@ -1033,3 +1033,53 @@ mod insights {
         }).await;
     }
 }
+
+#[tokio::test]
+async fn review_cannot_replace_or_invent_the_original_skill_catalog_binding() {
+    with_db(|f| async move {
+        for original in [Some("catalog-at-generation"), None] {
+            let mut entry = f
+                .entry(
+                    f.user,
+                    "default",
+                    if original.is_some() {
+                        "bound answer"
+                    } else {
+                        "legacy answer"
+                    },
+                    "Stable answer",
+                )
+                .await;
+            if let Some(catalog) = original {
+                entry.metadata["skill_catalog"] = json!(catalog);
+            }
+            let pending = f.cache.put(entry).await.unwrap();
+            let mut metadata = approved_metadata();
+            metadata["skill_catalog"] = json!("new-catalog-must-not-be-adopted");
+            let CacheCas::Applied(Some(active)) = f
+                .cache
+                .apply_review(
+                    &pending,
+                    CacheReview::Approve {
+                        response_text: "Reviewed stable answer".into(),
+                        metadata,
+                    },
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("fresh review must apply");
+            };
+            assert_eq!(
+                active
+                    .metadata
+                    .get("skill_catalog")
+                    .and_then(serde_json::Value::as_str),
+                original
+            );
+            assert_eq!(active.status, CacheStatus::Active);
+            assert_eq!(active.response_text, "Reviewed stable answer");
+        }
+    })
+    .await;
+}

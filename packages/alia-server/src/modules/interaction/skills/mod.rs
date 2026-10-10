@@ -4,6 +4,7 @@
 //! remains governed by the global tool router and policy layer.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMatch {
@@ -35,6 +36,22 @@ pub struct SkillInfo {
     pub display_name: String,
     pub description: String,
     pub category: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillCandidate {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub category: String,
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SkillCatalog {
+    pub candidates: Vec<SkillCandidate>,
+    pub fingerprint: String,
+    definitions: BTreeMap<String, String>,
 }
 
 pub mod markdown;

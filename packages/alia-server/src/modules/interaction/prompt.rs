@@ -121,6 +121,7 @@ pub(super) async fn build_base_system_messages(
     user_id: Uuid,
     modules: &InteractionServices,
     generation: &GenerationContext,
+    available_skills: Vec<String>,
 ) -> anyhow::Result<(Vec<ChatMessage>, RuntimePromptContext)> {
     let mut messages = Vec::new();
     let mut assistant_name = DEFAULT_ASSISTANT_NAME.to_string();
@@ -137,7 +138,7 @@ pub(super) async fn build_base_system_messages(
         }
     }
 
-    let mut runtime_context = build_runtime_prompt_context(modules, generation).await;
+    let mut runtime_context = build_runtime_prompt_context(generation, available_skills);
     runtime_context.assistant_name = assistant_name;
     if let Some(prompt) = render_runtime_context_system_prompt(&runtime_context) {
         messages.push(system_message(prompt));
@@ -146,16 +147,10 @@ pub(super) async fn build_base_system_messages(
     Ok((messages, runtime_context))
 }
 
-pub(super) async fn build_runtime_prompt_context(
-    modules: &InteractionServices,
+fn build_runtime_prompt_context(
     generation: &GenerationContext,
+    available_skills: Vec<String>,
 ) -> RuntimePromptContext {
-    let available_skills = modules
-        .skills
-        .list_skills()
-        .await
-        .map(|skills| skills.into_iter().map(|skill| skill.display_name).collect())
-        .unwrap_or_default();
     RuntimePromptContext {
         assistant_name: DEFAULT_ASSISTANT_NAME.to_string(),
         current_time: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),

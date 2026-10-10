@@ -467,6 +467,12 @@ impl CacheStore for CacheService {
                     None
                 }
                 CacheReview::Approve{response_text,mut metadata} => {
+                    // Review may refine an answer, but cannot relabel its original skill context.
+                    if let Some(catalog) = current.metadata.get("skill_catalog") {
+                        metadata["skill_catalog"] = catalog.clone();
+                    } else if let Some(object) = metadata.as_object_mut() {
+                        object.remove("skill_catalog");
+                    }
                     metadata["status"]=json!("active");
                     let digest=response_digest(&response_text)?;
                     let changed=tx.execute(stmt(

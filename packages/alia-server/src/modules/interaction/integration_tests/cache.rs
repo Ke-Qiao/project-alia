@@ -152,7 +152,7 @@ async fn seed_cache(f: &mut Fixture, semantic: bool) -> (CachedResponse, Uuid) {
             scope: DEFAULT_CACHE_SCOPE.into(),
             query_text: QUERY.into(),
             response_text: ANSWER.into(),
-            metadata: json!({}),
+            metadata: json!({"skill_catalog":f.modules.skills.catalog().await.unwrap().fingerprint}),
             ttl_seconds: 3600,
         })
         .await
@@ -429,4 +429,202 @@ async fn cancelled_cache_lookup_preserves_user_source_and_terminal_audit() {
         })
         .await;
     }
+}
+
+#[tokio::test]
+async fn changed_skill_catalog_rejects_approved_exact_and_semantic_cache_context() {
+    struct RecordingAnswer(Mutex<Vec<Vec<ChatMessage>>>);
+    impl ModuleLifecycle for RecordingAnswer {
+        fn name(&self) -> &'static str {
+            "catalog-cache-answer"
+        }
+    }
+    #[async_trait]
+    impl LlmAdapter for RecordingAnswer {
+        async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
+            self.0.lock().unwrap().push(messages.to_vec());
+            Ok("Fresh answer after the skill catalog changed.".into())
+        }
+        async fn chat_stream(
+            &self,
+            _: &[ChatMessage],
+        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
+            anyhow::bail!("catalog cache regression uses buffered generation")
+        }
+    }
+    for semantic in [false, true] {
+        with_linked_fixture(move |mut f| async move {
+            let db = f.conversation.db.as_ref().unwrap().clone();
+            let skills = Arc::new(crate::modules::interaction::skills::SkillRegistry::with_runtime(
+                db.clone(), Arc::new(crate::registry::ArtifactRegistry::new(db.clone())), None,
+            ));
+            skills.reload().await.unwrap();
+            Arc::get_mut(&mut f.modules).unwrap().skills = skills.clone();
+            let (cached, _) = seed_cache(&mut f, semantic).await;
+            let previous_catalog = skills.catalog().await.unwrap();
+            assert_eq!(cached.metadata["skill_catalog"], previous_catalog.fingerprint);
+            db.execute(sql("INSERT INTO skills(id,name,display_name,category,intent_patterns,prompt_template,source) VALUES($1,'new_catalog_skill','New skill','test','[\"binary search\"]','New skill context','api')", vec![Uuid::new_v4().into()])).await.unwrap();
+            skills.reload().await.unwrap();
+            assert!(!skills.is_current(&previous_catalog).await.unwrap());
+            let answer = Arc::new(RecordingAnswer(Mutex::new(Vec::new())));
+            let services = Arc::get_mut(&mut f.modules).unwrap();
+            services.llm = answer.clone();
+            services.minor_llm = answer.clone();
+            services.major_llm = answer.clone();
+            f.policy.conversation.streaming_enabled = false;
+            let query = if semantic { "How does binary search halve its interval?" } else { QUERY };
+            process_event(
+                ChannelEvent::TextMessage {
+                    channel_id: "test".into(), user_id: Uuid::from_u128(42).to_string(), text: query.into(),
+                    source_received_at: chrono::Utc::now(), source_privacy_epoch: 41, source_relationship_epoch: 0,
+                },
+                &f.modules, &f.channels, &f.sensors, &EventBus::new(32), CancellationToken::new(), false,
+                &f.policy.conversation, &f.policy.tools, &f.policy.cache, &f.policy.cache_policy, &f.policy.memory,
+            ).await.unwrap();
+            assert_eq!(*f.output.texts.lock().unwrap(), vec!["Fresh answer after the skill catalog changed.".to_string()]);
+            let prompts = answer.0.lock().unwrap();
+            assert_eq!(prompts.len(), 1);
+            assert!(prompts[0].iter().all(|message| !message.content.contains(ANSWER)), "stale semantic context reached the model");
+            drop(prompts);
+            let events = f.conversation.events.lock().unwrap();
+            assert!(!events.iter().any(|event| event.event_type == "cache_hit" || event.event_type == "semantic_cache_candidates"));
+            let write = events.iter().find(|event| event.event_type == "cache_write_scheduled").expect("fresh eligible answer must remain pending review");
+            assert_eq!(write.payload["metadata"]["status"], "pending_insights_review");
+            let catalog = write.payload["metadata"]["skill_catalog"].as_str().unwrap().to_string();
+            drop(events);
+            assert_eq!(catalog, skills.catalog().await.unwrap().fingerprint);
+        }).await;
+    }
+}
+
+#[tokio::test]
+async fn cancelled_generation_leaves_blocked_catalog_finish_without_persistence() {
+    use futures::{FutureExt, poll};
+    use std::time::Duration;
+
+    struct HeldAnswer {
+        entered: tokio::sync::Semaphore,
+        release: tokio::sync::Semaphore,
+    }
+    impl ModuleLifecycle for HeldAnswer {
+        fn name(&self) -> &'static str {
+            "held-catalog-answer"
+        }
+    }
+    #[async_trait]
+    impl LlmAdapter for HeldAnswer {
+        async fn chat(&self, _: &[ChatMessage]) -> anyhow::Result<String> {
+            self.entered.add_permits(1);
+            self.release.acquire().await.unwrap().forget();
+            Ok(ANSWER.into())
+        }
+        async fn chat_stream(
+            &self,
+            _: &[ChatMessage],
+        ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
+            panic!("catalog cancellation regression uses buffered generation")
+        }
+    }
+
+    with_linked_fixture(|mut f| async move {
+        let db = f.conversation.db.as_ref().unwrap().clone();
+        db.execute_unprepared("INSERT INTO skills(name,display_name,category,intent_patterns,prompt_template) VALUES('catalog_finish','Catalog finish','test','[]','before')").await.unwrap();
+        let skills = Arc::new(crate::modules::interaction::skills::SkillRegistry::with_runtime(
+            db.clone(), Arc::new(crate::registry::ArtifactRegistry::new(db.clone())), None,
+        ));
+        skills.reload().await.unwrap();
+        let answer = Arc::new(HeldAnswer {
+            entered: tokio::sync::Semaphore::new(0),
+            release: tokio::sync::Semaphore::new(0),
+        });
+        let services = Arc::get_mut(&mut f.modules).unwrap();
+        services.skills = skills.clone();
+        services.llm = answer.clone();
+        services.minor_llm = answer.clone();
+        services.major_llm = answer.clone();
+        f.policy.conversation.streaming_enabled = false;
+        let user = Uuid::from_u128(42).to_string();
+        let target = DeliveryTarget { user_id: user.clone(), voice: None };
+        let bus = EventBus::new(8);
+        let mut turn = VoiceTurn::request(CancellationToken::new());
+        turn.source_privacy_epoch = Some(41);
+        turn.source_relationship_epoch = Some(0);
+        let mut request = process_text(
+            QUERY, &user, &f.modules, f.output.as_ref(), &target, "test", &bus,
+            false, false, false, &f.policy.conversation, &f.policy.tools,
+            &f.policy.cache, &f.policy.cache_policy, &f.policy.memory, Some(&turn), true,
+        );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::select! {
+                _ = request.as_mut() => panic!("generation finished before the model barrier"),
+                permit = answer.entered.acquire() => permit.unwrap().forget(),
+            }
+        }).await.expect("generation never reached the model");
+
+        let key = Uuid::new_v4().as_u128() as i64;
+        db.execute_unprepared(&format!(
+            "CREATE FUNCTION block_catalog_finish() RETURNS trigger LANGUAGE plpgsql AS $$ \
+             BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN NEW; END $$; \
+             CREATE CONSTRAINT TRIGGER block_catalog_finish AFTER UPDATE ON skills \
+             DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION block_catalog_finish()"
+        )).await.unwrap();
+        let blocker = db.begin().await.unwrap();
+        blocker.execute(sql("SELECT pg_advisory_xact_lock($1)", vec![key.into()])).await.unwrap();
+        let change = skills.begin_change().await.unwrap();
+        let pid: i32 = change.transaction().query_one(sql("SELECT pg_backend_pid() AS pid", vec![]))
+            .await.unwrap().unwrap().try_get("", "pid").unwrap();
+        change.transaction().execute_unprepared("UPDATE skills SET prompt_template='after' WHERE name='catalog_finish'")
+            .await.unwrap();
+        let commit = tokio::spawn(change.commit());
+
+        // Catch assertions while the COMMIT is held so cleanup always releases its owner.
+        let result = std::panic::AssertUnwindSafe(async {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    let waiting: bool = db.query_one(sql(
+                        "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=$1 AND query='COMMIT' AND wait_event='advisory') AS waiting",
+                        vec![pid.into()],
+                    )).await.unwrap().unwrap().try_get("", "waiting").unwrap();
+                    if waiting { break; }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.expect("skill COMMIT never held the index write lock");
+            answer.release.add_permits(1);
+            assert!(poll!(request.as_mut()).is_pending());
+            // The fixture records this synchronously; the next await is finish's catalog read.
+            assert!(f.conversation.events.lock().unwrap().iter().any(|event|
+                event.turn_id == turn.id && event.event_type == "llm_result"
+            ));
+            turn.token.cancel();
+            let outcome = tokio::time::timeout(Duration::from_secs(1), request.as_mut())
+                .await.expect("cancelled generation waited for the skill COMMIT").unwrap();
+            assert!(outcome.interrupted);
+            assert_eq!(outcome.text, ANSWER);
+            assert!(!outcome.streamed && !outcome.audio_streamed);
+            assert!(outcome.pending_persistence.is_none());
+            assert_eq!(turn.interruption().stage, "cache_write_catalog");
+            assert!(!commit.is_finished(), "cancellation must finish before COMMIT");
+            assert!(turn.response_id.get().is_none());
+            assert!(f.output.texts.lock().unwrap().is_empty());
+            let events = f.conversation.events.lock().unwrap();
+            let terminal = events.iter().find(|event| event.turn_id == turn.id && event.sequence == i32::MAX)
+                .expect("cancelled catalog finish lost its terminal audit");
+            assert_eq!(terminal.payload["stage"], "cache_write_catalog");
+            assert_eq!(terminal.payload["preserved_user_context"], true);
+            assert_eq!(terminal.payload["assistant_response_persisted"], false);
+            assert_eq!(terminal.payload["cache_written"], false);
+            assert_eq!(terminal.payload["memory_capture"], false);
+            drop(events);
+            assert!(db.query_all(sql("SELECT response_id FROM delivery_responses WHERE channel_id='test'", vec![]))
+                .await.unwrap().is_empty());
+        }).catch_unwind().await;
+
+        blocker.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(3), commit).await
+            .expect("skill COMMIT owner failed to finish").unwrap().unwrap();
+        skills.stop().await.unwrap();
+        if let Err(error) = result {
+            std::panic::resume_unwind(error);
+        }
+    }).await;
 }

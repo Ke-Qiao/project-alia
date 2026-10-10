@@ -4,6 +4,224 @@ use futures::poll;
 use sea_orm::{ConnectOptions, Database, DatabaseBackend, Statement};
 use std::time::Duration;
 
+#[tokio::test]
+async fn live_candidates_are_ordered_metadata_without_prompt_or_tool_bindings() {
+    let registry = SkillRegistry::new();
+    let mut index = HashMap::new();
+    for (name, priority) in [("zeta", 4), ("first", 9), ("alpha", 4)] {
+        index.insert(
+            name.into(),
+            LoadedSkill {
+                id: Uuid::new_v4(),
+                info: SkillInfo {
+                    name: name.into(),
+                    display_name: format!("Display {name}"),
+                    description: "candidate description".into(),
+                    category: "test".into(),
+                },
+                keywords: vec!["routing keyword".into()],
+                preferred_tools: vec!["private_tool_binding".into()],
+                prompt_template: Some("private downstream instructions".into()),
+                cacheable: true,
+                priority,
+            },
+        );
+    }
+    *registry.skills.write().await = Some(index);
+    let catalog = registry.catalog().await.unwrap();
+    let candidates = &catalog.candidates;
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "alpha", "zeta"]
+    );
+    assert_eq!(
+        serde_json::to_value(&candidates[0]).unwrap(),
+        serde_json::json!({
+            "name": "first",
+            "display_name": "Display first",
+            "description": "candidate description",
+            "category": "test",
+            "keywords": ["routing keyword"]
+        })
+    );
+    *registry.skills.write().await = None;
+    assert!(registry.catalog().await.is_err());
+    assert!(registry.is_current(&catalog).await.is_err());
+    assert!(registry.resolve(&catalog, "first").await.is_err());
+}
+
+#[tokio::test]
+async fn catalog_content_checks_reject_changed_selections_and_preserve_unrelated_ones() {
+    let registry = SkillRegistry::new();
+    let original = LoadedSkill {
+        id: Uuid::new_v4(),
+        info: SkillInfo {
+            name: "selected".into(),
+            display_name: "Selected skill".into(),
+            description: "Description".into(),
+            category: "test".into(),
+        },
+        keywords: vec!["keyword".into()],
+        preferred_tools: vec!["zeta_tool".into(), "alpha_tool".into()],
+        prompt_template: Some("original prompt".into()),
+        cacheable: true,
+        priority: 4,
+    };
+    let mut other = original.clone();
+    other.id = Uuid::new_v4();
+    other.info.name = "other".into();
+    *registry.skills.write().await = Some(HashMap::from([
+        ("selected".into(), original.clone()),
+        ("other".into(), other.clone()),
+    ]));
+    let catalog = registry.catalog().await.unwrap();
+    let mut reordered = original.clone();
+    reordered.preferred_tools.reverse();
+    *registry.skills.write().await = Some(HashMap::from([
+        ("other".into(), other.clone()),
+        ("selected".into(), reordered),
+    ]));
+    assert_eq!(
+        catalog.fingerprint,
+        registry.catalog().await.unwrap().fingerprint
+    );
+    assert!(registry.is_current(&catalog).await.unwrap());
+    assert!(
+        registry
+            .resolve(&catalog, "selected")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        registry
+            .resolve(&catalog, "not_offered")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let changes: [(&str, fn(&mut LoadedSkill)); 10] = [
+        ("identity", |skill| skill.id = Uuid::new_v4()),
+        ("name", |skill| skill.info.name.push_str(" changed")),
+        ("display_name", |skill| {
+            skill.info.display_name.push_str(" changed")
+        }),
+        ("description", |skill| {
+            skill.info.description.push_str(" changed")
+        }),
+        ("category", |skill| skill.info.category.push_str(" changed")),
+        ("keywords", |skill| skill.keywords.push("changed".into())),
+        ("tools", |skill| {
+            skill.preferred_tools.push("changed_tool".into())
+        }),
+        ("prompt", |skill| {
+            skill.prompt_template = Some("changed prompt".into())
+        }),
+        ("cacheability", |skill| skill.cacheable = false),
+        ("priority", |skill| skill.priority += 1),
+    ];
+    for (label, change) in changes {
+        let mut changed = original.clone();
+        change(&mut changed);
+        *registry.skills.write().await = Some(HashMap::from([
+            ("selected".into(), changed),
+            ("other".into(), other.clone()),
+        ]));
+        assert!(!registry.is_current(&catalog).await.unwrap(), "{label}");
+        assert!(
+            registry
+                .resolve(&catalog, "selected")
+                .await
+                .unwrap()
+                .is_none(),
+            "{label}"
+        );
+        assert!(
+            registry.resolve(&catalog, "other").await.unwrap().is_some(),
+            "{label}"
+        );
+    }
+    *registry.skills.write().await = Some(HashMap::from([("other".into(), other)]));
+    assert!(!registry.is_current(&catalog).await.unwrap());
+    assert!(
+        registry
+            .resolve(&catalog, "selected")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn unchanged_reload_preserves_catalog_but_disable_and_same_name_recreation_invalidate_it() {
+    with_fixture(|f| async move {
+        let registry = registry(f.db.clone()).await;
+        let catalog = registry.catalog().await.unwrap();
+        f.db.execute_unprepared(
+            "UPDATE skills SET updated_at=clock_timestamp() WHERE name='commit_fixture'",
+        )
+        .await
+        .unwrap();
+        registry.reload().await.unwrap();
+        assert_eq!(
+            catalog.fingerprint,
+            registry.catalog().await.unwrap().fingerprint
+        );
+        assert!(registry.is_current(&catalog).await.unwrap());
+
+        let change = registry.begin_change().await.unwrap();
+        change
+            .transaction()
+            .execute_unprepared("UPDATE skills SET enabled=false WHERE name='commit_fixture'")
+            .await
+            .unwrap();
+        change.commit().await.unwrap();
+        assert!(!registry.is_current(&catalog).await.unwrap());
+        assert!(
+            registry
+                .resolve(&catalog, "commit_fixture")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(registry.catalog().await.unwrap().candidates.is_empty());
+
+        let change = registry.begin_change().await.unwrap();
+        change
+            .transaction()
+            .execute_unprepared(
+                "DELETE FROM skills WHERE name='commit_fixture'; \
+             INSERT INTO skills(name,display_name,category,intent_patterns,prompt_template) \
+             VALUES('commit_fixture','Commit fixture','test','[\"commitfixture\"]','before')",
+            )
+            .await
+            .unwrap();
+        change.commit().await.unwrap();
+        let recreated = registry.catalog().await.unwrap();
+        assert_ne!(catalog.fingerprint, recreated.fingerprint);
+        assert!(
+            registry
+                .resolve(&catalog, "commit_fixture")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            registry
+                .resolve(&recreated, "commit_fixture")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        registry.stop().await.unwrap();
+    })
+    .await;
+}
+
 fn sql(query: &str, values: Vec<sea_orm::Value>) -> Statement {
     Statement::from_sql_and_values(DatabaseBackend::Postgres, query, values)
 }
@@ -43,12 +261,11 @@ async fn update(registry: &Arc<SkillRegistry>) -> (SkillChange, i32) {
 }
 
 async fn prompt(registry: &SkillRegistry) -> String {
+    let catalog = registry.catalog().await.unwrap();
     registry
-        .resolve(&SkillMatch {
-            name: "commit_fixture".into(),
-            confidence: 1.0,
-        })
+        .resolve(&catalog, "commit_fixture")
         .await
+        .unwrap()
         .unwrap()
         .system_prompt
         .unwrap()
@@ -169,6 +386,7 @@ async fn failed_commit_and_failed_reconciliation_disable_index_until_successful_
             .set_schema_search_path(format!("{schema},public"));
         let database = Database::connect(options).await.unwrap();
         let mut registry = registry(database.clone()).await;
+        let catalog = registry.catalog().await.unwrap();
         let key = Uuid::new_v4().as_u128() as i64;
         install_commit_trigger(&f.db, key, true).await;
         let blocker = f.db.begin().await.unwrap();
@@ -201,15 +419,7 @@ async fn failed_commit_and_failed_reconciliation_disable_index_until_successful_
         }
         assert!(registry.match_skill("commitfixture").await.is_err());
         assert!(registry.list_skills().await.is_err());
-        assert!(
-            registry
-                .resolve(&SkillMatch {
-                    name: "commit_fixture".into(),
-                    confidence: 1.0
-                })
-                .await
-                .is_err()
-        );
+        assert!(registry.resolve(&catalog, "commit_fixture").await.is_err());
         assert!(matches!(
             registry.health_check().await,
             ModuleHealth::Degraded(_)

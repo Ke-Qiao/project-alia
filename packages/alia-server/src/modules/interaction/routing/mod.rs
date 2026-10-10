@@ -9,6 +9,7 @@ pub struct RouterInput {
     pub user_id: Uuid,
     pub conversation_context: Vec<ChatMessage>,
     pub assistant_name: String,
+    pub available_skills: Vec<super::skills::SkillCandidate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

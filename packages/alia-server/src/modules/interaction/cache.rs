@@ -19,15 +19,16 @@ pub struct CacheWrite {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CacheContext {
+pub struct CacheContext<'a> {
     pub memory_context_used: bool,
     pub used_tools: bool,
     pub skill_cacheable: Option<bool>,
     pub response_was_fallback: bool,
     pub route: &'static str,
+    pub skill_catalog: Option<&'a str>,
 }
 
-pub fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
+pub fn cached_response_is_safe_direct(cached: &CachedResponse, skill_catalog: &str) -> bool {
     let metadata = &cached.metadata;
     let policy = metadata
         .get("policy")
@@ -35,6 +36,10 @@ pub fn cached_response_is_safe_direct(cached: &CachedResponse) -> bool {
         .unwrap_or_default();
 
     metadata.get("schema").and_then(serde_json::Value::as_str) == Some(CACHE_METADATA_SCHEMA)
+        && metadata
+            .get("skill_catalog")
+            .and_then(serde_json::Value::as_str)
+            == Some(skill_catalog)
         && matches!(policy, "private_exact" | "shared_exact")
         && metadata
             .get("safe_direct_return")
@@ -60,8 +65,9 @@ pub fn cache_write_for_response(
     cache_policy: &CachePolicyResourceSection,
     query_text: &str,
     response_text: &str,
-    context: CacheContext,
+    context: CacheContext<'_>,
 ) -> Option<CacheWrite> {
+    let skill_catalog = context.skill_catalog?;
     if !cache_config.enabled || !cache_config.exact_match_enabled {
         return None;
     }
@@ -103,6 +109,7 @@ pub fn cache_write_for_response(
             "tool_free": true,
             "dynamic_free": true,
             "route": context.route,
+            "skill_catalog": skill_catalog,
             "language": guess_text_language(query_text),
             "created_by": "pipeline",
             "review_required_by": "insights",
@@ -171,10 +178,11 @@ pub(super) async fn semantic_cache_candidates(
 pub(super) fn semantic_cache_reference_prompt(
     candidates: &[SemanticCacheCandidate],
     debug_output: bool,
+    skill_catalog: &str,
 ) -> Option<(String, usize)> {
     let candidates = candidates
         .iter()
-        .filter(|candidate| semantic_candidate_is_safe_reference(candidate))
+        .filter(|candidate| semantic_candidate_is_safe_reference(candidate, skill_catalog))
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         return None;
@@ -214,12 +222,18 @@ pub(super) fn semantic_cache_reference_prompt(
     ))
 }
 
-pub(super) fn semantic_candidate_is_safe_direct(candidate: &SemanticCacheCandidate) -> bool {
-    semantic_candidate_is_safe_reference(candidate)
+pub(super) fn semantic_candidate_is_safe_direct(
+    candidate: &SemanticCacheCandidate,
+    skill_catalog: &str,
+) -> bool {
+    semantic_candidate_is_safe_reference(candidate, skill_catalog)
 }
 
-pub(super) fn semantic_candidate_is_safe_reference(candidate: &SemanticCacheCandidate) -> bool {
-    cached_response_is_safe_direct(&candidate.cached)
+pub(super) fn semantic_candidate_is_safe_reference(
+    candidate: &SemanticCacheCandidate,
+    skill_catalog: &str,
+) -> bool {
+    cached_response_is_safe_direct(&candidate.cached, skill_catalog)
 }
 
 pub(super) fn query_matches_keywords(text: &str, keywords: &[String]) -> bool {

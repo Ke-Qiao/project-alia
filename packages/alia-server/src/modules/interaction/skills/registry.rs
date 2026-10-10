@@ -9,7 +9,7 @@
 //! - A prompt template providing domain-specific LLM instructions
 //! - Preferred tool bindings through the `skill_preferred_tools` junction table
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -19,11 +19,12 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
     EntityTrait, IsolationLevel, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, oneshot};
 use uuid::Uuid;
 
 use super::markdown;
-use super::{SkillInfo, SkillMatch, SkillResolution};
+use super::{SkillCandidate, SkillCatalog, SkillInfo, SkillMatch, SkillResolution};
 use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle, RuntimeTasks};
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_SKILL};
@@ -37,6 +38,7 @@ const OBSOLETE_BUILTIN_SKILLS: &[&str] =
 /// preferred tool names resolved from `skill_preferred_tools`.
 #[derive(Clone)]
 pub struct LoadedSkill {
+    pub id: Uuid,
     pub info: SkillInfo,
     /// Keywords that trigger this skill (from intent_patterns)
     pub keywords: Vec<String>,
@@ -151,6 +153,7 @@ async fn load_snapshot(db: &impl ConnectionTrait) -> anyhow::Result<HashMap<Stri
             (
                 row.name.clone(),
                 LoadedSkill {
+                    id: row.id,
                     info: SkillInfo {
                         name: row.name,
                         display_name: row.display_name,
@@ -166,6 +169,38 @@ async fn load_snapshot(db: &impl ConnectionTrait) -> anyhow::Result<HashMap<Stri
             )
         })
         .collect())
+}
+
+fn definition_digest(skill: &LoadedSkill) -> anyhow::Result<String> {
+    let mut preferred_tools = skill.preferred_tools.iter().collect::<Vec<_>>();
+    preferred_tools.sort();
+    let bytes = serde_json::to_vec(&(
+        "skill-definition-v1",
+        skill.id,
+        &skill.info,
+        &skill.keywords,
+        preferred_tools,
+        &skill.prompt_template,
+        skill.cacheable,
+        skill.priority,
+    ))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn definition_digests(
+    skills: &HashMap<String, LoadedSkill>,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    skills
+        .iter()
+        .map(|(name, skill)| Ok((name.clone(), definition_digest(skill)?)))
+        .collect()
+}
+
+fn catalog_fingerprint(definitions: &BTreeMap<String, String>) -> anyhow::Result<String> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&("skill-catalog-v1", definitions))?)
+    ))
 }
 
 impl Default for SkillRegistry {
@@ -466,6 +501,44 @@ impl ModuleLifecycle for SkillRegistry {
 }
 
 impl SkillRegistry {
+    pub async fn catalog(&self) -> anyhow::Result<SkillCatalog> {
+        let index = self.skills.read().await;
+        let skills = index
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
+        let mut ordered = skills.values().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| {
+            right
+                .priority
+                .cmp(&left.priority)
+                .then_with(|| left.info.name.cmp(&right.info.name))
+        });
+        let candidates = ordered
+            .into_iter()
+            .map(|skill| SkillCandidate {
+                name: skill.info.name.clone(),
+                display_name: skill.info.display_name.clone(),
+                description: skill.info.description.clone(),
+                category: skill.info.category.clone(),
+                keywords: skill.keywords.clone(),
+            })
+            .collect();
+        let definitions = definition_digests(skills)?;
+        Ok(SkillCatalog {
+            candidates,
+            fingerprint: catalog_fingerprint(&definitions)?,
+            definitions,
+        })
+    }
+
+    pub async fn is_current(&self, catalog: &SkillCatalog) -> anyhow::Result<bool> {
+        let index = self.skills.read().await;
+        let skills = index
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
+        Ok(catalog_fingerprint(&definition_digests(skills)?)? == catalog.fingerprint)
+    }
+
     pub async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>> {
         let index = self.skills.read().await;
         let skills = index
@@ -505,25 +578,32 @@ impl SkillRegistry {
         }
     }
 
-    pub async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
+    pub async fn resolve(
+        &self,
+        catalog: &SkillCatalog,
+        name: &str,
+    ) -> anyhow::Result<Option<SkillResolution>> {
         let index = self.skills.read().await;
         let skills = index
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
 
-        let loaded = match skills.get(&skill.name) {
-            Some(s) => s,
-            None => {
-                anyhow::bail!("Skill '{}' not found", skill.name);
-            }
+        let Some(expected) = catalog.definitions.get(name) else {
+            return Ok(None);
         };
+        let Some(loaded) = skills.get(name) else {
+            return Ok(None);
+        };
+        if definition_digest(loaded)? != *expected {
+            return Ok(None);
+        }
 
-        Ok(SkillResolution {
-            skill_name: skill.name.clone(),
+        Ok(Some(SkillResolution {
+            skill_name: name.to_string(),
             system_prompt: loaded.prompt_template.clone(),
             preferred_tools: loaded.preferred_tools.clone(),
             cacheable: loaded.cacheable,
-        })
+        }))
     }
 
     pub async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {

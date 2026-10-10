@@ -1,19 +1,18 @@
 //! Skills HTTP writes must publish a complete index without changing tool authority.
 use super::*;
-use alia_server::modules::interaction::skills::SkillMatch;
 use alia_server::registry::ArtifactRef;
 use alia_server::state::AppState;
 use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
 use serde_json::{Value, json};
 
-fn client() -> reqwest::Client {
+pub(super) fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap()
 }
 
-async fn response(request: reqwest::RequestBuilder, expected: u16) -> Value {
+pub(super) async fn response(request: reqwest::RequestBuilder, expected: u16) -> Value {
     let response = request.send().await.unwrap();
     let status = response.status();
     let body = response.text().await.unwrap();
@@ -21,7 +20,7 @@ async fn response(request: reqwest::RequestBuilder, expected: u16) -> Value {
     serde_json::from_str(&body).unwrap()
 }
 
-fn definition(name: &str, keyword: &str) -> Value {
+pub(super) fn definition(name: &str, keyword: &str) -> Value {
     json!({
         "name": name, "display_name": "HTTP skill", "category": "test",
         "intent_patterns": [keyword], "prompt_template": "original prompt",
@@ -30,15 +29,14 @@ fn definition(name: &str, keyword: &str) -> Value {
 }
 
 async fn resolution(state: &AppState, name: &str) -> Value {
+    let catalog = state.modules.skills.catalog().await.unwrap();
     serde_json::to_value(
         state
             .modules
             .skills
-            .resolve(&SkillMatch {
-                name: name.into(),
-                confidence: 1.0,
-            })
+            .resolve(&catalog, name)
             .await
+            .unwrap()
             .unwrap(),
     )
     .unwrap()
@@ -119,7 +117,8 @@ async fn http_crud_publishes_skill_context_without_granting_tool_authority() {
             response(client.put(&item).bearer_auth(&token).json(&json!({"enabled":false})), 200).await;
             assert!(state.modules.skills.match_skill(new_keyword).await.unwrap().is_none());
             assert!(!state.modules.skills.list_skills().await.unwrap().iter().any(|skill| skill.name == name));
-            assert!(state.modules.skills.resolve(&SkillMatch {name:name.into(),confidence:1.0}).await.is_err());
+            let catalog = state.modules.skills.catalog().await.unwrap();
+            assert!(state.modules.skills.resolve(&catalog, name).await.unwrap().is_none());
             response(client.put(&item).bearer_auth(&token).json(&json!({"enabled":true})), 200).await;
             assert_eq!(state.modules.skills.match_skill(new_keyword).await.unwrap().unwrap().name, name);
 
@@ -135,7 +134,8 @@ async fn http_crud_publishes_skill_context_without_granting_tool_authority() {
             assert_eq!(persisted(&state, name).await, json!({"skill":null,"bindings":null,"artifact":null,"dependencies":null}));
             assert!(state.modules.skills.match_skill(new_keyword).await.unwrap().is_none());
             assert!(!state.modules.skills.list_skills().await.unwrap().iter().any(|skill| skill.name == name));
-            assert!(state.modules.skills.resolve(&SkillMatch {name:name.into(),confidence:1.0}).await.is_err());
+            let catalog = state.modules.skills.catalog().await.unwrap();
+            assert!(state.modules.skills.resolve(&catalog, name).await.unwrap().is_none());
             response(client.delete(&item).bearer_auth(&token), 404).await;
             response(client.put(&item).bearer_auth(&token).json(&json!({"enabled":true})), 404).await;
             assert_eq!(response(client.get(format!("{base}/tools/schedule_task")).bearer_auth(&token), 200).await, tool_before);

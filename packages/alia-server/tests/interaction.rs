@@ -149,6 +149,7 @@ fn cache_policy_allows_safe_memory_independent_exact_entries() {
             skill_cacheable: None,
             response_was_fallback: false,
             route: "minor_llm",
+            skill_catalog: Some("catalog-a"),
         },
     )
     .expect("safe static answer should be cacheable");
@@ -163,12 +164,22 @@ fn cache_policy_allows_safe_memory_independent_exact_entries() {
             "memory_independent": true,
             "tool_free": true,
             "dynamic_free": true,
+            "skill_catalog": "catalog-a",
         }),
         ..cached_fixture()
     };
     assert_eq!(entry.metadata["status"], "pending_insights_review");
     assert_eq!(entry.metadata["safe_direct_return"], false);
-    assert!(cached_response_is_safe_direct(&cached));
+    assert!(cached_response_is_safe_direct(&cached, "catalog-a"));
+    assert_eq!(entry.metadata["skill_catalog"], "catalog-a");
+    assert!(!cached_response_is_safe_direct(&cached, "catalog-b"));
+    let mut legacy = cached.clone();
+    legacy
+        .metadata
+        .as_object_mut()
+        .unwrap()
+        .remove("skill_catalog");
+    assert!(!cached_response_is_safe_direct(&legacy, "catalog-a"));
 }
 
 #[test]
@@ -180,9 +191,23 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
         skill_cacheable: None,
         response_was_fallback: false,
         route: "major_llm",
+        skill_catalog: Some("catalog-a"),
     };
 
     let policy = test_cache_policy();
+    assert!(
+        cache_write_for_response(
+            &config,
+            &policy,
+            "What is MQTT?",
+            "Answer",
+            CacheContext {
+                skill_catalog: None,
+                ..base
+            }
+        )
+        .is_none()
+    );
     assert!(
         cache_write_for_response(&config, &policy, "What time is it?", "It is noon.", base)
             .is_none()
@@ -213,24 +238,31 @@ fn cache_policy_rejects_tool_memory_dynamic_and_legacy_entries() {
         )
         .is_none()
     );
-    assert!(!cached_response_is_safe_direct(&CachedResponse {
-        response_text: "old cache".to_string(),
-        metadata: serde_json::json!({}),
-        ..cached_fixture()
-    }));
-    assert!(!cached_response_is_safe_direct(&CachedResponse {
-        response_text: "pending cache".to_string(),
-        metadata: serde_json::json!({
-            "schema": CACHE_METADATA_SCHEMA,
-            "policy": "private_exact",
-            "status": "pending_insights_review",
-            "safe_direct_return": false,
-            "memory_independent": true,
-            "tool_free": true,
-            "dynamic_free": true,
-        }),
-        ..cached_fixture()
-    }));
+    assert!(!cached_response_is_safe_direct(
+        &CachedResponse {
+            response_text: "old cache".to_string(),
+            metadata: serde_json::json!({}),
+            ..cached_fixture()
+        },
+        "catalog-a"
+    ));
+    assert!(!cached_response_is_safe_direct(
+        &CachedResponse {
+            response_text: "pending cache".to_string(),
+            metadata: serde_json::json!({
+                "schema": CACHE_METADATA_SCHEMA,
+                "policy": "private_exact",
+                "status": "pending_insights_review",
+                "safe_direct_return": false,
+                "memory_independent": true,
+                "tool_free": true,
+                "dynamic_free": true,
+                "skill_catalog": "catalog-a",
+            }),
+            ..cached_fixture()
+        },
+        "catalog-a"
+    ));
 }
 
 #[test]

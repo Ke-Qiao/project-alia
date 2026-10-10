@@ -81,7 +81,7 @@ CORE_CONTRACT = re.compile(
     r"|CacheStatus|CacheReview|CacheWork|CacheCas|SemanticCacheCandidate|DEFAULT_CACHE_SCOPE"
     r"|CACHE_METADATA_SCHEMA|RouterService|RouterInput|RouteDecision|ToolCandidateInfo|ToolSelectionInput"
     r"|PersonaService|Persona|RenderedPersonaPrompt|DEFAULT_ASSISTANT_NAME|sanitize_assistant_name"
-    r"|SkillRegistry|SkillChange|SkillMatch|SkillResolution|SkillInfo|InsightService|InsightTask|InsightStatus|InsightPhase"
+    r"|SkillRegistry|SkillChange|SkillCatalog|SkillCandidate|SkillMatch|SkillResolution|SkillInfo|InsightService|InsightTask|InsightStatus|InsightPhase"
     r"|SensorDefinition|SensorReading|SensorQuery|SensorSummary|SensorReadMode|SensorStalePolicy"
     r"|SensorFreshnessPolicy|SensorReadResult|SensorReadProvider|SensorRegistry|SensorRegistryConfig)\b"
 )
@@ -162,6 +162,11 @@ def check(server: Path) -> list[str]:
                     errors.append(f"{relative}: retired Skills database mutation/read facade")
             if relative == "src/api/skills.rs" and re.search(r"\bTransactionTrait\b", text):
                 errors.append(f"{relative}: Skills HTTP bypasses the registry change owner")
+            if relative.startswith("src/modules/interaction/routing/"):
+                if re.search(r"\b(?:SkillRegistry|SkillResolution|DatabaseConnection)\b", text):
+                    errors.append(f"{relative}: Router owns registry resolution or database access")
+                if re.search(r"\|\s*skill_name\s*\|\s*When to use\s*\|", text):
+                    errors.append(f"{relative}: Router embeds a static skill catalog")
             if relative.startswith("src/modules/delivery/"):
                 if re.search(r"\b(?:channels|providers)\s*::|\bChannelAdapter\b", text):
                     errors.append(f"{relative}: Delivery depends on a Channel or provider implementation contract")
@@ -290,6 +295,15 @@ def self_test() -> None:
         skills_registry.write_text("pub async fn begin_change(&self) {} pub async fn reload(&self) {}")
         assert not check(server)
         skills_registry.write_text("")
+        routing_service = server / "src/modules/interaction/routing/service.rs"
+        for source in ("use skills::SkillRegistry;", "let value: SkillResolution;", "let db: DatabaseConnection;"):
+            routing_service.write_text(source)
+            assert any("Router owns registry" in error for error in check(server)), source
+        routing_service.write_text("| skill_name | When to use |")
+        assert any("static skill catalog" in error for error in check(server))
+        routing_service.write_text("let candidates: Vec<SkillCandidate> = input.available_skills;")
+        assert not check(server)
+        routing_service.write_text("")
         adapter = server / "src/providers/adapter.rs"
         adapter.parent.mkdir(parents=True, exist_ok=True)
         for invalid in (

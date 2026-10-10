@@ -23,6 +23,7 @@ use super::prompt::{
     stt_transcript_context_prompt, system_message, tts_optimized_output_prompt,
 };
 use super::services::InteractionServices;
+use super::skills::SkillCatalog;
 use super::streaming::TtsTraceContext;
 use super::tools::{select_all_tools, select_tools_for_skill};
 use super::trace::AgentTrace;
@@ -216,6 +217,7 @@ struct PreparedTurn {
     history: Vec<ChatMessage>,
     base_system_messages: Vec<ChatMessage>,
     runtime_context: RuntimePromptContext,
+    skill_catalog: Option<SkillCatalog>,
     memory_context_used: bool,
     effective_cache: CacheSection,
     effective_memory: MemorySection,
@@ -282,10 +284,32 @@ async fn prepare_turn(request: &GenerationRequest<'_>) -> anyhow::Result<Option<
     let source_received_at = generation.source().source_received_at;
     let source_privacy_epoch = generation.source().source_privacy_epoch;
     let history = generation.history_messages();
+    let skill_catalog = match cancellable_stage(turn, "skill_catalog", async {
+        match modules.skills.catalog().await {
+            Ok(catalog) => Ok(Some(catalog)),
+            Err(error) => {
+                tracing::warn!(%error, "skill catalog unavailable; omitting skill context and cache reuse");
+                Ok(None)
+            }
+        }
+    }).await? {
+        Some(catalog) => catalog,
+        None => return Ok(None),
+    };
+    let available_skills = skill_catalog
+        .as_ref()
+        .map(|catalog| {
+            catalog
+                .candidates
+                .iter()
+                .map(|skill| skill.display_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     let (mut base_system_messages, runtime_context) = match cancellable_stage(
         turn,
         "context_prompt",
-        build_base_system_messages(uid, modules, &generation),
+        build_base_system_messages(uid, modules, &generation, available_skills),
     )
     .await?
     {
@@ -353,6 +377,7 @@ async fn prepare_turn(request: &GenerationRequest<'_>) -> anyhow::Result<Option<
         history,
         base_system_messages,
         runtime_context,
+        skill_catalog,
         memory_context_used,
         effective_cache,
         effective_memory,
@@ -378,6 +403,9 @@ async fn lookup_cache(
     let memory_context_used = prepared.memory_context_used;
     let cache_config = &prepared.effective_cache;
     let trace = &mut prepared.trace;
+    let Some(catalog) = prepared.skill_catalog.as_ref() else {
+        return Ok(None);
+    };
     // 2. Check exact cache first (never streamed). Only entries with explicit
     // safe-direct metadata can bypass the LLM.
     if cache_config.enabled && cache_config.exact_match_enabled && !memory_context_used {
@@ -389,7 +417,22 @@ async fn lookup_cache(
         .await?
         .flatten()
         {
-            if cached_response_is_safe_direct(&cached) {
+            let catalog_is_current =
+                if cached_response_is_safe_direct(&cached, &catalog.fingerprint) {
+                    let Some(current) = cancellable_stage(
+                        turn,
+                        "cache_catalog",
+                        modules.skills.is_current(catalog),
+                    )
+                    .await?
+                    else {
+                        return Ok(None);
+                    };
+                    current
+                } else {
+                    false
+                };
+            if catalog_is_current {
                 merge_turn_cache(modules, admitted_turn, &cached).await?;
                 let cache_metadata = cached.metadata.clone();
                 let response_text = cached.response_text;
@@ -465,9 +508,21 @@ async fn lookup_cache(
                 Some(value) => value,
                 None => return Ok(None),
             };
+        let Some(catalog_is_current) = cancellable_stage(
+            turn,
+            "semantic_cache_catalog",
+            modules.skills.is_current(catalog),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        if !catalog_is_current {
+            return Ok(None);
+        }
         if let Some(candidate) = semantic_candidates.iter().find(|candidate| {
             candidate.similarity >= cache_config.semantic_threshold
-                && semantic_candidate_is_safe_direct(candidate)
+                && semantic_candidate_is_safe_direct(candidate, &catalog.fingerprint)
         }) {
             merge_turn_cache(modules, admitted_turn, &candidate.cached).await?;
             let cache_metadata = candidate.cached.metadata.clone();
@@ -501,13 +556,14 @@ async fn lookup_cache(
             }));
         }
 
-        if let Some((prompt, candidate_count)) =
-            semantic_cache_reference_prompt(&semantic_candidates, debug_output)
-        {
-            for candidate in semantic_candidates
-                .iter()
-                .filter(|candidate| semantic_candidate_is_safe_reference(candidate))
-            {
+        if let Some((prompt, candidate_count)) = semantic_cache_reference_prompt(
+            &semantic_candidates,
+            debug_output,
+            &catalog.fingerprint,
+        ) {
+            for candidate in semantic_candidates.iter().filter(|candidate| {
+                semantic_candidate_is_safe_reference(candidate, &catalog.fingerprint)
+            }) {
                 merge_turn_cache(modules, admitted_turn, &candidate.cached).await?;
             }
             trace
@@ -560,9 +616,14 @@ async fn route_response(
         user_id: uid,
         conversation_context: history.to_vec(),
         assistant_name: runtime_context.assistant_name.clone(),
+        available_skills: prepared
+            .skill_catalog
+            .as_ref()
+            .map(|catalog| catalog.candidates.clone())
+            .unwrap_or_default(),
     };
     validate_generation_context(modules, turn).await?;
-    let decision =
+    let mut decision =
         match cancellable_stage(turn, "router", modules.router.route(&route_input)).await? {
             Some(decision) => decision,
             None => {
@@ -593,6 +654,33 @@ async fn route_response(
                 return Ok(None);
             }
         };
+    let resolution = if let RouteDecision::Skill { skill_name } = &decision {
+        let catalog = prepared
+            .skill_catalog
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("skill route has no catalog"))?;
+        let Some(resolution) = cancellable_stage(
+            turn,
+            "skill_context",
+            modules.skills.resolve(catalog, skill_name),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        if resolution.is_none() {
+            decision = modules
+                .router
+                .fallback(&runtime_context.assistant_name)
+                .await;
+            tracing::debug!(
+                "selected skill changed during classification; using current model fallback"
+            );
+        }
+        resolution
+    } else {
+        None
+    };
     debug_component_route(
         debug_output,
         "router",
@@ -613,17 +701,9 @@ async fn route_response(
         .await;
 
     let routed = match decision {
-        RouteDecision::Skill { skill_name } => {
-            let skill_match = crate::modules::interaction::skills::SkillMatch {
-                name: skill_name,
-                confidence: 1.0,
-            };
-            let Some(resolution) =
-                cancellable_stage(turn, "skill_context", modules.skills.resolve(&skill_match))
-                    .await?
-            else {
-                return Ok(None);
-            };
+        RouteDecision::Skill { .. } => {
+            let resolution = resolution
+                .ok_or_else(|| anyhow::anyhow!("skill route has no current resolution"))?;
             trace
                 .record(
                     modules,
@@ -899,6 +979,17 @@ async fn finish_generation(
         skill_cacheable,
         route: route_for_cache,
     } = routed;
+    let skill_catalog = match prepared.skill_catalog.as_ref() {
+        Some(catalog) => match cancellable_stage(turn, "cache_write_catalog", async {
+            Ok(modules.skills.is_current(catalog).await.unwrap_or(false))
+        })
+        .await?
+        {
+            Some(true) => Some(catalog.fingerprint.as_str()),
+            _ => None,
+        },
+        None => None,
+    };
     if turn_is_interrupted(turn) {
         if let Some(turn) = turn {
             turn.mark_interrupted_stage("before_persistence");
@@ -963,6 +1054,7 @@ async fn finish_generation(
         skill_cacheable,
         response_was_fallback,
         route: route_for_cache,
+        skill_catalog,
     };
     let cache_write =
         cache_write_for_response(cache_config, cache_policy, text, &response, cache_context);
