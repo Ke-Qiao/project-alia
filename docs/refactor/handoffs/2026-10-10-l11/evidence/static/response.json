@@ -1,0 +1,22 @@
+{
+  "baseline": "f15db66",
+  "transaction_body_matches_after_dependency_relocation": true,
+  "checks": {
+    "single_transaction": true,
+    "ack_timeout_seconds": 2,
+    "role_and_name_validation_preserved": true,
+    "erased_history_retry_skip_preserved": true,
+    "no_new_features_or_dependencies": true
+  },
+  "sha256": {
+    "packages/alia-server/src/modules/interaction/response.rs": "8e8a540c950bcd6d0d017cd3a8ec1840c40f4c01a94695ddc01769c3b1a120fa",
+    "packages/alia-server/tests/server_runtime/delivery.rs": "5be984317c8e66d43b0f8b18b9915ae03e2c7dc7ad082a512bccef6ac7075ec5",
+    "packages/alia-server/src/modules/interaction/integration_tests.rs": "99426dbfffc4298b24daf29a7d6e5571a4411178c80c3f36c80922eff7954f85"
+  },
+  "not_run": [
+    "Cargo",
+    "PostgreSQL",
+    "containers",
+    "hardware"
+  ]
+}

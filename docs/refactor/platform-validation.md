@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-10 L11：10/10，L09—L12 3/4，六轮仍 2/6。** 源码 `60f665cf6fce4811b144dfc743b4814c5bdf19d5`，V4 manifest `520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f`，640/640 Git blob 一致。macOS workspace **1060/0/5**、真实 PTY **3/0**、无默认 availability **2/0**、提前准入 **1/0**；Linux ARM64 Server 完整默认并行复跑 **778/0/5**，两端无默认全目标及 Linux release/native link 通过。所有最终结果同源且无漂移。 Linux 首次旧关闭测试超时仍待定位，原失败与复跑均保留。资源已关闭；见 [当前检查点](resume-checkpoint-l11-2026-10-10.md) 与 [最终验证](layering-l11-2026-10-10.md#最终验证与证据)。以下为历史记录。
+
 **2026-10-10：L10 初始化依赖清理 10/10，L09—L12 2/4，六轮仍 2/6。** 源码 `4519e75`，V2 637/637 输入匹配。macOS workspace **1058/0/5**、PTY **3/0**、无默认 availability **2/0**、提前准入 **1/0**；Linux ARM64 Server **776/0/5**、无默认和 release/native link 通过。全局初始化参数包和三个固定工厂删除，默认 Shadow/政策保持；资源已关闭。见 [当前检查点](resume-checkpoint-2026-10-10.md)、[最终验证](layering-2026-10-10.md#最终验证与证据)、[L11—L12](checklists/layering-next.md)。以下为历史记录。
 
 **2026-10-09：L09 固定核心分层 10/10，L09—L12 1/4，六轮仍 2/6。** 源码 `ffd7af1`，V1 637 输入逐项匹配。Interaction 拥有 Conversation/Cache/Router/Persona/Skills，Platform 拥有 Insights 调度/Sensors；Memory maintenance 与 Cache review 归各自领域。macOS workspace **1056/0/5**、PTY **3/0**、无默认 availability **2/0**；Linux ARM64 Server **774/0/5**、无默认与 release/link 通过。默认 Shadow 和政策保持，任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-09.md)、[最终验证](layering-2026-10-09.md#最终验证与证据)、[L10—L12](checklists/layering-next.md)。以下为历史记录。

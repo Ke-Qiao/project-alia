@@ -1,0 +1,87 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:183:20
+    |
+183 |         assert_eq!(delivery.prepare(valid.clone()).await.unwrap().response_id, response.response_id);
+    |                    ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:190:43
+    |
+190 |         for changed in variants { assert!(delivery.prepare(changed).await.is_err()); }
+    |                                           ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:204:17
+    |
+204 |         assert!(delivery.prepare_delivery(f.owner, altered).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:206:17
+    |
+206 |         assert!(delivery.prepare_delivery(f.owner, altered).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:208:17
+    |
+208 |         assert!(delivery.prepare_delivery(f.owner, altered).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:209:17
+    |
+209 | ...   assert!(delivery.prepare_text_delivery(f.owner, NewTextDelivery { response_id:response.response_id,output_key:INVITATION_MEDI...
+    |               ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:210:24
+    |
+210 |         let prepared = delivery.prepare_delivery(f.owner, valid_audio.clone()).await.unwrap();
+    |                        ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:211:20
+    |
+211 |         assert_eq!(delivery.prepare_delivery(f.owner, valid_audio.clone()).await.unwrap().delivery_id, prepared.delivery_id);
+    |                    ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:213:17
+    |
+213 |         assert!(delivery.prepare_delivery(f.owner, second).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:214:24
+    |
+214 |         let dispatch = delivery.dispatch(f.owner, prepared.delivery_id, instance).await.unwrap().unwrap();
+    |                        ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:215:17
+    |
+215 |         assert!(delivery.text_start(&dispatch).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:216:17
+    |
+216 | ...   assert!(delivery.offer_text_chunk(&dispatch, &TextChunk { sequence:0,utf8_offset:0,text:CandidateKind::FollowUpInvitation.tex...
+    |               ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:217:17
+    |
+217 |         assert!(delivery.offer_text_end(&dispatch, 0, 0).await.is_err());
+    |                 ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `delivery` in this scope
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:218:9
+    |
+218 |         delivery.start(&dispatch, 16000, 1).await.unwrap();
+    |         ^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `alia-server` (lib test) due to 14 previous errors

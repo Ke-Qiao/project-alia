@@ -1,0 +1,41 @@
+{
+  "recorded_at": "2026-10-10T08:46:45.397811+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-l11-linux-20261010-v2": {
+      "id": "f37ef00fa8199ddfc7e308960dd720bf97dcee61222a14fc575b1332555d0695",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T08:46:34.667713986Z"
+    },
+    "alia-l11-linux-20261010-v3": {
+      "id": "d09d50e199f8ab77b8a6a01d17f3dcd07e4bb6dc0f6f6702d9f1bc737a166634",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T08:46:39.787569568Z"
+    },
+    "alia-l11-linux-20261010-v4": {
+      "id": "44c3cda9b85dc1fdd4a651364ceecb751b7a3142b829a55a0ee06b6faab60d8a",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T08:46:44.913458026Z"
+    },
+    "alia-l11-20261010-db": {
+      "id": "e3ffff2c8f11102e6aa226eafe6159a679e06b74749ff69ab7e96f78911a2a40",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-10T08:46:45.272836609Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

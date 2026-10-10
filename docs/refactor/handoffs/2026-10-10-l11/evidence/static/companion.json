@@ -1,0 +1,23 @@
+{
+  "baseline": "f15db66",
+  "scope": "Only two production files owned by Companion agent; imports and explicit API renames excluded from body comparison; no runtime validation",
+  "files": [
+    {
+      "path": "packages/alia-server/src/modules/companion/repository.rs",
+      "sha256": "c0eeafdc9676cb6c7dbee459038298f9e87f986959a23be4794b08bb116175fa",
+      "business_body_equal_after_explicit_api_renames": true,
+      "literal_sequence_equal": true,
+      "commit_count": 8,
+      "rollback_count": 0
+    },
+    {
+      "path": "packages/alia-server/src/modules/companion/live/repository.rs",
+      "sha256": "b9a17007aadc169681f8537121f2ad6622421e7ccb1e19e631719ab95636497d",
+      "business_body_equal_after_explicit_api_renames": true,
+      "literal_sequence_equal": true,
+      "commit_count": 11,
+      "rollback_count": 0
+    }
+  ],
+  "result": "passed"
+}

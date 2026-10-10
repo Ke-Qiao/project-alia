@@ -1,0 +1,33 @@
+{
+  "started": "2026-10-10T08:43:07.426658+00:00",
+  "command": [
+    "python3",
+    "-c",
+    "from pathlib import Path\nimport hashlib, json, shutil\norigin = Path('/cache/target/debug/deps/server_runtime-d688634c1b44968f')\ndest = Path('/runtime/server_runtime-v4')\nassert not dest.exists()\nshutil.copy2(origin, dest)\ndef sha(p):\n    with p.open('rb') as stream:\n        return hashlib.file_digest(stream, 'sha256').hexdigest()\noriginal_hash, retained_hash = sha(origin), sha(dest)\nassert original_hash == retained_hash\nrecord = dict(original=str(origin), retained=str(dest), bytes=origin.stat().st_size, original_mtime_ns=origin.stat().st_mtime_ns, sha256=retained_hash, purpose='Retain V4 panic-fence failing/rechecked test executable for later diagnosis; ignored task runtime artifact, not deployed')\nPath('/evidence/retained-runtime-binary.json').write_text(json.dumps(record, indent=2) + '\\n')\nprint(json.dumps(record))\n"
+  ],
+  "container": "alia-l11-linux-20261010-v4",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f",
+  "source_before": {
+    "file_count": 640,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 4.606,
+  "finished": "2026-10-10T08:43:12.032956+00:00",
+  "source_after": {
+    "file_count": 640,
+    "errors": []
+  },
+  "finished_at": "2026-10-10T08:43:12.032956+00:00",
+  "source_drift": []
+}

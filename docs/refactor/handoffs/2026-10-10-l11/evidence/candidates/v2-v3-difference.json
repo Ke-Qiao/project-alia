@@ -1,0 +1,8 @@
+{
+  "reason": "Integration check found a missing DeliveryRepository test import and an unused test instance. Repair briefly removed another used instance; restored before final freeze. Production source unchanged. Both failed compile logs preserved.",
+  "changed": [
+    "packages/alia-server/src/modules/memory/context/invitation/tests.rs",
+    "packages/alia-server/tests/delivery_repository.rs"
+  ],
+  "unchanged": 638
+}

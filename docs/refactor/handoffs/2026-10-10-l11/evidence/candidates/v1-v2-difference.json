@@ -1,0 +1,7 @@
+{
+  "reason": "Static review found three Companion consumers still reading private_readable; restore original pub field visibility. V1 was not compiled or executed.",
+  "changed": [
+    "packages/alia-server/src/modules/memory/context/appraisal_source.rs"
+  ],
+  "unchanged": 639
+}

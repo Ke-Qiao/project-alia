@@ -1,0 +1,657 @@
+{
+  "source_commit": "60f665cf6fce4811b144dfc743b4814c5bdf19d5",
+  "manifest_sha256": "520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f",
+  "scope": "Final V4 same-source validation; preserved static-review correction and integration compile failures; task fixtures only",
+  "files": [
+    {
+      "path": "evidence/candidates/availability-no-default-v3-result.json",
+      "bytes": 682,
+      "sha256": "6540508660b479d6c1d504d50a55eb0dcfd512bab4b6d98897fdcd24dcf3e4dd"
+    },
+    {
+      "path": "evidence/candidates/availability-no-default-v3.log",
+      "bytes": 619,
+      "sha256": "b1e0d2e40f5e9c17e4ab29c2cdb77d9fb60220a24c3524efcd7ed75f672f34af"
+    },
+    {
+      "path": "evidence/candidates/integration-check-repaired.log",
+      "bytes": 4460,
+      "sha256": "4cb65076872fd625bfe59531d2ca55989c65ab6607d83200281a32681c8bef87"
+    },
+    {
+      "path": "evidence/candidates/integration-check.log",
+      "bytes": 7842,
+      "sha256": "6e9b582d807f7a1fee02f1c1156f0deab4ee082e66bd42a60640d69a80b2405d"
+    },
+    {
+      "path": "evidence/candidates/linux-v2-container-create.json",
+      "bytes": 1582,
+      "sha256": "02398f945cfb51b79389c68bad0e087918d75d323cb8d26ec70862ff2d984564"
+    },
+    {
+      "path": "evidence/candidates/linux-v2-source-manifest.json",
+      "bytes": 117638,
+      "sha256": "db2a59dbf34611aaf8183652967ee7a53536eb844ba59f56ba7003f50156b0c3"
+    },
+    {
+      "path": "evidence/candidates/linux-v2-source.sha256",
+      "bytes": 73800,
+      "sha256": "70098b0a229fa91fc54d3626477c32daf0ea5a062bd8ba15f341dbd2cb7c8cff"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/container-create.json",
+      "bytes": 1582,
+      "sha256": "6585c25fc4b708ded3ffcc2dc0ed32da959dbc89a47801130a54a996c9fba109"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/environment.command.json",
+      "bytes": 1155,
+      "sha256": "7f9eb8e8cc89b633bbc7d9ff8a4f688bcd55b946e05ee2fe3ce64974986b6888"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/environment.json",
+      "bytes": 1204,
+      "sha256": "e46a479e64ebdb7a3aff9b01a86b7924203e26c95e5804686ba461a60d2fde1d"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/environment.log",
+      "bytes": 984,
+      "sha256": "b60b7c37549e83ccbc7e357fd188dc3db03178d6116c624725f06b6e5411ea46"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/environment.result.json",
+      "bytes": 1391,
+      "sha256": "f5754127904a37bbac002414fbacf443aa454fb6cfe713f38e0140e29075d96c"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/native-archive.json",
+      "bytes": 313,
+      "sha256": "8370c3dca0d01ece5d22b10ce5b85831c5a36fb7cff1532f8a488f91fe3c4a82"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/run-stage.py",
+      "bytes": 3098,
+      "sha256": "975329ddd057f4d9ff161b3e707518d4a1b538fb0c1241fee0093487615a8105"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/server-tests.command.json",
+      "bytes": 709,
+      "sha256": "2738bb19080676ca27d36624517429e003eb80abae8c066053e4e3a25b7fda06"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/server-tests.log",
+      "bytes": 80806,
+      "sha256": "ab546630818e7f92c5363ae0e124866319fceb11a75803bb9fccdd96bbfd43e0"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/server-tests.result.json",
+      "bytes": 949,
+      "sha256": "5a264d2ca14e72c184abc981b29e098e6307c934d39eec22340d7c9087a5e49a"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/source-manifest.json",
+      "bytes": 117638,
+      "sha256": "87c20262a28af3c62d383ac92cd5e17f44a3e770384cffd2bd4bbc0fd58e4bc2"
+    },
+    {
+      "path": "evidence/candidates/linux-v3/source.sha256",
+      "bytes": 73800,
+      "sha256": "4f312d500dc40b3afd4da20cc27f5ff18da6d9688321bc3c1905458e9ed3072e"
+    },
+    {
+      "path": "evidence/candidates/linux-v3.counts.json",
+      "bytes": 33626,
+      "sha256": "ae2bb23d2155576d1f1d67bff4fb8903a35bddd473c622b804edf58540d6f893"
+    },
+    {
+      "path": "evidence/candidates/linux-v3.counts.txt",
+      "bytes": 7987,
+      "sha256": "3c2ee1a664244829307ef0a4c38ba450f14b6c7f4670ed4f3cf3be13bab43588"
+    },
+    {
+      "path": "evidence/candidates/no-default-v3-result.json",
+      "bytes": 665,
+      "sha256": "9bd357bbe97bb603b8dd9e58b519047d2bfb76668d3ae82120bb526546ce165c"
+    },
+    {
+      "path": "evidence/candidates/no-default-v3.log",
+      "bytes": 166,
+      "sha256": "e71e123c8f89f6575cdfd48df189def81cd6c6bfb38f38626efc45425687b3c3"
+    },
+    {
+      "path": "evidence/candidates/source-v1-manifest.json",
+      "bytes": 117638,
+      "sha256": "19dd7a894530059d66a83246036a37a9418f83478ccfaf9b3edfc4f074999cc6"
+    },
+    {
+      "path": "evidence/candidates/source-v2-manifest.json",
+      "bytes": 117638,
+      "sha256": "db2a59dbf34611aaf8183652967ee7a53536eb844ba59f56ba7003f50156b0c3"
+    },
+    {
+      "path": "evidence/candidates/source-v3-manifest.json",
+      "bytes": 117638,
+      "sha256": "87c20262a28af3c62d383ac92cd5e17f44a3e770384cffd2bd4bbc0fd58e4bc2"
+    },
+    {
+      "path": "evidence/candidates/static-v2-result.json",
+      "bytes": 813,
+      "sha256": "48d8fa13d524af8beff016fd3916db2045ccea61b50242c05883eafce7fc5319"
+    },
+    {
+      "path": "evidence/candidates/static-v2.log",
+      "bytes": 76,
+      "sha256": "1bc4d308afd4245dfece7a20a639971f3e6ad6d12a74a3738cb445439b508320"
+    },
+    {
+      "path": "evidence/candidates/static-v3-result.json",
+      "bytes": 813,
+      "sha256": "099d625ea332aa4801d22fcc04d4e887e007f802c4094e3f5a8f257a64452134"
+    },
+    {
+      "path": "evidence/candidates/static-v3.log",
+      "bytes": 76,
+      "sha256": "1bc4d308afd4245dfece7a20a639971f3e6ad6d12a74a3738cb445439b508320"
+    },
+    {
+      "path": "evidence/candidates/v1-v2-difference.json",
+      "bytes": 282,
+      "sha256": "5c845a5cd60ff1181de5b4009030a57e08cca6c2c5914aa5a27c7a613b8240cb"
+    },
+    {
+      "path": "evidence/candidates/v2-v3-difference.json",
+      "bytes": 424,
+      "sha256": "6e4cb9933adc0ba11aa65b8df0bd643b469314295253972faecc4c09583a5734"
+    },
+    {
+      "path": "evidence/candidates/v3-v4-difference.json",
+      "bytes": 322,
+      "sha256": "9e7717add430c5d108499817d23342f3ab19e71d50d4bbdf3b65f8b8405f6620"
+    },
+    {
+      "path": "evidence/candidates/workspace-v3-result.json",
+      "bytes": 629,
+      "sha256": "764b3cb79e6ecbd0a3095182acc72210fed9033f8b03a839a667ec0debf21edb"
+    },
+    {
+      "path": "evidence/candidates/workspace-v3.counts.json",
+      "bytes": 43999,
+      "sha256": "af4f58f57e5cd195d62fb0465fac342d12319579d2b92c069f9dd8b28aaaeed2"
+    },
+    {
+      "path": "evidence/candidates/workspace-v3.counts.txt",
+      "bytes": 9267,
+      "sha256": "c2f9659b4c53b9de07ab1c32bc2a88b773b484b33503c8db824e61d7e577836b"
+    },
+    {
+      "path": "evidence/candidates/workspace-v3.log",
+      "bytes": 111867,
+      "sha256": "cb9525e49e4f852f558e5ceb657d84a9ec1d3e6ba99164de67e807eb9d44658a"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 226,
+      "sha256": "c8ff008247cd50d49aa165ad1d1a499f35602f38ba1bb01bd286168eee6a670c"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "bytes": 536,
+      "sha256": "ca9003e895fe7f70fd13703d1ae51a4b9bf96b77c6ac765fe8b24e17892e90b0"
+    },
+    {
+      "path": "evidence/linux/container-create.json",
+      "bytes": 1582,
+      "sha256": "befc7fc04b965ae84f727786d720e8b2b2be767962dcf9d9b7e8d5582928988c"
+    },
+    {
+      "path": "evidence/linux/environment.command.json",
+      "bytes": 1155,
+      "sha256": "b869365c7c40c491266f052ad98f7343c2f0e0da05f4634b5597b09c4f40bf4c"
+    },
+    {
+      "path": "evidence/linux/environment.json",
+      "bytes": 1204,
+      "sha256": "e46a479e64ebdb7a3aff9b01a86b7924203e26c95e5804686ba461a60d2fde1d"
+    },
+    {
+      "path": "evidence/linux/environment.log",
+      "bytes": 984,
+      "sha256": "b60b7c37549e83ccbc7e357fd188dc3db03178d6116c624725f06b6e5411ea46"
+    },
+    {
+      "path": "evidence/linux/environment.result.json",
+      "bytes": 1391,
+      "sha256": "9612c250366e78ec5cec87ae1a86dea3383c479798a53ba8444c548fbef0b012"
+    },
+    {
+      "path": "evidence/linux/native-archive.json",
+      "bytes": 313,
+      "sha256": "12981eb0ffe1a143c0e38686eb17edcbe82262707e5a58c7c4940b632223cdda"
+    },
+    {
+      "path": "evidence/linux/panic-fence-recheck.command.json",
+      "bytes": 787,
+      "sha256": "7e00f87b2560d5ab3327a27408f661fde574503aea720129531267985f33d8ec"
+    },
+    {
+      "path": "evidence/linux/panic-fence-recheck.log",
+      "bytes": 510,
+      "sha256": "121c6c5ab10d0cb8952026f8d4da1f4e0c969b1aebb2244287c832089880b5f6"
+    },
+    {
+      "path": "evidence/linux/panic-fence-recheck.result.json",
+      "bytes": 1024,
+      "sha256": "ec6152cd6539a8d23195beb7f68e37eef3b62256605c5efcbd068e19d17b7816"
+    },
+    {
+      "path": "evidence/linux/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/linux/retain-runtime-binary.command.json",
+      "bytes": 1477,
+      "sha256": "dd9313ffaab8d14182665286e35829b0d51209f7ceba01162b909f49d75006ba"
+    },
+    {
+      "path": "evidence/linux/retain-runtime-binary.log",
+      "bytes": 390,
+      "sha256": "a02c514ed444139c773d80a63654d7026b11202c7c4c4e3475b712e8a3059258"
+    },
+    {
+      "path": "evidence/linux/retain-runtime-binary.result.json",
+      "bytes": 1713,
+      "sha256": "94dfcaaefa8980735fb6980ec93c0752a613d0345eed8a0338ecd7541500086a"
+    },
+    {
+      "path": "evidence/linux/retained-runtime-binary.json",
+      "bytes": 404,
+      "sha256": "34986078e84c334ed522ec71cfcf194fe114754a623df17ab8ff76e832a9a058"
+    },
+    {
+      "path": "evidence/linux/run-stage.py",
+      "bytes": 3098,
+      "sha256": "0045c05fe8c1327389424ea01c97a6ce466851a538d43bcbeb95595a97a35911"
+    },
+    {
+      "path": "evidence/linux/server-binary.command.json",
+      "bytes": 1040,
+      "sha256": "84e68357e68a9b0aff2ddf3c4d52cdfe9fb223493ca79d8411971096ddd343ac"
+    },
+    {
+      "path": "evidence/linux/server-binary.json",
+      "bytes": 867,
+      "sha256": "8a3410036ebe3132ff75b7899d816ebd83600c692476fddbd09ea06ba623488e"
+    },
+    {
+      "path": "evidence/linux/server-binary.log",
+      "bytes": 855,
+      "sha256": "480518e31a7b9cfb384add44d8bc799fe13d4ddba830dcee43b7d0f5585053ca"
+    },
+    {
+      "path": "evidence/linux/server-binary.result.json",
+      "bytes": 1276,
+      "sha256": "e1932a565d10a87e10cb9cd2e2896d2a6fd273151bd53e6b95d9a8ea5953255a"
+    },
+    {
+      "path": "evidence/linux/server-no-default.command.json",
+      "bytes": 738,
+      "sha256": "6f55a434d19e7a56db7f3a79a39120c7ef1118fe62c31e501b3681b87382367a"
+    },
+    {
+      "path": "evidence/linux/server-no-default.log",
+      "bytes": 266,
+      "sha256": "896769f048ef7fd5d995ce283618d10501658702283ccb7ceae260bc08342823"
+    },
+    {
+      "path": "evidence/linux/server-no-default.result.json",
+      "bytes": 975,
+      "sha256": "b564f9887214c759efb78dff386962875dd8510545a7281c756aa71478637432"
+    },
+    {
+      "path": "evidence/linux/server-release.command.json",
+      "bytes": 705,
+      "sha256": "b65ab92255b6b6f4cbc04615a255e993e8d484ba04eebca6924ea5f5873dbdeb"
+    },
+    {
+      "path": "evidence/linux/server-release.log",
+      "bytes": 186,
+      "sha256": "33b28d552427668ada0e4676b2b8f07f52117d7f2fbb824bacb74fecf308db4f"
+    },
+    {
+      "path": "evidence/linux/server-release.result.json",
+      "bytes": 943,
+      "sha256": "33ae4539e251b108642fd403bb984b7caf046ac596c66ae92e98c99b365c78d3"
+    },
+    {
+      "path": "evidence/linux/server-tests-repeat.command.json",
+      "bytes": 709,
+      "sha256": "8e622bda9285f4cbbbd67e9b56df93ef949a8db3e21e884f6e9389c9e52cb9d6"
+    },
+    {
+      "path": "evidence/linux/server-tests-repeat.counts.json",
+      "bytes": 33273,
+      "sha256": "83d622201daaaaef67eab1b76a9185ba7ed66833f2d7ae45380cf3eaa3962e9b"
+    },
+    {
+      "path": "evidence/linux/server-tests-repeat.counts.txt",
+      "bytes": 7867,
+      "sha256": "98cf311513fed7a4029b4d539e7f540dbc381b35376d82d85addca307cb3769f"
+    },
+    {
+      "path": "evidence/linux/server-tests-repeat.log",
+      "bytes": 79890,
+      "sha256": "82ecf8a659ecbda0d1bdde306615539a7de5f03e811fe5d44a85cdabc87edc18"
+    },
+    {
+      "path": "evidence/linux/server-tests-repeat.result.json",
+      "bytes": 947,
+      "sha256": "e5bc4087faf837a996de1e98958692c107e5ef309cc42f01cd3cc9727739b163"
+    },
+    {
+      "path": "evidence/linux/server-tests.command.json",
+      "bytes": 709,
+      "sha256": "83cc12443c733e0ab517d8c4ceb2e55d227dfb1bf1404e5b570b4186abc1d12c"
+    },
+    {
+      "path": "evidence/linux/server-tests.counts.json",
+      "bytes": 33852,
+      "sha256": "336d5c0da48d34275baf16e9526835a388595102860b47146d68b8364e42786d"
+    },
+    {
+      "path": "evidence/linux/server-tests.counts.txt",
+      "bytes": 8163,
+      "sha256": "48785cec23d31410495dad15b4e4001853bd9c94a0c431b189d19370cbc32fa3"
+    },
+    {
+      "path": "evidence/linux/server-tests.legacy-counts.json",
+      "bytes": 33735,
+      "sha256": "ac860b79b6440429e1be44177bdf6d92d5ce918d2579006761009e772ad86c26"
+    },
+    {
+      "path": "evidence/linux/server-tests.legacy-counts.txt",
+      "bytes": 8196,
+      "sha256": "85f7f1f44f92b8e7330a457322c4d7bcb95ba403b24131411a2f7e6b3b931014"
+    },
+    {
+      "path": "evidence/linux/server-tests.log",
+      "bytes": 80743,
+      "sha256": "abe0f23d2383725b80e0e58eafe92ff287f3adfaf3df408e891e1477d77df8c0"
+    },
+    {
+      "path": "evidence/linux/server-tests.result.json",
+      "bytes": 949,
+      "sha256": "675043167aa2f01909a257f72c931bab0247b49847479208ad91ff78bb14a395"
+    },
+    {
+      "path": "evidence/linux/source-manifest.json",
+      "bytes": 117638,
+      "sha256": "520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f"
+    },
+    {
+      "path": "evidence/linux/source.sha256",
+      "bytes": 73800,
+      "sha256": "730364282eb60a561b3f08a9faa21bceda8b783211090886727b0ca4c716f790"
+    },
+    {
+      "path": "evidence/macos/admission-no-default-v4-result.json",
+      "bytes": 738,
+      "sha256": "943564c98dabb4b0e40df1de392f8606910e27776f68600081e5c1e55c0e7576"
+    },
+    {
+      "path": "evidence/macos/admission-no-default-v4.counts.json",
+      "bytes": 3131,
+      "sha256": "2b0b2fea40dc2cde2e79e9806986a0012125529760606e54bbf5a5d33e9902f6"
+    },
+    {
+      "path": "evidence/macos/admission-no-default-v4.counts.txt",
+      "bytes": 1477,
+      "sha256": "0c970146b6a9c12d20027a3c81a585d964aa228a76efb3d4420ea34061d47b21"
+    },
+    {
+      "path": "evidence/macos/admission-no-default-v4.log",
+      "bytes": 433,
+      "sha256": "797d2287d4965f47eb7f70580c55dc313ef4286d3eda386933f6436ea4b08314"
+    },
+    {
+      "path": "evidence/macos/availability-no-default-v4-result.json",
+      "bytes": 682,
+      "sha256": "93ef5bf93d8f1780c5daf53b86024147f7a5646cd98063877fa72fac06a9a083"
+    },
+    {
+      "path": "evidence/macos/availability-no-default-v4.counts.json",
+      "bytes": 3014,
+      "sha256": "df094a13ba0abf8aefd6a74076ee9f8af1b5757d14dafa787c140c67eff1e95b"
+    },
+    {
+      "path": "evidence/macos/availability-no-default-v4.counts.txt",
+      "bytes": 1424,
+      "sha256": "f99a6c09f0d709eddf085518fdc7cc816b5676bdcadf27399417510751a6201a"
+    },
+    {
+      "path": "evidence/macos/availability-no-default-v4.log",
+      "bytes": 619,
+      "sha256": "70d01eefa3b7f79afcffc1195111ca1aa7b933c88b46b60e20f7f80064781a12"
+    },
+    {
+      "path": "evidence/macos/macos-environment.json",
+      "bytes": 775,
+      "sha256": "e3599cb58ece6d09eecc12465ca13e7139e41a94281ac598c944950bd6660aa1"
+    },
+    {
+      "path": "evidence/macos/macos-native-archive.json",
+      "bytes": 309,
+      "sha256": "262e5749c6235fed60eabeee0f743fd34468de1a26e4281eda3f080c4aef1e88"
+    },
+    {
+      "path": "evidence/macos/no-default-v4-result.json",
+      "bytes": 663,
+      "sha256": "a886ab4b0b174af4998570ee314826ce8874e9cc982cce83bd7bd079b2ea9968"
+    },
+    {
+      "path": "evidence/macos/no-default-v4.log",
+      "bytes": 165,
+      "sha256": "18fc54053e5287bd8c3dd5ca4a13b71380158a09ebea9279ed3053e5cd7818d5"
+    },
+    {
+      "path": "evidence/macos/pty-v4-result.json",
+      "bytes": 808,
+      "sha256": "be51e2d30d43af3712ee8dcfd4cd4ec67eda99fa5db54cf904192cf4b7dc932c"
+    },
+    {
+      "path": "evidence/macos/pty-v4.counts.json",
+      "bytes": 3156,
+      "sha256": "84a4f38f1e181c911b6d8683a3a5c2376fa9f6a435a3c61c83160472c2739b83"
+    },
+    {
+      "path": "evidence/macos/pty-v4.counts.txt",
+      "bytes": 1413,
+      "sha256": "58c2370a27a921e57015dc9d942a456d510453a64ebd3d5f4402ebb6ad5586fc"
+    },
+    {
+      "path": "evidence/macos/pty-v4.log",
+      "bytes": 1367,
+      "sha256": "d19eac662be75f84d94f396fd76919bae45c6361b451888439ce641d6d5ebca5"
+    },
+    {
+      "path": "evidence/macos/response-failure-v4-result.json",
+      "bytes": 699,
+      "sha256": "10d2cd9a663d8a741e341575c9acfd8d5a5f9e6922afa2cad68233639eb0595a"
+    },
+    {
+      "path": "evidence/macos/response-failure-v4.counts.json",
+      "bytes": 3039,
+      "sha256": "526b7a9f080e1b7fa586ba930b0ba826b6e5227f8e7706f504b68e0ea840a046"
+    },
+    {
+      "path": "evidence/macos/response-failure-v4.counts.txt",
+      "bytes": 1439,
+      "sha256": "dc2733b6e4045c1e5d77d44a53ae066cc87e2609a4130ec8ab1509fcdf20fd31"
+    },
+    {
+      "path": "evidence/macos/response-failure-v4.log",
+      "bytes": 482,
+      "sha256": "9cdf5e7fa21f17ae283b9c797590a0e83068a76f7211f2c5a5bfb4846353cc13"
+    },
+    {
+      "path": "evidence/macos/static-v4-result.json",
+      "bytes": 813,
+      "sha256": "5efe1f7cd41858f76bb1d1810a47a9aa85adac2ad1a9776e63ec9409b1cb2690"
+    },
+    {
+      "path": "evidence/macos/static-v4.log",
+      "bytes": 76,
+      "sha256": "1bc4d308afd4245dfece7a20a639971f3e6ad6d12a74a3738cb445439b508320"
+    },
+    {
+      "path": "evidence/macos/workspace-v4-result.json",
+      "bytes": 627,
+      "sha256": "925eb46d07c6265fbdb88991c7a11e2f5e0a185309f223e2a49f03c7378962e1"
+    },
+    {
+      "path": "evidence/macos/workspace-v4.counts.json",
+      "bytes": 43663,
+      "sha256": "2b19a2354834c355accca0f1348ad1d1d1534e58444a244d6424b2f262e09870"
+    },
+    {
+      "path": "evidence/macos/workspace-v4.counts.txt",
+      "bytes": 9163,
+      "sha256": "682123a9bc64e6c3731750304341ed62cac95b65b87470ddd5e143302b9c4854"
+    },
+    {
+      "path": "evidence/macos/workspace-v4.log",
+      "bytes": 111142,
+      "sha256": "f6f529b06b18f69de4fb0d50eabfb3f00eb32591eb33a2ea3ec3fe63eac67588"
+    },
+    {
+      "path": "evidence/resource-closure.json",
+      "bytes": 1758,
+      "sha256": "2af893358eb2eb4f7e4a686322d40b8c9bec9b14671b4ded644b52543b74e4e7"
+    },
+    {
+      "path": "evidence/source-v4-manifest.json",
+      "bytes": 117638,
+      "sha256": "520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f"
+    },
+    {
+      "path": "evidence/static/companion.json",
+      "bytes": 869,
+      "sha256": "9d45214cb6a09f9ed1f65a10e9ec1638b86b67318cc7945136e5af2b9b4f2d93"
+    },
+    {
+      "path": "evidence/static/context.json",
+      "bytes": 553,
+      "sha256": "293ed22a8ad1169b8c1af36e2aaf698d74890dfab1359793c6a5ca027328af33"
+    },
+    {
+      "path": "evidence/static/counter-self-test.json",
+      "bytes": 183,
+      "sha256": "afaba8acbf9b132cfcc9434b87a13cf5f92958f958b3dd881461d5957406a50b"
+    },
+    {
+      "path": "evidence/static/response.json",
+      "bytes": 818,
+      "sha256": "3f533c3ca52ec5db22b8cc9840cdde00cd1ed8f585d4a37cea67ff6a47be964e"
+    },
+    {
+      "path": "evidence/tools/archive-evidence.py",
+      "bytes": 4389,
+      "sha256": "6ef0b639c55753f0194ee00f5cd96f3527e641c658c1527d7cfc50d8053350ea"
+    },
+    {
+      "path": "evidence/tools/collect-resources.py",
+      "bytes": 2132,
+      "sha256": "9e0d86eabd48fb5ad0edf17564aade99cce57713b4797e59e12774469e413205"
+    },
+    {
+      "path": "evidence/tools/count_cargo_tests-before-late-tail.py",
+      "bytes": 11695,
+      "sha256": "4ffb882bc2243369f0e525fc2e34e489532281aa35dcf734d6be6d75605f0ed3"
+    },
+    {
+      "path": "evidence/tools/count_cargo_tests.py",
+      "bytes": 13500,
+      "sha256": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236"
+    },
+    {
+      "path": "evidence/tools/create-database.py",
+      "bytes": 1029,
+      "sha256": "217ac06a6bf9d82e7568e91dd965338efb4f5d091eebdc72af4610ef4a23e442"
+    },
+    {
+      "path": "evidence/tools/finalize-docs.py",
+      "bytes": 11709,
+      "sha256": "860f291c22395068afef2ef5db983d26d77b3bdc78d6822e9e1166a5f81c52c1"
+    },
+    {
+      "path": "evidence/tools/finish-linux.py",
+      "bytes": 1557,
+      "sha256": "fee4a66f28f6e0cc06a5d25c685f29f92da8f424d55eb1ddf698c502356da729"
+    },
+    {
+      "path": "evidence/tools/freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "evidence/tools/move-context-owners.py",
+      "bytes": 9567,
+      "sha256": "528d6f7987e8429761b23e27a62a7bdca941b80c1b6270c253592523363f9430"
+    },
+    {
+      "path": "evidence/tools/prepare-linux-v4.py",
+      "bytes": 1521,
+      "sha256": "05cee19543b69d8b90f1ef3e1194c04b0d390371174a6becba54ad4e65df2390"
+    },
+    {
+      "path": "evidence/tools/prepare-linux.py",
+      "bytes": 1750,
+      "sha256": "c5a1f814e8685b330b9f22365f9ab1183486a615ef2ad148d94de164705d0f95"
+    },
+    {
+      "path": "evidence/tools/record-environment.py",
+      "bytes": 1237,
+      "sha256": "532a5c776cb99e2e131d9c43bd41e3146e3f3b29d6d32d825878ae9124a76e7c"
+    },
+    {
+      "path": "evidence/tools/retain-failing-binary.py",
+      "bytes": 1060,
+      "sha256": "4a4f29c04e9d23b7f02c08fadebd9f70f1561c880760db45cd2014d48431a718"
+    },
+    {
+      "path": "evidence/tools/run-linux.py",
+      "bytes": 1553,
+      "sha256": "f5171d384c9dd8da66d64d7764a781b033b8ba817bb390e678be140631d19e95"
+    },
+    {
+      "path": "evidence/tools/run-macos.py",
+      "bytes": 780,
+      "sha256": "e90a5045e98ca35e72d23dc9636044d3ad5897bf3e576320e116c4fd1099df6a"
+    },
+    {
+      "path": "evidence/tools/run_pty_stage.py",
+      "bytes": 3011,
+      "sha256": "494dd616465c848ae8466f931d01a7e617d0e1ad5bcbd435a7f2fe5cc44e45d8"
+    },
+    {
+      "path": "evidence/tools/run_stage.py",
+      "bytes": 2997,
+      "sha256": "50fcff11e2d7c4fdac300aaaf4744a314fa4731b963ac3052780ae29010c5c17"
+    },
+    {
+      "path": "evidence/tools/test-counter.py",
+      "bytes": 2406,
+      "sha256": "bf1ca9870b6602ce99a644839ab1993901bafde36cea114439b9f089c2a2618c"
+    },
+    {
+      "path": "evidence/tools/verify-commit.py",
+      "bytes": 726,
+      "sha256": "d60d70421beb0e278777cbe9f17669e5da0fedd073e0f04450053ec24908982f"
+    }
+  ]
+}

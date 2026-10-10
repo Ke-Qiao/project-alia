@@ -1,0 +1,7 @@
+{
+  "reason": "Retain the new SQL-failure test observation receiver across async move by asserting the actual model input after processing. SQL injection/is_called and all policy/production logic unchanged.",
+  "changed": [
+    "packages/alia-server/src/modules/interaction/integration_tests.rs"
+  ],
+  "unchanged": 639
+}

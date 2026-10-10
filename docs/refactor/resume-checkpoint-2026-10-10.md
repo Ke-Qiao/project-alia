@@ -1,5 +1,7 @@
 # 当前检查点：2026-10-10 L10 完成
 
+后续 L11 已完成；最新恢复入口见 [L11 检查点](resume-checkpoint-l11-2026-10-10.md)。以下保留 L10 当时记录。
+
 分支 `codex/architecture-refactor`；源码 `4519e757542f644e9eb385d4055551546bf7abd3`。本轮 **10/10**，L09—L12 **2/4**，R01—R06 仍 **2/6**。三个 subagent 已交回；无待接回的 Cargo/PG 作业；本轮两个 Linux holder 和 PG 均停止。
 
 恢复时依次读取 [技术说明与验证](layering-2026-10-10.md)、[checklist](checklists/l10-2026-10-10.md)、[四份 HANDOFF](handoffs/2026-10-10/README.md)、[证据索引](handoffs/2026-10-10/evidence-index.json)，再核对实际 Git 状态及 [后续清单](checklists/layering-next.md)。

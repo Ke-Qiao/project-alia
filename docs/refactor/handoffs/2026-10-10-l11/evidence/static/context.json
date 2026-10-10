@@ -1,0 +1,19 @@
+{
+  "source_base": "f15db66",
+  "sql_statement_multiset_unchanged": true,
+  "sql_occurrences": 8,
+  "sql_unique": 8,
+  "authority_source_has_no_companion_type_or_sql": true,
+  "context_invitation_has_no_private_grant_or_companion_policy_sql": true,
+  "lease_field_visibility_unchanged": true,
+  "old_files": [
+    "memory/context/companion.rs",
+    "memory/context/companion/invitation.rs"
+  ],
+  "new_files": [
+    "memory/context/appraisal_source.rs",
+    "companion/source.rs",
+    "companion/invitation.rs",
+    "memory/context/invitation.rs"
+  ]
+}

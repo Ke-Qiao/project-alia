@@ -1,0 +1,12 @@
+
+running 1 test
+
+running 1 test
+
+thread 'delivery::panicked_playback_fence_retains_original_native_future_and_dependencies' (6149) panicked at packages/alia-server/tests/server_runtime/delivery.rs:664:9:
+injected precise cancellation panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test delivery::panicked_playback_fence_retains_original_native_future_and_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 16.40s
+

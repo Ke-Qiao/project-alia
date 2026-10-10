@@ -1,0 +1,85 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+warning: unused variable: `delivery`
+   --> packages/alia-server/src/modules/memory/context/invitation/tests.rs:303:13
+    |
+303 |         let delivery = DeliveryRepository::new(f.db.clone());
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_delivery`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `alia-server` (lib test) generated 1 warning (run `cargo fix --lib -p alia-server --tests` to apply 1 suggestion)
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+  --> packages/alia-server/tests/delivery_repository.rs:51:13
+   |
+51 |             DeliveryRepository::mark_generated_in_transaction(
+   |             ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+   |
+help: a struct with a similar name exists
+   |
+51 -             DeliveryRepository::mark_generated_in_transaction(
+51 +             DeliveryRecord::mark_generated_in_transaction(
+   |
+
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+   --> packages/alia-server/tests/delivery_repository.rs:355:37
+    |
+355 |  let tx=f.db.begin().await.unwrap();DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!...
+    |                                     ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+    |
+help: a struct with a similar name exists
+    |
+355 -  let tx=f.db.begin().await.unwrap();DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+355 +  let tx=f.db.begin().await.unwrap();DeliveryRecord::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+    |
+
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+   --> packages/alia-server/tests/delivery_repository.rs:356:51
+    |
+356 |  let tx=f.db.begin().await.unwrap();let committed=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id...
+    |                                                   ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+    |
+help: a struct with a similar name exists
+    |
+356 -  let tx=f.db.begin().await.unwrap();let committed=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant','hello')",vec![message.into(),session.into()])).await.unwrap();tx.commit().await.unwrap();assert_eq!(committed.assistant_message_id,Some(message));
+356 +  let tx=f.db.begin().await.unwrap();let committed=DeliveryRecord::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant','hello')",vec![message.into(),session.into()])).await.unwrap();tx.commit().await.unwrap();assert_eq!(committed.assistant_message_id,Some(message));
+    |
+
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+   --> packages/alia-server/tests/delivery_repository.rs:357:48
+    |
+357 |  let tx=f.db.begin().await.unwrap();let replay=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uu...
+    |                                                ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+    |
+help: a struct with a similar name exists
+    |
+357 -  let tx=f.db.begin().await.unwrap();let replay=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
+357 +  let tx=f.db.begin().await.unwrap();let replay=DeliveryRecord::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
+    |
+
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+   --> packages/alia-server/tests/delivery_repository.rs:357:256
+    |
+357 | ...,Some(message));assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(...
+    |                                     ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+    |
+help: a struct with a similar name exists
+    |
+357 -  let tx=f.db.begin().await.unwrap();let replay=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
+357 +  let tx=f.db.begin().await.unwrap();let replay=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(DeliveryRecord::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
+    |
+
+error[E0433]: cannot find type `DeliveryRepository` in this scope
+   --> packages/alia-server/tests/delivery_repository.rs:590:54
+    |
+590 |  let tx=f.db.begin().await.unwrap();assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response...
+    |                                                      ^^^^^^^^^^^^^^^^^^ use of undeclared type `DeliveryRepository`
+    |
+help: a struct with a similar name exists
+    |
+590 -  let tx=f.db.begin().await.unwrap();assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"old response"})).await,Err(DeliveryError::Unauthorized(_))));tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+590 +  let tx=f.db.begin().await.unwrap();assert!(matches!(DeliveryRecord::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"old response"})).await,Err(DeliveryError::Unauthorized(_))));tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+    |
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `alia-server` (test "delivery_repository") due to 6 previous errors
+warning: build failed, waiting for other jobs to finish...
