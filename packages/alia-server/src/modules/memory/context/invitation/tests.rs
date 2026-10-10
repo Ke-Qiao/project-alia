@@ -7,7 +7,7 @@ use crate::modules::{
             tests::{Fixture, with_fixture},
             types::*,
         },
-        types::CandidateKind,
+        types::{CandidateKind, CompanionMode, CompanionPolicy},
     },
     delivery::{
         repository::DeliveryRepository,
@@ -15,7 +15,9 @@ use crate::modules::{
     },
 };
 use alia_core::{delivery::PlaybackIdentity, text_delivery::TextChunk};
-use sea_orm::TransactionTrait;
+use chrono::{DateTime, Utc};
+use sea_orm::{ConnectionTrait, TransactionTrait};
+use serde_json::Value;
 
 fn enabled(ttl: u32) -> CompanionPolicy {
     CompanionPolicy {
@@ -73,7 +75,7 @@ async fn invitation_keeps_original_parent_and_every_root_but_grants_only_new_out
         let (permit, binding, response) = f.fresh(&live).await;
         let tx = f.db.begin().await.unwrap();
         let lease = load(&tx, f.owner, binding.context_id).await.unwrap();
-        let (admission, _) = grant(&tx, f.owner, permit.admission_id(), false)
+        let admission = read_invitation_grant(&tx, f.owner, permit.admission_id())
             .await
             .unwrap();
         let source = &admission.candidate.observation;
@@ -189,13 +191,13 @@ async fn invitation_rejects_changed_envelopes_final_text_and_additional_media_at
         for changed in variants { assert!(delivery.prepare(changed).await.is_err()); }
         for final_content in [json!({"text":"different"}), json!({"text":CandidateKind::FollowUpInvitation.text(),"extra":true})] {
             let tx = f.db.begin().await.unwrap();
-            assert!(delivery.mark_generated_in_transaction(&tx, f.owner, response.response_id, Uuid::new_v4(), final_content).await.is_err());
+            assert!(DeliveryRepository::mark_generated_in_transaction(&tx, f.owner, response.response_id, Uuid::new_v4(), final_content).await.is_err());
             tx.rollback().await.unwrap();
         }
         let tx = f.db.begin().await.unwrap();
         let assistant = Uuid::new_v4();
         tx.execute(stmt("INSERT INTO chat_messages(id,session_id,user_id,role,content) VALUES($1,$2,$3,'assistant',$4)", vec![assistant.into(), f.session.into(), f.owner.to_string().into(), CandidateKind::FollowUpInvitation.text().into()])).await.unwrap();
-        delivery.mark_generated_in_transaction(&tx, f.owner, response.response_id, assistant, json!({"text":CandidateKind::FollowUpInvitation.text()})).await.unwrap();
+        DeliveryRepository::mark_generated_in_transaction(&tx, f.owner, response.response_id, assistant, json!({"text":CandidateKind::FollowUpInvitation.text()})).await.unwrap();
         tx.commit().await.unwrap();
         let instance = Uuid::new_v4();
         let valid_audio = audio(&response, instance);
@@ -251,7 +253,7 @@ async fn invitation_short_admission_expiry_preserves_existing_output_until_origi
         let live = f.live(Uuid::new_v4());
         let (permit, binding, response) = f.fresh(&live).await;
         let tx = f.db.begin().await.unwrap();
-        let (admission, _) = grant(&tx, f.owner, permit.admission_id(), false)
+        let admission = read_invitation_grant(&tx, f.owner, permit.admission_id())
             .await
             .unwrap();
         let mut at_admission_boundary = admission.clone();
@@ -298,7 +300,6 @@ async fn invitation_stored_content_and_final_content_are_revalidated_before_outp
         f.enable_live(enabled(60)).await;
         let live = f.live(Uuid::new_v4());
         let (_, _, response) = f.fresh(&live).await;
-        let delivery = DeliveryRepository::new(f.db.clone());
         let valid = response_input(&response);
         for (field, value) in [("content", json!({"text":"corrupt"})), ("final_content", json!({"text":"corrupt"}))] {
             let tx = f.db.begin().await.unwrap();
@@ -308,7 +309,7 @@ async fn invitation_stored_content_and_final_content_are_revalidated_before_outp
                 // Deliberate persisted corruption: no production bypass or permit is used.
                 tx.execute(stmt("UPDATE delivery_responses SET status='committed',assistant_message_id=$2,final_content=$3 WHERE response_id=$1", vec![response.response_id.into(), Uuid::new_v4().into(), value.into()])).await.unwrap();
             }
-            assert!(delivery.prepare_in_transaction(&tx, valid.clone()).await.is_err());
+            assert!(DeliveryRepository::prepare_in_transaction(&tx, valid.clone()).await.is_err());
             assert!(crate::modules::delivery::repository::validate_response_source(&tx, f.owner, response.response_id).await.is_err());
             tx.rollback().await.unwrap();
         }

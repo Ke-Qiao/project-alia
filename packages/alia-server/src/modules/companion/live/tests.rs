@@ -110,16 +110,67 @@ async fn atomic_admission_rollback_and_original_pending_lock_reconcile_without_s
         })
         .await;
         let pending = f.seed_pending(&repository).await;
+        let contexts = f.count("context_leases").await;
+        let mut before = Vec::new();
+        for table in [
+            "companion_admissions",
+            "context_leases",
+            "delivery_responses",
+            "delivery_events",
+            "companion_source_claims",
+            "companion_live_sources",
+        ] {
+            before.push((table, f.count(table).await));
+        }
+        for (table, operation, preceding_write) in [
+            (
+                "context_leases",
+                "INSERT",
+                "SELECT 1 FROM companion_admissions WHERE state='active'",
+            ),
+            (
+                "delivery_responses",
+                "INSERT",
+                "SELECT 1 FROM context_leases WHERE purpose='companion_invitation'",
+            ),
+            (
+                "companion_live_pending",
+                "UPDATE OF state",
+                "SELECT 1 FROM delivery_events WHERE kind='prepared'",
+            ),
+        ] {
+            let injected = format!("injected {table} write failure");
+            f.db.execute_unprepared(&format!(
+                "CREATE FUNCTION reject_live_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NOT EXISTS({preceding_write}) THEN RAISE EXCEPTION 'fault did not reach preceding write'; END IF; RAISE EXCEPTION '{injected}'; END; $$; CREATE TRIGGER reject_live_write BEFORE {operation} ON {table} FOR EACH ROW EXECUTE FUNCTION reject_live_write();"
+            )).await.unwrap();
+            // Each failed attempt rolls back before the next opportunity is
+            // frozen; the original two-second deadline is never extended.
+            let intent = repository
+                .prepare_intent(pending.candidate_id, f.opportunity(&pending).await)
+                .await
+                .unwrap();
+            match repository.admit(&intent).await {
+                Err(LiveError::Unavailable(error)) => {
+                    assert!(error.contains(&injected), "unexpected failure: {error}");
+                }
+                other => panic!("fault did not abort admission: {other:?}"),
+            }
+            for (table, count) in &before {
+                assert_eq!(f.count(table).await, *count, "partial write in {table}");
+            }
+            let state: String = f.db.query_one(sql(
+                "SELECT state FROM companion_live_pending WHERE candidate_id=$1",
+                vec![pending.candidate_id.into()],
+            )).await.unwrap().unwrap().try_get("", "state").unwrap();
+            assert_eq!(state, "pending");
+            f.db.execute_unprepared(&format!(
+                "DROP TRIGGER reject_live_write ON {table}; DROP FUNCTION reject_live_write();"
+            )).await.unwrap();
+        }
         let intent = repository
             .prepare_intent(pending.candidate_id, f.opportunity(&pending).await)
             .await
             .unwrap();
-        let contexts = f.count("context_leases").await;
-        f.db.execute_unprepared("CREATE FUNCTION reject_live_response() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected Response write failure'; END; $$; CREATE TRIGGER reject_live_response BEFORE INSERT ON delivery_responses FOR EACH ROW EXECUTE FUNCTION reject_live_response();").await.unwrap();
-        assert!(matches!(repository.admit(&intent).await,Err(LiveError::Unavailable(_))));
-        assert_eq!(f.count("companion_admissions").await,0);
-        assert_eq!(f.count("context_leases").await,contexts);
-        f.db.execute_unprepared("DROP TRIGGER reject_live_response ON delivery_responses; DROP FUNCTION reject_live_response();").await.unwrap();
         // Stage the *production* atomic write but control the database outcome.
         // This is a commit/rollback barrier test, not physical commit-ACK loss.
         let staged = repository.stage_for_test(&intent).await.unwrap();
@@ -141,6 +192,12 @@ async fn atomic_admission_rollback_and_original_pending_lock_reconcile_without_s
         assert_eq!(f.count("companion_admissions").await, 1);
         assert_eq!(f.count("context_leases").await, contexts + 1);
         assert_eq!(f.count("delivery_responses").await, 1);
+        assert_eq!(f.count("delivery_events").await, 1);
+        let revision: i64 = f.db.query_one(sql(
+            "SELECT budget_revision FROM companion_admissions WHERE admission_id=$1",
+            vec![intent.admission_id().into()],
+        )).await.unwrap().unwrap().try_get("", "budget_revision").unwrap();
+        assert_eq!(revision, 1, "failed writes must not leave a budget charge");
         assert!(matches!(
             repository.admit(&intent).await.unwrap(),
             AdmissionResult::Existing(_)

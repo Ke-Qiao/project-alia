@@ -34,6 +34,7 @@ pub struct ModuleRegistry {
     pub embedding: Arc<dyn EmbeddingAdapter>,
     // Intelligence core
     pub conversation: Arc<ConversationService>,
+    pub responses: Arc<crate::modules::interaction::response::ResponseCommitter>,
     pub memory: Arc<crate::modules::memory::MemoryService>,
     pub context: Arc<crate::modules::memory::context::ContextService>,
     pub companion: Arc<crate::modules::companion::CompanionService>,

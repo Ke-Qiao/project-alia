@@ -152,9 +152,8 @@ async fn clear_or_policy_change_during_model_call_rejects_old_output_and_allows_
             assert!(
                 !fixture
                     .conversation
-                    .messages
-                    .lock()
-                    .unwrap()
+                    .persisted_history()
+                    .await
                     .iter()
                     .any(|message| message.role == "assistant")
             );

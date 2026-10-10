@@ -51,7 +51,18 @@ struct Conversation {
     db: Option<sea_orm::DatabaseConnection>,
     fail_session: AtomicBool,
     fail_user: AtomicBool,
-    fail_assistant: AtomicBool,
+}
+
+impl Conversation {
+    async fn persisted_history(&self) -> Vec<ChatMessage> {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        self.db.as_ref().expect("history assertion requires linked SQL fixture")
+            .query_all(Statement::from_string(DatabaseBackend::Postgres,
+                "SELECT m.role,m.content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE s.channel_id='test' ORDER BY m.created_at,m.id"))
+            .await.unwrap().into_iter().map(|row| {
+                ChatMessage::new(row.try_get::<String>("", "role").unwrap(), row.try_get::<String>("", "content").unwrap())
+            }).collect()
+    }
 }
 
 #[async_trait]
@@ -94,10 +105,6 @@ impl ConversationStore for Conversation {
         Ok(Vec::new())
     }
     async fn append_message(&self, _: Uuid, message: ChatMessage) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            message.role != "assistant" || !self.fail_assistant.load(Ordering::SeqCst),
-            "injected assistant persistence failure"
-        );
         self.messages.lock().unwrap().push(message);
         Ok(())
     }
@@ -131,38 +138,6 @@ impl ConversationStore for Conversation {
             .unwrap()
             .push(source_relationship_epoch);
         Ok(source)
-    }
-    async fn commit_response(
-        &self,
-        owner: Uuid,
-        session: Uuid,
-        response: Uuid,
-        message: ChatMessage,
-    ) -> anyhow::Result<Uuid> {
-        anyhow::ensure!(
-            !self.fail_assistant.load(Ordering::SeqCst),
-            "injected assistant persistence failure"
-        );
-        let db = self
-            .db
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("test conversation has no durable delivery ledger"))?;
-        use sea_orm::{ConnectionTrait, TransactionTrait};
-        let tx = db.begin().await?;
-        let result = crate::modules::delivery::repository::DeliveryRepository::new(db.clone())
-            .mark_generated_in_transaction(
-                &tx,
-                owner,
-                response,
-                Uuid::new_v4(),
-                serde_json::json!({"text":message.content}),
-            )
-            .await?;
-        let id = result.assistant_message_id.unwrap();
-        tx.execute(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant',$3) ON CONFLICT DO NOTHING",vec![id.into(),session.into(),message.content.clone().into()])).await?;
-        tx.commit().await?;
-        self.append_message(session, message).await?;
-        Ok(id)
     }
     async fn append_event(&self, _: Uuid, event: ConversationEventEntry) -> anyhow::Result<()> {
         let mut events = self.events.lock().unwrap();
@@ -556,6 +531,9 @@ impl Fixture {
         let output = Arc::new(OutputChannel::default());
         channels.register(output.clone()).await.unwrap();
         let modules = Arc::new(InteractionServices {
+            responses: Arc::new(super::response::ResponseCommitter::new(
+                sea_orm::DatabaseConnection::Disconnected,
+            )),
             context: Arc::new(crate::modules::memory::context::ContextService::new(
                 sea_orm::DatabaseConnection::Disconnected,
                 Arc::new(crate::providers::embedding::NoopEmbedding),
@@ -751,63 +729,92 @@ async fn prepared_voice_error_before_register_ack_keeps_original_context_and_res
 }
 
 #[tokio::test]
-async fn incomplete_history_does_not_publish_completion_or_memory_capture() {
-    for fail_user in [true, false] {
-        let fixture = Fixture::new(false).await;
-        fixture
-            .conversation
-            .fail_user
-            .store(fail_user, Ordering::SeqCst);
-        fixture
-            .conversation
-            .fail_assistant
-            .store(!fail_user, Ordering::SeqCst);
-        let user = Uuid::new_v4();
-        let bus = EventBus::new(8);
-        let mut events = bus.subscribe();
-        let pending = PendingTextPersistence {
-            context: ContextBinding {
-                context_id: Uuid::new_v4(),
-                owner_id: user,
-                request_id: Uuid::new_v4(),
-                source_event_id: None,
-                source_privacy_epoch: 0,
-            },
-            source_received_at: chrono::Utc::now(),
-            source_privacy_epoch: 0,
+async fn missing_source_does_not_publish_completion_or_memory_capture() {
+    let fixture = Fixture::new(false).await;
+    let user = Uuid::new_v4();
+    let bus = EventBus::new(8);
+    let mut events = bus.subscribe();
+    let pending = PendingTextPersistence {
+        context: ContextBinding {
+            context_id: Uuid::new_v4(),
+            owner_id: user,
+            request_id: Uuid::new_v4(),
             source_event_id: None,
-            response_id: uuid::Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
-            user_id: user,
-            user_id_text: user.to_string(),
-            query_text: "This input must have durable provenance".into(),
-            response_text: "A reply whose history write might fail".into(),
-            channel_id: "test".into(),
-            cache_write: None,
-        };
-        persist_text_interaction(
-            &fixture.modules,
-            pending,
+            source_privacy_epoch: 0,
+        },
+        source_received_at: chrono::Utc::now(),
+        source_privacy_epoch: 0,
+        source_event_id: None,
+        response_id: uuid::Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        user_id: user,
+        user_id_text: user.to_string(),
+        query_text: "This input must have durable provenance".into(),
+        response_text: "A reply whose history write might fail".into(),
+        channel_id: "test".into(),
+        cache_write: None,
+    };
+    persist_text_interaction(
+        &fixture.modules,
+        pending,
+        &fixture.policy.memory,
+        &bus,
+        None,
+    )
+    .await;
+    assert!(
+        events.try_recv().is_err(),
+        "incomplete interaction published completion"
+    );
+    let messages = fixture.conversation.messages.lock().unwrap();
+    assert!(
+        messages.is_empty(),
+        "missing provenance must not be manufactured after generation"
+    );
+    assert!(messages.iter().all(|message| message.role == "user"));
+    assert!(
+        fixture.conversation.events.lock().unwrap().is_empty(),
+        "incomplete interaction reached memory capture audit"
+    );
+}
+
+#[tokio::test]
+async fn response_commit_failure_suppresses_completion_and_memory_capture() {
+    with_linked_fixture(|mut fixture| async move {
+        use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+        let db = fixture.conversation.db.as_ref().unwrap();
+        db.execute_unprepared("CREATE SEQUENCE fail_assistant_attempt; CREATE FUNCTION fail_assistant_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.role='assistant' THEN PERFORM nextval('fail_assistant_attempt'); RAISE EXCEPTION 'injected assistant commit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_assistant_commit BEFORE INSERT ON chat_messages FOR EACH ROW EXECUTE FUNCTION fail_assistant_commit()").await.unwrap();
+        let bus = EventBus::new(32);
+        let mut events = bus.subscribe();
+        process_event(
+            ChannelEvent::TextMessage {
+                channel_id: "test".into(),
+                user_id: Uuid::from_u128(42).to_string(),
+                text: "This response cannot be durably committed".into(),
+                source_received_at: chrono::Utc::now(),
+                source_privacy_epoch: 41,
+                source_relationship_epoch: 0,
+            },
+            &fixture.modules, &fixture.channels, &fixture.sensors, &bus,
+            CancellationToken::new(), false, &fixture.policy.conversation,
+            &fixture.policy.tools, &fixture.policy.cache, &fixture.policy.cache_policy,
             &fixture.policy.memory,
-            &bus,
-            None,
-        )
-        .await;
-        assert!(
-            events.try_recv().is_err(),
-            "incomplete interaction published completion"
-        );
-        let messages = fixture.conversation.messages.lock().unwrap();
-        assert!(
-            messages.is_empty(),
-            "missing provenance must not be manufactured after generation"
-        );
-        assert!(messages.iter().all(|message| message.role == "user"));
-        assert!(
-            fixture.conversation.events.lock().unwrap().is_empty(),
-            "incomplete interaction reached memory capture audit"
-        );
-    }
+        ).await.unwrap();
+        assert_eq!(fixture.started.try_recv().unwrap(), "This response cannot be durably committed");
+        while let Ok(event) = events.try_recv() {
+            assert!(!matches!(event, crate::event::ServerEvent::ConversationTurnCompleted { .. }));
+        }
+        assert!(!fixture.conversation.persisted_history().await.iter().any(|message| message.role == "assistant"));
+        assert!(!fixture.conversation.events.lock().unwrap().iter().any(|event| event.event_type == "memory_capture"));
+        let row = db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+            "SELECT (SELECT count(*) FROM delivery_responses WHERE status='committed') AS committed,(SELECT count(*) FROM delivery_responses WHERE status='pending') AS pending"))
+            .await.unwrap().unwrap();
+        assert_eq!(row.try_get::<i64>("", "committed").unwrap(), 0);
+        assert_eq!(row.try_get::<i64>("", "pending").unwrap(), 1);
+        let attempted = db.query_one(Statement::from_string(DatabaseBackend::Postgres,
+            "SELECT is_called FROM fail_assistant_attempt")).await.unwrap().unwrap();
+        assert!(attempted.try_get::<bool>("", "is_called").unwrap(), "the SQL history failure must actually be reached");
+    }).await;
 }
 
 #[tokio::test]
@@ -903,7 +910,7 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
             &[0],
             "queued speech must preserve its relationship admission through generation"
         );
-        let messages = fixture.conversation.messages.lock().unwrap();
+        let messages = fixture.conversation.persisted_history().await;
         assert_eq!(
             messages
                 .iter()
@@ -1088,6 +1095,7 @@ where
     delivery.start().await.unwrap();
     let modules = Arc::get_mut(&mut fixture.modules).unwrap();
     modules.delivery = delivery.clone();
+    modules.responses = Arc::new(super::response::ResponseCommitter::new(db.clone()));
     modules.conversation = fixture.conversation.clone();
     modules.expression.attach_db(db.clone()).await.unwrap();
     appraisal_writer.set(modules.expression.clone()).unwrap();

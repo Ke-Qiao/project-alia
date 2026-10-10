@@ -479,7 +479,7 @@ async fn validate_response_binding(
         // this transaction; this read cannot mint or refresh authority.
         let content: crate::modules::companion::live::types::InvitationContent =
             serde_json::from_value(response.content.clone())?;
-        let grant = crate::modules::memory::context::companion::read_invitation_grant(
+        let grant = crate::modules::companion::invitation::read_invitation_grant(
             tx,
             response.key.user_id,
             content.admission_id,

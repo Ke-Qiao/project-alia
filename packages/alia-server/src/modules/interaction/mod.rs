@@ -15,6 +15,7 @@ pub mod llm;
 pub mod persistence;
 pub mod policy;
 pub mod prompt;
+pub mod response;
 mod runtime;
 mod services;
 pub mod streaming;

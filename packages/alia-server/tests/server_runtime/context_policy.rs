@@ -25,7 +25,7 @@ async fn disabled_memory_still_erases_and_can_be_hot_enabled_then_restarted() {
         };
         state
             .modules
-            .conversation
+            .responses
             .commit_response(
                 owner,
                 response.conversation_id.unwrap(),

@@ -135,9 +135,8 @@ async fn buffered_and_streamed_text_each_commit_one_response_and_source_epoch() 
             assert_eq!(r.final_content, Some(serde_json::json!({"text":full})));
             assert_eq!(
                 f.conversation
-                    .messages
-                    .lock()
-                    .unwrap()
+                    .persisted_history()
+                    .await
                     .iter()
                     .filter(|message| message.role == "assistant")
                     .count(),
@@ -189,9 +188,8 @@ async fn broken_model_stream_keeps_partial_chunks_without_success_end_or_assista
         );
         assert!(
             !f.conversation
-                .messages
-                .lock()
-                .unwrap()
+                .persisted_history()
+                .await
                 .iter()
                 .any(|message| message.role == "assistant")
         );

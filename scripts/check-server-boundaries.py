@@ -25,6 +25,8 @@ REMOVED_PATHS = (
     "src/channels/pipeline.rs",
     "src/channels/pipeline",
     "src/memory_policy.rs",
+    "src/modules/memory/context/companion.rs",
+    "src/modules/memory/context/companion",
 )
 REQUIRED_PATHS = (
     "src/bootstrap/builder.rs",
@@ -35,6 +37,11 @@ REQUIRED_PATHS = (
     "src/modules/memory/service.rs",
     "src/modules/memory/types.rs",
     "src/modules/interaction/services.rs",
+    "src/modules/interaction/response.rs",
+    "src/modules/companion/source.rs",
+    "src/modules/companion/invitation.rs",
+    "src/modules/memory/context/appraisal_source.rs",
+    "src/modules/memory/context/invitation.rs",
     "src/modules/interaction/conversation/service.rs",
     "src/modules/interaction/cache/store.rs",
     "src/modules/interaction/cache/types.rs",
@@ -49,7 +56,7 @@ RETIRED_SYMBOLS = (
     "spawn_pipeline", "ConversationBackend", "DatabaseConversationBackend", "CacheBackend",
     "DbCache", "RouterStrategy", "MultiLayerRouter", "PassthroughRouter", "DirectRouter",
     "PersonaProvider", "TemplatePersona", "SkillProvider", "BuiltinSkills", "InsightStrategy",
-    "ScheduledInsights", "NoopInsights", "ModuleContext",
+    "ScheduledInsights", "NoopInsights", "ModuleContext", "set_response_status_in_transaction",
 )
 FIXED_FACTORIES = "memory|conversation|cache|router|persona|skills|insights|sensor|rule_engine|scheduler|tools_with_sensors"
 OLD_SYMBOLS = re.compile(
@@ -136,6 +143,12 @@ def check(server: Path) -> list[str]:
                 if match:
                     line = text.count("\n", 0, match.start()) + 1
                     errors.append(f"{relative}:{line}: initialization depends on global ServerConfig")
+            if relative.startswith("src/modules/interaction/conversation/"):
+                if re.search(r"\b(?:commit_response|DeliveryRepository)\b", text):
+                    errors.append(f"{relative}: Conversation storage owns a cross-domain response transaction")
+            if relative.startswith("src/modules/memory/context/") and "/tests" not in relative:
+                if re.search(r"\b(?:private_grant|CompanionPolicy|CompanionPolicySnapshot|CanonicalObservation)\b", text):
+                    errors.append(f"{relative}: Context owns Companion business policy or projection")
             if relative == "src/bootstrap/factory.rs":
                 match = FIXED_FACTORY_DECLARATION.search(text)
                 if match:
@@ -285,6 +298,21 @@ def self_test() -> None:
             assert any("domain value depends on infrastructure" in error for error in check(server)), invalid
         domain_types.write_text("")
         assert not check(server)
+        for relative, invalid, expected in (
+            ("src/modules/interaction/conversation/service.rs", "async fn commit_response() {}", "cross-domain response transaction"),
+            ("src/modules/interaction/conversation/service.rs", "use crate::modules::delivery::repository::DeliveryRepository;", "cross-domain response transaction"),
+            ("src/modules/memory/context/appraisal_source.rs", "struct Source { observation: CanonicalObservation }", "Companion business policy or projection"),
+            ("src/modules/memory/context/invitation.rs", "let policy: CompanionPolicy;", "Companion business policy or projection"),
+            ("src/modules/memory/context/invitation.rs", 'let sql = "SELECT private_grant FROM companion_admissions";', "Companion business policy or projection"),
+        ):
+            owner = server / relative
+            owner.write_text(invalid)
+            assert any(expected in error for error in check(server)), invalid
+            owner.write_text("")
+        invitation = server / "src/modules/memory/context/invitation.rs"
+        invitation.write_text("use crate::modules::companion::invitation::lock_invitation_grant;")
+        assert not check(server)
+        invitation.write_text("")
         lifecycle = server / "src/modules/platform/lifecycle.rs"
         for invalid in (
             "pub trait ModuleLifecycle { async fn init(&mut self, deps: &Dependencies); }",

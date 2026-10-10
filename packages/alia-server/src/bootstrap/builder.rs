@@ -758,6 +758,8 @@ impl ServerBuilder {
             .await?;
         }
 
+        let responses =
+            Arc::new(crate::modules::interaction::response::ResponseCommitter::new(db.clone()));
         let voice_initiatives =
             crate::modules::interaction::initiative::VoiceInitiativeHandle::default();
         let companion = Arc::new(
@@ -769,7 +771,7 @@ impl ServerBuilder {
             .with_live_outputs(crate::modules::companion::LiveOutputs {
                 context: context.clone(),
                 delivery: delivery.clone(),
-                conversation: conversation_arc.clone(),
+                responses: responses.clone(),
                 tts: tts.clone(),
             }),
         );
@@ -799,6 +801,7 @@ impl ServerBuilder {
             tts,
             embedding: embedding_arc,
             conversation: conversation_arc,
+            responses,
             memory: memory_arc,
             context,
             companion,
@@ -944,6 +947,7 @@ impl ServerBuilder {
             tts: state.modules.tts.clone(),
             embedding: state.modules.embedding.clone(),
             conversation: state.modules.conversation.clone(),
+            responses: state.modules.responses.clone(),
             memory: state.modules.memory.clone(),
             context: state.modules.context.clone(),
             cache: state.modules.cache.clone(),

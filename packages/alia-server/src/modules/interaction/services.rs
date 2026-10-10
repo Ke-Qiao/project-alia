@@ -19,6 +19,7 @@ pub struct InteractionServices {
     pub tts: Arc<dyn TtsAdapter>,
     pub embedding: Arc<dyn EmbeddingAdapter>,
     pub conversation: Arc<dyn ConversationStore>,
+    pub responses: Arc<super::response::ResponseCommitter>,
     pub memory: Arc<crate::modules::memory::MemoryService>,
     pub context: Arc<crate::modules::memory::context::ContextService>,
     pub cache: Arc<dyn CacheStore>,

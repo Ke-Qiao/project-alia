@@ -21,8 +21,8 @@ use crate::{
             types::{DeliveryStatus, ResponseRecord},
         },
         interaction::{
-            conversation::ConversationStore,
             initiative::{VoiceInitiativeHandle, VoiceInitiativeRequest},
+            response::ResponseCommitter,
         },
         memory::context::{ContextBinding, ContextService, ContextUse},
     },
@@ -41,7 +41,7 @@ const CLEANUP_BUDGET: Duration = Duration::from_secs(2);
 pub(crate) struct LiveOutputs {
     pub context: Arc<ContextService>,
     pub delivery: Arc<DeliveryService>,
-    pub conversation: Arc<dyn ConversationStore>,
+    pub responses: Arc<ResponseCommitter>,
     pub tts: Arc<dyn TtsAdapter>,
 }
 
@@ -277,7 +277,7 @@ impl LiveRunner {
         // This uses the ordinary atomic Response/history commit. No new user
         // message, affect inference or automatic memory write is fabricated.
         self.outputs
-            .conversation
+            .responses
             .commit_response(
                 context.owner_id,
                 response

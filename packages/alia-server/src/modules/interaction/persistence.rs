@@ -65,7 +65,7 @@ pub(super) async fn persist_text_interaction(
     }
 
     if let Err(error) = modules
-        .conversation
+        .responses
         .commit_response(
             pending.user_id,
             pending.session_id,

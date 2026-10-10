@@ -12,8 +12,8 @@ use crate::{
         },
         delivery::repository::DeliveryRepository,
         interaction::{
-            conversation::ConversationService,
             initiative::{Request as VoiceRequest, VoiceOpportunity},
+            response::ResponseCommitter,
         },
         platform::lifecycle::ModuleLifecycle,
     },
@@ -68,7 +68,9 @@ fn runner(
         // No output work is admitted in these failure paths, so no supervisor
         // needs starting. The real SQL repository remains installed.
         delivery: DeliveryService::new(DeliveryRepository::new(f.db.clone()), &stop),
-        conversation: Arc::new(ConversationService::new()),
+        responses: Arc::new(ResponseCommitter::new(
+            sea_orm::DatabaseConnection::Disconnected,
+        )),
         tts: Arc::new(CountedNoopTts(calls.clone())),
     };
     (LiveRunner::new(live, voice, outputs, stop), calls)

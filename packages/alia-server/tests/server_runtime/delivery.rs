@@ -120,17 +120,42 @@ async fn canonical_response_and_history_commit_once_or_roll_back_together() {
         let response = draft(&state, owner).await;
         let repository = DeliveryRepository::new(state.db.clone());
         let session = response.conversation_id.unwrap();
-        state.db.execute_unprepared("CREATE FUNCTION fail_response_message() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.role='assistant' THEN RAISE EXCEPTION 'injected assistant insert failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_response_message BEFORE INSERT ON chat_messages FOR EACH ROW EXECUTE FUNCTION fail_response_message()").await.unwrap();
-        assert!(state.modules.conversation.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
-        let unchanged = repository.response(owner, response.response_id).await.unwrap();
-        assert_eq!(unchanged.status, ResponseStatus::Pending);
-        assert!(unchanged.assistant_message_id.is_none());
-        assert!(unchanged.final_content.is_none());
-        state.db.execute_unprepared("DROP TRIGGER fail_response_message ON chat_messages; DROP FUNCTION fail_response_message()").await.unwrap();
+        let context_before: serde_json::Value = state.db.query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres, "SELECT to_jsonb(c) AS record FROM context_leases c WHERE context_id=$1",
+            [response.context_id.into()],
+        )).await.unwrap().unwrap().try_get("", "record").unwrap();
+        let session_before: chrono::DateTime<chrono::Utc> = state.db.query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres, "SELECT updated_at FROM chat_sessions WHERE id=$1", [session.into()],
+        )).await.unwrap().unwrap().try_get("", "updated_at").unwrap();
+        // Both the history insert and the final session write must roll back the
+        // Response transition and its audit without changing the frozen Context.
+        for (table, action, predicate) in [
+            ("chat_messages", "INSERT", "NEW.role='assistant'"),
+            ("chat_sessions", "UPDATE", "TRUE"),
+        ] {
+            state.db.execute_unprepared(&format!(
+                "CREATE FUNCTION fail_response_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF {predicate} THEN RAISE EXCEPTION 'injected response commit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_response_commit BEFORE {action} ON {table} FOR EACH ROW EXECUTE FUNCTION fail_response_commit()"
+            )).await.unwrap();
+            let error = state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.unwrap_err();
+            assert!(format!("{error:#}").contains("injected response commit failure"), "unexpected rollback cause: {error:#}");
+            let unchanged = repository.response(owner, response.response_id).await.unwrap();
+            assert_eq!(unchanged.status, ResponseStatus::Pending);
+            assert!(unchanged.assistant_message_id.is_none());
+            assert!(unchanged.final_content.is_none());
+            let effects = state.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+                "SELECT (SELECT count(*) FROM chat_messages WHERE session_id=$1 AND role='assistant') AS history_count,(SELECT count(*) FROM delivery_events WHERE response_id=$2 AND kind='history_disposition') AS audit_count,(SELECT updated_at FROM chat_sessions WHERE id=$1) AS updated_at,(SELECT to_jsonb(c) FROM context_leases c WHERE context_id=$3) AS context",
+                [session.into(), response.response_id.into(), response.context_id.into()],
+            )).await.unwrap().unwrap();
+            assert_eq!(effects.try_get::<i64>("", "history_count").unwrap(), 0);
+            assert_eq!(effects.try_get::<i64>("", "audit_count").unwrap(), 0);
+            assert_eq!(effects.try_get::<chrono::DateTime<chrono::Utc>>("", "updated_at").unwrap(), session_before);
+            assert_eq!(effects.try_get::<serde_json::Value>("", "context").unwrap(), context_before);
+            state.db.execute_unprepared(&format!("DROP TRIGGER fail_response_commit ON {table}; DROP FUNCTION fail_response_commit()")).await.unwrap();
+        }
 
         let (left, right) = tokio::join!(
-            state.modules.conversation.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")),
-            state.modules.conversation.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")),
+            state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")),
+            state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "规范响应")),
         );
         let id = left.unwrap();
         assert_eq!(right.unwrap(), id);
@@ -142,11 +167,44 @@ async fn canonical_response_and_history_commit_once_or_roll_back_together() {
             "SELECT count(*) AS count FROM chat_messages WHERE session_id=$1 AND role='assistant'", [session.into()],
         )).await.unwrap().unwrap().try_get("", "count").unwrap();
         assert_eq!(count, 1);
-        assert!(state.modules.conversation.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "篡改重试")).await.is_err());
-        assert!(state.modules.conversation.commit_response(other, session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
+        assert!(state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "篡改重试")).await.is_err());
+        assert!(state.modules.responses.commit_response(other, session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
         let different_session = state.modules.conversation.create_session("delivery-test", &owner.to_string()).await.unwrap();
-        assert!(state.modules.conversation.commit_response(owner, different_session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
+        assert!(state.modules.responses.commit_response(owner, different_session, response.response_id, ChatMessage::new("assistant", "规范响应")).await.is_err());
+        assert!(state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("user", "规范响应")).await.is_err());
+        let mut named = ChatMessage::new("assistant", "规范响应");
+        named.name = Some(owner.to_string());
+        assert!(state.modules.responses.commit_response(owner, session, response.response_id, named).await.is_err());
         // Committing text alone never creates device presentation evidence.
+        assert!(state.delivery.list_deliveries(owner, response.response_id).await.unwrap().is_empty());
+        runtime.shutdown().await.unwrap();
+    }).await;
+}
+
+#[tokio::test]
+async fn committed_response_retry_never_recreates_erased_assistant_history() {
+    with_fixture(|f| async move {
+        let runtime = f.builder().build().await.unwrap();
+        let state = runtime.state().clone();
+        let (owner, _) = account(&state, "user").await;
+        let response = draft(&state, owner).await;
+        let session = response.conversation_id.unwrap();
+        let id = state.modules.responses.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "committed once")).await.unwrap();
+        state.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "DELETE FROM chat_messages WHERE id=$1", [id.into()],
+        )).await.unwrap();
+        // Another owner instance must observe the historical fact, without an
+        // in-memory retry cache or a new assistant row after erasure.
+        let restarted = alia_server::modules::interaction::response::ResponseCommitter::new(state.db.clone());
+        let replay = restarted.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "committed once")).await.unwrap();
+        assert_eq!(replay, id);
+        let effects = state.db.query_one(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT (SELECT count(*) FROM chat_messages WHERE session_id=$1 AND role='assistant') AS history_count,(SELECT count(*) FROM delivery_events WHERE response_id=$2 AND kind='history_disposition') AS audit_count",
+            [session.into(), response.response_id.into()],
+        )).await.unwrap().unwrap();
+        assert_eq!(effects.try_get::<i64>("", "history_count").unwrap(), 0);
+        assert_eq!(effects.try_get::<i64>("", "audit_count").unwrap(), 1);
+        assert!(restarted.commit_response(owner, session, response.response_id, ChatMessage::new("assistant", "changed retry")).await.is_err());
         assert!(state.delivery.list_deliveries(owner, response.response_id).await.unwrap().is_empty());
         runtime.shutdown().await.unwrap();
     }).await;

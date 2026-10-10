@@ -1,80 +1,18 @@
+//! Context-owned invitation evidence and immutable lease issuance.
 //! The original source closure is locked before a live grant or its policy.
-use super::*;
+use sea_orm::DatabaseTransaction;
+use serde_json::json;
+use uuid::Uuid;
+
+use super::{appraisal_source::lock_appraisal_authority, repository::*, *};
 use crate::modules::companion::{
-    live::types::{INVITATION_KIND, INVITATION_OUTPUT_KEY, LiveAdmissionGrant},
-    types::{CompanionMode, CompanionPolicy, PolicySnapshot as CompanionPolicySnapshot},
+    invitation::{lock_invitation_grant, read_invitation_grant},
+    live::types::{INVITATION_KIND, LiveAdmissionGrant},
+    source::load_companion_source,
 };
-use serde_json::{Value, json};
 
 fn revoked() -> anyhow::Error {
     ContextError::Revoked("Companion invitation authority is unavailable or changed".into()).into()
-}
-
-async fn grant(
-    tx: &DatabaseTransaction,
-    owner: Uuid,
-    admission_id: Uuid,
-    lock: bool,
-) -> ContextResult<(LiveAdmissionGrant, String)> {
-    let query = if lock {
-        "SELECT * FROM companion_admissions WHERE admission_id=$1 AND owner_id=$2 AND state='active' FOR SHARE"
-    } else {
-        "SELECT * FROM companion_admissions WHERE admission_id=$1 AND owner_id=$2 AND state='active'"
-    };
-    let row = tx
-        .query_one(stmt(query, vec![admission_id.into(), owner.into()]))
-        .await?
-        .ok_or_else(revoked)?;
-    let value = row
-        .try_get::<Option<Value>>("", "private_grant")?
-        .ok_or_else(revoked)?;
-    let stored_digest = row
-        .try_get::<Option<String>>("", "grant_digest")?
-        .ok_or_else(revoked)?;
-    if serde_json::to_vec(&value)?.len() > 64 * 1024 || digest(&value)? != stored_digest {
-        return Err(revoked());
-    }
-    let grant: LiveAdmissionGrant = serde_json::from_value(value).map_err(|_| revoked())?;
-    grant.validate().map_err(|_| revoked())?;
-    let charged_at: DateTime<Utc> = row.try_get("", "charged_at")?;
-    if grant.digest()? != stored_digest
-        || grant.admission_id != admission_id
-        || grant.candidate.observation.owner_id != owner
-        || row.try_get::<Uuid>("", "candidate_id")? != grant.candidate.id
-        || row.try_get::<Uuid>("", "initiative_request_id")? != grant.initiative_request_id
-        || row.try_get::<Option<Uuid>>("", "context_id")? != Some(grant.context_id)
-        || row.try_get::<Uuid>("", "server_instance_id")? != grant.server_instance_id
-        || row.try_get::<Uuid>("", "opportunity_id")? != grant.opportunity.id
-        || row.try_get::<Uuid>("", "conversation_id")?
-            != grant.candidate.observation.conversation_id
-        || row
-            .try_get::<Option<String>>("", "intent_digest")?
-            .as_deref()
-            != Some(grant.intent_digest.as_str())
-        || row.try_get::<String>("", "output_key")? != INVITATION_OUTPUT_KEY
-        || row.try_get::<DateTime<Utc>>("", "admit_before")? != grant.admit_before
-        || row.try_get::<DateTime<Utc>>("", "valid_until")? != grant.valid_until
-        || u64::try_from(row.try_get::<i64>("", "budget_revision")?).ok()
-            != grant.input.budget.revision.checked_add(1)
-        || charged_at != grant.input.as_of
-        || charged_at >= grant.admit_before
-        || row.try_get::<chrono::NaiveDate>("", "budget_date")? != charged_at.date_naive()
-        || grant.initiative_request_id == grant.candidate.observation.request_id
-        || grant.context_id == grant.candidate.observation.context_id
-    {
-        return Err(revoked());
-    }
-    Ok((grant, stored_digest))
-}
-
-/// Read immutable binding facts after the caller has validated the dedicated
-/// Context in this transaction. This read alone grants no output permission.
-pub(crate) async fn read_invitation_grant(
-    tx: &DatabaseTransaction,
-    owner: Uuid,
-    admission_id: Uuid,
-) -> ContextResult<LiveAdmissionGrant> {
-    Ok(grant(tx, owner, admission_id, false).await?.0)
 }
 
 async fn invitation_lease(
@@ -84,8 +22,8 @@ async fn invitation_lease(
 ) -> ContextResult<(LiveAdmissionGrant, ContextLease)> {
     // This first read acquires no grant lock. Source-erasure triggers take their
     // original root locks before retiring grants, so the reverse order deadlocks.
-    let (initial, initial_digest) = grant(tx, owner, admission_id, false).await?;
-    let authority = lock_companion_authority(tx, owner).await?;
+    let initial = read_invitation_grant(tx, owner, admission_id).await?;
+    let authority = lock_appraisal_authority(tx, owner).await?;
     let references = &initial.candidate.observation.appraisals;
     let mut canonical =
         load_companion_source(tx, owner, references[0].appraisal_id, &authority).await?;
@@ -107,32 +45,7 @@ async fn invitation_lease(
     if canonical.observation.digest()? != initial.candidate.observation.digest()? {
         return Err(revoked());
     }
-    let row = tx
-        .query_one(stmt(
-            "SELECT revision,policy,policy_digest FROM companion_policies WHERE owner_id=$1 FOR SHARE",
-            vec![owner.into()],
-        ))
-        .await?
-        .ok_or_else(revoked)?;
-    let policy: CompanionPolicy =
-        serde_json::from_value(row.try_get("", "policy")?).map_err(|_| revoked())?;
-    let current = CompanionPolicySnapshot {
-        revision: row.try_get("", "revision")?,
-        policy,
-    };
-    current.validate().map_err(|_| revoked())?;
-    if current != initial.candidate.policy
-        || current.policy.digest()? != row.try_get::<String>("", "policy_digest")?
-        || current.policy.mode != CompanionMode::Enabled
-        || current.policy.quiet
-        || current.policy.paused
-    {
-        return Err(revoked());
-    }
-    let (locked, locked_digest) = grant(tx, owner, admission_id, true).await?;
-    if locked_digest != initial_digest || locked != initial {
-        return Err(revoked());
-    }
+    let (locked, locked_digest) = lock_invitation_grant(tx, owner, admission_id, &initial).await?;
     ensure_live(tx, Some(locked.valid_until)).await?;
     let mut lease = canonical.lease;
     lease.id = locked.context_id;
@@ -205,6 +118,7 @@ mod tests;
 #[cfg(test)]
 mod purpose_tests {
     use super::*;
+    use chrono::DateTime;
 
     #[test]
     fn invitation_authorizes_only_its_two_output_operations() {

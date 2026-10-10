@@ -3,7 +3,7 @@ use crate::{
     modules::{
         companion::live::tests::with_fixture,
         delivery::{DeliveryService, repository::DeliveryRepository},
-        interaction::{conversation::ConversationService, initiative::Request},
+        interaction::{initiative::Request, response::ResponseCommitter},
     },
     providers::tts::NoopTts,
 };
@@ -21,8 +21,10 @@ async fn same_channel_has_one_outstanding_snapshot_and_close_drains_its_original
                 context: Arc::new(f.context()),
                 delivery,
                 // No opportunity is released. Any accidental output path would
-                // encounter this deliberately uninitialized conversation backend.
-                conversation: Arc::new(ConversationService::new()),
+                // encounter this deliberately disconnected response transaction owner.
+                responses: Arc::new(ResponseCommitter::new(
+                    sea_orm::DatabaseConnection::Disconnected,
+                )),
                 tts: Arc::new(NoopTts),
             }),
         );

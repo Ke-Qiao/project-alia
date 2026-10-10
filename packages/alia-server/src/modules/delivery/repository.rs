@@ -36,7 +36,7 @@ impl DeliveryRepository {
 
     pub async fn prepare(&self, input: NewResponse) -> DeliveryResult<ResponseRecord> {
         let tx = self.db.begin().await?;
-        let response = self.prepare_in_transaction(&tx, input).await?;
+        let response = Self::prepare_in_transaction(&tx, input).await?;
         tx.commit().await?;
         Ok(response)
     }
@@ -44,7 +44,6 @@ impl DeliveryRepository {
     /// The caller must commit this same transaction together with any associated
     /// assistant-history change. No network I/O may happen before that commit.
     pub async fn prepare_in_transaction(
-        &self,
         tx: &DatabaseTransaction,
         input: NewResponse,
     ) -> DeliveryResult<ResponseRecord> {
@@ -143,14 +142,13 @@ impl DeliveryRepository {
     }
 
     pub async fn mark_generated_in_transaction(
-        &self,
         tx: &DatabaseTransaction,
         owner: Uuid,
         response_id: Uuid,
         assistant_message_id: Uuid,
         final_content: Value,
     ) -> DeliveryResult<ResponseRecord> {
-        let old = self.response_in_transaction(tx, owner, response_id).await?;
+        let old = Self::response_in_transaction(tx, owner, response_id).await?;
         if serde_json::to_vec(&final_content)?.len() > MAX_CONTENT_BYTES {
             return Err(DeliveryError::InvalidInput(
                 "final response content exceeds bound".into(),
@@ -205,40 +203,6 @@ impl DeliveryRepository {
         )
         .await?;
         required_response(tx, response_id).await
-    }
-
-    pub async fn set_response_status_in_transaction(
-        &self,
-        tx: &DatabaseTransaction,
-        owner: Uuid,
-        id: Uuid,
-        status: ResponseStatus,
-    ) -> DeliveryResult<ResponseRecord> {
-        let old = owned_response(tx, owner, id).await?;
-        if old.status == status {
-            return Ok(old);
-        }
-        if old.status != ResponseStatus::Pending
-            || matches!(status, ResponseStatus::Pending | ResponseStatus::Committed)
-        {
-            return Err(DeliveryError::InvalidTransition(
-                "response history disposition is final".into(),
-            ));
-        }
-        tx.execute(stmt(
-            "UPDATE delivery_responses SET status=$2 WHERE response_id=$1",
-            vec![id.into(), enum_name(status)?.into()],
-        ))
-        .await?;
-        audit(
-            tx,
-            id,
-            None,
-            "history_disposition",
-            json!({"status":status}),
-        )
-        .await?;
-        required_response(tx, id).await
     }
 
     pub async fn prepare_delivery(
@@ -777,8 +741,7 @@ impl DeliveryRepository {
         Ok(rows.len())
     }
 
-    pub async fn response_in_transaction(
-        &self,
+    async fn response_in_transaction(
         tx: &DatabaseTransaction,
         owner: Uuid,
         id: Uuid,

@@ -135,25 +135,16 @@ async fn seed_cache(f: &mut Fixture, semantic: bool) -> (CachedResponse, Uuid) {
         })
         .await
         .unwrap();
-    let tx = db.begin().await.unwrap();
-    let assistant = Uuid::new_v4();
-    ledger
-        .mark_generated_in_transaction(
-            &tx,
+    f.modules
+        .responses
+        .commit_response(
             owner,
+            session,
             origin.response_id,
-            assistant,
-            json!({"text":ANSWER}),
+            ChatMessage::new("assistant", ANSWER),
         )
         .await
         .unwrap();
-    tx.execute(sql(
-        "INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant',$3)",
-        vec![assistant.into(), session.into(), ANSWER.into()],
-    ))
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
     let pending = cache
         .put(CacheEntry {
             context: generation.lease().binding(),
@@ -205,7 +196,7 @@ async fn exact_and_semantic_hits_share_one_response_exit_and_keep_revocable_sour
             ).await.unwrap();
             assert!(f.started.try_recv().is_err(), "a safe cache hit called the response LLM");
             assert_eq!(*f.output.texts.lock().unwrap(), vec![ANSWER.to_string()]);
-            assert_eq!(f.conversation.messages.lock().unwrap().iter().filter(|message| message.role == "assistant").count(), 1);
+            assert_eq!(f.conversation.persisted_history().await.iter().filter(|message| message.role == "assistant").count(), 1);
             let hit_count = f.conversation.events.lock().unwrap().iter().filter(|event|
                 event.event_type == "cache_hit" && event.payload["kind"] == if semantic { "semantic" } else { "exact" }
             ).count();

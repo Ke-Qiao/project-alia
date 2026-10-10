@@ -1,7 +1,7 @@
 //! Real PostgreSQL delivery state and fault tests.
 mod delivery_support;
 use alia_core::delivery::{ObservationEnd, SubmissionBackend, SubmissionBoundary};
-use alia_server::modules::delivery::types::*;
+use alia_server::modules::delivery::{repository::DeliveryRepository, types::*};
 use delivery_support::*;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use serde_json::json;
@@ -48,7 +48,7 @@ async fn policy_revocation_blocks_new_audio_admission_and_retains_inflight_facts
         ));
         let tx = f.db.begin().await.unwrap();
         assert!(matches!(
-            repo.mark_generated_in_transaction(
+            DeliveryRepository::mark_generated_in_transaction(
                 &tx,
                 f.user,
                 response.response_id,
@@ -352,9 +352,9 @@ async fn owner_lease_recovery_changes_only_expired_rows_and_never_replays() {
 async fn response_history_commit_is_atomic_and_freezes_final_content() {
     with_db(|f|async move{
  let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let input=f.response_in_session(session).await;let repo=f.repo();let response=repo.prepare(input).await.unwrap();let message=Uuid::new_v4();
- let tx=f.db.begin().await.unwrap();repo.mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
- let tx=f.db.begin().await.unwrap();let committed=repo.mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant','hello')",vec![message.into(),session.into()])).await.unwrap();tx.commit().await.unwrap();assert_eq!(committed.assistant_message_id,Some(message));
- let tx=f.db.begin().await.unwrap();let replay=repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
+ let tx=f.db.begin().await.unwrap();DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+ let tx=f.db.begin().await.unwrap();let committed=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,message,json!({"text":"hello"})).await.unwrap();tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant','hello')",vec![message.into(),session.into()])).await.unwrap();tx.commit().await.unwrap();assert_eq!(committed.assistant_message_id,Some(message));
+ let tx=f.db.begin().await.unwrap();let replay=DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"hello"})).await.unwrap();assert_eq!(replay.assistant_message_id,Some(message));assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"different"})).await,Err(DeliveryError::IdempotencyConflict)));tx.rollback().await.unwrap();assert_eq!(f.assistant_count().await,1);
 }).await;
 }
 
@@ -587,7 +587,7 @@ async fn first_visible_cancel_checkpoint_after_ack_loss_is_valid_and_late_facts_
 async fn cleared_source_cannot_commit_old_assistant_history() {
     with_db(|f|async move{
  let repo=f.repo();let session=Uuid::new_v4();f.sql(&format!("INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES('{session}','test-device','{}')",f.user)).await;let input=f.response_in_session(session).await;let response=repo.prepare(input).await.unwrap();f.sql(&format!("UPDATE memory_privacy_state SET privacy_epoch=1 WHERE user_id='{}'",f.user)).await;
- let tx=f.db.begin().await.unwrap();assert!(matches!(repo.mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"old response"})).await,Err(DeliveryError::Unauthorized(_))));tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
+ let tx=f.db.begin().await.unwrap();assert!(matches!(DeliveryRepository::mark_generated_in_transaction(&tx,f.user,response.response_id,Uuid::new_v4(),json!({"text":"old response"})).await,Err(DeliveryError::Unauthorized(_))));tx.rollback().await.unwrap();assert_eq!(repo.response(f.user,response.response_id).await.unwrap().status,ResponseStatus::Pending);
  let mut unstamped=f.response().await;unstamped.source_privacy_epoch=None;assert!(matches!(repo.prepare(unstamped).await,Err(DeliveryError::Unauthorized(_))));
 }).await;
 }

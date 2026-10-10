@@ -78,15 +78,14 @@ async fn source_notice_only_admits_its_fixed_literal_and_cannot_commit_history()
         let response = f.repo().prepare(input).await.unwrap();
         let tx = f.db.begin().await.unwrap();
         assert!(matches!(
-            f.repo()
-                .mark_generated_in_transaction(
-                    &tx,
-                    f.user,
-                    response.response_id,
-                    Uuid::new_v4(),
-                    json!({"text":literal})
-                )
-                .await,
+            DeliveryRepository::mark_generated_in_transaction(
+                &tx,
+                f.user,
+                response.response_id,
+                Uuid::new_v4(),
+                json!({"text":literal})
+            )
+            .await,
             Err(DeliveryError::Unauthorized(_))
         ));
         tx.rollback().await.unwrap();

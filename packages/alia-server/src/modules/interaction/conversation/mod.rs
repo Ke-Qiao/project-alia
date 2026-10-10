@@ -1,4 +1,4 @@
-//! Conversation history, input provenance and canonical response commits.
+//! Conversation history and admitted input provenance.
 mod service;
 
 pub use service::ConversationService;
@@ -41,17 +41,6 @@ pub trait ConversationStore: Send + Sync {
 
     /// Append a message to a session.
     async fn append_message(&self, session_id: Uuid, message: ChatMessage) -> anyhow::Result<()>;
-
-    /// Commit the canonical response and its assistant history entry in one
-    /// transaction. A retry returns the same message UUID; this fact says
-    /// nothing about whether any delivery was presented by a device.
-    async fn commit_response(
-        &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        response_id: Uuid,
-        message: ChatMessage,
-    ) -> anyhow::Result<Uuid>;
 
     /// Persist trusted user input and return the actual source record identity.
     async fn append_sourced_message(

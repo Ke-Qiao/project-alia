@@ -133,7 +133,7 @@ where
         }).await.unwrap();
         let tx = db.begin().await.unwrap();
         let assistant = Uuid::new_v4();
-        ledger.mark_generated_in_transaction(&tx,owner,response.response_id,assistant,serde_json::json!({"text":answer})).await.unwrap();
+        alia_server::modules::delivery::repository::DeliveryRepository::mark_generated_in_transaction(&tx,owner,response.response_id,assistant,serde_json::json!({"text":answer})).await.unwrap();
         tx.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO chat_messages(id,session_id,role,content) VALUES($1,$2,'assistant',$3)",[assistant.into(),session.into(),answer.into()])).await.unwrap();
         tx.commit().await.unwrap();

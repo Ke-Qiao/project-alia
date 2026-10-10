@@ -12,6 +12,7 @@ use crate::modules::{
     companion::{
         decision::{canonical_digest, decide, generate_candidate},
         repository::locked_policy,
+        source::load_companion_source,
         types::*,
     },
     delivery::{
@@ -20,10 +21,8 @@ use crate::modules::{
     },
     interaction::initiative::VoiceOpportunity,
     memory::context::{
-        ContextError,
-        companion::{
-            issue_invitation_in_transaction, load_companion_source, lock_companion_authority,
-        },
+        ContextError, appraisal_source::lock_appraisal_authority,
+        invitation::issue_invitation_in_transaction,
     },
 };
 
@@ -73,7 +72,7 @@ impl LiveRepository {
     ) -> LiveResult<PolicySnapshot> {
         policy.validate().map_err(|_| LiveError::InvalidInput)?;
         let tx = self.transaction().await?;
-        lock_companion_authority(&tx, owner).await?;
+        lock_appraisal_authority(&tx, owner).await?;
         let prior = locked_policy(&tx, owner).await?;
         if prior.revision != expected {
             return Err(LiveError::Conflict);
@@ -126,7 +125,7 @@ impl LiveRepository {
     }
     async fn create_pending(&self, owner: Uuid, appraisal: Uuid) -> LiveResult<()> {
         let tx = self.transaction().await?;
-        let authority = match lock_companion_authority(&tx, owner).await {
+        let authority = match lock_appraisal_authority(&tx, owner).await {
             Ok(authority) if authority.private_readable => authority,
             Ok(_) => return Ok(()),
             Err(error)
@@ -299,7 +298,7 @@ impl LiveRepository {
             return Err(LiveError::Forbidden);
         }
         let owner = intent.candidate.observation.owner_id;
-        let authority = lock_companion_authority(tx, owner).await?;
+        let authority = lock_appraisal_authority(tx, owner).await?;
         // Roots precede candidate/admission locks, including on retry.
         let source = load_companion_source(
             tx,
@@ -429,27 +428,26 @@ impl LiveRepository {
         tx.execute(sql("INSERT INTO companion_admissions(admission_id,candidate_id,owner_id,initiative_request_id,output_key,context_id,conversation_id,server_instance_id,opportunity_id,charged_at,budget_date,budget_revision,admit_before,valid_until,state,private_grant,grant_digest,intent_digest) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15,$16,$17)",vec![intent.admission_id.into(),intent.candidate.id.into(),owner.into(),intent.initiative_request_id.into(),INVITATION_OUTPUT_KEY.into(),intent.context_id.into(),intent.candidate.observation.conversation_id.into(),self.instance_id.into(),intent.opportunity.id.into(),as_of.into(),as_of.date_naive().into(),revision.into(),intent.admit_before.into(),intent.valid_until.into(),json!(grant).into(),grant.digest()?.into(),intent.digest.clone().into()])).await?;
         let lease = issue_invitation_in_transaction(tx, owner, intent.admission_id).await?;
         let s = lease.source();
-        let response = DeliveryRepository::new(self.db.clone())
-            .prepare_in_transaction(
-                tx,
-                NewResponse {
-                    key: ResponseKey {
-                        user_id: owner,
-                        request_id: intent.initiative_request_id,
-                        output_key: INVITATION_OUTPUT_KEY.into(),
-                    },
-                    context_id: lease.id(),
-                    conversation_id: s.conversation_id,
-                    source_event_id: s.source_event_id,
-                    source_received_at: s.source_received_at,
-                    source_privacy_epoch: Some(s.source_privacy_epoch),
-                    channel_id: s.channel_id.clone(),
-                    kind: INVITATION_KIND.into(),
-                    content: json!(content),
+        let response = DeliveryRepository::prepare_in_transaction(
+            tx,
+            NewResponse {
+                key: ResponseKey {
+                    user_id: owner,
+                    request_id: intent.initiative_request_id,
+                    output_key: INVITATION_OUTPUT_KEY.into(),
                 },
-            )
-            .await
-            .map_err(|e| LiveError::Unavailable(e.to_string()))?;
+                context_id: lease.id(),
+                conversation_id: s.conversation_id,
+                source_event_id: s.source_event_id,
+                source_received_at: s.source_received_at,
+                source_privacy_epoch: Some(s.source_privacy_epoch),
+                channel_id: s.channel_id.clone(),
+                kind: INVITATION_KIND.into(),
+                content: json!(content),
+            },
+        )
+        .await
+        .map_err(|e| LiveError::Unavailable(e.to_string()))?;
         tx.execute(sql(
             "UPDATE companion_live_pending SET state='admitted' WHERE candidate_id=$1",
             vec![intent.candidate.id.into()],
@@ -485,7 +483,7 @@ impl LiveRepository {
 
     pub async fn receipt(&self, owner: Uuid, id: Uuid) -> LiveResult<AdmissionReceipt> {
         let tx = self.transaction().await?;
-        lock_companion_authority(&tx, owner).await?;
+        lock_appraisal_authority(&tx, owner).await?;
         let row = tx
             .query_one(sql(
                 "SELECT * FROM companion_admissions WHERE admission_id=$1 AND owner_id=$2",

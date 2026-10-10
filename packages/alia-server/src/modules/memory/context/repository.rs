@@ -263,7 +263,7 @@ pub(crate) async fn validate_evidence(
         let owner = lease.source.owner_id;
         match reference {
             ContextEvidence::CompanionAdmission { id, intent_digest } => {
-                Box::pin(super::companion::validate_invitation_reference(
+                Box::pin(super::invitation::validate_invitation_reference(
                     tx,
                     lease,
                     *id,

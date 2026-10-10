@@ -413,7 +413,7 @@ async fn bounded_page_and_explicit_simulated_opportunity_never_acquire_output_au
             ids.push(f.seed().await.0);
         }
         let tx = f.db.begin().await.unwrap();
-        let authority = lock_companion_authority(&tx, f.owner).await.unwrap();
+        let authority = lock_appraisal_authority(&tx, f.owner).await.unwrap();
         tx.commit().await.unwrap();
         let report = f
             .repo()
@@ -475,7 +475,7 @@ async fn absent_opportunity_uses_database_time_while_future_observations_are_rej
     with_fixture(|f| async move {
         let (appraisal, _) = f.seed().await;
         let tx = f.db.begin().await.unwrap();
-        let authority = lock_companion_authority(&tx, f.owner).await.unwrap();
+        let authority = lock_appraisal_authority(&tx, f.owner).await.unwrap();
         tx.commit().await.unwrap();
         let future = authority.as_of + chrono::Duration::hours(1);
         let simulated = OpportunitySnapshot::simulation(future);

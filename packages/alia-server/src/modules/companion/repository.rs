@@ -13,11 +13,12 @@ use uuid::Uuid;
 
 use super::{
     decision::{canonical_digest, decide, generate_candidate, replay as replay_decision},
+    source::load_companion_source,
     types::*,
 };
 use crate::modules::memory::context::{
     ContextError,
-    companion::{CompanionAuthority, load_companion_source, lock_companion_authority},
+    appraisal_source::{AppraisalReadAuthority, lock_appraisal_authority},
 };
 
 const MAX_OBSERVATIONS: usize = 32;
@@ -111,7 +112,7 @@ impl CompanionRepository {
 
     pub async fn policy(&self, owner: Uuid) -> RepoResult<PolicySnapshot> {
         let tx = self.transaction().await?;
-        lock_companion_authority(&tx, owner).await?;
+        lock_appraisal_authority(&tx, owner).await?;
         let result = locked_policy(&tx, owner).await?;
         tx.commit().await?;
         Ok(result)
@@ -138,7 +139,7 @@ impl CompanionRepository {
             ));
         }
         let tx = self.transaction().await?;
-        lock_companion_authority(&tx, owner).await?;
+        lock_appraisal_authority(&tx, owner).await?;
         let old = locked_policy(&tx, owner).await?;
         if old.revision != expected_revision {
             return Err(RepoError::Conflict);
@@ -200,7 +201,7 @@ impl CompanionRepository {
         let request_digest =
             canonical_digest(&json!({"owner":owner,"appraisal_ids":appraisal_ids}))?;
         let tx = self.transaction().await?;
-        let authority = lock_companion_authority(&tx, owner).await?;
+        let authority = lock_appraisal_authority(&tx, owner).await?;
         let policy = locked_policy(&tx, owner).await?;
         tx.execute(sql(
             "SELECT pg_advisory_xact_lock(hashtextextended($1, 927614))",
@@ -363,7 +364,7 @@ impl CompanionRepository {
             return Err(RepoError::InvalidInput("operation ID required".into()));
         }
         let tx = self.transaction().await?;
-        let authority = lock_companion_authority(&tx, owner).await?;
+        let authority = lock_appraisal_authority(&tx, owner).await?;
         let policy = locked_policy(&tx, owner).await?;
         let row = operation(&tx, operation_id)
             .await?
@@ -448,7 +449,7 @@ async fn finish_read(
     tx: DatabaseTransaction,
     row: QueryResult,
     owner: Uuid,
-    authority: &CompanionAuthority,
+    authority: &AppraisalReadAuthority,
     policy: &PolicySnapshot,
 ) -> RepoResult<ShadowReport> {
     if !authority.private_readable {
