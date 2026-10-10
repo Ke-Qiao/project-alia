@@ -16,16 +16,13 @@ use alia_core::{
     },
 };
 use alia_server::{
-    channels::adapter::*,
-    modules::{
-        delivery::{
-            AudioDelivery, DeliveryService, OutputProducer,
-            repository::control::{ControlCommandStatus, OutputControlStatus},
-            types::*,
-        },
-        platform::lifecycle::ModuleLifecycle,
+    modules::delivery::audio::ResponseAudioBudget,
+    modules::delivery::transport::*,
+    modules::delivery::{
+        AudioDelivery, DeliveryService, OutputProducer,
+        repository::control::{ControlCommandStatus, OutputControlStatus},
+        types::*,
     },
-    providers::tts::audio_budget::ResponseAudioBudget,
 };
 use async_trait::async_trait;
 use delivery_support::*;
@@ -173,14 +170,9 @@ impl Device {
         self.media_release.add_permits(32);
     }
 }
-#[async_trait]
-impl ModuleLifecycle for Device {
-    fn name(&self) -> &'static str {
-        "output-lifecycle-test"
-    }
-}
+
 impl Device {
-    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+    async fn retire_model_scope(&self, target: &DeliveryTarget, _: &str) -> anyhow::Result<()> {
         assert_eq!(target.user_id, self.owner.to_string());
         assert_eq!(target.voice, self.scope.get().copied());
         let mut owner = InFlight {
@@ -198,22 +190,12 @@ impl Device {
 }
 
 #[async_trait]
-impl ChannelAdapter for Device {
-    fn channel_type(&self) -> &'static str {
-        "test"
-    }
+impl alia_server::modules::delivery::transport::DeliveryTransport for Device {
     fn channel_id(&self) -> &str {
         "test-device"
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         Some(self.owner)
-    }
-    fn capabilities(&self) -> ChannelCapabilities {
-        ChannelCapabilities {
-            voice_output: true,
-            audio_streaming: true,
-            ..Default::default()
-        }
     }
 
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
@@ -314,7 +296,7 @@ impl ChannelAdapter for Device {
             assert_eq!(expected, &self.backend);
         }
         self.retire_model_scope(
-            &ChannelTarget {
+            &DeliveryTarget {
                 user_id: self.owner.to_string(),
                 voice: Some(request.scope),
             },
@@ -342,7 +324,7 @@ impl ChannelAdapter for Device {
     }
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<PlaybackIdentity> {
         let sequence = self.reservations.fetch_add(1, Ordering::SeqCst) as u64 + 1;
@@ -354,7 +336,7 @@ impl ChannelAdapter for Device {
     }
     async fn deliver_audio(
         &self,
-        _: &ChannelTarget,
+        _: &DeliveryTarget,
         identity: PlaybackIdentity,
         mut audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
@@ -453,7 +435,7 @@ impl Scene {
             output_key: "speech:0".into(),
             content: json!({"text":"hello"}),
             channel: self.device.clone(),
-            target: ChannelTarget {
+            target: DeliveryTarget {
                 user_id: self.f.user.to_string(),
                 voice: Some(self.device.registration.get().unwrap().binding.scope),
             },

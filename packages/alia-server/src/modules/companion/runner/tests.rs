@@ -10,17 +10,14 @@ use crate::{
             },
             types::{CompanionMode, CompanionPolicy},
         },
-        delivery::repository::DeliveryRepository,
+        delivery::{audio::EncodedAudio, repository::DeliveryRepository},
         interaction::{
             initiative::{Request as VoiceRequest, VoiceOpportunity},
             response::ResponseCommitter,
         },
         platform::lifecycle::ModuleLifecycle,
     },
-    providers::tts::{
-        NoopTts,
-        audio_budget::{EncodedAudio, TtsAudioStream},
-    },
+    providers::{adapter::TtsAudioStream, tts::NoopTts},
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -1,10 +1,11 @@
+use crate::modules::delivery::transport::{AudioFormat, AudioPayload, DeliveryTarget};
 use serde::Serialize;
 use uuid::Uuid;
 
 use super::InteractionServices;
 use super::debug::{debug_component_json, log_channel_delivery_failure};
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::ChannelAdapter;
 use crate::modules::memory::context::{ContextSource, SourceNotice};
 use crate::{
     modules::interaction::conversation::ConversationEventEntry, providers::adapter::TtsRequest,
@@ -75,7 +76,7 @@ pub(super) struct InteractionErrorNotification {
 pub(super) async fn notify_interaction_error(
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     stage: InteractionErrorStage,
@@ -321,7 +322,7 @@ fn build_interaction_error_notice(
 async fn deliver_text_error_notice(
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     notice: &InteractionErrorNotice,
@@ -374,7 +375,7 @@ async fn deliver_text_error_notice(
 async fn deliver_voice_error_notice(
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     notice: &InteractionErrorNotice,
@@ -529,22 +530,13 @@ mod tests {
         }
     }
     #[async_trait::async_trait]
-    impl ChannelAdapter for RecordingChannel {
-        fn channel_type(&self) -> &'static str {
-            "test"
-        }
+    impl crate::modules::delivery::transport::DeliveryTransport for RecordingChannel {
         fn channel_id(&self) -> &str {
             "test"
         }
-        fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
-            crate::channels::adapter::ChannelCapabilities {
-                voice_output: true,
-                ..Default::default()
-            }
-        }
         fn reserve_text(
             &self,
-            _: &ChannelTarget,
+            _: &DeliveryTarget,
             _: Uuid,
         ) -> anyhow::Result<alia_core::text_delivery::TextIdentity> {
             self.effects
@@ -553,12 +545,25 @@ mod tests {
         }
         fn reserve_playback(
             &self,
-            _: &ChannelTarget,
+            _: &DeliveryTarget,
             _: Uuid,
         ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
             self.effects
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             anyhow::bail!("unexpected playback reservation")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChannelAdapter for RecordingChannel {
+        fn channel_type(&self) -> &'static str {
+            "test"
+        }
+        fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
+            crate::channels::adapter::ChannelCapabilities {
+                voice_output: true,
+                ..Default::default()
+            }
         }
         async fn execute_action(&self, _: ChannelAction) -> anyhow::Result<serde_json::Value> {
             self.effects
@@ -580,8 +585,8 @@ mod tests {
         async fn synthesize_request(
             &self,
             _: &crate::providers::adapter::TtsRequest,
-            budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            budget: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::modules::delivery::audio::EncodedAudio> {
             self.cancel.cancel();
             if self.fails {
                 anyhow::bail!("test synthesis error");
@@ -591,8 +596,8 @@ mod tests {
         async fn synthesize_stream_request(
             &self,
             _: &crate::providers::adapter::TtsRequest,
-            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            _: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::adapter::TtsAudioStream> {
             unreachable!("fixture expects buffered synthesis")
         }
     }
@@ -606,7 +611,7 @@ mod tests {
                 cancel: turn.token.clone(),
                 fails,
             };
-            let target = ChannelTarget {
+            let target = DeliveryTarget {
                 voice: None,
                 user_id: "user".into(),
             };
@@ -639,7 +644,7 @@ mod tests {
         let turn = VoiceTurn::request(tokio_util::sync::CancellationToken::new());
         turn.token.cancel();
         let channel = RecordingChannel::default();
-        let target = ChannelTarget {
+        let target = DeliveryTarget {
             voice: None,
             user_id: "user".into(),
         };

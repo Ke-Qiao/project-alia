@@ -1,3 +1,4 @@
+use crate::modules::delivery::transport::DeliveryTarget;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -11,7 +12,7 @@ use super::types::{
     ExpressionExecutionResult, ExpressionPlan, ExpressionPriority, ExpressionTimelineAction,
     SkippedExpressionAction,
 };
-use crate::channels::adapter::{ChannelAction, ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::{ChannelAction, ChannelAdapter};
 
 /// The adapter must bind this capability to typed, original command evidence.
 pub const EXPRESSION_COMMAND_PROTOCOL: &str = "expression-command-v1";
@@ -64,7 +65,7 @@ pub struct ExpressionOrchestrator {
 }
 
 impl ExpressionOrchestrator {
-    fn channel(&self, channel: &dyn ChannelAdapter, target: &ChannelTarget) -> Arc<ChannelState> {
+    fn channel(&self, channel: &dyn ChannelAdapter, target: &DeliveryTarget) -> Arc<ChannelState> {
         self.channels
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -126,7 +127,7 @@ pub async fn negotiate_expression_capabilities(
 pub async fn cancel_expression_execution(
     orchestrator: &ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     reason: &str,
 ) -> ExpressionExecutionResult {
     let state = orchestrator.channel(channel, target);
@@ -230,7 +231,7 @@ async fn cancel_owned(
 pub async fn execute_expression_plan_phase_with_response(
     orchestrator: &ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     plan: &ExpressionPlan,
     phase: ExpressionExecutionPhase,
     response_id: Option<Uuid>,
@@ -463,7 +464,7 @@ pub async fn execute_expression_plan_phase_with_response(
 async fn refresh_observation(
     state: &ChannelState,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
 ) {
     let original = state
         .active
@@ -733,12 +734,16 @@ mod tests {
         }
     }
     #[async_trait]
+    impl crate::modules::delivery::transport::DeliveryTransport for MockChannel {
+        fn channel_id(&self) -> &str {
+            "same-channel"
+        }
+    }
+
+    #[async_trait::async_trait]
     impl ChannelAdapter for MockChannel {
         fn channel_type(&self) -> &'static str {
             "test"
-        }
-        fn channel_id(&self) -> &str {
-            "same-channel"
         }
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities {
@@ -878,8 +883,8 @@ mod tests {
             Ok(result)
         }
     }
-    fn target() -> ChannelTarget {
-        ChannelTarget {
+    fn target() -> DeliveryTarget {
+        DeliveryTarget {
             user_id: Uuid::from_u128(3).to_string(),
             voice: Some(VoiceScope {
                 device_boot_id: Uuid::new_v4(),
@@ -910,7 +915,7 @@ mod tests {
     async fn phase(
         o: &ExpressionOrchestrator,
         c: &MockChannel,
-        t: &ChannelTarget,
+        t: &DeliveryTarget,
         p: &ExpressionPlan,
     ) -> ExpressionExecutionResult {
         execute_expression_plan_phase_with_response(

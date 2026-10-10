@@ -286,12 +286,16 @@ mod tests {
     }
 
     #[async_trait]
+    impl crate::modules::delivery::transport::DeliveryTransport for FailingCleanup {
+        fn channel_id(&self) -> &str {
+            "restart-test"
+        }
+    }
+
+    #[async_trait::async_trait]
     impl ChannelAdapter for FailingCleanup {
         fn channel_type(&self) -> &'static str {
             "test"
-        }
-        fn channel_id(&self) -> &str {
-            "restart-test"
         }
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities::default()

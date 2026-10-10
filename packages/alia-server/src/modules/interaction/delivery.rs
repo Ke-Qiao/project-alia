@@ -1,6 +1,6 @@
 use super::turn::VoiceTurn;
+use crate::modules::delivery::transport::{AudioPayloadStream, DeliveryTarget, TextPayloadStream};
 use crate::{
-    channels::adapter::{AudioPayloadStream, ChannelTarget, TextPayloadStream},
     modules::delivery::{
         AudioDelivery, TextDelivery,
         types::{DeliveryRecord, NewResponse, ResponseKey},
@@ -93,7 +93,7 @@ pub(super) async fn prepare_response(
 
 pub(super) async fn text_stream(
     modules: &InteractionServices,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     turn: Option<&VoiceTurn>,
     output_key: &str,
     content: serde_json::Value,
@@ -161,7 +161,7 @@ pub(super) async fn text_stream(
 /// and explicit producer End as a streamed result.
 pub(super) async fn text(
     modules: &InteractionServices,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     turn: Option<&VoiceTurn>,
     output_key: &str,
     text: &str,
@@ -204,7 +204,7 @@ pub(super) async fn text(
 
 pub(super) async fn audio(
     modules: &InteractionServices,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     turn: Option<&VoiceTurn>,
     output_key: &str,
     text: &str,

@@ -1,5 +1,8 @@
 //! One managed attempt retains its immutable intent and original voice producer.
 //! Nothing in this runner reconstructs permission from an Existing receipt.
+use crate::modules::delivery::transport::{
+    AudioFormat, AudioPayload, AudioPayloadStream, DeliveryTarget,
+};
 use std::{future::Future, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
@@ -14,10 +17,10 @@ use super::live::{
 };
 use super::types::CandidateKind;
 use crate::{
-    channels::adapter::{AudioFormat, AudioPayload, AudioPayloadStream, ChannelTarget},
     modules::{
         delivery::{
             AudioDelivery, DeliveryService,
+            audio::ResponseAudioBudget,
             types::{DeliveryStatus, ResponseRecord},
         },
         interaction::{
@@ -26,10 +29,7 @@ use crate::{
         },
         memory::context::{ContextBinding, ContextService, ContextUse},
     },
-    providers::{
-        adapter::{ChatMessage, TtsAdapter, TtsRequest},
-        tts::audio_budget::ResponseAudioBudget,
-    },
+    providers::adapter::{ChatMessage, TtsAdapter, TtsRequest},
 };
 
 const RECONCILIATION_ATTEMPTS: usize = 3;
@@ -296,7 +296,7 @@ impl LiveRunner {
         let budget = ResponseAudioBudget::for_response(response.response_id)?;
         let request = TtsRequest::plain(literal);
         let channel = output.channel();
-        let audio: AudioPayloadStream = if channel.capabilities().audio_streaming {
+        let audio: AudioPayloadStream = if channel.audio_streaming() {
             let stream = self
                 .outputs
                 .tts
@@ -334,7 +334,7 @@ impl LiveRunner {
                 output_key: INVITATION_MEDIA_KEY.into(),
                 content: json!({"text": literal}),
                 channel,
-                target: ChannelTarget {
+                target: DeliveryTarget {
                     user_id: context.owner_id.to_string(),
                     voice: Some(expected),
                 },

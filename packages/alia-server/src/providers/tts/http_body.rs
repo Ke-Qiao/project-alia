@@ -1,6 +1,6 @@
 //! Bounded application copies. Reqwest/HTTP framing, TLS and socket buffers
 //! remain transport-owned; these limits are not a process RSS claim.
-use super::audio_budget::AudioReservation;
+use crate::modules::delivery::audio::AudioReservation;
 use anyhow::{Result, ensure};
 use futures::StreamExt;
 

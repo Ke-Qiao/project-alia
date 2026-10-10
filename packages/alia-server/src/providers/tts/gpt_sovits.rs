@@ -14,17 +14,19 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use super::audio_budget::{
-    EncodedAudio, MAX_ENCODED_PAYLOAD_BYTES, MAX_TTS_STREAM_BYTES, ResponseAudioBudget,
-    TtsAudioStream,
-};
 use super::http_body::{ERROR_BODY_BYTES, check_length, error_body, read_body};
 use crate::config::{ExpressionStyleSection, GptSovitsProviderSection, VoiceProfileSection};
+use crate::modules::delivery::audio::{
+    EncodedAudio, MAX_ENCODED_PAYLOAD_BYTES, MAX_RESPONSE_ENCODED_BYTES, ResponseAudioBudget,
+};
 use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
 use crate::providers::adapter::{
-    TtsAdapter, TtsCapabilities, TtsProsodyLimits, TtsProviderAdjustment, TtsRequest,
+    TtsAdapter, TtsAudioStream, TtsCapabilities, TtsProsodyLimits, TtsProviderAdjustment,
+    TtsRequest,
 };
 use crate::settings::values::{bool_setting, f32_setting, string_setting, u64_setting};
+
+const MAX_TTS_STREAM_BYTES: usize = MAX_RESPONSE_ENCODED_BYTES;
 
 /// GPT-SoVITS synthesis request
 #[derive(Debug, Serialize)]

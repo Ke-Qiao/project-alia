@@ -1,5 +1,5 @@
 use super::*;
-use crate::channels::adapter::AudioBuffer;
+use crate::modules::delivery::audio::AudioBuffer;
 
 // These transport-only tests inject the already-admitted binding. The paired
 // duplex_playback integration suite exercises its actual SQL/device registration.
@@ -15,7 +15,7 @@ fn binding(scope: VoiceScope) -> alia_core::output_control::OutputBinding {
 
 #[test]
 fn decoder_copy_limits_include_an_incomplete_native_frame() {
-    use crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+    use crate::modules::delivery::audio::MAX_PCM_PAYLOAD_BYTES;
     let payload = |data| AudioPayload {
         data: AudioBuffer::input(data),
         sample_rate: 24_000,

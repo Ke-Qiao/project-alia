@@ -1,5 +1,5 @@
 use super::*;
-use crate::channels::adapter::{TextDeliveryReport, TextPayloadStream};
+use crate::modules::delivery::transport::{TextDeliveryReport, TextPayloadStream};
 use alia_core::delivery::PlaybackIdentity;
 use alia_core::text_delivery::{TextIdentity, TextProgress};
 
@@ -7,8 +7,8 @@ pub struct TextDelivery {
     pub response_id: Uuid,
     pub output_key: String,
     pub content: Value,
-    pub channel: Arc<dyn ChannelAdapter>,
-    pub target: ChannelTarget,
+    pub channel: Arc<dyn DeliveryTransport>,
+    pub target: DeliveryTarget,
     pub text: TextPayloadStream,
     pub cancel: CancellationToken,
 }
@@ -17,8 +17,8 @@ pub(super) struct DeliveryInput {
     pub response_id: Uuid,
     pub output_key: String,
     pub content: Value,
-    pub channel: Arc<dyn ChannelAdapter>,
-    pub target: ChannelTarget,
+    pub channel: Arc<dyn DeliveryTransport>,
+    pub target: DeliveryTarget,
     pub payload: Payload,
     pub cancel: CancellationToken,
 }
@@ -61,8 +61,8 @@ impl Payload {
     }
     pub async fn deliver(
         self,
-        channel: &dyn ChannelAdapter,
-        target: &ChannelTarget,
+        channel: &dyn DeliveryTransport,
+        target: &DeliveryTarget,
         identity: MediaIdentity,
         observer: Arc<DurableObserver>,
         cancel: CancellationToken,
@@ -89,7 +89,7 @@ pub(super) enum MediaIdentity {
 impl MediaIdentity {
     pub async fn cancel(
         self,
-        channel: &dyn ChannelAdapter,
+        channel: &dyn DeliveryTransport,
         reason: &str,
     ) -> anyhow::Result<MediaProgress> {
         match self {

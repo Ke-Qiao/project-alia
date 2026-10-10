@@ -267,7 +267,7 @@ async fn voice_chat(
             .tts
             .synthesize(
                 &response_text,
-                crate::providers::tts::audio_budget::ResponseAudioBudget::for_standalone_request(
+                crate::modules::delivery::audio::ResponseAudioBudget::for_standalone_request(
                     uuid::Uuid::new_v4(),
                 )
                 .map_err(|e| AppError::AiService(e.to_string()))?,
@@ -330,7 +330,7 @@ async fn synthesize(
         .tts
         .synthesize(
             &req.text,
-            crate::providers::tts::audio_budget::ResponseAudioBudget::for_standalone_request(
+            crate::modules::delivery::audio::ResponseAudioBudget::for_standalone_request(
                 uuid::Uuid::new_v4(),
             )
             .map_err(|e| AppError::AiService(e.to_string()))?,

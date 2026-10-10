@@ -3,6 +3,7 @@
 //! Crossterm poll/read stay on one worker thread. All terminal output is queued
 //! to that worker; the async runtime never blocks waiting for terminal input.
 
+use crate::modules::delivery::transport::DeliveryTarget;
 use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,9 +19,7 @@ use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::adapter::{
-    ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelEvent, ChannelTarget,
-};
+use super::adapter::{ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelEvent};
 use crate::event::{EventBus, ServerEvent};
 use crate::modules::interaction::conversation::ConversationStore;
 use crate::modules::platform::lifecycle::ModuleHealth;
@@ -249,6 +248,50 @@ impl ModuleLifecycle for CliChannel {
 }
 
 #[async_trait]
+impl crate::modules::delivery::transport::DeliveryTransport for CliChannel {
+    fn owner_user_id(&self) -> Option<uuid::Uuid> {
+        self.owner_user_id
+    }
+    fn channel_id(&self) -> &str {
+        &self.id
+    }
+
+    fn reserve_text(
+        &self,
+        _target: &DeliveryTarget,
+        text_id: uuid::Uuid,
+    ) -> anyhow::Result<alia_core::text_delivery::TextIdentity> {
+        ensure!(!text_id.is_nil(), "text identity is empty");
+        Ok(alia_core::text_delivery::TextIdentity {
+            text_id,
+            channel_instance_id: self.instance_id,
+        })
+    }
+    async fn deliver_text(
+        &self,
+        _target: &DeliveryTarget,
+        identity: alia_core::text_delivery::TextIdentity,
+        input: crate::modules::delivery::transport::TextPayloadStream,
+        observer: Arc<dyn crate::modules::delivery::transport::TextObserver>,
+        cancel: CancellationToken,
+    ) -> anyhow::Result<crate::modules::delivery::transport::TextDeliveryReport> {
+        self.deliver_owned_text(identity, input, observer, cancel)
+            .await
+    }
+    async fn cancel_text(
+        &self,
+        identity: alia_core::text_delivery::TextIdentity,
+        reason: &str,
+    ) -> anyhow::Result<alia_core::text_delivery::TextProgress> {
+        ensure!(
+            identity.channel_instance_id == self.instance_id,
+            "text belongs to another CLI instance"
+        );
+        self.text_writers.cancel(identity, reason).await
+    }
+}
+
+#[async_trait::async_trait]
 impl ChannelAdapter for CliChannel {
     async fn authenticated_source_epochs(
         &self,
@@ -264,15 +307,8 @@ impl ChannelAdapter for CliChannel {
         .await
     }
 
-    fn owner_user_id(&self) -> Option<uuid::Uuid> {
-        self.owner_user_id
-    }
-
     fn channel_type(&self) -> &'static str {
         "cli"
-    }
-    fn channel_id(&self) -> &str {
-        &self.id
     }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
@@ -280,40 +316,6 @@ impl ChannelAdapter for CliChannel {
             streaming: true,
             ..Default::default()
         }
-    }
-
-    fn reserve_text(
-        &self,
-        _target: &ChannelTarget,
-        text_id: uuid::Uuid,
-    ) -> anyhow::Result<alia_core::text_delivery::TextIdentity> {
-        ensure!(!text_id.is_nil(), "text identity is empty");
-        Ok(alia_core::text_delivery::TextIdentity {
-            text_id,
-            channel_instance_id: self.instance_id,
-        })
-    }
-    async fn deliver_text(
-        &self,
-        _target: &ChannelTarget,
-        identity: alia_core::text_delivery::TextIdentity,
-        input: super::adapter::TextPayloadStream,
-        observer: Arc<dyn super::adapter::TextObserver>,
-        cancel: CancellationToken,
-    ) -> anyhow::Result<super::adapter::TextDeliveryReport> {
-        self.deliver_owned_text(identity, input, observer, cancel)
-            .await
-    }
-    async fn cancel_text(
-        &self,
-        identity: alia_core::text_delivery::TextIdentity,
-        reason: &str,
-    ) -> anyhow::Result<alia_core::text_delivery::TextProgress> {
-        ensure!(
-            identity.channel_instance_id == self.instance_id,
-            "text belongs to another CLI instance"
-        );
-        self.text_writers.cancel(identity, reason).await
     }
 
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {

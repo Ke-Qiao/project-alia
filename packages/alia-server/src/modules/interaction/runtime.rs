@@ -9,11 +9,12 @@ use super::turn::{VoiceTurn, VoiceTurnRegistry, cancellable_stage, turn_is_inter
 use super::voice_input::RecognizedVoiceInput;
 use super::{delivery, supervision, voice};
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
+use crate::channels::adapter::{ChannelAdapter, ChannelEvent};
 use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
 };
 use crate::event::{EventBus, ServerEvent};
+use crate::modules::delivery::transport::DeliveryTarget;
 use crate::modules::platform::sensors::SensorRegistry;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -191,7 +192,7 @@ pub(super) async fn process_event(
                 Some((&channel_id, &user_id)),
             );
             let (channel_id, channel) = resolve_event_channel(channels, &channel_id).await?;
-            let target = ChannelTarget {
+            let target = DeliveryTarget {
                 voice: None,
                 user_id: user_id.clone(),
             };

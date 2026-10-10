@@ -29,6 +29,8 @@ pub async fn run_setup(shutdown: CancellationToken) -> anyhow::Result<Option<Pat
         listener,
         shutdown,
         io::stdin().is_terminal() && io::stdout().is_terminal(),
+        #[cfg(test)]
+        None,
     )
     .await
 }
@@ -37,6 +39,7 @@ async fn run_setup_on(
     listener: tokio::net::TcpListener,
     shutdown: CancellationToken,
     interactive: bool,
+    #[cfg(test)] listener_dropped: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> anyhow::Result<Option<PathBuf>> {
     let cancel = shutdown.child_token();
     let _cancel_on_drop = cancel.clone().drop_guard();
@@ -60,14 +63,17 @@ async fn run_setup_on(
         cancel: cancel.clone(),
     });
     let connections = SetupConnections(Connections::new());
-    let server = axum::serve(
-        super::runtime::HttpListener {
-            listener,
-            connections: connections.0.clone(),
-        },
-        app,
-    )
-    .with_graceful_shutdown(cancel.clone().cancelled_owned());
+    let listener = super::runtime::HttpListener {
+        listener,
+        connections: connections.0.clone(),
+    };
+    #[cfg(test)]
+    let listener = SetupListenerProbe {
+        listener: Some(listener),
+        dropped: listener_dropped,
+    };
+    let server =
+        axum::serve(listener, app).with_graceful_shutdown(cancel.clone().cancelled_owned());
     let server = std::future::IntoFuture::into_future(server);
     tokio::pin!(server);
 
@@ -126,6 +132,37 @@ async fn run_setup_on(
         Some(SetupResult::ConfigReady(path)) => Ok(Some(path)),
         Some(SetupResult::Cancelled) => Ok(None),
         None => anyhow::bail!("setup server exited before setup completed"),
+    }
+}
+
+#[cfg(test)]
+struct SetupListenerProbe {
+    listener: Option<super::runtime::HttpListener>,
+    dropped: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+#[cfg(test)]
+impl axum::serve::Listener for SetupListenerProbe {
+    type Io = alia_transport::connections::Connection;
+    type Addr = std::net::SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        axum::serve::Listener::accept(self.listener.as_mut().unwrap()).await
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        axum::serve::Listener::local_addr(self.listener.as_ref().unwrap())
+    }
+}
+
+#[cfg(test)]
+impl Drop for SetupListenerProbe {
+    fn drop(&mut self) {
+        // The witness follows the actual listener close, not just its setup scope.
+        drop(self.listener.take());
+        if let Some(dropped) = self.dropped.take() {
+            let _ = dropped.send(());
+        }
     }
 }
 
@@ -220,13 +257,14 @@ mod tests {
 
     #[tokio::test]
     async fn setup_completion_delivers_response_and_closes_stalled_connections() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::io::AsyncWriteExt;
 
         let listener = bind_setup_listener(0).await.unwrap();
         let address = listener.local_addr().unwrap();
         let stop = CancellationToken::new();
         let _stop_on_drop = stop.clone().drop_guard();
-        let serving = tokio::spawn(run_setup_on(listener, stop, false));
+        let (listener_dropped, mut listener_closed) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(run_setup_on(listener, stop, false, Some(listener_dropped)));
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
@@ -261,12 +299,7 @@ mod tests {
             .unwrap();
         assert_eq!(completed, Some(target.clone()));
         crate::config::ServerConfig::load(&target).unwrap();
-        let mut remaining = Vec::new();
-        tokio::time::timeout(Duration::from_secs(1), stalled.read_to_end(&mut remaining))
-            .await
-            .expect("accepted setup socket must be closed")
-            .unwrap();
-        assert!(tokio::net::TcpStream::connect(address).await.is_err());
+        assert_setup_released(&mut listener_closed, &mut stalled).await;
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -285,7 +318,13 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let stop = CancellationToken::new();
         let _stop_on_drop = stop.clone().drop_guard();
-        let serving = tokio::spawn(run_setup_on(listener, stop.clone(), false));
+        let (listener_dropped, mut listener_closed) = tokio::sync::oneshot::channel();
+        let serving = tokio::spawn(run_setup_on(
+            listener,
+            stop.clone(),
+            false,
+            Some(listener_dropped),
+        ));
         let directory =
             std::env::temp_dir().join(format!("alia-setup-cancel-{}", uuid::Uuid::new_v4()));
         let target = directory.join("server.toml");
@@ -325,7 +364,29 @@ mod tests {
             "drain cannot publish after caller cancellation"
         );
         assert!(!directory.exists());
-        assert!(tokio::net::TcpStream::connect(address).await.is_err());
+        assert_setup_released(&mut listener_closed, &mut socket).await;
+    }
+
+    async fn assert_setup_released(
+        listener_closed: &mut tokio::sync::oneshot::Receiver<()>,
+        socket: &mut tokio::net::TcpStream,
+    ) {
+        use tokio::io::AsyncReadExt;
+
+        listener_closed
+            .try_recv()
+            .expect("the original setup listener must close before setup returns");
+        let mut remaining = Vec::new();
+        let result =
+            tokio::time::timeout(Duration::from_secs(1), socket.read_to_end(&mut remaining))
+                .await
+                .expect("the original accepted setup socket must close");
+        if let Err(error) = result {
+            assert!(
+                matches!(error.kind(), io::ErrorKind::ConnectionReset),
+                "accepted setup socket did not reach EOF or reset: {error}"
+            );
+        }
     }
 
     #[tokio::test]

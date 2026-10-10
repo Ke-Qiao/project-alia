@@ -1,10 +1,9 @@
 #![cfg(feature = "channel-embedded")]
-use alia_server::channels::adapter::AudioBuffer;
-
-use alia_server::channels::adapter::{AudioFormat, AudioPayload};
 use alia_server::channels::embedded::{
     normalize_embedded_playback_payload, pcm16_to_le_bytes, pcm16le_bytes_to_samples,
 };
+use alia_server::modules::delivery::audio::AudioBuffer;
+use alia_server::modules::delivery::transport::{AudioFormat, AudioPayload};
 
 #[test]
 fn normalizes_stereo_pcm16_payload_to_mono() {
@@ -28,7 +27,7 @@ fn normalizes_stereo_pcm16_payload_to_mono() {
 
 #[tokio::test]
 async fn normalized_pcm_keeps_encoded_credit_until_the_last_derived_clone() {
-    use alia_server::providers::tts::audio_budget::ResponseAudioBudget;
+    use alia_server::modules::delivery::audio::ResponseAudioBudget;
     let budget = ResponseAudioBudget::for_response(uuid::Uuid::new_v4()).unwrap();
     let source = pcm16_to_le_bytes(&[100, 300, -200, -400]);
     let encoded = budget.copy_from_slice(&source).await.unwrap();
@@ -49,7 +48,7 @@ async fn normalized_pcm_keeps_encoded_credit_until_the_last_derived_clone() {
 
 #[test]
 fn normalization_rejects_oversized_pcm_before_conversion() {
-    use alia_server::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+    use alia_server::modules::delivery::audio::MAX_PCM_PAYLOAD_BYTES;
     let payload = AudioPayload {
         data: AudioBuffer::input(vec![0; MAX_PCM_PAYLOAD_BYTES + 1]),
         sample_rate: 24_000,

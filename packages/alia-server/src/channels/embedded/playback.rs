@@ -1,6 +1,6 @@
 //! Identity-preserving delivery. Start/Audio are gated by durable observer writes;
 //! End keeps receipts open until an explicit observation end.
-use crate::channels::adapter::{
+use crate::modules::delivery::transport::{
     AudioDeliveryReport, AudioFormat, AudioPayload, AudioPayloadStream, PlaybackObserver,
 };
 use alia_core::delivery::{
@@ -439,7 +439,7 @@ impl PcmDecoder {
         // This is the explicit decoder workspace boundary. Its PCM output and
         // protobuf queue have separate caps; the encoded lease ends only when
         // the source AudioBuffer is dropped, never through an implicit clone.
-        const WORKSPACE_BYTES: usize = crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+        const WORKSPACE_BYTES: usize = crate::modules::delivery::audio::MAX_PCM_PAYLOAD_BYTES;
         ensure!(
             payload.data.len() <= WORKSPACE_BYTES,
             "decoder input exceeds 2 MiB"

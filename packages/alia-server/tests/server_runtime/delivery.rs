@@ -6,9 +6,9 @@ use alia_core::output_control::{
     OutputBinding, OutputRegistration, OutputRetirementEvidence, OutputRetirementReceipt,
     OutputRetirementRequest,
 };
-use alia_server::channels::adapter::{
-    AudioDeliveryReport, AudioPayloadStream, ChannelAdapter, ChannelCapabilities, ChannelTarget,
-    PlaybackObserver,
+use alia_server::channels::adapter::{ChannelAdapter, ChannelCapabilities};
+use alia_server::modules::delivery::transport::{
+    AudioDeliveryReport, AudioPayloadStream, DeliveryTarget, DeliveryTransport, PlaybackObserver,
 };
 use alia_server::modules::delivery::repository::DeliveryRepository;
 use alia_server::modules::delivery::types::{
@@ -400,22 +400,26 @@ impl ChannelAdapter for NativePlayback {
     fn channel_type(&self) -> &'static str {
         "native_playback_probe"
     }
-    fn channel_id(&self) -> &str {
-        "delivery-test"
-    }
-    fn owner_user_id(&self) -> Option<Uuid> {
-        Some(self.owner)
-    }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
             voice_output: true,
             ..Default::default()
         }
     }
+}
+
+#[async_trait]
+impl DeliveryTransport for NativePlayback {
+    fn channel_id(&self) -> &str {
+        "delivery-test"
+    }
+    fn owner_user_id(&self) -> Option<Uuid> {
+        Some(self.owner)
+    }
 
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<PlaybackIdentity> {
         assert!(!self.retired.load(Ordering::SeqCst));
@@ -480,7 +484,7 @@ impl ChannelAdapter for NativePlayback {
 
     async fn deliver_audio(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         identity: PlaybackIdentity,
         _: AudioPayloadStream,
         _: Arc<dyn PlaybackObserver>,
@@ -499,9 +503,11 @@ impl ChannelAdapter for NativePlayback {
         // The owning future must remain alive until its actual join finishes.
         tokio::task::spawn_blocking(move || {
             active.fetch_add(1, Ordering::SeqCst);
+            runtime_phase("native.blocking.entered");
             entered.add_permits(1);
             release.wait();
             active.fetch_sub(1, Ordering::SeqCst);
+            runtime_phase("native.blocking.returned");
         })
         .await?;
         Ok(AudioDeliveryReport::unobserved(
@@ -548,7 +554,7 @@ async fn delivery_shutdown_retains_native_owner_channels_and_database_past_both_
         let dispatch = tokio::spawn(async move {
             service.deliver_audio(alia_server::modules::delivery::AudioDelivery {
                 response_id, output_key: "native:0".into(), content: json!({"text":"native probe"}),
-                channel, target: ChannelTarget { user_id: owner.to_string(), voice: Some(scope) },
+                channel, target: DeliveryTarget { user_id: owner.to_string(), voice: Some(scope) },
                 audio: Box::pin(futures::stream::empty()), cancel: CancellationToken::new(),
             }).await
         });
@@ -606,6 +612,13 @@ impl ChannelAdapter for PanicFencePlayback {
         "panic_fence_playback_probe"
     }
 
+    fn capabilities(&self) -> ChannelCapabilities {
+        self.inner.capabilities()
+    }
+}
+
+#[async_trait]
+impl DeliveryTransport for PanicFencePlayback {
     fn channel_id(&self) -> &str {
         self.inner.channel_id()
     }
@@ -614,13 +627,9 @@ impl ChannelAdapter for PanicFencePlayback {
         self.inner.owner_user_id()
     }
 
-    fn capabilities(&self) -> ChannelCapabilities {
-        self.inner.capabilities()
-    }
-
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<PlaybackIdentity> {
         self.inner.reserve_playback(target, playback_id)
@@ -636,12 +645,13 @@ impl ChannelAdapter for PanicFencePlayback {
     ) -> anyhow::Result<OutputRetirementReceipt> {
         let receipt = self.inner.retire_voice_output(request).await?;
         self.retirement_finished.fetch_add(1, Ordering::SeqCst);
+        runtime_phase("retirement.finished");
         Ok(receipt)
     }
 
     async fn deliver_audio(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         identity: PlaybackIdentity,
         audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
@@ -661,6 +671,7 @@ impl ChannelAdapter for PanicFencePlayback {
     ) -> anyhow::Result<PlaybackProgress> {
         assert!(identity.is_valid());
         self.fence_entered.add_permits(1);
+        runtime_phase("cancellation_panic.raised");
         panic!("injected precise cancellation panic");
     }
 }
@@ -679,6 +690,7 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
                 "--nocapture",
             ])
             .env(CHILD, "1")
+            .env("ALIA_TEST_RUNTIME_PHASES", "1")
             .spawn()
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(20);
@@ -695,19 +707,25 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    runtime_phase("child.entered");
     let host = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
+    runtime_phase("child.runtime.ready");
     let checked = host.block_on(async {
         with_fixture(|mut f| async move {
             f.config.server.shutdown_grace_ms = 40;
+            runtime_phase("migrations.begin");
             alia_server::modules::platform::migrations::run(&f.db).await.unwrap();
+            runtime_phase("migrations.done");
             let owner = Uuid::new_v4();
+            runtime_phase("owner.insert.begin");
             f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
                 "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Panic test','unused','user','active')",
                 [owner.into(), format!("{owner}@panic.test").into()],
             )).await.unwrap();
+            runtime_phase("owner.insert.done");
             let release = Arc::new(NativeGate::default());
             let _release_on_drop = ReleaseOnDrop(release.clone());
             let entered = Arc::new(Semaphore::new(0));
@@ -716,6 +734,7 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
             let stops = Arc::new(AtomicUsize::new(0));
             let media_dropped = Arc::new(AtomicUsize::new(0));
             let retirement_finished = Arc::new(AtomicUsize::new(0));
+            runtime_phase("server.build.begin");
             let runtime = ServerBuilder::from_config(Arc::new(f.config), CancellationToken::new())
                 .with_channel(PanicFencePlayback {
                     inner: NativePlayback {
@@ -727,31 +746,43 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
                     fence_entered: fence_entered.clone(), media_dropped: media_dropped.clone(),
                     retirement_finished: retirement_finished.clone(),
                 }).build().await.unwrap();
+            runtime_phase("server.build.done");
             let state = runtime.state().clone();
             let scope = VoiceScope {
                 device_boot_id: Uuid::new_v4(), session_id: Uuid::new_v4(), generation_epoch: 1,
             };
+            runtime_phase("response.prepare.begin");
             let response = draft_with_voice(&state, owner, Some(scope)).await;
+            runtime_phase("response.prepare.done");
             let response_id = response.response_id;
             let service = state.delivery.clone();
             let channel = state.channels.get("delivery-test").await.unwrap();
             let _producer = service.begin_voice_output(
                 owner, response.key.request_id, scope, channel.clone(), CancellationToken::new(), None,
             ).unwrap();
+            runtime_phase("producer.bind.begin");
             _producer.bind(response).await.unwrap();
+            runtime_phase("producer.bind.done");
             let dispatch = tokio::spawn(async move {
                 service.deliver_audio(alia_server::modules::delivery::AudioDelivery {
                     response_id, output_key: "native:panic".into(), content: json!({"text":"panic probe"}),
-                    channel, target: ChannelTarget { user_id: owner.to_string(), voice: Some(scope) },
+                    channel, target: DeliveryTarget { user_id: owner.to_string(), voice: Some(scope) },
                     audio: Box::pin(futures::stream::empty()), cancel: CancellationToken::new(),
                 }).await
             });
+            runtime_phase("native.enter.begin");
             signalled(&entered).await;
+            runtime_phase("native.enter.done");
             dispatch.abort();
             assert!(dispatch.await.unwrap_err().is_cancelled());
             let completion = runtime.shutdown_handle();
+            runtime_phase("shutdown.begin");
             assert!(runtime.shutdown().await.unwrap_err().is::<ShutdownIncomplete>());
+            runtime_phase("shutdown.incomplete");
+            runtime_phase("cancellation_panic.begin");
             signalled(&fence_entered).await;
+            runtime_phase("cancellation_panic.observed");
+            runtime_phase("delivery_unknown.begin");
             tokio::time::timeout(Duration::from_secs(3), async {
                 loop {
                     let records = state.delivery.list_deliveries(owner, response_id).await.unwrap();
@@ -761,25 +792,34 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             }).await.unwrap();
+            runtime_phase("delivery_unknown.done");
             assert_eq!(active.load(Ordering::SeqCst), 1);
             assert_eq!(media_dropped.load(Ordering::SeqCst), 0);
             assert_eq!(retirement_finished.load(Ordering::SeqCst), 0);
             assert_eq!(stops.load(Ordering::SeqCst), 0);
             assert!(state.delivery.shutdown_pending());
+            runtime_phase("retained_database.ping.begin");
             state.db.ping().await.unwrap();
+            runtime_phase("retained_database.ping.done");
+            runtime_phase("native.release.begin");
             release.release();
             tokio::time::timeout(Duration::from_secs(2), async {
                 while active.load(Ordering::SeqCst) != 0 || retirement_finished.load(Ordering::SeqCst) != 1 {
                     tokio::task::yield_now().await;
                 }
             }).await.unwrap();
+            runtime_phase("native.release.done");
             // The native call ending cannot prove a panicked control completed.
+            runtime_phase("quarantine.wait.begin");
             assert!(completion.wait_until(tokio::time::Instant::now() + Duration::from_millis(40)).await.unwrap_err().is::<ShutdownIncomplete>());
+            runtime_phase("quarantine.retained");
             assert!(!completion.is_finished());
             assert!(completion.pending_modules().iter().any(|name| name == "delivery"));
             assert_eq!(media_dropped.load(Ordering::SeqCst), 0);
             assert_eq!(stops.load(Ordering::SeqCst), 0);
+            runtime_phase("quarantined_database.ping.begin");
             state.db.ping().await.unwrap();
+            runtime_phase("quarantined_database.ping.done");
         }).await;
         true
     });
@@ -787,5 +827,6 @@ fn panicked_playback_fence_retains_original_native_future_and_dependencies() {
     // All assertions and fixture cleanup have completed. The quarantined
     // control cannot be safely joined; end this isolated test process instead
     // of dismantling its live Tokio context beneath retained cleanup futures.
+    runtime_phase("child.exit");
     std::process::exit(0);
 }

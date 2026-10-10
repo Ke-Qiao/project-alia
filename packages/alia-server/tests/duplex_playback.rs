@@ -1,6 +1,9 @@
 //! Real server Delivery owner and Embedded PlaybackService over loopback gRPC.
 //! Only the bounded native queue is simulated. No Presented or acoustic claim.
 #![cfg(feature = "channel-embedded")]
+use alia_server::modules::delivery::transport::{
+    AudioFormat, AudioPayload, DeliveryTarget, DeliveryTransport,
+};
 mod delivery_support;
 use alia_core::{delivery::*, output_control::*, playback_control::*};
 use alia_embedded::{
@@ -25,11 +28,11 @@ use alia_server::{
         embedded::{EmbeddedChannel, EmbeddedChannelConfig, EmbeddedRuntimeDependencies},
     },
     event::EventBus,
+    modules::delivery::audio::ResponseAudioBudget,
     modules::{
         delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*},
         platform::{lifecycle::ModuleLifecycle as ServerLifecycle, sensors::SensorRegistry},
     },
-    providers::tts::audio_budget::ResponseAudioBudget,
 };
 use delivery_support::{Fixture, with_db};
 use futures::FutureExt;
@@ -583,8 +586,8 @@ impl Scene {
             expected_backend: Some(registered.backend),
         }
     }
-    fn target(&self) -> ChannelTarget {
-        ChannelTarget {
+    fn target(&self) -> DeliveryTarget {
+        DeliveryTarget {
             user_id: self.f.user.to_string(),
             voice: Some(self.scope),
         }

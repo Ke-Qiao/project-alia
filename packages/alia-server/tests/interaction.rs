@@ -1,6 +1,6 @@
-use alia_server::channels::adapter::AudioBuffer;
-use alia_server::channels::adapter::AudioFormat;
 use alia_server::config::{CachePolicyResourceSection, CacheSection};
+use alia_server::modules::delivery::audio::AudioBuffer;
+use alia_server::modules::delivery::transport::AudioFormat;
 use alia_server::modules::interaction::cache::{
     CACHE_METADATA_SCHEMA, CacheStatus, CacheVersion, CachedResponse,
 };

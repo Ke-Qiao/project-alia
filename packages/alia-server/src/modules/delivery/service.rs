@@ -1,9 +1,9 @@
 //! Instance-owned supervision. A dropped caller only loses its reply receiver;
 //! it cannot drop the sole media/progress owner or authorize another dispatch.
+use super::transport::DeliveryTransport;
 use super::{repository::DeliveryRepository, types::*};
-use crate::channels::adapter::{
-    AudioDeliveryReport, AudioPayloadStream, ChannelAdapter, ChannelTarget, PlaybackObserver,
-    TextObserver,
+use crate::modules::delivery::transport::{
+    AudioDeliveryReport, AudioPayloadStream, DeliveryTarget, PlaybackObserver, TextObserver,
 };
 use alia_core::delivery::{ObservationEnd, PlaybackProgress};
 use async_trait::async_trait;
@@ -37,8 +37,8 @@ pub struct AudioDelivery {
     pub response_id: Uuid,
     pub output_key: String,
     pub content: Value,
-    pub channel: Arc<dyn ChannelAdapter>,
-    pub target: ChannelTarget,
+    pub channel: Arc<dyn DeliveryTransport>,
+    pub target: DeliveryTarget,
     pub audio: AudioPayloadStream,
     pub cancel: CancellationToken,
 }

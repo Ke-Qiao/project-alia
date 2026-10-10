@@ -1063,12 +1063,16 @@ impl crate::modules::platform::lifecycle::ModuleLifecycle for ExpressionChannel 
 }
 
 #[async_trait]
+impl crate::modules::delivery::transport::DeliveryTransport for ExpressionChannel {
+    fn channel_id(&self) -> &str {
+        "test-channel"
+    }
+}
+
+#[async_trait::async_trait]
 impl crate::channels::adapter::ChannelAdapter for ExpressionChannel {
     fn channel_type(&self) -> &'static str {
         "test"
-    }
-    fn channel_id(&self) -> &str {
-        "test-channel"
     }
     fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
         crate::channels::adapter::ChannelCapabilities {
@@ -1100,7 +1104,7 @@ async fn orchestrator_refreshes_accepted_body_to_submitted_without_position_comp
     let h = Harness::new().await;
     let params = params(40);
     let plan = serde_json::from_value(params.clone()).unwrap();
-    let target = crate::channels::adapter::ChannelTarget {
+    let target = crate::modules::delivery::transport::DeliveryTarget {
         user_id: params["target_user_id"].as_str().unwrap().into(),
         voice: None,
     };

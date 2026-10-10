@@ -13,12 +13,13 @@ use super::turn::{
 };
 use super::voice_input::RecognizedVoiceInput;
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
+use crate::channels::adapter::{ChannelAdapter, ChannelEvent};
 use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
 };
 use crate::event::EventBus;
 use crate::expression::orchestrator::ExpressionExecutionPhase;
+use crate::modules::delivery::transport::DeliveryTarget;
 use uuid::Uuid;
 
 pub(super) enum InteractionInput {
@@ -39,7 +40,10 @@ pub(super) async fn process_recognized_voice(
         return Ok(());
     }
     let (channel_id, channel) = resolve_event_channel(channels, &input.channel_id).await?;
-    let channel = if let Some(output) = &input.output {
+    let channel = if let Some(binding) = &input.output {
+        let output = &binding.producer;
+        let transport: std::sync::Arc<dyn crate::modules::delivery::transport::DeliveryTransport> =
+            binding.channel.clone();
         anyhow::ensure!(
             output.request_id() == input.request_id
                 && output.owner().to_string() == input.user_id
@@ -49,17 +53,18 @@ pub(super) async fn process_recognized_voice(
                         device_boot_id: input.device_boot_id,
                         generation_epoch: input.generation_epoch,
                     }
-                && output.channel().channel_id() == channel_id,
+                && output.channel().channel_id() == channel_id
+                && std::sync::Arc::ptr_eq(&output.channel(), &transport),
             "recognized input differs from its original output owner"
         );
-        output.channel()
+        binding.channel.clone()
     } else {
         channel
     };
     if input.cancel.is_cancelled() {
         return Ok(());
     }
-    let target = ChannelTarget {
+    let target = DeliveryTarget {
         voice: Some(VoiceSessionScope {
             session_id: input.session_id,
             device_boot_id: input.device_boot_id,
@@ -81,7 +86,7 @@ pub(super) async fn process_recognized_voice(
         generation_epoch: input.generation_epoch,
     });
     turn.output_channel = Some(channel.clone());
-    turn.output = input.output;
+    turn.output = input.output.map(|binding| binding.producer);
     turn.received_at = input.source_received_at;
     turn.source_privacy_epoch = Some(input.source_privacy_epoch);
     turn.source_relationship_epoch = Some(input.source_relationship_epoch);
@@ -114,7 +119,7 @@ pub(super) async fn process_voice_response(
     user_id: &str,
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     event_bus: &EventBus,
     debug_output: bool,
@@ -134,7 +139,7 @@ pub(super) async fn process_voice_response(
         channel_id,
         event_bus,
         debug_output,
-        channel.capabilities().voice_output && channel.capabilities().audio_streaming,
+        channel.capabilities().voice_output && channel.audio_streaming(),
         true,
         conversation_config,
         tools_config,

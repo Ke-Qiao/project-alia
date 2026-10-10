@@ -6,6 +6,7 @@
 //! 16 kHz conversions of the pinned official complete_real_1, backchannel_real_1,
 //! and wait_real_1 WAV samples. Conversion: alia_easy_turn.smoke.pcm16.
 #![cfg(all(feature = "channel-embedded", feature = "turn-easy"))]
+use alia_server::modules::delivery::transport::DeliveryTarget;
 mod delivery_support;
 
 use std::path::PathBuf;
@@ -32,9 +33,7 @@ use alia_proto::voice::{
 };
 use alia_server::adapters::easy_turn::{EasyTurnConfig, EasyTurnDetector};
 use alia_server::channels::ChannelRegistry;
-use alia_server::channels::adapter::{
-    ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
-};
+use alia_server::channels::adapter::{ChannelAction, ChannelAdapter, ChannelCapabilities};
 use alia_server::grpc::voice_auth::VoiceIngressAuth;
 use alia_server::grpc::voice_session::VoiceSessionService;
 use alia_server::modules::interaction::voice_input;
@@ -152,7 +151,7 @@ impl ModuleLifecycle for TestChannel {
 }
 
 impl TestChannel {
-    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+    async fn retire_model_scope(&self, target: &DeliveryTarget, _: &str) -> anyhow::Result<()> {
         let scope = target.voice.expect("stop must name the original scope");
         let mut output = self.output.lock().unwrap();
         if let Some(registered) = &mut output.registered {
@@ -167,44 +166,13 @@ impl TestChannel {
 }
 
 #[async_trait]
-impl ChannelAdapter for TestChannel {
-    async fn authenticated_source_epochs(
-        &self,
-    ) -> anyhow::Result<alia_server::modules::memory::source::SourceEpochs> {
-        capture_source_epochs(&self.db, self.owner).await
-    }
-
-    async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
-        let row = self
-            .db
-            .query_one(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT status FROM users WHERE id=$1",
-                vec![self.owner.into()],
-            ))
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("owner unavailable"))?;
-        anyhow::ensure!(
-            row.try_get::<String>("", "status")? == "active",
-            "owner inactive"
-        );
-        Ok(self.owner)
-    }
-
+impl alia_server::modules::delivery::transport::DeliveryTransport for TestChannel {
     fn owner_user_id(&self) -> Option<Uuid> {
         Some(self.owner)
     }
 
-    fn channel_type(&self) -> &'static str {
-        "embedded"
-    }
-
     fn channel_id(&self) -> &str {
         CHANNEL
-    }
-
-    fn capabilities(&self) -> ChannelCapabilities {
-        ChannelCapabilities::default()
     }
 
     async fn retire_voice_output(
@@ -238,7 +206,7 @@ impl ChannelAdapter for TestChannel {
                 "original live output or backend changed"
             );
             self.retire_model_scope(
-                &ChannelTarget {
+                &DeliveryTarget {
                     user_id: self.owner.to_string(),
                     voice: Some(request.scope),
                 },
@@ -265,29 +233,6 @@ impl ChannelAdapter for TestChannel {
         };
         receipt.validate(request)?;
         Ok(receipt)
-    }
-
-    async fn fence_voice(
-        &self,
-        scope: VoiceScope,
-        close_session: bool,
-        _: &str,
-    ) -> anyhow::Result<()> {
-        assert!(scope.is_valid());
-        self.fences.lock().unwrap().push((scope, close_session));
-        Ok(()) // Injected output; no device playback acceptance is claimed.
-    }
-
-    async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
-        anyhow::ensure!(
-            action.name == "verify_audio_ingress_auth",
-            "unexpected action"
-        );
-        anyhow::ensure!(
-            action.params["token"] == TEST_TOKEN,
-            "invalid test credential"
-        );
-        Ok(serde_json::json!({"ok": true}))
     }
 
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
@@ -335,6 +280,63 @@ impl ChannelAdapter for TestChannel {
         command: &BoundControlCommand,
     ) -> anyhow::Result<BoundControlReceipt> {
         self.receipt(command.clone(), false)
+    }
+}
+
+#[async_trait::async_trait]
+impl ChannelAdapter for TestChannel {
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<alia_server::modules::memory::source::SourceEpochs> {
+        capture_source_epochs(&self.db, self.owner).await
+    }
+
+    async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT status FROM users WHERE id=$1",
+                vec![self.owner.into()],
+            ))
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("owner unavailable"))?;
+        anyhow::ensure!(
+            row.try_get::<String>("", "status")? == "active",
+            "owner inactive"
+        );
+        Ok(self.owner)
+    }
+
+    fn channel_type(&self) -> &'static str {
+        "embedded"
+    }
+
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities::default()
+    }
+
+    async fn fence_voice(
+        &self,
+        scope: VoiceScope,
+        close_session: bool,
+        _: &str,
+    ) -> anyhow::Result<()> {
+        assert!(scope.is_valid());
+        self.fences.lock().unwrap().push((scope, close_session));
+        Ok(()) // Injected output; no device playback acceptance is claimed.
+    }
+
+    async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {
+        anyhow::ensure!(
+            action.name == "verify_audio_ingress_auth",
+            "unexpected action"
+        );
+        anyhow::ensure!(
+            action.params["token"] == TEST_TOKEN,
+            "invalid test credential"
+        );
+        Ok(serde_json::json!({"ok": true}))
     }
 }
 
@@ -581,7 +583,7 @@ async fn official_audio(fixture: Fixture) {
             assert_eq!(input.user_id, fixture.user.to_string());
             assert_eq!(input.transcript, evidence.transcript.trim());
             let response = canonical_response(&fixture, &delivery, &input).await;
-            let producer = input.output.as_ref().unwrap();
+            let producer = &input.output.as_ref().unwrap().producer;
             producer.bind(response.clone()).await.unwrap();
             assert_eq!(producer.request_id(), input.request_id);
             assert_eq!(producer.output().response_id(), Some(response.response_id));
@@ -603,7 +605,7 @@ async fn official_audio(fixture: Fixture) {
             assert!(recognized.try_recv().is_err());
             let original = active_input.as_ref().unwrap();
             assert!(!original.cancel.is_cancelled());
-            let producer = original.output.as_ref().unwrap();
+            let producer = &original.output.as_ref().unwrap().producer;
             assert_eq!(producer.output().response_id(), response_id);
             if expected == TurnState::Backchannel {
                 tokio::time::timeout(Duration::from_secs(3), producer.wait_open())
@@ -790,6 +792,6 @@ async fn canonical_response(
         context_id: context.lease().id(), conversation_id: Some(session), source_event_id: Some(event),
         source_received_at: source_time, source_privacy_epoch: Some(input.source_privacy_epoch),
         channel_id: CHANNEL.into(), kind: "conversation".into(),
-        content: serde_json::json!({"intent":input.transcript,"voice_scope":input.output.as_ref().unwrap().scope()}),
+        content: serde_json::json!({"intent":input.transcript,"voice_scope":input.output.as_ref().unwrap().producer.scope()}),
     }).await.unwrap()
 }

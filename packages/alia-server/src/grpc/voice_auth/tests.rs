@@ -23,6 +23,16 @@ impl ModuleLifecycle for Device {
     }
 }
 #[async_trait]
+impl crate::modules::delivery::transport::DeliveryTransport for Device {
+    fn channel_id(&self) -> &str {
+        DEVICE
+    }
+    fn owner_user_id(&self) -> Option<Uuid> {
+        self.owner
+    }
+}
+
+#[async_trait::async_trait]
 impl ChannelAdapter for Device {
     async fn authenticated_source_epochs(
         &self,
@@ -37,12 +47,6 @@ impl ChannelAdapter for Device {
 
     fn channel_type(&self) -> &'static str {
         "embedded"
-    }
-    fn channel_id(&self) -> &str {
-        DEVICE
-    }
-    fn owner_user_id(&self) -> Option<Uuid> {
-        self.owner
     }
     async fn authenticated_owner(&self) -> anyhow::Result<Uuid> {
         anyhow::ensure!(

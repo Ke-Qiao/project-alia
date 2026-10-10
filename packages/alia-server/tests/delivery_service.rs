@@ -1,14 +1,13 @@
 //! Media mocks prove ownership and durable ordering; the ledger is real PostgreSQL.
-use alia_server::channels::adapter::AudioBuffer;
+use alia_server::modules::delivery::audio::AudioBuffer;
 mod delivery_support;
 use alia_core::delivery::{
     ObservationEnd, PlaybackIdentity, PlaybackProgress, SubmissionBackend, SubmissionBoundary,
     VoiceScope,
 };
 use alia_core::output_control::{OutputBinding, OutputRegistration};
-use alia_server::channels::adapter::*;
+use alia_server::modules::delivery::transport::*;
 use alia_server::modules::delivery::{AudioDelivery, DeliveryService, OutputProducer, types::*};
-use alia_server::modules::platform::lifecycle::ModuleLifecycle;
 use async_trait::async_trait;
 use delivery_support::*;
 use futures::StreamExt;
@@ -48,14 +47,9 @@ struct Channel {
     last_progress: Mutex<Option<PlaybackProgress>>,
     db: DatabaseConnection,
 }
-#[async_trait]
-impl ModuleLifecycle for Channel {
-    fn name(&self) -> &'static str {
-        "delivery-test"
-    }
-}
+
 impl Channel {
-    async fn retire_model_scope(&self, target: &ChannelTarget, _: &str) -> anyhow::Result<()> {
+    async fn retire_model_scope(&self, target: &DeliveryTarget, _: &str) -> anyhow::Result<()> {
         assert_eq!(target.user_id, self.owner.to_string());
         assert_eq!(target.voice, Some(self.scope));
         // Scope retirement is a separate barrier. Preserve each test's original
@@ -65,22 +59,12 @@ impl Channel {
 }
 
 #[async_trait]
-impl ChannelAdapter for Channel {
-    fn channel_type(&self) -> &'static str {
-        "test"
-    }
+impl alia_server::modules::delivery::transport::DeliveryTransport for Channel {
     fn channel_id(&self) -> &str {
         "test-device"
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         Some(self.owner)
-    }
-    fn capabilities(&self) -> ChannelCapabilities {
-        ChannelCapabilities {
-            voice_output: true,
-            audio_streaming: true,
-            ..Default::default()
-        }
     }
 
     async fn register_output(&self, binding: OutputBinding) -> anyhow::Result<OutputRegistration> {
@@ -109,7 +93,7 @@ impl ChannelAdapter for Channel {
         assert_eq!(request.binding, Some(registration.binding));
         assert_eq!(request.expected_backend.as_ref(), Some(&self.backend));
         self.retire_model_scope(
-            &ChannelTarget {
+            &DeliveryTarget {
                 user_id: self.owner.to_string(),
                 voice: Some(self.scope),
             },
@@ -131,7 +115,7 @@ impl ChannelAdapter for Channel {
     }
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<PlaybackIdentity> {
         Ok(PlaybackIdentity {
@@ -170,7 +154,7 @@ impl ChannelAdapter for Channel {
     }
     async fn deliver_audio(
         &self,
-        _: &ChannelTarget,
+        _: &DeliveryTarget,
         identity: PlaybackIdentity,
         mut audio: AudioPayloadStream,
         observer: Arc<dyn PlaybackObserver>,
@@ -235,6 +219,7 @@ impl ChannelAdapter for Channel {
         Ok(AudioDeliveryReport::unobserved("no final observed receipt"))
     }
 }
+
 fn channel(f: &Fixture, behavior: Behavior) -> Arc<Channel> {
     Arc::new(Channel {
         owner: f.user,
@@ -283,7 +268,7 @@ fn request(response: Uuid, channel: Arc<Channel>, cancel: CancellationToken) -> 
         response_id: response,
         output_key: "speech:0".into(),
         content: json!({"text":"hello"}),
-        target: ChannelTarget {
+        target: DeliveryTarget {
             user_id: channel.owner.to_string(),
             voice: Some(channel.scope),
         },

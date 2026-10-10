@@ -27,12 +27,13 @@ use super::streaming::TtsTraceContext;
 use super::tools::{select_all_tools, select_tools_for_skill};
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::ChannelAdapter;
 use crate::config::{
     CachePolicyResourceSection, CacheSection, ConversationSection, MemorySection, ToolsSection,
 };
 use crate::event::EventBus;
 use crate::expression::{ExpressionInput, ExpressionPlan};
+use crate::modules::delivery::transport::DeliveryTarget;
 use crate::{
     modules::interaction::{
         cache::DEFAULT_CACHE_SCOPE,
@@ -82,7 +83,7 @@ pub(super) fn process_text<'a>(
     user_id: &'a str,
     modules: &'a InteractionServices,
     channel: &'a dyn ChannelAdapter,
-    target: &'a ChannelTarget,
+    target: &'a DeliveryTarget,
     channel_id: &'a str,
     event_bus: &'a EventBus,
     debug_output: bool,
@@ -191,7 +192,7 @@ struct GenerationRequest<'a> {
     user_id: &'a str,
     modules: &'a InteractionServices,
     channel: &'a dyn ChannelAdapter,
-    target: &'a ChannelTarget,
+    target: &'a DeliveryTarget,
     channel_id: &'a str,
     event_bus: &'a EventBus,
     debug_output: bool,

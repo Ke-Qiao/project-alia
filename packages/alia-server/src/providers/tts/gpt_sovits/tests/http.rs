@@ -1,6 +1,6 @@
 //! Actual HTTP framing and body lifetime; no database or live TTS model.
 use super::*;
-use crate::providers::tts::audio_budget::MAX_RESPONSE_ENCODED_BYTES;
+use crate::modules::delivery::audio::MAX_RESPONSE_ENCODED_BYTES;
 use axum::{
     Router,
     body::{Body, Bytes},

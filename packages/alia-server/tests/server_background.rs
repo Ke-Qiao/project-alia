@@ -168,12 +168,16 @@ impl ModuleLifecycle for FakeChannel {
     }
 }
 #[async_trait]
+impl alia_server::modules::delivery::transport::DeliveryTransport for FakeChannel {
+    fn channel_id(&self) -> &str {
+        &self.id
+    }
+}
+
+#[async_trait::async_trait]
 impl ChannelAdapter for FakeChannel {
     fn channel_type(&self) -> &'static str {
         "fake"
-    }
-    fn channel_id(&self) -> &str {
-        &self.id
     }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()
@@ -454,12 +458,16 @@ impl ModuleLifecycle for PanickingStopChannel {
     }
 }
 #[async_trait]
+impl alia_server::modules::delivery::transport::DeliveryTransport for PanickingStopChannel {
+    fn channel_id(&self) -> &str {
+        "panic-test-device"
+    }
+}
+
+#[async_trait::async_trait]
 impl ChannelAdapter for PanickingStopChannel {
     fn channel_type(&self) -> &'static str {
         "panic-test"
-    }
-    fn channel_id(&self) -> &str {
-        "panic-test-device"
     }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()

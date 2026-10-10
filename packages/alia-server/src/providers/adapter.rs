@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::expression::{ProsodyControls, SpeechExpression};
+use crate::modules::delivery::audio::{EncodedAudio, ResponseAudioBudget};
 use crate::modules::platform::lifecycle::ModuleLifecycle;
 
 // ========== Common types ==========
@@ -669,6 +670,9 @@ impl TtsRequest {
     }
 }
 
+pub type TtsAudioStream =
+    Pin<Box<dyn Stream<Item = anyhow::Result<EncodedAudio>> + Send + 'static>>;
+
 #[async_trait]
 pub trait TtsAdapter: ModuleLifecycle {
     /// Providers must reserve before copying encoded media. No unbounded
@@ -676,20 +680,20 @@ pub trait TtsAdapter: ModuleLifecycle {
     async fn synthesize_request(
         &self,
         request: &TtsRequest,
-        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio>;
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<EncodedAudio>;
 
     async fn synthesize_stream_request(
         &self,
         request: &TtsRequest,
-        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream>;
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<TtsAudioStream>;
 
     async fn synthesize(
         &self,
         text: &str,
-        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<EncodedAudio> {
         self.synthesize_request(&TtsRequest::plain(text), budget)
             .await
     }
@@ -697,8 +701,8 @@ pub trait TtsAdapter: ModuleLifecycle {
     async fn synthesize_stream(
         &self,
         text: &str,
-        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+        budget: ResponseAudioBudget,
+    ) -> anyhow::Result<TtsAudioStream> {
         self.synthesize_stream_request(&TtsRequest::plain(text), budget)
             .await
     }

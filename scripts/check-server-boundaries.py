@@ -27,6 +27,8 @@ REMOVED_PATHS = (
     "src/memory_policy.rs",
     "src/modules/memory/context/companion.rs",
     "src/modules/memory/context/companion",
+    "src/providers/tts/audio_budget.rs",
+    "src/providers/tts/audio_budget_tests.rs",
 )
 REQUIRED_PATHS = (
     "src/bootstrap/builder.rs",
@@ -42,6 +44,8 @@ REQUIRED_PATHS = (
     "src/modules/companion/invitation.rs",
     "src/modules/memory/context/appraisal_source.rs",
     "src/modules/memory/context/invitation.rs",
+    "src/modules/delivery/transport.rs",
+    "src/modules/delivery/audio.rs",
     "src/modules/interaction/conversation/service.rs",
     "src/modules/interaction/cache/store.rs",
     "src/modules/interaction/cache/types.rs",
@@ -57,6 +61,7 @@ RETIRED_SYMBOLS = (
     "DbCache", "RouterStrategy", "MultiLayerRouter", "PassthroughRouter", "DirectRouter",
     "PersonaProvider", "TemplatePersona", "SkillProvider", "BuiltinSkills", "InsightStrategy",
     "ScheduledInsights", "NoopInsights", "ModuleContext", "set_response_status_in_transaction",
+    "ChannelTarget",
 )
 FIXED_FACTORIES = "memory|conversation|cache|router|persona|skills|insights|sensor|rule_engine|scheduler|tools_with_sensors"
 OLD_SYMBOLS = re.compile(
@@ -65,6 +70,7 @@ OLD_SYMBOLS = re.compile(
     r"|\bproviders\s*::\s*(?:memory|conversation|cache|router|persona|skills|insights|sensor)\b"
     r"|\bchannels\s*::\s*pipeline\b"
     r"|\bmemory_policy\s*::"
+    r"|\btts\s*::\s*audio_budget\b"
     r"|\bfactory\s*::\s*create_(?:" + FIXED_FACTORIES + r")\b"
 )
 MEMORY_DECLARATION = re.compile(
@@ -115,6 +121,11 @@ SERVER_CONFIG_DEPENDENCY = re.compile(r"\bServerConfig\b")
 # would reintroduce the initialization locator even if its type were renamed.
 INIT_SIGNATURE = re.compile(r"\bfn\s+init\s*(?:<[^(){};]*>)?\s*\(([^)]*)\)")
 BOUND_INIT_RECEIVER = re.compile(r"\s*&\s*mut\s+self\s*,?\s*")
+OUTBOUND_CONTRACT = re.compile(
+    r"\b(?:DeliveryTransport|DeliveryTarget|AudioPayload|AudioPayloadStream|AudioFormat"
+    r"|TextPayloadStream|TextObserver|TextDeliveryReport|PlaybackObserver|AudioDeliveryReport"
+    r"|ResponseAudioBudget|AudioBudgetOwner|AudioReservation|EncodedAudio|AudioBuffer)\b"
+)
 
 
 def check(server: Path) -> list[str]:
@@ -146,6 +157,17 @@ def check(server: Path) -> list[str]:
             if relative.startswith("src/modules/interaction/conversation/"):
                 if re.search(r"\b(?:commit_response|DeliveryRepository)\b", text):
                     errors.append(f"{relative}: Conversation storage owns a cross-domain response transaction")
+            if relative.startswith("src/modules/delivery/"):
+                if re.search(r"\b(?:channels|providers)\s*::|\bChannelAdapter\b", text):
+                    errors.append(f"{relative}: Delivery depends on a Channel or provider implementation contract")
+            if relative == "src/channels/adapter.rs" or relative.startswith("src/providers/"):
+                declarations = re.findall(r"\bpub\s+(?:struct|enum|trait|type)\s+(\w+)", text)
+                exports = re.findall(r"\bpub\s+use\s+[^;]+;", text)
+                if any(OUTBOUND_CONTRACT.fullmatch(name) for name in declarations) or any(
+                    OUTBOUND_CONTRACT.search(export) or re.search(r"\bdelivery\s*::\s*(?:audio|transport)\b", export)
+                    for export in exports
+                ):
+                    errors.append(f"{relative}: outbound contract must be owned by Delivery without forwarding exports")
             if relative.startswith("src/modules/memory/context/") and "/tests" not in relative:
                 if re.search(r"\b(?:private_grant|CompanionPolicy|CompanionPolicySnapshot|CanonicalObservation)\b", text):
                     errors.append(f"{relative}: Context owns Companion business policy or projection")
@@ -313,6 +335,26 @@ def self_test() -> None:
         invitation.write_text("use crate::modules::companion::invitation::lock_invitation_grant;")
         assert not check(server)
         invitation.write_text("")
+        for relative, invalid, expected in (
+            ("src/modules/delivery/transport.rs", "use crate::channels::adapter::ChannelAdapter;", "Delivery depends on"),
+            ("src/modules/delivery/audio.rs", "use crate::providers::tts::Budget;", "Delivery depends on"),
+            ("src/channels/adapter.rs", "pub use crate::modules::delivery::transport::*;", "outbound contract must be owned"),
+            ("src/channels/adapter.rs", "pub trait PlaybackObserver {}", "outbound contract must be owned"),
+            ("src/providers/adapter.rs", "pub struct ResponseAudioBudget;", "outbound contract must be owned"),
+            ("src/providers/adapter.rs", "pub use crate::modules::delivery::audio::AudioBuffer;", "outbound contract must be owned"),
+            ("src/providers/adapter.rs", "type Budget = crate::providers::tts::audio_budget::ResponseAudioBudget;", "retired symbol/path"),
+        ):
+            owner = server / relative
+            owner.parent.mkdir(parents=True, exist_ok=True)
+            owner.write_text(invalid)
+            assert any(expected in error for error in check(server)), invalid
+            owner.write_text("")
+        adapter.write_text("use crate::modules::delivery::audio::{ResponseAudioBudget, EncodedAudio}; pub type TtsAudioStream = Stream<EncodedAudio>;")
+        channel = server / "src/channels/adapter.rs"
+        channel.write_text("use crate::modules::delivery::transport::DeliveryTransport; pub trait ChannelAdapter: DeliveryTransport {}")
+        assert not check(server)
+        adapter.write_text("")
+        channel.write_text("")
         lifecycle = server / "src/modules/platform/lifecycle.rs"
         for invalid in (
             "pub trait ModuleLifecycle { async fn init(&mut self, deps: &Dependencies); }",

@@ -97,3 +97,7 @@ async-trait = "0.1"
 
 # Unix
 libc = "0.2"
+
+# Runtime tests hash the full executable inside bounded child-process startup.
+[profile.dev.package.sha2]
+opt-level = 3

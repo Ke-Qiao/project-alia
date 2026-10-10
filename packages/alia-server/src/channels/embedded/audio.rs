@@ -1,5 +1,5 @@
-use crate::channels::adapter::{AudioFormat, AudioPayload};
-use crate::providers::tts::audio_budget::MAX_PCM_PAYLOAD_BYTES;
+use crate::modules::delivery::audio::MAX_PCM_PAYLOAD_BYTES;
+use crate::modules::delivery::transport::{AudioFormat, AudioPayload};
 
 pub fn normalize_embedded_playback_payload(audio: AudioPayload) -> anyhow::Result<AudioPayload> {
     anyhow::ensure!(

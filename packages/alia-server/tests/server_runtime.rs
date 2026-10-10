@@ -20,6 +20,23 @@ use uuid::Uuid;
 
 static DATABASE_CASES: Semaphore = Semaphore::const_new(2);
 
+fn runtime_phase(phase: &str) {
+    static START: std::sync::OnceLock<Option<Instant>> = std::sync::OnceLock::new();
+    if let Some(start) = START
+        .get_or_init(|| std::env::var_os("ALIA_TEST_RUNTIME_PHASES").map(|_| Instant::now()))
+    {
+        eprintln!(
+            "[runtime-phase] pid={} unix_ms={} elapsed_ms={} phase={phase}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+            start.elapsed().as_millis()
+        );
+    }
+}
+
 #[path = "server_runtime/websocket.rs"]
 mod websocket;
 
@@ -200,16 +217,16 @@ impl alia_server::providers::adapter::TtsAdapter for Probe {
     async fn synthesize_request(
         &self,
         _: &alia_server::providers::adapter::TtsRequest,
-        _: alia_server::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<alia_server::providers::tts::audio_budget::EncodedAudio> {
+        _: alia_server::modules::delivery::audio::ResponseAudioBudget,
+    ) -> anyhow::Result<alia_server::modules::delivery::audio::EncodedAudio> {
         anyhow::bail!("runtime initialization probe must not synthesize audio")
     }
 
     async fn synthesize_stream_request(
         &self,
         _: &alia_server::providers::adapter::TtsRequest,
-        _: alia_server::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<alia_server::providers::tts::audio_budget::TtsAudioStream> {
+        _: alia_server::modules::delivery::audio::ResponseAudioBudget,
+    ) -> anyhow::Result<alia_server::providers::adapter::TtsAudioStream> {
         anyhow::bail!("runtime initialization probe must not synthesize audio")
     }
 }
@@ -224,22 +241,28 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        runtime_phase("fixture.admin_connect.begin");
         let url = std::env::var("ALIA_TEST_DATABASE_URL")
             .expect("set ALIA_TEST_DATABASE_URL to disposable PostgreSQL");
         let admin = Database::connect(&url)
             .await
             .expect("test PostgreSQL is required");
+        runtime_phase("fixture.admin_connect.done");
         let schema = format!("server_runtime_{}", Uuid::new_v4().simple());
+        runtime_phase(&format!("fixture.create_schema.begin schema={schema}"));
         admin
             .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
             .await
             .unwrap();
+        runtime_phase("fixture.create_schema.done");
         let mut options = ConnectOptions::new(url.clone());
         options
             .max_connections(4)
             .set_schema_search_path(format!("{schema},public"))
             .sqlx_logging(false);
+        runtime_phase("fixture.pool_connect.begin");
         let db = Database::connect(options).await.unwrap();
+        runtime_phase("fixture.pool_connect.done");
         let dir = std::env::temp_dir().join(&schema);
         std::fs::create_dir(&dir).unwrap();
         let mut config: ServerConfig =
@@ -288,13 +311,20 @@ impl Fixture {
         )
     }
     async fn cleanup(self) {
+        runtime_phase("fixture.close_pool.begin");
         self.db.close().await.unwrap();
+        runtime_phase("fixture.close_pool.done");
+        runtime_phase("fixture.drop_schema.begin");
         self.admin
             .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.schema))
             .await
             .unwrap();
+        runtime_phase("fixture.drop_schema.done");
+        runtime_phase("fixture.close_admin.begin");
         self.admin.close().await.unwrap();
+        runtime_phase("fixture.close_admin.done");
         std::fs::remove_dir_all(self.dir).unwrap();
+        runtime_phase("fixture.cleanup.done");
     }
 }
 async fn with_fixture<F, Fut>(test: F)
@@ -302,14 +332,18 @@ where
     F: FnOnce(Fixture) -> Fut,
     Fut: Future<Output = ()>,
 {
+    runtime_phase("fixture.permit.begin");
     let _permit = DATABASE_CASES.acquire().await.unwrap();
+    runtime_phase("fixture.permit.done");
     let fixture = Fixture::new().await;
+    runtime_phase("fixture.ready");
     let result = AssertUnwindSafe(tokio::time::timeout(
         Duration::from_secs(45),
         test(fixture.clone()),
     ))
     .catch_unwind()
     .await;
+    runtime_phase("fixture.body.returned");
     fixture.cleanup().await;
     match result {
         Ok(Ok(())) => {}
@@ -780,12 +814,16 @@ async fn occupied_listener_and_invalid_factory_fail_before_module_initialization
 }
 
 #[async_trait]
+impl alia_server::modules::delivery::transport::DeliveryTransport for Probe {
+    fn channel_id(&self) -> &str {
+        self.name
+    }
+}
+
+#[async_trait::async_trait]
 impl alia_server::channels::ChannelAdapter for Probe {
     fn channel_type(&self) -> &'static str {
         "runtime_probe"
-    }
-    fn channel_id(&self) -> &str {
-        self.name
     }
     fn capabilities(&self) -> alia_server::channels::adapter::ChannelCapabilities {
         Default::default()

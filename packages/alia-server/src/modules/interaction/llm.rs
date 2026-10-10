@@ -11,9 +11,10 @@ use super::streaming::{
 use super::tools::{ToolSelection, run_llm_tool_loop};
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::ChannelAdapter;
 use crate::config::ToolsSection;
 use crate::event::EventBus;
+use crate::modules::delivery::transport::DeliveryTarget;
 use crate::providers::adapter::{ChatMessage, LlmAdapter, ToolDefinition};
 use uuid::Uuid;
 
@@ -42,7 +43,7 @@ pub(super) async fn execute_llm_response(
     user_uuid: Uuid,
     session_id: Uuid,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     event_bus: &EventBus,

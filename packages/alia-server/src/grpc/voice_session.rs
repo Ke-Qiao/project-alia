@@ -26,7 +26,9 @@ use crate::channels::adapter::ChannelAdapter;
 use crate::modules::delivery::{DeliveryService, VoiceOutput};
 use crate::modules::interaction::initiative::VoiceInitiativeHandle;
 use crate::modules::interaction::turn_detector::{DetectionError, TurnDetector};
-use crate::modules::interaction::voice_input::{RecognizedVoiceInput, VoiceInputHandle};
+use crate::modules::interaction::voice_input::{
+    RecognizedVoiceInput, RecognizedVoiceOutput, VoiceInputHandle,
+};
 use crate::modules::memory::context::ContextService;
 
 mod initiative;
@@ -701,7 +703,7 @@ where
                         ).map_err(|_| Status::resource_exhausted("voice output supervision unavailable"))?;
                         let current_output = producer.output();
                         input.try_submit(RecognizedVoiceInput {
-                            request_id, output: Some(producer),
+                            request_id, output: Some(RecognizedVoiceOutput { producer, channel: channel.clone() }),
                             channel_id: lease.channel.clone(), user_id: owner_user_id.to_string(), transcript,
                             session_id: lease.id, device_boot_id: boot, generation_epoch, cancel: response_cancel.clone(),
                             source_received_at: window.source_received_at()
@@ -737,6 +739,7 @@ mod tests {
     use super::*;
     use crate::channels::ChannelRegistry;
     use crate::modules::delivery::repository::DeliveryRepository;
+    use crate::modules::delivery::transport::DeliveryTransport as _;
     use crate::modules::interaction::voice_input;
     use alia_core::voice::{DetectionId, ModelIdentity, PcmWindow};
     use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
@@ -905,7 +908,7 @@ mod tests {
     impl AuthChannel {
         async fn retire_model_scope(
             &self,
-            target: &crate::channels::adapter::ChannelTarget,
+            target: &crate::modules::delivery::transport::DeliveryTarget,
             _: &str,
         ) -> anyhow::Result<()> {
             assert!(
@@ -913,6 +916,48 @@ mod tests {
                 "must stop only original output scope"
             );
             Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::modules::delivery::transport::DeliveryTransport for AuthChannel {
+        fn owner_user_id(&self) -> Option<Uuid> {
+            Some(Uuid::from_u128(7))
+        }
+        fn channel_id(&self) -> &str {
+            "device"
+        }
+
+        async fn retire_voice_output(
+            &self,
+            request: &alia_core::output_control::OutputRetirementRequest,
+        ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
+            request.validate()?;
+            anyhow::ensure!(
+                request.binding.is_none() && request.expected_backend.is_none(),
+                "actor fixture never registers a native output"
+            );
+            anyhow::ensure!(
+                self.fences
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(scope, close)| *scope == request.scope && !close),
+                "unknown actor output scope"
+            );
+            self.retire_model_scope(
+                &crate::modules::delivery::transport::DeliveryTarget {
+                    user_id: Uuid::from_u128(7).to_string(),
+                    voice: Some(request.scope),
+                },
+                "original actor output ended",
+            )
+            .await?;
+            Ok(alia_core::output_control::OutputRetirementReceipt {
+                scope: request.scope,
+                binding: None,
+                evidence: alia_core::output_control::OutputRetirementEvidence::NoNativeOwner,
+            })
         }
     }
 
@@ -933,15 +978,8 @@ mod tests {
             Ok(Uuid::from_u128(7))
         }
 
-        fn owner_user_id(&self) -> Option<Uuid> {
-            Some(Uuid::from_u128(7))
-        }
-
         fn channel_type(&self) -> &'static str {
             "embedded"
-        }
-        fn channel_id(&self) -> &str {
-            "device"
         }
         fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
             Default::default()
@@ -982,38 +1020,6 @@ mod tests {
         async fn fence_voice(&self, scope: VoiceScope, close: bool, _: &str) -> anyhow::Result<()> {
             self.fences.lock().unwrap().push((scope, close));
             Ok(())
-        }
-
-        async fn retire_voice_output(
-            &self,
-            request: &alia_core::output_control::OutputRetirementRequest,
-        ) -> anyhow::Result<alia_core::output_control::OutputRetirementReceipt> {
-            request.validate()?;
-            anyhow::ensure!(
-                request.binding.is_none() && request.expected_backend.is_none(),
-                "actor fixture never registers a native output"
-            );
-            anyhow::ensure!(
-                self.fences
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|(scope, close)| *scope == request.scope && !close),
-                "unknown actor output scope"
-            );
-            self.retire_model_scope(
-                &crate::channels::adapter::ChannelTarget {
-                    user_id: Uuid::from_u128(7).to_string(),
-                    voice: Some(request.scope),
-                },
-                "original actor output ended",
-            )
-            .await?;
-            Ok(alia_core::output_control::OutputRetirementReceipt {
-                scope: request.scope,
-                binding: None,
-                evidence: alia_core::output_control::OutputRetirementEvidence::NoNativeOwner,
-            })
         }
     }
     fn token(revision: u64) -> String {
@@ -1523,7 +1529,15 @@ mod tests {
                 h.speech().await;
                 h.call().await.answer(TurnState::Wait);
                 h.event().await;
-                assert!(original.output.as_ref().unwrap().output().is_held());
+                assert!(
+                    original
+                        .output
+                        .as_ref()
+                        .unwrap()
+                        .producer
+                        .output()
+                        .is_held()
+                );
                 assert!(handle.snapshot(owner, "device").await.is_err());
                 assert!(!original.cancel.is_cancelled());
                 h.finish().await;
@@ -1540,10 +1554,11 @@ mod tests {
             assert_eq!(h.event().await.generation_epoch, 2);
             let first = h.input.recv().await.unwrap();
             assert!(!first.request_id.is_nil());
-            let producer = first.output.as_ref().unwrap();
+            let producer = &first.output.as_ref().unwrap().producer;
             assert_eq!(producer.request_id(), first.request_id);
             assert_eq!(producer.scope().generation_epoch, first.generation_epoch);
-            let pinned: Arc<dyn ChannelAdapter> = h.channel.clone();
+            let pinned: Arc<dyn crate::modules::delivery::transport::DeliveryTransport> =
+                h.channel.clone();
             assert!(Arc::ptr_eq(&producer.channel(), &pinned));
             assert!(
                 producer.output().response_id().is_none(),
@@ -1576,7 +1591,13 @@ mod tests {
             );
             assert!(!first.cancel.is_cancelled());
             assert_eq!(
-                first.output.as_ref().unwrap().output().hold_reason(),
+                first
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .producer
+                    .output()
+                    .hold_reason(),
                 Some(alia_core::playback_control::HoldReason::ExplicitWait)
             );
             h.finish().await;
@@ -1591,7 +1612,7 @@ mod tests {
             h.call().await.answer(TurnState::Complete);
             h.event().await;
             let original = h.input.recv().await.unwrap();
-            let producer = original.output.as_ref().unwrap();
+            let producer = &original.output.as_ref().unwrap().producer;
             h.speech().await;
             h.call().await.answer(TurnState::Wait);
             let paused = h.event().await;
@@ -1661,7 +1682,15 @@ mod tests {
             stale.answer_text(TurnState::Complete, "继续");
             let fresh = h.call().await;
             assert!(h.events.try_recv().is_err());
-            assert!(original.output.as_ref().unwrap().output().is_held());
+            assert!(
+                original
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .producer
+                    .output()
+                    .is_held()
+            );
             fresh.answer_text(TurnState::Complete, "继续讲这个问题");
             let event = h.event().await;
             assert_eq!(event.generation_epoch, original.generation_epoch + 1);
@@ -1704,7 +1733,15 @@ mod tests {
                 h.events.try_recv().is_err(),
                 "old Continue must not emit semantic permission"
             );
-            assert!(original.output.as_ref().unwrap().output().is_held());
+            assert!(
+                original
+                    .output
+                    .as_ref()
+                    .unwrap()
+                    .producer
+                    .output()
+                    .is_held()
+            );
             fresh.answer(TurnState::Wait);
             assert_eq!(
                 evidence_payload(&h.event().await).output_decision,
@@ -1772,7 +1809,7 @@ mod tests {
             h.call().await.answer(TurnState::Complete);
             let admitted = h.event().await;
             let original = h.input.recv().await.unwrap();
-            let control = original.output.as_ref().unwrap().output();
+            let control = original.output.as_ref().unwrap().producer.output();
             drop(original);
             assert!(!control.is_alive());
             h.speech().await;
@@ -1806,7 +1843,7 @@ mod tests {
             for _ in 0..8 {
                 let queued = h.input.try_recv().unwrap();
                 assert!(queued.cancel.is_cancelled());
-                assert!(!queued.output.as_ref().unwrap().output().is_alive());
+                assert!(!queued.output.as_ref().unwrap().producer.output().is_alive());
             }
         })
         .await;

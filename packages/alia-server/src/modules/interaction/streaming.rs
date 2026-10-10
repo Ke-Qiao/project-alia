@@ -1,3 +1,5 @@
+use crate::modules::delivery::audio::AudioBuffer;
+use crate::modules::delivery::transport::{AudioFormat, AudioPayload, DeliveryTarget};
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,9 +17,7 @@ use super::debug::{
     debug_component_text, log_channel_delivery_failure,
 };
 use super::turn::{VoiceTurn, cancellable_stage, turn_is_interrupted};
-use crate::channels::adapter::{
-    AudioBuffer, AudioFormat, AudioPayload, ChannelAdapter, ChannelTarget,
-};
+use crate::channels::adapter::ChannelAdapter;
 use crate::config::SentenceExpressionLlmPolicySection;
 use crate::event::{EventBus, ServerEvent};
 use crate::expression::orchestrator::{
@@ -27,8 +27,8 @@ use crate::expression::{
     ExpressionConstraints, ExpressionConversationContext, ExpressionDeviceContext, ExpressionInput,
     ExpressionPlan, ExpressionSafetyContext, ExpressionUserState, SpeechExpression,
 };
+use crate::modules::delivery::audio::{MAX_PCM_PAYLOAD_BYTES, ResponseAudioBudget};
 use crate::modules::memory::MemoryContextPack;
-use crate::providers::tts::audio_budget::{MAX_PCM_PAYLOAD_BYTES, ResponseAudioBudget};
 use crate::{
     modules::interaction::conversation::{ConversationEventEntry, ConversationStore},
     providers::adapter::{ChatMessage, LlmAdapter, TtsAdapter, TtsCapabilities, TtsRequest},
@@ -126,7 +126,7 @@ impl SentenceSpeechContext {
 pub(super) async fn deliver_tts_audio(
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     text: &str,
@@ -162,7 +162,7 @@ pub(super) async fn deliver_tts_audio(
 
 pub(super) async fn prepare_audio_budget(
     modules: &InteractionServices,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     turn: Option<&VoiceTurn>,
 ) -> anyhow::Result<ResponseAudioBudget> {
@@ -181,7 +181,7 @@ pub(super) async fn prepare_audio_budget(
 pub(super) async fn deliver_tts_audio_inner(
     modules: &InteractionServices,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     text: &str,
@@ -242,7 +242,7 @@ pub(super) async fn deliver_tts_audio_inner(
             speech.cloned()
         };
 
-    if channel.capabilities().audio_streaming {
+    if channel.audio_streaming() {
         debug_component_text(
             debug_output,
             "tts",
@@ -442,7 +442,7 @@ async fn trace_tts_provider_adjustments(
 async fn execute_speech_start_expression(
     orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     plan: Option<&ExpressionPlan>,
     debug_output: bool,
     channel_id: &str,
@@ -483,7 +483,7 @@ pub(super) async fn stream_llm_response_with_sentence_tts(
     modules: &InteractionServices,
     llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     event_bus: &EventBus,
@@ -1371,7 +1371,7 @@ pub(super) async fn stream_llm_response(
     modules: &InteractionServices,
     llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     event_bus: &EventBus,
@@ -1409,7 +1409,7 @@ async fn stream_generated_text(
     modules: &InteractionServices,
     llm: &dyn LlmAdapter,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     channel_id: &str,
     user_id: &str,
     event_bus: &EventBus,

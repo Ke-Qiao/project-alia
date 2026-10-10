@@ -2,7 +2,10 @@
 //! media deliveries. Control work never waits in the media admission queue.
 mod gate;
 use super::*;
-use crate::modules::delivery::repository::control::{ControlAdmission, OutputControlStatus};
+use crate::modules::delivery::{
+    audio::ResponseAudioBudget,
+    repository::control::{ControlAdmission, OutputControlStatus},
+};
 use alia_core::{
     delivery::VoiceScope,
     output_control::{
@@ -61,7 +64,7 @@ struct Inner {
     request_id: Uuid,
     owner: Uuid,
     scope: VoiceScope,
-    channel: Arc<dyn ChannelAdapter>,
+    channel: Arc<dyn DeliveryTransport>,
     cancel: CancellationToken,
     gate: StdMutex<Gate>,
     changed: watch::Sender<u64>,
@@ -71,7 +74,7 @@ struct Inner {
     initiative: std::sync::OnceLock<InitiativeConstraint>,
     // Keep the original budget identity alive across sentence gaps and native
     // tails, even when no encoded buffer happens to be retained at that instant.
-    audio_budget: std::sync::OnceLock<crate::providers::tts::audio_budget::ResponseAudioBudget>,
+    audio_budget: std::sync::OnceLock<ResponseAudioBudget>,
     sender: mpsc::Sender<Work>,
 }
 
@@ -111,7 +114,7 @@ impl OutputProducer {
     pub fn owner(&self) -> Uuid {
         self.output.0.owner
     }
-    pub fn channel(&self) -> Arc<dyn ChannelAdapter> {
+    pub fn channel(&self) -> Arc<dyn DeliveryTransport> {
         self.output.0.channel.clone()
     }
     pub async fn wait_open(&self) -> anyhow::Result<()> {
@@ -415,7 +418,7 @@ impl DeliveryService {
         owner: Uuid,
         request_id: Uuid,
         scope: VoiceScope,
-        channel: Arc<dyn ChannelAdapter>,
+        channel: Arc<dyn DeliveryTransport>,
         cancel: CancellationToken,
         hold_budget: Option<Duration>,
     ) -> anyhow::Result<Arc<OutputProducer>> {
@@ -765,11 +768,7 @@ impl DeliveryService {
         output
             .0
             .audio_budget
-            .set(
-                crate::providers::tts::audio_budget::ResponseAudioBudget::for_response(
-                    response.response_id,
-                )?,
-            )
+            .set(ResponseAudioBudget::for_response(response.response_id)?)
             .map_err(|_| anyhow::anyhow!("original audio budget already bound"))?;
         let durable = self
             .repository

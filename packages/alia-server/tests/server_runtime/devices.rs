@@ -19,15 +19,19 @@ impl ModuleLifecycle for DeviceChannel {
     }
 }
 #[async_trait]
-impl ChannelAdapter for DeviceChannel {
-    fn channel_type(&self) -> &'static str {
-        "embedded"
-    }
+impl alia_server::modules::delivery::transport::DeliveryTransport for DeviceChannel {
     fn channel_id(&self) -> &str {
         self.id
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         self.owner
+    }
+}
+
+#[async_trait::async_trait]
+impl ChannelAdapter for DeviceChannel {
+    fn channel_type(&self) -> &'static str {
+        "embedded"
     }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities::default()

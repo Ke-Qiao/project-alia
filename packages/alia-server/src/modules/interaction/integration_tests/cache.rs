@@ -337,7 +337,7 @@ async fn cancelled_cache_lookup_preserves_user_source_and_terminal_audit() {
             turn.source_relationship_epoch = Some(0);
             let owner = Uuid::from_u128(42);
             let user = owner.to_string();
-            let target = ChannelTarget {
+            let target = DeliveryTarget {
                 user_id: user.clone(),
                 voice: None,
             };

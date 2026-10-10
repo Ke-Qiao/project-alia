@@ -119,15 +119,15 @@ impl TtsAdapter for NoopTts {
     async fn synthesize_request(
         &self,
         _: &crate::providers::adapter::TtsRequest,
-        budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+        budget: crate::modules::delivery::audio::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::modules::delivery::audio::EncodedAudio> {
         budget.copy_from_slice(&[]).await
     }
     async fn synthesize_stream_request(
         &self,
         _: &crate::providers::adapter::TtsRequest,
-        _budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-    ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+        _budget: crate::modules::delivery::audio::ResponseAudioBudget,
+    ) -> anyhow::Result<crate::providers::adapter::TtsAudioStream> {
         Ok(Box::pin(stream::empty()))
     }
 }

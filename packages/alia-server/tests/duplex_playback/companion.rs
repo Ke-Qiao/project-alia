@@ -13,13 +13,11 @@ use alia_server::{
     grpc::{voice_auth::VoiceIngressAuth, voice_session::VoiceSessionService},
     modules::{
         companion::types::{CompanionMode, CompanionPolicy},
+        delivery::audio::EncodedAudio,
         interaction::turn_detector::{DetectionError, TurnDetector},
         memory::{context::ContextSource, source::capture_source_epochs},
     },
-    providers::{
-        adapter::{TtsAdapter, TtsRequest},
-        tts::audio_budget::{EncodedAudio, TtsAudioStream},
-    },
+    providers::adapter::{TtsAdapter, TtsAudioStream, TtsRequest},
 };
 use sea_orm::{DatabaseBackend, Statement};
 use tokio::sync::{mpsc, oneshot};

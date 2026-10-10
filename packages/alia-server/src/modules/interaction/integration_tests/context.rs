@@ -17,7 +17,7 @@ async fn generate(fixture: &Fixture, turn: &VoiceTurn, text: &str) -> anyhow::Re
         &user,
         &fixture.modules,
         fixture.output.as_ref(),
-        &ChannelTarget {
+        &DeliveryTarget {
             user_id: user.clone(),
             voice: None,
         },

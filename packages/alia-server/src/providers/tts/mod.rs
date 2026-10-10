@@ -4,8 +4,6 @@
 //! - `GptSovitsTts`: GPT-SoVITS server for high-quality voice synthesis
 //! - `NoopTts`: No-op placeholder (re-exported from llm module)
 
-pub mod audio_budget;
-
 #[cfg(feature = "tts-sovits")]
 pub mod gpt_sovits;
 

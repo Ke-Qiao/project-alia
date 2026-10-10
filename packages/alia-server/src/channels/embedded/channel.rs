@@ -1,3 +1,5 @@
+use crate::modules::delivery::transport::DeliveryTransport as _;
+use crate::modules::delivery::transport::{AudioPayloadStream, DeliveryTarget};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -43,9 +45,7 @@ use super::sensor::{
     embedded_sensor_source, ingest_embedded_sensor_reading, mirror_embedded_sensor_definitions,
 };
 use super::settings::{required_action_str, set_volume_request_from_json, volume_settings_to_json};
-use crate::channels::adapter::{
-    AudioPayloadStream, ChannelAction, ChannelAdapter, ChannelCapabilities, ChannelTarget,
-};
+use crate::channels::adapter::{ChannelAction, ChannelAdapter, ChannelCapabilities};
 
 const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 
@@ -955,10 +955,14 @@ impl ModuleLifecycle for EmbeddedChannel {
 }
 
 #[async_trait]
-impl ChannelAdapter for EmbeddedChannel {
+impl crate::modules::delivery::transport::DeliveryTransport for EmbeddedChannel {
+    fn audio_streaming(&self) -> bool {
+        true
+    }
+
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: uuid::Uuid,
     ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
         let scope = target
@@ -975,12 +979,12 @@ impl ChannelAdapter for EmbeddedChannel {
 
     async fn deliver_audio(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         identity: alia_core::delivery::PlaybackIdentity,
         audio: AudioPayloadStream,
-        observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
+        observer: Arc<dyn crate::modules::delivery::transport::PlaybackObserver>,
         cancel: CancellationToken,
-    ) -> anyhow::Result<crate::channels::adapter::AudioDeliveryReport> {
+    ) -> anyhow::Result<crate::modules::delivery::transport::AudioDeliveryReport> {
         anyhow::ensure!(
             target.voice == Some(identity.scope),
             "delivery target differs from reserved playback scope"
@@ -1019,52 +1023,13 @@ impl ChannelAdapter for EmbeddedChannel {
         )
         .await
     }
-    async fn authenticated_source_epochs(
-        &self,
-    ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
-        let db = self
-            .account_database
-            .as_ref()
-            .context("channel account database unavailable")?;
-        let owner = self
-            .owner_user_id()
-            .context("channel owner is not configured")?;
-        crate::modules::memory::source::capture_source_epochs(db, owner).await
-    }
-
-    async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
-        crate::modules::platform::identity::require_active_owner(
-            self.account_database.as_ref(),
-            self.owner_user_id(),
-        )
-        .await
-    }
 
     fn owner_user_id(&self) -> Option<uuid::Uuid> {
         self.config.owner_user_id.filter(|id| !id.is_nil())
     }
 
-    fn channel_type(&self) -> &'static str {
-        "embedded"
-    }
-
     fn channel_id(&self) -> &str {
         &self.config.id
-    }
-
-    fn capabilities(&self) -> ChannelCapabilities {
-        ChannelCapabilities {
-            text: false,
-            voice_input: true,
-            voice_output: true,
-            images: false,
-            rich_messages: false,
-            streaming: true,
-            audio_streaming: true,
-            sensors: true,
-            hardware_control: true,
-            presence: true,
-        }
     }
 
     async fn retire_voice_output(
@@ -1103,36 +1068,6 @@ impl ChannelAdapter for EmbeddedChannel {
         Ok(alia_proto::output_control::decode_retirement_receipt(
             &receipt, request,
         )?)
-    }
-
-    async fn fence_voice(
-        &self,
-        scope: alia_core::delivery::VoiceScope,
-        close_session: bool,
-        reason: &str,
-    ) -> anyhow::Result<()> {
-        // Stop local admission before attempting the remote barrier; an unknown
-        // ACK must never permit a new Start on an obsolete binding.
-        self.output_bindings
-            .lock()
-            .unwrap()
-            .retain(|registered, _| {
-                registered.device_boot_id != scope.device_boot_id
-                    || registered.session_id != scope.session_id
-                    || (!close_session && registered.generation_epoch >= scope.generation_epoch)
-            });
-        let mut client = self.playback_client().await?;
-        let receipt = client
-            .fence(self.auth_request(alia_proto::playback::FenceRequest {
-                playback_id: None,
-                playback_sequence: None,
-                scope: Some(super::playback::encode_scope(scope)),
-                reason: reason.into(),
-                close_session,
-            })?)
-            .await?
-            .into_inner();
-        super::playback::validate_fence_receipt(scope, close_session, &receipt)
     }
 
     async fn register_output(
@@ -1245,6 +1180,78 @@ impl ChannelAdapter for EmbeddedChannel {
         Ok(alia_proto::output_control::decode_control_receipt(
             &receipt, command,
         )?)
+    }
+}
+
+#[async_trait::async_trait]
+impl ChannelAdapter for EmbeddedChannel {
+    async fn authenticated_source_epochs(
+        &self,
+    ) -> anyhow::Result<crate::modules::memory::source::SourceEpochs> {
+        let db = self
+            .account_database
+            .as_ref()
+            .context("channel account database unavailable")?;
+        let owner = self
+            .owner_user_id()
+            .context("channel owner is not configured")?;
+        crate::modules::memory::source::capture_source_epochs(db, owner).await
+    }
+
+    async fn authenticated_owner(&self) -> anyhow::Result<uuid::Uuid> {
+        crate::modules::platform::identity::require_active_owner(
+            self.account_database.as_ref(),
+            self.owner_user_id(),
+        )
+        .await
+    }
+
+    fn channel_type(&self) -> &'static str {
+        "embedded"
+    }
+
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            text: false,
+            voice_input: true,
+            voice_output: true,
+            images: false,
+            rich_messages: false,
+            streaming: true,
+            sensors: true,
+            hardware_control: true,
+            presence: true,
+        }
+    }
+
+    async fn fence_voice(
+        &self,
+        scope: alia_core::delivery::VoiceScope,
+        close_session: bool,
+        reason: &str,
+    ) -> anyhow::Result<()> {
+        // Stop local admission before attempting the remote barrier; an unknown
+        // ACK must never permit a new Start on an obsolete binding.
+        self.output_bindings
+            .lock()
+            .unwrap()
+            .retain(|registered, _| {
+                registered.device_boot_id != scope.device_boot_id
+                    || registered.session_id != scope.session_id
+                    || (!close_session && registered.generation_epoch >= scope.generation_epoch)
+            });
+        let mut client = self.playback_client().await?;
+        let receipt = client
+            .fence(self.auth_request(alia_proto::playback::FenceRequest {
+                playback_id: None,
+                playback_sequence: None,
+                scope: Some(super::playback::encode_scope(scope)),
+                reason: reason.into(),
+                close_session,
+            })?)
+            .await?
+            .into_inner();
+        super::playback::validate_fence_receipt(scope, close_session, &receipt)
     }
 
     async fn execute_action(&self, action: ChannelAction) -> anyhow::Result<serde_json::Value> {

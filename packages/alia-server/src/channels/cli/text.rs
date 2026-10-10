@@ -346,10 +346,10 @@ impl CliChannel {
     pub(super) async fn deliver_owned_text(
         &self,
         identity: TextIdentity,
-        mut input: super::super::adapter::TextPayloadStream,
-        observer: Arc<dyn super::super::adapter::TextObserver>,
+        mut input: crate::modules::delivery::transport::TextPayloadStream,
+        observer: Arc<dyn crate::modules::delivery::transport::TextObserver>,
         cancel: CancellationToken,
-    ) -> anyhow::Result<super::super::adapter::TextDeliveryReport> {
+    ) -> anyhow::Result<crate::modules::delivery::transport::TextDeliveryReport> {
         ensure!(
             identity.channel_instance_id == self.instance_id,
             "text belongs to another CLI instance"
@@ -404,7 +404,7 @@ impl CliChannel {
             .observation_end
             .clone()
             .context("CLI text ended without terminal checkpoint")?;
-        Ok(super::super::adapter::TextDeliveryReport {
+        Ok(crate::modules::delivery::transport::TextDeliveryReport {
             progress: Some(progress),
             observation_end,
         })
@@ -416,7 +416,7 @@ use futures::StreamExt;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::channels::adapter::{ChannelAdapter, TextObserver, TextPayloadStream};
+    use crate::modules::delivery::transport::{DeliveryTransport, TextObserver, TextPayloadStream};
     use alia_core::text_delivery::TextWriteBoundary;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -520,8 +520,8 @@ mod tests {
             channel_instance_id: channel.instance_id,
         }
     }
-    fn target() -> ChannelTarget {
-        ChannelTarget {
+    fn target() -> DeliveryTarget {
+        DeliveryTarget {
             voice: None,
             user_id: uuid::Uuid::new_v4().to_string(),
         }

@@ -1,4 +1,4 @@
-//! Encoded media ownership, independent of PCM decoder and transport buffers.
+//! Shared encoded media ownership across producers, Delivery, and transports.
 //! A reservation precedes application body copying. Bytes owns the reservation
 //! so clones, slices and HTTP response bodies cannot release it prematurely.
 use anyhow::{Result, ensure};
@@ -15,7 +15,6 @@ use uuid::Uuid;
 pub const MAX_ENCODED_PAYLOAD_BYTES: usize = 1024 * 1024;
 pub const MAX_RESPONSE_ENCODED_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_GLOBAL_ENCODED_BYTES: usize = 256 * 1024 * 1024;
-pub const MAX_TTS_STREAM_BYTES: usize = MAX_RESPONSE_ENCODED_BYTES;
 pub const MAX_PCM_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
 const MAX_BUDGET_OWNERS: usize = 4096;
 
@@ -257,9 +256,6 @@ impl Serialize for AudioBuffer {
     }
 }
 
-pub type TtsAudioStream =
-    std::pin::Pin<Box<dyn futures::Stream<Item = Result<EncodedAudio>> + Send + 'static>>;
-
 #[cfg(test)]
-#[path = "audio_budget_tests.rs"]
+#[path = "audio_tests.rs"]
 mod tests;

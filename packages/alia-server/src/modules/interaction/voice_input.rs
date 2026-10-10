@@ -1,6 +1,10 @@
 //! Bounded application entrance for recognized speech. This is intentionally
 //! separate from the lossy broadcast bus used for observations and UI updates.
 
+use std::sync::Arc;
+
+use crate::channels::adapter::ChannelAdapter;
+use crate::modules::delivery::OutputProducer;
 use chrono::{DateTime, Utc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -10,7 +14,7 @@ use uuid::Uuid;
 pub struct RecognizedVoiceInput {
     /// Fixed before entering the bounded pipeline queue.
     pub request_id: Uuid,
-    pub output: Option<std::sync::Arc<crate::modules::delivery::OutputProducer>>,
+    pub output: Option<RecognizedVoiceOutput>,
     pub channel_id: String,
     pub user_id: String,
     pub transcript: String,
@@ -23,6 +27,22 @@ pub struct RecognizedVoiceInput {
     pub device_boot_id: Uuid,
     pub generation_epoch: u64,
     pub cancel: CancellationToken,
+}
+
+/// The recognized turn keeps its original channel for expression and capability
+/// policy; Delivery retains only the same instance's output transport.
+pub struct RecognizedVoiceOutput {
+    pub producer: Arc<OutputProducer>,
+    pub channel: Arc<dyn ChannelAdapter>,
+}
+
+impl std::fmt::Debug for RecognizedVoiceOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecognizedVoiceOutput")
+            .field("producer", &self.producer)
+            .field("channel_id", &self.channel.channel_id())
+            .finish()
+    }
 }
 
 #[derive(Clone)]

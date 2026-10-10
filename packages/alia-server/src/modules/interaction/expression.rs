@@ -5,7 +5,7 @@ use super::streaming::SentenceSpeechContext;
 use super::trace::AgentTrace;
 use super::turn::{VoiceTurn, cancellable_stage};
 use super::{dialogue_policy, turn};
-use crate::channels::adapter::{ChannelAdapter, ChannelTarget};
+use crate::channels::adapter::ChannelAdapter;
 use crate::expression::orchestrator::{
     ExpressionExecutionPhase, execute_expression_plan_phase_with_response,
     negotiate_expression_capabilities,
@@ -14,6 +14,7 @@ use crate::expression::{
     ExpressionDeviceContext, ExpressionInput, ExpressionPlan, ExpressionSafetyContext,
     ExpressionUserState,
 };
+use crate::modules::delivery::transport::DeliveryTarget;
 
 pub(super) struct PlannedExpression {
     pub(super) plan: ExpressionPlan,
@@ -247,7 +248,7 @@ pub(super) fn expression_safety_context(
 pub(super) async fn execute_expression_and_trace(
     orchestrator: &crate::expression::orchestrator::ExpressionOrchestrator,
     channel: &dyn ChannelAdapter,
-    target: &ChannelTarget,
+    target: &DeliveryTarget,
     plan: &ExpressionPlan,
     phase: Option<ExpressionExecutionPhase>,
     debug_output: bool,

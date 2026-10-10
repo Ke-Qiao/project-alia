@@ -27,13 +27,16 @@ impl ModuleLifecycle for TestChannel {
 }
 
 #[async_trait]
+impl alia_server::modules::delivery::transport::DeliveryTransport for TestChannel {
+    fn channel_id(&self) -> &str {
+        &self.id
+    }
+}
+
+#[async_trait::async_trait]
 impl ChannelAdapter for TestChannel {
     fn channel_type(&self) -> &'static str {
         self.channel_type
-    }
-
-    fn channel_id(&self) -> &str {
-        &self.id
     }
 
     fn capabilities(&self) -> ChannelCapabilities {

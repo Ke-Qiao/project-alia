@@ -1,11 +1,8 @@
 mod delivery_support;
 use alia_core::{delivery::ObservationEnd, text_delivery::*};
 use alia_server::{
-    channels::adapter::*,
-    modules::{
-        delivery::{DeliveryService, TextDelivery, types::*},
-        platform::lifecycle::ModuleLifecycle,
-    },
+    modules::delivery::transport::*,
+    modules::delivery::{DeliveryService, TextDelivery, types::*},
 };
 use async_trait::async_trait;
 use delivery_support::*;
@@ -56,30 +53,17 @@ impl Channel {
         })
     }
 }
-impl ModuleLifecycle for Channel {
-    fn name(&self) -> &'static str {
-        "owned-text-test"
-    }
-}
+
 #[async_trait]
-impl ChannelAdapter for Channel {
-    fn channel_type(&self) -> &'static str {
-        "test"
-    }
+impl alia_server::modules::delivery::transport::DeliveryTransport for Channel {
     fn channel_id(&self) -> &str {
         "test-device"
     }
     fn owner_user_id(&self) -> Option<Uuid> {
         Some(self.owner)
     }
-    fn capabilities(&self) -> ChannelCapabilities {
-        ChannelCapabilities {
-            text: true,
-            ..Default::default()
-        }
-    }
 
-    fn reserve_text(&self, _: &ChannelTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
+    fn reserve_text(&self, _: &DeliveryTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
         Ok(TextIdentity {
             text_id,
             channel_instance_id: self.instance,
@@ -87,7 +71,7 @@ impl ChannelAdapter for Channel {
     }
     async fn deliver_text(
         &self,
-        _: &ChannelTarget,
+        _: &DeliveryTarget,
         identity: TextIdentity,
         mut input: TextPayloadStream,
         observer: Arc<dyn TextObserver>,
@@ -223,6 +207,7 @@ impl ChannelAdapter for Channel {
         Ok(p.clone())
     }
 }
+
 fn input(response_id: Uuid, channel: Arc<Channel>, end: bool) -> TextDelivery {
     let mut frames = vec![Ok(TextFrame::Chunk(TextChunk {
         sequence: 0,
@@ -239,7 +224,7 @@ fn input(response_id: Uuid, channel: Arc<Channel>, end: bool) -> TextDelivery {
         response_id,
         output_key: "text:response".into(),
         content: json!({"representation":"plain_utf8"}),
-        target: ChannelTarget {
+        target: DeliveryTarget {
             user_id: channel.owner.to_string(),
             voice: None,
         },

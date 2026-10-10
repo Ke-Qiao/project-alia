@@ -9,12 +9,14 @@ use super::runtime::{process_event, spawn_interaction};
 use super::services::InteractionServices;
 use super::streaming::tts_bytes_to_pcm_payload;
 use super::turn::{VoiceSessionScope, VoiceTurn, VoiceTurnRegistry};
-use super::voice_input::RecognizedVoiceInput;
+use super::voice_input::{RecognizedVoiceInput, RecognizedVoiceOutput};
 use super::{delivery, error_notice, supervision, tools, voice};
 use crate::channels::ChannelRegistry;
-use crate::channels::adapter::AudioPayload;
-use crate::channels::adapter::{ChannelAdapter, ChannelEvent, ChannelTarget};
+use crate::channels::adapter::{ChannelAdapter, ChannelEvent};
 use crate::event::EventBus;
+use crate::modules::delivery::transport::AudioPayload;
+use crate::modules::delivery::transport::DeliveryTarget;
+use crate::modules::delivery::transport::DeliveryTransport as _;
 use crate::modules::interaction::conversation::ConversationStore;
 use crate::modules::memory::context::ContextBinding;
 use crate::modules::platform::lifecycle::ModuleLifecycle;
@@ -244,10 +246,11 @@ impl ModuleLifecycle for OutputChannel {
     }
 }
 #[async_trait]
-impl ChannelAdapter for OutputChannel {
-    fn channel_type(&self) -> &'static str {
-        "test"
+impl crate::modules::delivery::transport::DeliveryTransport for OutputChannel {
+    fn audio_streaming(&self) -> bool {
+        self.streaming
     }
+
     fn channel_id(&self) -> &str {
         if self.id.is_empty() { "test" } else { &self.id }
     }
@@ -338,7 +341,7 @@ impl ChannelAdapter for OutputChannel {
     }
     fn reserve_playback(
         &self,
-        target: &ChannelTarget,
+        target: &DeliveryTarget,
         playback_id: Uuid,
     ) -> anyhow::Result<alia_core::delivery::PlaybackIdentity> {
         Ok(alia_core::delivery::PlaybackIdentity {
@@ -351,12 +354,12 @@ impl ChannelAdapter for OutputChannel {
     }
     async fn deliver_audio(
         &self,
-        _: &ChannelTarget,
+        _: &DeliveryTarget,
         identity: alia_core::delivery::PlaybackIdentity,
-        mut audio: crate::channels::adapter::AudioPayloadStream,
-        observer: Arc<dyn crate::channels::adapter::PlaybackObserver>,
+        mut audio: crate::modules::delivery::transport::AudioPayloadStream,
+        observer: Arc<dyn crate::modules::delivery::transport::PlaybackObserver>,
         _: CancellationToken,
-    ) -> anyhow::Result<crate::channels::adapter::AudioDeliveryReport> {
+    ) -> anyhow::Result<crate::modules::delivery::transport::AudioDeliveryReport> {
         use futures::StreamExt;
         observer.start(24000, 1).await?;
         let mut frames = 0u64;
@@ -383,21 +386,12 @@ impl ChannelAdapter for OutputChannel {
             observation_end: Some(alia_core::delivery::ObservationEnd::SubmissionFinished),
         };
         observer.progress(progress.clone()).await?;
-        Ok(crate::channels::adapter::AudioDeliveryReport {
+        Ok(crate::modules::delivery::transport::AudioDeliveryReport {
             progress: Some(progress),
             observation_end: alia_core::delivery::ObservationEnd::SubmissionFinished,
         })
     }
-    fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
-        crate::channels::adapter::ChannelCapabilities {
-            text: true,
-            streaming: self.streaming,
-            audio_streaming: self.streaming,
-            voice_output: true,
-            ..Default::default()
-        }
-    }
-    fn reserve_text(&self, _: &ChannelTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
+    fn reserve_text(&self, _: &DeliveryTarget, text_id: Uuid) -> anyhow::Result<TextIdentity> {
         let identity = TextIdentity {
             text_id,
             channel_instance_id: *self.text_instance.get_or_init(Uuid::new_v4),
@@ -421,12 +415,12 @@ impl ChannelAdapter for OutputChannel {
     }
     async fn deliver_text(
         &self,
-        _: &ChannelTarget,
+        _: &DeliveryTarget,
         identity: TextIdentity,
-        mut text: crate::channels::adapter::TextPayloadStream,
-        observer: Arc<dyn crate::channels::adapter::TextObserver>,
+        mut text: crate::modules::delivery::transport::TextPayloadStream,
+        observer: Arc<dyn crate::modules::delivery::transport::TextObserver>,
         cancel: CancellationToken,
-    ) -> anyhow::Result<crate::channels::adapter::TextDeliveryReport> {
+    ) -> anyhow::Result<crate::modules::delivery::transport::TextDeliveryReport> {
         use futures::StreamExt;
         observer.start().await?;
         let mut buffered = String::new();
@@ -489,7 +483,7 @@ impl ChannelAdapter for OutputChannel {
             },
         )?;
         observer.progress(progress.clone()).await?;
-        Ok(crate::channels::adapter::TextDeliveryReport {
+        Ok(crate::modules::delivery::transport::TextDeliveryReport {
             observation_end: progress.observation_end.clone().unwrap(),
             progress: Some(progress),
         })
@@ -505,6 +499,21 @@ impl ChannelAdapter for OutputChannel {
                 reason: reason.into(),
             },
         )
+    }
+}
+
+#[async_trait::async_trait]
+impl ChannelAdapter for OutputChannel {
+    fn channel_type(&self) -> &'static str {
+        "test"
+    }
+    fn capabilities(&self) -> crate::channels::adapter::ChannelCapabilities {
+        crate::channels::adapter::ChannelCapabilities {
+            text: true,
+            streaming: self.streaming,
+            voice_output: true,
+            ..Default::default()
+        }
     }
 }
 pub(super) struct Fixture {
@@ -612,23 +621,22 @@ fn attach_output(
     channel: Arc<dyn ChannelAdapter>,
     input: &mut RecognizedVoiceInput,
 ) {
-    input.output = Some(
-        modules
-            .delivery
-            .begin_voice_output(
-                input.user_id.parse().unwrap(),
-                input.request_id,
-                VoiceSessionScope {
-                    session_id: input.session_id,
-                    device_boot_id: input.device_boot_id,
-                    generation_epoch: input.generation_epoch,
-                },
-                channel,
-                input.cancel.clone(),
-                None,
-            )
-            .unwrap(),
-    );
+    let producer = modules
+        .delivery
+        .begin_voice_output(
+            input.user_id.parse().unwrap(),
+            input.request_id,
+            VoiceSessionScope {
+                session_id: input.session_id,
+                device_boot_id: input.device_boot_id,
+                generation_epoch: input.generation_epoch,
+            },
+            channel.clone(),
+            input.cancel.clone(),
+            None,
+        )
+        .unwrap();
+    input.output = Some(RecognizedVoiceOutput { producer, channel });
 }
 
 #[tokio::test]
@@ -644,15 +652,15 @@ async fn prepared_voice_error_before_register_ack_keeps_original_context_and_res
         async fn synthesize_request(
             &self,
             _: &crate::providers::adapter::TtsRequest,
-            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            _: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::modules::delivery::audio::EncodedAudio> {
             panic!("prepared voice error started a replacement TTS request");
         }
         async fn synthesize_stream_request(
             &self,
             _: &crate::providers::adapter::TtsRequest,
-            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            _: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::adapter::TtsAudioStream> {
             panic!("prepared voice error started a replacement TTS stream");
         }
     }
@@ -706,7 +714,7 @@ async fn prepared_voice_error_before_register_ack_keeps_original_context_and_res
         // cancellation becomes visible. An ACK failure and error notification
         // may race with that cancellation on a multithreaded executor.
         let error = anyhow::anyhow!("injected registration acknowledgement failure");
-        let target = ChannelTarget { user_id: user.clone(), voice: Some(scope) };
+        let target = DeliveryTarget { user_id: user.clone(), voice: Some(scope) };
         let (prepared, notified) = tokio::join!(prepare.as_mut(), notify_interaction_error(
             &fixture.modules, channel.as_ref(), &target, "test", &user,
             InteractionErrorStage::Delivery, Some("Read this answer"), Some(&error),
@@ -830,7 +838,7 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
         &user,
         &fixture.modules,
         fixture.output.as_ref(),
-        &ChannelTarget {
+        &DeliveryTarget {
             user_id: user.clone(),
             voice: None,
         },
@@ -858,11 +866,50 @@ async fn failed_user_source_prevents_model_and_tool_processing() {
     assert!(fixture.output.texts.lock().unwrap().is_empty());
 }
 #[tokio::test]
-async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
+async fn recognized_speech_keeps_original_channel_and_rejects_same_name_replacement() {
     with_linked_fixture(|mut fixture| async move {
+        let mut forged = input("same name cannot replace the original adapter");
         let mut input = input("Keep this exact recognized transcript.");
         input.user_id = Uuid::from_u128(42).to_string();
         attach_output(&fixture.modules, fixture.output.clone(), &mut input);
+        let replacement = Arc::new(OutputChannel {
+            owner: fixture.output.owner,
+            ..Default::default()
+        });
+        assert_eq!(replacement.channel_id(), fixture.output.channel_id());
+        forged.request_id = input.request_id;
+        forged.user_id = input.user_id.clone();
+        forged.session_id = input.session_id;
+        forged.device_boot_id = input.device_boot_id;
+        forged.generation_epoch = input.generation_epoch;
+        forged.output = Some(RecognizedVoiceOutput {
+            producer: input.output.as_ref().unwrap().producer.clone(),
+            channel: replacement.clone(),
+        });
+        let error = voice::process_recognized_voice(
+            forged,
+            &fixture.modules,
+            &fixture.channels,
+            &EventBus::new(8),
+            &VoiceTurnRegistry::default(),
+            false,
+            &fixture.policy,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("original output owner"));
+        assert!(fixture.started.try_recv().is_err());
+        assert!(fixture.conversation.persisted_history().await.is_empty());
+        assert!(fixture.output.texts.lock().unwrap().is_empty());
+        assert!(fixture.output.audio.lock().unwrap().is_empty());
+        assert!(replacement.texts.lock().unwrap().is_empty());
+        assert!(replacement.audio.lock().unwrap().is_empty());
+        fixture.channels.unregister("test").await.unwrap();
+        fixture
+            .channels
+            .register(replacement.clone())
+            .await
+            .unwrap();
         let session_id = input.session_id;
         let source_received_at = input.source_received_at;
         voice::process_recognized_voice(
@@ -885,6 +932,8 @@ async fn recognized_speech_reaches_llm_and_shared_text_tts_without_stt() {
             &["recognized reply"]
         );
         assert_eq!(fixture.output.audio.lock().unwrap().len(), 1);
+        assert!(replacement.texts.lock().unwrap().is_empty());
+        assert!(replacement.audio.lock().unwrap().is_empty());
         assert_eq!(
             fixture.conversation.source_times.lock().unwrap().as_slice(),
             &[source_received_at],
@@ -1208,11 +1257,10 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
         async fn synthesize_request(
             &self,
             request: &crate::providers::adapter::TtsRequest,
-            budget: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::EncodedAudio> {
+            budget: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::modules::delivery::audio::EncodedAudio> {
             use sea_orm::ConnectionTrait;
-            let crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id) =
-                budget.owner()
+            let crate::modules::delivery::audio::AudioBudgetOwner::Response(id) = budget.owner()
             else {
                 panic!("sentence TTS must use its real Response budget");
             };
@@ -1247,8 +1295,8 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
         async fn synthesize_stream_request(
             &self,
             _: &crate::providers::adapter::TtsRequest,
-            _: crate::providers::tts::audio_budget::ResponseAudioBudget,
-        ) -> anyhow::Result<crate::providers::tts::audio_budget::TtsAudioStream> {
+            _: crate::modules::delivery::audio::ResponseAudioBudget,
+        ) -> anyhow::Result<crate::providers::adapter::TtsAudioStream> {
             unreachable!("fixture expects buffered synthesis")
         }
     }
@@ -1283,8 +1331,8 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
         let mut recognized = input("Read two sentences.");
         recognized.user_id = Uuid::from_u128(42).to_string();
         attach_output(&fixture.modules, output.clone(), &mut recognized);
-        let control = recognized.output.as_ref().unwrap().output();
-        let scope = recognized.output.as_ref().unwrap().scope();
+        let control = recognized.output.as_ref().unwrap().producer.output();
+        let scope = recognized.output.as_ref().unwrap().producer.scope();
         let modules = fixture.modules.clone();
         let policy = fixture.policy.clone();
         let task = tokio::spawn(async move {
@@ -1356,7 +1404,7 @@ async fn run_sentence_budget_case(fail_tts: bool, pause_first_request: bool) {
         let id: Uuid = row.try_get("", "response_id").unwrap();
         assert_eq!(*speech.owners.lock().unwrap(), [id, id]);
         assert!(output.audio.lock().unwrap().iter().filter(|payload| payload.data.owner().is_some())
-            .all(|payload| payload.data.owner() == Some(crate::providers::tts::audio_budget::AudioBudgetOwner::Response(id))));
+            .all(|payload| payload.data.owner() == Some(crate::modules::delivery::audio::AudioBudgetOwner::Response(id))));
         let records = fixture
             .modules
             .delivery
