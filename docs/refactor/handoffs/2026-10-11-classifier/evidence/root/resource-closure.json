@@ -1,0 +1,27 @@
+{
+  "recorded_at": "2026-10-10T18:35:47.254449+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-classifier-linux-20261011-v2": {
+      "id": "f5c1b984dc3e9bdf156a8ee2deec471f2c7ca9b18370c1f3cbeac4ff163e26f4",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T18:35:46.152266971Z"
+    },
+    "alia-classifier-20261011-db": {
+      "id": "f9cd39494560f7a48b4dea7a1c4cd63f4b5e0232c35493eb3960e8d41fa571a6",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-10T18:35:47.140481723Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

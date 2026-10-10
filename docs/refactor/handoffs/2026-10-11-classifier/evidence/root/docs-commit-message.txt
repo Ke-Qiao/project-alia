@@ -1,0 +1,5 @@
+docs(refactor): close classifier catalog checklist and checkpoint
+
+Record the frozen source, macOS/Linux validation, three-agent handoffs,
+resource closure and exact evidence hashes. Preserve the static V1 review
+and define the next bounded health aggregation audit.

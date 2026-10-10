@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "run/validation-20261011-classifier/static-checks.py"
+  ],
+  "started_at": "2026-10-10T18:25:29.604669+00:00",
+  "finished_at": "2026-10-10T18:25:30.494512+00:00",
+  "elapsed_seconds": 0.89,
+  "exit_code": 0,
+  "source_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

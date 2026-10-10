@@ -1,5 +1,7 @@
 # 当前检查点：2026-10-11 Skills HTTP 索引清理完成
 
+后续更新：静态 classifier 与运行目录衔接已完成，最新恢复从 [Classifier 检查点](resume-checkpoint-classifier-2026-10-11.md) 开始；下文保留 Skills 轮当时的状态。
+
 分支 `codex/architecture-refactor`；本轮 **10/10**，L09—L12 **4/4**，R01—R06 仍 **2/6**，不是整个项目完成百分比。三个 subagent 已交接，任务容器/数据库全部停止，无待恢复 Cargo/PG 作业。
 
 依次读取 [技术说明](skills-2026-10-11.md)、[checklist](checklists/skills-2026-10-11.md)、[四份 HANDOFF](handoffs/2026-10-11-skills/README.md) 和 [证据索引](handoffs/2026-10-11-skills/evidence-index.json)，核对 Git 状态后继续。

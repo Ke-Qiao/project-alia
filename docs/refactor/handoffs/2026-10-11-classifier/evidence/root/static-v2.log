@@ -1,0 +1,8 @@
+RUN ['python3', 'scripts/check-server-boundaries.py', '--self-test']
+Server boundary checker self-test passed
+RUN ['python3', 'scripts/check-server-boundaries.py']
+Server ownership boundaries passed
+RUN ['git', 'diff', '--check']
+RUN ['rustfmt', '--edition', '2024', '--check', '--config', 'skip_children=true', 'packages/alia-server/tests/server_runtime/classifier.rs', 'packages/alia-server/src/modules/interaction/cache.rs', 'packages/alia-server/src/modules/interaction/cache/store.rs', 'packages/alia-server/src/modules/interaction/generation.rs', 'packages/alia-server/src/modules/interaction/integration_tests/cache.rs', 'packages/alia-server/src/modules/interaction/prompt.rs', 'packages/alia-server/src/modules/interaction/routing/mod.rs', 'packages/alia-server/src/modules/interaction/routing/service.rs', 'packages/alia-server/src/modules/interaction/skills/mod.rs', 'packages/alia-server/src/modules/interaction/skills/registry.rs', 'packages/alia-server/src/modules/interaction/skills/registry_tests.rs', 'packages/alia-server/tests/cache_context.rs', 'packages/alia-server/tests/interaction.rs', 'packages/alia-server/tests/router.rs', 'packages/alia-server/tests/server_runtime.rs', 'packages/alia-server/tests/server_runtime/skills.rs', 'packages/alia-server/tests/skills.rs']
+RUN ['python3', 'run/validation-20261011-classifier/test-counter.py']
+{"cases": 8, "passed": 8, "scope": "adjacent early start and delayed matching prior tail accepted; nested child preserved; starts, diagnostics and count mismatches rejected"}

@@ -1,6 +1,6 @@
 # 后续分层 checklist：L09—L12
 
-后续更新：Skills HTTP CRUD reload 清理已完成（本轮 10/10），下一项软件审计见 [2026-10-11 检查点](../resume-checkpoint-skills-2026-10-11.md)。下方 L12 阶段的“下一项”保留历史语境。
+后续更新：Skills HTTP CRUD reload 与 classifier 运行目录衔接均已完成（各轮 10/10），下一项 health 软件审计见 [2026-10-11 最新检查点](../resume-checkpoint-classifier-2026-10-11.md)。下方 L12 阶段的“下一项”保留历史语境。
 
 更新：2026-10-10。承接 [本轮 L01—L08](../layering-2026-10-08.md)，当前 **4 / 4 完成**。这是剩余架构工作的续接清单，不计入 R01—R06，也不代表整个项目的完成百分比。
 

@@ -1,0 +1,10 @@
+{
+  "status": "not executed",
+  "finding": "Generation imported SkillCatalog through a private import in registry.rs; canonical type lives in skills/mod.rs",
+  "action": "Import from skills::SkillCatalog before any Cargo or database verification",
+  "source_manifest": "source-v1-manifest.json",
+  "additional_findings": [
+    "Three skill catalog lock reads must use cancellable_stage; finish cancellation must take original interrupted path.",
+    "New stale-cache regression must replace major_llm as fixture uses major-only."
+  ]
+}

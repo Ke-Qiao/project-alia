@@ -136,8 +136,17 @@ macOS V3 setup 原端口新连接断言失败证据保留；V4 直接检查原 l
 ## 2026-10-11：Skills HTTP 索引清理后的续接
 
 - [x] 本轮 10/10，源码 `7aca2a6`，CRUD 索引准备/提交/发布、失败恢复、取消与 stop 所有权、旧 facade 清理及同源双平台回归完成；见 [最新检查点](resume-checkpoint-skills-2026-10-11.md)。
-- [ ] 下一项软件任务：独立审计静态 classifier 的 skill 发现与 Registry live snapshot 的衔接。读取 `routing/service.rs` 的两份静态模板、`classification_prompt_for_mode` / `classify` / `to_decision`，以及 `routing/mod.rs::RouterInput`、`generation.rs::route_response`，检查新增／禁用／删除 skill 的候选和退化，以及返回技能名的允许范围。先查已有实现再补缺口，保持全局工具可见性与 Execution 批准；本轮未实施。
+- [x] 后续已在 [Classifier 轮](resume-checkpoint-classifier-2026-10-11.md) 完成，以下为此前任务定义：独立审计静态 classifier 的 skill 发现与 Registry live snapshot 的衔接。读取 `routing/service.rs` 的两份静态模板、`classification_prompt_for_mode` / `classify` / `to_decision`，以及 `routing/mod.rs::RouterInput`、`generation.rs::route_response`，检查新增／禁用／删除 skill 的候选和退化，以及返回技能名的允许范围。先查已有实现再补缺口，保持全局工具可见性与 Execution 批准；原 Skills 轮未实施，现已由 Classifier 轮完成。
 - [ ] 多实例／外部 SQL 的自动索引通知未实现；当前通过显式 reload。仅出现明确多实例需求时再立项，不为未来场景引入广播依赖。
 - [ ] 原 V01、R02/R03/R05/R06 与 D01—D05、C03—C05、H01—H05 保持原状态。默认 Shadow、工具可见性、执行批准和硬件边界保持。
 
 本轮未改变请求数组元素/null 语义；Skills 网络 COMMIT ACK 丢失没有实测注入，只有实现屏障、实际约束 COMMIT 失败/恢复回归和 RR 时序探针证据。没有新增平台、依赖或硬件动作。
+
+## 2026-10-11：Classifier 运行目录衔接后的续接
+
+- [x] 本轮 10/10，动态候选、未知名回退、选中定义版本核对、整目录缓存绑定和可取消读锁均完成；源码 `744cae2a11f8192f0e8ccf3d13004402202c1411`，V2 manifest `adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5`，644/644 Git blob 一致。
+- [ ] 下一软件任务：从已记录的 R04 整体 health 限额开始，审计 `api/health.rs`、ModuleRegistry 顺序聚合、Router 重复 minor probe 及 Provider 诊断；先检查现有实现，再收敛整体预算、同 profile 重复探测和并发边界。保持 API、默认 probe=false 和当前政策，不自行启用外部或付费探测。本轮未实施。
+- [ ] 多实例/外部 SQL 自动通知仍待明确需求，当前显式 reload；未新增广播依赖。
+- [ ] V01、R02/R03/R05/R06 与 D/H 原状态不变。已准入文本不会由后续技能修改自动撤销，Execution 仍独立检查权限与批准。
+
+macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798/0/5**。两端无默认 feature 全目标检查、边界正反自测和变更文件格式检查全部通过。计数依次为 passed/failed/ignored，嵌套子进程摘要不重复累计；所有最终阶段同源、无源码漂移。

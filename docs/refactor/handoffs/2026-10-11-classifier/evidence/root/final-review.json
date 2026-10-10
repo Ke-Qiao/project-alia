@@ -1,0 +1,26 @@
+{
+  "base": "4e4d59529a4beef21b022eb36b5dc89cb990a497",
+  "protected_paths_unchanged": {
+    "Cargo.toml": [],
+    "Cargo.lock": [],
+    "packages/alia-server/Cargo.toml": [],
+    "packages/alia-embedded": [],
+    "packages/alia-server/src/auth": [],
+    "packages/alia-server/src/modules/execution": [],
+    "packages/alia-server/src/modules/interaction/tools.rs": [],
+    "packages/alia-server/src/modules/delivery": [],
+    "packages/alia-server/src/modules/companion": [],
+    "packages/alia-server/src/api/tools.rs": [],
+    "packages/alia-server/src/api/effects.rs": []
+  },
+  "policy": "Shadow, global tool visibility and Execution approval unchanged; no new dependencies/features/platforms/hardware",
+  "source_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+  "agent_reviews": [
+    "Router dynamic candidates, exact-name admission and cancellation stages",
+    "Registry per-definition identity/content and cache provenance binding",
+    "Real HTTP/EventBus/Interaction fixtures, policy coverage and bounded cleanup"
+  ],
+  "root_review": "Generation single catalog, cache approve binding, source/caller migration, static ownership guards; three pre-run findings fixed in V2",
+  "new_dependencies": false,
+  "new_features": false
+}

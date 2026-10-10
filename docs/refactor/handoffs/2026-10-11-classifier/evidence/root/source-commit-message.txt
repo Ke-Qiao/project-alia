@@ -1,0 +1,9 @@
+refactor(interaction): route from live skill catalogs and bind cache provenance
+
+Replace fixed classifier skills with the published Registry catalog, validate
+selected definitions after classification, and fall back using current mode.
+Bind approved cache reuse and pending writes to the original catalog; review
+cannot relabel that binding. Keep catalog lock waits cancellable.
+
+Cover real HTTP-to-Interaction changes, in-flight replacement, stale caches,
+review provenance, and cancellation while an owned commit holds the index.

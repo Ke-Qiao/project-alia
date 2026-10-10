@@ -18,6 +18,8 @@
 
 2026-10-11 Skills HTTP 索引清理 **10/10**，源码 `7aca2a6`；六轮仍 **2/6**。最新恢复从 [Skills 检查点](../resume-checkpoint-skills-2026-10-11.md) 开始。三个 HTTP 索引缺口关闭，下一软件项为静态 classifier 候选与运行 Registry 的衔接审计。
 
+2026-10-11 Classifier 运行目录衔接 **10/10**，源码 `744cae2`；六轮仍 **2/6**。动态候选、在途定义核对、缓存绑定与取消已同源双平台验收。最新恢复从 [Classifier 检查点](../resume-checkpoint-classifier-2026-10-11.md) 开始，下一软件项为 R04 整体 health 限额审计。
+
 ## R01 · Companion shadow、回放与受约束主动表达
 
 - [x] 核对已实现 Appraisal / Relationship / Affect / Regulation 的规范来源与剩余缺口，定义可回放的候选输入和决策证据。

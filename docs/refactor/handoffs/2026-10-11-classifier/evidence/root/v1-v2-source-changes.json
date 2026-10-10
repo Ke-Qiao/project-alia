@@ -1,0 +1,12 @@
+{
+  "v1_status": "static review only; no Cargo/test executions",
+  "changed_paths": [
+    "packages/alia-server/src/modules/interaction/generation.rs",
+    "packages/alia-server/src/modules/interaction/integration_tests/cache.rs"
+  ],
+  "reasons": [
+    "Canonical SkillCatalog import; cancellation wrappers for three catalog reads",
+    "MajorOnly LLM fixture wiring; real held-COMMIT cancellation regression"
+  ],
+  "v2_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5"
+}

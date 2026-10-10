@@ -1,0 +1,287 @@
+{
+  "source_commit": "744cae2a11f8192f0e8ccf3d13004402202c1411",
+  "manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+  "scope": "Final same-source classifier/catalog/cache validation; V1 was static review only, with findings and fixes preserved",
+  "files": [
+    {
+      "path": "evidence/linux-arm64-v2/container-create.json",
+      "bytes": 1595,
+      "sha256": "67ecbfb78be129e64d0651d74bf54010f56c7fdcdd477d83af9efdf6598981a7"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.command.json",
+      "bytes": 800,
+      "sha256": "873db0e7b2ae4eb5f1f9a4fa212ee937bc186a08622e35981f97ee5cd8457fec"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.log",
+      "bytes": 820,
+      "sha256": "fd41e2cddd645700a288becb1057ad7d58a84713b6f9353726fc489a7529f232"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.result.json",
+      "bytes": 1036,
+      "sha256": "5ccc827b679931d0933b4c54a30b147c2649f1caa3de5851e9920a1dea399b47"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/native-archive.json",
+      "bytes": 313,
+      "sha256": "bee7e002579ad0e3bc0ce053e849a263c489a3d811d8527dff990f90e3c724a5"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/run-stage.py",
+      "bytes": 4459,
+      "sha256": "aebd590401baf9470176289ac5a50d4ea62a64b7d1a933c59fa7d81f0d99a081"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.command.json",
+      "bytes": 745,
+      "sha256": "81e6884c52d75d7940a1c6bf0d782643283bea68890403a911cb9aa44d7d1ad7"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.log",
+      "bytes": 266,
+      "sha256": "9d5887fafc09a547cca80e970608df245480a2f9aee77033676ca1792b5bcb90"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.result.json",
+      "bytes": 982,
+      "sha256": "406833ab96a1390c790c0aa943da90e6705dc16200b2eca521ed224314ee1aa1"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.command.json",
+      "bytes": 716,
+      "sha256": "76ad0d80a4d473c8aa5cb24634fefe89364055a1d95b5853a3280eb4e23cfc34"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.counts.json",
+      "bytes": 33278,
+      "sha256": "357bcdd3dd5b5df0128f7f3a75de4770096dc74d205fe776248262a24d5ec679"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.counts.txt",
+      "bytes": 7867,
+      "sha256": "0f644602ec880c639cd37faccbdfb777579d9523d2ce3316c1a7338e0e5b1fbe"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.log",
+      "bytes": 86859,
+      "sha256": "7dd9a71a84b6a62e4ba4f7fedf20cad0453b538fc6c241cf695cb9359a4625dd"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.pg-waits.json",
+      "bytes": 304180,
+      "sha256": "c3eb3e998a2a22ab00b06731fdfcef14a00eb0ead8a57148b0c9af1ab10aa48a"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.result.json",
+      "bytes": 954,
+      "sha256": "f79b9d3db998b52a4d32c13db82fc37ce37708bc84a729eba58f66feedaf4802"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/source-manifest.json",
+      "bytes": 118402,
+      "sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/source.sha256",
+      "bytes": 74289,
+      "sha256": "5c319e3a754bc6f8f510cb60332b7a22416c0284557b06a553e9cc48ac43e78c"
+    },
+    {
+      "path": "evidence/root/commit-verification.json",
+      "bytes": 226,
+      "sha256": "cc6fb171315787f3fbf996af62486975ac3e95f2e04d6219d7a047cf6b7775c8"
+    },
+    {
+      "path": "evidence/root/counter-self-test.json",
+      "bytes": 183,
+      "sha256": "afaba8acbf9b132cfcc9434b87a13cf5f92958f958b3dd881461d5957406a50b"
+    },
+    {
+      "path": "evidence/root/database-create.json",
+      "bytes": 550,
+      "sha256": "10e85e6a3e39959e6d481d3a55d8f9b2551f158d028849e20403ef584db9fc04"
+    },
+    {
+      "path": "evidence/root/docs-commit-message.txt",
+      "bytes": 267,
+      "sha256": "62711f2cd4dc4ec73efad8eee66303c8ed00aebf6157885a9a022054772538cc"
+    },
+    {
+      "path": "evidence/root/final-review.json",
+      "bytes": 1280,
+      "sha256": "04dc27a358d3ff392b196d22301d9a49de42bf5aefa9ac6924d3ee24fbf57b3c"
+    },
+    {
+      "path": "evidence/root/final-stage-summary.json",
+      "bytes": 6094,
+      "sha256": "eb46accd8c6da02e90a4b3a28ce6e44fb3f92abfa1a7a4f8da304d5e8f543752"
+    },
+    {
+      "path": "evidence/root/linux-v2-command.json",
+      "bytes": 1368,
+      "sha256": "f053c5ace6b133057e142ab512b5d4aca47210b65a9a05283c8390767ad3fb27"
+    },
+    {
+      "path": "evidence/root/macos-environment.json",
+      "bytes": 775,
+      "sha256": "e3599cb58ece6d09eecc12465ca13e7139e41a94281ac598c944950bd6660aa1"
+    },
+    {
+      "path": "evidence/root/macos-native-archive.json",
+      "bytes": 309,
+      "sha256": "6620580a19be9de247b21cf1bcb8652a5f5016c84f456ab9309707dadd0ceee2"
+    },
+    {
+      "path": "evidence/root/no-default-v2-result.json",
+      "bytes": 655,
+      "sha256": "8d5ce1edea1a8d595fcaf8994c522b22c13e367c9ccb8e0234cc23afefc0458a"
+    },
+    {
+      "path": "evidence/root/no-default-v2.log",
+      "bytes": 166,
+      "sha256": "1dbec4c81d00c37a7c56c14d9eb7a63383cae539a2dc27c7acf6786b10f4f32f"
+    },
+    {
+      "path": "evidence/root/protected-paths-review.json",
+      "bytes": 710,
+      "sha256": "d180922f0b149ebf4aea6203258569ab27f3d3492a901bbb37d8b9a4f8b089ea"
+    },
+    {
+      "path": "evidence/root/resource-closure.json",
+      "bytes": 1138,
+      "sha256": "f9c17801903d73daee17e686854562fbbbaffe66358554f1e0ddeecb5378a296"
+    },
+    {
+      "path": "evidence/root/source-commit-message.txt",
+      "bytes": 532,
+      "sha256": "883979a2ffc52f2d864593d8dd78fc9e97997db2fa932ca947aa33e840fec6f2"
+    },
+    {
+      "path": "evidence/root/source-v1-manifest.json",
+      "bytes": 118402,
+      "sha256": "711f95be89cb35f159c2d6983a04cade7a6d16f85e63b70a9f96e5b387e989f5"
+    },
+    {
+      "path": "evidence/root/source-v2-manifest.json",
+      "bytes": 118402,
+      "sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5"
+    },
+    {
+      "path": "evidence/root/static-v2-result.json",
+      "bytes": 600,
+      "sha256": "4dc19628fb6314e8e8b6b5905ecd185664dc5c6b29d527dc373c4b39946b9ce9"
+    },
+    {
+      "path": "evidence/root/static-v2.log",
+      "bytes": 1538,
+      "sha256": "0841bbb45710f0f942dc6271743a11a867781651b25f8ac6abc109134afd2b75"
+    },
+    {
+      "path": "evidence/root/v1-static-review.json",
+      "bytes": 536,
+      "sha256": "2ca4af9a03c775068d7dd3bb1e34a74f8f36f90c0c8ce8bb6b0b0f477178030c"
+    },
+    {
+      "path": "evidence/root/v1-v2-source-changes.json",
+      "bytes": 509,
+      "sha256": "c12d15154f5da41c556ba9e10ea962eca37ee72e930a37e65b99d103eb08693b"
+    },
+    {
+      "path": "evidence/root/workspace-v2-result.json",
+      "bytes": 626,
+      "sha256": "04a4778a7c53e0b4b12fee9b35b5ac6979268fb6fbf6eb268c04551d0f07445e"
+    },
+    {
+      "path": "evidence/root/workspace-v2.counts.json",
+      "bytes": 43647,
+      "sha256": "3e39a86aed2a72ec02ad6a6773c6c0a556c56874d7dda4c02d136d40e193e769"
+    },
+    {
+      "path": "evidence/root/workspace-v2.counts.txt",
+      "bytes": 9146,
+      "sha256": "9eb5cf6560ce0c1e630cde80503bb83c08f39ad059f9f0c3c5a7461f87a4f626"
+    },
+    {
+      "path": "evidence/root/workspace-v2.log",
+      "bytes": 117940,
+      "sha256": "d3126bb9edd268de50535a7b38484544a9efabc7ecf4faa67c3f8b757e41d291"
+    },
+    {
+      "path": "evidence/tools/archive-evidence.py",
+      "bytes": 1640,
+      "sha256": "6b01417bb50bddbe6afb9060c4be74cd26efe5fc4b6b00b6b9318e2fd7f9dbde"
+    },
+    {
+      "path": "evidence/tools/collect-resources.py",
+      "bytes": 2306,
+      "sha256": "04b662b29996cb5fcce679821315f65e796b6df0e21ac3997e9c7586022865e5"
+    },
+    {
+      "path": "evidence/tools/count_cargo_tests.py",
+      "bytes": 13500,
+      "sha256": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236"
+    },
+    {
+      "path": "evidence/tools/create-database.py",
+      "bytes": 1020,
+      "sha256": "66c359dba959610413b06c12286450aafefa4308cc84e643fc3ba55209d89870"
+    },
+    {
+      "path": "evidence/tools/finalize-docs.py",
+      "bytes": 10548,
+      "sha256": "08fc959681163efac6538f07b2765e914d4c3b24922127ed0b7e24378eb5eaad"
+    },
+    {
+      "path": "evidence/tools/freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "evidence/tools/prepare-linux-v2.py",
+      "bytes": 928,
+      "sha256": "9d75fdddf3c79de1a07135cd9281f641fe8e81a0ab33c62ecc1e5868cfd96991"
+    },
+    {
+      "path": "evidence/tools/record-environment.py",
+      "bytes": 1237,
+      "sha256": "c8d02ce1e796656005f4477475c20ce5c9211ee7ebe1c2d2b50ac8fea02a0cae"
+    },
+    {
+      "path": "evidence/tools/run_stage.py",
+      "bytes": 3069,
+      "sha256": "72f2e912f8031d597c2e8aab09103a77c0373dd7f12578d60e9033ca68e0c78b"
+    },
+    {
+      "path": "evidence/tools/static-checks.py",
+      "bytes": 1469,
+      "sha256": "6292a6b3f9adf282d1ef824089e0aa6b8a136fb27632aa79be476e91d14aea52"
+    },
+    {
+      "path": "evidence/tools/summarize-final.py",
+      "bytes": 1690,
+      "sha256": "f98cff7e680dd15c4e374aaa47e9e7a0ea82e75174709b88c837f526cfde5dc7"
+    },
+    {
+      "path": "evidence/tools/test-counter.py",
+      "bytes": 2406,
+      "sha256": "bf1ca9870b6602ce99a644839ab1993901bafde36cea114439b9f089c2a2618c"
+    },
+    {
+      "path": "evidence/tools/verify-commit.py",
+      "bytes": 726,
+      "sha256": "b50136f30b4f543d682778770ef30db747549a91f7af6f995e280f8b395e340f"
+    },
+    {
+      "path": "evidence/tools/verify-delivery.py",
+      "bytes": 1774,
+      "sha256": "668a4cacd7aa96470490e5a36facb7781c31e774bf1b36f0c1337b1d0976a359"
+    }
+  ]
+}

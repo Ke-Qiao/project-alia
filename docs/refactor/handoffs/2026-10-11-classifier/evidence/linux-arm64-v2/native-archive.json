@@ -1,0 +1,7 @@
+{
+  "archive": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib.tar.bz2",
+  "bytes": 19167687,
+  "sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+  "verified_at": "2026-10-10T18:20:33.160782+00:00",
+  "usage": "Existing archive, default-feature native linking; no physical audio I/O."
+}

@@ -1,0 +1,191 @@
+{
+  "manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+  "input_count": 644,
+  "stages": {
+    "macos/workspace-v2": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "started_at": "2026-10-10T18:25:18.908964+00:00",
+      "finished_at": "2026-10-10T18:34:05.710255+00:00",
+      "elapsed_seconds": 526.8,
+      "exit_code": 0,
+      "source_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb",
+      "counts": {
+        "passed": 1080,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "macos/no-default-v2": {
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--no-default-features",
+        "--locked",
+        "--offline"
+      ],
+      "started_at": "2026-10-10T18:34:28.469423+00:00",
+      "finished_at": "2026-10-10T18:35:14.818337+00:00",
+      "elapsed_seconds": 46.35,
+      "exit_code": 0,
+      "source_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "macos/static-v2": {
+      "command": [
+        "python3",
+        "run/validation-20261011-classifier/static-checks.py"
+      ],
+      "started_at": "2026-10-10T18:25:29.604669+00:00",
+      "finished_at": "2026-10-10T18:25:30.494512+00:00",
+      "elapsed_seconds": 0.89,
+      "exit_code": 0,
+      "source_manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "linux/server-tests": {
+      "started": "2026-10-10T18:25:28.356032+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--locked",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "container": "alia-classifier-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_before": {
+        "file_count": 644,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 388.073,
+      "finished": "2026-10-10T18:31:56.429899+00:00",
+      "source_after": {
+        "file_count": 644,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T18:31:56.429899+00:00",
+      "source_drift": [],
+      "counts": {
+        "passed": 798,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "linux/server-no-default": {
+      "started": "2026-10-10T18:32:54.316106+00:00",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--all-targets",
+        "--no-default-features",
+        "--locked",
+        "--offline"
+      ],
+      "container": "alia-classifier-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_before": {
+        "file_count": 644,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 16.386,
+      "finished": "2026-10-10T18:33:10.703000+00:00",
+      "source_after": {
+        "file_count": 644,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T18:33:10.703000+00:00",
+      "source_drift": []
+    },
+    "linux/environment": {
+      "started": "2026-10-10T18:28:01.811843+00:00",
+      "command": [
+        "sh",
+        "-c",
+        "uname -a; cat /etc/os-release; rustc -Vv; cargo -V; protoc --version; pkg-config --modversion alsa; env | sort | sed -n \"/^CARGO/p;/^SHERPA/p;/^RUST/p;/^DOCS_RS/p\""
+      ],
+      "container": "alia-classifier-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5",
+      "source_before": {
+        "file_count": 644,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 0.058,
+      "finished": "2026-10-10T18:28:01.870486+00:00",
+      "source_after": {
+        "file_count": 644,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T18:28:01.870486+00:00",
+      "source_drift": []
+    }
+  }
+}
