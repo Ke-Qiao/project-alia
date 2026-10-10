@@ -1,0 +1,32 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "--locked",
+    "--offline",
+    "--",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "inherited_real_pty": {
+    "0": true,
+    "1": true,
+    "2": true
+  },
+  "started_at": "2026-10-10T09:36:52.899773+00:00",
+  "finished_at": "2026-10-10T09:36:53.728265+00:00",
+  "elapsed_seconds": 0.83,
+  "exit_code": 0,
+  "source_manifest_sha256": "bc542c0718b07fc45c1f7e09084a51fddfa3350014eee089514e6a582f9e75ea",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "1 (explicit PTY libtest argument; environment unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

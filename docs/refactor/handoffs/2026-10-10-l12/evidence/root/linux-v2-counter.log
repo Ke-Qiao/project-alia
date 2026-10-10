@@ -1,0 +1,75 @@
+Log: /Users/ke-qiao/Developer/project-alia/run/validation-20261010-l12/linux-arm64-v2/evidence/server-tests.log
+SHA-256: ed7a6d7fa911304b1608d9a67be6acd09e7e30800ffb0bd31af85cf95198c9f3
+Assessment: PASSED_RECORDED_RUN
+Targets: 49 Running + 1 Doc-tests
+Counted outer totals: {"passed": 778, "failed": 0, "ignored": 5, "measured": 0, "filtered_out": 0}
+Excluded nested summaries: 1; totals: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 323}
+Extra nested harness starts: 2
+Earlier summaries are excluded, not added to passed / filtered totals.
+
+Recorded invocation: {"command": ["cargo", "test", "-p", "alia-server", "--locked", "--offline", "--no-fail-fast"], "workspace_requested": false, "all_features_requested": false, "default_features_disabled": false, "explicit_features": [], "target_argument": null, "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"}
+Cargo exit code: 0
+
+line	status	passed	failed	ignored	measured	filtered	target
+374	ok	321	0	3	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_server-4562ca4078866c78)
+  EXCLUDED nested summary line 287: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 323, "status": "ok", "seconds": 0.07, "line": 287}
+  Nested harness start line 280: 1 selected; child may exit intentionally without a summary
+  Observed ignored line 39: bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 41: channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 49: channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal; requires a real PTY; run with --ignored --nocapture --test-threads=1
+380	ok	0	0	0	0	0	Running unittests src/main.rs (/cache/target/debug/deps/alia_server-808156c3c7a96bc2)
+406	ok	20	0	0	0	0	Running tests/appraisal_provenance.rs (/cache/target/debug/deps/appraisal_provenance-fa6a7f517f32d962)
+419	ok	7	0	0	0	0	Running tests/body_delivery.rs (/cache/target/debug/deps/body_delivery-8b1f16c15436b699)
+441	ok	16	0	0	0	0	Running tests/cache_context.rs (/cache/target/debug/deps/cache_context-a00b2af94bd0a843)
+450	ok	3	0	0	0	0	Running tests/channel_registry.rs (/cache/target/debug/deps/channel_registry-fadd805c22459898)
+460	ok	4	0	0	0	0	Running tests/config.rs (/cache/target/debug/deps/config-8d280cd192ed35c8)
+492	ok	26	0	0	0	0	Running tests/context_lease.rs (/cache/target/debug/deps/context_lease-75e8c6c5619c120e)
+513	ok	15	0	0	0	0	Running tests/delivery_repository.rs (/cache/target/debug/deps/delivery_repository-8c278d6cf3464d5b)
+531	ok	12	0	0	0	0	Running tests/delivery_service.rs (/cache/target/debug/deps/delivery_service-849b3ee00235fba8)
+543	ok	6	0	0	0	0	Running tests/delivery_text.rs (/cache/target/debug/deps/delivery_text-9db1b05b01ea7542)
+553	ok	4	0	0	0	0	Running tests/delivery_text_service.rs (/cache/target/debug/deps/delivery_text_service-e1120b932c975f6c)
+568	ok	9	0	0	0	0	Running tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-d45b955dfe913cbf)
+575	ok	0	0	1	0	0	Running tests/easy_turn_live.rs (/cache/target/debug/deps/easy_turn_live-898229ac493c196c)
+  Observed ignored line 573: official_audio_through_production_rust_adapter; requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16
+584	ok	3	0	0	0	0	Running tests/embedded_channel.rs (/cache/target/debug/deps/embedded_channel-23ca688b0ba3b51b)
+609	ok	19	0	0	0	0	Running tests/execution_repository.rs (/cache/target/debug/deps/execution_repository-821b30d609a6c43d)
+645	ok	30	0	0	0	0	Running tests/execution_service.rs (/cache/target/debug/deps/execution_service-b8849b54fa8451ec)
+653	ok	2	0	0	0	0	Running tests/expression_abi.rs (/cache/target/debug/deps/expression_abi-8aa1cb6d1e5d51d1)
+661	ok	2	0	0	0	0	Running tests/expression_appraisal.rs (/cache/target/debug/deps/expression_appraisal-3f187ea487fbcb74)
+673	ok	6	0	0	0	0	Running tests/expression_eval.rs (/cache/target/debug/deps/expression_eval-ae37547dbd1b0df3)
+680	ok	1	0	0	0	0	Running tests/expression_regulation.rs (/cache/target/debug/deps/expression_regulation-5721326d0349694b)
+688	ok	2	0	0	0	0	Running tests/expression_trace.rs (/cache/target/debug/deps/expression_trace-415b0fd9fb97a6a6)
+711	ok	17	0	0	0	0	Running tests/interaction.rs (/cache/target/debug/deps/interaction-61cd4a77ed3ad824)
+730	ok	13	0	0	0	0	Running tests/interaction_tools.rs (/cache/target/debug/deps/interaction_tools-f7050832c8bfc254)
+737	ok	1	0	0	0	0	Running tests/llm.rs (/cache/target/debug/deps/llm-b0c2b973b3e6ea4d)
+748	ok	5	0	0	0	0	Running tests/llm_providers.rs (/cache/target/debug/deps/llm_providers-d34dacb976be1144)
+767	ok	13	0	0	0	0	Running tests/memory.rs (/cache/target/debug/deps/memory-c19f494b4e8fb577)
+779	ok	6	0	0	0	0	Running tests/memory_capture.rs (/cache/target/debug/deps/memory_capture-6d031749f2e9631d)
+798	ok	13	0	0	0	0	Running tests/memory_embedding.rs (/cache/target/debug/deps/memory_embedding-fd80c31bb1a177da)
+811	ok	7	0	0	0	0	Running tests/memory_embedding_provenance.rs (/cache/target/debug/deps/memory_embedding_provenance-7f5121d332bc5d8d)
+820	ok	3	0	0	0	0	Running tests/memory_message_pins.rs (/cache/target/debug/deps/memory_message_pins-a24fb597eb8ea61d)
+857	ok	31	0	0	0	0	Running tests/memory_privacy.rs (/cache/target/debug/deps/memory_privacy-8de1851f424cfaf7)
+870	ok	7	0	0	0	0	Running tests/migrations.rs (/cache/target/debug/deps/migrations-8d2d64ccecf901a8)
+889	ok	13	0	0	0	0	Running tests/output_control.rs (/cache/target/debug/deps/output_control-08562a0be594484a)
+906	ok	11	0	0	0	0	Running tests/output_lifecycle.rs (/cache/target/debug/deps/output_lifecycle-4799c0b1ae413bdf)
+913	ok	1	0	0	0	0	Running tests/persona.rs (/cache/target/debug/deps/persona-73314011d37ca41d)
+923	ok	4	0	0	0	0	Running tests/plugin_storage.rs (/cache/target/debug/deps/plugin_storage-d328a765e2d0ede7)
+935	ok	6	0	0	0	0	Running tests/provider_adapters.rs (/cache/target/debug/deps/provider_adapters-9d34043488f3cb73)
+942	ok	1	0	0	0	0	Running tests/registry.rs (/cache/target/debug/deps/registry-5913bec47e3e702d)
+960	ok	12	0	0	0	0	Running tests/router.rs (/cache/target/debug/deps/router-fd2fc2470915a8a1)
+967	ok	1	0	0	0	0	Running tests/rules.rs (/cache/target/debug/deps/rules-e977553536c93256)
+974	ok	1	0	0	0	0	Running tests/scheduler.rs (/cache/target/debug/deps/scheduler-b29d2f4d67b6e378)
+988	ok	8	0	0	0	0	Running tests/sensors.rs (/cache/target/debug/deps/sensors-04178aeb5d395dd1)
+1007	ok	13	0	0	0	0	Running tests/server_background.rs (/cache/target/debug/deps/server_background-4c2347fcd73a05ff)
+1123	ok	54	0	0	0	0	Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-0615b029fdd82771)
+  Nested harness start line 1013: 1 selected; child may exit intentionally without a summary
+1132	ok	3	0	0	0	0	Running tests/settings.rs (/cache/target/debug/deps/settings-f132eb8efff7bceb)
+1149	ok	11	0	0	0	0	Running tests/skills.rs (/cache/target/debug/deps/skills-bce52cbb6b36f22b)
+1170	ok	15	0	0	0	0	Running tests/tools.rs (/cache/target/debug/deps/tools-9c13bf00caa3c7f8)
+1177	ok	0	0	1	0	0	Running tests/voice_stream_live.rs (/cache/target/debug/deps/voice_stream_live-8183c72da65c4ba2)
+  Observed ignored line 1175: official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait; requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL
+1183	ok	0	0	0	0	0	Doc-tests alia_server
+
+Limits: sequential Cargo log required; nested Cargo Running headings or interleaved
+independent Cargo invocations require separate logs. Test lines may include child output;
+only outer summaries contribute counts. No sidecar means overall run completion is unconfirmed.

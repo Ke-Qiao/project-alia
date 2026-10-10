@@ -1,0 +1,19 @@
+{
+  "result": "/evidence/hash-cost-v2-actual/result.json",
+  "binary": {
+    "path": "/cache/target/debug/deps/server_runtime-0615b029fdd82771",
+    "bytes": 462511360,
+    "sha256": "f09535930fbaf726f136bc47095ab087fd5b79013c2209f0d6263a7473d3de33"
+  },
+  "sha2_rlib": {
+    "path": "/cache/target/debug/deps/libsha2-1eee5cca70ceabdd.rlib",
+    "bytes": 858224,
+    "sha256": "6e241f40da4c16e0bd0be954e2b5d0d39ef7682041e9d97b8b8bf6e36ab32552"
+  },
+  "probe": {
+    "bytes": 462511360,
+    "elapsed_ns": 846088208,
+    "sha256": "f09535930fbaf726f136bc47095ab087fd5b79013c2209f0d6263a7473d3de33"
+  },
+  "sha256sum_elapsed_ns": 874475083
+}

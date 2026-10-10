@@ -1,0 +1,121 @@
+   Compiling alia-proto v0.1.0 (/workspace/crates/proto)
+   Compiling alia-server v0.1.0 (/workspace/packages/alia-server)
+   Compiling alia-embedded v0.1.0 (/workspace/packages/alia-embedded)
+warning: unused import: `crate::modules::delivery::transport::DeliveryTransport as _`
+ --> packages/alia-server/src/channels/cli/text.rs:4:5
+  |
+4 | use crate::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `TextPayloadStream`
+ --> packages/alia-server/src/channels/cli/text.rs:5:57
+  |
+5 | use crate::modules::delivery::transport::{TextObserver, TextPayloadStream};
+  |                                                         ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::modules::delivery::transport::DeliveryTransport`
+ --> packages/alia-server/src/api/channels.rs:1:5
+  |
+1 | use crate::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `TextObserver`
+ --> packages/alia-server/src/channels/cli/text.rs:5:43
+  |
+5 | use crate::modules::delivery::transport::{TextObserver, TextPayloadStream};
+  |                                           ^^^^^^^^^^^^
+
+warning: unused import: `crate::modules::delivery::transport::DeliveryTransport`
+ --> packages/alia-server/src/channels/cli.rs:7:5
+  |
+7 | use crate::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::modules::delivery::transport::DeliveryTransport`
+ --> packages/alia-server/src/expression/orchestrator.rs:2:5
+  |
+2 | use crate::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::modules::delivery::transport::DeliveryTransport`
+ --> packages/alia-server/src/grpc/voice_session.rs:3:5
+  |
+3 | use crate::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `alia-server` (lib) generated 7 warnings (run `cargo fix --lib -p alia-server` to apply 2 suggestions)
+warning: unused import: `alia_server::modules::delivery::transport::DeliveryTransport as _`
+ --> packages/alia-server/tests/server_runtime/devices.rs:5:5
+  |
+5 | use alia_server::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `alia-server` (test "server_runtime") generated 1 warning (run `cargo fix --test "server_runtime" -p alia-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s
+     Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-d688634c1b44968f)
+
+running 1 test
+
+running 1 test
+[runtime-phase] pid=942 unix_ms=1791623108280 elapsed_ms=0 phase=child.entered
+[runtime-phase] pid=942 unix_ms=1791623108281 elapsed_ms=0 phase=child.runtime.ready
+[runtime-phase] pid=942 unix_ms=1791623108281 elapsed_ms=0 phase=fixture.permit.begin
+[runtime-phase] pid=942 unix_ms=1791623108281 elapsed_ms=0 phase=fixture.permit.done
+[runtime-phase] pid=942 unix_ms=1791623108281 elapsed_ms=0 phase=fixture.admin_connect.begin
+[runtime-phase] pid=942 unix_ms=1791623108287 elapsed_ms=7 phase=fixture.admin_connect.done
+[runtime-phase] pid=942 unix_ms=1791623108288 elapsed_ms=7 phase=fixture.create_schema.begin schema=server_runtime_bd2e4d2122b54e2287bbdad9c17a59c9
+[runtime-phase] pid=942 unix_ms=1791623108301 elapsed_ms=20 phase=fixture.create_schema.done
+[runtime-phase] pid=942 unix_ms=1791623108301 elapsed_ms=20 phase=fixture.pool_connect.begin
+[runtime-phase] pid=942 unix_ms=1791623108303 elapsed_ms=22 phase=fixture.pool_connect.done
+[runtime-phase] pid=942 unix_ms=1791623108306 elapsed_ms=25 phase=fixture.ready
+[runtime-phase] pid=942 unix_ms=1791623108306 elapsed_ms=25 phase=migrations.begin
+[runtime-phase] pid=942 unix_ms=1791623108424 elapsed_ms=143 phase=migrations.done
+[runtime-phase] pid=942 unix_ms=1791623108424 elapsed_ms=143 phase=owner.insert.begin
+[runtime-phase] pid=942 unix_ms=1791623108426 elapsed_ms=145 phase=owner.insert.done
+[runtime-phase] pid=942 unix_ms=1791623108426 elapsed_ms=145 phase=server.build.begin
+[runtime-phase] pid=942 unix_ms=1791623124675 elapsed_ms=16394 phase=server.build.done
+[runtime-phase] pid=942 unix_ms=1791623124675 elapsed_ms=16394 phase=response.prepare.begin
+[runtime-phase] pid=942 unix_ms=1791623124700 elapsed_ms=16419 phase=response.prepare.done
+[runtime-phase] pid=942 unix_ms=1791623124700 elapsed_ms=16419 phase=producer.bind.begin
+[runtime-phase] pid=942 unix_ms=1791623124705 elapsed_ms=16424 phase=producer.bind.done
+[runtime-phase] pid=942 unix_ms=1791623124705 elapsed_ms=16424 phase=native.enter.begin
+[runtime-phase] pid=942 unix_ms=1791623124713 elapsed_ms=16432 phase=native.blocking.entered
+[runtime-phase] pid=942 unix_ms=1791623124713 elapsed_ms=16432 phase=native.enter.done
+[runtime-phase] pid=942 unix_ms=1791623124713 elapsed_ms=16432 phase=shutdown.begin
+[runtime-phase] pid=942 unix_ms=1791623124714 elapsed_ms=16433 phase=cancellation_panic.raised
+
+thread 'delivery::panicked_playback_fence_retains_original_native_future_and_dependencies' (943) panicked at packages/alia-server/tests/server_runtime/delivery.rs:675:9:
+injected precise cancellation panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[runtime-phase] pid=942 unix_ms=1791623124754 elapsed_ms=16473 phase=shutdown.incomplete
+[runtime-phase] pid=942 unix_ms=1791623124754 elapsed_ms=16473 phase=cancellation_panic.begin
+[runtime-phase] pid=942 unix_ms=1791623124754 elapsed_ms=16473 phase=cancellation_panic.observed
+[runtime-phase] pid=942 unix_ms=1791623124754 elapsed_ms=16473 phase=delivery_unknown.begin
+[runtime-phase] pid=942 unix_ms=1791623124755 elapsed_ms=16474 phase=delivery_unknown.done
+[runtime-phase] pid=942 unix_ms=1791623124755 elapsed_ms=16474 phase=retained_database.ping.begin
+[runtime-phase] pid=942 unix_ms=1791623124755 elapsed_ms=16474 phase=retained_database.ping.done
+[runtime-phase] pid=942 unix_ms=1791623124755 elapsed_ms=16474 phase=native.release.begin
+[runtime-phase] pid=942 unix_ms=1791623124755 elapsed_ms=16474 phase=native.blocking.returned
+[runtime-phase] pid=942 unix_ms=1791623124757 elapsed_ms=16476 phase=retirement.finished
+[runtime-phase] pid=942 unix_ms=1791623124757 elapsed_ms=16476 phase=native.release.done
+[runtime-phase] pid=942 unix_ms=1791623124757 elapsed_ms=16476 phase=quarantine.wait.begin
+[runtime-phase] pid=942 unix_ms=1791623124801 elapsed_ms=16520 phase=quarantine.retained
+[runtime-phase] pid=942 unix_ms=1791623124801 elapsed_ms=16520 phase=quarantined_database.ping.begin
+[runtime-phase] pid=942 unix_ms=1791623124801 elapsed_ms=16520 phase=quarantined_database.ping.done
+[runtime-phase] pid=942 unix_ms=1791623124801 elapsed_ms=16520 phase=fixture.body.returned
+[runtime-phase] pid=942 unix_ms=1791623124801 elapsed_ms=16520 phase=fixture.close_pool.begin
+[runtime-phase] pid=942 unix_ms=1791623124802 elapsed_ms=16521 phase=fixture.close_pool.done
+[runtime-phase] pid=942 unix_ms=1791623124802 elapsed_ms=16521 phase=fixture.drop_schema.begin
+[runtime-phase] pid=942 unix_ms=1791623124831 elapsed_ms=16550 phase=fixture.drop_schema.done
+[runtime-phase] pid=942 unix_ms=1791623124831 elapsed_ms=16551 phase=fixture.close_admin.begin
+[runtime-phase] pid=942 unix_ms=1791623124831 elapsed_ms=16551 phase=fixture.close_admin.done
+[runtime-phase] pid=942 unix_ms=1791623124832 elapsed_ms=16551 phase=fixture.cleanup.done
+[runtime-phase] pid=942 unix_ms=1791623124832 elapsed_ms=16551 phase=child.exit
+test delivery::panicked_playback_fence_retains_original_native_future_and_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 16.56s
+

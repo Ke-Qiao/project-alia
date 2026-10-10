@@ -1,0 +1,78 @@
+   Compiling sha2 v0.10.9
+   Compiling alia-proto v0.1.0 (/workspace/crates/proto)
+   Compiling sqlx-core v0.8.6
+   Compiling alia-core v0.1.0 (/workspace/crates/alia-core)
+   Compiling sqlx-postgres v0.8.6
+   Compiling sqlx-sqlite v0.8.6
+   Compiling sqlx v0.8.6
+   Compiling ed25519-dalek v2.2.0
+   Compiling alia-transport v0.1.0 (/workspace/crates/transport)
+   Compiling sea-query-binder v0.7.0
+   Compiling sea-orm v1.1.20
+   Compiling pgvector v0.4.1
+   Compiling alia-embedded v0.1.0 (/workspace/packages/alia-embedded)
+   Compiling alia-server v0.1.0 (/workspace/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.58s
+     Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-0615b029fdd82771)
+
+running 1 test
+
+running 1 test
+[runtime-phase] pid=1337 unix_ms=1791623426133 elapsed_ms=0 phase=child.entered
+[runtime-phase] pid=1337 unix_ms=1791623426134 elapsed_ms=0 phase=child.runtime.ready
+[runtime-phase] pid=1337 unix_ms=1791623426134 elapsed_ms=0 phase=fixture.permit.begin
+[runtime-phase] pid=1337 unix_ms=1791623426134 elapsed_ms=0 phase=fixture.permit.done
+[runtime-phase] pid=1337 unix_ms=1791623426134 elapsed_ms=0 phase=fixture.admin_connect.begin
+[runtime-phase] pid=1337 unix_ms=1791623426139 elapsed_ms=5 phase=fixture.admin_connect.done
+[runtime-phase] pid=1337 unix_ms=1791623426139 elapsed_ms=5 phase=fixture.create_schema.begin schema=server_runtime_8521905102854bdd878cba47c4fa2174
+[runtime-phase] pid=1337 unix_ms=1791623426157 elapsed_ms=24 phase=fixture.create_schema.done
+[runtime-phase] pid=1337 unix_ms=1791623426157 elapsed_ms=24 phase=fixture.pool_connect.begin
+[runtime-phase] pid=1337 unix_ms=1791623426159 elapsed_ms=25 phase=fixture.pool_connect.done
+[runtime-phase] pid=1337 unix_ms=1791623426161 elapsed_ms=27 phase=fixture.ready
+[runtime-phase] pid=1337 unix_ms=1791623426161 elapsed_ms=27 phase=migrations.begin
+[runtime-phase] pid=1337 unix_ms=1791623426251 elapsed_ms=118 phase=migrations.done
+[runtime-phase] pid=1337 unix_ms=1791623426251 elapsed_ms=118 phase=owner.insert.begin
+[runtime-phase] pid=1337 unix_ms=1791623426253 elapsed_ms=119 phase=owner.insert.done
+[runtime-phase] pid=1337 unix_ms=1791623426253 elapsed_ms=119 phase=server.build.begin
+[runtime-phase] pid=1337 unix_ms=1791623427267 elapsed_ms=1133 phase=server.build.done
+[runtime-phase] pid=1337 unix_ms=1791623427267 elapsed_ms=1133 phase=response.prepare.begin
+[runtime-phase] pid=1337 unix_ms=1791623427284 elapsed_ms=1150 phase=response.prepare.done
+[runtime-phase] pid=1337 unix_ms=1791623427284 elapsed_ms=1150 phase=producer.bind.begin
+[runtime-phase] pid=1337 unix_ms=1791623427287 elapsed_ms=1154 phase=producer.bind.done
+[runtime-phase] pid=1337 unix_ms=1791623427287 elapsed_ms=1154 phase=native.enter.begin
+[runtime-phase] pid=1337 unix_ms=1791623427293 elapsed_ms=1160 phase=native.blocking.entered
+[runtime-phase] pid=1337 unix_ms=1791623427293 elapsed_ms=1160 phase=native.enter.done
+[runtime-phase] pid=1337 unix_ms=1791623427293 elapsed_ms=1160 phase=shutdown.begin
+[runtime-phase] pid=1337 unix_ms=1791623427294 elapsed_ms=1160 phase=cancellation_panic.raised
+
+thread 'delivery::panicked_playback_fence_retains_original_native_future_and_dependencies' (1338) panicked at packages/alia-server/tests/server_runtime/delivery.rs:675:9:
+injected precise cancellation panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1201 phase=shutdown.incomplete
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1201 phase=cancellation_panic.begin
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1201 phase=cancellation_panic.observed
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1201 phase=delivery_unknown.begin
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1202 phase=delivery_unknown.done
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1202 phase=retained_database.ping.begin
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1202 phase=retained_database.ping.done
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1202 phase=native.release.begin
+[runtime-phase] pid=1337 unix_ms=1791623427335 elapsed_ms=1202 phase=native.blocking.returned
+[runtime-phase] pid=1337 unix_ms=1791623427338 elapsed_ms=1204 phase=retirement.finished
+[runtime-phase] pid=1337 unix_ms=1791623427338 elapsed_ms=1204 phase=native.release.done
+[runtime-phase] pid=1337 unix_ms=1791623427338 elapsed_ms=1204 phase=quarantine.wait.begin
+[runtime-phase] pid=1337 unix_ms=1791623427381 elapsed_ms=1248 phase=quarantine.retained
+[runtime-phase] pid=1337 unix_ms=1791623427381 elapsed_ms=1248 phase=quarantined_database.ping.begin
+[runtime-phase] pid=1337 unix_ms=1791623427381 elapsed_ms=1248 phase=quarantined_database.ping.done
+[runtime-phase] pid=1337 unix_ms=1791623427382 elapsed_ms=1248 phase=fixture.body.returned
+[runtime-phase] pid=1337 unix_ms=1791623427382 elapsed_ms=1248 phase=fixture.close_pool.begin
+[runtime-phase] pid=1337 unix_ms=1791623427382 elapsed_ms=1249 phase=fixture.close_pool.done
+[runtime-phase] pid=1337 unix_ms=1791623427382 elapsed_ms=1249 phase=fixture.drop_schema.begin
+[runtime-phase] pid=1337 unix_ms=1791623427413 elapsed_ms=1279 phase=fixture.drop_schema.done
+[runtime-phase] pid=1337 unix_ms=1791623427413 elapsed_ms=1279 phase=fixture.close_admin.begin
+[runtime-phase] pid=1337 unix_ms=1791623427413 elapsed_ms=1280 phase=fixture.close_admin.done
+[runtime-phase] pid=1337 unix_ms=1791623427413 elapsed_ms=1280 phase=fixture.cleanup.done
+[runtime-phase] pid=1337 unix_ms=1791623427413 elapsed_ms=1280 phase=child.exit
+test delivery::panicked_playback_fence_retains_original_native_future_and_dependencies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 1.29s
+

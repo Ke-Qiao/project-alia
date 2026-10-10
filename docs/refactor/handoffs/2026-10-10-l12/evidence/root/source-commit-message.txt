@@ -1,0 +1,9 @@
+refactor(server): move outbound contracts and audio budgets into Delivery
+
+Make Delivery own transport types, exact output control ports, and shared audio
+budgets. Keep ingress and lifecycle on Channel, pin recognized output to its
+original adapter, migrate callers and fixtures, and remove the old exports.
+
+Add phase evidence for the Linux playback cleanup child. Optimize the existing
+sha2 dependency in the dev profile without changing hashes or timeout budgets.
+Verify setup shutdown against its actual listener and accepted connection.

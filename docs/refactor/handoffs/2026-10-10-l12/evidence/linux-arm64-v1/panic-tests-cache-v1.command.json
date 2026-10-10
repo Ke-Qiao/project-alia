@@ -1,0 +1,33 @@
+{
+  "started": "2026-10-10T09:04:07.519352+00:00",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--test",
+    "server_runtime",
+    "delivery::panicked_playback_fence_retains_original_native_future_and_dependencies",
+    "--locked",
+    "--offline",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "container": "alia-l12-linux-20261010-v1-cache",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "5c0560d721a54ffd26d750596719efe038b3c801c409d831443471d06a070fac",
+  "source_before": {
+    "file_count": 641,
+    "errors": []
+  }
+}

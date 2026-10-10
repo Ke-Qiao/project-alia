@@ -1,0 +1,13 @@
+error: failed to download `alsa v0.9.1`
+
+Caused by:
+  unable to get packages from source
+
+Caused by:
+  failed to unpack package `alsa v0.9.1`
+
+Caused by:
+  failed to create directory `/cache/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/alsa-0.9.1`
+
+Caused by:
+  Read-only file system (os error 30)

@@ -1,0 +1,15 @@
+   Compiling alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 08s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 5 tests
+test bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test bootstrap::setup::tests::cancelled_setup_does_not_bind_or_read_terminal ... ok
+test bootstrap::setup::tests::unauthenticated_setup_listener_is_loopback_only ... ok
+test bootstrap::setup::tests::cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain ... ok
+test bootstrap::setup::tests::setup_completion_delivers_response_and_closes_stalled_connections ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 319 filtered out; finished in 3.39s
+

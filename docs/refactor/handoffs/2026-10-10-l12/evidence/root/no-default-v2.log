@@ -1,0 +1,24 @@
+    Checking sha2 v0.10.9
+    Checking sqlx-core v0.8.6
+    Checking alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+    Checking ed25519-dalek v2.2.0
+    Checking alia-transport v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/transport)
+    Checking sqlx-postgres v0.8.6
+    Checking sqlx-sqlite v0.8.6
+    Checking alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+    Checking sqlx v0.8.6
+    Checking sea-query-binder v0.7.0
+    Checking pgvector v0.4.1
+    Checking alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Checking sea-orm v1.1.20
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+warning: unused import: `alia_server::modules::delivery::transport::DeliveryTransport`
+ --> packages/alia-server/tests/channel_registry.rs:1:5
+  |
+1 | use alia_server::modules::delivery::transport::DeliveryTransport as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `alia-server` (test "channel_registry") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 32s

@@ -1,0 +1,159 @@
+{
+  "baseline": "d5481b5cf4a6eeb28f535f08a8b1b9be7b31d5c9",
+  "production_adapter_methods_compared": 25,
+  "adapter_methods": [
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "authenticated_source_epochs",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "authenticated_owner",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "owner_user_id",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "channel_type",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "channel_id",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "capabilities",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "reserve_text",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "deliver_text",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "cancel_text",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/cli.rs",
+      "implementation": "CliChannel",
+      "method": "execute_action",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "reserve_playback",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "deliver_audio",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "cancel_playback",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "authenticated_source_epochs",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "authenticated_owner",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "owner_user_id",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "channel_type",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "channel_id",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "capabilities",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "retire_voice_output",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "fence_voice",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "register_output",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "control_output",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "observe_output_control",
+      "body_equal_after_contract_path_and_capability_projection": true
+    },
+    {
+      "file": "packages/alia-server/src/channels/embedded/channel.rs",
+      "implementation": "EmbeddedChannel",
+      "method": "execute_action",
+      "body_equal_after_contract_path_and_capability_projection": true
+    }
+  ],
+  "delivery_service_and_media_identical_except_imports_and_contract_types": true,
+  "delivery_only_fixtures_without_channel_or_lifecycle": 3,
+  "runtime_execution": "not run by subagent; Root owns unified validation"
+}

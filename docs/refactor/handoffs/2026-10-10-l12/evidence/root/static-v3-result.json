@@ -1,0 +1,19 @@
+{
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess; subprocess.run([\"python3\",\"scripts/check-server-boundaries.py\"],check=True); subprocess.run([\"python3\",\"scripts/check-server-boundaries.py\",\"--self-test\"],check=True); subprocess.run([\"git\",\"diff\",\"--check\"],check=True)"
+  ],
+  "started_at": "2026-10-10T09:14:12.895164+00:00",
+  "finished_at": "2026-10-10T09:14:13.538056+00:00",
+  "elapsed_seconds": 0.64,
+  "exit_code": 0,
+  "source_manifest_sha256": "a412e90f06be3b17c7d2850be2ae684fe75b8214d8cfa122cc16d37aac03d254",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

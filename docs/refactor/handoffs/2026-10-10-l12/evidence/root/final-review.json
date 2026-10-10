@@ -1,0 +1,18 @@
+{
+  "reviewers": [
+    "l12_outbound_contracts",
+    "l12_audio_budget",
+    "l12_playback_timeout"
+  ],
+  "source_manifest_sha256": "bc542c0718b07fc45c1f7e09084a51fddfa3350014eee089514e6a582f9e75ea",
+  "findings": [],
+  "checks": [
+    "25 CLI/Embedded methods normalized-equivalent; original Arc upcast and voice pinning retained",
+    "DeliveryService/media native future cancellation ownership retained",
+    "audio_streaming actual consumers and defaults unchanged",
+    "audio budget algorithm and six original tests unchanged",
+    "sha2 only dev profile optimization; no dependency feature or algorithm changes",
+    "setup non-test behavior unchanged; actual listener drop precedes test witness; accepted socket bounded EOF/ConnectionReset"
+  ],
+  "limits": "static peer review; runtime validation reported separately"
+}

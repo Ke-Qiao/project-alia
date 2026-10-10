@@ -1,0 +1,12 @@
+{
+  "changed": [
+    "packages/alia-server/src/api/channels.rs",
+    "packages/alia-server/src/expression/orchestrator.rs",
+    "packages/alia-server/src/channels/cli/text.rs",
+    "packages/alia-server/src/grpc/voice_session.rs",
+    "packages/alia-server/tests/server_runtime/devices.rs",
+    "packages/alia-server/src/channels/cli.rs",
+    "Cargo.toml"
+  ],
+  "reason": "Remove compiler-confirmed unused imports; optimize existing sha2 dependency in dev/test profile after exact-binary timing"
+}

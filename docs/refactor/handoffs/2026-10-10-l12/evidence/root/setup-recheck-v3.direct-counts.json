@@ -1,0 +1,14 @@
+{
+  "kind": "direct libtest binary, not Cargo target aggregation",
+  "command": [
+    "target/debug/deps/alia_server-5e5a7edaca97f77f",
+    "--exact",
+    "bootstrap::setup::tests::cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain",
+    "--nocapture"
+  ],
+  "log_sha256": "8d468a4f923da5a7966bb7d43245521c58d7d7f103b16b4a8585deafa928f9f1",
+  "passed": 1,
+  "failed": 0,
+  "seconds": 0.1,
+  "limit": "targeted rerun passed; does not prove the original full-run failure was fixed"
+}

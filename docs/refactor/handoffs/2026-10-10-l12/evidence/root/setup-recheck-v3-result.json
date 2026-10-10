@@ -1,0 +1,20 @@
+{
+  "command": [
+    "target/debug/deps/alia_server-5e5a7edaca97f77f",
+    "--exact",
+    "bootstrap::setup::tests::cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-10T09:20:41.528195+00:00",
+  "finished_at": "2026-10-10T09:20:41.682484+00:00",
+  "elapsed_seconds": 0.15,
+  "exit_code": 0,
+  "source_manifest_sha256": "a412e90f06be3b17c7d2850be2ae684fe75b8214d8cfa122cc16d37aac03d254",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

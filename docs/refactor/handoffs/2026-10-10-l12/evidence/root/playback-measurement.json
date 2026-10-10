@@ -1,0 +1,34 @@
+{
+  "phases": {
+    "v1_targeted": {
+      "child_ms": 16551,
+      "build_ms": 16249,
+      "native_release_ms": 2,
+      "schema_drop_ms": 29
+    },
+    "v2_targeted": {
+      "child_ms": 1280,
+      "build_ms": 1014,
+      "native_release_ms": 2,
+      "schema_drop_ms": 30
+    },
+    "v2_full_default_parallel": {
+      "child_ms": 1565,
+      "build_ms": 1063,
+      "native_release_ms": 2,
+      "schema_drop_ms": 39
+    },
+    "v4_full_default_parallel": {
+      "child_ms": 2983,
+      "build_ms": 1833,
+      "native_release_ms": 2,
+      "schema_drop_ms": 87
+    }
+  },
+  "identical_input_sha256": "e3dab6f2f4586861b66c589eda3db87f4ecd775277adde569da8a482127bb2a5",
+  "identical_input_bytes": 462699808,
+  "hash_before_seconds": 15.416193875,
+  "hash_after_seconds": 0.833610583,
+  "ratio": 18.49327994316022,
+  "limit": "20s unchanged; historical L11 failure has no phase timeline; no assertion all possible contention eliminated"
+}

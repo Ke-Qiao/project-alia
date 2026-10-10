@@ -1,0 +1,5 @@
+{
+  "changed": [
+    "packages/alia-server/src/bootstrap/setup.rs"
+  ]
+}

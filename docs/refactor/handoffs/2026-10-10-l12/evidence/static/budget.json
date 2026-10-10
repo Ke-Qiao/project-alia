@@ -1,0 +1,21 @@
+{
+  "base_commit": "d5481b5cf4a6eeb28f535f08a8b1b9be7b31d5c9",
+  "implementation_equal_after_documented_module_path_and_provider_alias_extraction": true,
+  "existing_six_tests_byte_identical": true,
+  "moved_test_sha256": "33c7b863d82a92a83ff868631e951c25cb9b01faed342e1cceef88c160449de0",
+  "provider_tts_stream_alias_preserved": true,
+  "provider_stream_total_bound_preserved": true,
+  "old_provider_module_removed": true,
+  "old_budget_paths_outside_channel_agent_scope": [],
+  "cargo_or_runtime_tests_run_by_budget_agent": false,
+  "root_verification_required": [
+    "modules::delivery::audio::tests",
+    "providers::tts::gpt_sovits::tests",
+    "interaction tests",
+    "output_lifecycle",
+    "duplex_playback",
+    "no-default all-targets"
+  ],
+  "remaining_parallel_scope": "outbound agent has completed Channel budget/AudioBuffer imports; Root owns runtime validation",
+  "old_budget_paths_all_server_sources_and_tests": []
+}

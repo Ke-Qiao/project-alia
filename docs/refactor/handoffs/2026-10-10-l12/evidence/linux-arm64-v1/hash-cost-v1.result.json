@@ -1,0 +1,36 @@
+{
+  "started": "2026-10-10T09:08:04.331242+00:00",
+  "command": [
+    "python3",
+    "/evidence/measure-build-digest.py",
+    "--binary",
+    "/cache/target/debug/deps/server_runtime-d688634c1b44968f",
+    "--out",
+    "/evidence/hash-cost-v1"
+  ],
+  "container": "alia-l12-linux-20261010-v1-cache",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "5c0560d721a54ffd26d750596719efe038b3c801c409d831443471d06a070fac",
+  "source_before": {
+    "file_count": 641,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 17.098,
+  "finished": "2026-10-10T09:08:21.429266+00:00",
+  "source_after": {
+    "file_count": 641,
+    "errors": []
+  },
+  "finished_at": "2026-10-10T09:08:21.429266+00:00",
+  "source_drift": []
+}

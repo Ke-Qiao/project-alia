@@ -1,5 +1,8 @@
 # 隔离平台验证
 
+**2026-10-10 L12：10/10，L09—L12 4/4，六轮仍 2/6。** 源码 `d9f97216a6599742c45e0a6389110b6b465e8461`，V4 manifest `bc542c0718b07fc45c1f7e09084a51fddfa3350014eee089514e6a582f9e75ea`，641/641 Git blob 一致。 macOS workspace **1060/0/5**、真实 PTY **3/0/0**、无默认 availability **2/0/0**、提前准入 **1/0/0**；Linux ARM64 Server 默认并行完整测试 **778/0/5**。两端无默认全目标检查及 Linux release/native link 均通过。计数依次为 passed/failed/ignored，子进程摘要不重复计入。 当前 Linux hash 瓶颈实测修复，20 秒期限及默认并发保持；历史 L11 超时与 V3 setup 失败的证据边界保留。资源全部关闭，见 [最新检查点](resume-checkpoint-l12-2026-10-10.md) 和 [最终验证](layering-l12-2026-10-10.md#最终验证与证据)。以下为历史记录。
+
+
 **2026-10-10 L11：10/10，L09—L12 3/4，六轮仍 2/6。** 源码 `60f665cf6fce4811b144dfc743b4814c5bdf19d5`，V4 manifest `520ec684c2619e775389330adbe837113edcb675e2f7d62fc7f5d65758fe274f`，640/640 Git blob 一致。macOS workspace **1060/0/5**、真实 PTY **3/0**、无默认 availability **2/0**、提前准入 **1/0**；Linux ARM64 Server 完整默认并行复跑 **778/0/5**，两端无默认全目标及 Linux release/native link 通过。所有最终结果同源且无漂移。 Linux 首次旧关闭测试超时仍待定位，原失败与复跑均保留。资源已关闭；见 [当前检查点](resume-checkpoint-l11-2026-10-10.md) 与 [最终验证](layering-l11-2026-10-10.md#最终验证与证据)。以下为历史记录。
 
 **2026-10-10：L10 初始化依赖清理 10/10，L09—L12 2/4，六轮仍 2/6。** 源码 `4519e75`，V2 637/637 输入匹配。macOS workspace **1058/0/5**、PTY **3/0**、无默认 availability **2/0**、提前准入 **1/0**；Linux ARM64 Server **776/0/5**、无默认和 release/native link 通过。全局初始化参数包和三个固定工厂删除，默认 Shadow/政策保持；资源已关闭。见 [当前检查点](resume-checkpoint-2026-10-10.md)、[最终验证](layering-2026-10-10.md#最终验证与证据)、[L11—L12](checklists/layering-next.md)。以下为历史记录。

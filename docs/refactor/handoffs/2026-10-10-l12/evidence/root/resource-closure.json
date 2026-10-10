@@ -1,0 +1,55 @@
+{
+  "recorded_at": "2026-10-10T09:40:28.684963+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-l12-linux-20261010-v1-cache": {
+      "id": "e88886f8926faa47e3c8afb01ab26017c42f4c956a7eb7fbcae002ec715ed139",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T09:40:12.739242531Z"
+    },
+    "alia-l12-linux-20261010-v1": {
+      "id": "0b408560e17d4dd802ee6ccbb0544e6529ba27b5df5e243ea78a6e723c4a7d4e",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T09:04:07.342474905Z"
+    },
+    "alia-l12-linux-20261010-v2": {
+      "id": "6f11e6144de7d41e4472766ea2bd232e6e2da72a8f14e12894c8d93afcb48ef3",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T09:40:17.879158739Z"
+    },
+    "alia-l12-linux-20261010-v3": {
+      "id": "3a33dbb804a381c93eb8b7e4d14c1f3aac83a16df4b2421fef0b839905571ddd",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T09:40:22.989333905Z"
+    },
+    "alia-l12-linux-20261010-v4": {
+      "id": "9bb31eba6aaa0f169efdb9f442937fd9c06f0ef5fdcd4d0eecd33011cb86d27d",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-10T09:40:28.085373155Z"
+    },
+    "alia-l12-20261010-db": {
+      "id": "c6626354e2bbdaf8857fc7bec0ce9f305a927489a2357b9917c329414e86335d",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-10T09:40:28.554341238Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

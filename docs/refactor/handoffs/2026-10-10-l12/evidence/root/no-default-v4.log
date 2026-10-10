@@ -1,0 +1,6 @@
+    Checking alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Checking alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Checking alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+    Checking alia-transport v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/transport)
+    Checking alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 50.65s

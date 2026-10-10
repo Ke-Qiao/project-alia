@@ -1,0 +1,108 @@
+{
+  "purpose": "Same sha2 rlib and 64 KiB read/update loop; no inference from total build time alone",
+  "binary_before": {
+    "path": "/cache/target/debug/deps/server_runtime-d688634c1b44968f",
+    "bytes": 462699808,
+    "sha256": "e3dab6f2f4586861b66c589eda3db87f4ecd775277adde569da8a482127bb2a5"
+  },
+  "sha2_rlib": {
+    "path": "/cache/target/debug/deps/libsha2-94ad25fc377d8918.rlib",
+    "bytes": 351602,
+    "sha256": "00a116b40cc7cd9e1a74912e087dd5d0a19a24713a4948c6c9c917fd1ccbf836"
+  },
+  "sha2_fingerprint": {
+    "path": "/cache/target/debug/.fingerprint/sha2-94ad25fc377d8918/lib-sha2",
+    "bytes": 16,
+    "sha256": "ccac1356ab436b1ca959443cde274fc82b33053bc9d2a2b9bb7e7be8537842eb"
+  },
+  "sha2_features": "[\"default\", \"std\"]",
+  "target_fingerprint": {
+    "path": "/cache/target/debug/.fingerprint/alia-server-d688634c1b44968f/test-integration-test-server_runtime.json",
+    "bytes": 3323,
+    "sha256": "f658cd3c15b3cae598aa05edce504090c1d8b780bf64011c377cef64cbc5309b"
+  },
+  "target_sha2_dependency": [
+    9857275760291862238,
+    "sha2",
+    false,
+    13025174389067551188
+  ],
+  "probe_source": {
+    "path": "/evidence/build-digest-probe.rs",
+    "bytes": 763,
+    "sha256": "a712e59e7c9b6e986128fe30201a58b6070d525569b741010895aa36c197a8d7"
+  },
+  "rustc_version": {
+    "argv": [
+      "rustc",
+      "--version",
+      "--verbose"
+    ],
+    "elapsed_ns": 31725001,
+    "exit_code": 0,
+    "stdout": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-unknown-linux-gnu\nrelease: 1.95.0\nLLVM version: 22.1.2\n",
+    "stderr": ""
+  },
+  "compile": {
+    "argv": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "debuginfo=2",
+      "--extern",
+      "sha2=/cache/target/debug/deps/libsha2-94ad25fc377d8918.rlib",
+      "-L",
+      "dependency=/cache/target/debug/deps",
+      "/evidence/build-digest-probe.rs",
+      "-o",
+      "/evidence/hash-cost-v1/build-digest-probe"
+    ],
+    "elapsed_ns": 144566500,
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "probe_binary": {
+    "path": "/evidence/hash-cost-v1/build-digest-probe",
+    "bytes": 4858952,
+    "sha256": "67bed0c4bb7ab95fdc08aa582fd9a00f2d7fd59fc81e5d37d7508071d7f22ae2"
+  },
+  "vector_probe": {
+    "argv": [
+      "/evidence/hash-cost-v1/build-digest-probe",
+      "/evidence/hash-cost-v1/probe-vector.bin"
+    ],
+    "elapsed_ns": 7090250,
+    "exit_code": 0,
+    "stdout": "{\"bytes\":65537,\"elapsed_ns\":2180750,\"sha256\":\"11787b8dd479293a3f85f4eb483a1f082b7830f67c79d6e384c70986304e1208\"}\n",
+    "stderr": ""
+  },
+  "production_algorithm_probe": {
+    "argv": [
+      "/evidence/hash-cost-v1/build-digest-probe",
+      "/cache/target/debug/deps/server_runtime-d688634c1b44968f"
+    ],
+    "elapsed_ns": 15420945042,
+    "exit_code": 0,
+    "stdout": "{\"bytes\":462699808,\"elapsed_ns\":15416193875,\"sha256\":\"e3dab6f2f4586861b66c589eda3db87f4ecd775277adde569da8a482127bb2a5\"}\n",
+    "stderr": ""
+  },
+  "sha256sum": {
+    "argv": [
+      "sha256sum",
+      "/cache/target/debug/deps/server_runtime-d688634c1b44968f"
+    ],
+    "elapsed_ns": 864939500,
+    "exit_code": 0,
+    "stdout": "e3dab6f2f4586861b66c589eda3db87f4ecd775277adde569da8a482127bb2a5  /cache/target/debug/deps/server_runtime-d688634c1b44968f\n",
+    "stderr": ""
+  },
+  "binary_after": {
+    "path": "/cache/target/debug/deps/server_runtime-d688634c1b44968f",
+    "bytes": 462699808,
+    "sha256": "e3dab6f2f4586861b66c589eda3db87f4ecd775277adde569da8a482127bb2a5"
+  },
+  "digest_and_bytes_match": true
+}
