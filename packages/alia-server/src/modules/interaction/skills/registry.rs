@@ -16,16 +16,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, IsolationLevel, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, oneshot};
 use uuid::Uuid;
 
 use super::markdown;
-use super::{PluginSkillDefinition, SkillInfo, SkillMatch, SkillResolution};
+use super::{SkillInfo, SkillMatch, SkillResolution};
 use crate::entity::{registry_artifact, registry_dependency, skill, skill_preferred_tool, tool};
-use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle};
+use crate::modules::platform::lifecycle::{ModuleHealth, ModuleLifecycle, RuntimeTasks};
 use crate::registry::{ArtifactRef, ArtifactRegistry, KIND_SKILL};
 
 const OBSOLETE_BUILTIN_SKILLS: &[&str] =
@@ -55,13 +55,117 @@ pub struct LoadedSkill {
 pub struct SkillRegistry {
     db: Option<DatabaseConnection>,
     /// In-memory skill index (loaded from DB)
-    skills: Arc<RwLock<HashMap<String, LoadedSkill>>>,
+    skills: Arc<RwLock<Option<HashMap<String, LoadedSkill>>>>,
+    changes: Arc<Mutex<bool>>,
+    commits: RuntimeTasks,
     /// Minimum confidence threshold for matching
     min_confidence: f32,
     /// Optional directory for markdown skill files
     skills_dir: Option<PathBuf>,
     /// Unified artifact/dependency graph manager.
     artifacts: Option<Arc<ArtifactRegistry>>,
+}
+
+pub(crate) struct SkillChange {
+    registry: Arc<SkillRegistry>,
+    _guard: OwnedMutexGuard<bool>,
+    transaction: DatabaseTransaction,
+}
+
+impl SkillChange {
+    pub(crate) fn transaction(&self) -> &DatabaseTransaction {
+        &self.transaction
+    }
+
+    pub(crate) async fn commit(self) -> anyhow::Result<()> {
+        let snapshot = load_snapshot(&self.transaction).await?;
+        let mut index = self.registry.skills.clone().write_owned().await;
+        let (send, receive) = oneshot::channel();
+        let registry = self.registry.clone();
+        registry.commits.try_spawn("skill index commit", async move {
+            let Self {
+                registry,
+                _guard,
+                transaction,
+            } = self;
+            // A lost commit acknowledgement must never leave a stale index readable.
+            *index = None;
+            let result = transaction.commit().await;
+            match &result {
+                Ok(()) => *index = Some(snapshot),
+                Err(error) => {
+                    tracing::warn!(%error, "skill commit failed; reconciling index with database");
+                    match registry.read_snapshot().await {
+                        Ok(snapshot) => *index = Some(snapshot),
+                        Err(error) => {
+                            tracing::error!(%error, "skill index unavailable after commit failure");
+                        }
+                    }
+                }
+            }
+            let _ = send.send(result);
+            Ok(())
+        })?;
+        receive
+            .await
+            .map_err(|error| anyhow::anyhow!("skill commit owner exited: {error}"))??;
+        Ok(())
+    }
+}
+
+async fn load_snapshot(db: &impl ConnectionTrait) -> anyhow::Result<HashMap<String, LoadedSkill>> {
+    let rows = skill::Entity::find()
+        .filter(skill::Column::Enabled.eq(true))
+        .order_by_desc(skill::Column::Priority)
+        .all(db)
+        .await?;
+    let bindings = skill_preferred_tool::Entity::find().all(db).await?;
+    let tools = tool::Entity::find()
+        .filter(tool::Column::Enabled.eq(true))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|tool| (tool.id, tool.name))
+        .collect::<HashMap<_, _>>();
+    let mut preferred_tools: HashMap<Uuid, Vec<String>> = HashMap::new();
+    for binding in bindings {
+        if let Some(name) = tools.get(&binding.tool_id) {
+            preferred_tools
+                .entry(binding.skill_id)
+                .or_default()
+                .push(name.clone());
+        }
+    }
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let keywords = row
+                .intent_patterns
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (
+                row.name.clone(),
+                LoadedSkill {
+                    info: SkillInfo {
+                        name: row.name,
+                        display_name: row.display_name,
+                        description: row.description.unwrap_or_default(),
+                        category: row.category,
+                    },
+                    keywords,
+                    preferred_tools: preferred_tools.remove(&row.id).unwrap_or_default(),
+                    prompt_template: row.prompt_template,
+                    cacheable: row.cacheable,
+                    priority: row.priority,
+                },
+            )
+        })
+        .collect())
 }
 
 impl Default for SkillRegistry {
@@ -74,7 +178,9 @@ impl SkillRegistry {
     pub fn new() -> Self {
         Self {
             db: None,
-            skills: Arc::new(RwLock::new(HashMap::new())),
+            skills: Arc::new(RwLock::new(Some(HashMap::new()))),
+            changes: Arc::new(Mutex::new(false)),
+            commits: RuntimeTasks::default(),
             min_confidence: 0.3,
             skills_dir: None,
             artifacts: None,
@@ -106,52 +212,33 @@ impl SkillRegistry {
             .ok_or_else(|| anyhow::anyhow!("SkillRegistry not initialized"))
     }
 
-    /// Load all enabled skills from DB into memory
-    async fn load_skills(&self) -> anyhow::Result<()> {
-        let db = self.db()?;
-
-        let rows = skill::Entity::find()
-            .filter(skill::Column::Enabled.eq(true))
-            .order_by_desc(skill::Column::Priority)
-            .all(db)
+    async fn begin_snapshot(&self) -> anyhow::Result<DatabaseTransaction> {
+        let tx = self
+            .db()?
+            .begin_with_config(Some(IsolationLevel::RepeatableRead), None)
             .await?;
+        // Wait for an uncertain earlier COMMIT before establishing the read snapshot.
+        tx.execute_unprepared("LOCK TABLE skills IN SHARE ROW EXCLUSIVE MODE")
+            .await?;
+        Ok(tx)
+    }
 
-        let mut skills = self.skills.write().await;
-        skills.clear();
+    async fn read_snapshot(&self) -> anyhow::Result<HashMap<String, LoadedSkill>> {
+        let tx = self.begin_snapshot().await?;
+        let snapshot = load_snapshot(&tx).await?;
+        tx.commit().await?;
+        Ok(snapshot)
+    }
 
-        for row in rows {
-            let keywords = row
-                .intent_patterns
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-
-            let preferred_tools = preferred_tool_names_for_skill(db, row.id).await?;
-
-            skills.insert(
-                row.name.clone(),
-                LoadedSkill {
-                    info: SkillInfo {
-                        name: row.name,
-                        display_name: row.display_name,
-                        description: row.description.unwrap_or_default(),
-                        category: row.category,
-                    },
-                    keywords,
-                    preferred_tools,
-                    prompt_template: row.prompt_template,
-                    cacheable: row.cacheable,
-                    priority: row.priority,
-                },
-            );
-        }
-
-        tracing::info!(count = skills.len(), "loaded skills from database");
-        Ok(())
+    pub(crate) async fn begin_change(self: &Arc<Self>) -> anyhow::Result<SkillChange> {
+        let guard = self.changes.clone().lock_owned().await;
+        anyhow::ensure!(!*guard, "skill registry is stopping");
+        let transaction = self.begin_snapshot().await?;
+        Ok(SkillChange {
+            registry: self.clone(),
+            _guard: guard,
+            transaction,
+        })
     }
 
     /// Ensure default built-in skills are present.
@@ -250,7 +337,12 @@ impl SkillRegistry {
 
     /// Reload skills from DB into memory
     pub async fn reload(&self) -> anyhow::Result<()> {
-        self.load_skills().await
+        let guard = self.changes.lock().await;
+        anyhow::ensure!(!*guard, "skill registry is stopping");
+        let snapshot = self.read_snapshot().await?;
+        tracing::info!(count = snapshot.len(), "loaded skills from database");
+        *self.skills.write().await = Some(snapshot);
+        Ok(())
     }
 
     /// Sync markdown skill files into DB (upsert by name).
@@ -330,62 +422,6 @@ impl SkillRegistry {
 
         Ok(())
     }
-
-    /// Get a skill by name from DB
-    pub async fn get_by_name(&self, name: &str) -> anyhow::Result<Option<skill::Model>> {
-        let db = self.db()?;
-        Ok(skill::Entity::find()
-            .filter(skill::Column::Name.eq(name))
-            .one(db)
-            .await?)
-    }
-
-    /// Create a new skill in DB
-    pub async fn create(&self, model: skill::ActiveModel) -> anyhow::Result<skill::Model> {
-        let db = self.db()?;
-        let result = model.insert(db).await?;
-        self.artifacts()?
-            .upsert_artifact(&ArtifactRef::skill(result.name.clone()), &result.source)
-            .await?;
-        self.load_skills().await?;
-        Ok(result)
-    }
-
-    /// Update a skill in DB
-    pub async fn update(&self, model: skill::ActiveModel) -> anyhow::Result<skill::Model> {
-        let db = self.db()?;
-        let result = model.update(db).await?;
-        self.artifacts()?
-            .upsert_artifact(&ArtifactRef::skill(result.name.clone()), &result.source)
-            .await?;
-        self.load_skills().await?;
-        Ok(result)
-    }
-
-    /// Delete a skill by ID
-    pub async fn delete(&self, id: Uuid) -> anyhow::Result<bool> {
-        let db = self.db()?;
-        let Some(existing) = skill::Entity::find_by_id(id).one(db).await? else {
-            return Ok(false);
-        };
-        let artifact = ArtifactRef::skill(existing.name);
-        self.artifacts()?
-            .ensure_no_external_dependents(std::slice::from_ref(&artifact))
-            .await?;
-        let result = skill::Entity::delete_by_id(id).exec(db).await?;
-        self.artifacts()?.delete_artifact(&artifact).await?;
-        self.load_skills().await?;
-        Ok(result.rows_affected > 0)
-    }
-
-    /// List all skills from DB (including disabled)
-    pub async fn list_all_db(&self) -> anyhow::Result<Vec<skill::Model>> {
-        let db = self.db()?;
-        Ok(skill::Entity::find()
-            .order_by_desc(skill::Column::Priority)
-            .all(db)
-            .await?)
-    }
 }
 
 #[async_trait]
@@ -408,22 +444,33 @@ impl ModuleLifecycle for SkillRegistry {
             tracing::warn!(error = %e, "failed to ensure builtin skill preferred tools");
         }
 
-        self.load_skills().await?;
+        self.reload().await?;
         Ok(())
     }
 
+    async fn stop(&self) -> anyhow::Result<()> {
+        *self.changes.lock().await = true;
+        self.commits.close();
+        self.commits.wait().await
+    }
+
     async fn health_check(&self) -> ModuleHealth {
-        if self.db.is_some() {
-            ModuleHealth::Healthy
-        } else {
+        if self.db.is_none() {
             ModuleHealth::Unhealthy("Database not initialized".into())
+        } else if self.skills.read().await.is_none() {
+            ModuleHealth::Degraded("Skill index unavailable".into())
+        } else {
+            ModuleHealth::Healthy
         }
     }
 }
 
 impl SkillRegistry {
     pub async fn match_skill(&self, intent: &str) -> anyhow::Result<Option<SkillMatch>> {
-        let skills = self.skills.read().await;
+        let index = self.skills.read().await;
+        let skills = index
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
 
         // Find best matching skill, using priority to break ties
         let mut best: Option<(&str, f32, i32)> = None; // (name, score, priority)
@@ -459,7 +506,10 @@ impl SkillRegistry {
     }
 
     pub async fn resolve(&self, skill: &SkillMatch) -> anyhow::Result<SkillResolution> {
-        let skills = self.skills.read().await;
+        let index = self.skills.read().await;
+        let skills = index
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
 
         let loaded = match skills.get(&skill.name) {
             Some(s) => s,
@@ -477,137 +527,12 @@ impl SkillRegistry {
     }
 
     pub async fn list_skills(&self) -> anyhow::Result<Vec<SkillInfo>> {
-        let skills = self.skills.read().await;
+        let index = self.skills.read().await;
+        let skills = index
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Skill index unavailable"))?;
         Ok(skills.values().map(|s| s.info.clone()).collect())
     }
-
-    pub async fn register_plugin_skill(
-        &self,
-        plugin_name: &str,
-        def: PluginSkillDefinition,
-    ) -> anyhow::Result<()> {
-        let db = self.db()?;
-        let now = Utc::now();
-        let tool_ids = resolve_tool_ids(db, self.artifacts()?, &def.preferred_tools).await?;
-
-        let intent_patterns = serde_json::Value::Array(
-            def.intent_patterns
-                .iter()
-                .map(|s| serde_json::json!(s))
-                .collect(),
-        );
-
-        // Upsert by name
-        let existing = skill::Entity::find()
-            .filter(skill::Column::Name.eq(&def.name))
-            .one(db)
-            .await?;
-
-        let skill_id = match existing {
-            Some(row) => {
-                let skill_id = row.id;
-                let mut active: skill::ActiveModel = row.into();
-                active.display_name = Set(def.display_name);
-                active.description = Set(def.description);
-                active.category = Set(def.category);
-                active.intent_patterns = Set(intent_patterns);
-                active.source = Set(plugin_name.to_string());
-                active.prompt_template = Set(def.prompt_template);
-                active.cacheable = Set(def.cacheable);
-                active.enabled = Set(true);
-                active.priority = Set(def.priority);
-                active.updated_at = Set(now);
-                active.update(db).await?;
-                skill_id
-            }
-            None => {
-                let skill_id = Uuid::new_v4();
-                let active = skill::ActiveModel {
-                    id: Set(skill_id),
-                    name: Set(def.name.clone()),
-                    display_name: Set(def.display_name),
-                    description: Set(def.description),
-                    category: Set(def.category),
-                    intent_patterns: Set(intent_patterns),
-                    source: Set(plugin_name.to_string()),
-                    prompt_template: Set(def.prompt_template),
-                    cacheable: Set(def.cacheable),
-                    enabled: Set(true),
-                    priority: Set(def.priority),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                };
-                active.insert(db).await?;
-                skill_id
-            }
-        };
-
-        self.artifacts()?
-            .upsert_artifact(&ArtifactRef::skill(def.name.clone()), plugin_name)
-            .await?;
-        replace_skill_preferred_tool_ids(db, self.artifacts()?, skill_id, &def.name, &tool_ids)
-            .await?;
-
-        tracing::info!(plugin = %plugin_name, skill = %def.name, "registered plugin skill");
-        self.load_skills().await?;
-        Ok(())
-    }
-
-    pub async fn unregister_plugin_skills(&self, plugin_name: &str) -> anyhow::Result<u64> {
-        let db = self.db()?;
-        let tx = db.begin().await?;
-        let artifacts = self
-            .artifacts()?
-            .owned_artifacts_in(&tx, "plugin", plugin_name, Some(KIND_SKILL))
-            .await?;
-
-        self.artifacts()?
-            .ensure_no_external_dependents_in(&tx, &artifacts)
-            .await?;
-
-        let mut removed = 0;
-        for artifact in &artifacts {
-            let result = skill::Entity::delete_many()
-                .filter(skill::Column::Name.eq(&artifact.name))
-                .exec(&tx)
-                .await?;
-            removed += result.rows_affected;
-            self.artifacts()?.delete_artifact_in(&tx, artifact).await?;
-        }
-        tx.commit().await?;
-
-        if removed > 0 {
-            tracing::info!(
-                plugin = %plugin_name,
-                count = removed,
-                "unregistered plugin skills"
-            );
-            self.load_skills().await?;
-        }
-
-        Ok(removed)
-    }
-}
-
-async fn preferred_tool_names_for_skill(
-    db: &DatabaseConnection,
-    skill_id: Uuid,
-) -> anyhow::Result<Vec<String>> {
-    let bindings = skill_preferred_tool::Entity::find()
-        .filter(skill_preferred_tool::Column::SkillId.eq(skill_id))
-        .all(db)
-        .await?;
-    let mut names = Vec::with_capacity(bindings.len());
-
-    for binding in bindings {
-        if let Some(row) = tool::Entity::find_by_id(binding.tool_id).one(db).await? {
-            if row.enabled {
-                names.push(row.name);
-            }
-        }
-    }
-
-    Ok(names)
 }
 
 async fn replace_skill_preferred_tools(
@@ -993,3 +918,7 @@ pub fn builtin_skill_seeds() -> Vec<skill::ActiveModel> {
         },
     ]
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

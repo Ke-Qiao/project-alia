@@ -61,7 +61,7 @@ RETIRED_SYMBOLS = (
     "DbCache", "RouterStrategy", "MultiLayerRouter", "PassthroughRouter", "DirectRouter",
     "PersonaProvider", "TemplatePersona", "SkillProvider", "BuiltinSkills", "InsightStrategy",
     "ScheduledInsights", "NoopInsights", "ModuleContext", "set_response_status_in_transaction",
-    "ChannelTarget",
+    "ChannelTarget", "PluginSkillDefinition", "register_plugin_skill", "unregister_plugin_skills",
 )
 FIXED_FACTORIES = "memory|conversation|cache|router|persona|skills|insights|sensor|rule_engine|scheduler|tools_with_sensors"
 OLD_SYMBOLS = re.compile(
@@ -81,7 +81,7 @@ CORE_CONTRACT = re.compile(
     r"|CacheStatus|CacheReview|CacheWork|CacheCas|SemanticCacheCandidate|DEFAULT_CACHE_SCOPE"
     r"|CACHE_METADATA_SCHEMA|RouterService|RouterInput|RouteDecision|ToolCandidateInfo|ToolSelectionInput"
     r"|PersonaService|Persona|RenderedPersonaPrompt|DEFAULT_ASSISTANT_NAME|sanitize_assistant_name"
-    r"|SkillRegistry|SkillMatch|SkillResolution|SkillInfo|PluginSkillDefinition|InsightService|InsightTask|InsightStatus|InsightPhase"
+    r"|SkillRegistry|SkillChange|SkillMatch|SkillResolution|SkillInfo|InsightService|InsightTask|InsightStatus|InsightPhase"
     r"|SensorDefinition|SensorReading|SensorQuery|SensorSummary|SensorReadMode|SensorStalePolicy"
     r"|SensorFreshnessPolicy|SensorReadResult|SensorReadProvider|SensorRegistry|SensorRegistryConfig)\b"
 )
@@ -157,6 +157,11 @@ def check(server: Path) -> list[str]:
             if relative.startswith("src/modules/interaction/conversation/"):
                 if re.search(r"\b(?:commit_response|DeliveryRepository)\b", text):
                     errors.append(f"{relative}: Conversation storage owns a cross-domain response transaction")
+            if relative == "src/modules/interaction/skills/registry.rs":
+                if re.search(r"\bfn\s+(?:create|update|delete|get_by_name|list_all_db)\s*\(", text):
+                    errors.append(f"{relative}: retired Skills database mutation/read facade")
+            if relative == "src/api/skills.rs" and re.search(r"\bTransactionTrait\b", text):
+                errors.append(f"{relative}: Skills HTTP bypasses the registry change owner")
             if relative.startswith("src/modules/delivery/"):
                 if re.search(r"\b(?:channels|providers)\s*::|\bChannelAdapter\b", text):
                     errors.append(f"{relative}: Delivery depends on a Channel or provider implementation contract")
@@ -273,6 +278,18 @@ def self_test() -> None:
         api.parent.mkdir(parents=True)
         api.write_text("async fn create_persona() {}")
         assert not check(server)
+        skills_api = server / "src/api/skills.rs"
+        skills_api.write_text("use sea_orm::TransactionTrait;")
+        assert any("Skills HTTP bypasses" in error for error in check(server))
+        skills_api.write_text("let change = skills.begin_change().await?; change.commit().await?;")
+        assert not check(server)
+        skills_registry = server / "src/modules/interaction/skills/registry.rs"
+        for name in ("create", "update", "delete", "get_by_name", "list_all_db"):
+            skills_registry.write_text(f"pub async fn {name}(&self) {{}}")
+            assert any("retired Skills" in error for error in check(server)), name
+        skills_registry.write_text("pub async fn begin_change(&self) {} pub async fn reload(&self) {}")
+        assert not check(server)
+        skills_registry.write_text("")
         adapter = server / "src/providers/adapter.rs"
         adapter.parent.mkdir(parents=True, exist_ok=True)
         for invalid in (

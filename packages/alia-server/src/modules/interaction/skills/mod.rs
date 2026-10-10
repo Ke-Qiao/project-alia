@@ -37,22 +37,6 @@ pub struct SkillInfo {
     pub category: String,
 }
 
-/// Skill definition provided by a plugin at runtime.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginSkillDefinition {
-    pub name: String,
-    pub display_name: String,
-    pub description: Option<String>,
-    pub category: String,
-    pub intent_patterns: Vec<String>,
-    pub preferred_tools: Vec<String>,
-    pub prompt_template: Option<String>,
-    #[serde(default)]
-    pub cacheable: bool,
-    #[serde(default)]
-    pub priority: i32,
-}
-
 pub mod markdown;
 pub mod registry;
 

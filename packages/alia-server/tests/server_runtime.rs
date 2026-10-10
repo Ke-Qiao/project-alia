@@ -22,8 +22,8 @@ static DATABASE_CASES: Semaphore = Semaphore::const_new(2);
 
 fn runtime_phase(phase: &str) {
     static START: std::sync::OnceLock<Option<Instant>> = std::sync::OnceLock::new();
-    if let Some(start) = START
-        .get_or_init(|| std::env::var_os("ALIA_TEST_RUNTIME_PHASES").map(|_| Instant::now()))
+    if let Some(start) =
+        START.get_or_init(|| std::env::var_os("ALIA_TEST_RUNTIME_PHASES").map(|_| Instant::now()))
     {
         eprintln!(
             "[runtime-phase] pid={} unix_ms={} elapsed_ms={} phase={phase}",
@@ -72,6 +72,9 @@ mod companion;
 
 #[path = "server_runtime/devices.rs"]
 mod devices;
+
+#[path = "server_runtime/skills.rs"]
+mod skills;
 
 #[cfg(feature = "llm-openai")]
 #[path = "server_runtime/health.rs"]

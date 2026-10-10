@@ -4,7 +4,6 @@ use axum::{Json, Router};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -39,10 +38,7 @@ pub struct SkillResponse {
     pub updated_at: String,
 }
 
-async fn skill_response(
-    db: &sea_orm::DatabaseConnection,
-    m: skill::Model,
-) -> Result<SkillResponse> {
+async fn skill_response(db: &impl ConnectionTrait, m: skill::Model) -> Result<SkillResponse> {
     let preferred_tools = preferred_tool_names_for_skill(db, m.id).await?;
     Ok(SkillResponse {
         id: m.id,
@@ -86,6 +82,13 @@ pub struct CreateSkillRequest {
 
 fn default_enabled() -> bool {
     true
+}
+
+fn skill_change_error(error: anyhow::Error) -> crate::error::AppError {
+    match error.downcast::<sea_orm::DbErr>() {
+        Ok(error) => crate::error::AppError::Database(error),
+        Err(error) => crate::error::AppError::Internal(error),
+    }
 }
 
 async fn preferred_tool_names_for_skill(
@@ -260,11 +263,13 @@ async fn create_skill(
     let now = Utc::now();
     let skill_id = Uuid::new_v4();
     let skill_name = body.name;
-    let tx = state
-        .db
-        .begin()
+    let change = state
+        .modules
+        .skills
+        .begin_change()
         .await
-        .map_err(crate::error::AppError::Database)?;
+        .map_err(skill_change_error)?;
+    let tx = change.transaction();
     let model = skill::ActiveModel {
         id: Set(skill_id),
         name: Set(skill_name.clone()),
@@ -282,29 +287,26 @@ async fn create_skill(
     };
 
     let result = model
-        .insert(&tx)
+        .insert(tx)
         .await
         .map_err(crate::error::AppError::Database)?;
     state
         .artifacts
-        .upsert_artifact_in(&tx, &ArtifactRef::skill(skill_name.clone()), "api")
+        .upsert_artifact_in(tx, &ArtifactRef::skill(skill_name.clone()), "api")
         .await
         .map_err(crate::error::AppError::Internal)?;
     replace_skill_preferred_tools(
         &state.artifacts,
-        &tx,
+        tx,
         skill_id,
         &skill_name,
         &body.preferred_tools,
     )
     .await?;
-    tx.commit()
-        .await
-        .map_err(crate::error::AppError::Database)?;
+    let response = skill_response(tx, result).await?;
+    change.commit().await.map_err(skill_change_error)?;
 
-    // TODO: trigger skills reload in SkillRegistry module
-
-    Ok(Json(skill_response(&state.db, result).await?))
+    Ok(Json(response))
 }
 
 async fn update_skill(
@@ -313,9 +315,16 @@ async fn update_skill(
     Path(name): Path<String>,
     Json(body): Json<UpdateSkillRequest>,
 ) -> Result<Json<SkillResponse>> {
+    let change = state
+        .modules
+        .skills
+        .begin_change()
+        .await
+        .map_err(skill_change_error)?;
+    let tx = change.transaction();
     let existing = skill::Entity::find()
         .filter(skill::Column::Name.eq(&name))
-        .one(&state.db)
+        .one(tx)
         .await
         .map_err(crate::error::AppError::Database)?
         .ok_or_else(|| crate::error::AppError::NotFound(format!("Skill '{}' not found", name)))?;
@@ -356,31 +365,23 @@ async fn update_skill(
 
     active.updated_at = Set(Utc::now());
 
-    let tx = state
-        .db
-        .begin()
-        .await
-        .map_err(crate::error::AppError::Database)?;
     let result = active
-        .update(&tx)
+        .update(tx)
         .await
         .map_err(crate::error::AppError::Database)?;
     state
         .artifacts
-        .upsert_artifact_in(&tx, &ArtifactRef::skill(name.clone()), &result.source)
+        .upsert_artifact_in(tx, &ArtifactRef::skill(name.clone()), &result.source)
         .await
         .map_err(crate::error::AppError::Internal)?;
     if let Some(preferred_tools) = preferred_tools_update {
-        replace_skill_preferred_tools(&state.artifacts, &tx, skill_id, &name, &preferred_tools)
+        replace_skill_preferred_tools(&state.artifacts, tx, skill_id, &name, &preferred_tools)
             .await?;
     }
-    tx.commit()
-        .await
-        .map_err(crate::error::AppError::Database)?;
+    let response = skill_response(tx, result).await?;
+    change.commit().await.map_err(skill_change_error)?;
 
-    // TODO: trigger skills reload in SkillRegistry module
-
-    Ok(Json(skill_response(&state.db, result).await?))
+    Ok(Json(response))
 }
 
 async fn delete_skill(
@@ -388,20 +389,22 @@ async fn delete_skill(
     _auth: AuthUser,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    let tx = state
-        .db
-        .begin()
+    let change = state
+        .modules
+        .skills
+        .begin_change()
         .await
-        .map_err(crate::error::AppError::Database)?;
+        .map_err(skill_change_error)?;
+    let tx = change.transaction();
     let artifact = ArtifactRef::skill(name.clone());
     state
         .artifacts
-        .ensure_no_external_dependents_in(&tx, std::slice::from_ref(&artifact))
+        .ensure_no_external_dependents_in(tx, std::slice::from_ref(&artifact))
         .await
         .map_err(crate::error::AppError::Internal)?;
     let result = skill::Entity::delete_many()
         .filter(skill::Column::Name.eq(&name))
-        .exec(&tx)
+        .exec(tx)
         .await
         .map_err(crate::error::AppError::Database)?;
 
@@ -413,14 +416,10 @@ async fn delete_skill(
     }
     state
         .artifacts
-        .delete_artifact_in(&tx, &artifact)
+        .delete_artifact_in(tx, &artifact)
         .await
         .map_err(crate::error::AppError::Internal)?;
-    tx.commit()
-        .await
-        .map_err(crate::error::AppError::Database)?;
-
-    // TODO: trigger skills reload in SkillRegistry module
+    change.commit().await.map_err(skill_change_error)?;
 
     Ok(Json(serde_json::json!({"success": true})))
 }
@@ -463,6 +462,20 @@ pub fn routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_change_errors_preserve_database_and_internal_responses() {
+        let database = anyhow::Error::new(sea_orm::DbErr::Custom("commit failed".into()))
+            .context("skill change failed");
+        assert!(matches!(
+            skill_change_error(database),
+            crate::error::AppError::Database(_)
+        ));
+        assert!(matches!(
+            skill_change_error(anyhow::anyhow!("skills unavailable")),
+            crate::error::AppError::Internal(_)
+        ));
+    }
 
     #[test]
     fn create_skill_request_accepts_preferred_tools() {
