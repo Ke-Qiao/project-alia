@@ -103,7 +103,7 @@ N01 不是“欠下的迁移任务”。只有后来出现真实保留需求时�
 
 - [x] L09 固定核心与契约归属验收完成，见 [当前检查点](resume-checkpoint-2026-10-09.md)。L09—L12 当前 1/4，六轮仍 2/6。
 - [x] L10 初始化依赖、L11 跨域事务、L12 出站契约后续均已完成，见 [分层清单 4/4](checklists/layering-next.md)。
-- [ ] Skills HTTP 创建/更新/删除后的运行索引 reload 尚有三个既有 TODO（`packages/alia-server/src/api/skills.rs`）；插件注册/卸载 reload 保持。此项是软件待办，不是用户要求延期，后续需核对实际更新入口并补整合回归。
+- [x] 该 Skills HTTP 索引待办已在 2026-10-11 完成，见 [本轮检查点](resume-checkpoint-skills-2026-10-11.md)。三个入口统一变更 owner；无调用 plugin facade 已删除，实际 builtin/file 初始化保留。
 
 本轮不改变 D/H/R 平台、前端、真实 AEC、机械反馈和 V01 的原状态；没有新增硬件或部署授权。
 
@@ -120,7 +120,7 @@ N01 不是“欠下的迁移任务”。只有后来出现真实保留需求时�
 - [x] L11 跨域事务所有者清理完成，10/10；L09—L12 3/4，六轮仍 2/6，见 [当前检查点](resume-checkpoint-l11-2026-10-10.md)。
 - [x] L12 出站契约已完成：Delivery 拥有 transport / audio budget，取消、限额和真实关闭证据保持。
 - [x] Linux 旧 panic-fence 测试子进程的阶段定位与当前瓶颈修复已在 L12 完成；下面是 L11 当时观察：V4 首次 777/1/5，原二进制定向 1/0、16.40 秒，默认并行全包复跑 778/0/5。没有改生产、期限或并行度；启动摘要计算只是候选原因，不宣称已修复。保留 binary/SHA、原失败与复查见 [Root HANDOFF](handoffs/2026-10-10-l11/root-HANDOFF.md)。后续先补阶段耗时和 PG 等待证据，独立于 V01。
-- [ ] Skills HTTP CRUD 三处 reload TODO 继续开放。
+- [x] 该 Skills HTTP 索引待办已在 2026-10-11 完成，见 [本轮检查点](resume-checkpoint-skills-2026-10-11.md)。三个入口统一变更 owner；无调用 plugin facade 已删除，实际 builtin/file 初始化保留。
 
 原 V01、R02/R03/R05/R06、前端、真实模型、硬件与未来端上部署的状态不变；无新增硬件或部署授权。
 
@@ -128,7 +128,16 @@ N01 不是“欠下的迁移任务”。只有后来出现真实保留需求时�
 
 - [x] L12 出站契约 10/10，L09—L12 4/4，六轮仍 2/6；见 [最新检查点](resume-checkpoint-l12-2026-10-10.md)。
 - [x] 当前 Linux 启动瓶颈由实际 hash 同字节测量确认；仅 sha2 dev 优化，20 秒期限/默认并发保留，最终默认全量通过。L11 历史失败无阶段日志，原因不能全部追认。
-- [ ] 下一项软件任务：核对 `packages/alia-server/src/api/skills.rs` 中创建/更新/删除后的三个 reload TODO 与 `modules/interaction/skills` 的实际索引更新路径；先检查既有实现，再补缺口和真实整合回归。保持工具可见性、批准、加载/卸载/热更新和当前政策；本轮未实施该任务。
+- [x] 该 Skills HTTP 索引待办已在 2026-10-11 完成，见 [本轮检查点](resume-checkpoint-skills-2026-10-11.md)。三个入口统一变更 owner；无调用 plugin facade 已删除，实际 builtin/file 初始化保留。
 - [ ] 原 V01 仍独立开放，后续复现需保存阶段/候选/准入证据。R02/R03/R05/R06 与用户暂缓项保持原门槛。
 
 macOS V3 setup 原端口新连接断言失败证据保留；V4 直接检查原 listener 与已接收连接释放，同源双平台通过。未证实原 peer 身份，不把端口重用写为确定根因。
+
+## 2026-10-11：Skills HTTP 索引清理后的续接
+
+- [x] 本轮 10/10，源码 `7aca2a6`，CRUD 索引准备/提交/发布、失败恢复、取消与 stop 所有权、旧 facade 清理及同源双平台回归完成；见 [最新检查点](resume-checkpoint-skills-2026-10-11.md)。
+- [ ] 下一项软件任务：独立审计静态 classifier 的 skill 发现与 Registry live snapshot 的衔接。读取 `routing/service.rs` 的两份静态模板、`classification_prompt_for_mode` / `classify` / `to_decision`，以及 `routing/mod.rs::RouterInput`、`generation.rs::route_response`，检查新增／禁用／删除 skill 的候选和退化，以及返回技能名的允许范围。先查已有实现再补缺口，保持全局工具可见性与 Execution 批准；本轮未实施。
+- [ ] 多实例／外部 SQL 的自动索引通知未实现；当前通过显式 reload。仅出现明确多实例需求时再立项，不为未来场景引入广播依赖。
+- [ ] 原 V01、R02/R03/R05/R06 与 D01—D05、C03—C05、H01—H05 保持原状态。默认 Shadow、工具可见性、执行批准和硬件边界保持。
+
+本轮未改变请求数组元素/null 语义；Skills 网络 COMMIT ACK 丢失没有实测注入，只有实现屏障、实际约束 COMMIT 失败/恢复回归和 RR 时序探针证据。没有新增平台、依赖或硬件动作。

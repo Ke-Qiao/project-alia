@@ -1,0 +1,27 @@
+Linux 1319a90070a6 7.0.14-orbstack-00380-ga7e0a2dc9535 #1 SMP PREEMPT Fri Aug  7 03:48:40 UTC 2026 aarch64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+rustc 1.95.0 (59807616e 2026-04-14)
+binary: rustc
+commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860
+commit-date: 2026-04-14
+host: aarch64-unknown-linux-gnu
+release: 1.95.0
+LLVM version: 22.1.2
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+libprotoc 3.21.12
+1.2.8
+CARGO_BUILD_JOBS=2
+CARGO_HOME=/cache/cargo
+CARGO_TARGET_DIR=/cache/target
+CARGO_TERM_COLOR=never
+RUSTUP_HOME=/usr/local/rustup
+RUST_VERSION=1.95.0
+SHERPA_ONNX_ARCHIVE_DIR=/native

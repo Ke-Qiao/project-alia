@@ -1,0 +1,7 @@
+{
+  "source_path": "packages/alia-server/src/modules/interaction/skills/registry_tests.rs",
+  "original_sha256": "ffacb40af2ff326f0a2ccaf4da68de923bb51efb739c05cc3b05779d05b2a0ac",
+  "patched_sha256": "19922b29be9d391d517d68e86781917f05a7d0cc6ca775fab7a75f38cffe0ede",
+  "source_modified": false,
+  "reason": "V1 macOS test incorrectly required pool.close() first poll to remain Pending; is_closed is the required failure injection state. Accept Ready and Pending without repolling completed close future. Wait for RuntimeTasks active count zero before test-only Arc::get_mut recovery."
+}

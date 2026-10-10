@@ -1,0 +1,142 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/run/validation-20261011-skills/linux-arm64-v1/evidence/skills-tests.log",
+  "log_sha256": "d965019ca1392ec27ddfffecba0a8fa40cf91024ed1cf421fe9775ac6fa27279",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 1,
+  "running_targets": 1,
+  "doctest_targets": 0,
+  "totals": {
+    "passed": 7,
+    "failed": 1,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 321
+  },
+  "running_totals": {
+    "passed": 7,
+    "failed": 1,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 321
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 0,
+  "excluded_nested_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "nested_harness_start_count": 0,
+  "orphan_summaries": [],
+  "cargo_errors": [
+    {
+      "line": 28,
+      "text": "error: test failed, to rerun pass `-p alia-server --lib`"
+    }
+  ],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_server-4562ca4078866c78)",
+      "heading_line": 5,
+      "nonpassing_test_lines": [
+        {
+          "line": 17,
+          "name": "modules::interaction::skills::registry::tests::failed_commit_and_failed_reconciliation_disable_index_until_successful_reload",
+          "status": "FAILED",
+          "reason": null
+        }
+      ],
+      "outer_harness_start": {
+        "line": 7,
+        "selected": 8
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 7,
+        "failed": 1,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 321,
+        "status": "FAILED",
+        "seconds": 0.51,
+        "line": 26
+      }
+    }
+  ],
+  "adjacent_pre_heading_starts": [],
+  "delayed_previous_target_tails": [],
+  "run_metadata": {
+    "started": "2026-10-10T16:49:39.572923+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "--locked",
+      "--offline",
+      "skills::",
+      "--",
+      "--nocapture"
+    ],
+    "container": "alia-skills-linux-20261011-v1",
+    "environment": {
+      "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+      "CARGO_HOME": "/cache/cargo",
+      "CARGO_TARGET_DIR": "/cache/target",
+      "CARGO_BUILD_JOBS": "2",
+      "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+      "RUST_TEST_THREADS": "unset",
+      "RUST_MIN_STACK": "unset",
+      "DOCS_RS": "unset"
+    },
+    "manifest_sha256": "33cd145d05cb6145a0cf7dd672a313debd0644fd7b76847a70c51665a930c492",
+    "source_before": {
+      "file_count": 643,
+      "errors": []
+    },
+    "exit_code": 101,
+    "elapsed_seconds": 49.366,
+    "finished": "2026-10-10T16:50:28.939510+00:00",
+    "source_after": {
+      "file_count": 643,
+      "errors": []
+    },
+    "finished_at": "2026-10-10T16:50:28.939510+00:00",
+    "source_drift": []
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--lib",
+      "--locked",
+      "--offline",
+      "skills::",
+      "--",
+      "--nocapture"
+    ],
+    "workspace_requested": false,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "FAILED"
+}

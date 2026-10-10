@@ -1,0 +1,462 @@
+{
+  "source_commit": "7aca2a6f02e6b6a4fd74ca241a06bc3970d28956",
+  "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+  "scope": "Final V2 same-source Skills validation; preserved V1 macOS/Linux fixture failures, V1 HTTP success and V1-to-V2 test-only patch; table-lock snapshot probe",
+  "files": [
+    {
+      "path": "evidence/linux-arm64-v1/container-create.json",
+      "bytes": 1575,
+      "sha256": "a1e9693522db3c62dd56320bb2e769135b32a72b0ee1379e1a8898069c0e5507"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/native-archive.json",
+      "bytes": 313,
+      "sha256": "6c6d7aedb4102becc80eb4cb9b9942a78c66ec45dbb72b4fe05353ae31dd62ff"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/run-stage.py",
+      "bytes": 4443,
+      "sha256": "e481e89fd7c16df800052b4fb31fb4a2a8d2eed526c50afbcc99d755d88469ff"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.command.json",
+      "bytes": 748,
+      "sha256": "8fc4f3a37e3c4d3dd2527dcc9dab26809c7e5ecd3bb82ab66b031776c8850129"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.counts.json",
+      "bytes": 3686,
+      "sha256": "1f7ee1540689d27ce7af998b5d61291bca0740f46c803b3fd6b6f955d499035e"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.counts.txt",
+      "bytes": 1552,
+      "sha256": "bbf1b8766370f3289324f4b9ea6f6f440c5db45fb12e821baa99d5a9dc1de153"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.log",
+      "bytes": 1912,
+      "sha256": "d965019ca1392ec27ddfffecba0a8fa40cf91024ed1cf421fe9775ac6fa27279"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.pg-waits.json",
+      "bytes": 6932,
+      "sha256": "a64594ddf1a7bec73eb017165bb8ee2d3aa6b90ff20bfc63fde51442aacfc98f"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/skills-tests.result.json",
+      "bytes": 987,
+      "sha256": "304401320038f2998bb80f9fbc713ec278f5b147ba790746acd9503dd6e1db33"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/source-manifest.json",
+      "bytes": 118210,
+      "sha256": "33cd145d05cb6145a0cf7dd672a313debd0644fd7b76847a70c51665a930c492"
+    },
+    {
+      "path": "evidence/linux-arm64-v1/source.sha256",
+      "bytes": 74167,
+      "sha256": "81c539f78973c19bf17b5869bae3fe8f46e815cee1bddebd74b222e1b22c7895"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/container-create.json",
+      "bytes": 1575,
+      "sha256": "49a86266818d47eae618a3fc4072f4cfa004a1146c8d69764cf7ad1e4eb31727"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.command.json",
+      "bytes": 796,
+      "sha256": "7c9c65ab387cac4a8b872954fd911946170f972bed8edf49f456f5e893f5ec49"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.log",
+      "bytes": 820,
+      "sha256": "db75f2b91dc5be3fd90d53b9f2c447fb18328cfd2886a6ba5014ce231ed39490"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/environment.result.json",
+      "bytes": 1032,
+      "sha256": "b6d7cd8da25d24654b9deaa35978958d59bb0178668dd957687dee4219324982"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/prepare-source.py",
+      "bytes": 1788,
+      "sha256": "29d4943afcd13f488efd91a2f7742af084b7aa5d4e6af56a897068dbfe6db3b0"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/run-stage.py",
+      "bytes": 4443,
+      "sha256": "64fdf582ce672f25ac15511c0d42f9bedfc883941bf78686f953177c4ea3ea0b"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.command.json",
+      "bytes": 741,
+      "sha256": "814191079b9100e493202b3dff948354b55d33e3ff7d0fb9579fa617aa1d851d"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.log",
+      "bytes": 266,
+      "sha256": "ce0c079c22e610d25b4fc2a7ba9581780bb707b1a4d01b53ae0d0c467c5b9305"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-no-default.result.json",
+      "bytes": 978,
+      "sha256": "87b21db54fc917427fdf41865b1944402c194a600f6b0a5118279b5a6ed20abc"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.command.json",
+      "bytes": 712,
+      "sha256": "8ed7fc7cff82d7d3e8e026de3f95a79caca88c3323efa58906aab11735970cd6"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.counts.json",
+      "bytes": 33273,
+      "sha256": "304fc9108935548071a47e992a4f1b965a6029dfabb7378260ebbb4e623ec849"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.counts.txt",
+      "bytes": 7863,
+      "sha256": "2820965ee2bf7a4998b2e5ac421b2dfd7443aaba1f984adb3ca290d4a8253739"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.log",
+      "bytes": 85440,
+      "sha256": "753cb44a3bc7ed2e24f6215de0fe84cf71282ece7762c2dc07ed66aedf3b37f6"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.pg-waits.json",
+      "bytes": 296497,
+      "sha256": "ced04efd60e706fae698729de28d57388dcd8608154c3473d81a0e39e83d2fcf"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/server-tests.result.json",
+      "bytes": 950,
+      "sha256": "351dfd6639d2538533143aa18493f99818f2fe1ad2b05c546d5e5650106c0219"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.command.json",
+      "bytes": 748,
+      "sha256": "f36b92fdd800c9efa7edefe44ae635e00e10f04d34613e3272f1375ebdf44fd0"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.counts.json",
+      "bytes": 3337,
+      "sha256": "da49c3128bc7ee86681b6bcf8cb28c2934818d43cd58409f6c493214f610d402"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.counts.txt",
+      "bytes": 1407,
+      "sha256": "5410415ac78565866c35d3d6c2c84bfe9441ca7a188312d77c53a163de5b3f37"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.log",
+      "bytes": 1333,
+      "sha256": "7c1f0dc85ca7a9251b470bab2029542a112f5cbe5a2c999c59d972336e3b001b"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.pg-waits.json",
+      "bytes": 4314,
+      "sha256": "950b50ca2a3ed39619a4efde8c06729803d1b434ff93ac0d8f50becfda52b6f1"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/skills-tests.result.json",
+      "bytes": 985,
+      "sha256": "644d7089344ca2265f26318488acc63192bf05dcdb60d2ca987a2a9db6b2723a"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/source-manifest.json",
+      "bytes": 118210,
+      "sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552"
+    },
+    {
+      "path": "evidence/linux-arm64-v2/source.sha256",
+      "bytes": 74167,
+      "sha256": "6788dcced58d494cef19f9e45f08cb5d0b41b2dcee68e882f1b20d724add64ce"
+    },
+    {
+      "path": "evidence/root/commit-verification.json",
+      "bytes": 226,
+      "sha256": "1644f05c7b0af18761070e3f882012b8ecf012b3ef775522270c2ccfec91e651"
+    },
+    {
+      "path": "evidence/root/counter-self-test.json",
+      "bytes": 183,
+      "sha256": "afaba8acbf9b132cfcc9434b87a13cf5f92958f958b3dd881461d5957406a50b"
+    },
+    {
+      "path": "evidence/root/database-create.json",
+      "bytes": 542,
+      "sha256": "9a0513d2118364760a845c1a5829734fbfc5d9bd130120990b3cf90ad9d8c8f7"
+    },
+    {
+      "path": "evidence/root/docs-commit-message.txt",
+      "bytes": 289,
+      "sha256": "1d896e1ad057ddfdae78cfac4c00dfff4b6d6f4a6f72acc3a55c2a8b7721d4ae"
+    },
+    {
+      "path": "evidence/root/final-review.json",
+      "bytes": 1210,
+      "sha256": "aacd405b4b787e662136ae227f791a146f2c7295a741fe172bf7483afa895b95"
+    },
+    {
+      "path": "evidence/root/final-stage-summary.json",
+      "bytes": 8331,
+      "sha256": "aaed9b0dfdfa521fe5bed67f7f20dc907ad1ebffb2d700fa3a66cd911ae7e18d"
+    },
+    {
+      "path": "evidence/root/linux-counter.log",
+      "bytes": 7863,
+      "sha256": "2820965ee2bf7a4998b2e5ac421b2dfd7443aaba1f984adb3ca290d4a8253739"
+    },
+    {
+      "path": "evidence/root/linux-v1-command.json",
+      "bytes": 1348,
+      "sha256": "8f3acf9ccf8b2f6b97e5b2dadb5fc96e4768acc5b89eb0d20fe2774c3863966d"
+    },
+    {
+      "path": "evidence/root/linux-v2-command.json",
+      "bytes": 1348,
+      "sha256": "1af3bdbc68393ee3d2b205e603a77ec864f3a56b5a91e820dd9d7a0545957c0d"
+    },
+    {
+      "path": "evidence/root/lock-snapshot-probe.json",
+      "bytes": 519,
+      "sha256": "a726ac0446d516246e482b5921b6c1eaaeb638de01990d02dc5c76004ba5c60f"
+    },
+    {
+      "path": "evidence/root/macos-counter.log",
+      "bytes": 9142,
+      "sha256": "2777dd56d814bde6c01671d1511c5af45ecfc96a8914db01af90f7814fc58f1b"
+    },
+    {
+      "path": "evidence/root/macos-environment.json",
+      "bytes": 775,
+      "sha256": "e3599cb58ece6d09eecc12465ca13e7139e41a94281ac598c944950bd6660aa1"
+    },
+    {
+      "path": "evidence/root/macos-native-archive.json",
+      "bytes": 309,
+      "sha256": "920063ca6439830c748b0c821ca160059c626aafb56715e03eabc3708a88e5a1"
+    },
+    {
+      "path": "evidence/root/no-default-v2-result.json",
+      "bytes": 655,
+      "sha256": "1ae3e1037a52b71a74d9921edb9b244d80dcede01b651b8dc971767b46923804"
+    },
+    {
+      "path": "evidence/root/no-default-v2.log",
+      "bytes": 166,
+      "sha256": "00fa5e98de99073eddb624ecbb957ba5fbdb132479dbd4d36b5a738e911096d9"
+    },
+    {
+      "path": "evidence/root/registry-pool-close-v2-review.json",
+      "bytes": 589,
+      "sha256": "8c8167fe231c5dff9d874cfc330f67179a542d3d46cebc2df1c4379fa3d2867c"
+    },
+    {
+      "path": "evidence/root/registry-pool-close-v2.patch",
+      "bytes": 1882,
+      "sha256": "5e14affaa31388c5fe72460c2734a69fd71e6f8cb1b9148d72f96236e09489df"
+    },
+    {
+      "path": "evidence/root/resource-closure.json",
+      "bytes": 1450,
+      "sha256": "2697bb6f02208543bb41337597073655682fe4b38c542104c8e5ffa8059dcad7"
+    },
+    {
+      "path": "evidence/root/skills-http-v1-result.json",
+      "bytes": 695,
+      "sha256": "5e0b4c63f939258ae35316eb49411b7feacf704c3a624d18f53c577f259299bc"
+    },
+    {
+      "path": "evidence/root/skills-http-v1.counts.json",
+      "bytes": 3020,
+      "sha256": "076457d8403d16cee0a8ab04d8b9d4a16441073753079d15459a01abdb27805a"
+    },
+    {
+      "path": "evidence/root/skills-http-v1.counts.txt",
+      "bytes": 1401,
+      "sha256": "f8c5f312c2a8efd2de0f8b35bb5fcc80f07523bc49ed01bed7eef2999c4dbf46"
+    },
+    {
+      "path": "evidence/root/skills-http-v1.log",
+      "bytes": 645,
+      "sha256": "b73efe90eb2bb0bbaeff88e176fc367f3e0250e620accba8a5009e2dca0f8c0f"
+    },
+    {
+      "path": "evidence/root/skills-lib-v1-result.json",
+      "bytes": 674,
+      "sha256": "b8076b8b859859acf7c2903c32d8f466f867cb4238bda53e0ac937bf9e98f037"
+    },
+    {
+      "path": "evidence/root/skills-lib-v1.counts.json",
+      "bytes": 3315,
+      "sha256": "dc63e736e8c52f732745b0cbd70ed0d0dd2185f6f1bdb589739fde5f21dd7f15"
+    },
+    {
+      "path": "evidence/root/skills-lib-v1.counts.txt",
+      "bytes": 1522,
+      "sha256": "d02b9fb120225808e42da218a16e3b25c417f08f2a863dad2846c5ef2d5ec9d7"
+    },
+    {
+      "path": "evidence/root/skills-lib-v1.log",
+      "bytes": 1809,
+      "sha256": "49cb87e23a0679577076f8e644583d3a9d48ce793c027889090b0f9e92fc4164"
+    },
+    {
+      "path": "evidence/root/skills-lib-v2-result.json",
+      "bytes": 672,
+      "sha256": "7cd64aefb517fd61c304c1dda7048618013018450980e520ca9d976d0b014f06"
+    },
+    {
+      "path": "evidence/root/skills-lib-v2.counts.json",
+      "bytes": 2966,
+      "sha256": "65ba15ff51ecea5878fe71551c9dd0e686c13520d8f051fbac68229d77e25b87"
+    },
+    {
+      "path": "evidence/root/skills-lib-v2.counts.txt",
+      "bytes": 1377,
+      "sha256": "4b653e8858181219f12bd2608290dc9cb3f5932654c319d67bf44afae87241e5"
+    },
+    {
+      "path": "evidence/root/skills-lib-v2.log",
+      "bytes": 1226,
+      "sha256": "bd666f3a367d039a8657fd30df25891d1d53a8db4e172d24e6bd5c93b4d46cf2"
+    },
+    {
+      "path": "evidence/root/source-commit-message.txt",
+      "bytes": 582,
+      "sha256": "77eb3ec6808662cd988ad13fd98e71ce38584125332615bafbc1deb626fd8298"
+    },
+    {
+      "path": "evidence/root/source-v1-manifest.json",
+      "bytes": 118210,
+      "sha256": "33cd145d05cb6145a0cf7dd672a313debd0644fd7b76847a70c51665a930c492"
+    },
+    {
+      "path": "evidence/root/source-v2-manifest.json",
+      "bytes": 118210,
+      "sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552"
+    },
+    {
+      "path": "evidence/root/static-v2-result.json",
+      "bytes": 596,
+      "sha256": "e49dd90473f5dac7c8198c53f374cbdf3d2b6b66a60e9555a413f3e2e794912d"
+    },
+    {
+      "path": "evidence/root/static-v2.log",
+      "bytes": 938,
+      "sha256": "8fd41cde7dac8ad9db4fa79faacdb4b110e4ecc92b12dd3fb8c3f37922eca20e"
+    },
+    {
+      "path": "evidence/root/v1-v2-source-changes.json",
+      "bytes": 78,
+      "sha256": "47d7adccaf433f8a9b72a0e100df31d59a4542f7769dfc4c9f482c227d54111d"
+    },
+    {
+      "path": "evidence/root/workspace-v2-result.json",
+      "bytes": 627,
+      "sha256": "27ed1de2aa5128c19118ef518dc55729ef6062fd173fcda8c003f1718a44514b"
+    },
+    {
+      "path": "evidence/root/workspace-v2.counts.json",
+      "bytes": 43641,
+      "sha256": "3a1fc11b0142dacdb2cc3b97beaf1ad60bbcd79dc5fe809743b6fa434f23ff24"
+    },
+    {
+      "path": "evidence/root/workspace-v2.counts.txt",
+      "bytes": 9142,
+      "sha256": "2777dd56d814bde6c01671d1511c5af45ecfc96a8914db01af90f7814fc58f1b"
+    },
+    {
+      "path": "evidence/root/workspace-v2.log",
+      "bytes": 116659,
+      "sha256": "338f48685c9dcd7018de2b31836a69e5337066d5bd08860effada5e35815bbd8"
+    },
+    {
+      "path": "evidence/tools/archive-evidence.py",
+      "bytes": 1675,
+      "sha256": "5dd0efc0e7255f64612d0a429698470ea8acf8a335645a05e747894b4354ee2b"
+    },
+    {
+      "path": "evidence/tools/collect-resources.py",
+      "bytes": 2298,
+      "sha256": "a3a2f51f845eea38eb290bfb708982768eeade44a59be669849bd11daff8b5d6"
+    },
+    {
+      "path": "evidence/tools/count_cargo_tests.py",
+      "bytes": 13500,
+      "sha256": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236"
+    },
+    {
+      "path": "evidence/tools/create-database.py",
+      "bytes": 1006,
+      "sha256": "b276d239278d30b7271b0f8d5c75af97112840a1e08ece2df5f443effdedca2f"
+    },
+    {
+      "path": "evidence/tools/finalize-docs.py",
+      "bytes": 13096,
+      "sha256": "a9a19f2b45e84294ba967d77aa1b831404b55ec1331018e55266de611185c59e"
+    },
+    {
+      "path": "evidence/tools/freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "evidence/tools/prepare-linux-v2.py",
+      "bytes": 894,
+      "sha256": "71e2ef5b775368934efd068ed6fe3143d2469f41810dfeec66357a413f3f9602"
+    },
+    {
+      "path": "evidence/tools/prepare-linux.py",
+      "bytes": 925,
+      "sha256": "3dc8fa58e537aa7c456c72ee9a66b60b32b84ebcbb9c3e00723ae320ff367965"
+    },
+    {
+      "path": "evidence/tools/probe-lock-snapshot.py",
+      "bytes": 2354,
+      "sha256": "50ce53fdeb082f6e478dc8e7abc0ee5d4584036274416e6e212189baea98d730"
+    },
+    {
+      "path": "evidence/tools/record-environment.py",
+      "bytes": 1237,
+      "sha256": "980400f25c64fb2c9780040d38d17466d27c663a1b178bde6e79d978394c9e09"
+    },
+    {
+      "path": "evidence/tools/run_stage.py",
+      "bytes": 3000,
+      "sha256": "7217fced4e82cf84fc230754a3964be40fbccbf8b57d62c2c09cd133a9064965"
+    },
+    {
+      "path": "evidence/tools/static-checks.py",
+      "bytes": 810,
+      "sha256": "7899038072707b25f1ac075c103de93e038208ea8748473e3e2d15043a484d4b"
+    },
+    {
+      "path": "evidence/tools/summarize-final.py",
+      "bytes": 1677,
+      "sha256": "5656d2e1a2cbe4ac270431bd936c8638be90d8b86ba1da1c7577c36ad2b18b4e"
+    },
+    {
+      "path": "evidence/tools/test-counter.py",
+      "bytes": 2406,
+      "sha256": "bf1ca9870b6602ce99a644839ab1993901bafde36cea114439b9f089c2a2618c"
+    },
+    {
+      "path": "evidence/tools/verify-commit.py",
+      "bytes": 726,
+      "sha256": "b50136f30b4f543d682778770ef30db747549a91f7af6f995e280f8b395e340f"
+    },
+    {
+      "path": "evidence/tools/verify-delivery.py",
+      "bytes": 1758,
+      "sha256": "7d787bf0e56a312bfda33d9b8b5cf7573ef362bffcb0f49fe200674409b9be9c"
+    }
+  ]
+}

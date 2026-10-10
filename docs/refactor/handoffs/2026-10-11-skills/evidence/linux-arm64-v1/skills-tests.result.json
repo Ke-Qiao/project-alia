@@ -1,0 +1,40 @@
+{
+  "started": "2026-10-10T16:49:39.572923+00:00",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "--locked",
+    "--offline",
+    "skills::",
+    "--",
+    "--nocapture"
+  ],
+  "container": "alia-skills-linux-20261011-v1",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "33cd145d05cb6145a0cf7dd672a313debd0644fd7b76847a70c51665a930c492",
+  "source_before": {
+    "file_count": 643,
+    "errors": []
+  },
+  "exit_code": 101,
+  "elapsed_seconds": 49.366,
+  "finished": "2026-10-10T16:50:28.939510+00:00",
+  "source_after": {
+    "file_count": 643,
+    "errors": []
+  },
+  "finished_at": "2026-10-10T16:50:28.939510+00:00",
+  "source_drift": []
+}

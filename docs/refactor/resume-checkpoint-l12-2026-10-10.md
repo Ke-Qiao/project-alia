@@ -1,5 +1,7 @@
 # 当前检查点：2026-10-10 L12 完成
 
+本检查点为历史记录；Skills HTTP 后续清理已完成，最新从 [2026-10-11 检查点](resume-checkpoint-skills-2026-10-11.md) 继续。
+
 分支 `codex/architecture-refactor`；本轮 **10/10**，L09—L12 **4/4**，R01—R06 仍 **2/6**，不是整个项目完成百分比。三个 subagent 已交接，任务容器/数据库全部停止，无待恢复 Cargo/PG 作业。
 
 依次读取 [技术说明](layering-l12-2026-10-10.md)、[checklist](checklists/l12-2026-10-10.md)、[四份 HANDOFF](handoffs/2026-10-10-l12/README.md) 和 [证据索引](handoffs/2026-10-10-l12/evidence-index.json)，核对 Git 状态后继续。

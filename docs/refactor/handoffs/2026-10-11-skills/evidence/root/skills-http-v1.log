@@ -1,0 +1,11 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.71s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 3 tests
+test skills::failed_skill_snapshot_keeps_the_complete_index_and_rolls_back_http_changes ... ok
+test skills::http_crud_publishes_skill_context_without_granting_tool_authority ... ok
+test skills::concurrent_skill_reload_retains_readers_and_publishes_the_latest_snapshot ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 54 filtered out; finished in 2.49s
+

@@ -1,0 +1,271 @@
+{
+  "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+  "input_count": 643,
+  "stages": {
+    "macos/skills-lib-v2": {
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--lib",
+        "--locked",
+        "--offline",
+        "skills::",
+        "--",
+        "--nocapture"
+      ],
+      "started_at": "2026-10-10T16:53:43.640968+00:00",
+      "finished_at": "2026-10-10T16:54:05.983498+00:00",
+      "elapsed_seconds": 22.34,
+      "exit_code": 0,
+      "source_manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb",
+      "counts": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 321
+      }
+    },
+    "macos/workspace-v2": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "started_at": "2026-10-10T16:54:39.335280+00:00",
+      "finished_at": "2026-10-10T17:03:07.623228+00:00",
+      "elapsed_seconds": 508.29,
+      "exit_code": 0,
+      "source_manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb",
+      "counts": {
+        "passed": 1068,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "macos/no-default-v2": {
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--no-default-features",
+        "--locked",
+        "--offline"
+      ],
+      "started_at": "2026-10-10T17:03:50.303416+00:00",
+      "finished_at": "2026-10-10T17:04:34.510109+00:00",
+      "elapsed_seconds": 44.21,
+      "exit_code": 0,
+      "source_manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "macos/static-v2": {
+      "command": [
+        "python3",
+        "run/validation-20261011-skills/static-checks.py"
+      ],
+      "started_at": "2026-10-10T16:55:07.136367+00:00",
+      "finished_at": "2026-10-10T16:55:07.845146+00:00",
+      "elapsed_seconds": 0.71,
+      "exit_code": 0,
+      "source_manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "linux/skills-tests": {
+      "started": "2026-10-10T16:53:59.264147+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--lib",
+        "--locked",
+        "--offline",
+        "skills::",
+        "--",
+        "--nocapture"
+      ],
+      "container": "alia-skills-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_before": {
+        "file_count": 643,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 26.816,
+      "finished": "2026-10-10T16:54:26.080310+00:00",
+      "source_after": {
+        "file_count": 643,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T16:54:26.080310+00:00",
+      "source_drift": [],
+      "counts": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 321
+      }
+    },
+    "linux/server-tests": {
+      "started": "2026-10-10T16:54:37.682217+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--locked",
+        "--offline",
+        "--no-fail-fast"
+      ],
+      "container": "alia-skills-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_before": {
+        "file_count": 643,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 357.039,
+      "finished": "2026-10-10T17:00:34.721178+00:00",
+      "source_after": {
+        "file_count": 643,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T17:00:34.721178+00:00",
+      "source_drift": [],
+      "counts": {
+        "passed": 786,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "linux/server-no-default": {
+      "started": "2026-10-10T17:01:11.789101+00:00",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--all-targets",
+        "--no-default-features",
+        "--locked",
+        "--offline"
+      ],
+      "container": "alia-skills-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_before": {
+        "file_count": 643,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 14.975,
+      "finished": "2026-10-10T17:01:26.764300+00:00",
+      "source_after": {
+        "file_count": 643,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T17:01:26.764300+00:00",
+      "source_drift": []
+    },
+    "linux/environment": {
+      "started": "2026-10-10T16:55:21.283495+00:00",
+      "command": [
+        "sh",
+        "-c",
+        "uname -a; cat /etc/os-release; rustc -Vv; cargo -V; protoc --version; pkg-config --modversion alsa; env | sort | sed -n \"/^CARGO/p;/^SHERPA/p;/^RUST/p;/^DOCS_RS/p\""
+      ],
+      "container": "alia-skills-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+      "source_before": {
+        "file_count": 643,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 0.063,
+      "finished": "2026-10-10T16:55:21.346519+00:00",
+      "source_after": {
+        "file_count": 643,
+        "errors": []
+      },
+      "finished_at": "2026-10-10T16:55:21.346519+00:00",
+      "source_drift": []
+    }
+  }
+}

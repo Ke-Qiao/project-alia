@@ -1,0 +1,5 @@
+docs(refactor): record Skills index validation and handoff
+
+Close the Skills HTTP reload checklist with frozen-source macOS and Linux
+results, preserve the V1 fixture failure and V2 repair, and record resource
+cleanup and source identity. Hand off the separate classifier discovery audit.

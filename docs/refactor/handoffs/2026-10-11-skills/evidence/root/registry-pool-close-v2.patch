@@ -1,0 +1,42 @@
+--- a/packages/alia-server/src/modules/interaction/skills/registry_tests.rs
++++ b/packages/alia-server/src/modules/interaction/skills/registry_tests.rs
+@@ -179,13 +179,23 @@
+         let (change, pid) = update(&registry).await;
+         let waiter = tokio::spawn(change.commit());
+         wait_for_commit(&f.db, pid).await;
++        let pool = database.get_postgres_connection_pool().clone();
+         let closing = database.close();
+         tokio::pin!(closing);
+-        assert!(poll!(closing.as_mut()).is_pending());
++        let closing_pending = match poll!(closing.as_mut()) {
++            std::task::Poll::Ready(result) => {
++                result.unwrap();
++                false
++            }
++            std::task::Poll::Pending => true,
++        };
++        assert!(pool.is_closed(), "reconciliation must not acquire a new connection");
+         blocker.rollback().await.unwrap();
+         let error = waiter.await.unwrap().unwrap_err();
+         assert!(error.downcast_ref::<sea_orm::DbErr>().is_some());
+-        closing.await.unwrap();
++        if closing_pending {
++            closing.await.unwrap();
++        }
+         assert!(registry.match_skill("commitfixture").await.is_err());
+         assert!(registry.list_skills().await.is_err());
+         assert!(
+@@ -202,6 +212,13 @@
+             ModuleHealth::Degraded(_)
+         ));
+ 
++        tokio::time::timeout(Duration::from_secs(5), async {
++            while registry.commits.active() != 0 {
++                tokio::task::yield_now().await;
++            }
++        })
++        .await
++        .expect("commit owner did not finish after delivering its result");
+         // Repair only the test's failed pool; production recovery uses the same reload path.
+         let registry_mut = Arc::get_mut(&mut registry).expect("commit owner released its registry");
+         registry_mut.db = Some(f.db.clone());

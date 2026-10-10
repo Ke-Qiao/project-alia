@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-11 Skills：10/10，L09—L12 4/4，六轮仍 2/6。** 源码 `7aca2a6f02e6b6a4fd74ca241a06bc3970d28956`，V2 manifest `0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552`，643/643 Git blob 一致。 macOS workspace **1068/0/5**；Linux ARM64 Server 默认并行完整回归 **786/0/5**。两端 Skills lib 定向各 **8/0/0**，无默认全目标检查、边界正反自测与变更文件格式检查通过。计数依次为 passed/failed/ignored，定向测试及嵌套子进程摘要不额外加到完整结果。所有最终结果同源、无源码漂移。 当前仅完成此矩阵，未重跑 release、真实 PTY、部署 smoke 或硬件。资源全部关闭，见 [最新检查点](resume-checkpoint-skills-2026-10-11.md) 和 [最终验证](skills-2026-10-11.md#最终验证与证据)。以下为历史记录。
+
 **2026-10-10 L12：10/10，L09—L12 4/4，六轮仍 2/6。** 源码 `d9f97216a6599742c45e0a6389110b6b465e8461`，V4 manifest `bc542c0718b07fc45c1f7e09084a51fddfa3350014eee089514e6a582f9e75ea`，641/641 Git blob 一致。 macOS workspace **1060/0/5**、真实 PTY **3/0/0**、无默认 availability **2/0/0**、提前准入 **1/0/0**；Linux ARM64 Server 默认并行完整测试 **778/0/5**。两端无默认全目标检查及 Linux release/native link 均通过。计数依次为 passed/failed/ignored，子进程摘要不重复计入。 当前 Linux hash 瓶颈实测修复，20 秒期限及默认并发保持；历史 L11 超时与 V3 setup 失败的证据边界保留。资源全部关闭，见 [最新检查点](resume-checkpoint-l12-2026-10-10.md) 和 [最终验证](layering-l12-2026-10-10.md#最终验证与证据)。以下为历史记录。
 
 

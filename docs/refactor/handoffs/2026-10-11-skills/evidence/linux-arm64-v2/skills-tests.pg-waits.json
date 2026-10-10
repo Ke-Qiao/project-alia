@@ -1,0 +1,233 @@
+[
+  {
+    "unix_ms": 1791651239264,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651240339,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651241421,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651242482,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651243533,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651244584,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651245636,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 489,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.008857,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 490,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007102,
+        "blockers": [
+          489
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 491,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001758,
+        "blockers": [
+          489,
+          490
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651246698,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651247752,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651248812,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651249871,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651250930,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651251988,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651253047,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651254107,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651255163,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651256211,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651257261,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651258312,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651259359,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651260415,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651261514,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651262572,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651263656,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651264710,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651265769,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 623,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001663,
+        "blockers": [
+          625,
+          626
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 624,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001296,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 625,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.008365,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 626,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005761,
+        "blockers": [
+          625
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  }
+]

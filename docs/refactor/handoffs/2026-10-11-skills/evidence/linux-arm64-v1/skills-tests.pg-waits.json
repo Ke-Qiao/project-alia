@@ -1,0 +1,376 @@
+[
+  {
+    "unix_ms": 1791650979573,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650980782,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650981843,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650982901,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650983994,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650985053,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650986151,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650987212,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650988272,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650989329,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650990378,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650991486,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650992540,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650993615,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650994662,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650995715,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650996782,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650997838,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650998890,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791650999947,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651001008,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651002058,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 238,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.01057,
+        "blockers": [
+          241
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 239,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005464,
+        "blockers": [
+          241,
+          238
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 240,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003854,
+        "blockers": [
+          241,
+          238,
+          239
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 241,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003794,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651003116,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651004174,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651005233,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651006288,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651007348,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651008410,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651009469,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651010536,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651011592,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651012648,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651013702,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651014749,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651015807,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651016865,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651017922,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651018978,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651020032,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651021091,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651022146,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651023232,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651024294,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651025355,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651026411,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651027470,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791651028558,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 408,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001721,
+        "blockers": [
+          411,
+          412,
+          413
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 411,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001679,
+        "blockers": [],
+        "query": "-- Built-in Memory Runtime schema.\n--\n-- Canonical memory is provider-neutral. Embeddings are stored in profile-\n-- specific side tables so future 1024/3072-dim"
+      },
+      {
+        "pid": 412,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.009789,
+        "blockers": [
+          411
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 413,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007779,
+        "blockers": [
+          411,
+          412
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  }
+]

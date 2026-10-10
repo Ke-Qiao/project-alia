@@ -1,0 +1,27 @@
+{
+  "base": "9c9d1b8d55b9864205bfd6a3387b9c64fa3d040d",
+  "protected_paths_unchanged": {
+    "Cargo.toml": [],
+    "Cargo.lock": [],
+    "packages/alia-server/Cargo.toml": [],
+    "packages/alia-embedded/Cargo.toml": [],
+    "packages/alia-server/src/auth": [],
+    "packages/alia-server/src/modules/execution": [],
+    "packages/alia-server/src/modules/interaction/tools.rs": [],
+    "packages/alia-server/src/modules/interaction/generation.rs": [],
+    "packages/alia-server/src/modules/interaction/prompt.rs": [],
+    "packages/alia-server/src/modules/interaction/routing": [],
+    "packages/alia-server/src/api/tools.rs": [],
+    "packages/alia-server/src/api/effects.rs": []
+  },
+  "source_manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+  "agent_reviews": [
+    "registry stop/commit ownership",
+    "HTTP callers/error/auth and execution chain",
+    "regression assertion scope"
+  ],
+  "root_review": "SkillChange commit, reload, API transaction scope and RuntimeTasks stop path read; scoped boundary and rustfmt checks passed",
+  "policy": "default Shadow, tools visibility and execution approval unchanged",
+  "new_dependencies": false,
+  "new_features": false
+}

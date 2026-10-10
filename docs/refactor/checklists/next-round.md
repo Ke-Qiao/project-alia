@@ -16,6 +16,8 @@
 
 2026-10-10 L12 出站契约清理 **10/10**，源码 `d9f9721`；L09—L12 **4/4**，六轮仍 **2/6**。最新恢复从 [L12 检查点](../resume-checkpoint-l12-2026-10-10.md) 开始；下一软件项为 Skills HTTP CRUD reload。Linux 当前 hash 瓶颈已有同字节测量与修复，历史失败边界保留，原 V01 不因此关闭。
 
+2026-10-11 Skills HTTP 索引清理 **10/10**，源码 `7aca2a6`；六轮仍 **2/6**。最新恢复从 [Skills 检查点](../resume-checkpoint-skills-2026-10-11.md) 开始。三个 HTTP 索引缺口关闭，下一软件项为静态 classifier 候选与运行 Registry 的衔接审计。
+
 ## R01 · Companion shadow、回放与受约束主动表达
 
 - [x] 核对已实现 Appraisal / Relationship / Affect / Regulation 的规范来源与剩余缺口，定义可回放的候选输入和决策证据。

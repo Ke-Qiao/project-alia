@@ -1,0 +1,16 @@
+{
+  "recorded_at": "2026-10-10T16:47:59.984336+00:00",
+  "database": "task-only alia_skills_20261011",
+  "reader_observed_wait_event_type": "Lock",
+  "reader_isolation": "RepeatableRead",
+  "first_transaction_statement": "LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE",
+  "reader_result_after_writer_commit": 1,
+  "reader_output": [
+    "SET",
+    "BEGIN",
+    "LOCK TABLE",
+    "1",
+    "COMMIT"
+  ],
+  "conclusion": "The RR data snapshot is acquired after waiting for this table lock; no read occurs before the lock."
+}

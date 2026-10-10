@@ -1,0 +1,10 @@
+fix(skills): own HTTP mutations and atomic index publication
+
+Prepare skill context, preferred-tool bindings, artifact changes and HTTP
+responses in one transaction. Publish a complete registry snapshot only
+through an owned commit, and reconcile uncertain commit results behind a
+PostgreSQL table-lock barrier. Retain cleanup ownership when callers cancel.
+
+Remove unused database/plugin skill facades, guard the ownership boundary,
+and exercise real HTTP, PostgreSQL failures, concurrent reloads and shutdown.
+Keep Shadow, global tool visibility and execution approval unchanged.

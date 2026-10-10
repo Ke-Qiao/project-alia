@@ -1,0 +1,24 @@
+{
+  "started": "2026-10-10T16:55:21.283495+00:00",
+  "command": [
+    "sh",
+    "-c",
+    "uname -a; cat /etc/os-release; rustc -Vv; cargo -V; protoc --version; pkg-config --modversion alsa; env | sort | sed -n \"/^CARGO/p;/^SHERPA/p;/^RUST/p;/^DOCS_RS/p\""
+  ],
+  "container": "alia-skills-linux-20261011-v2",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "0ecb239bfe6ec3d4a9a12032e518376695e2b5b1b78f8fb3a79f3ce5a9639552",
+  "source_before": {
+    "file_count": 643,
+    "errors": []
+  }
+}
