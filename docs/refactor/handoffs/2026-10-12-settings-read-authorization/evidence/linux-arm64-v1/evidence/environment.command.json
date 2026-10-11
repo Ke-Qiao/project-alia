@@ -1,0 +1,24 @@
+{
+  "started": "2026-10-11T19:01:13.282834+00:00",
+  "command": [
+    "sh",
+    "-c",
+    "rustc -Vv; cargo -V; uname -sm; cat /etc/os-release"
+  ],
+  "container": "alia-settings-read-authorization-linux-20261012-v1",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "aa52f64b79e6ec2fd82bb79d1e1828066e3c0c954c4138d92ebb5c95d13aec36",
+  "source_before": {
+    "file_count": 655,
+    "errors": []
+  }
+}

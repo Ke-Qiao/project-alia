@@ -71,6 +71,8 @@ curl --fail --silent --show-error "$ALIA_URL/health"
 
 四个 Companion 操作和 execution/delivery 契约可在 Server `/scalar` 查阅。其他旧模块的 OpenAPI 覆盖不应由这个页面存在就自动推断；对应 Markdown 和实际 REST 用例仍是操作依据。
 
+`GET /api/v1/settings` 在全部设置快照等待结束后、返回 JSON 与政策 ETag 前核验当前 active admin。等待期间已降权、停用或删除为 403；最终核验失败或超过 2 秒为脱敏 503，均不返回设置或 ETag。成功响应仍保留原值/schema 与 prefix 行为，包括管理员可读取的 secret 值。原 SQL 暂停到期与内存政策投影保持，响应准入后不持续持有用户锁。
+
 纯非政策 `PATCH /api/v1/settings` 会在更新锁、政策读取和 embedding 预览结束后，重新核验当前 active admin。等待期间已降权、停用或删除返回 403；核验数据库失败或等待超过 2 秒返回脱敏 503，且不应用或保存本请求设置。已经准入的操作继续沿用部分成功规则，不因随后降权自动回滚。
 
 运行时 `PATCH /api/v1/settings` 有 SQL 政策提交、期望设置更新、模块生效和文件保存几个独立完成点。HTTP 200 中 `success=false` 不表示此前动作已回滚，应核对 `context_policy_version`、`applied`、`module_reports` 与 `errors`。同值显式重试仍会调用模块并保存。`settings.toml` 通过完整快照原子替换；发布前失败保留旧文件，发布后同步失败明确报告持久性未确认。失败后直接重启只加载磁盘上完整的旧版或新版，SQL 仍是政策权威；此路径没有首次 setup 的恢复记录。详见 [运行时设置说明](../../packages/alia-server/docs/configuration.md#runtime-settings)。

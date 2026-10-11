@@ -1,0 +1,103 @@
+//! Delayed settings reads must not expose credentials to revoked administrators.
+use super::*;
+use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
+use serde_json::Value;
+
+const SECRET_KEY: &str = "core.providers.llm.openai.api_key";
+
+#[tokio::test]
+async fn settings_get_rechecks_admin_after_policy_wait_before_returning_secrets() {
+    with_fixture(|f| async move {
+        let runtime = f.builder().build().await.unwrap();
+        let state = runtime.state().clone();
+        let url = format!("http://{}/api/v1/settings", runtime.http_addr());
+        let stop = state.cancel_token.clone();
+        let mut serving = tokio::spawn(runtime.run());
+        let mut request = None;
+        let mut blocker = None;
+        let assertions = AssertUnwindSafe(async {
+            let (actor, token) = delivery::account(&state, "admin").await;
+            let client = skills::client();
+            let sentinel = format!("nonfunctional-settings-read-fixture-{}", Uuid::new_v4());
+            state.settings.set(SECRET_KEY, Value::String(sentinel.clone())).await;
+            assert!(state.settings.get_entry(SECRET_KEY).await.unwrap().schema.unwrap().secret);
+            state.settings.save().await.unwrap();
+            let path = f.dir.join("settings.toml");
+            let file_before = std::fs::read(&path).unwrap();
+            let policy_before = state.modules.context.policy_store().current().await.unwrap();
+
+            blocker = Some(state.db.begin().await.unwrap());
+            let barrier = blocker.as_ref().unwrap();
+            barrier.execute_unprepared("SELECT version FROM context_policy FOR UPDATE").await.unwrap();
+            let barrier_pid: i32 = barrier.query_one(Statement::from_string(
+                DatabaseBackend::Postgres, "SELECT pg_backend_pid() AS pid",
+            )).await.unwrap().unwrap().try_get("", "pid").unwrap();
+            request = Some(tokio::spawn(async move {
+                let response = client.get(&url).bearer_auth(&token).send().await.unwrap();
+                let status = response.status();
+                let has_etag = response.headers().contains_key("etag");
+                let response = response.json::<Value>().await.unwrap();
+                (status, has_etag, response)
+            }));
+            let mut polls = 0;
+            let mut policy_waiters = 0_i64;
+            let mut gate_held = false;
+            let witness = tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    policy_waiters = f.admin.query_one(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "SELECT count(*) AS n FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock' AND query LIKE '%FROM context_policy WHERE singleton FOR UPDATE%'",
+                        [barrier_pid.into()],
+                    )).await.unwrap().unwrap().try_get("", "n").unwrap();
+                    gate_held = state.settings.lock_updates().now_or_never().is_none();
+                    polls += 1;
+                    if policy_waiters > 0 && gate_held { break; }
+                    tokio::task::yield_now().await;
+                }
+            }).await;
+            eprintln!("[settings-read-witness] reached={} polls={polls} policy_waiters={policy_waiters} gate_held={gate_held} request_finished={}", witness.is_ok(), request.as_ref().unwrap().is_finished());
+            witness.expect("authenticated GET must reach its policy wait while holding the update gate");
+            let changed = state.db.execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE users SET role='user' WHERE id=$1 AND role='admin'",
+                [actor.into()],
+            )).await.unwrap();
+            assert_eq!(changed.rows_affected(), 1);
+            blocker.take().unwrap().rollback().await.unwrap();
+            let joined = tokio::time::timeout(Duration::from_secs(5), request.as_mut().unwrap()).await;
+            if joined.is_ok() { request.take(); }
+            let (status, has_etag, response) = joined.expect("GET must finish after policy barrier release").unwrap();
+            let exposed = response.to_string().contains(&sentinel);
+            let file_changed = std::fs::read(&path).unwrap() != file_before;
+            let policy_after = state.modules.context.policy_store().current().await.unwrap();
+            eprintln!("[settings-read-result] status={} has_etag={has_etag} sentinel_exposed={exposed} file_changed={file_changed}", status.as_u16());
+            assert_eq!(status, reqwest::StatusCode::FORBIDDEN);
+            assert!(response["error"]["code"] == "AUTH_FORBIDDEN", "expected existing forbidden error envelope");
+            assert!(!has_etag);
+            assert!(!exposed, "revoked actor received the controlled secret sentinel");
+            assert!(!file_changed);
+            assert_eq!(policy_after.version, policy_before.version);
+            assert_eq!(policy_after.policy, policy_before.policy);
+        }).catch_unwind().await;
+
+        if let Some(barrier) = blocker.take() {
+            barrier.rollback().await.unwrap();
+        }
+        if let Some(mut request) = request.take() {
+            if tokio::time::timeout(Duration::from_secs(5), &mut request).await.is_err() {
+                request.abort();
+                let _ = request.await;
+            }
+        }
+        stop.cancel();
+        let joined = tokio::time::timeout(Duration::from_secs(5), &mut serving).await;
+        if joined.is_err() {
+            serving.abort();
+            let _ = serving.await;
+        }
+        joined.expect("settings read runtime must join").unwrap().unwrap();
+        if let Err(error) = assertions {
+            std::panic::resume_unwind(error);
+        }
+    }).await;
+}

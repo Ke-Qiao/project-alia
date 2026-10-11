@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-10-11T19:23:16.045702+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-settings-read-authorization-linux-20261012-v1": {
+      "id": "f89f6f89c1c325bdaf77a8c590d79b5f07b73c919274afa385ca6a2f3ce3c478",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-11T19:23:09.896022324Z"
+    },
+    "alia-settings-read-authorization-linux-20261012-v3": {
+      "id": "f1848826e3d1b23973505f1b24e34685e1588ab0c6cd29c51df3eb1fc2575e87",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-11T19:23:15.009833574Z"
+    },
+    "alia-settings-read-authorization-20261012-db": {
+      "id": "28a195e4285ae675cfa8f20f5372d596fda33f200b9524254cfd1f0941b6059e",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-11T19:23:15.92436749Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

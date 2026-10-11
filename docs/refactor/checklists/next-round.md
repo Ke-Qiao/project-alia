@@ -83,3 +83,7 @@
 ## 2026-10-12 Settings 身份重验证续轮
 
 本轮 **10/10**，源码 `4553e88`，六轮仍 **2/6**。纯非政策 PATCH 最终准入与 8 项真实 HTTP/PG 回归已同源双平台验收。最新恢复从 [身份检查点](../resume-checkpoint-settings-authorization-2026-10-12.md) 开始。下一软件候选：先审计并复现 `GET /api/v1/settings` 等待后返回含敏感配置的设置前的当前身份有效性；保持原 API 和管理员读取边界，不扩大为全系统持续撤权框架。
+
+## 2026-10-12 Settings GET 身份重验证续轮
+
+本轮 **10/10**，源码 `d080710`，六轮仍 **2/6**。最后响应准入、GET六项和PATCH八项回归已同源双平台验收。最新恢复从 [GET检查点](../resume-checkpoint-settings-read-authorization-2026-10-12.md) 开始。下一软件候选：先审计 Settings GET/PATCH 共用 update gate 的排队、各阶段预算和取消所有权。current/final-auth 已有 2 秒，gate/preview/apply 等待尚未故障实证；区分准入前等待与 SQL/desired/module 已发生后的部分成功，不直接套整请求 timeout 或全局回滚，不把客户端断开等同 handler 已取消。

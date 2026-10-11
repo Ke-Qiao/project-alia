@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "run/validation-20261012-settings-read-authorization/static-checks.py"
+  ],
+  "started_at": "2026-10-11T19:20:42.814908+00:00",
+  "finished_at": "2026-10-11T19:20:43.967809+00:00",
+  "elapsed_seconds": 1.15,
+  "exit_code": 0,
+  "source_manifest_sha256": "48547827ad52952af80c9275cc83dd35ef9da5a25cb58b7fb32e8cab57fc1c7c",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

@@ -1,0 +1,36 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.13s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 6 tests
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=KeepAdmin status=200 elapsed_ms=4 has_etag=true sentinel_exposed=true file_changed=false
+
+thread 'settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts' (6518249) panicked at packages/alia-server/tests/server_runtime/settings_read_authorization.rs:140:17:
+authorized GET must retain the full entry JSON contract
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[settings-read-result] change=Delete status=403 elapsed_ms=4 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts ... FAILED
+test settings_read_authorization::settings_get_rejects_deleted_account_after_policy_wait ... ok
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=Disable status=403 elapsed_ms=3 has_etag=false sentinel_exposed=false file_changed=false
+[settings-read-result] change=LookupError status=503 elapsed_ms=2 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_account_lookup_error_returns_no_settings_or_etag ... ok
+test settings_read_authorization::settings_get_rejects_disabled_account_after_policy_wait ... ok
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=Demote status=403 elapsed_ms=2 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_rechecks_admin_after_policy_wait_before_returning_secrets ... ok
+[settings-read-result] change=LookupTimeout status=503 elapsed_ms=2006 has_etag=false sentinel_exposed=false file_changed=false
+test settings_read_authorization::settings_get_account_lookup_timeout_is_bounded_and_returns_no_settings_or_etag ... ok
+
+failures:
+
+failures:
+    settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 5.74s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

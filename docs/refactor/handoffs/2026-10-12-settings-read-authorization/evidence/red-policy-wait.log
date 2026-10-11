@@ -1,0 +1,23 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.81s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 1 test
+[settings-read-witness] reached=true polls=1 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] status=200 has_etag=true sentinel_exposed=true file_changed=false
+
+thread 'settings_read_authorization::settings_get_rechecks_admin_after_policy_wait_before_returning_secrets' (6510517) panicked at packages/alia-server/tests/server_runtime/settings_read_authorization.rs:74:13:
+assertion `left == right` failed
+  left: 200
+ right: 403
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test settings_read_authorization::settings_get_rechecks_admin_after_policy_wait_before_returning_secrets ... FAILED
+
+failures:
+
+failures:
+    settings_read_authorization::settings_get_rechecks_admin_after_policy_wait_before_returning_secrets
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 2.25s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

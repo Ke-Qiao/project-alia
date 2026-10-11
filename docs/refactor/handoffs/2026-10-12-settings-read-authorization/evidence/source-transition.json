@@ -1,0 +1,16 @@
+{
+  "changes": {
+    "v1_to_v2": [
+      "packages/alia-server/tests/server_runtime/settings_read_authorization.rs"
+    ],
+    "v2_to_v3": [
+      "packages/alia-server/tests/server_runtime/settings_read_authorization.rs"
+    ],
+    "v1_to_v3": [
+      "packages/alia-server/tests/server_runtime/settings_read_authorization.rs"
+    ]
+  },
+  "production_unchanged_since_v1": true,
+  "v2": "Bounded shape-only diagnostics, original strict equality assertion retained",
+  "v3": "Expected values use actual JSON wire encode/decode before strict whole-response equality; no tolerance or omitted fields"
+}

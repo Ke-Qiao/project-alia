@@ -1,0 +1,23 @@
+{
+  "baseline": "b15fa7d87e8447d4f6819332121823c271b41573",
+  "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-embedded",
+    "crates/alia-core",
+    "crates/proto",
+    "packages/alia-server/src/api/auth.rs",
+    "packages/alia-server/src/api/companion.rs",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "config",
+    "packages/alia-server/src/modules/memory/context/policy.rs",
+    "packages/alia-server/src/settings",
+    "packages/alia-server/src/auth",
+    "packages/alia-server/src/api/memories.rs"
+  ],
+  "exit_code": 0,
+  "scope": "GET settings final response admission; private query shared with PATCH without changing its behavior. SQL policy actor/CAS, registry, auth, privacy, protocols, policy defaults and dependencies/platforms unchanged.",
+  "new_dependency_or_feature": false
+}

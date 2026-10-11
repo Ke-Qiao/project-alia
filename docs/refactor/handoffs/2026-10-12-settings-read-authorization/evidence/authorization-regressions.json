@@ -1,0 +1,33 @@
+{
+  "tests": {
+    "settings_read_authorization": [
+      "settings_get_rechecks_admin_after_policy_wait_before_returning_secrets",
+      "settings_get_rejects_disabled_account_after_policy_wait",
+      "settings_get_rejects_deleted_account_after_policy_wait",
+      "settings_get_account_lookup_error_returns_no_settings_or_etag",
+      "settings_get_account_lookup_timeout_is_bounded_and_returns_no_settings_or_etag",
+      "settings_get_preserves_admin_json_secret_prefix_and_etag_contracts"
+    ],
+    "settings_authorization": [
+      "non_policy_patch_rechecks_admin_after_waiting_for_policy",
+      "demotion_during_first_preview_prevents_non_policy_settings",
+      "disabling_during_second_preview_prevents_non_policy_settings",
+      "deletion_during_second_preview_prevents_non_policy_settings",
+      "fresh_account_lookup_error_is_unavailable_without_settings_changes",
+      "fresh_account_lookup_timeout_is_bounded_without_settings_changes",
+      "active_admin_patch_and_same_value_retry_do_not_advance_policy",
+      "demotion_after_apply_admission_does_not_claim_cross_module_rollback"
+    ]
+  },
+  "results": {
+    "macos": {
+      "get_passed": 6,
+      "patch_passed": 8
+    },
+    "linux": {
+      "get_passed": 6,
+      "patch_passed": 8
+    }
+  },
+  "note": "Subset of full counts, never added a second time"
+}

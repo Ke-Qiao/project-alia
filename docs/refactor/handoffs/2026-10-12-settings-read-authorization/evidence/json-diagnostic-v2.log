@@ -1,0 +1,25 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.63s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 1 test
+[settings-read-witness] reached=true polls=2 policy_waiters=1 gate_held=true request_finished=false
+[settings-read-result] change=KeepAdmin status=200 elapsed_ms=9 has_etag=true sentinel_exposed=true file_changed=false
+[settings-read-shape] actual_keys=166 expected_keys=166 different_keys=3 serialized_expected_matches=true
+[settings-read-shape-key] key=core.policies.affect.fatigue_per_turn value_equal=false schema_equal=true actual_value_kind=float expected_value_kind=float serialized_entry_matches=true
+[settings-read-shape-key] key=core.policies.cache.semantic_threshold value_equal=false schema_equal=true actual_value_kind=float expected_value_kind=float serialized_entry_matches=true
+[settings-read-shape-key] key=core.providers.gpt_sovits.min_fragment_interval value_equal=false schema_equal=true actual_value_kind=float expected_value_kind=float serialized_entry_matches=true
+
+thread 'settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts' (6521188) panicked at packages/alia-server/tests/server_runtime/settings_read_authorization.rs:190:17:
+authorized GET must retain the full entry JSON contract
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts ... FAILED
+
+failures:
+
+failures:
+    settings_read_authorization::settings_get_preserves_admin_json_secret_prefix_and_etag_contracts
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 77 filtered out; finished in 2.27s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`
