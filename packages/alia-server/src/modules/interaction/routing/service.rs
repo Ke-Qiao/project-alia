@@ -463,13 +463,11 @@ impl ModuleLifecycle for RouterService {
         if matches!(state.config.llm_mode(), LlmMode::MajorOnly) {
             return ModuleHealth::Healthy;
         }
-        let Some(minor_llm) = &state.minor_llm else {
+        if state.minor_llm.is_none() {
             return ModuleHealth::Degraded("minor LLM unavailable; routing falls back".to_string());
-        };
-        match minor_llm.health_check().await {
-            ModuleHealth::Healthy => ModuleHealth::Healthy,
-            other => other,
         }
+        // Provider availability belongs to its own registry health result.
+        ModuleHealth::Healthy
     }
 
     async fn apply_settings(
@@ -594,9 +592,43 @@ mod tests {
         requests: std::sync::Mutex<Vec<Vec<ChatMessage>>>,
     }
 
+    #[async_trait]
     impl ModuleLifecycle for CandidateClassifier {
         fn name(&self) -> &'static str {
             "candidate_classifier"
+        }
+
+        async fn health_check(&self) -> ModuleHealth {
+            panic!("router health must not probe the bound provider");
+        }
+    }
+
+    #[tokio::test]
+    async fn router_health_checks_local_binding_in_each_live_mode() {
+        let router = RouterService::new(
+            RouterConfig {
+                timeout_sec: 1,
+                minor_llm_enabled: true,
+                major_llm_enabled: true,
+            },
+            Some(Arc::new(CandidateClassifier::default())),
+        )
+        .unwrap();
+        for (minor_enabled, major_enabled) in [(true, true), (true, false), (false, true)] {
+            router
+                .apply_settings(&BTreeMap::from([
+                    (
+                        "core.policies.routing.minor_llm_enabled".into(),
+                        Value::from(minor_enabled),
+                    ),
+                    (
+                        "core.policies.routing.major_llm_enabled".into(),
+                        Value::from(major_enabled),
+                    ),
+                ]))
+                .await
+                .unwrap();
+            assert!(matches!(router.health_check().await, ModuleHealth::Healthy));
         }
     }
 

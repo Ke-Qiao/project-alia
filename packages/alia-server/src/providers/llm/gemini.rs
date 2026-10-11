@@ -274,7 +274,8 @@ impl ModuleLifecycle for GeminiLlm {
     }
 
     async fn health_check(&self) -> ModuleHealth {
-        let config = self.config.read().await;
+        // Probe deadlines and settings ownership are independent of generation.
+        let config = self.config.read().await.clone();
         if config.api_key.trim().is_empty() {
             ModuleHealth::Unhealthy("API key not configured".to_string())
         } else if !config.health_probe_enabled {
@@ -288,6 +289,7 @@ impl ModuleLifecycle for GeminiLlm {
                     config.model.trim_start_matches("models/")
                 ))
                 .header("x-goog-api-key", config.api_key.trim())
+                .timeout(std::time::Duration::from_secs(5))
                 .send()
                 .await
             {
@@ -296,7 +298,17 @@ impl ModuleLifecycle for GeminiLlm {
                     "Gemini model probe returned {}",
                     response.status()
                 )),
-                Err(error) => ModuleHealth::Degraded(format!("Gemini probe failed: {error}")),
+                Err(error) => {
+                    // Raw transport errors may contain credential-bearing URLs.
+                    let failure = if error.is_timeout() {
+                        "timed out after 5s"
+                    } else if error.is_connect() {
+                        "connection failed"
+                    } else {
+                        "request failed"
+                    };
+                    ModuleHealth::Degraded(format!("Gemini probe {failure}"))
+                }
             }
         }
     }
@@ -644,6 +656,263 @@ fn gemini_stream_delta(data: &str) -> anyhow::Result<GeminiStreamDelta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    fn test_llm() -> GeminiLlm {
+        let mut profile = crate::config::ProfilesSection::default()
+            .llm_profile("major")
+            .unwrap()
+            .clone();
+        profile.provider = "gemini".into();
+        GeminiLlm::new("major", &profile, &GeminiProviderSection::default()).unwrap()
+    }
+
+    async fn accept_probe(listener: &TcpListener) -> (TcpStream, String) {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0; 1];
+            socket.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+            assert!(request.len() <= 8192);
+        }
+        (socket, String::from_utf8(request).unwrap())
+    }
+
+    #[tokio::test]
+    async fn health_probe_default_disabled_and_missing_key_do_not_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let llm = test_llm();
+        {
+            let mut config = llm.config.write().await;
+            assert!(!config.health_probe_enabled);
+            config.base_url = format!("http://{}/v1beta", listener.local_addr().unwrap());
+        }
+        assert!(matches!(
+            llm.health_check().await,
+            ModuleHealth::Unhealthy(message) if message == "API key not configured"
+        ));
+        llm.config.write().await.api_key = "local-health-secret".into();
+        assert!(matches!(
+            llm.health_check().await,
+            ModuleHealth::Degraded(message)
+                if message == "API key configured; live provider probe disabled"
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), listener.accept())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn health_probe_preserves_http_status_without_disclosing_request_or_body() {
+        for status in ["200 OK", "401 Unauthorized", "404 Not Found"] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let llm = test_llm();
+            {
+                let mut config = llm.config.write().await;
+                config.api_key = "local-health-secret".into();
+                config.base_url = format!(
+                    "http://{}/private-url-secret/v1beta/",
+                    listener.local_addr().unwrap()
+                );
+                config.model = "models/test-model".into();
+                config.health_probe_enabled = true;
+            }
+            let peer = async {
+                let (mut socket, request) = accept_probe(&listener).await;
+                assert!(
+                    request.starts_with(
+                        "GET /private-url-secret/v1beta/models/test-model HTTP/1.1\r\n"
+                    )
+                );
+                assert!(
+                    request
+                        .to_ascii_lowercase()
+                        .contains("\r\nx-goog-api-key: local-health-secret\r\n")
+                );
+                let body = "private-response-secret";
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            };
+            let (health, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+                tokio::join!(llm.health_check(), peer)
+            })
+            .await
+            .unwrap();
+            if status == "200 OK" {
+                assert!(matches!(health, ModuleHealth::Healthy));
+            } else {
+                let ModuleHealth::Degraded(message) = health else {
+                    panic!("HTTP rejection must be degraded");
+                };
+                assert_eq!(message, format!("Gemini model probe returned {status}"));
+                for secret in [
+                    "local-health-secret",
+                    "private-url-secret",
+                    "private-response-secret",
+                    "x-goog-api-key",
+                ] {
+                    assert!(!message.contains(secret));
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_health_probe_times_out_without_blocking_settings_updates() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let llm = test_llm();
+        {
+            let mut config = llm.config.write().await;
+            config.api_key = "local-health-secret".into();
+            config.base_url = format!(
+                "http://{}/private-url-secret/v1beta",
+                listener.local_addr().unwrap()
+            );
+            config.model = "test-model".into();
+            config.health_probe_enabled = true;
+        }
+        let started = Instant::now();
+        let probe = llm.health_check();
+        tokio::pin!(probe);
+        let (_socket, request) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                request = accept_probe(&listener) => request,
+                _ = &mut probe => panic!("probe must wait for the stalled peer"),
+            }
+        })
+        .await
+        .unwrap();
+        assert!(request.contains("/models/test-model HTTP/1.1"));
+        let applied = tokio::time::timeout(
+            Duration::from_millis(500),
+            llm.apply_settings(&BTreeMap::from([
+                (
+                    "core.providers.llm.gemini.api_key".into(),
+                    json!("next-health-secret"),
+                ),
+                (
+                    "core.profiles.llm.major.model".into(),
+                    json!("models/next-model"),
+                ),
+            ])),
+        )
+        .await
+        .expect("a stalled probe must not hold the settings read lock")
+        .unwrap();
+        assert_eq!(applied.len(), 2);
+        let health = tokio::time::timeout(Duration::from_secs(7), &mut probe)
+            .await
+            .expect("the independent provider deadline must finish the probe");
+        assert!(matches!(
+            health,
+            ModuleHealth::Degraded(message) if message == "Gemini probe timed out after 5s"
+        ));
+        assert!(started.elapsed() >= Duration::from_millis(4500));
+        assert!(started.elapsed() < Duration::from_secs(7));
+
+        let peer = async {
+            let (mut socket, request) = accept_probe(&listener).await;
+            assert!(request.contains("/models/next-model HTTP/1.1"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("\r\nx-goog-api-key: next-health-secret\r\n")
+            );
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+        };
+        let (health, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(llm.health_check(), peer)
+        })
+        .await
+        .unwrap();
+        assert!(matches!(health, ModuleHealth::Healthy));
+    }
+
+    #[tokio::test]
+    async fn cancelled_health_probe_releases_its_stalled_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let llm = test_llm();
+        {
+            let mut config = llm.config.write().await;
+            config.api_key = "local-health-secret".into();
+            config.base_url = format!("http://{}/v1beta", listener.local_addr().unwrap());
+            config.health_probe_enabled = true;
+        }
+        let mut socket = {
+            let probe = llm.health_check();
+            tokio::pin!(probe);
+            tokio::time::timeout(Duration::from_secs(2), async {
+                tokio::select! {
+                    (socket, _) = accept_probe(&listener) => socket,
+                    _ = &mut probe => panic!("probe must wait for the stalled peer"),
+                }
+            })
+            .await
+            .unwrap()
+        };
+        let mut byte = [0; 1];
+        let closed = tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte))
+            .await
+            .expect("dropping the probe must close the pending request")
+            .unwrap();
+        assert_eq!(closed, 0);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn health_probe_connection_refusal_is_distinct_and_redacted() {
+        struct SocketPath(std::path::PathBuf);
+        impl Drop for SocketPath {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let path =
+            std::env::temp_dir().join(format!("alia-{}.sock", uuid::Uuid::new_v4().simple()));
+        let reserved = tokio::net::UnixSocket::new_stream().unwrap();
+        reserved.bind(&path).unwrap();
+        let _socket_path = SocketPath(path.clone());
+        let refused = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::net::UnixStream::connect(&path),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::ConnectionRefused);
+        let mut llm = test_llm();
+        llm.client = Client::builder().unix_socket(path).build().unwrap();
+        {
+            let mut config = llm.config.write().await;
+            config.api_key = "local-health-secret".into();
+            config.base_url = "http://localhost/private-url-secret/v1beta".into();
+            config.health_probe_enabled = true;
+        }
+        let health = tokio::time::timeout(Duration::from_secs(2), llm.health_check())
+            .await
+            .unwrap();
+        assert!(matches!(
+            health,
+            ModuleHealth::Degraded(message) if message == "Gemini probe connection failed"
+        ));
+        drop(reserved);
+    }
 
     #[test]
     fn gemini_stream_url_uses_sse_endpoint() {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -329,42 +330,39 @@ impl ServerBuilder {
             .await;
 
         // Create provider adapters from config; core services are fixed below.
-        let minor_llm = match self.minor_llm {
-            Some(llm) => llm,
-            None if self.config.policies.routing.minor_llm_enabled => {
-                factory::create_llm(&self.config, &self.config.llm.roles.minor)?
+        let minor_profile = if self.config.policies.routing.minor_llm_enabled {
+            self.config.llm.roles.minor.clone()
+        } else {
+            "noop".to_string()
+        };
+        let major_profile = if self.config.policies.routing.major_llm_enabled {
+            self.config.llm.roles.major.clone()
+        } else {
+            "noop".to_string()
+        };
+        let mut pending_llms = HashMap::new();
+        for (custom, profile) in [
+            (&self.minor_llm, Some(minor_profile.as_str())),
+            (&self.major_llm, Some(major_profile.as_str())),
+            (
+                &self.memory_capture_llm,
+                self.config.llm.roles.memory_capture.as_deref(),
+            ),
+            (
+                &self.sentence_expression_llm,
+                self.config.llm.roles.sentence_expression.as_deref(),
+            ),
+        ] {
+            if custom.is_none()
+                && let Some(profile) = profile
+            {
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    pending_llms.entry(profile.to_string())
+                {
+                    entry.insert(factory::create_llm(&self.config, profile)?);
+                }
             }
-            None => factory::create_llm(&self.config, "noop")?,
-        };
-        let major_llm = match self.major_llm {
-            Some(llm) => llm,
-            None if self.config.policies.routing.major_llm_enabled => {
-                factory::create_llm(&self.config, &self.config.llm.roles.major)?
-            }
-            None => factory::create_llm(&self.config, "noop")?,
-        };
-        let memory_capture_llm = match self.memory_capture_llm {
-            Some(llm) => Some(llm),
-            None => self
-                .config
-                .llm
-                .roles
-                .memory_capture
-                .as_deref()
-                .map(|profile| factory::create_llm(&self.config, profile))
-                .transpose()?,
-        };
-        let sentence_expression_llm = match self.sentence_expression_llm {
-            Some(llm) => Some(llm),
-            None => self
-                .config
-                .llm
-                .roles
-                .sentence_expression
-                .as_deref()
-                .map(|profile| factory::create_llm(&self.config, profile))
-                .transpose()?,
-        };
+        }
         let stt = match self.stt {
             Some(module) => module,
             None => factory::create_stt(&self.config, &self.config.modules.stt)?,
@@ -509,28 +507,45 @@ impl ServerBuilder {
         let conversation_arc = cleanup
             .initialize(conversation, &self.cancel_token, ShutdownPhase::Resources)
             .await?;
-        let minor_llm = cleanup
-            .initialize(minor_llm, &self.cancel_token, ShutdownPhase::Resources)
-            .await?;
-        let major_llm = cleanup
-            .initialize(major_llm, &self.cancel_token, ShutdownPhase::Resources)
-            .await?;
-        let memory_capture_llm = match memory_capture_llm {
-            Some(module) => Some(
-                cleanup
-                    .initialize(module, &self.cancel_token, ShutdownPhase::Resources)
-                    .await?,
-            ),
-            None => None,
-        };
-        let sentence_expression_llm = match sentence_expression_llm {
-            Some(module) => Some(
-                cleanup
-                    .initialize(module, &self.cancel_token, ShutdownPhase::Resources)
-                    .await?,
-            ),
-            None => None,
-        };
+        let mut initialized_llms = HashMap::new();
+        let minor_llm = initialize_llm_role(
+            self.minor_llm,
+            Some(minor_profile.as_str()),
+            &mut pending_llms,
+            &mut initialized_llms,
+            &cleanup,
+            &self.cancel_token,
+        )
+        .await?
+        .context("minor LLM profile is required")?;
+        let major_llm = initialize_llm_role(
+            self.major_llm,
+            Some(major_profile.as_str()),
+            &mut pending_llms,
+            &mut initialized_llms,
+            &cleanup,
+            &self.cancel_token,
+        )
+        .await?
+        .context("major LLM profile is required")?;
+        let memory_capture_llm = initialize_llm_role(
+            self.memory_capture_llm,
+            self.config.llm.roles.memory_capture.as_deref(),
+            &mut pending_llms,
+            &mut initialized_llms,
+            &cleanup,
+            &self.cancel_token,
+        )
+        .await?;
+        let sentence_expression_llm = initialize_llm_role(
+            self.sentence_expression_llm,
+            self.config.llm.roles.sentence_expression.as_deref(),
+            &mut pending_llms,
+            &mut initialized_llms,
+            &cleanup,
+            &self.cancel_token,
+        )
+        .await?;
         let default_llm = if self.config.llm.roles.default == self.config.llm.roles.minor {
             minor_llm.clone()
         } else {
@@ -792,6 +807,8 @@ impl ServerBuilder {
         // Build registry
         let registry = ModuleRegistry {
             cleanup: cleanup.clone(),
+            health_gate: tokio::sync::Mutex::new(()),
+            health_cancel: self.cancel_token.clone(),
             llm: default_llm,
             minor_llm,
             major_llm,
@@ -895,12 +912,7 @@ impl ServerBuilder {
 
         // Start downstream adapters before any durable execution can dispatch.
         tracing::info!("starting modules...");
-        start_module(state.modules.minor_llm.as_ref(), &state.cancel_token).await?;
-        start_module(state.modules.major_llm.as_ref(), &state.cancel_token).await?;
-        if let Some(llm) = &state.modules.memory_capture_llm {
-            start_module(llm.as_ref(), &state.cancel_token).await?;
-        }
-        if let Some(llm) = &state.modules.sentence_expression_llm {
+        for llm in state.modules.unique_llms() {
             start_module(llm.as_ref(), &state.cancel_token).await?;
         }
         start_module(state.modules.stt.as_ref(), &state.cancel_token).await?;
@@ -998,6 +1010,37 @@ impl ServerBuilder {
     }
 }
 
+// A configured profile has one lifecycle owner; explicit overrides stay independent.
+async fn initialize_llm_role(
+    custom: Option<Box<dyn LlmAdapter>>,
+    profile: Option<&str>,
+    pending: &mut HashMap<String, Box<dyn LlmAdapter>>,
+    initialized: &mut HashMap<String, Arc<dyn LlmAdapter>>,
+    cleanup: &RuntimeCleanup,
+    cancel: &CancellationToken,
+) -> anyhow::Result<Option<Arc<dyn LlmAdapter>>> {
+    if let Some(module) = custom {
+        return cleanup
+            .initialize(module, cancel, ShutdownPhase::Resources)
+            .await
+            .map(Some);
+    }
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    if let Some(module) = initialized.get(profile) {
+        return Ok(Some(module.clone()));
+    }
+    let module = pending
+        .remove(profile)
+        .context("configured LLM was not prepared")?;
+    let module = cleanup
+        .initialize(module, cancel, ShutdownPhase::Resources)
+        .await?;
+    initialized.insert(profile.to_string(), module.clone());
+    Ok(Some(module))
+}
+
 async fn verify_memory_health(
     module: &dyn ModuleLifecycle,
     config: &MemorySection,
@@ -1052,3 +1095,7 @@ async fn register_initialized_channel(
     transferred.store(true, std::sync::atomic::Ordering::Release);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "builder_llm_tests.rs"]
+mod llm_tests;
