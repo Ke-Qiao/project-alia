@@ -1,0 +1,14 @@
+{
+  "from": "source-v1-manifest.json",
+  "to": "source-v2-manifest.json",
+  "changed_inputs": [
+    "packages/alia-server/tests/server_runtime/settings_authorization.rs"
+  ],
+  "reason": "Remove completed request JoinHandle before unwrapping task result so panic cleanup never polls it twice",
+  "production_changed": false,
+  "v1_targeted": {
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0
+  }
+}

@@ -79,3 +79,7 @@
 ## 2026-10-11 运行时 Settings 续轮
 
 本轮 **10/10**，源码 `2f5e2a2`；六轮仍 **2/6**。原子快照与明确失败阶段、同值恢复、privacy SQL／管理员入口和同源双平台验收已完成。最新恢复从 [Settings 检查点](../resume-checkpoint-settings-recovery-2026-10-11.md) 开始。下一软件候选：先审计纯非政策 `PATCH /api/v1/settings` 在等待更新锁／政策读取期间发生管理员降权时的准入重验证，保留现有 SQL actor 核验、API 与权限政策；先复现，再补缺口。
+
+## 2026-10-12 Settings 身份重验证续轮
+
+本轮 **10/10**，源码 `4553e88`，六轮仍 **2/6**。纯非政策 PATCH 最终准入与 8 项真实 HTTP/PG 回归已同源双平台验收。最新恢复从 [身份检查点](../resume-checkpoint-settings-authorization-2026-10-12.md) 开始。下一软件候选：先审计并复现 `GET /api/v1/settings` 等待后返回含敏感配置的设置前的当前身份有效性；保持原 API 和管理员读取边界，不扩大为全系统持续撤权框架。

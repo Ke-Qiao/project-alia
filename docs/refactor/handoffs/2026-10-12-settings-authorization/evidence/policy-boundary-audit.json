@@ -1,0 +1,23 @@
+{
+  "baseline": "bdc94dd245251a45b620877be728a7635d3e1296",
+  "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-embedded",
+    "crates/alia-core",
+    "crates/proto",
+    "packages/alia-server/src/api/auth.rs",
+    "packages/alia-server/src/api/companion.rs",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "config",
+    "packages/alia-server/src/modules/memory/context/policy.rs",
+    "packages/alia-server/src/settings",
+    "packages/alia-server/src/auth",
+    "packages/alia-server/src/api/memories.rs"
+  ],
+  "exit_code": 0,
+  "scope": "Pure non-policy PATCH settings admission only; SQL policy actor/CAS, auth extractor, privacy routes, storage, protocols, policy defaults and dependency/platform manifests unchanged.",
+  "new_dependency_or_feature": false
+}

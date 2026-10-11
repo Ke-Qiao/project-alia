@@ -1,0 +1,23 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.16s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 1 test
+[settings-auth-witness] reached=true polls=2 blocked=1 policy_blocked=1 policy_reads=2 policy_active=1 policy_locks=1 barrier_idle=1 gate_held_seen=true request_finished_seen=false
+[settings-auth-wait] status=200 error_code=none json_body=true desired_before=Some(Number(8)) desired_after=Some(Number(9)) live_before=8 live_after=9 file_changed=true module_applies=1
+
+thread 'settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy' (6226810) panicked at packages/alia-server/tests/server_runtime/settings_authorization.rs:225:13:
+assertion `left == right` failed
+  left: 200
+ right: 403
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy ... FAILED
+
+failures:
+
+failures:
+    settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 64 filtered out; finished in 2.27s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

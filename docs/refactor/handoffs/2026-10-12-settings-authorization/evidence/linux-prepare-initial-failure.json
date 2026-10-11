@@ -1,0 +1,9 @@
+{
+  "stage": "prepare-linux-v1.py before source copy",
+  "exit_code": 1,
+  "reason": "Missing empty source directory; prepare-source.py iterdir failed",
+  "source_copied": false,
+  "container_started": false,
+  "cargo_started": false,
+  "recovery": "Create empty source and runtime directories, then rerun preparation with unchanged V2 source"
+}

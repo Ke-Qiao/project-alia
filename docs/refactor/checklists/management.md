@@ -45,4 +45,10 @@ C01 Temporal 与 C02 Rig/rmcp/Home Assistant 的候选门槛不因被提案点�
 ## 运行时 Settings 恢复续轮
 
 - [x] 源码 `2f5e2a2`，原子文件保存、明确发布失败阶段及显式重试；privacy 按用户确认统一 SQL 政策与管理员修改，保留成功响应形状与原读取权限。见 [本轮 10/10](settings-recovery-2026-10-11.md)。
-- [ ] 下一软件候选：先审计纯非政策 `PATCH /api/v1/settings` 在等待更新锁／政策读取期间发生管理员降权时的准入重验证，保留现有 SQL actor 核验、API 与权限政策；先复现，再补缺口。
+- [x] 纯非政策 PATCH 等待后身份核验已完成，源码 `4553e88`，见 [本轮10/10](settings-authorization-2026-10-12.md)。
+
+## 2026-10-12 Settings 身份重验证后续
+
+- [ ] 下一软件候选：先审计并复现 `GET /api/v1/settings` 等待后返回含敏感配置的设置前的当前身份有效性；保持原 API 和管理员读取边界，不扩大为全系统持续撤权框架。
+
+未独立动态验证纯 update gate 排队或慢 JSON body 窗口；最终核验位置由静态顺序与真实 policy/preview 等待验证。未运行真实 PTY/Easy-Turn、Linux 全 workspace、release/部署 smoke、外部付费服务、Pi/声学/执行器或长稳。最终核验是一次准入，准入后的降权不追溯撤销已开始的更新。

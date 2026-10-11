@@ -1,0 +1,4 @@
+   Compiling alia-proto v0.1.0 (/workspace/crates/proto)
+    Checking alia-server v0.1.0 (/workspace/packages/alia-server)
+    Checking alia-embedded v0.1.0 (/workspace/packages/alia-embedded)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.61s

@@ -1,0 +1,19 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 13s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 1 test
+
+thread 'settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy' (6204775) panicked at packages/alia-server/tests/server_runtime/settings_authorization.rs:81:26:
+authenticated PATCH did not reach the policy row barrier: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy ... FAILED
+
+failures:
+
+failures:
+    settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 64 filtered out; finished in 2.27s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

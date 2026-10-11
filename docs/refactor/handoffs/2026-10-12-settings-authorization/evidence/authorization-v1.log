@@ -1,0 +1,25 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.25s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 8 tests
+[settings-auth-preview] call=2 change=Disable status=403 elapsed_ms=1 desired_changed=false live_changed=false file_changed=false module_applies=0
+[settings-auth-preview] call=2 change=Delete status=403 elapsed_ms=0 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::deletion_during_second_preview_prevents_non_policy_settings ... ok
+test settings_authorization::disabling_during_second_preview_prevents_non_policy_settings ... ok
+[settings-auth-preview] call=1 change=Demote status=403 elapsed_ms=1 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::demotion_during_first_preview_prevents_non_policy_settings ... ok
+[settings-auth-witness] reached=true polls=2 blocked=1 policy_blocked=1 policy_reads=2 policy_active=1 policy_locks=1 barrier_idle=1 gate_held_seen=true request_finished_seen=false
+[settings-auth-wait] status=403 error_code=AUTH_FORBIDDEN json_body=true desired_before=Some(Number(8)) desired_after=Some(Number(8)) live_before=8 live_after=8 file_changed=false module_applies=0
+test settings_authorization::non_policy_patch_rechecks_admin_after_waiting_for_policy ... ok
+[settings-auth-preview] call=2 change=LookupError status=503 elapsed_ms=2 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::fresh_account_lookup_error_is_unavailable_without_settings_changes ... ok
+[settings-auth-preview] call=0 change=DemoteAfterAdmission status=200 elapsed_ms=9 desired_changed=true live_changed=true file_changed=true module_applies=1
+test settings_authorization::demotion_after_apply_admission_does_not_claim_cross_module_rollback ... ok
+[settings-auth-preview] call=2 change=KeepAdmin status=200 elapsed_ms=10 desired_changed=true live_changed=true file_changed=true module_applies=1
+[settings-auth-preview] call=2 change=LookupTimeout status=503 elapsed_ms=2003 desired_changed=false live_changed=false file_changed=false module_applies=0
+test settings_authorization::active_admin_patch_and_same_value_retry_do_not_advance_policy ... ok
+test settings_authorization::fresh_account_lookup_timeout_is_bounded_without_settings_changes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 64 filtered out; finished in 5.19s
+

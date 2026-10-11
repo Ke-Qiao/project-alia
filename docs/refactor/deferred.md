@@ -170,7 +170,13 @@ macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798
 ## 2026-10-11 Settings 恢复后的续接
 
 - [x] 本轮 10/10，源码 `2f5e2a2`，同源双平台软件验收完成。
-- [ ] 下一软件候选：先审计纯非政策 `PATCH /api/v1/settings` 在等待更新锁／政策读取期间发生管理员降权时的准入重验证，保留现有 SQL actor 核验、API 与权限政策；先复现，再补缺口。
+- [x] 纯非政策 PATCH 等待后身份核验已完成，源码 `4553e88`，见 [本轮10/10](resume-checkpoint-settings-authorization-2026-10-12.md)。
 - [ ] 任意 ACL／扩展属性保留、跨进程共享 settings 文件协调及真实存储/断电保证仍需部署需求和独立验证。本轮没有扩大平台或依赖。
 
 未运行真实断电、独立进程 kill/restart、真实 PTY／Easy-Turn、Linux 全 workspace、release／部署 smoke、外部付费服务、Pi／声学／执行器或长稳。存储回归使用软件故障注入，runtime 重启使用实际 ServerBuilder；不等于操作系统进程重启或物理断电。ACL／扩展属性迁移、异 owner 拒绝的提权实测、FIFO 故障和其他本机进程并发改写没有验证。
+
+## 2026-10-12 Settings 身份重验证后续
+
+- [ ] 下一软件候选：先审计并复现 `GET /api/v1/settings` 等待后返回含敏感配置的设置前的当前身份有效性；保持原 API 和管理员读取边界，不扩大为全系统持续撤权框架。
+
+未独立动态验证纯 update gate 排队或慢 JSON body 窗口；最终核验位置由静态顺序与真实 policy/preview 等待验证。未运行真实 PTY/Easy-Turn、Linux 全 workspace、release/部署 smoke、外部付费服务、Pi/声学/执行器或长稳。最终核验是一次准入，准入后的降权不追溯撤销已开始的更新。
