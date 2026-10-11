@@ -131,6 +131,17 @@ policies and shadow defaults are unchanged.
 
 ## Runtime Settings
 
+`GET /api/v1/settings` requires an active administrator and returns the original
+setting values and schema, including secret values; `schema.secret` is UI metadata.
+Its optional `prefix` filter and quoted policy-version ETag are unchanged. After
+the update gate, policy projection, and settings snapshot waits, the server checks
+the caller's current administrator status before building the response. A demoted,
+inactive, or deleted account gets 403; a failed or timed-out authorization query
+gets a redacted 503, with a two-second query deadline. These errors contain no
+settings or policy ETag. The existing policy read may independently expire a timed
+pause and refresh the in-memory policy projection. This is one final admission
+check, not continuous revocation while the network sends the response.
+
 `PATCH /api/v1/settings` updates frontend-visible settings. The response reports
 which keys changed, which were applied live, which require restart, and which
 were ignored by current runtime components.

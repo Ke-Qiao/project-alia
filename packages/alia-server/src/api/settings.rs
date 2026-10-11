@@ -53,6 +53,8 @@ async fn get_settings(
         Some(prefix) => state.settings.list(prefix).await,
         None => state.settings.all().await,
     };
+    // The final registry wait can outlive the authenticated role snapshot.
+    require_current_admin(&state, &auth).await?;
 
     let mut response = Json(entries).into_response();
     response.headers_mut().insert(
@@ -118,25 +120,7 @@ async fn update_settings(
         .await?
     } else {
         // Gate and preview waits can outlive the authenticated role snapshot.
-        let actor = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            user::Entity::find_by_id(auth.id)
-                .filter(user::Column::Status.eq("active"))
-                .filter(user::Column::Role.eq("admin"))
-                .select_only()
-                .column(user::Column::Id)
-                .into_tuple::<uuid::Uuid>()
-                .one(&state.db),
-        )
-        .await
-        .map_err(|_| AppError::Unavailable("settings authorization timed out; retry explicitly"))?
-        .map_err(|error| {
-            tracing::error!(%error, "settings authorization failed");
-            AppError::Unavailable("settings authorization unavailable; retry explicitly")
-        })?;
-        if actor.is_none() {
-            return Err(AppError::Forbidden);
-        }
+        require_current_admin(&state, &auth).await?;
         current
     };
     // Project committed policy rather than overwriting it from this process's RAM.
@@ -252,6 +236,29 @@ async fn update_settings(
         })
         .unwrap_or_default(),
     ))
+}
+
+async fn require_current_admin(state: &AppState, auth: &AuthUser) -> Result<()> {
+    let actor = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        user::Entity::find_by_id(auth.id)
+            .filter(user::Column::Status.eq("active"))
+            .filter(user::Column::Role.eq("admin"))
+            .select_only()
+            .column(user::Column::Id)
+            .into_tuple::<uuid::Uuid>()
+            .one(&state.db),
+    )
+    .await
+    .map_err(|_| AppError::Unavailable("settings authorization timed out; retry explicitly"))?
+    .map_err(|error| {
+        tracing::error!(%error, "settings authorization failed");
+        AppError::Unavailable("settings authorization unavailable; retry explicitly")
+    })?;
+    if actor.is_none() {
+        return Err(AppError::Forbidden);
+    }
+    Ok(())
 }
 
 pub(super) async fn prepare_policy_update(
