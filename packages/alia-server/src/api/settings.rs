@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
-use crate::modules::memory::context::{ContextError, PolicySnapshot};
-use crate::settings::context_policy;
+use crate::modules::memory::context::{ContextError, ContextPolicy, PolicySnapshot};
+use crate::providers::adapter::EmbeddingProfile;
+use crate::settings::{SettingsSaveError, context_policy};
 use crate::state::AppState;
 
 #[derive(Deserialize, Default)]
@@ -69,29 +70,7 @@ async fn update_settings(
         return Err(AppError::Forbidden);
     }
     let _update = state.settings.lock_updates().await;
-    let current = current_policy(&state).await?;
-    let expected = if let Some(value) = headers.get(header::IF_MATCH) {
-        value
-            .to_str()
-            .ok()
-            .and_then(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
-            .and_then(|s| s.parse::<i64>().ok())
-            .filter(|v| *v > 0)
-            .ok_or_else(|| {
-                AppError::Validation(
-                    "If-Match must contain the quoted context policy version".into(),
-                )
-            })?
-    } else {
-        current.version
-    };
-    if expected != current.version {
-        return Err(AppError::Conflict(
-            "context policy changed; reload settings before retrying".into(),
-        ));
-    }
-    let mut next = context_policy::patched(&current.policy, &body)
-        .map_err(|error| AppError::Validation(error.to_string()))?;
+    let (current, mut next) = prepare_policy_update(&state, &headers, &body).await?;
     let current_profile = state
         .modules
         .embedding
@@ -123,30 +102,18 @@ async fn update_settings(
         next.active_embedding_profile = next.cache_embedding_profile_id.clone();
     }
     let policy = if body.keys().any(|key| context_policy::owns(key)) || embedding_changed {
-        tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            state
-                .modules
-                .context
-                .policy_store()
-                .replace_for_actor_with_embedding(
-                    expected,
-                    next,
-                    auth.id,
-                    if embedding_changed {
-                        next_profile.as_ref()
-                    } else {
-                        None
-                    },
-                ),
+        commit_policy_update(
+            &state,
+            &auth,
+            current.version,
+            next,
+            if embedding_changed {
+                next_profile.as_ref()
+            } else {
+                None
+            },
         )
-        .await
-        .map_err(|_| {
-            AppError::Unavailable(
-                "context policy acknowledgement timed out; reload before retrying",
-            )
-        })?
-        .map_err(policy_error)?
+        .await?
     } else {
         current
     };
@@ -239,10 +206,15 @@ async fn update_settings(
     if !changed.is_empty() || !requested_keys.is_empty() {
         if let Err(e) = state.settings.save().await {
             tracing::warn!(error = %e, "failed to persist settings");
-            errors.push(
-                "non-policy settings could not be saved; the context policy is already committed"
-                    .into(),
-            );
+            let error = if e
+                .downcast_ref::<SettingsSaveError>()
+                .is_some_and(SettingsSaveError::was_published)
+            {
+                "non-policy settings were published but durability is unconfirmed; policy and runtime changes were not rolled back; retry explicitly"
+            } else {
+                "non-policy settings were not published; desired settings and any completed policy or runtime changes remain; retry explicitly"
+            };
+            errors.push(error.into());
         }
     }
 
@@ -261,7 +233,60 @@ async fn update_settings(
     ))
 }
 
-async fn current_policy(state: &AppState) -> Result<PolicySnapshot> {
+pub(super) async fn prepare_policy_update(
+    state: &AppState,
+    headers: &HeaderMap,
+    updates: &BTreeMap<String, serde_json::Value>,
+) -> Result<(PolicySnapshot, ContextPolicy)> {
+    let current = current_policy(state).await?;
+    let expected = if let Some(value) = headers.get(header::IF_MATCH) {
+        value
+            .to_str()
+            .ok()
+            .and_then(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|v| *v > 0)
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "If-Match must contain the quoted context policy version".into(),
+                )
+            })?
+    } else {
+        current.version
+    };
+    if expected != current.version {
+        return Err(AppError::Conflict(
+            "context policy changed; reload settings before retrying".into(),
+        ));
+    }
+    let next = context_policy::patched(&current.policy, updates)
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+    Ok((current, next))
+}
+
+pub(super) async fn commit_policy_update(
+    state: &AppState,
+    auth: &AuthUser,
+    expected: i64,
+    next: ContextPolicy,
+    embedding: Option<&EmbeddingProfile>,
+) -> Result<PolicySnapshot> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        state
+            .modules
+            .context
+            .policy_store()
+            .replace_for_actor_with_embedding(expected, next, auth.id, embedding),
+    )
+    .await
+    .map_err(|_| {
+        AppError::Unavailable("context policy acknowledgement timed out; reload before retrying")
+    })?
+    .map_err(policy_error)
+}
+
+pub(super) async fn current_policy(state: &AppState) -> Result<PolicySnapshot> {
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
         state.modules.context.policy_store().current(),

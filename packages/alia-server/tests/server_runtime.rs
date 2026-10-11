@@ -58,6 +58,9 @@ mod body;
 #[path = "server_runtime/context_policy.rs"]
 mod context_policy;
 
+#[path = "server_runtime/settings.rs"]
+mod settings;
+
 #[path = "server_runtime/embedding_profile.rs"]
 mod embedding_profile;
 

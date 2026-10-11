@@ -1,4 +1,5 @@
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use std::collections::BTreeMap;
 
 use axum::routing::{delete, get, post};
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::AuthUser;
 use crate::config::MemoryCaptureMode;
 use crate::error::{AppError, Result};
+use crate::modules::memory::context::ContextPolicy;
 use crate::modules::memory::policy::{
     detect_sensitive_memory, normalize_memory_layer, normalize_memory_layers,
 };
@@ -17,6 +19,8 @@ use crate::modules::memory::{
     RetrievalOpts,
 };
 use crate::state::AppState;
+
+use super::settings::{commit_policy_update, current_policy, prepare_policy_update};
 
 #[derive(Debug, Serialize)]
 pub struct MemoryInfo {
@@ -499,9 +503,8 @@ async fn get_memory_privacy(
     State(state): State<AppState>,
     _auth: AuthUser,
 ) -> Result<Json<MemoryPrivacyResponse>> {
-    let memory = state.interaction_policies.read().await.memory.clone();
-    let capabilities = state.modules.memory.memory_capabilities().await;
-    Ok(Json(memory_privacy_response(&memory, &capabilities)))
+    let policy = current_policy(&state).await?;
+    Ok(Json(memory_privacy_response(&policy.policy)))
 }
 
 async fn get_memory_capabilities(
@@ -513,9 +516,14 @@ async fn get_memory_capabilities(
 
 async fn update_memory_privacy(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
+    headers: HeaderMap,
     Json(body): Json<MemoryPrivacyUpdateRequest>,
 ) -> Result<Json<MemoryPrivacyResponse>> {
+    if !auth.is_admin() {
+        return Err(AppError::Forbidden);
+    }
+    let _update = state.settings.lock_updates().await;
     let mut updates = BTreeMap::new();
     if let Some(enabled) = body.enabled {
         updates.insert(
@@ -551,21 +559,21 @@ async fn update_memory_privacy(
         );
     }
 
-    if !updates.is_empty() {
-        state.settings.batch_update(&updates).await;
-        state
-            .interaction_policies
-            .write()
-            .await
-            .apply_settings(&updates);
-        if let Err(error) = state.settings.save().await {
-            tracing::warn!(error = %error, "failed to persist memory privacy settings");
-        }
-    }
-
-    let memory = state.interaction_policies.read().await.memory.clone();
-    let capabilities = state.modules.memory.memory_capabilities().await;
-    Ok(Json(memory_privacy_response(&memory, &capabilities)))
+    let (current, next) = prepare_policy_update(&state, &headers, &updates).await?;
+    let policy = if updates.is_empty() {
+        current
+    } else {
+        commit_policy_update(&state, &auth, current.version, next, None).await?
+    };
+    // Privacy fields belong to committed SQL policy, never settings.toml.
+    let projection = crate::settings::context_policy::projection(&policy.policy);
+    state.settings.batch_update(&projection).await;
+    state
+        .interaction_policies
+        .write()
+        .await
+        .apply_settings(&projection);
+    Ok(Json(memory_privacy_response(&policy.policy)))
 }
 
 async fn get_memory_audit(
@@ -574,7 +582,7 @@ async fn get_memory_audit(
     Query(query): Query<MemoryListQuery>,
 ) -> Result<Json<MemoryAuditResponse>> {
     let capabilities = state.modules.memory.memory_capabilities().await;
-    let memory = state.interaction_policies.read().await.memory.clone();
+    let policy = current_policy(&state).await?;
     let memories = state
         .modules
         .memory
@@ -585,7 +593,7 @@ async fn get_memory_audit(
         .map(memory_info)
         .collect();
     Ok(Json(MemoryAuditResponse {
-        privacy: memory_privacy_response(&memory, &capabilities),
+        privacy: memory_privacy_response(&policy.policy),
         capabilities,
         memories,
     }))
@@ -733,44 +741,22 @@ fn merge_direct_memory_metadata(
     metadata
 }
 
-fn memory_privacy_response(
-    memory: &crate::config::MemorySection,
-    _capabilities: &MemoryCapabilities,
-) -> MemoryPrivacyResponse {
+fn memory_privacy_response(policy: &ContextPolicy) -> MemoryPrivacyResponse {
     let supported_capture_modes = vec![
         MemoryCaptureMode::None,
         MemoryCaptureMode::ExplicitToolOnly,
         MemoryCaptureMode::LlmSelected,
     ];
+    let enabled = policy.memory_enabled && policy.paused_until.is_none();
     MemoryPrivacyResponse {
-        enabled: memory.enabled,
-        capture_mode: memory.capture_mode,
-        automatic_capture_enabled: memory_effectively_enabled(memory)
-            && matches!(memory.capture_mode, MemoryCaptureMode::LlmSelected),
-        paused_until: memory
-            .paused_until
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned),
-        explicit_memory_enabled: memory_effectively_enabled(memory),
+        enabled: policy.memory_enabled,
+        capture_mode: policy.capture_mode,
+        automatic_capture_enabled: enabled
+            && matches!(policy.capture_mode, MemoryCaptureMode::LlmSelected),
+        paused_until: policy.paused_until.map(|until| until.to_rfc3339()),
+        explicit_memory_enabled: enabled,
         sensitive_auto_capture_allowed: false,
         sensitive_direct_entry_allowed: true,
         supported_capture_modes,
     }
-}
-
-fn memory_effectively_enabled(memory: &crate::config::MemorySection) -> bool {
-    if !memory.enabled {
-        return false;
-    }
-    let Some(paused_until) = memory.paused_until.as_deref().map(str::trim) else {
-        return true;
-    };
-    if paused_until.is_empty() {
-        return true;
-    }
-    chrono::DateTime::parse_from_rfc3339(paused_until)
-        .map(|until| until.with_timezone(&chrono::Utc) <= chrono::Utc::now())
-        .unwrap_or(true)
 }

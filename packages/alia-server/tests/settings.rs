@@ -2,6 +2,124 @@ use std::path::Path;
 
 use alia_server::config::ServerConfig;
 use alia_server::settings::SettingsRegistry;
+use alia_server::settings::registry::SettingSchema;
+use serde_json::json;
+
+struct SettingsDirectory(std::path::PathBuf);
+
+impl SettingsDirectory {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("alia-settings-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for SettingsDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn private_schema() -> SettingSchema {
+    SettingSchema {
+        label: "Isolated fixture credential".into(),
+        description: None,
+        value_type: "secret".into(),
+        default: None,
+        options: None,
+        requires_restart: false,
+        secret: true,
+    }
+}
+
+#[tokio::test]
+async fn persisted_values_exclude_sql_policy_and_null_and_preserve_registered_schema() {
+    let directory = SettingsDirectory::new();
+    let path = directory.0.join("nested/settings.toml");
+    let settings = SettingsRegistry::new();
+    settings
+        .register(
+            "plugin.fixture.credential",
+            json!("fixture-only-secret"),
+            private_schema(),
+        )
+        .await;
+    settings
+        .set("plugin.fixture.targets", json!(["one", "two"]))
+        .await;
+    settings
+        .set("plugin.fixture.unset", serde_json::Value::Null)
+        .await;
+    settings
+        .set("core.policies.memory.enabled", json!(false))
+        .await;
+    settings
+        .set("core.policies.affect.enabled", json!(true))
+        .await;
+    settings.set_persist_path(path.clone()).await;
+    settings.save().await.unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let values: std::collections::BTreeMap<String, serde_json::Value> =
+        toml::from_str(&text).unwrap();
+    assert_eq!(values.len(), 2);
+    assert_eq!(values["plugin.fixture.credential"], "fixture-only-secret");
+    assert_eq!(values["plugin.fixture.targets"], json!(["one", "two"]));
+    assert!(
+        !text.contains("Isolated fixture credential"),
+        "schema metadata must not be serialized as a setting"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    let loaded = SettingsRegistry::new();
+    loaded
+        .register(
+            "plugin.fixture.credential",
+            json!("deployment-default"),
+            private_schema(),
+        )
+        .await;
+    loaded.load_persisted(&path).await.unwrap();
+    let entry = loaded.get_entry("plugin.fixture.credential").await.unwrap();
+    assert_eq!(entry.value, "fixture-only-secret");
+    let schema = entry.schema.unwrap();
+    assert_eq!(schema.label, "Isolated fixture credential");
+    assert!(schema.secret);
+    assert_eq!(
+        loaded.get("plugin.fixture.targets").await,
+        Some(json!(["one", "two"]))
+    );
+    assert!(loaded.get("core.policies.memory.enabled").await.is_none());
+    assert!(loaded.get("plugin.fixture.unset").await.is_none());
+}
+
+#[tokio::test]
+async fn invalid_persisted_file_does_not_partially_replace_values_or_the_save_target() {
+    let directory = SettingsDirectory::new();
+    let path = directory.0.join("settings.toml");
+    let invalid = directory.0.join("invalid.toml");
+    let settings = SettingsRegistry::new();
+    settings.set("plugin.fixture.level", json!(1)).await;
+    settings.set_persist_path(path.clone()).await;
+    settings.save().await.unwrap();
+    let invalid_text = "\"plugin.fixture.level\" = 999\n[broken\n";
+    std::fs::write(&invalid, invalid_text).unwrap();
+    assert!(settings.load_persisted(&invalid).await.is_err());
+    assert_eq!(settings.get("plugin.fixture.level").await, Some(json!(1)));
+    settings.set("plugin.fixture.level", json!(2)).await;
+    settings.save().await.unwrap();
+    let fresh = SettingsRegistry::new();
+    fresh.load_persisted(&path).await.unwrap();
+    assert_eq!(fresh.get("plugin.fixture.level").await, Some(json!(2)));
+    assert_eq!(std::fs::read_to_string(&invalid).unwrap(), invalid_text);
+}
 
 #[tokio::test]
 async fn memory_policy_settings_are_registered_without_backend_slot() {

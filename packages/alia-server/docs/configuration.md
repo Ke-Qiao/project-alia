@@ -135,6 +135,31 @@ policies and shadow defaults are unchanged.
 which keys changed, which were applied live, which require restart, and which
 were ignored by current runtime components.
 
+The administrator-only update first commits any SQL-owned Context policy with
+its version check, then updates desired settings, applies supported live changes,
+and saves non-policy values to `settings.toml`. These are separate commit points:
+`success: false` does not undo a policy commit or a module that already applied
+its update. Inspect `context_policy_version`, `applied`, `module_reports`, and
+`errors`; reload the current version before retrying a request with `If-Match`.
+Explicitly requested keys are applied and saved again even when `changed` is
+empty. A module apply failure does not prevent saving the desired settings.
+
+Settings saves serialize within the registry and publish a complete TOML
+snapshot through a temporary file and same-directory atomic replacement.
+Successful saves confirm file and parent-directory synchronization. A failure
+before replacement leaves the previous file intact; a failure after replacement
+reports that the new file is published but durability is unconfirmed. Live
+changes remain in effect, and an explicit retry saves the current desired
+snapshot. This runtime path has no setup-style recovery journal: restarting
+after a failed save loads whichever complete old or new snapshot remains on
+disk, while SQL continues to own Context policy. Ordinary loading stays read-only.
+
+`PATCH /api/v1/memories/privacy` is a narrow administrator-only update of the
+same global SQL policy. It supports the same quoted policy-version `If-Match`,
+retains its existing response fields, and never writes a second file projection.
+Authenticated privacy reads remain available and report the committed policy,
+including changes made by another server instance.
+
 Hot-updatable areas include many provider parameters and pipeline policies:
 
 - LLM provider endpoints, model profile names, and timeouts

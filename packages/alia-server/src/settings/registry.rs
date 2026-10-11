@@ -54,6 +54,7 @@ pub struct SettingSchema {
 pub struct SettingsRegistry {
     inner: Arc<RwLock<RegistryInner>>,
     updates: Arc<tokio::sync::Mutex<()>>,
+    persistence: Arc<tokio::sync::Mutex<()>>,
 }
 
 struct RegistryInner {
@@ -67,6 +68,7 @@ impl SettingsRegistry {
     pub fn new() -> Self {
         Self {
             updates: Arc::default(),
+            persistence: Arc::default(),
             inner: Arc::new(RwLock::new(RegistryInner {
                 entries: BTreeMap::new(),
                 persist_path: None,
@@ -80,6 +82,7 @@ impl SettingsRegistry {
 
     /// Set the file path for persisting runtime settings.
     pub async fn set_persist_path(&self, path: PathBuf) {
+        let _persistence = self.persistence.lock().await;
         self.inner.write().await.persist_path = Some(path);
     }
 
@@ -242,39 +245,39 @@ impl SettingsRegistry {
 
     /// Persist current settings to disk as TOML.
     pub async fn save(&self) -> anyhow::Result<()> {
-        let inner = self.inner.read().await;
-        let path = inner
-            .persist_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no persist path configured"))?;
-
-        // Convert to a serializable map (value only, no schema)
-        let values: BTreeMap<String, serde_json::Value> = inner
-            .entries
-            .iter()
-            .filter(|(key, entry)| {
-                !crate::settings::context_policy::owns(key) && !entry.value.is_null()
-            })
-            .map(|(k, e)| (k.clone(), e.value.clone()))
-            .collect();
-
-        let toml_str = toml::to_string_pretty(&values)?;
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, toml_str)?;
-
-        Ok(())
+        // Take the snapshot only after admission, so an older save cannot
+        // publish after a newer request that was waiting for persistence.
+        let _persistence = self.persistence.lock().await;
+        let (path, values) = {
+            let inner = self.inner.read().await;
+            let path = inner.persist_path.clone().ok_or_else(|| {
+                super::SettingsSaveError::not_published(anyhow::anyhow!(
+                    "no persist path configured"
+                ))
+            })?;
+            let values: BTreeMap<String, serde_json::Value> = inner
+                .entries
+                .iter()
+                .filter(|(key, entry)| {
+                    !crate::settings::context_policy::owns(key) && !entry.value.is_null()
+                })
+                .map(|(key, entry)| (key.clone(), entry.value.clone()))
+                .collect();
+            (path, values)
+        };
+        let content =
+            toml::to_string_pretty(&values).map_err(super::SettingsSaveError::not_published)?;
+        super::storage::save(&path, &content).map_err(Into::into)
     }
 
     /// Load persisted settings from disk (values only, schemas are preserved).
     pub async fn load_persisted(&self, path: &Path) -> anyhow::Result<()> {
-        if !path.exists() {
-            return Ok(());
-        }
-
-        let content = std::fs::read_to_string(path)?;
+        let _persistence = self.persistence.lock().await;
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
         let values: BTreeMap<String, serde_json::Value> = toml::from_str(&content)?;
 
         let mut inner = self.inner.write().await;
