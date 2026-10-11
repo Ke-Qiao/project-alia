@@ -1,0 +1,8 @@
+RUN ['python3', 'scripts/check-server-boundaries.py', '--self-test']
+Server boundary checker self-test passed
+RUN ['python3', 'scripts/check-server-boundaries.py']
+Server ownership boundaries passed
+RUN ['git', 'diff', '--check']
+RUN ['rustfmt', '--edition', '2024', '--check', '--config', 'skip_children=true', 'packages/alia-server/src/bootstrap/builder.rs', 'packages/alia-server/src/bootstrap/builder_llm_tests.rs', 'packages/alia-server/src/bootstrap/registry.rs', 'packages/alia-server/src/bootstrap/registry_tests.rs', 'packages/alia-server/src/modules/interaction/routing/service.rs', 'packages/alia-server/src/providers/llm/gemini.rs', 'packages/alia-server/tests/server_runtime/health.rs']
+RUN ['python3', 'run/validation-20261011-health/test-counter.py']
+{"cases": 8, "passed": 8, "scope": "adjacent early start and delayed matching prior tail accepted; nested child preserved; starts, diagnostics and count mismatches rejected"}

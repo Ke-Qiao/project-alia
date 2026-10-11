@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-更新：2026-10-10。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
+更新：2026-10-11。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
 
@@ -19,6 +19,8 @@
 2026-10-11 Skills HTTP 索引清理 **10/10**，源码 `7aca2a6`；六轮仍 **2/6**。最新恢复从 [Skills 检查点](../resume-checkpoint-skills-2026-10-11.md) 开始。三个 HTTP 索引缺口关闭，下一软件项为静态 classifier 候选与运行 Registry 的衔接审计。
 
 2026-10-11 Classifier 运行目录衔接 **10/10**，源码 `744cae2`；六轮仍 **2/6**。动态候选、在途定义核对、缓存绑定与取消已同源双平台验收。最新恢复从 [Classifier 检查点](../resume-checkpoint-classifier-2026-10-11.md) 开始，下一软件项为 R04 整体 health 限额审计。
+
+2026-10-11 /health 清理 **10/10**，源码 `29420a5`；六轮仍 **2/6**。整体预算、重复探测、并发和生命周期已同源双平台验收。最新恢复从 [Health 检查点](../resume-checkpoint-health-2026-10-11.md) 开始，下一软件项为 R04 配置目录持久性。
 
 ## R01 · Companion shadow、回放与受约束主动表达
 

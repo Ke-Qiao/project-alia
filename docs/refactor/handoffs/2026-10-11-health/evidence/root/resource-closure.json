@@ -1,0 +1,34 @@
+{
+  "recorded_at": "2026-10-11T08:02:42.025340+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-health-linux-20261011-v1": {
+      "id": "57bddadc51ebe65d01618f7cfc3667654f0a408f3a2739e7d74f1db60ab7709a",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-11T07:49:29.490214283Z"
+    },
+    "alia-health-linux-20261011-v2": {
+      "id": "19ad2873dd29f60213847f887911fd4761a116a8aa05b20a2182b5ed45314e71",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-11T08:02:41.206716052Z"
+    },
+    "alia-health-20261011-db": {
+      "id": "8bd33f2dd752bdccf3244210b3ed43e4f927f68f3b63e0096dacb7ef3ab4a0c8",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-11T08:02:41.907106427Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

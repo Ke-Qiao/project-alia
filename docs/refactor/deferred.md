@@ -94,7 +94,7 @@ N01 不是“欠下的迁移任务”。只有后来出现真实保留需求时�
 - [ ] **R02**：native capture 缺口及 KWS 半词跨断点已补软件拒绝路径；仍没有生产 AEC consumer、漂移标定、10 ms 重分帧/同步测量工具或真实尾音/双讲证据。参考点与剩余测量工作见 [audio.md](handoffs/2026-10-04/audio.md)。
 - [ ] **R03**：签名覆盖 Body 命令/文件名/参数，不覆盖动作资产 bytes；Embedded boot 不代表 MCU boot，UART flush/I²C write 不证明 MCU ACK 或物理到位。具体 mock 证据与现场出口见 [motion.md](handoffs/2026-10-04/motion.md)。
 - [ ] **H02—H04 当前事实**：Pi5/8 GB、Ubuntu 24.04.4/aarch64、KeQiaopi/ke-qiao 为历史资料；当前 SSH 配置/known_hosts 不足以确定可信可用目标，未 SSH/扫网。系统/ALSA/串口/供电散热、音频/执行器型号和机构安全态仍待当前资料。
-- [ ] **R04**：整体 `/health` 预算/并发/重复探测和配置目录断电持久性仍开放，见 [management checklist](checklists/management.md)。本机 Host/Origin 防护不替代同机权限或正式部署身份设计。
+- [ ] **R04**：整体 `/health` 预算/并发/重复探测已由 [Health 轮](resume-checkpoint-health-2026-10-11.md) 验收；配置目录断电持久性和可信本机文件系统部署边界仍开放，见 [management checklist](checklists/management.md)。本机 Host/Origin 防护不替代同机权限或正式部署身份设计。
 - [ ] **R05/R06**：本轮仅把指定 Linux ARM64 容器推进到默认 feature build/run 证据，矩阵见 [linux.md](handoffs/2026-10-04/linux.md)；Pi、声学、机械、升级恢复及至少 24 h 负载仍待实机。未新增其它平台、前端、模型端侧迁移或同机组合产品化。
 
 以上保留项已挂靠原 R 编号，不另起整体重写。后续先核对已有实现和测试；没有硬件接入时仍可处理已明确的软件缺口，但不得自行改绑定、部署政策、网络、凭证或发动作。
@@ -145,8 +145,16 @@ macOS V3 setup 原端口新连接断言失败证据保留；V4 直接检查原 l
 ## 2026-10-11：Classifier 运行目录衔接后的续接
 
 - [x] 本轮 10/10，动态候选、未知名回退、选中定义版本核对、整目录缓存绑定和可取消读锁均完成；源码 `744cae2a11f8192f0e8ccf3d13004402202c1411`，V2 manifest `adeeaa0d150e6c7a036beeb05aa409da1d811e130d60354fe46e290c2ec132b5`，644/644 Git blob 一致。
-- [ ] 下一软件任务：从已记录的 R04 整体 health 限额开始，审计 `api/health.rs`、ModuleRegistry 顺序聚合、Router 重复 minor probe 及 Provider 诊断；先检查现有实现，再收敛整体预算、同 profile 重复探测和并发边界。保持 API、默认 probe=false 和当前政策，不自行启用外部或付费探测。本轮未实施。
+- [x] 后续已由 [Health 轮](resume-checkpoint-health-2026-10-11.md) 完成整体 health 限额、同 profile 去重及并发边界；原 Classifier 轮未实施，历史 scope 保留。
 - [ ] 多实例/外部 SQL 自动通知仍待明确需求，当前显式 reload；未新增广播依赖。
 - [ ] V01、R02/R03/R05/R06 与 D/H 原状态不变。已准入文本不会由后续技能修改自动撤销，Execution 仍独立检查权限与批准。
 
 macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798/0/5**。两端无默认 feature 全目标检查、边界正反自测和变更文件格式检查全部通过。计数依次为 passed/failed/ignored，嵌套子进程摘要不重复累计；所有最终阶段同源、无源码漂移。
+
+## 2026-10-11 Health 清理后的续接
+
+- [x] 本轮 10/10，源码 `29420a5`；公开 API/default probe=false/政策保持，聚合、实例所有权和 Provider 边界同源验收，见 [检查点](resume-checkpoint-health-2026-10-11.md)。
+- [ ] 下一软件任务：配置目录持久性。先核对 base 文件与 fragments 的创建、同步和原子发布调用链，定义发布后父目录 sync 失败的未知结果、目录树/祖先同步和恢复规则，再补必要实现与隔离文件系统回归。保持当前 API、政策、权限与已有依赖；真实断电不能用进程 kill 代替。本轮未实施这项。
+- [ ] 可信本机文件系统的账户、权限、路径和其他进程修改边界仍须实际部署固定。
+
+未运行 Linux 全 workspace、release/native release link、部署 smoke、真实 PTY、外部或付费模型、Pi/声学/执行器及长稳验证。6 秒预算约束合作式异步检查，不能强制中断同步阻塞；本地取消不代表远端立即停止处理请求。

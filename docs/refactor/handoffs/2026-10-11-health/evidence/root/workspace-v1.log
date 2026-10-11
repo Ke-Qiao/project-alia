@@ -1,0 +1,31 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+error: implementation of `FnOnce` is not general enough
+  --> packages/alia-server/src/api/health.rs:76:36
+   |
+76 |     Router::new().route("/health", get(health_check))
+   |                                    ^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+   |
+   = note: closure with signature `fn((&'0 dyn lifecycle::ModuleLifecycle, Vec<&str>)) -> {async block@packages/alia-server/src/bootstrap/registry.rs:223:84: 223:94}` must implement `FnOnce<((&'1 dyn lifecycle::ModuleLifecycle, Vec<&str>),)>`, for any two lifetimes `'0` and `'1`...
+   = note: ...but it actually implements `FnOnce<((&dyn lifecycle::ModuleLifecycle, Vec<&str>),)>`
+
+error: implementation of `FnOnce` is not general enough
+  --> packages/alia-server/src/api/health.rs:76:36
+   |
+76 |     Router::new().route("/health", get(health_check))
+   |                                    ^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+   |
+   = note: closure with signature `fn((&(dyn lifecycle::ModuleLifecycle + '0), Vec<&str>)) -> {async block@packages/alia-server/src/bootstrap/registry.rs:223:84: 223:94}` must implement `FnOnce<((&(dyn lifecycle::ModuleLifecycle + '1), Vec<&str>),)>`, for any two lifetimes `'0` and `'1`...
+   = note: ...but it actually implements `FnOnce<((&dyn lifecycle::ModuleLifecycle, Vec<&str>),)>`
+
+error: implementation of `FnOnce` is not general enough
+  --> packages/alia-server/src/api/health.rs:76:36
+   |
+76 |     Router::new().route("/health", get(health_check))
+   |                                    ^^^^^^^^^^^^^^^^^ implementation of `FnOnce` is not general enough
+   |
+   = note: closure with signature `fn((&dyn lifecycle::ModuleLifecycle, Vec<&'0 str>)) -> {async block@packages/alia-server/src/bootstrap/registry.rs:223:84: 223:94}` must implement `FnOnce<((&dyn lifecycle::ModuleLifecycle, Vec<&'1 str>),)>`, for any two lifetimes `'0` and `'1`...
+   = note: ...but it actually implements `FnOnce<((&dyn lifecycle::ModuleLifecycle, Vec<&str>),)>`
+
+error: could not compile `alia-server` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `alia-server` (lib test) due to 3 previous errors

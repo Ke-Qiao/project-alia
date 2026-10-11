@@ -1,0 +1,10 @@
+refactor(server): bound health sweeps and share profile ownership
+
+Give each ModuleRegistry one admitted health sweep with a six-second total
+budget, eight concurrent checks, instance deduplication and owned cancellation.
+Concurrent requests return degraded status without launching more probes.
+
+Share configured LLM profiles across roles and deduplicate their lifecycle and
+settings calls. Keep explicit overrides independent, make Router health local,
+and bound Gemini probes without holding settings locks or exposing request data.
+Preserve the health API, default disabled probes and current execution policies.

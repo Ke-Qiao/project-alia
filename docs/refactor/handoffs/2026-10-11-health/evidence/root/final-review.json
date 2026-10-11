@@ -1,0 +1,29 @@
+{
+  "base": "d27490fc78bb89c71f2286e65318fb6cd71f63b5",
+  "protected_paths_unchanged": {
+    "Cargo.toml": [],
+    "Cargo.lock": [],
+    "packages/alia-server/Cargo.toml": [],
+    "packages/alia-server/src/api/health.rs": [],
+    "packages/alia-server/src/providers/llm/openai.rs": [],
+    "packages/alia-server/src/auth": [],
+    "packages/alia-server/src/modules/execution": [],
+    "packages/alia-server/src/modules/interaction/tools.rs": [],
+    "packages/alia-server/src/modules/delivery": [],
+    "packages/alia-server/src/modules/companion": [],
+    "packages/alia-server/src/api/tools.rs": [],
+    "packages/alia-server/src/api/effects.rs": [],
+    "packages/alia-embedded": [],
+    "packages/alia-frontend": []
+  },
+  "policy": "Same public health API, default probe=false, Shadow, tool visibility and Execution approvals; no dependency/feature/platform/hardware expansion",
+  "source_manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+  "agent_reviews": [
+    "Registry budget/admission/dedup/drop and Builder ownership",
+    "Router/Gemini probe deadlines, lock release and redaction",
+    "Real HTTP requests, local peers and bounded failure cleanup"
+  ],
+  "root_review": "All health callers and original consumer shape checked; configured profile ownership shares actual adapters and preserves override/rollback; static boundary checks pass; V1 compile failure retained and V2 changes only Future construction",
+  "new_dependencies": false,
+  "new_features": false
+}

@@ -1,0 +1,190 @@
+{
+  "manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+  "input_count": 646,
+  "stages": {
+    "macos/workspace-v2": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-11T07:50:44.504057+00:00",
+      "finished_at": "2026-10-11T08:00:54.041227+00:00",
+      "elapsed_seconds": 609.54,
+      "exit_code": 0,
+      "source_manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb",
+      "counts": {
+        "passed": 1094,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "macos/no-default-v2": {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-11T08:01:25.318542+00:00",
+      "finished_at": "2026-10-11T08:02:27.729249+00:00",
+      "elapsed_seconds": 62.41,
+      "exit_code": 0,
+      "source_manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "macos/static-v2": {
+      "command": [
+        "python3",
+        "run/validation-20261011-health/static-checks.py"
+      ],
+      "started_at": "2026-10-11T07:50:29.914747+00:00",
+      "finished_at": "2026-10-11T07:50:30.725116+00:00",
+      "elapsed_seconds": 0.81,
+      "exit_code": 0,
+      "source_manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "linux/server-tests": {
+      "started": "2026-10-11T07:50:45.675672+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--offline",
+        "--locked"
+      ],
+      "container": "alia-health-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_before": {
+        "file_count": 646,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 477.782,
+      "finished": "2026-10-11T07:58:43.458342+00:00",
+      "source_after": {
+        "file_count": 646,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T07:58:43.458342+00:00",
+      "source_drift": [],
+      "counts": {
+        "passed": 812,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "linux/server-no-default": {
+      "started": "2026-10-11T07:58:52.458411+00:00",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "container": "alia-health-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_before": {
+        "file_count": 646,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 13.253,
+      "finished": "2026-10-11T07:59:05.711568+00:00",
+      "source_after": {
+        "file_count": 646,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T07:59:05.711568+00:00",
+      "source_drift": []
+    },
+    "linux/environment": {
+      "started": "2026-10-11T07:50:46.062697+00:00",
+      "command": [
+        "sh",
+        "-c",
+        "rustc -Vv && cargo -V && uname -sm && cat /etc/os-release"
+      ],
+      "container": "alia-health-linux-20261011-v2",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+      "source_before": {
+        "file_count": 646,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 0.084,
+      "finished": "2026-10-11T07:50:46.149722+00:00",
+      "source_after": {
+        "file_count": 646,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T07:50:46.149722+00:00",
+      "source_drift": []
+    }
+  }
+}

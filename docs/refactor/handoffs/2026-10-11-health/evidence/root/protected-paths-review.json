@@ -1,0 +1,19 @@
+{
+  "base": "d27490fc78bb89c71f2286e65318fb6cd71f63b5",
+  "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-server/src/api/health.rs",
+    "packages/alia-server/src/providers/llm/openai.rs",
+    "packages/alia-server/src/config",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "packages/alia-server/src/modules/companion",
+    "packages/alia-server/src/modules/interaction/policies.rs",
+    "packages/alia-embedded",
+    "packages/alia-frontend"
+  ],
+  "changed": [],
+  "scope": "Source-byte comparison to baseline; no claim of new deployment or hardware verification"
+}

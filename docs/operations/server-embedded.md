@@ -61,7 +61,11 @@ curl --fail --silent --show-error "$ALIA_URL/health"
 | 人格与关系状态 | `/api/v1/personas/me`，关系读取/清理/重建接口 | 见 [Relationship 操作](relationship.md)；清除需原 operation/revision，重建不能复活已删除来源。 |
 | 工具执行/确认/取消 | `/api/v1/tools/execute`，`/api/v1/effects/{id}`，`/{id}/confirm`、`/{id}/cancel` | 从 `/scalar` 的 execution 契约取得完整请求；保留原 effect identity/version，Unknown 先核对，不再次调用非幂等工具。 |
 | Response 与文本/音频/身体结果 | `/api/v1/responses/{id}`、`/{id}/deliveries`、`/{id}/events` | 见 [Delivery API](../refactor/delivery-api.md)；Submitted、Presented、位置反馈和完成分别记录，查询不是重播。 |
-| 配置/模块健康 | `/health`、`GET /api/v1/settings` | 检查每模块状态；在线 OpenAI probe 显式启用、单请求5秒，顺序多个 probe 耗时可能累加；disabled 状态不能当作在线通过。 |
+| 配置/模块健康 | `/health`、`GET /api/v1/settings` | 检查每模块状态；默认 probe=false；OpenAI/Gemini 在线 GET 需显式启用、单次 5 秒。整体一轮最多 6 秒、8 项并发；busy/disabled 均不能当作在线通过。 |
+
+`GET /health` 保持公开 HTTP 200 和 `status`、`version`、`modules` 响应字段，仍需检查各模块状态。相同配置 LLM profile 的多个角色共享一次检查；Router 只报告本地模式和依赖绑定，模型状态见对应 `llm.*`。同一 Registry 有一轮检查进行时，重叠请求立即返回 `degraded` / `health check already in progress`，不排队、不复用旧结果。6 秒整体期限到达后保留已完成状态，未完成项返回 `degraded` / `health check timed out after 6s`；停机时未完成项返回 `server is stopping`，单项 panic 返回 `unhealthy` / `health check panicked`。后续请求在空闲时重新检查。
+
+这些期限约束合作式异步检查；Server 不启动后台探测，也不能保证已发出的远端请求在远端立即停止。设置更新不等待健康网络探测，已经发出的探测使用其开始时的配置快照。没有新增深度诊断端点或 probe 热切换开关。
 
 四个 Companion 操作和 execution/delivery 契约可在 Server `/scalar` 查阅。其他旧模块的 OpenAPI 覆盖不应由这个页面存在就自动推断；对应 Markdown 和实际 REST 用例仍是操作依据。
 

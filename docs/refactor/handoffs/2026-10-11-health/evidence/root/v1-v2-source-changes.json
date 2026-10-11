@@ -1,0 +1,7 @@
+{
+  "changed": [
+    "packages/alia-server/src/bootstrap/registry.rs"
+  ],
+  "reason": "Compile FnOnce lifetime generalization: construct pending Future Vec before stream::iter; no budget/concurrency/cancellation/test changes",
+  "v1": "Both macOS and Linux failed compilation with exit 101, no test results claimed"
+}

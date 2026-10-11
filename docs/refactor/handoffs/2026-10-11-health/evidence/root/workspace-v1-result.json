@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--workspace",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-11T07:47:48.045342+00:00",
+  "finished_at": "2026-10-11T07:48:52.554135+00:00",
+  "elapsed_seconds": 64.51,
+  "exit_code": 101,
+  "source_manifest_sha256": "9caa75ce2d2ad1203d64cffe3802438b43a6ba0bfad455cf5b478a382c163acf",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

@@ -1,0 +1,6 @@
+docs(refactor): record health cleanup and validation handoff
+
+Document the aggregate health contract, final same-source macOS and Linux
+validation, preserved first-compilation failures, resource closure and all four
+handoffs. Close the health checklist and record configuration durability as the
+next software task while retaining deployment and hardware evidence boundaries.

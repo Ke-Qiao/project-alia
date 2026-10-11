@@ -1,0 +1,38 @@
+{
+  "started": "2026-10-11T07:58:52.458411+00:00",
+  "command": [
+    "cargo",
+    "check",
+    "-p",
+    "alia-server",
+    "--no-default-features",
+    "--all-targets",
+    "--offline",
+    "--locked"
+  ],
+  "container": "alia-health-linux-20261011-v2",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+  "source_before": {
+    "file_count": 646,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 13.253,
+  "finished": "2026-10-11T07:59:05.711568+00:00",
+  "source_after": {
+    "file_count": 646,
+    "errors": []
+  },
+  "finished_at": "2026-10-11T07:59:05.711568+00:00",
+  "source_drift": []
+}

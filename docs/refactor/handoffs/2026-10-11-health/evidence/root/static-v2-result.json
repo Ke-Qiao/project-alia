@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python3",
+    "run/validation-20261011-health/static-checks.py"
+  ],
+  "started_at": "2026-10-11T07:50:29.914747+00:00",
+  "finished_at": "2026-10-11T07:50:30.725116+00:00",
+  "elapsed_seconds": 0.81,
+  "exit_code": 0,
+  "source_manifest_sha256": "9902508f7743bbbae5d447fec76c753d9f8910b0b1b019ef3ea5f801d03a21b0",
+  "source_drift": [],
+  "build_jobs": 2,
+  "rust_min_stack": "unset",
+  "rust_test_threads": "default (unset)",
+  "rust_backtrace": "unset",
+  "docs_rs": "unset",
+  "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+}

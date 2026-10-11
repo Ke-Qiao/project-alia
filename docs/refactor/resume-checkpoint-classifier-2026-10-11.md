@@ -1,5 +1,7 @@
 # 当前检查点：2026-10-11 Classifier 目录衔接完成
 
+后续更新：本轮之后的 /health 整体预算、重复探测和并发边界已完成，最新恢复从 [Health 检查点](resume-checkpoint-health-2026-10-11.md) 开始；下文保留 Classifier 轮当时状态。
+
 分支 `codex/architecture-refactor`；本轮 **10/10**，L09—L12 **4/4**，R01—R06 仍 **2/6**，不代表整个项目完成百分比。三个 subagent 已交接，没有待恢复的 Cargo/PG 作业。
 
 依次读取 [技术说明](classifier-2026-10-11.md)、[checklist](checklists/classifier-2026-10-11.md)、[四份 HANDOFF](handoffs/2026-10-11-classifier/README.md) 和 [证据索引](handoffs/2026-10-11-classifier/evidence-index.json)，然后核对 Git branch/status/log。
