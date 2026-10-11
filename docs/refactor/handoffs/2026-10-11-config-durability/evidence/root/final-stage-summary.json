@@ -1,0 +1,190 @@
+{
+  "manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+  "input_count": 650,
+  "stages": {
+    "macos/workspace-v3": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-11T11:03:15.831198+00:00",
+      "finished_at": "2026-10-11T11:07:38.079289+00:00",
+      "elapsed_seconds": 262.25,
+      "exit_code": 0,
+      "source_manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb",
+      "counts": {
+        "passed": 1108,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "macos/no-default-v3": {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-11T11:07:38.150317+00:00",
+      "finished_at": "2026-10-11T11:07:39.816056+00:00",
+      "elapsed_seconds": 1.67,
+      "exit_code": 0,
+      "source_manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "macos/static-v3": {
+      "command": [
+        "python3",
+        "run/validation-20261011-config-durability/static-checks.py"
+      ],
+      "started_at": "2026-10-11T11:03:12.136173+00:00",
+      "finished_at": "2026-10-11T11:03:12.942144+00:00",
+      "elapsed_seconds": 0.81,
+      "exit_code": 0,
+      "source_manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_drift": [],
+      "build_jobs": 2,
+      "rust_min_stack": "unset",
+      "rust_test_threads": "default (unset)",
+      "rust_backtrace": "unset",
+      "docs_rs": "unset",
+      "native_archive_sha256": "ca7baf61f331ea6b848e3630e566647302c26960c7303932bc33125074871eeb"
+    },
+    "linux/server-tests": {
+      "started": "2026-10-11T11:07:53.774059+00:00",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--offline",
+        "--locked"
+      ],
+      "container": "alia-config-durability-linux-20261011-v3",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_before": {
+        "file_count": 650,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 365.031,
+      "finished": "2026-10-11T11:13:58.805614+00:00",
+      "source_after": {
+        "file_count": 650,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T11:13:58.805614+00:00",
+      "source_drift": [],
+      "counts": {
+        "passed": 826,
+        "failed": 0,
+        "ignored": 5,
+        "measured": 0,
+        "filtered_out": 0
+      }
+    },
+    "linux/server-no-default": {
+      "started": "2026-10-11T11:13:58.934915+00:00",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "container": "alia-config-durability-linux-20261011-v3",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_before": {
+        "file_count": 650,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 23.906,
+      "finished": "2026-10-11T11:14:22.842064+00:00",
+      "source_after": {
+        "file_count": 650,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T11:14:22.842064+00:00",
+      "source_drift": []
+    },
+    "linux/environment": {
+      "started": "2026-10-11T11:03:21.893573+00:00",
+      "command": [
+        "sh",
+        "-c",
+        "uname -sm; cat /etc/os-release; rustc -Vv; cargo -V"
+      ],
+      "container": "alia-config-durability-linux-20261011-v3",
+      "environment": {
+        "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+        "CARGO_HOME": "/cache/cargo",
+        "CARGO_TARGET_DIR": "/cache/target",
+        "CARGO_BUILD_JOBS": "2",
+        "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+        "RUST_TEST_THREADS": "unset",
+        "RUST_MIN_STACK": "unset",
+        "DOCS_RS": "unset"
+      },
+      "manifest_sha256": "11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f",
+      "source_before": {
+        "file_count": 650,
+        "errors": []
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 0.094,
+      "finished": "2026-10-11T11:03:21.987839+00:00",
+      "source_after": {
+        "file_count": 650,
+        "errors": []
+      },
+      "finished_at": "2026-10-11T11:03:21.987839+00:00",
+      "source_drift": []
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "started": "2026-10-11T10:42:22.181651+00:00",
+  "command": [
+    "sh",
+    "-c",
+    "uname -sm; cat /etc/os-release; rustc -Vv; cargo -V"
+  ],
+  "container": "alia-config-durability-linux-20261011-v1",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "44d404ec3ea37fc22ad657e882e33b5b212ad04de600f3a535c23e4945c488ff",
+  "source_before": {
+    "file_count": 650,
+    "errors": []
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 0.368,
+  "finished": "2026-10-11T10:42:22.550555+00:00",
+  "source_after": {
+    "file_count": 650,
+    "errors": []
+  },
+  "finished_at": "2026-10-11T10:42:22.550555+00:00",
+  "source_drift": []
+}

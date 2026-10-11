@@ -1,6 +1,6 @@
 # R04 · CLI / REST 管理与诊断 checklist
 
-更新：2026-10-11（health 续轮已收口）。原 R04 包源码 `8f5bb83`，其历史结果保留在下方；本次补充审查见 [2026-10-04 交接](../handoffs/2026-10-04/README.md)。前端、通用 Embedded 适配及新 Provider/工具平台不在本包引入。
+更新：2026-10-11（health 与配置持久性续轮已收口）。原 R04 包源码 `8f5bb83`，其历史结果保留在下方；本次补充审查见 [2026-10-04 交接](../handoffs/2026-10-04/README.md)。前端、通用 Embedded 适配及新 Provider/工具平台不在本包引入。
 
 当前四个已定位缺口 **4/4 完成**，MG05统一验收及源码提交 `8f5bb83` 已完成；该数字表示本包的四组修复，不是整个项目百分比。原始只读依据见 [R04 readiness](../handoffs/2026-09-28/r04-readiness.md)。
 
@@ -37,7 +37,7 @@ C01 Temporal 与 C02 Rig/rmcp/Home Assistant 的候选门槛不因被提案点�
 - [x] 核对公开 device status 没有升级成输出授权，补真实 DeviceBinding/Body gRPC 的未绑定、其它 controller、新连接和替换 boot 拒绝场景；驱动仍为 mock。
 - [x] 核对 `/health` 消费者、顺序聚合、router 重复 minor probe 与 lock、默认 probe=false；未新增健康框架或付费探测。
 - [x] **整体 health 限额**：2026-10-11 源码 `29420a5`，保留 API/default probe=false，6 秒总预算／8 并发／同 Registry 单轮准入，相同 profile 共享实例，Router 本地检查，Gemini 5 秒有界与脱敏；无缓存或新增诊断入口。实际同源验收见 [本轮 10/10](health-2026-10-11.md)。
-- [ ] **配置目录持久性**：目前 base 文件 sync+原子发布，不同步父目录/新 fragments；需要定义发布后 sync 失败的未知结果、目录树/祖先同步及恢复规则，再在隔离文件系统验证。不能把进程 kill 当真断电。
+- [x] **配置目录持久性软件闭环**：源码 `0954996`，base/fragments/目录树与完整 canonical 父链同步，未知发布保留文件与 descriptor，同意图重试及 loader 恢复；正常加载保持只读。隔离文件系统双平台验证见 [本轮 10/10](config-durability-2026-10-11.md)。真实断电与部署文件系统保证不由软件测试代替。
 - [ ] **可信本机文件系统边界**：Host/Origin 防护不认证同机进程；操作者路径、服务账户和权限需要在实际部署固定。单进程门不冻结其它进程修改 fragments/symlink 的行为。
 
-后面三项是 2026-10-04 审查记录的 R04 增强/部署出口，其中 health 已在 2026-10-11 单独验收，其余两项继续开放，不回写为原 MG01—MG05 已覆盖，也不自动启动新框架。V01 仍开放，见 [台账](../deferred.md)。
+后面三项是 2026-10-04 审查记录的 R04 增强/部署出口，其中 health 与配置持久性软件闭环已在 2026-10-11 分别验收，可信本机部署边界继续开放，不回写为原 MG01—MG05 已覆盖，也不自动启动新框架。V01 仍开放，见 [台账](../deferred.md)。

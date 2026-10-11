@@ -1,0 +1,57 @@
+{
+  "scope": "V2 first complete Server run failed at existing duplex_playback.rs:865; same compiled binary all 9 tests rechecked successfully; neither run overwrites the other",
+  "failure_stage": "linux-arm64-v2/evidence/server-tests.result.json",
+  "recheck_stage": "linux-arm64-v2/evidence/duplex-tests-recheck.result.json",
+  "finding": "command_count observes durable receipted rows before apply_control_receipt resumes its local gate; failed immediate assertion has no local completion witness",
+  "proposed_fix": "Only that test: command_count(2) and local !is_held share original 3s deadline, preserving final assertion/fixture cleanup/production policy",
+  "files": [
+    {
+      "path": "packages/alia-server/tests/duplex_playback.rs",
+      "exists": true,
+      "sha256": "fddce9fc6eda9cea1a72cf86f55e731b1a8c33ceb2392c4d5f07010f5621bc13",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "packages/alia-server/tests/duplex_playback/companion.rs",
+      "exists": true,
+      "sha256": "56629b6a3f91aadce96d396a2111e954c343d2d68f61675e1c42f60875274c0b",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "packages/alia-server/tests/delivery_support/mod.rs",
+      "exists": true,
+      "sha256": "2a14ee287113ace2efc30ac32755d980145322be42ea5ce86af9cc53edf339b2",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service/output.rs",
+      "exists": true,
+      "sha256": "c664506ab88c18ab8b19b06a194a5a04f43d23f789a5b8a052b3d980aca45b6f",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/service/output/gate.rs",
+      "exists": true,
+      "sha256": "c1a5f0d8097e9222e8d0bc9016a1592c4e4688ddb4346961969ba0a031b9c854",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "packages/alia-server/src/modules/delivery/repository/control.rs",
+      "exists": true,
+      "sha256": "cf14019e4bdf4cb2cce64dfcc0ce313a821c6c2f55096c457016e38210f023e4",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "config/server.example.toml",
+      "exists": true,
+      "sha256": "ee4716568cab50f45e2c13763a84d45050c275989379e7d2baf87f0a6d6eed6c",
+      "baseline_health_v2_equals_config_v2": true
+    },
+    {
+      "path": "Cargo.lock",
+      "exists": true,
+      "sha256": "845d709734b382d24baaec28bd9d69a524e92c4b41366184de02f0ef7a322dfc",
+      "baseline_health_v2_equals_config_v2": true
+    }
+  ]
+}

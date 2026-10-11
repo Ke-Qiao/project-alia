@@ -1,0 +1,19 @@
+{
+  "baseline": "7165ad633a2a5979ffcea29abfc0daee9f4f1c79",
+  "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-embedded",
+    "crates/alia-core",
+    "crates/alia-proto",
+    "packages/alia-server/src/api/auth.rs",
+    "packages/alia-server/src/api/companion.rs",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "config"
+  ],
+  "exit_code": 0,
+  "scope": "Tracked policy/protocol/authorization/dependency/platform configuration paths unchanged; audit repeated after source freeze",
+  "new_dependency_or_feature": false
+}

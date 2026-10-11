@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-10-11T10:27:42.123392+00:00",
+  "command": [
+    "rustc directory-sync-probe.rs -o directory-sync-probe",
+    "directory-sync-probe"
+  ],
+  "exit_code": 0,
+  "stdout": "std directory sync_all: Ok(())",
+  "scope": "Owned temporary directory on current macOS host; Rust std File::open(dir).sync_all supported, no new FFI/dependency; not physical power-loss proof"
+}

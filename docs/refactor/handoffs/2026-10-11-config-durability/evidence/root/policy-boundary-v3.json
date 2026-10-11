@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-10-11T11:07:54.969005+00:00",
+  "command": [
+    "git",
+    "diff",
+    "--exit-code",
+    "7165ad633a2a5979ffcea29abfc0daee9f4f1c79",
+    "--",
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-embedded",
+    "crates",
+    "packages/alia-server/src/api/auth.rs",
+    "packages/alia-server/src/api/companion.rs",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "config"
+  ],
+  "exit_code": 0,
+  "source_manifest": "source-v3-manifest.json",
+  "scope": "All crates, Embedded, dependency/feature manifests, default config/policies and authorization/execution/delivery paths unchanged",
+  "correction": "Includes actual crates/proto under all crates; preliminary audit named crates/alia-proto, which is not a repository path"
+}

@@ -1,6 +1,6 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-04。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
+更新：2026-10-11。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
 
 ## 配置与启动
 
@@ -34,9 +34,11 @@ curl --fail --silent --show-error \
   | jq -e 'if .success then {success, path} else error(.error // "setup save failed") end'
 ```
 
-`save-config` 的正常 JSON 响应包含 `success`、`path`，失败时另有 `error`。配置验证或保存失败也可能返回 HTTP 200，因此必须检查 `success`；仅用 `curl --fail` 不够。失败不会发送 ConfigReady，setup 继续等待修正后的请求；成功响应排空后 setup 关闭，其端点不作为常驻管理 API。准备阶段的 `/health` 返回 `status: "setup"`，不是模块健康结果；启动完成后使用配置中的实际 Server 地址和端口。
+`save-config` 的正常 JSON 响应包含 `success`、`path`，失败时另有 `error`。配置验证或保存失败也可能返回 HTTP 200，因此必须检查 `success`；仅用 `curl --fail` 不够。发布开始前的失败允许修正后重试。发布已开始但同步失败时，错误会明确持久化仍为 unknown；setup 保留原发布，只接受同一路径、内容和安装方式的重试，不能换请求覆盖。只有持久化确认后才进入 Ready；成功响应排空后 setup 关闭，其端点不作为常驻管理 API。准备阶段的 `/health` 返回 `status: "setup"`，不是模块健康结果；启动完成后使用配置中的实际 Server 地址和端口。
 
-同一 setup 进程只有一次成功完成：并发 HTTP/CLI 的输家返回失败且不写第二份配置；取消后，即使已接收请求随后才补齐 body，也不会发布。base 文件按原子方式发布，但父目录和 CLI 分片树尚未完整同步落盘，不能承诺断电后的目录持久性；也不能同时让其它进程修改正在校验的 fragments/symlink。详细边界见 [本次 setup 审查](../refactor/handoffs/2026-10-04/runtime.md)。
+同一 setup 进程只有一次成功完成：并发 HTTP/CLI 的输家返回失败且不写第二份配置；取消后，即使已接收请求随后才补齐 body，也不会发布。base、分片树及完整 canonical 祖先目录链按发布协议同步；若发布已开始后失败，不删除 base 或 CLI 分片，而是保留私有的相邻恢复记录。记录只含路径和内容摘要，不含配置值或密钥。CLI 按 `c` 重试原安装；HTTP 重发原请求；取消保留磁盘文件。重启时选择相同配置路径（自定义路径用 `ALIA_CONFIG_PATH`），加载器会先恢复再加载，正常无记录时仍纯只读。
+
+恢复发现 base、候选或分片内容改变/丢失时会拒绝盲覆盖，应保留文件与报错交由操作者核对，不要只删恢复记录强行继续。恢复记录建立前崩溃可能留下需人工核对的临时文件/CLI 分片；也不能同时让其它进程修改正在校验的文件树。实际断电、存储硬件与服务账户部署权限仍需独立验证，见 [本轮发布与恢复说明](../refactor/config-durability-2026-10-11.md)。
 
 配置语义有效不等于数据库、模型或硬件已在线。先准备独立 PostgreSQL/pgvector 和选择的 [模型服务](model-services.md)，再核对 `/health`；不要以 HTTP 200 或非空 API key 判断所有 Provider 可用。
 

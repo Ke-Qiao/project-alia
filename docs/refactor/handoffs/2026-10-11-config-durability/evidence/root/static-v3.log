@@ -1,0 +1,9 @@
+RUN ['python3', 'scripts/check-server-boundaries.py', '--self-test']
+Server boundary checker self-test passed
+RUN ['python3', 'scripts/check-server-boundaries.py']
+Server ownership boundaries passed
+RUN ['git', 'diff', '--check']
+RUN ['rustfmt', '--edition', '2024', '--check', '--config', 'skip_children=true', 'packages/alia-server/src/config.rs', 'packages/alia-server/src/config/publication.rs', 'packages/alia-server/src/config/publication/testing.rs', 'packages/alia-server/src/config/publication/tests.rs', 'packages/alia-server/src/oobe/bootstrap.rs', 'packages/alia-server/src/oobe/routes.rs', 'packages/alia-server/src/oobe/routes/tests.rs', 'packages/alia-server/src/oobe/routes/tests/durability.rs', 'packages/alia-server/src/bootstrap/setup.rs', 'packages/alia-server/tests/duplex_playback.rs']
+RUN ['python3', '/Users/ke-qiao/Developer/project-alia/run/validation-20261011-config-durability/test-counter.py']
+{"cases": 8, "passed": 8, "scope": "adjacent early start and delayed matching prior tail accepted; nested child preserved; starts, diagnostics and count mismatches rejected"}
+Policy/protocol/permission/dependency protected paths unchanged.

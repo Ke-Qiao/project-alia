@@ -1,0 +1,119 @@
+[
+  {
+    "unix_ms": 1791716406847,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716407980,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 4702,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 6.3e-05,
+        "blockers": [],
+        "query": "SELECT to_jsonb(r) || jsonb_build_object('key', jsonb_build_object('user_id',r.user_id,'request_id',r.request_id,'output_key',r.output_key)) AS record FROM deli"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716409033,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716410090,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 4718,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000809,
+        "blockers": [],
+        "query": "INSERT INTO \"registry_artifacts\" (\"id\", \"artifact_kind\", \"artifact_name\", \"owner_kind\", \"owner_name\", \"source\", \"created_at\", \"updated_at\") VALUES ($1, $2, $3, "
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716411151,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716412211,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716413280,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 4751,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000471,
+        "blockers": [],
+        "query": "BEGIN"
+      },
+      {
+        "pid": 4747,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000349,
+        "blockers": [],
+        "query": "-- Persist expression/appraisal events so affect and relationship state can\n-- recover across server restarts while runtime reducers stay fast in memory.\n\nCREAT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716414343,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716415401,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716416462,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716417519,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716418578,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716419643,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  }
+]

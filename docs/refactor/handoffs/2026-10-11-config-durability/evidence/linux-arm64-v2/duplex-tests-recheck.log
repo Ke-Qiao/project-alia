@@ -1,0 +1,14 @@
+
+running 9 tests
+test replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up ... ok
+test registration_reply_after_fence_never_repopulates_obsolete_channel_binding ... ok
+test held_full_native_queue_keeps_original_pcm_and_control_lane_available ... ok
+test held_after_end_preserves_unsubmitted_tail_beyond_media_idle ... ok
+test held_before_first_start_survives_handshake_idle_and_resumes_one_original_output ... ok
+test control_ack_loss_is_observed_from_original_device_command ... ok
+test companion::source_erasure_during_original_tts_prevents_first_media_and_preserves_charge ... ok
+test companion::scanner_commits_one_fixed_invitation_through_real_voice_and_paired_playback ... ok
+test companion::applied_resume_lost_ack_and_new_local_speech_handoff_to_h2_on_original_output ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.32s
+

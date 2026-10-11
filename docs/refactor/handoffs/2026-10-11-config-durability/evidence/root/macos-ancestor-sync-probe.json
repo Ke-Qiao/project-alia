@@ -1,0 +1,13 @@
+{
+  "recorded_at": "2026-10-11T10:43:18.092633+00:00",
+  "command": [
+    "rustc",
+    "ancestor-sync-probe.rs",
+    "-o",
+    "ancestor-sync-probe"
+  ],
+  "run": "ancestor-sync-probe",
+  "exit_code": 0,
+  "raw_output": "macos-ancestor-sync-probe.log",
+  "scope": "current macOS host real temp directory and every canonical ancestor up to /; std sync_all succeeds; not a power-loss test"
+}

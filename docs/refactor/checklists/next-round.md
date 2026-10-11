@@ -22,6 +22,8 @@
 
 2026-10-11 /health 清理 **10/10**，源码 `29420a5`；六轮仍 **2/6**。整体预算、重复探测、并发和生命周期已同源双平台验收。最新恢复从 [Health 检查点](../resume-checkpoint-health-2026-10-11.md) 开始，下一软件项为 R04 配置目录持久性。
 
+2026-10-11 配置目录持久性与发布恢复 **10/10**，源码 `0954996`；六轮仍 **2/6**。最新恢复从 [配置检查点](../resume-checkpoint-config-durability-2026-10-11.md) 开始。下一软件候选：先审计 `SettingsRegistry::save` 与 `PATCH /api/v1/settings` 的 live apply、内存配置及 `settings.toml` 持久化顺序，定义保存失败与重试的恢复语义，再在授权范围补缺口。保持 API、当前政策和权限；先检查既有实现，不直接扩展本轮发布协议为通用事务框架。
+
 ## R01 · Companion shadow、回放与受约束主动表达
 
 - [x] 核对已实现 Appraisal / Relationship / Affect / Regulation 的规范来源与剩余缺口，定义可回放的候选输入和决策证据。

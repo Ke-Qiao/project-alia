@@ -1,0 +1,6492 @@
+[
+  {
+    "unix_ms": 1791716873774,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716874898,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716875955,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716877038,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716878099,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716879166,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716880255,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716881313,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716882372,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716883429,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716884491,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716885555,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716886614,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716887673,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716888746,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716889836,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716890896,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716892062,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716893148,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716894209,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716895316,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716896383,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716897457,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716898522,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716899580,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716900713,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716901805,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716902869,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716903932,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716904990,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716906046,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716907105,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716908190,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716909255,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716910314,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716911374,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716912438,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716913510,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716914607,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716915669,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716916730,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716917798,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716918856,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716919960,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716921031,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716922097,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716923165,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716924248,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716925351,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716926421,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716927486,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716928551,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716929615,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716930747,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716931813,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716932876,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716933942,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716935005,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716936097,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716937178,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716938245,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716939347,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716940417,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716941494,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716942592,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716943655,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716944718,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716945776,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716946850,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716947927,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716949027,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716950096,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716951160,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716952216,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716953279,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716954364,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716955421,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716956481,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716957535,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716958598,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716959688,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716960764,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716961830,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716962887,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716963948,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716965014,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716966117,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716967171,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716968235,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716969297,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716970356,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716971415,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716972507,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716973569,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716974643,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716975724,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716976787,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716977890,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716978946,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716980021,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716981079,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716982137,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716983201,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716984292,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716985412,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716986480,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716987545,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716988603,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716989708,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716990774,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716991836,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716992897,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716993955,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716995058,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716996118,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716997183,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716998238,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791716999303,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717000396,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717001457,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717002520,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717003588,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717004657,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717005761,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717006831,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717007907,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717008975,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717010052,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717011157,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717012214,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717013272,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717014335,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717015396,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717016454,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717017522,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717018614,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717019674,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717020739,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717021795,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717022857,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717023958,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717025019,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717026083,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717027147,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717028201,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717029261,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717030369,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717031435,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717032496,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717033562,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717034621,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717035694,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717036780,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717037842,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717038902,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717039965,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717041029,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717042128,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717043186,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717044247,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717045305,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717046369,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717047464,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717048532,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7426,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.02279,
+        "blockers": [],
+        "query": "DROP SCHEMA voice_actor_cb370d5bb4724041ba76c232f0d52593 CASCADE"
+      },
+      {
+        "pid": 7425,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.050826,
+        "blockers": [],
+        "query": "DROP SCHEMA voice_actor_26fce2c44b5747e9ace9fdc388623308 CASCADE"
+      },
+      {
+        "pid": 7437,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.006221,
+        "blockers": [],
+        "query": "-- Delivery is a record of an attempted presentation, never a replay queue.\nCREATE TABLE delivery_responses (\n    response_id UUID PRIMARY KEY,\n    user_id UUID"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717049596,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7471,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001016,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7476,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003396,
+        "blockers": [
+          7471,
+          7475,
+          7467,
+          7486
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7486,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005331,
+        "blockers": [
+          7471,
+          7475,
+          7467
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7475,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.02313,
+        "blockers": [
+          7471
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7467,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.008287,
+        "blockers": [
+          7471,
+          7475
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717050656,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7492,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.009597,
+        "blockers": [
+          7501,
+          7511,
+          7496,
+          7500
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7508,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.006622,
+        "blockers": [
+          7501,
+          7511,
+          7496,
+          7500,
+          7492
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7490,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000103,
+        "blockers": [],
+        "query": "SELECT session_id,source_received_at,source_privacy_epoch FROM chat_messages WHERE id=$1 AND user_id=$2 AND role='user' FOR SHARE"
+      },
+      {
+        "pid": 7496,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.021147,
+        "blockers": [
+          7501,
+          7511
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7511,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.026469,
+        "blockers": [
+          7501
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7501,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001874,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7500,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.011884,
+        "blockers": [
+          7501,
+          7511,
+          7496
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7513,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003327,
+        "blockers": [
+          7501,
+          7511,
+          7496,
+          7500,
+          7492,
+          7508
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717051717,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7543,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.038277,
+        "blockers": [
+          7515
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7546,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.025538,
+        "blockers": [
+          7515,
+          7543,
+          7553,
+          7528
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7487,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.027847,
+        "blockers": [],
+        "query": "SELECT clock_timestamp() AS now"
+      },
+      {
+        "pid": 7528,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.028806,
+        "blockers": [
+          7515,
+          7543,
+          7553
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7511,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.001124,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7515,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001555,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7535,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.016756,
+        "blockers": [
+          7515,
+          7543,
+          7553,
+          7528,
+          7546,
+          7529
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7554,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.009191,
+        "blockers": [
+          7515,
+          7543,
+          7553,
+          7528,
+          7546,
+          7529,
+          7535,
+          7538
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7538,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.013004,
+        "blockers": [
+          7515,
+          7543,
+          7553,
+          7528,
+          7546,
+          7529,
+          7535
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7529,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.021092,
+        "blockers": [
+          7515,
+          7543,
+          7553,
+          7528,
+          7546
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7553,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.033556,
+        "blockers": [
+          7515,
+          7543
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7544,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.331611,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717052780,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7552,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.03438,
+        "blockers": [
+          7576,
+          7584,
+          7585
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7546,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000296,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7585,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.039397,
+        "blockers": [
+          7576,
+          7584
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7564,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.027414,
+        "blockers": [
+          7576,
+          7584,
+          7585,
+          7552,
+          7586
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7586,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.031325,
+        "blockers": [
+          7576,
+          7584,
+          7585,
+          7552
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7576,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.000127,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7572,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003428,
+        "blockers": [
+          7576,
+          7584,
+          7585,
+          7552,
+          7586,
+          7564,
+          7553,
+          7567
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7567,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007858,
+        "blockers": [
+          7576,
+          7584,
+          7585,
+          7552,
+          7586,
+          7564,
+          7553
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7584,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.040498,
+        "blockers": [
+          7576
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7537,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.014829,
+        "blockers": [],
+        "query": "DROP SCHEMA companion_test_75fc4a41f22b48229a166c06e2a280f5 CASCADE"
+      },
+      {
+        "pid": 7553,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.02319,
+        "blockers": [
+          7576,
+          7584,
+          7585,
+          7552,
+          7586,
+          7564
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717053926,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7600,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.050725,
+        "blockers": [
+          7584,
+          7610
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7606,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.039018,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7622,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.015372,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612,
+          7602,
+          7572
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7610,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.053747,
+        "blockers": [
+          7584
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7585,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.045349,
+        "blockers": [
+          7584,
+          7610,
+          7600
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7586,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.043051,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7596,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.010522,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612,
+          7602,
+          7572,
+          7622
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7612,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.035107,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7602,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.026714,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7572,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.01947,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612,
+          7602
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7584,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002635,
+        "blockers": [],
+        "query": "-- Text shares dispatch ownership and recovery, never audio frame evidence.\nALTER TABLE deliveries\n    ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'audio' CHECK"
+      },
+      {
+        "pid": 7615,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003122,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612,
+          7602,
+          7572,
+          7622,
+          7596,
+          7579
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7579,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.006717,
+        "blockers": [
+          7584,
+          7610,
+          7600,
+          7585,
+          7586,
+          7606,
+          7612,
+          7602,
+          7572,
+          7622,
+          7596
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717054990,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7640,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000314,
+        "blockers": [],
+        "query": "SELECT n.nspname AS schema_name FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='vector'"
+      },
+      {
+        "pid": 7622,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 8.1e-05,
+        "blockers": [
+          7640,
+          7617,
+          7610,
+          7630,
+          7612
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7610,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.023898,
+        "blockers": [
+          7640,
+          7617
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7607,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000333,
+        "blockers": [],
+        "query": "UPDATE companion_policies SET revision=$2,policy=$3,policy_digest=$4,updated_at=clock_timestamp() WHERE owner_id=$1"
+      },
+      {
+        "pid": 7617,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.028145,
+        "blockers": [
+          7640
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7630,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.012809,
+        "blockers": [
+          7640,
+          7617,
+          7610
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7612,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00644,
+        "blockers": [
+          7640,
+          7617,
+          7610,
+          7630
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717056045,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7667,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 8.7e-05,
+        "blockers": [],
+        "query": "BEGIN"
+      },
+      {
+        "pid": 7664,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.00835,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717057104,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7693,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 9.5e-05,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      },
+      {
+        "pid": 7691,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001433,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717058167,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7721,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001299,
+        "blockers": [],
+        "query": "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717059234,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7745,
+        "state": "active",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 7.7e-05,
+        "blockers": [],
+        "query": "SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE"
+      },
+      {
+        "pid": 7761,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00971,
+        "blockers": [
+          7756
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005548,
+        "blockers": [
+          7756,
+          7761
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7756,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001837,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7755,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00248,
+        "blockers": [
+          7756,
+          7761,
+          7751
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717060299,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7791,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.041502,
+        "blockers": [
+          7783
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7769,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.026178,
+        "blockers": [],
+        "query": "DROP SCHEMA companion_test_6013ca2294ad4edda21606b9e95923d3 CASCADE"
+      },
+      {
+        "pid": 7785,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.017519,
+        "blockers": [
+          7783,
+          7791
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7775,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.000303,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7786,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.004614,
+        "blockers": [
+          7783,
+          7791,
+          7785
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7783,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000767,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7768,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.038143,
+        "blockers": [],
+        "query": "DROP SCHEMA pipeline_delivery_4af8be857f584f5585fca6b1a3dfb5ba CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717061396,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7810,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.005554,
+        "blockers": [],
+        "query": "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,'rebuild-device',$2)"
+      },
+      {
+        "pid": 7821,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.004723,
+        "blockers": [
+          7815
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7804,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.00203,
+        "blockers": [],
+        "query": "INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING"
+      },
+      {
+        "pid": 7809,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 9.4e-05,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7815,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.0047,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717062466,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7835,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.018668,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7821,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.010129,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7839,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 0.018351,
+        "blockers": [
+          7835
+        ],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      },
+      {
+        "pid": 7838,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.018872,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717063584,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7867,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 0.001659,
+        "blockers": [
+          7853
+        ],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      },
+      {
+        "pid": 7855,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.006718,
+        "blockers": [],
+        "query": "DROP SCHEMA pipeline_delivery_71545c88dc4e401f91d8fad32f634d4e CASCADE"
+      },
+      {
+        "pid": 7853,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001189,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717064647,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7899,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001691,
+        "blockers": [],
+        "query": "INSERT INTO chat_sessions(id,channel_id,creator_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING"
+      },
+      {
+        "pid": 7893,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 9.5e-05,
+        "blockers": [],
+        "query": "UPDATE delivery_responses SET cancel_requested=TRUE,status=CASE WHEN status='pending' THEN 'interrupted' ELSE status END WHERE response_id=$1"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717065705,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717066765,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717067820,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7951,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.047722,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7959,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.022401,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7942,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.050473,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7963,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003511,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7953,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.05304,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7960,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.017743,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7944,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.058471,
+        "blockers": [
+          7937,
+          7945,
+          7943
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7945,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.063149,
+        "blockers": [
+          7937
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7962,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007535,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7954,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.045023,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7958,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.027145,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7937,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000641,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7955,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.040583,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7961,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.013138,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7957,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.031506,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7952,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.055559,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7943,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.060668,
+        "blockers": [
+          7937,
+          7945
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7956,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.035705,
+        "blockers": [
+          7937,
+          7945,
+          7943,
+          7944,
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717068882,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7951,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.091974,
+        "blockers": [
+          7952,
+          7953,
+          7942
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7959,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.05444,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7942,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.096539,
+        "blockers": [
+          7952,
+          7953
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7963,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.028272,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7953,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.102867,
+        "blockers": [
+          7952
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7965,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.014866,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962,
+          7963,
+          7964
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7960,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.048693,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7962,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.034918,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7954,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.087328,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7964,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.021522,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962,
+          7963
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7958,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.061443,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7966,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007194,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962,
+          7963,
+          7964,
+          7965
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7955,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.080849,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7967,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.000637,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960,
+          7961,
+          7962,
+          7963,
+          7964,
+          7965,
+          7966
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7961,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.041892,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956,
+          7957,
+          7958,
+          7959,
+          7960
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7957,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.067713,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955,
+          7956
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7952,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000478,
+        "blockers": [],
+        "query": "-- Old cache rows have no canonical generation provenance. They cannot be\n-- upgraded by assigning today's context or retained as a shared fallback.\nDELETE FROM"
+      },
+      {
+        "pid": 7956,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.073485,
+        "blockers": [
+          7952,
+          7953,
+          7942,
+          7951,
+          7954,
+          7955
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717069938,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 7951,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.000684,
+        "blockers": [],
+        "query": "SELECT m.id,m.role,m.content,m.source_privacy_epoch,r.response_id,r.context_id,r.final_content FROM chat_messages m LEFT JOIN delivery_responses r ON r.assistan"
+      },
+      {
+        "pid": 7996,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.002706,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8003,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.002157,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7940,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000151,
+        "blockers": [],
+        "query": "SELECT m.content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND s.creator_id=$2 AND m.user_id=$2 AND m.role='user' AND m.sourc"
+      },
+      {
+        "pid": 7969,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000777,
+        "blockers": [],
+        "query": "SELECT m.id::text,m.revision,m.kind,m.scope,m.memory_layer,m.node_type,m.content,m.summary,m.confidence,m.salience,m.importance,m.visibility,m.sensitive,m.statu"
+      },
+      {
+        "pid": 7960,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.000805,
+        "blockers": [],
+        "query": "SELECT e.id,e.evidence_memory_id,e.source_revision,e.valid_to,src.id AS src_id,src.label AS source,src.node_type AS source_type,src.properties AS src_properties"
+      },
+      {
+        "pid": 7945,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000113,
+        "blockers": [],
+        "query": "SELECT * FROM context_leases WHERE context_id=$1 AND owner_id=$2"
+      },
+      {
+        "pid": 7993,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000234,
+        "blockers": [],
+        "query": "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user"
+      },
+      {
+        "pid": 7954,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.000478,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7964,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.002003,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7994,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00612,
+        "blockers": [
+          7996
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 7967,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.004062,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 7968,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.002274,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717071032,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8023,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001067,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8032,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005695,
+        "blockers": [
+          8023
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717072088,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8047,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003127,
+        "blockers": [],
+        "query": "-- Execution owns these records. A response cancellation cannot erase an effect.\nCREATE TABLE execution_effects (\n    effect_id UUID PRIMARY KEY,\n    user_id UU"
+      },
+      {
+        "pid": 8048,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003213,
+        "blockers": [
+          8047,
+          8043
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8043,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.006812,
+        "blockers": [
+          8047
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717073145,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8075,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.002559,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8061,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.016811,
+        "blockers": [],
+        "query": "DROP SCHEMA delivery_test_85de807ef153477ab89d63508e701b13 CASCADE"
+      },
+      {
+        "pid": 8058,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.00764,
+        "blockers": [],
+        "query": "DROP SCHEMA delivery_test_a1948bbd35bd4d068b95b47029886b0f CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717074205,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8088,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001069,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8090,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001345,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717075305,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8120,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000121,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8117,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.006044,
+        "blockers": [
+          8120
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717076373,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8143,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00481,
+        "blockers": [
+          8140
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8140,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.004779,
+        "blockers": [],
+        "query": "-- Built-in Memory Runtime schema.\n--\n-- Canonical memory is provider-neutral. Embeddings are stored in profile-\n-- specific side tables so future 1024/3072-dim"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717077433,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8168,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000113,
+        "blockers": [],
+        "query": "BEGIN"
+      },
+      {
+        "pid": 8171,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.010403,
+        "blockers": [
+          8170
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8167,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.008018,
+        "blockers": [
+          8170,
+          8171
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8170,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000107,
+        "blockers": [],
+        "query": "-- An old alias and a fixed vector width do not establish which model request\n-- produced a vector. Discard those derived indexes and rebuild from canonical\n-- "
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717078493,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8189,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.00052,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8200,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002951,
+        "blockers": [],
+        "query": "-- Built-in Memory Runtime schema.\n--\n-- Canonical memory is provider-neutral. Embeddings are stored in profile-\n-- specific side tables so future 1024/3072-dim"
+      },
+      {
+        "pid": 8197,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007594,
+        "blockers": [
+          8200
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8203,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.002991,
+        "blockers": [
+          8200,
+          8197
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717079559,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8214,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.052821,
+        "blockers": [],
+        "query": "DROP SCHEMA context_test_d506cef2d66343a89631b3317573d9f4 CASCADE"
+      },
+      {
+        "pid": 8222,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002794,
+        "blockers": [],
+        "query": "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Context test','not-a-login','user','active')"
+      },
+      {
+        "pid": 8226,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001101,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8218,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.032076,
+        "blockers": [],
+        "query": "DROP SCHEMA context_test_fa42515fb986468dbafcb351e678b879 CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717080620,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8252,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00199,
+        "blockers": [
+          8261,
+          8257
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8249,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000441,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8261,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002186,
+        "blockers": [],
+        "query": "-- Migration: users, refresh tokens, and external identity links.\n-- User identity is shared by HTTP auth, frontend settings, LLM scoping,\n-- and future voicepr"
+      },
+      {
+        "pid": 8257,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.007135,
+        "blockers": [
+          8261
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717081679,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8283,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001039,
+        "blockers": [],
+        "query": "-- Live invitations never promote a shadow receipt. Charges and opaque identity\n-- survive source/authority erasure; there is no replayable output outbox.\nALTER"
+      },
+      {
+        "pid": 8285,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001183,
+        "blockers": [
+          8283,
+          8284
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8284,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.010801,
+        "blockers": [
+          8283
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717082747,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8311,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001425,
+        "blockers": [
+          8314
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8314,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001417,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      },
+      {
+        "pid": 8308,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001811,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717083810,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8341,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 8.1e-05,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock(hashtextextended($1, 891129))"
+      },
+      {
+        "pid": 8345,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.002215,
+        "blockers": [],
+        "query": "INSERT INTO context_policy(singleton,version,policy,policy_digest) VALUES(TRUE,1,$1,$2) ON CONFLICT DO NOTHING"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717084872,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8377,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003654,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717085935,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8389,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.758043,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717086989,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8389,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.815128,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717088050,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8389,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 2.875313,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717089113,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8389,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 3.936537,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717090175,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8425,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.034664,
+        "blockers": [],
+        "query": "DROP SCHEMA delivery_test_92aa03700a764c7bafc203c64f1920d4 CASCADE"
+      },
+      {
+        "pid": 8389,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 4.998839,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      },
+      {
+        "pid": 8388,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 9.8e-05,
+        "blockers": [],
+        "query": "SELECT to_jsonb(r) || jsonb_build_object('key', jsonb_build_object('user_id',r.user_id,'request_id',r.request_id,'output_key',r.output_key)) AS record FROM deli"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717091236,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717092288,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717093347,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717094408,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717095462,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717096523,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8494,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001538,
+        "blockers": [
+          8496
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8491,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.002672,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8496,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001562,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717097589,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8526,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003451,
+        "blockers": [
+          8527
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8527,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.00084,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8530,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001364,
+        "blockers": [
+          8527,
+          8526
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717098652,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717099720,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8564,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000848,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717100779,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717101874,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717102932,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717103996,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8592,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002821,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      },
+      {
+        "pid": 8595,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00281,
+        "blockers": [
+          8592
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717105057,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717106110,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717107169,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717108226,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717109286,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8596,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003267,
+        "blockers": [],
+        "query": "SELECT a.owner_id,a.appraisal_id,c.channel_id FROM appraisal_records a JOIN context_leases c ON c.context_id=a.context_id JOIN users u ON u.id=a.owner_id AND u."
+      },
+      {
+        "pid": 8604,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.000233,
+        "blockers": [],
+        "query": "SELECT * FROM companion_live_pending WHERE candidate_id=$1 AND server_instance_id=$2 AND state='pending'"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717110347,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717111410,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8643,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.010587,
+        "blockers": [],
+        "query": "DROP SCHEMA execution_test_4ecf96b77f974776972bff21e0b130ac CASCADE"
+      },
+      {
+        "pid": 8655,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001335,
+        "blockers": [],
+        "query": "INSERT INTO users (id,email,name,password_hash,role,status) VALUES ($1,$2,'Execution test','not-a-login-hash',$3,'active')"
+      },
+      {
+        "pid": 8645,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.006801,
+        "blockers": [],
+        "query": "DROP SCHEMA execution_test_037d7a84ff3d48878a1e7a341a44d717 CASCADE"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.020966,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_type"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717112479,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8692,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002877,
+        "blockers": [],
+        "query": "-- Text shares dispatch ownership and recovery, never audio frame evidence.\nALTER TABLE deliveries\n    ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'audio' CHECK"
+      },
+      {
+        "pid": 8695,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.010062,
+        "blockers": [
+          8692,
+          8683
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8683,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.01306,
+        "blockers": [
+          8692
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8689,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.002943,
+        "blockers": [
+          8692,
+          8683,
+          8695
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.754814,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717113544,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8724,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00057,
+        "blockers": [
+          8721
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8695,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001271,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8721,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000503,
+        "blockers": [],
+        "query": "ALTER TABLE context_leases DROP CONSTRAINT context_leases_purpose_check;\nALTER TABLE context_leases ADD CONSTRAINT context_leases_purpose_check\n    CHECK (purpo"
+      },
+      {
+        "pid": 8715,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.014327,
+        "blockers": [],
+        "query": "DROP SCHEMA execution_test_0d27589f709e44b1b03437142c378de0 CASCADE"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 1.818981,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717114605,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8742,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.009475,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8743,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.004459,
+        "blockers": [
+          8742
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.877541,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717115666,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000127,
+        "blockers": [],
+        "query": "SELECT * FROM context_leases WHERE context_id=$1 AND owner_id=$2"
+      },
+      {
+        "pid": 8740,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 7.7e-05,
+        "blockers": [],
+        "query": "SELECT * FROM context_leases WHERE context_id=$1 AND owner_id=$2"
+      },
+      {
+        "pid": 8738,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001558,
+        "blockers": [],
+        "query": "INSERT INTO chat_messages(id,session_id,user_id,role,content,source_received_at,source_privacy_epoch) VALUES($1,$2,$3,'user','Please remember my preference.',$4"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 3.973859,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717116763,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 0.597018,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.049456,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.049235,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 5.038779,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717117821,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.651131,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 2.103597,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8808,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.0197,
+        "blockers": [],
+        "query": "DROP SCHEMA execution_service_2af692dea2114f3f8eadbde6cfa42270 CASCADE"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.103384,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.744112,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_class"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717118878,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.725269,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 3.177706,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.009189,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.177487,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.227784,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717119950,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.778039,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 4.23048,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.770434,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 0.753081,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.230264,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "DataFileWrite",
+        "query_age_seconds": 1.280562,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717120999,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.831881,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 5.28432,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.824272,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.806919,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 5.284102,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.334399,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717122063,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 5.893307,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 6.34575,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 2.885703,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.86835,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 6.345535,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8792,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.018209,
+        "blockers": [],
+        "query": "DROP SCHEMA execution_service_d8a79afe45c14e8196c98b2caeb674c1 CASCADE"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 3.395835,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717123122,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8874,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000337,
+        "blockers": [],
+        "query": "-- The original prepared Response owns a bounded, non-transferable control lifetime.\n-- These tables are evidence, never an outbox or permission to replay media"
+      },
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 6.953792,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 7.406217,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 3.946168,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.928815,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 7.405999,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.30482,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_index"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717124179,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 8.009649,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 8.462089,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 5.002042,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.984688,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8896,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003676,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 8.461876,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "DataFileRead",
+        "query_age_seconds": 0.880881,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_trigger"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717125242,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8739,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 9.073742,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8741,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 9.52618,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8904,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.046928,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 6.066135,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 6.048782,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8751,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 9.525965,
+        "blockers": [
+          8741
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8839,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.047587,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8905,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.046455,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8832,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 1.04762,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.339134,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717126303,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8904,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.1051,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 7.124325,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 7.106973,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8839,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.105776,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8905,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.104644,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8832,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 2.105809,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 1.397323,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717127362,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8904,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.169852,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 8.189075,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 8.171722,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8931,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000223,
+        "blockers": [],
+        "query": "-- The original prepared Response owns a bounded, non-transferable control lifetime.\n-- These tables are evidence, never an outbox or permission to replay media"
+      },
+      {
+        "pid": 8839,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.170528,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8905,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.169396,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8832,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 3.170561,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.462075,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717128418,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8950,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000588,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 8904,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.220449,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8830,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 9.239658,
+        "blockers": [],
+        "query": "LOCK TABLE execution_effects IN ACCESS EXCLUSIVE MODE"
+      },
+      {
+        "pid": 8831,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 9.222305,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8839,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.221108,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8905,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.219976,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8832,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "relation",
+        "query_age_seconds": 4.22114,
+        "blockers": [
+          8830
+        ],
+        "query": "SELECT to_jsonb(e) || jsonb_build_object('key', jsonb_build_object('user_id', e.user_id, 'request_id', e.request_id, 'invocation_key', e.invocation_key)) AS rec"
+      },
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 3.512654,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717129479,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8657,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 4.577748,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717130542,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717131603,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717132661,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717133754,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717134814,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 8992,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.032452,
+        "blockers": [],
+        "query": "DROP SCHEMA memory_runtime_test_112dc00292a34e549d08250d30bd2661 CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717135874,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9033,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00218,
+        "blockers": [
+          9036
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9036,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001068,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717136936,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9057,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.003478,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9055,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002095,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717137995,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717139051,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717140113,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717141174,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717142237,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9115,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.003772,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      },
+      {
+        "pid": 9116,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003864,
+        "blockers": [
+          9115
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717143299,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9146,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00314,
+        "blockers": [
+          9149
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9149,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001577,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717144355,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9175,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001292,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9177,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.003817,
+        "blockers": [
+          9175,
+          9176
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9176,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.008228,
+        "blockers": [
+          9175
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717145414,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9202,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00505,
+        "blockers": [
+          9198,
+          9201
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9198,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001593,
+        "blockers": [],
+        "query": "-- Software body submission is its own evidence type, not audio or position.\nCREATE TABLE body_deliveries (\n    delivery_id UUID PRIMARY KEY,\n    response_id UU"
+      },
+      {
+        "pid": 9203,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.00161,
+        "blockers": [
+          9198,
+          9201,
+          9202
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9201,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.008225,
+        "blockers": [
+          9198
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717146475,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9225,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001694,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9231,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.001095,
+        "blockers": [],
+        "query": "CREATE TABLE IF NOT EXISTS automation_rules (\n    id UUID PRIMARY KEY,\n    user_id UUID NOT NULL,\n    name TEXT NOT NULL,\n    enabled BOOLEAN NOT NULL DEFAULT T"
+      },
+      {
+        "pid": 9229,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.001059,
+        "blockers": [
+          9231
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9221,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.02432,
+        "blockers": [],
+        "query": "DROP SCHEMA memory_privacy_test_5f073708f3c4452fb4ed3f7ffc83ac10 CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717147531,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9261,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 5e-05,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9258,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001715,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9264,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.008275,
+        "blockers": [
+          9261
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9269,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005423,
+        "blockers": [
+          9261,
+          9264
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717148588,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9290,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001113,
+        "blockers": [],
+        "query": "DROP SCHEMA memory_privacy_test_d4ea688bb24049a6964c253f0d8889d8 CASCADE"
+      },
+      {
+        "pid": 9303,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.0007,
+        "blockers": [
+          9296,
+          9300
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9300,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.005499,
+        "blockers": [
+          9296
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9296,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000624,
+        "blockers": [],
+        "query": "-- Software body submission is its own evidence type, not audio or position.\nCREATE TABLE body_deliveries (\n    delivery_id UUID PRIMARY KEY,\n    response_id UU"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717149650,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9315,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 0.884532,
+        "blockers": [
+          9300
+        ],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      },
+      {
+        "pid": 9300,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.887328,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717150711,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9315,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 1.975505,
+        "blockers": [
+          9300
+        ],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      },
+      {
+        "pid": 9300,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.9783,
+        "blockers": [],
+        "query": "SELECT privacy_epoch FROM memory_privacy_state WHERE user_id=$1 FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717151792,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9362,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "LockManager",
+        "query_age_seconds": 0.020079,
+        "blockers": [],
+        "query": "DROP SCHEMA delivery_test_3071fbb10d6144e4a78beb0807f728d6 CASCADE"
+      },
+      {
+        "pid": 9373,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000409,
+        "blockers": [],
+        "query": "-- Migration: Server-owned plugin storage.\n--\n-- Plugins get a scoped JSON document store owned by alia-server. They do not\n-- receive raw database connections "
+      },
+      {
+        "pid": 9376,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.000503,
+        "blockers": [
+          9373
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717152853,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9408,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.002123,
+        "blockers": [
+          9405
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9405,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001995,
+        "blockers": [],
+        "query": "ALTER TABLE context_leases DROP CONSTRAINT context_leases_purpose_check;\nALTER TABLE context_leases ADD CONSTRAINT context_leases_purpose_check\n    CHECK (purpo"
+      },
+      {
+        "pid": 9400,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.002318,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717153919,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9439,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.002327,
+        "blockers": [
+          9435
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9435,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002439,
+        "blockers": [],
+        "query": "-- Canonical judgments are separate from their fallible interpretation content.\n-- Old records contain no recoverable authority; never invent lineage for them.\n"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717154986,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9472,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000406,
+        "blockers": [],
+        "query": "-- Migration: Create llm_cache table for DB-backed LLM response caching\n-- Supports exact (hash) matching and semantic (vector) matching\n\nCREATE TABLE llm_cache"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717156038,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9498,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000974,
+        "blockers": [],
+        "query": "-- Migration: users, refresh tokens, and external identity links.\n-- User identity is shared by HTTP auth, frontend settings, LLM scoping,\n-- and future voicepr"
+      },
+      {
+        "pid": 9494,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.000992,
+        "blockers": [
+          9498
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717157099,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717158154,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9536,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000361,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717159214,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717160269,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717161355,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717162414,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717163466,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717164521,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717165628,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9605,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.000114,
+        "blockers": [
+          9604
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9597,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000522,
+        "blockers": [],
+        "query": "UPDATE \"registry_artifacts\" SET \"owner_kind\" = $1, \"owner_name\" = $2, \"source\" = $3, \"updated_at\" = $4 WHERE \"registry_artifacts\".\"id\" = $5 RETURNING \"id\", \"art"
+      },
+      {
+        "pid": 9604,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 9.3e-05,
+        "blockers": [],
+        "query": "SELECT checksum FROM schema_migrations WHERE version = $1"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717166697,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9635,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000147,
+        "blockers": [],
+        "query": "COMMIT"
+      },
+      {
+        "pid": 9628,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.001293,
+        "blockers": [],
+        "query": "UPDATE delivery_responses SET cancel_requested=TRUE,status=CASE WHEN status='pending' THEN 'interrupted' ELSE status END WHERE response_id=$1"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717167751,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9651,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.002981,
+        "blockers": [
+          9655
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9655,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000697,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717168815,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9668,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000586,
+        "blockers": [],
+        "query": "-- Migration: Create chat sessions and messages tables\n-- Used for short-term conversational context, separate from the semantic memory graph.\n\nCREATE TABLE IF "
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717169878,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9680,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 0.254747,
+        "blockers": [
+          9678
+        ],
+        "query": "SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE"
+      },
+      {
+        "pid": 9678,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.288893,
+        "blockers": [],
+        "query": "SELECT version FROM context_policy FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717170934,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9680,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 1.307417,
+        "blockers": [
+          9678
+        ],
+        "query": "SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE"
+      },
+      {
+        "pid": 9678,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.341563,
+        "blockers": [],
+        "query": "SELECT version FROM context_policy FOR UPDATE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717171987,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9698,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.004695,
+        "blockers": [],
+        "query": "INSERT INTO \"skill_preferred_tools\" (\"skill_id\", \"tool_id\", \"created_at\") VALUES ($1, $2, $3) RETURNING \"skill_id\", \"tool_id\", \"created_at\""
+      },
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.282639,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717173049,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9723,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000906,
+        "blockers": [],
+        "query": "-- Migration: Create llm_cache table for DB-backed LLM response caching\n-- Supports exact (hash) matching and semantic (vector) matching\n\nCREATE TABLE llm_cache"
+      },
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 1.350119,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717174116,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.431761,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_attribute"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717175198,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.035334,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_proc"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717176261,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.079903,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717177369,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 1.134112,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717178429,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9765,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.004772,
+        "blockers": [],
+        "query": "-- Shadow evidence has no output or execution authority. Erasure retains only\n-- opaque intent/dedup identities; it never leaves a private replay archive.\nCREAT"
+      },
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.19702,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717179493,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.454213,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_trigger"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717180554,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.53591,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717181631,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 1.596908,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717182691,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9694,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 2.65678,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_depend"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717183748,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717184804,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717185863,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717186924,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9840,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.004077,
+        "blockers": [],
+        "query": "-- Live invitations never promote a shadow receipt. Charges and opaque identity\n-- survive source/authority erasure; there is no replayable output outbox.\nALTER"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717187988,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9847,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.90131,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9840,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.894235,
+        "blockers": [
+          9847
+        ],
+        "query": "INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717189048,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9847,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 1.960014,
+        "blockers": [],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 9840,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 1.952938,
+        "blockers": [
+          9847
+        ],
+        "query": "INSERT INTO appraisal_records(appraisal_id,owner_id,request_id,context_id,occurrence_key,interpreter_id,interpreter_version,policy_version,interpretation_policy"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717190103,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9878,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.001469,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717191163,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9894,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000367,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717192220,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9917,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "DataFileExtend",
+        "query_age_seconds": 0.000155,
+        "blockers": [],
+        "query": "INSERT INTO \"tools\" (\"id\", \"name\", \"description\", \"parameters\", \"source\", \"require_confirmation\", \"required_role\", \"routing_keywords\", \"routing_examples\", \"rout"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717193272,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717194328,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717195388,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9944,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.022404,
+        "blockers": [],
+        "query": "DROP SCHEMA server_runtime_02eceab3d5b34c379a67642496ce3db9 CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717196451,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9969,
+        "state": "idle in transaction",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.000105,
+        "blockers": [],
+        "query": "SELECT id FROM users WHERE id=$1 AND status='active' FOR SHARE"
+      },
+      {
+        "pid": 9968,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002873,
+        "blockers": [],
+        "query": "SELECT a.owner_id,a.appraisal_id,c.channel_id FROM appraisal_records a JOIN context_leases c ON c.context_id=a.context_id JOIN users u ON u.id=a.owner_id AND u."
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717197508,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 9987,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.002088,
+        "blockers": [],
+        "query": "SELECT erase_memory_closure($1,$2,ARRAY(SELECT jsonb_array_elements_text($3::jsonb)::uuid UNION SELECT a.memory_id FROM memory_appraisal_sources a JOIN memory_i"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717198562,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10017,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "query_age_seconds": 0.009166,
+        "blockers": [
+          10014
+        ],
+        "query": "SELECT pg_advisory_xact_lock($1)"
+      },
+      {
+        "pid": 10014,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.007289,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717199627,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10038,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.0022,
+        "blockers": [],
+        "query": "INSERT INTO \"skill_preferred_tools\" (\"skill_id\", \"tool_id\", \"created_at\") VALUES ($1, $2, $3) RETURNING \"skill_id\", \"tool_id\", \"created_at\""
+      },
+      {
+        "pid": 10039,
+        "state": "active",
+        "wait_event_type": "LWLock",
+        "wait_event": "WALWrite",
+        "query_age_seconds": 0.000662,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717200690,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10042,
+        "state": "idle in transaction",
+        "wait_event_type": "Client",
+        "wait_event": "ClientRead",
+        "query_age_seconds": 0.997688,
+        "blockers": [],
+        "query": "SELECT version FROM context_policy FOR UPDATE"
+      },
+      {
+        "pid": 10038,
+        "state": "active",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "query_age_seconds": 0.984899,
+        "blockers": [
+          10042
+        ],
+        "query": "SELECT version,policy,policy_digest,clock_timestamp() AS now FROM context_policy WHERE singleton FOR SHARE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717201750,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10036,
+        "state": "active",
+        "wait_event_type": null,
+        "wait_event": null,
+        "query_age_seconds": 0.018906,
+        "blockers": [],
+        "query": "DROP SCHEMA server_runtime_8273a2233b5849dfba2823b36f764849 CASCADE"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717202811,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717203871,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10105,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000507,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717204934,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717205995,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10133,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "WalSync",
+        "query_age_seconds": 0.000852,
+        "blockers": [],
+        "query": "COMMIT"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717207059,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717208108,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717209162,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717210232,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717211286,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717212346,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717213404,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717214468,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717215531,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717216593,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717217654,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717218724,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717219785,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717220842,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717221895,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717222954,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717224014,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717225076,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717226135,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717227187,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717228245,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717229305,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717230365,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717231430,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10287,
+        "state": "active",
+        "wait_event_type": "IO",
+        "wait_event": "DataFileRead",
+        "query_age_seconds": 0.01162,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_type"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717232492,
+    "exit_code": 0,
+    "activity": [
+      {
+        "pid": 10287,
+        "state": "active",
+        "wait_event_type": "Timeout",
+        "wait_event": "VacuumDelay",
+        "query_age_seconds": 0.232674,
+        "blockers": [],
+        "query": "autovacuum: VACUUM ANALYZE pg_catalog.pg_constraint"
+      }
+    ],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717233543,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717234598,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717235656,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717236712,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  },
+  {
+    "unix_ms": 1791717237772,
+    "exit_code": 0,
+    "activity": [],
+    "error": ""
+  }
+]
