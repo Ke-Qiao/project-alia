@@ -3,6 +3,8 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+pub(crate) mod publication;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     pub server: ServerSection,
@@ -2070,6 +2072,7 @@ impl ServerConfig {
     }
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
+        publication::recover(path)?;
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let content = load_config_with_fragments(&canonical)?;
         Self::from_merged_content(&canonical, &content)
@@ -2216,7 +2219,7 @@ impl ServerConfig {
         ];
 
         for c in &candidates {
-            if !c.is_empty() && Path::new(c).exists() {
+            if !c.is_empty() && (Path::new(c).exists() || publication::has_pending(Path::new(c))) {
                 return c.clone();
             }
         }

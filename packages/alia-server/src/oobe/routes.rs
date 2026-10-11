@@ -10,9 +10,8 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
 
-use super::bootstrap::{self, SetupResult};
+use super::bootstrap::{self, SetupCompletion};
 
 #[cfg(test)]
 mod tests;
@@ -21,8 +20,7 @@ mod tests;
 
 #[derive(Clone)]
 pub struct OobeState {
-    /// Channel to signal setup completion
-    pub done_tx: Arc<watch::Sender<Option<SetupResult>>>,
+    pub completion: Arc<SetupCompletion>,
     pub cancel: tokio_util::sync::CancellationToken,
 }
 
@@ -156,11 +154,8 @@ async fn save_config(
         .path
         .map(PathBuf::from)
         .unwrap_or_else(bootstrap::default_config_target);
-    match bootstrap::finish_setup(&state.done_tx, || {
-        anyhow::ensure!(!state.cancel.is_cancelled(), "setup is shutting down");
-        bootstrap::save_config(&target, &body.config).map(SetupResult::ConfigReady)
-    }) {
-        Ok(SetupResult::ConfigReady(target)) => {
+    match state.completion.save(&target, &body.config, &state.cancel) {
+        Ok(target) => {
             let path_str = target.to_string_lossy().into_owned();
             Json(SaveConfigResponse {
                 success: true,
@@ -168,7 +163,6 @@ async fn save_config(
                 error: None,
             })
         }
-        Ok(SetupResult::Cancelled) => unreachable!("save only publishes ConfigReady"),
         Err(e) => Json(SaveConfigResponse {
             success: false,
             path: target.to_string_lossy().into_owned(),

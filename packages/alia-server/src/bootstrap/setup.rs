@@ -7,13 +7,10 @@ use anyhow::Context;
 use axum::Router;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::io::{self, IsTerminal, Write};
-use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::channels::cli::{INPUT_POLL_INTERVAL, TerminalSession};
-use crate::oobe::bootstrap::{
-    SetupResult, default_config_target, finish_setup, print_banner, release_example_config,
-};
+use crate::oobe::bootstrap::{SetupCompletion, SetupState, default_config_target, print_banner};
 use crate::oobe::routes::{OobeState, routes};
 
 /// Complete the existing CLI/HTTP setup flow without terminating the host.
@@ -46,20 +43,20 @@ async fn run_setup_on(
     if cancel.is_cancelled() {
         return Ok(None);
     }
-    let (done_tx, mut done_rx) = watch::channel::<Option<SetupResult>>(None);
-    let done_tx = Arc::new(done_tx);
+    let completion = Arc::new(SetupCompletion::new());
+    let mut done_rx = completion.subscribe();
     let mut input = if interactive {
-        let done_tx = (*done_tx).clone();
+        let completion = completion.clone();
         let input_cancel = cancel.clone();
         Some(tokio::task::spawn_blocking(move || {
-            setup_input(done_tx, input_cancel)
+            setup_input(completion, input_cancel)
         }))
     } else {
         tracing::info!("setup has no interactive terminal; use the HTTP setup API");
         None
     };
     let app = Router::new().merge(routes()).with_state(OobeState {
-        done_tx: done_tx.clone(),
+        completion: completion.clone(),
         cancel: cancel.clone(),
     });
     let connections = SetupConnections(Connections::new());
@@ -85,7 +82,7 @@ async fn run_setup_on(
             server_completed = true;
             result.context("serving setup HTTP")
         },
-        result = done_rx.wait_for(|value| value.is_some()) => {
+        result = done_rx.wait_for(SetupState::is_terminal) => {
             result.map(|_| ()).context("setup completion channel closed")
         }
         result = async {
@@ -101,10 +98,10 @@ async fn run_setup_on(
     if cancel.is_cancelled() || served.is_err() || input_completed {
         // A request whose body finishes during drain cannot publish a new
         // configuration after cancellation or input failure.
-        let _ = finish_setup(&done_tx, || Ok(SetupResult::Cancelled));
+        completion.cancel();
     }
     cancel.cancel();
-    // ConfigReady can precede the successful response being written. Preserve
+    // Ready can precede the successful response being written. Preserve
     // the original server until that response drains. Stalled peers do not own
     // shutdown: close their actual sockets after the bounded grace period.
     let drained = if server_completed {
@@ -129,9 +126,11 @@ async fn run_setup_on(
     }
     let result = done_rx.borrow().clone();
     match result {
-        Some(SetupResult::ConfigReady(path)) => Ok(Some(path)),
-        Some(SetupResult::Cancelled) => Ok(None),
-        None => anyhow::bail!("setup server exited before setup completed"),
+        SetupState::Ready(path) => Ok(Some(path)),
+        SetupState::Cancelled => Ok(None),
+        SetupState::Idle | SetupState::Pending(_) => {
+            anyhow::bail!("setup server exited before setup completed")
+        }
     }
 }
 
@@ -181,10 +180,7 @@ async fn bind_setup_listener(port: u16) -> anyhow::Result<tokio::net::TcpListene
         .context("binding local setup HTTP listener")
 }
 
-fn setup_input(
-    done: watch::Sender<Option<SetupResult>>,
-    cancel: CancellationToken,
-) -> anyhow::Result<()> {
+fn setup_input(completion: Arc<SetupCompletion>, cancel: CancellationToken) -> anyhow::Result<()> {
     let mut terminal = TerminalSession::acquire()?;
     let mut line = String::new();
     let result = (|| {
@@ -199,7 +195,7 @@ fn setup_input(
                 continue;
             }
             if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                let _ = finish_setup(&done, || Ok(SetupResult::Cancelled));
+                completion.cancel();
                 break;
             }
             match key.code {
@@ -210,23 +206,24 @@ fn setup_input(
                     line.pop();
                 }
                 KeyCode::Enter => match line.trim().to_ascii_lowercase().as_str() {
-                    "c" => {
-                        // HTTP may have completed while terminal input was
-                        // pending. A losing CLI must neither write nor replace it.
-                        if let Err(error) = finish_setup(&done, || {
-                            if cancel.is_cancelled() {
-                                return Ok(SetupResult::Cancelled);
-                            }
-                            release_example_config(&default_config_target())
-                                .map(SetupResult::ConfigReady)
-                        }) && done.borrow().is_none()
-                        {
-                            return Err(error);
+                    "c" => match completion.generate(&default_config_target(), &cancel) {
+                        Ok(_) => break,
+                        Err(_) if cancel.is_cancelled() => {
+                            completion.cancel();
+                            break;
                         }
-                        break;
-                    }
+                        Err(_) if completion.is_terminal() => break,
+                        Err(error) if completion.is_pending() => {
+                            writeln!(
+                                io::stderr(),
+                                "\r\nConfig publication remains unconfirmed: {error:#}\r\nRetry the original request (c + Enter for CLI) to confirm durability, or press q to exit without deleting the files."
+                            )?;
+                            line.clear();
+                        }
+                        Err(error) => return Err(error),
+                    },
                     "q" => {
-                        let _ = finish_setup(&done, || Ok(SetupResult::Cancelled));
+                        completion.cancel();
                         break;
                     }
                     _ => line.clear(),
@@ -301,6 +298,99 @@ mod tests {
         crate::config::ServerConfig::load(&target).unwrap();
         assert_setup_released(&mut listener_closed, &mut stalled).await;
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn pending_publication_keeps_setup_available_until_confirmed_response_drains() {
+        use crate::config::publication::testing::{Stage, fail_once};
+        use futures::FutureExt;
+        use std::panic::AssertUnwindSafe;
+        use tokio::io::AsyncWriteExt;
+
+        struct TestDirectory(PathBuf);
+        impl Drop for TestDirectory {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let directory = TestDirectory(
+            std::env::temp_dir().join(format!("alia-setup-pending-{}", uuid::Uuid::new_v4())),
+        );
+        let target = directory.0.join("server.toml");
+        let template = crate::oobe::bootstrap::example_config().unwrap();
+        let _fault = fail_once(&target, Stage::Published);
+        let listener = bind_setup_listener(0).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let stop = CancellationToken::new();
+        let _stop_on_drop = stop.clone().drop_guard();
+        let (listener_dropped, mut listener_closed) = tokio::sync::oneshot::channel();
+        let mut serving = tokio::spawn(run_setup_on(
+            listener,
+            stop.clone(),
+            false,
+            Some(listener_dropped),
+        ));
+        let assertions = AssertUnwindSafe(async {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap();
+            let save_url = format!("http://{address}/api/v1/setup/save-config");
+            let request = serde_json::json!({"path": target, "config": template});
+            let response = client.post(&save_url).json(&request).send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            let failed: serde_json::Value = response.json().await.unwrap();
+            assert_eq!(failed["success"], false, "{failed}");
+            assert!(failed["error"].as_str().unwrap().contains("unknown"));
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), template);
+            assert!(crate::config::publication::has_pending(&target));
+
+            let status: serde_json::Value = client
+                .get(format!("http://{address}/api/v1/setup/status"))
+                .send()
+                .await
+                .expect("unknown publication must leave setup available")
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(status["needs_setup"], true);
+            assert!(!serving.is_finished());
+            let mut stalled = tokio::net::TcpStream::connect(address).await.unwrap();
+            stalled.write_all(b"POST /api/v1/setup/save-config HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 10000\r\n\r\n{").await.unwrap();
+
+            let response = client.post(save_url).json(&request).send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            let recovered: serde_json::Value = response
+                .json()
+                .await
+                .expect("confirmed recovery must drain its success response");
+            assert_eq!(recovered["success"], true, "{recovered}");
+            assert!(!crate::config::publication::has_pending(&target));
+            stalled
+        })
+        .catch_unwind()
+        .await;
+        if assertions.is_err() {
+            stop.cancel();
+        }
+        let joined = tokio::time::timeout(Duration::from_secs(4), &mut serving).await;
+        if joined.is_err() {
+            stop.cancel();
+            serving.abort();
+            let _ = serving.await;
+        }
+        let completed = joined
+            .expect("setup must join after recovery or assertion failure")
+            .unwrap()
+            .unwrap();
+        match assertions {
+            Ok(mut stalled) => {
+                assert_eq!(completed, Some(target.clone()));
+                assert_setup_released(&mut listener_closed, &mut stalled).await;
+                crate::config::ServerConfig::load(&target).unwrap();
+            }
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
     }
 
     #[tokio::test]
@@ -395,8 +485,8 @@ mod tests {
         assert!(io::stdin().is_terminal() && io::stdout().is_terminal());
         let cancel = CancellationToken::new();
         let worker_cancel = cancel.clone();
-        let (done, _result) = watch::channel(None);
-        let worker = tokio::task::spawn_blocking(move || setup_input(done, worker_cancel));
+        let completion = Arc::new(SetupCompletion::new());
+        let worker = tokio::task::spawn_blocking(move || setup_input(completion, worker_cancel));
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             while !crossterm::terminal::is_raw_mode_enabled().unwrap() {
                 tokio::task::yield_now().await;

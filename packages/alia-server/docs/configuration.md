@@ -16,6 +16,39 @@ The server resolves the base config from:
 When the base file is `server.toml`, fragments under `server.d/**/*.toml` are
 loaded recursively in sorted order and deep-merged.
 
+## Setup Publication and Recovery
+
+Setup validates the effective base plus fragments before publishing. It syncs
+the candidate file, fragment files and directories, and the complete canonical parent
+directory chain before reporting success. A private adjacent recovery record
+identifies the original publication using paths and content hashes; it does not
+contain configuration values or credentials. HTTP response fields and status
+codes are unchanged: always check `success`, including for HTTP 200 responses.
+
+Once publication has started, a sync failure means durability is unconfirmed.
+The setup process retains the candidate, published files and recovery record.
+Retry the same path, content and installation method to verify and finish that
+publication. A different request cannot replace it. Cancellation exits setup
+without deleting these files. On restart, select the same configuration path
+(set `ALIA_CONFIG_PATH` for a custom path); the loader reconciles a pending
+publication before reading it, even if the base was not yet published.
+
+Recovery rejects changed or missing candidate/base/fragment content instead of
+blindly overwriting it. Preserve the files and error details for operator review;
+do not remove the recovery record merely to force a new setup. Normal loading
+without a recovery record remains read-only and performs no durability sync.
+Saving and recovering require access to sync the complete canonical ancestor
+chain; unsupported filesystems or insufficient access fail explicitly without
+changing permissions.
+Configuration directories must remain under a trusted service account: this
+protocol does not lock other local processes out of the file tree. A crash before
+the recovery record exists can leave unowned temporary files or a CLI fragment
+tree requiring manual review. Filesystem sync and injected-failure tests do not
+establish physical power-loss guarantees for arbitrary storage hardware.
+
+Runtime `settings.toml` writes are a separate path and are not covered by this
+setup publication protocol.
+
 ## Recommended Layout
 
 ```text

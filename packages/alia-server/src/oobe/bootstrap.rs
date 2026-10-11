@@ -1,67 +1,139 @@
 //! OOBE bootstrap logic: detection, CLI key handler, config generation.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
+use crate::config::publication::{self, PendingPublication};
 use crate::config::{ServerConfig, merge_toml_values};
 
-/// Result of the OOBE setup flow.
+/// HTTP, CLI and cancellation share one publication and completion decision.
+pub struct SetupCompletion {
+    state: tokio::sync::watch::Sender<SetupState>,
+}
+
 #[derive(Clone)]
-pub enum SetupResult {
-    /// Config was written; return the path to load.
-    ConfigReady(PathBuf),
-    /// User cancelled (Ctrl-C).
+pub(crate) enum SetupState {
+    Idle,
+    Pending(PendingPublication),
+    Ready(PathBuf),
     Cancelled,
 }
 
-/// HTTP save, CLI generation and cancellation share one completion decision.
-/// The watch write lock covers publication, so a losing caller never writes a
-/// second configuration. A failed preparation leaves setup available for retry.
-pub(crate) fn finish_setup(
-    done: &tokio::sync::watch::Sender<Option<SetupResult>>,
-    prepare: impl FnOnce() -> anyhow::Result<SetupResult>,
-) -> anyhow::Result<SetupResult> {
-    let mut result = Err(anyhow::anyhow!("setup has already completed"));
-    done.send_if_modified(|current| {
-        if current.is_some() {
-            return false;
-        }
-        result = prepare();
-        if let Ok(ready) = &result {
-            *current = Some(ready.clone());
-            true
-        } else {
-            false
-        }
-    });
-    result
+impl SetupState {
+    pub(crate) fn is_terminal(&self) -> bool {
+        matches!(self, Self::Ready(_) | Self::Cancelled)
+    }
 }
 
-/// Check if any config file exists in the standard search locations.
-pub fn needs_setup() -> bool {
-    // If explicitly set, check if the file actually exists
-    if let Ok(p) = std::env::var("ALIA_CONFIG_PATH") {
-        return !Path::new(&p).exists();
+impl SetupCompletion {
+    pub(crate) fn new() -> Self {
+        let (state, _) = tokio::sync::watch::channel(SetupState::Idle);
+        Self { state }
     }
 
-    let candidates = [
-        "config/server.toml".to_string(),
-        dirs::config_dir()
-            .map(|d| {
-                d.join("alia")
-                    .join("server.toml")
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .unwrap_or_default(),
-        "/etc/alia/server.toml".to_string(),
-    ];
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<SetupState> {
+        self.state.subscribe()
+    }
 
-    !candidates
-        .iter()
-        .any(|c| !c.is_empty() && Path::new(c).exists())
+    pub(crate) fn is_pending(&self) -> bool {
+        matches!(&*self.state.borrow(), SetupState::Pending(_))
+    }
+
+    pub(crate) fn is_terminal(&self) -> bool {
+        self.state.borrow().is_terminal()
+    }
+
+    pub(crate) fn cancel(&self) {
+        self.state.send_if_modified(|state| {
+            if state.is_terminal() {
+                return false;
+            }
+            // A pending publication remains on disk for restart recovery.
+            *state = SetupState::Cancelled;
+            true
+        });
+    }
+
+    pub(crate) fn save(
+        &self,
+        target: &Path,
+        content: &str,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<PathBuf> {
+        self.publish(target, content, true, None, cancel)
+    }
+
+    pub(crate) fn generate(
+        &self,
+        target: &Path,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<PathBuf> {
+        self.publish(
+            target,
+            EXAMPLE_CONFIG,
+            false,
+            Some(EXAMPLE_CONFIG_FRAGMENTS),
+            cancel,
+        )
+    }
+
+    fn publish(
+        &self,
+        target: &Path,
+        content: &str,
+        replace: bool,
+        fragments: Option<&[(&str, &str)]>,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<PathBuf> {
+        let mut result = Err(anyhow::anyhow!("setup has already completed"));
+        // Publication and its recovery stay inside the same completion gate.
+        self.state.send_if_modified(|state| {
+            if state.is_terminal() {
+                return false;
+            }
+            if cancel.is_cancelled() {
+                result = Err(anyhow::anyhow!("setup is shutting down"));
+                return false;
+            }
+            result = match state {
+                SetupState::Idle => publication::save(target, content, replace, fragments),
+                SetupState::Pending(pending) => {
+                    if !pending.matches_request(target, content, replace, fragments) {
+                        result = Err(anyhow::anyhow!(
+                            "configuration publication durability is unknown; retry the same path, content and installation method"
+                        ));
+                        return false;
+                    }
+                    pending.retry().context(
+                        "configuration publication durability remains unknown; recovery failed",
+                    )
+                }
+                SetupState::Ready(_) | SetupState::Cancelled => unreachable!(),
+            };
+            match &result {
+                Ok(path) => {
+                    *state = SetupState::Ready(path.clone());
+                    true
+                }
+                Err(error) => match error.downcast_ref::<PendingPublication>() {
+                    Some(pending) => {
+                        *state = SetupState::Pending(pending.clone());
+                        true
+                    }
+                    None => false,
+                },
+            }
+        });
+        result
+    }
+}
+
+/// A pending publication must be recovered before offering another setup.
+pub fn needs_setup() -> bool {
+    let path = ServerConfig::discover_config_path();
+    let path = Path::new(&path);
+    !path.exists() && !publication::has_pending(path)
 }
 
 /// Base example config (same content as config/server.example.toml).
@@ -197,85 +269,6 @@ pub(crate) fn example_config() -> anyhow::Result<String> {
         merge_toml_values(&mut config, toml::from_str(content)?);
     }
     toml::to_string_pretty(&config).context("serialize complete setup template")
-}
-
-/// Keep the CLI's editable base + fragments layout. This is a first-install
-/// operation: existing configuration must never be overwritten with defaults.
-pub fn release_example_config(target: &Path) -> anyhow::Result<PathBuf> {
-    let fragment_dir = target.with_extension("d");
-    anyhow::ensure!(
-        std::fs::symlink_metadata(target).is_err(),
-        "configuration already exists: {}",
-        target.display()
-    );
-    ServerConfig::load_candidate(target, &example_config()?)?.validate_llm_roles()?;
-    std::fs::create_dir_all(config_parent(target))?;
-    // Exclusive creation also protects an existing fragment tree. Only this
-    // newly-owned tree is removed if installation cannot publish its base.
-    std::fs::create_dir(&fragment_dir).with_context(|| {
-        format!(
-            "create new configuration fragments {}",
-            fragment_dir.display()
-        )
-    })?;
-    let result = (|| {
-        for (name, content) in EXAMPLE_CONFIG_FRAGMENTS {
-            let path = fragment_dir.join(name);
-            std::fs::create_dir_all(config_parent(&path))?;
-            std::fs::write(path, content)?;
-        }
-        write_validated_config(target, EXAMPLE_CONFIG, false)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_dir_all(&fragment_dir);
-    }
-    result
-}
-
-pub(crate) fn save_config(target: &Path, content: &str) -> anyhow::Result<PathBuf> {
-    write_validated_config(target, content, true)
-}
-
-fn config_parent(path: &Path) -> &Path {
-    path.parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."))
-}
-
-fn write_validated_config(target: &Path, content: &str, replace: bool) -> anyhow::Result<PathBuf> {
-    // Resolve an existing symlink exactly as the runtime loader does, so the
-    // validated fragment directory is also the one loaded after publication.
-    let destination = target
-        .canonicalize()
-        .unwrap_or_else(|_| target.to_path_buf());
-    ServerConfig::load_candidate(&destination, content)?.validate_llm_roles()?;
-    let parent = config_parent(&destination);
-    std::fs::create_dir_all(parent)?;
-    let temporary = parent.join(format!(".alia-setup-{}.tmp", uuid::Uuid::new_v4()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary)?;
-    let result = (|| -> anyhow::Result<()> {
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?;
-        drop(file);
-        if replace {
-            std::fs::rename(&temporary, &destination)?;
-        } else {
-            // A second CLI/HTTP completion cannot be overwritten between the
-            // first-install check and this final publication.
-            std::fs::hard_link(&temporary, &destination)?;
-        }
-        Ok(())
-    })();
-    let _ = std::fs::remove_file(&temporary);
-    result.with_context(|| format!("save configuration {}", target.display()))?;
-    Ok(target.to_path_buf())
 }
 
 /// Print the OOBE banner to the terminal.

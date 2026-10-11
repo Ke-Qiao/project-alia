@@ -861,7 +861,13 @@ async fn control_ack_loss_is_observed_from_original_device_command() {
         assert_eq!(observed.receipt.outcome, CommandOutcome::Applied);
         assert_eq!(observed.receipt.snapshot.phase, ControlPhase::Held);
         s.continue_output(&producer);
-        s.command_count(&response, 2).await;
+        // The durable receipt precedes release of the producer's local gate.
+        tokio::time::timeout(Duration::from_secs(3), async {
+            s.command_count(&response, 2).await;
+            eventually(|| async { !producer.output().is_held() }).await;
+        })
+        .await
+        .expect("resume receipt and local gate release");
         assert!(!producer.output().is_held());
         drop(producer);
     })

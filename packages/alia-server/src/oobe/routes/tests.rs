@@ -2,18 +2,22 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
 use crate::config::{LlmProfileKind, ServerConfig};
+use crate::oobe::bootstrap::{SetupCompletion, SetupState};
+
+mod durability;
 
 struct Fixture {
     directory: PathBuf,
     url: String,
     client: reqwest::Client,
-    done: watch::Receiver<Option<SetupResult>>,
-    done_tx: Arc<watch::Sender<Option<SetupResult>>>,
+    done: watch::Receiver<SetupState>,
+    completion: Arc<SetupCompletion>,
     stop: CancellationToken,
     serving: JoinHandle<()>,
 }
@@ -22,11 +26,11 @@ impl Fixture {
     async fn new() -> Self {
         let directory = std::env::temp_dir().join(format!("alia-oobe-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        let (done_tx, done) = watch::channel(None);
-        let done_tx = Arc::new(done_tx);
+        let completion = Arc::new(SetupCompletion::new());
+        let done = completion.subscribe();
         let stop = CancellationToken::new();
         let app = routes().with_state(OobeState {
-            done_tx: done_tx.clone(),
+            completion: completion.clone(),
             cancel: stop.clone(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -46,7 +50,7 @@ impl Fixture {
                 .build()
                 .unwrap(),
             done,
-            done_tx,
+            completion,
             stop,
             serving,
         }
@@ -69,22 +73,20 @@ impl Fixture {
     }
 
     async fn save(&self, path: &Path, config: &str) -> Value {
-        self.client
+        let response = self
+            .client
             .post(format!("{}/api/v1/setup/save-config", self.url))
             .json(&json!({"path":path,"config":config}))
             .send()
             .await
-            .unwrap()
-            .error_for_status()
-            .unwrap()
-            .json()
-            .await
-            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response.json().await.unwrap()
     }
 
     fn assert_ready(&self, target: &Path) {
         let done = self.done.borrow();
-        let Some(SetupResult::ConfigReady(path)) = &*done else {
+        let SetupState::Ready(path) = &*done else {
             panic!("missing ConfigReady")
         };
         assert_eq!(path, target);
@@ -194,7 +196,7 @@ async fn missing_role_profiles_leave_original_config_and_setup_state_unchanged()
             error.contains(role) && error.contains("missing-profile"),
             "{error}"
         );
-        assert!(f.done.borrow().is_none());
+        assert!(matches!(&*f.done.borrow(), SetupState::Idle));
         assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
         f.assert_no_temporary_files();
     }
@@ -228,7 +230,7 @@ async fn wrong_role_kind_or_provider_is_rejected_before_publication() {
         let result = f.save(&target, &toml::to_string(&config).unwrap()).await;
         assert_eq!(result["success"], false, "{defect}: {result}");
         assert!(result["error"].as_str().unwrap().contains("LLM role"));
-        assert!(f.done.borrow().is_none());
+        assert!(matches!(&*f.done.borrow(), SetupState::Idle));
         assert!(!target.exists());
     }
     f.close().await;
@@ -253,7 +255,7 @@ async fn target_fragments_are_validated_and_preserved_with_the_proposed_base() {
             .unwrap()
             .contains("missing-fragment-profile")
     );
-    assert!(f.done.borrow().is_none());
+    assert!(matches!(&*f.done.borrow(), SetupState::Idle));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), template);
     assert_eq!(std::fs::read_to_string(&overlay).unwrap(), invalid);
 
@@ -282,7 +284,7 @@ async fn publication_io_failure_keeps_original_target_and_emits_no_ready() {
     std::fs::write(&original, "retain original directory").unwrap();
     let result = f.save(&target, &template).await;
     assert_eq!(result["success"], false, "{result}");
-    assert!(f.done.borrow().is_none());
+    assert!(matches!(&*f.done.borrow(), SetupState::Idle));
     assert_eq!(
         std::fs::read_to_string(original).unwrap(),
         "retain original directory"
@@ -297,7 +299,7 @@ async fn malformed_config_does_not_create_target_or_signal_ready() {
     let target = f.directory.join("new/server.toml");
     let result = f.save(&target, "[broken").await;
     assert_eq!(result["success"], false, "{result}");
-    assert!(f.done.borrow().is_none());
+    assert!(matches!(&*f.done.borrow(), SetupState::Idle));
     assert!(!target.parent().unwrap().exists());
     f.close().await;
 }
@@ -329,13 +331,13 @@ async fn noop_and_absent_optional_roles_do_not_validate_unused_profiles() {
 async fn cli_keeps_fragment_layout_and_refuses_to_replace_existing_configuration() {
     let f = Fixture::new().await;
     let target = f.directory.join("cli/server.toml");
-    bootstrap::release_example_config(&target).unwrap();
+    SetupCompletion::new().generate(&target, &f.stop).unwrap();
     let profiles = target.with_extension("d").join("profiles/llm.toml");
     assert!(profiles.is_file());
     assert_example_roles(&ServerConfig::load(&target).unwrap());
     let base_before = std::fs::read(&target).unwrap();
     let profiles_before = std::fs::read(&profiles).unwrap();
-    assert!(bootstrap::release_example_config(&target).is_err());
+    assert!(SetupCompletion::new().generate(&target, &f.stop).is_err());
     assert_eq!(std::fs::read(&target).unwrap(), base_before);
     assert_eq!(std::fs::read(&profiles).unwrap(), profiles_before);
 
@@ -344,7 +346,11 @@ async fn cli_keeps_fragment_layout_and_refuses_to_replace_existing_configuration
     std::fs::create_dir(&existing_fragments).unwrap();
     let operator_file = existing_fragments.join("operator.toml");
     std::fs::write(&operator_file, "# operator configuration\n").unwrap();
-    assert!(bootstrap::release_example_config(&target_with_fragments).is_err());
+    assert!(
+        SetupCompletion::new()
+            .generate(&target_with_fragments, &f.stop)
+            .is_err()
+    );
     assert!(!target_with_fragments.exists());
     assert_eq!(
         std::fs::read_to_string(&operator_file).unwrap(),
@@ -376,12 +382,13 @@ async fn concurrent_http_saves_publish_one_configuration_and_one_completion() {
         "rejected completion must not write another path"
     );
     f.done.borrow_and_update();
+    let late_cli = f.directory.join("late-cli.toml");
+    assert!(f.completion.generate(&late_cli, &f.stop).is_err());
     assert!(
-        bootstrap::finish_setup(&f.done_tx, || {
-            panic!("a late CLI must not publish or cancel the HTTP winner")
-        })
-        .is_err()
+        !late_cli.exists(),
+        "a late CLI must not publish another config"
     );
+    assert!(!late_cli.with_extension("d").exists());
     assert!(!f.done.has_changed().unwrap());
     assert_eq!(f.save(winner, "[broken").await["success"], false);
     assert_eq!(std::fs::read_to_string(winner).unwrap(), template);
@@ -396,14 +403,11 @@ async fn cli_completion_or_cancellation_prevents_late_http_writes() {
         let cli_target = f.directory.join("cli.toml");
         let http_target = f.directory.join("http.toml");
         let template = f.template().await;
-        bootstrap::finish_setup(&f.done_tx, || {
-            if cancelled {
-                Ok(SetupResult::Cancelled)
-            } else {
-                bootstrap::release_example_config(&cli_target).map(SetupResult::ConfigReady)
-            }
-        })
-        .unwrap();
+        if cancelled {
+            f.completion.cancel();
+        } else {
+            f.completion.generate(&cli_target, &f.stop).unwrap();
+        }
         f.done.borrow_and_update();
         let result = f.save(&http_target, &template).await;
         assert_eq!(result["success"], false, "{result}");
@@ -445,7 +449,7 @@ async fn setup_rejects_foreign_hosts_origins_and_non_json_without_writing() {
             StatusCode::FORBIDDEN
         );
         assert!(!target.exists());
-        assert!(f.done.borrow().is_none());
+        assert!(matches!(&*f.done.borrow(), SetupState::Idle));
     }
     assert_eq!(
         f.client
