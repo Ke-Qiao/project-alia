@@ -144,6 +144,17 @@ its update. Inspect `context_policy_version`, `applied`, `module_reports`, and
 Explicitly requested keys are applied and saved again even when `changed` is
 empty. A module apply failure does not prevent saving the desired settings.
 
+For a non-policy update, the server rechecks that the caller is still an active
+administrator after the update gate, policy read, and embedding previews, before
+changing desired settings or applying modules. Demotion, deactivation, or deletion
+observed at this admission point returns 403; a failed or timed-out authorization
+query returns a redacted 503 after at most two seconds of query waiting. These
+rejections do not apply or save the requested settings. The existing SQL policy
+read may independently expire a timed pause. Policy and embedding changes retain
+their transaction-local actor check and version comparison. Admission is not
+continuous revocation: later demotion does not roll back an already admitted
+update. Every explicit retry is a new request and must pass authorization again.
+
 Settings saves serialize within the registry and publish a complete TOML
 snapshot through a temporary file and same-directory atomic replacement.
 Successful saves confirm file and parent-directory synchronization. A failure
