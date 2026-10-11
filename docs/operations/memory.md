@@ -177,3 +177,12 @@ addition to `enabled`, `automatic_capture_enabled`, and `capture_mode`. Pausing
 memory disables automatic capture and runtime retrieval until `paused_until`;
 direct user-managed memory APIs remain available so users can inspect or delete
 stored records.
+
+Privacy settings are global SQL policy. Reading them requires authentication;
+changing them requires an administrator, including through this older privacy
+endpoint. Both privacy reads and `audit.privacy` report the committed policy,
+not a process-local settings projection. A successful PATCH survives restart
+without writing `settings.toml`. It accepts the same quoted policy-version
+`If-Match` as `/api/v1/settings`; obtain the version from the settings GET ETag.
+A stale version returns 409, and a failed or timed-out policy operation must be
+read back before retrying. The existing privacy response fields are unchanged.

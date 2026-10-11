@@ -1,0 +1,27 @@
+{
+  "started": "2026-10-11T11:49:16.526608+00:00",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--offline",
+    "--locked"
+  ],
+  "container": "alia-settings-recovery-linux-20261011-v1",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PG; credentials omitted",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset"
+  },
+  "manifest_sha256": "c2fc158414333488da098f06050c4daf681477aef50fbdda193b82b111744312",
+  "source_before": {
+    "file_count": 653,
+    "errors": []
+  }
+}

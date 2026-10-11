@@ -1,0 +1,20 @@
+{
+  "baseline": "1d6ef379c4706d0613089a640a57cb329edfd62d",
+  "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "packages/alia-server/Cargo.toml",
+    "packages/alia-embedded",
+    "crates/alia-core",
+    "crates/proto",
+    "packages/alia-server/src/api/auth.rs",
+    "packages/alia-server/src/api/companion.rs",
+    "packages/alia-server/src/modules/execution",
+    "packages/alia-server/src/modules/delivery",
+    "config"
+  ],
+  "exit_code": 0,
+  "scope": "Protected core policies, protocols, dependency manifests, platform configurations unchanged. User separately approved admin-only Memory privacy mutation; route code is reviewed and tested.",
+  "new_dependency_or_feature": false,
+  "path_review": "Use actual crates/proto directory; earlier inherited audit named absent crates/alia-proto. Final static stage rechecks corrected protected paths without source changes."
+}

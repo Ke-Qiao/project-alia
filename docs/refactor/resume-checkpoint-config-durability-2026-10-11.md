@@ -1,5 +1,6 @@
 # 当前检查点：2026-10-11 配置持久性与发布恢复完成
 
+后续运行时 Settings 轮已完成，最新恢复从 [Settings 检查点](resume-checkpoint-settings-recovery-2026-10-11.md) 开始；下文保留配置轮历史状态。
 分支 `codex/architecture-refactor`；本轮 **10/10**，L09—L12 **4/4**，R01—R06 仍 **2/6**，不是项目整体百分比。三个 subagent 已交接，无待恢复 Cargo/PG 作业。
 
 依次读取 [技术说明](config-durability-2026-10-11.md)、[checklist](checklists/config-durability-2026-10-11.md)、[四份 HANDOFF](handoffs/2026-10-11-config-durability/README.md)、[证据索引](handoffs/2026-10-11-config-durability/evidence-index.json)，然后核对 branch/status/log。

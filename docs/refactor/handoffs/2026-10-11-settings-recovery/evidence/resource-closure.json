@@ -1,0 +1,27 @@
+{
+  "recorded_at": "2026-10-11T11:57:49.667942+00:00",
+  "remaining_test_schemas": [],
+  "leftover_schemas_removed": [],
+  "cleanup_reason": "A killed panic-fence child may leave its task-only schema; cleanup occurs only with zero other connections",
+  "other_database_connections": 0,
+  "all_task_containers_stopped": true,
+  "containers": {
+    "alia-settings-recovery-linux-20261011-v1": {
+      "id": "01dceb7a73d05cea25a86a9ed5c89e053c6ea727a32c56c25cf0bd341340fa51",
+      "image": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "status": "exited",
+      "exit_code": 137,
+      "finished_at": "2026-10-11T11:57:48.786403061Z"
+    },
+    "alia-settings-recovery-20261011-db": {
+      "id": "b1afbd57917b3f0bf15a2d201083f4f15945490d56a146dc0db32d488767c365",
+      "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "status": "exited",
+      "exit_code": 0,
+      "finished_at": "2026-10-11T11:57:49.538012811Z"
+    }
+  },
+  "user_database_5433": "not accessed",
+  "cargo_jobs": "all validation stages completed",
+  "cached_artifacts": "retained in ignored run directory"
+}

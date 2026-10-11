@@ -162,7 +162,15 @@ macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798
 ## 2026-10-11 配置持久性清理后的续接
 
 - [x] 本轮 10/10，源码 `0954996`，保持 API、政策、权限与既有依赖；发布归配置域、同意图恢复、四份交接及同源双平台验收已闭环。
-- [ ] 下一软件候选：先审计 `SettingsRegistry::save` 与 `PATCH /api/v1/settings` 的 live apply、内存配置及 `settings.toml` 持久化顺序，定义保存失败与重试的恢复语义，再在授权范围补缺口。保持 API、当前政策和权限；先检查既有实现，不直接扩展本轮发布协议为通用事务框架。
+- [x] 后续 [Settings 轮](resume-checkpoint-settings-recovery-2026-10-11.md) 已完成运行时保存、部分成功与重试语义，并按用户确认统一 privacy SQL／管理员入口。
 - [ ] 真实断电、部署账户/目录权限及同机其他进程信任仍需实际部署核对。恢复记录建立前的 crash 可留候选或 CLI fragment tree；无法确认所有权的文件不自动删除。
 
 未运行真实断电、独立进程 kill/restart、Linux 全 workspace、release/native release link、部署 smoke、真实 PTY、外部或付费模型、Pi/声学/执行器及长稳验证。故障注入与丢弃旧 setup owner 后加载证明软件恢复语义；不代表任意存储设备兑现 flush，也不提供其他本机进程的文件系统锁。
+
+## 2026-10-11 Settings 恢复后的续接
+
+- [x] 本轮 10/10，源码 `2f5e2a2`，同源双平台软件验收完成。
+- [ ] 下一软件候选：先审计纯非政策 `PATCH /api/v1/settings` 在等待更新锁／政策读取期间发生管理员降权时的准入重验证，保留现有 SQL actor 核验、API 与权限政策；先复现，再补缺口。
+- [ ] 任意 ACL／扩展属性保留、跨进程共享 settings 文件协调及真实存储/断电保证仍需部署需求和独立验证。本轮没有扩大平台或依赖。
+
+未运行真实断电、独立进程 kill/restart、真实 PTY／Easy-Turn、Linux 全 workspace、release／部署 smoke、外部付费服务、Pi／声学／执行器或长稳。存储回归使用软件故障注入，runtime 重启使用实际 ServerBuilder；不等于操作系统进程重启或物理断电。ACL／扩展属性迁移、异 owner 拒绝的提权实测、FIFO 故障和其他本机进程并发改写没有验证。
