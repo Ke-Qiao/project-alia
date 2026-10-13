@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+
+thread 'module::context::audio_reference::tests::another_bus_clone_cannot_steal_the_established_consumers_pcm' (1877256) panicked at packages/alia-embedded/src/module/context/audio_reference.rs:392:9:
+a cloned bus stole PCM from the established consumer
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test module::context::audio_reference::tests::another_bus_clone_cannot_steal_the_established_consumers_pcm ... FAILED
+
+failures:
+
+failures:
+    module::context::audio_reference::tests::another_bus_clone_cannot_steal_the_established_consumers_pcm
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 200 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

@@ -120,8 +120,9 @@ path separately before treating a local software run as a hardware result.
 
 - Enable `server.debug_output` for high-level router, LLM, tool, STT, TTS, and
   channel traces.
-- Enable embedded `audio_debug` only while diagnosing audio; WAV files can grow
-  quickly.
+- Embedded native audio evidence uses an explicit bounded session and synthetic
+  offline replay. The obsolete `[audio_debug]` table is rejected; remove it from
+  local configuration. See [audio evidence](../../packages/alia-embedded/docs/audio-and-voice.md#debugging-and-limits).
 - Use `/health` for aggregated module health. A responding HTTP endpoint is not proof that every provider is ready; inspect `status` and each module.
 - Health aggregation has a 6-second overall budget, at most 8 concurrent checks,
   shared-profile deduplication and one active round per Registry. The router

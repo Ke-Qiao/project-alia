@@ -1,0 +1,88 @@
+{
+  "recorded_at": "2026-10-13T19:09:33.476964+00:00",
+  "baseline": "f372ad3b4a7fc87de2526840fcada461080c20dc",
+  "source_inputs": 659,
+  "green_manifest_sha256": "676d2e76fccd23ac78003a6d6cbc8258a1c1faeba18e8c8cf1d02da8b246bda3",
+  "source_drift": [],
+  "red": {
+    "expected_failed": 4,
+    "stages": [
+      "red-config",
+      "red-native-capture",
+      "red-single-consumer"
+    ],
+    "source_inputs": 657,
+    "unexpected_build_failure": false
+  },
+  "green": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-embedded",
+      "--all-targets",
+      "--offline",
+      "--locked"
+    ],
+    "platform": "macOS ARM64",
+    "features": "default",
+    "test_parallelism": "default",
+    "library": 218,
+    "integration": 66,
+    "total_passed": 284,
+    "failed": 0,
+    "ignored": 0,
+    "elapsed_seconds": 58.43,
+    "exit_code": 0,
+    "evidence_tests": 13,
+    "native_clock_tests": 5,
+    "reader_queue_tests": 10
+  },
+  "sandbox_first_run": {
+    "passed": 176,
+    "failed": 42,
+    "exit_code": 101,
+    "cause": "EPERM binding local loopback fixture listeners",
+    "source_changed_before_retry": false,
+    "retry": "same command with sandbox escalation permitting loopback"
+  },
+  "synthetic_replay": {
+    "exit_code": 0,
+    "records": 7,
+    "samples": 16,
+    "resets": 9,
+    "source": "SyntheticFixture",
+    "latest_playback_lost_blocks": 2,
+    "latest_playback_lost_frames": 2,
+    "latest_capture_running": true,
+    "replaced_capture_final": "unknown",
+    "physical_alignment": "unproven",
+    "no_clobber_retry": {
+      "expected_exit_code": 1,
+      "same_bytes": true,
+      "no_temporary_residue": true
+    }
+  },
+  "format": {
+    "embedded": "passed",
+    "workspace": "baseline Server import ordering only; unchanged file"
+  },
+  "dependencies_changed": false,
+  "resources": {
+    "external_databases": 0,
+    "containers_started": 0,
+    "hardware_io": false,
+    "real_recordings": 0,
+    "cargo_finished": true,
+    "note": "Tests use task-local temporary files/SQLite, loopback and simulated native backends."
+  },
+  "limitations": [
+    "Linux not run: OrbStack stopped; no machine startup.",
+    "No hardware, real recording/playback, AEC, acoustic alignment, drift/latency or deployment validation.",
+    "Native memory handoff is fixed; no automatic file recording/session.",
+    "Active snapshots are independent observations; overwritten historical final states stay unknown.",
+    "Synchronous I/O duration is not bounded by byte/operation limits.",
+    "ObservedNative/SyntheticFixture are provenance declarations, not authentication."
+  ],
+  "source_commit": "e557ceb962610004287f38e66b50abca3e44b661"
+}

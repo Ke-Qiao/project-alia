@@ -1,0 +1,21 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.45s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+
+thread 'module::cpal_audio::clock::tests::native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus' (1876416) panicked at packages/alia-embedded/src/module/cpal_audio/clock.rs:183:9:
+assertion `left == right` failed: native capture PCM was lost before the evidence consumer
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test module::cpal_audio::clock::tests::native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus ... FAILED
+
+failures:
+
+failures:
+    module::cpal_audio::clock::tests::native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 200 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

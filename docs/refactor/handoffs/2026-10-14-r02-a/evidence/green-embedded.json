@@ -1,0 +1,20 @@
+{
+  "phase": "green",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--all-targets",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-13T19:04:02.310942+00:00",
+  "elapsed_seconds": 57.91,
+  "exit_code": 101,
+  "source_manifest_sha256": "676d2e76fccd23ac78003a6d6cbc8258a1c1faeba18e8c8cf1d02da8b246bda3",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

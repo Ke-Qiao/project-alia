@@ -1,0 +1,11 @@
+{
+  "stage": "green-embedded",
+  "exit_code": 101,
+  "source_unchanged": true,
+  "library_passed": 176,
+  "library_failed": 42,
+  "failure_class": "sandbox denied loopback TcpListener::bind with OS EPERM",
+  "permission_denied_witnesses": 42,
+  "retry": "green-embedded-loopback: same frozen source, default parallelism, only sandbox escalation to permit local loopback",
+  "hardware": false
+}

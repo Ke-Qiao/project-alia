@@ -1,0 +1,185 @@
+diff --git a/packages/alia-embedded/src/module/context/audio_reference.rs b/packages/alia-embedded/src/module/context/audio_reference.rs
+index d69080c..2e1443c 100644
+--- a/packages/alia-embedded/src/module/context/audio_reference.rs
++++ b/packages/alia-embedded/src/module/context/audio_reference.rs
+@@ -376,6 +376,24 @@ mod tests {
+             sample_count: frames as usize * 2,
+         }
+     }
++
++    #[test]
++    fn another_bus_clone_cannot_steal_the_established_consumers_pcm() {
++        let bus = AudioReferenceBus::new(Uuid::new_v4());
++        let consumer = bus.clone();
++        let mut clock = bus.open_stream(AudioDirection::Playback, format());
++        clock.probe.activate();
++        consumer.try_read().unwrap();
++        let pcm = block(&mut clock, 4);
++        clock.probe.publish(pcm);
++        let other = bus.clone();
++        let stolen = other.try_read();
++        clock.probe.close();
++        assert!(
++            stolen.is_none(),
++            "a cloned bus stole PCM from the established consumer"
++        );
++    }
+     #[test]
+     fn full_reference_queue_and_lost_close_remain_visible_without_later_pcm() {
+         let bus = AudioReferenceBus::with_capacity(Uuid::new_v4(), 1);
+diff --git a/packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs b/packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs
+index df644b8..c9cd320 100644
+--- a/packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs
++++ b/packages/alia-embedded/src/module/cpal_audio/alsa_backend.rs
+@@ -1,5 +1,5 @@
+ use super::super::context::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe};
+-use super::clock::AlsaTimeOrigin;
++use super::clock::{AlsaTimeOrigin, observe_capture_samples};
+ use super::*;
+ use alia_core::audio_clock::*;
+ use anyhow::ensure;
+@@ -97,7 +97,11 @@ pub(super) fn run_alsa_capture_thread(
+                 match io.readi(&mut raw_buffer_i16) {
+                     Ok(frames) => {
+                         let samples_read = frames.saturating_mul(input_channels);
+-                        let native = clock.observe(frames as u64, reading);
++                        let native = observe_capture_samples(
++                            &mut clock,
++                            &raw_buffer_i16[..samples_read],
++                            reading,
++                        );
+                         if native.continuity != continuity {
+                             converter.reset();
+                             continuity = native.continuity;
+@@ -145,7 +149,7 @@ pub(super) fn run_alsa_capture_thread(
+                             .copied()
+                             .map(|sample| i32_sample_to_i16_with_shift(sample, shift))
+                             .collect();
+-                        let native = clock.observe(frames as u64, reading);
++                        let native = observe_capture_samples(&mut clock, raw, reading);
+                         if native.continuity != continuity {
+                             converter.reset();
+                             continuity = native.continuity;
+diff --git a/packages/alia-embedded/src/module/cpal_audio/clock.rs b/packages/alia-embedded/src/module/cpal_audio/clock.rs
+index 9409636..cbda9f8 100644
+--- a/packages/alia-embedded/src/module/cpal_audio/clock.rs
++++ b/packages/alia-embedded/src/module/cpal_audio/clock.rs
+@@ -71,6 +71,15 @@ impl NativeReferenceSample for f64 {
+     }
+ }
+ 
++pub(super) fn observe_capture_samples<T>(
++    clock: &mut AudioStreamClock,
++    samples: &[T],
++    reading: AudioClockReading,
++) -> AudioTiming {
++    let channels = usize::from(clock.probe.format().channels);
++    clock.observe((samples.len() / channels) as u64, reading)
++}
++
+ pub(super) fn record_samples<T: NativeReferenceSample>(
+     clock: &mut AudioStreamClock,
+     samples: &[T],
+@@ -148,6 +157,39 @@ impl AlsaTimeOrigin {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus() {
++        let bus = crate::module::context::AudioBus::new(2).reference();
++        let mut clock = bus.open_stream(
++            AudioDirection::Capture,
++            AudioFormat {
++                sample_rate_hz: 48000,
++                channels: 2,
++            },
++        );
++        let samples = [0_i16, 16384, -16384, 8192, -32768, 32767];
++        let reading = clock.probe.unknown_clock();
++        let native = observe_capture_samples(&mut clock, &samples, reading);
++        clock.probe.close();
++        let mut blocks = Vec::new();
++        while let Some(block) = bus.try_read() {
++            if block.sample_count > 0 {
++                blocks.push(block);
++            }
++        }
++        assert_eq!(native.frames, 3);
++        assert_eq!(bus.snapshot(AudioDirection::Capture).unwrap().cursor, 3);
++        assert_eq!(
++            blocks.len(),
++            1,
++            "native capture PCM was lost before the evidence consumer"
++        );
++        assert_eq!(blocks[0].timing, native);
++        assert_eq!(blocks[0].sample_count, samples.len());
++        assert_eq!(blocks[0].samples[1], 0.5);
++        assert_eq!(blocks[0].samples[2], -0.5);
++    }
+     #[test]
+     fn alsa_clock_loss_does_not_create_a_timestamp_or_reset_the_old_origin() {
+         let bus = crate::module::context::AudioBus::new(2).reference();
+diff --git a/packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs b/packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs
+index 52c58bb..0ceca47 100644
+--- a/packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs
++++ b/packages/alia-embedded/src/module/cpal_audio/cpal_backend.rs
+@@ -1,5 +1,7 @@
+ use super::super::context::{AudioStreamClock, AudioStreamOwner, ReferenceContent};
+-use super::clock::{CpalTimeOrigin, NativeReferenceSample, record_samples};
++use super::clock::{
++    CpalTimeOrigin, NativeReferenceSample, observe_capture_samples, record_samples,
++};
+ use super::*;
+ use alia_core::audio_clock::*;
+ 
+@@ -376,7 +378,7 @@ where
+                 let native_format = clock.probe.format();
+                 let complete = data.len() / usize::from(native_format.channels) * usize::from(native_format.channels);
+                 if complete != data.len() { clock.probe.mark(AudioDiscontinuity::BackendError); }
+-                let native = clock.observe((complete / usize::from(native_format.channels)) as u64, reading);
++                let native = observe_capture_samples(&mut clock, &data[..complete], reading);
+                 let mut pcm = match converter.lock() {
+                     Ok(mut converter) => {
+                         if continuity != native.continuity {
+diff --git a/packages/alia-embedded/tests/config.rs b/packages/alia-embedded/tests/config.rs
+index 7f7a747..42d7bd9 100644
+--- a/packages/alia-embedded/tests/config.rs
++++ b/packages/alia-embedded/tests/config.rs
+@@ -4,6 +4,36 @@ use alia_embedded::config::{
+     EmbeddedRuntimeSettings, normalize_config_path_for_cwd, relativize_runtime_paths,
+ };
+ 
++#[test]
++fn obsolete_source_wav_recorder_configuration_is_rejected() {
++    for enabled in [false, true] {
++        let text = format!("[audio_debug]\nenabled = {enabled}\n");
++        assert!(
++            toml::from_str::<EmbeddedRuntimeSettings>(&text).is_err(),
++            "source WAV recording is not bounded native dual-stream evidence"
++        );
++    }
++}
++
++#[tokio::test]
++async fn obsolete_source_wav_update_preserves_memory_and_disk() {
++    use alia_embedded::config::{load_config, save_runtime_config};
++    use alia_embedded::settings::EmbeddedSettingsManager;
++    let dir = tempfile::tempdir().unwrap();
++    let path = dir.path().join("embedded.toml");
++    let config = load_config(&path).unwrap();
++    save_runtime_config(&config).unwrap();
++    let manager = EmbeddedSettingsManager::new(&config);
++    let before_memory = manager.snapshot_json(false).await.unwrap();
++    let before_disk = std::fs::read(&path).unwrap();
++    let update = manager
++        .update_from_json(r#"{"audio_debug":{"enabled":true}}"#)
++        .await;
++    assert!(update.is_err(), "removed recorder must not be re-enabled");
++    assert_eq!(manager.snapshot_json(false).await.unwrap(), before_memory);
++    assert_eq!(std::fs::read(&path).unwrap(), before_disk);
++}
++
+ #[test]
+ fn removed_voice_and_mixer_selectors_are_rejected_instead_of_ignored() {
+     for old in [

@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-**当前执行顺序：R02-A 双流证据/离线重放，R03-A 可信资产内容身份；之后按现场出口进入 R05。** R03-0 软件包 10/10，源码 `b5100d7`，恢复从 [最新检查点](../resume-checkpoint-r03-0-2026-10-14.md) 开始。硬件输入已确认的部分见 [部署资料](../../operations/hardware-deployment-readiness.md)；软件保持不等于物理保持。
+**当前执行顺序：R03-A 可信动作资产内容身份；R02/R03 现场出口完成后进入 R05。** R02-A 软件包 10/10，源码 `e557ceb`，恢复从 [最新检查点](../resume-checkpoint-r02-a-2026-10-14.md) 开始。R03-0 继续保持已完成；硬件门槛见 [部署资料](../../operations/hardware-deployment-readiness.md)。
 更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
@@ -39,8 +39,9 @@
 
 - [x] 核对真实 render/reference/capture/wake/VAD 顺序、既有依赖和离线 fixture；补 native continuity 消费与 KWS reset，当前 macOS/Linux 回归通过，见 [audio HANDOFF](../handoffs/2026-10-04/audio.md)。
 - [x] Pi 目标/Ubuntu 已只读核对；用户确认 R1 尚未接入、以后 USB 接 Pi。见 [硬件确认 checklist](hardware-confirmation-2026-10-14.md)，该项不表示音频就绪。
+- [x] R02-A：native 双流、单消费者、有界会话/导出与合成 PCM 离线重放完成；旧 source-WAV 路径删除。macOS 默认 Embedded 284/0/0，Linux 本轮未跑，见 [10/10 checklist](r02-a-2026-10-14.md)。没有真实录音、AEC 或声学验收。
 - [ ] 固定 H02/H03 的运行账户音频权限、实物/固件、采集/播放设备、采样格式及物理布局。
-- [ ] 固定 AEC consumer、重分帧、独立时钟/漂移及同步记录格式；现有 1024 样本参考块和上传帧不等于 10 ms AEC 帧。
+- [ ] 在已实现独占 reader/有界记录基础上固定实际 AEC consumer、重分帧和独立时钟/漂移映射；现有 1024 样本参考块和上传帧不等于 10 ms AEC 帧。
 - [ ] 基于已有 native 播放参考与独立时钟契约接入实际 AEC，显式处理参考缺口与漂移。
 - [ ] 实测同时播放/说话、附和、明确等待/继续、噪声、失联和重开；区分模型标签与声学质量。
 - [ ] 记录端到端暂停/恢复延迟及设备配置；不能只报告模型推理耗时。

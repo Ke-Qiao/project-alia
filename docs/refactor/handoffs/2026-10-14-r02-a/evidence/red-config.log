@@ -1,0 +1,24 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.06s
+     Running tests/config.rs (target/debug/deps/config-0d959533d9af1540)
+
+running 2 tests
+
+thread 'obsolete_source_wav_recorder_configuration_is_rejected' (1875490) panicked at packages/alia-embedded/tests/config.rs:11:9:
+source WAV recording is not bounded native dual-stream evidence
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test obsolete_source_wav_recorder_configuration_is_rejected ... FAILED
+
+thread 'obsolete_source_wav_update_preserves_memory_and_disk' (1875491) panicked at packages/alia-embedded/tests/config.rs:32:5:
+removed recorder must not be re-enabled
+test obsolete_source_wav_update_preserves_memory_and_disk ... FAILED
+
+failures:
+
+failures:
+    obsolete_source_wav_recorder_configuration_is_rejected
+    obsolete_source_wav_update_preserves_memory_and_disk
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-embedded --test config`

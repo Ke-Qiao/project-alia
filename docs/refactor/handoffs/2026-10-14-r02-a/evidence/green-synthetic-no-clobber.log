@@ -1,0 +1,7 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/examples/audio_evidence_replay run/validation-20261014-r02-a/synthetic-evidence.json`
+Error: publishing new synthetic fixture without overwriting
+
+Caused by:
+    0: failed to persist temporary file: File exists (os error 17)
+    1: File exists (os error 17)

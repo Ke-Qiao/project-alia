@@ -1,0 +1,24 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "module::cpal_audio::clock::tests::native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-13T18:50:18.914888+00:00",
+  "elapsed_seconds": 7.41,
+  "exit_code": 101,
+  "source_manifest_sha256": "e520b96fb716df80ba7c5d5c4c2e9a7975b987495785d95c7bab2d55a96a4a78",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

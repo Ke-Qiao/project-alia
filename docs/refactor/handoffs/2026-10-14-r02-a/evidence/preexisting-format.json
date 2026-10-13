@@ -1,0 +1,7 @@
+{
+  "path": "packages/alia-server/tests/server_runtime/delivery.rs",
+  "baseline": "f372ad3b4a7fc87de2526840fcada461080c20dc",
+  "unchanged_from_baseline": true,
+  "sha256": "f1c3bbabf0a575161e8a1cadd043d6cb94fb0b57b19fe788cd3a52a6e78d6709",
+  "finding": "workspace rustfmt import ordering; outside R02-A and not changed"
+}

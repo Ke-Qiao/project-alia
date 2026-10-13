@@ -1,0 +1,24 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "module::context::audio_reference::tests::another_bus_clone_cannot_steal_the_established_consumers_pcm",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-13T18:50:58.993421+00:00",
+  "elapsed_seconds": 0.14,
+  "exit_code": 101,
+  "source_manifest_sha256": "e520b96fb716df80ba7c5d5c4c2e9a7975b987495785d95c7bab2d55a96a4a78",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}
