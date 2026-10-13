@@ -106,11 +106,81 @@ fn has_motion_protection_defaults() {
     assert_eq!(settings.motion.serial_path, PathBuf::from("/dev/ttyACM0"));
     assert_eq!(settings.motion.serial_baud_rate, 115_200);
     assert_eq!(settings.motion.serial_startup_delay_ms, 2_000);
-    assert!(settings.motion.soft_start_enabled);
-    assert_eq!(settings.motion.soft_start_duration_ms, 1_500);
-    assert!(settings.motion.reset_on_stop);
-    assert_eq!(settings.motion.reset_duration_ms, 1_200);
+    assert!(!settings.motion.hardware_enabled);
+    assert!(!settings.motion.calibration_confirmed);
     assert_eq!(settings.motion.max_servo_speed_deg_per_sec, 60.0);
+}
+
+#[test]
+fn removed_motion_reset_and_soft_start_options_are_rejected_instead_of_ignored() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("embedded.toml");
+    for old in [
+        "reset_on_stop = true",
+        "reset_on_stop = false",
+        "reset_duration_ms = 1200",
+        "soft_start_enabled = true",
+        "soft_start_enabled = false",
+        "soft_start_duration_ms = 1500",
+    ] {
+        let content = format!("[motion]\n{old}\n");
+        assert!(
+            toml::from_str::<EmbeddedRuntimeSettings>(&content).is_err(),
+            "accepted removed motion option: {old}"
+        );
+        std::fs::write(&path, content).unwrap();
+        assert!(
+            load_config(&path).is_err(),
+            "load accepted removed option: {old}"
+        );
+    }
+    std::fs::write(&path, "[motion]\ncalibration_confirmed = true\n").unwrap();
+    let config = load_config(&path).unwrap();
+    assert!(config.motion.calibration_confirmed);
+    save_runtime_config(&config).unwrap();
+    let saved = std::fs::read_to_string(&path).unwrap();
+    for removed in [
+        "reset_on_stop",
+        "reset_duration_ms",
+        "soft_start_enabled",
+        "soft_start_duration_ms",
+    ] {
+        assert!(!saved.contains(removed));
+    }
+    assert!(load_config(&path).unwrap().motion.calibration_confirmed);
+}
+
+#[tokio::test]
+async fn removed_motion_json_options_do_not_replace_or_persist_runtime_settings() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = alia_embedded::config::EmbeddedConfig {
+        config_path: directory.path().join("embedded.toml"),
+        ..Default::default()
+    };
+    let manager = alia_embedded::settings::EmbeddedSettingsManager::new(&config);
+    manager
+        .update_from_value(serde_json::json!({"motion":{"calibration_confirmed":true}}))
+        .await
+        .unwrap();
+    let before = manager.snapshot_json(false).await.unwrap();
+    let persisted = std::fs::read(&config.config_path).unwrap();
+    for (key, value) in [
+        ("reset_on_stop", serde_json::json!(true)),
+        ("reset_on_stop", serde_json::json!(false)),
+        ("reset_duration_ms", serde_json::json!(1200)),
+        ("soft_start_enabled", serde_json::json!(true)),
+        ("soft_start_enabled", serde_json::json!(false)),
+        ("soft_start_duration_ms", serde_json::json!(1500)),
+    ] {
+        let mut patch = serde_json::json!({"motion": {}});
+        patch["motion"][key] = value;
+        assert!(serde_json::from_value::<EmbeddedRuntimeSettings>(patch.clone()).is_err());
+        assert!(manager.update_from_json(&patch.to_string()).await.is_err());
+        assert_eq!(manager.snapshot_json(false).await.unwrap(), before);
+        assert_eq!(std::fs::read(&config.config_path).unwrap(), persisted);
+    }
 }
 
 #[test]

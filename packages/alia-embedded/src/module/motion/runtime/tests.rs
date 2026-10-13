@@ -126,8 +126,7 @@ fn unstarted() -> (MotionRuntime, Arc<ProbeServo>) {
     let config = MotionConfig {
         servo_count: 3,
         fps: 120,
-        soft_start_enabled: false,
-        reset_on_stop: false,
+        calibration_confirmed: true,
         ..MotionConfig::default()
     };
     let servo = Arc::new(ProbeServo::default());
@@ -659,10 +658,8 @@ async fn cancellation_deadline_keeps_native_owner_and_accepts_late_quiescent_che
 }
 
 #[tokio::test]
-async fn shutdown_waiter_drop_keeps_join_and_reset_runs_only_after_entered_write_returns() {
-    let (mut runtime, servo) = unstarted();
-    Arc::make_mut(&mut runtime.config).reset_on_stop = true;
-    Arc::make_mut(&mut runtime.config).reset_duration_ms = 0;
+async fn shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns() {
+    let (runtime, servo) = unstarted();
     runtime.start().await.unwrap();
     let command = command(open(&runtime), 1);
     let _native_guard = servo.block_next();
@@ -693,10 +690,211 @@ async fn shutdown_waiter_drop_keeps_join_and_reset_runs_only_after_entered_write
     runtime.stop().await.unwrap();
     let end = terminal(observation, &command).await;
     assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
-    assert_eq!(servo.count(), 3, "startup, old entered frame, then reset");
+    assert_eq!(
+        servo.count(),
+        2,
+        "startup and old entered frame only; stop must hold"
+    );
     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
     runtime.stop().await.unwrap();
-    assert_eq!(servo.count(), 3, "stop is idempotent");
+    assert_eq!(servo.count(), 2, "stop is idempotent and emits no reset");
+}
+
+#[tokio::test]
+async fn unconfirmed_calibration_startup_does_not_submit_native_targets() {
+    let (mut runtime, servo) = unstarted();
+    Arc::make_mut(&mut runtime.config).calibration_confirmed = false;
+    runtime.start().await.unwrap();
+    let available = runtime.control_state().available;
+    runtime.stop().await.unwrap();
+    assert_eq!(
+        servo.count(),
+        0,
+        "uncalibrated startup must not send a center target"
+    );
+    assert!(!available, "uncalibrated writer must not admit motion");
+}
+
+#[tokio::test]
+async fn unconfirmed_native_calibration_is_rejected_before_construction_or_start() {
+    let config = MotionConfig {
+        hardware_enabled: true,
+        neck_config_file: "/definitely-absent-r03-calibration".into(),
+        ..MotionConfig::default()
+    };
+    let error = MotionRuntime::new(config).err().unwrap().to_string();
+    assert!(error.contains("requires confirmed mechanism calibration"));
+
+    let (mut runtime, servo) = unstarted();
+    let config = Arc::make_mut(&mut runtime.config);
+    config.hardware_enabled = true;
+    config.calibration_confirmed = false;
+    let error = runtime.start().await.unwrap_err().to_string();
+    runtime.stop().await.unwrap();
+    assert!(error.contains("requires confirmed mechanism calibration"));
+    assert_eq!(servo.count(), 0);
+    assert!(!runtime.control_state().available);
+}
+
+#[tokio::test]
+async fn unconfirmed_mock_does_not_load_a_matrix_or_advertise_motion() {
+    let config = MotionConfig {
+        neck_config_file: "/definitely-absent-r03-calibration".into(),
+        ..MotionConfig::default()
+    };
+    let runtime = MotionRuntime::new(config).unwrap();
+    runtime.start().await.unwrap();
+    assert!(runtime.mapper.is_none());
+    assert!(!runtime.shared.lock().spawned);
+    assert!(!runtime.control_state().available);
+    let mut metadata = DiscoveryMetadata {
+        status: "test".into(),
+        server_id: None,
+        capabilities: vec![],
+        attributes: Default::default(),
+    };
+    runtime.enrich_discovery_metadata(&mut metadata);
+    assert!(
+        !metadata
+            .capabilities
+            .iter()
+            .any(|value| value == "motion.native")
+    );
+    runtime.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn confirmed_startup_waits_for_one_complete_center_submission_before_admission() {
+    let (runtime, servo) = unstarted();
+    let runtime = Arc::new(runtime);
+    let _native_guard = servo.block_next();
+    let start = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { runtime.start().await }
+    });
+    servo.wait_entered().await;
+    assert!(!runtime.control_state().available);
+    assert!(
+        runtime
+            .open_control(0, Uuid::new_v4(), authorization())
+            .is_err()
+    );
+    assert_eq!(servo.count(), 0);
+    servo.release();
+    start.await.unwrap().unwrap();
+    assert!(runtime.control_state().available);
+    assert_eq!(
+        servo.count(),
+        1,
+        "initial angle is unknown; submit center once"
+    );
+    assert_eq!(servo.writes.lock().unwrap()[0].1, vec![90.0; 3]);
+    runtime.stop().await.unwrap();
+    assert_eq!(servo.count(), 1, "stop keeps the submitted center target");
+}
+
+#[tokio::test]
+async fn partial_startup_never_admits_commands_or_retries_the_center_target() {
+    let (runtime, servo) = unstarted();
+    servo.partial.store(true, Ordering::Release);
+    assert!(runtime.start().await.is_err());
+    assert!(!runtime.control_state().available);
+    assert!(runtime.stop().await.is_err());
+    assert!(runtime.start().await.is_err());
+    assert_eq!(servo.count(), 1);
+}
+
+#[test]
+fn confirmed_calibration_still_requires_matching_dimensions_and_valid_center() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("neck.json");
+    std::fs::write(&path, CALIBRATION.replace("[0,180]", "[40,80]")).unwrap();
+    let mut config = MotionConfig {
+        calibration_confirmed: true,
+        neck_config_file: path.clone(),
+        servo_count: 3,
+        ..MotionConfig::default()
+    };
+    let error = MotionRuntime::new(config.clone())
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("exceeds calibrated limits"));
+    config.center_angle = 60.0;
+    config.servo_count = 4;
+    let error = MotionRuntime::new(config.clone())
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("must match the calibration output count"));
+    config.servo_count = 3;
+    std::fs::write(&path, "not valid calibration JSON").unwrap();
+    assert!(MotionRuntime::new(config).is_err());
+}
+
+#[tokio::test]
+async fn lease_close_and_binding_revocation_hold_after_the_entered_write() {
+    for binding_revocation in [false, true] {
+        let (runtime, servo) = unstarted();
+        runtime.start().await.unwrap();
+        let lease = open(&runtime);
+        let command = command(lease, 1);
+        let _native_guard = servo.block_next();
+        let observation = submitted(&runtime, &command).await;
+        servo.wait_entered().await;
+        if binding_revocation {
+            runtime.revoke_control("device binding changed").unwrap();
+        } else {
+            runtime
+                .close_control(&lease, "control owner closed")
+                .unwrap();
+        }
+        assert!(!observation.snapshot().writer_quiescent);
+        assert!(observation.snapshot().end.is_none());
+        assert!(runtime.control_state().lease.is_none());
+        assert_eq!(servo.count(), 1);
+        assert_eq!(servo.active.load(Ordering::Acquire), 1);
+        servo.release();
+        let end = terminal(observation, &command).await;
+        assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+        assert!(end.writer_quiescent);
+        assert_eq!(end.submitted_frames, 1);
+        assert_eq!(end.position_confirmed_actions, None);
+        runtime.stop().await.unwrap();
+        assert_eq!(
+            servo.count(),
+            2,
+            "startup plus entered write; no reset after revoke"
+        );
+        assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
+    }
+}
+
+#[tokio::test]
+async fn dropping_observer_keeps_the_native_owner_and_current_control_lease() {
+    let (runtime, servo) = unstarted();
+    runtime.start().await.unwrap();
+    let lease = open(&runtime);
+    let command = command(lease, 1);
+    let _native_guard = servo.block_next();
+    let observation = submitted(&runtime, &command).await;
+    servo.wait_entered().await;
+    drop(observation);
+    assert_eq!(runtime.control_state().lease, Some(lease));
+    assert_eq!(servo.active.load(Ordering::Acquire), 1);
+    let observation = runtime.observe(command.identity).unwrap();
+    assert!(!observation.snapshot().writer_quiescent);
+    assert!(observation.snapshot().end.is_none());
+    servo.release();
+    let end = terminal(observation, &command).await;
+    assert_eq!(end.end, Some(BodyEnd::Submitted));
+    assert_eq!(runtime.control_state().lease, Some(lease));
+    runtime.stop().await.unwrap();
+    assert_eq!(
+        servo.count(),
+        2,
+        "dropping observation adds no cancellation or reset"
+    );
 }
 
 #[tokio::test]
@@ -890,8 +1088,7 @@ async fn queued_cancellation_is_immediately_quiescent_even_when_another_native_c
 
 #[tokio::test]
 async fn native_partial_failure_preserves_complete_and_uncertain_channels_and_seals_writer() {
-    let (mut runtime, servo) = unstarted();
-    Arc::make_mut(&mut runtime.config).reset_on_stop = true;
+    let (runtime, servo) = unstarted();
     runtime.start().await.unwrap();
     let command = command(open(&runtime), 1);
     servo.partial.store(true, Ordering::Release);

@@ -95,9 +95,13 @@ payloads. Admission occurs under the binding lock; binding changes revoke old
 output authority. Preparation is bounded and followed by another authorization
 check before writer admission.
 
-One retained native writer owns startup, expression frames, face tracking and
-shutdown reset. Existing calibration, channel limits, angle validation, speed
-limits and soft-start/reset policy remain in force. Animation preparation
+One retained native writer owns calibrated startup centering, expression frames,
+face tracking and backend cleanup. Local `motion.calibration_confirmed` is
+required before startup motion; remote commands cannot provide this confirmation.
+Stop cancels future targets and waits for entered native work without adding a
+center or disable command. The old soft-start and shutdown-reset settings are
+rejected. Channel limits, angle validation and speed limits between submitted
+software targets remain; the initial physical position is unknown. Animation preparation
 validates file location, size, frame shape and the complete expanded plan before
 native output. The command signature covers the filename and parameters; it is
 not a signature of the file's bytes.

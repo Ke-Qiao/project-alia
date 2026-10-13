@@ -12,13 +12,19 @@ Core 的 `body` 模块定义无数据库/网络依赖的命令、作用域和回
 
 Builder 为同一设备进程生成共享 boot UUID。Motion 维护 CAS control generation 和单调命令 sequence；身份直接由 boot/server-instance/generation/sequence 构成，不另设可被重新包装的命令 UUID。Voice 复用真实 Ready 的作用域，Nonvoice 使用规范 Response UUID。绑定变更、voice fence 与本地关闭均在同步准入门下撤销旧动作，锁顺序为 Binding → Playback → Motion。
 
-Motion 独占一个保留句柄的 native writer，设备打开、初始化、表达、人脸跟随、可选回中和关闭都由它执行。准备并发上限 4，动作队列 8，回执缓存 64；人脸只保留最新目标。序号水位独立于缓存淘汰，相同身份与内容返回原事实，变造内容拒绝。可证明未接纳的新身份会写入 Rejected 并退休其序号；旧 lease 或已淘汰事实只能保持不可知，不能伪造零写入。
+Motion 独占一个保留句柄的 native writer，设备打开、初始化、校准确认后的启动归中、表达、人脸跟随和关闭都由它执行。准备并发上限 4，动作队列 8，回执缓存 64；人脸只保留最新目标。序号水位独立于缓存淘汰，相同身份与内容返回原事实，变造内容拒绝。可证明未接纳的新身份会写入 Rejected 并退休其序号；旧 lease 或已淘汰事实只能保持不可知，不能伪造零写入。
 
 动作数最多 32、名义动作合计 5 秒、最多 3,600 个 native 帧；映射、有限值、文件/循环/帧率与整个动画在进入硬件前校验。沿用已有校准和限位，速度限制跨命令延续。串口按实际短写字节完成边界、I²C 按通道事务记录提交；部分或不确定写入隔离后端。取消只关闭新写入并等在途 native 返回，5 秒等待超时不会丢弃 owner 或宣称电机已停止。
 
 Server 以 `(response_id, phase)` 固定同一身体意图，先查原账本，才允许对新意图打开控制。新发送必须在 PostgreSQL 原子保存 intent、唯一 dispatch permit 和审计后发生。最多 64 个活跃账本项、每 Response 32 项；短租约不延长绝对观察期限。传输丢 ACK 后只查询/精确取消原身份；重启不重播。同实例观察 owner、native 依赖和最终 join 纳入 Server 关闭流程。
 
 Submitted 只表示指定串口主机/I²C 寄存器/模拟边界已提交；v1 不提供位置反馈。表达编排可以在 quiescent 的 Submitted/Cancelled 后解除软件占用，`completion_acknowledged` 仍为 false。Unknown 保留原前缀；迟到回执独立审计，已确认终态不能被后续检查点改写。查询接口见 [Delivery API](delivery-api.md)。
+
+### R03-0 生命周期更新（2026-10-14）
+
+本地 `motion.calibration_confirmed` 默认 false，历史矩阵能解析不代表实际机构完成校准。未确认的 mock 不发启动帧且不提供 motion 准入；硬件未确认时在 backend 创建前拒绝。校准确认后仍验证矩阵、通道、中心与限位，只完整提交一次中心目标后建立上次软件目标；初始实际姿态未知，不宣称物理平滑归中。
+
+停止、lease Close/到期及 binding 撤销不追加归中或 disable 写入；保留在途 native owner 与精确取消，observer drop 不触发全局撤权。旧 soft-start、stop-reset 四个配置键已移除并拒绝解析。下方历史基线中“关闭回中/沿用 reset_on_stop”不再代表当前行为；当前契约见 [Motion 使用说明](../../packages/alia-embedded/docs/motion-assets.md)。软件保持不证明 PWM、力矩或机械位置保持。
 
 ## 设计时源码与可复用边界（历史基线）
 

@@ -650,6 +650,7 @@ fn default_hmmd_stale_after_ms() -> u64 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MotionConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -679,18 +680,14 @@ pub struct MotionConfig {
     pub max_pulse_us: u16,
     #[serde(default)]
     pub hardware_enabled: bool,
+    /// Local operator confirmation of calibration on the actual mechanism.
+    /// A parseable bundled matrix alone does not authorize native movement.
+    #[serde(default)]
+    pub calibration_confirmed: bool,
     #[serde(default = "default_motion_fps")]
     pub fps: u32,
     #[serde(default = "default_motion_center_angle")]
     pub center_angle: f32,
-    #[serde(default = "default_true")]
-    pub soft_start_enabled: bool,
-    #[serde(default = "default_motion_soft_start_duration_ms")]
-    pub soft_start_duration_ms: u32,
-    #[serde(default = "default_true")]
-    pub reset_on_stop: bool,
-    #[serde(default = "default_motion_reset_duration_ms")]
-    pub reset_duration_ms: u32,
     #[serde(default = "default_motion_max_servo_speed_deg_per_sec")]
     pub max_servo_speed_deg_per_sec: f32,
     #[serde(default = "default_motion_face_max_yaw")]
@@ -726,12 +723,9 @@ impl Default for MotionConfig {
             min_pulse_us: default_motion_min_pulse_us(),
             max_pulse_us: default_motion_max_pulse_us(),
             hardware_enabled: false,
+            calibration_confirmed: false,
             fps: default_motion_fps(),
             center_angle: default_motion_center_angle(),
-            soft_start_enabled: true,
-            soft_start_duration_ms: default_motion_soft_start_duration_ms(),
-            reset_on_stop: true,
-            reset_duration_ms: default_motion_reset_duration_ms(),
             max_servo_speed_deg_per_sec: default_motion_max_servo_speed_deg_per_sec(),
             face_max_yaw: default_motion_face_max_yaw(),
             face_max_pitch: default_motion_face_max_pitch(),
@@ -864,12 +858,6 @@ fn default_motion_fps() -> u32 {
 }
 fn default_motion_center_angle() -> f32 {
     90.0
-}
-fn default_motion_soft_start_duration_ms() -> u32 {
-    1_500
-}
-fn default_motion_reset_duration_ms() -> u32 {
-    1_200
 }
 fn default_motion_max_servo_speed_deg_per_sec() -> f32 {
     60.0

@@ -285,12 +285,10 @@ impl Pca9685ServoBackend {
         if config.pca9685_addresses.is_empty() {
             bail!("motion.pca9685_addresses must not be empty when hardware is enabled");
         }
-        let mut boards = Vec::new();
-        for address in &config.pca9685_addresses {
-            ensure!(!cancelled(), "body initialization cancelled");
-            let mut device = Pca9685Device::open(
+        let boards = initialize_pca_boards(&config.pca9685_addresses, cancelled, |address| {
+            Pca9685Device::open(
                 &config.i2c_device,
-                *address,
+                address,
                 config.pca_frequency_hz,
                 config.min_pulse_us,
                 config.max_pulse_us,
@@ -300,20 +298,54 @@ impl Pca9685ServoBackend {
                     "opening PCA9685 servo controller at 0x{address:02x} on {}",
                     config.i2c_device.display()
                 )
-            })?;
-            device.initialize(cancelled).with_context(|| {
-                format!(
-                    "initializing PCA9685 servo controller at 0x{address:02x} on {}",
-                    config.i2c_device.display()
-                )
-            })?;
-            boards.push(Mutex::new(device));
-        }
+            })
+        })?;
         Ok(Self {
             servo_count: config.servo_count,
             boards,
         })
     }
+}
+
+fn initialize_pca_boards<Io: Read + Write>(
+    addresses: &[u16],
+    cancelled: &dyn Fn() -> bool,
+    mut open: impl FnMut(u16) -> Result<Pca9685Device<Io>>,
+) -> Result<Vec<Mutex<Pca9685Device<Io>>>> {
+    let mut boards = Vec::new();
+    let initialization = (|| {
+        for &address in addresses {
+            ensure!(!cancelled(), "body initialization cancelled");
+            let mut device = open(address)?;
+            let original = device
+                .initialize(cancelled)
+                .with_context(|| format!("initializing PCA9685 address 0x{address:02x}"))?;
+            boards.push((device, original));
+        }
+        ensure!(!cancelled(), "body initialization cancelled");
+        Ok::<_, anyhow::Error>(())
+    })();
+    if let Err(error) = initialization {
+        let mut failures = Vec::new();
+        for (device, original) in boards.iter_mut().rev() {
+            if let Err(recovery) = device.restore(*original) {
+                failures.push(format!("address 0x{:02x}: {recovery:#}", device.address));
+            }
+        }
+        if failures.is_empty() {
+            return Err(
+                error.context("PCA9685 construction aborted; prior-board restoration submitted")
+            );
+        }
+        bail!(
+            "PCA9685 construction failed; output state unknown; cause: {error:#}; prior-board recovery: {}",
+            failures.join("; ")
+        );
+    }
+    Ok(boards
+        .into_iter()
+        .map(|(device, _)| Mutex::new(device))
+        .collect())
 }
 
 impl ServoBackend for Pca9685ServoBackend {
@@ -360,12 +392,25 @@ fn submit_i2c_channels(
     result
 }
 
-struct Pca9685Device {
-    file: std::fs::File,
+struct Pca9685Device<Io = std::fs::File> {
+    file: Io,
     address: u16,
     frequency_hz: u16,
     min_pulse_us: u16,
     max_pulse_us: u16,
+}
+
+const PCA_MODE1: u8 = 0x00;
+const PCA_PRESCALE: u8 = 0xfe;
+const PCA_RESTART: u8 = 0x80;
+const PCA_EXTCLK: u8 = 0x40;
+const PCA_AI: u8 = 0x20;
+const PCA_SLEEP: u8 = 0x10;
+
+#[derive(Clone, Copy, Debug)]
+struct Pca9685Snapshot {
+    mode: u8,
+    prescale: u8,
 }
 
 impl Pca9685Device {
@@ -395,34 +440,92 @@ impl Pca9685Device {
             max_pulse_us,
         })
     }
+}
 
-    fn initialize(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
-        const MODE1: u8 = 0x00;
-        const PRESCALE: u8 = 0xfe;
-        const RESTART: u8 = 0x80;
-        const SLEEP: u8 = 0x10;
-        const ALLCALL: u8 = 0x01;
-
+impl<Io: Read + Write> Pca9685Device<Io> {
+    fn initialize(&mut self, cancelled: &dyn Fn() -> bool) -> Result<Pca9685Snapshot> {
         ensure!(!cancelled(), "body initialization cancelled");
-        self.write_reg(MODE1, ALLCALL)?;
-        std::thread::sleep(std::time::Duration::from_millis(5));
-
+        let mode = self.read_reg(PCA_MODE1)?;
+        ensure!(
+            mode & PCA_EXTCLK == 0,
+            "PCA9685 external clock is unsupported; no configuration registers changed"
+        );
         ensure!(!cancelled(), "body initialization cancelled");
-        let old_mode = self.read_reg(MODE1)?;
-        let sleep_mode = (old_mode & !RESTART) | SLEEP;
+        let original = Pca9685Snapshot {
+            mode,
+            prescale: self.read_reg(PCA_PRESCALE)?,
+        };
         ensure!(!cancelled(), "body initialization cancelled");
-        self.write_reg(MODE1, sleep_mode)?;
-        ensure!(!cancelled(), "body initialization cancelled");
-        self.write_reg(PRESCALE, self.prescale())?;
-        ensure!(!cancelled(), "body initialization cancelled");
-        self.write_reg(MODE1, old_mode)?;
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        ensure!(!cancelled(), "body initialization cancelled");
-        self.write_reg(MODE1, old_mode | RESTART | ALLCALL)?;
+        let active_mode = (original.mode & !(PCA_RESTART | PCA_SLEEP)) | PCA_AI;
+        // Even a failed first write may enter SLEEP; this owner must finish recovery.
+        let initialization = (|| {
+            self.write_reg(PCA_MODE1, active_mode | PCA_SLEEP)?;
+            ensure!(!cancelled(), "body initialization cancelled");
+            self.write_reg(PCA_PRESCALE, self.prescale())?;
+            ensure!(!cancelled(), "body initialization cancelled");
+            self.wake(active_mode)?;
+            ensure!(!cancelled(), "body initialization cancelled");
+            Ok::<_, anyhow::Error>(())
+        })();
+        if let Err(error) = initialization {
+            match self.restore(original) {
+                Ok(()) => {
+                    return Err(error.context(
+                        "PCA9685 initialization failed; original register restoration submitted",
+                    ));
+                }
+                Err(recovery) => bail!(
+                    "PCA9685 initialization failed; output state unknown; cause: {error:#}; recovery: {recovery:#}"
+                ),
+            }
+        }
         info!(
             address = format_args!("0x{:02x}", self.address),
             frequency_hz = self.frequency_hz,
             "PCA9685 initialized"
+        );
+        Ok(original)
+    }
+
+    fn wake(&mut self, mode: u8) -> Result<()> {
+        let active_mode = mode & !(PCA_RESTART | PCA_SLEEP);
+        self.write_reg(PCA_MODE1, active_mode)
+            .context("clearing PCA9685 SLEEP")?;
+        // NXP requires at least 500 us after clearing SLEEP before RESTART/PWM.
+        std::thread::sleep(Duration::from_micros(500));
+        let current_mode = self.read_reg(PCA_MODE1)?;
+        ensure!(
+            current_mode & !PCA_RESTART == active_mode,
+            "PCA9685 awake mode readback mismatch"
+        );
+        if current_mode & PCA_RESTART != 0 {
+            self.write_reg(PCA_MODE1, active_mode | PCA_RESTART)
+                .context("restarting PCA9685 channels")?;
+        }
+        Ok(())
+    }
+
+    fn restore(&mut self, original: Pca9685Snapshot) -> Result<()> {
+        let mode = original.mode & !PCA_RESTART;
+        let mut failures = Vec::new();
+        match self.write_reg(PCA_MODE1, mode | PCA_SLEEP) {
+            Ok(()) => {
+                if let Err(error) = self.write_reg(PCA_PRESCALE, original.prescale) {
+                    failures.push(format!("restoring PRE_SCALE: {error:#}"));
+                }
+            }
+            Err(error) => failures.push(format!("establishing recovery SLEEP: {error:#}")),
+        }
+        // A failed prescale restoration must not abandon our own successful SLEEP.
+        if mode & PCA_SLEEP == 0 {
+            if let Err(error) = self.wake(mode) {
+                failures.push(format!("restoring running mode: {error:#}"));
+            }
+        }
+        ensure!(
+            failures.is_empty(),
+            "PCA9685 recovery failed; output state unknown: {}",
+            failures.join("; ")
         );
         Ok(())
     }
@@ -576,6 +679,9 @@ fn set_i2c_slave(file: &std::fs::File, address: u16) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod pca_tests;
 
 #[cfg(test)]
 mod tests {

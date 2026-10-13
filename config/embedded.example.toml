@@ -165,7 +165,7 @@ servo_backend = "serial"
 serial_path = "/dev/ttyACM0"
 serial_baud_rate = 115200
 # Arduino Uno resets when the serial device opens; this gives the sketch time
-# to boot before the soft-start frame is sent.
+# to boot before the calibrated startup center target is sent.
 serial_startup_delay_ms = 2000
 # Optional I2C backend: set servo_backend = "pca9685" to drive PCA9685 directly.
 i2c_device = "/dev/i2c-1"
@@ -173,15 +173,15 @@ pca9685_addresses = [64]
 pca_frequency_hz = 50
 min_pulse_us = 500
 max_pulse_us = 2500
-# Keep false for development; set true on the Pi after Arduino serial wiring is verified.
+# Keep false until the actual wiring, supply and mechanism calibration are verified.
 hardware_enabled = false
+# Operator confirmation for the actual mechanism, not just a parseable sample matrix.
+# Until confirmed, motion remains unavailable and no startup target is submitted.
+calibration_confirmed = false
 fps = 30
 center_angle = 90.0
-# Servo protection. All motion targets are rate-limited before reaching hardware.
-soft_start_enabled = true
-soft_start_duration_ms = 1500
-reset_on_stop = true
-reset_duration_ms = 1200
+# Confirmed startup sends the center target once: the initial physical angle is
+# unknown. Later software targets are rate-limited; stop/disconnect never reset.
 max_servo_speed_deg_per_sec = 60.0
 face_max_yaw = 25.0
 face_max_pitch = 18.0

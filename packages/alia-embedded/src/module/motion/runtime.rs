@@ -258,14 +258,14 @@ pub(super) struct FaceWork {
 pub(super) enum ActiveWork {
     Command(Arc<CommandRecord>),
     Face(Arc<Permit>),
-    Reset(Arc<Permit>),
+    Startup(Arc<Permit>),
 }
 
 impl ActiveWork {
     fn permit(&self) -> &Arc<Permit> {
         match self {
             Self::Command(record) => &record.permit,
-            Self::Face(permit) | Self::Reset(permit) => permit,
+            Self::Face(permit) | Self::Startup(permit) => permit,
         }
     }
 }
@@ -480,15 +480,21 @@ impl MotionRuntime {
             return Ok(Self::disabled_with_boot(config, boot));
         }
         validate_config(&config)?;
-        // All calibration validation precedes opening a hardware backend.
-        let mapper = NeckMapper::load(&config.neck_config_file)?;
-        ensure!(
-            mapper.servo_count() == config.servo_count,
-            "servo count must match the calibration output count"
-        );
-        mapper.validate_angles(&vec![config.center_angle; config.servo_count])?;
+        // A matrix's presence is not confirmation of calibration on the device.
+        // Unconfirmed simulation remains unavailable without loading demo data.
+        let mapper = if config.calibration_confirmed {
+            let mapper = NeckMapper::load(&config.neck_config_file)?;
+            ensure!(
+                mapper.servo_count() == config.servo_count,
+                "servo count must match the calibration output count"
+            );
+            mapper.validate_angles(&vec![config.center_angle; config.servo_count])?;
+            Some(mapper)
+        } else {
+            None
+        };
         let servo = create_servo_backend(&config)?.into();
-        Ok(Self::from_parts(config, boot, Some(mapper), servo))
+        Ok(Self::from_parts(config, boot, mapper, servo))
     }
 
     pub fn disabled(config: MotionConfig) -> Self {
@@ -892,7 +898,7 @@ impl MotionRuntime {
             || !state.queue.is_empty()
             || matches!(
                 state.active,
-                Some(ActiveWork::Command(_) | ActiveWork::Reset(_))
+                Some(ActiveWork::Command(_) | ActiveWork::Startup(_))
             )
         {
             return Ok(false);
@@ -925,7 +931,7 @@ impl MotionRuntime {
     pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
         // The persistent BodyDelivery integration must opt into command-v1.
         // A native writer alone must never advertise end-to-end completion.
-        if self.config.enabled && self.mapper.is_some() {
+        if self.config.enabled && self.config.calibration_confirmed && self.mapper.is_some() {
             metadata.capabilities.push("motion.native".into());
         }
         metadata.capabilities.sort();
@@ -953,6 +959,10 @@ impl ModuleLifecycle for MotionRuntime {
 
     async fn start(&self) -> Result<()> {
         if !self.config.enabled {
+            return Ok(());
+        }
+        validate_config(&self.config)?;
+        if !self.config.calibration_confirmed {
             return Ok(());
         }
         {
@@ -1077,6 +1087,10 @@ impl Drop for MotionRuntime {
 
 fn validate_config(config: &MotionConfig) -> Result<()> {
     ensure!(
+        !config.hardware_enabled || config.calibration_confirmed,
+        "native body output requires confirmed mechanism calibration"
+    );
+    ensure!(
         (1..=MAX_BODY_CHANNELS).contains(&config.servo_count),
         "body servo count must be 1..32"
     );
@@ -1093,10 +1107,6 @@ fn validate_config(config: &MotionConfig) -> Result<()> {
     ensure!(
         config.center_angle.is_finite() && (0.0..=180.0).contains(&config.center_angle),
         "invalid body center angle"
-    );
-    ensure!(
-        config.soft_start_duration_ms <= 30_000 && config.reset_duration_ms <= 30_000,
-        "body reset exceeds 30 seconds"
     );
     ensure!(
         config.serial_startup_delay_ms <= 30_000,

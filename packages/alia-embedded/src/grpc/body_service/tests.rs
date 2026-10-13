@@ -51,8 +51,7 @@ impl Fixture {
             neck_config_file: matrix,
             servo_count: 3,
             hardware_enabled: false,
-            soft_start_enabled: false,
-            reset_on_stop: false,
+            calibration_confirmed: true,
             fps: 30,
             ..MotionConfig::default()
         };
