@@ -1,0 +1,15 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.42s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 7 tests
+test settings::storage::tests::a_non_regular_target_is_rejected_before_opening_for_write ... ok
+test settings::storage::tests::preparation_failure_keeps_the_complete_previous_snapshot_and_removes_candidate ... ok
+test settings::storage::tests::published_failure_reports_unknown_and_explicit_retry_syncs_the_complete_parent_chain ... ok
+test settings::storage::tests::later_save_syncs_parents_left_visible_by_an_earlier_prepare_failure ... ok
+test settings::storage::tests::private_new_files_and_existing_modes_are_preserved_without_replacing_hardlinks ... ok
+test settings::storage::tests::valid_and_dangling_symlinks_follow_the_target_without_creating_missing_link_parents ... ok
+test settings::storage::tests::a_queued_save_snapshots_after_admission_without_holding_the_registry_read_lock ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 361 filtered out; finished in 0.12s
+

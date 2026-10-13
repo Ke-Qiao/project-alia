@@ -2,6 +2,7 @@
 
 更新：2026-10-11。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
 
+当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 ## 配置与启动
 
 从仓库根目录按 [本地开发](local-development.md) 准备主文件和 `.d` 分片；[Server 配置](../../packages/alia-server/docs/configuration.md)与 [Embedded 配置](../../packages/alia-embedded/docs/configuration.md)分别管理业务/模型和设备实时运行时。`ALIA_CONFIG_PATH` 可以选择 Server 主文件，配套分片目录为同名 `.d`；Embedded 使用独立的 `ALIA_EMBEDDED_CONFIG_PATH`。

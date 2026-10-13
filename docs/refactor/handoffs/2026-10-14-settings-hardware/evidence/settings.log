@@ -1,0 +1,21 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s
+     Running tests/settings.rs (target/debug/deps/settings-274e646f92db41ea)
+
+running 5 tests
+test core_services_are_not_exposed_as_replaceable_module_slots ... ok
+test memory_policy_settings_are_registered_without_backend_slot ... ok
+test expression_policy_settings_are_registered ... ok
+test persisted_values_exclude_sql_policy_and_null_and_preserve_registered_schema ... ok
+test invalid_persisted_file_does_not_partially_replace_values_or_the_save_target ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/settings_cancellation.rs (target/debug/deps/settings_cancellation-2442819355302da6)
+
+running 2 tests
+test dropping_a_queued_update_does_not_block_the_next_waiter ... ok
+test aborting_an_update_holder_releases_admission_without_rolling_back_desired_values ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

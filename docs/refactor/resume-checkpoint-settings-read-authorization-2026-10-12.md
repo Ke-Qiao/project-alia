@@ -1,5 +1,6 @@
 # 当前检查点：2026-10-12 Settings GET 身份重验证完成
 
+后续有界审计已完成，最新从 [2026-10-14 检查点](resume-checkpoint-settings-hardware-2026-10-14.md) 继续 R02/R03；下文为上轮历史。
 分支 `codex/architecture-refactor`，本轮 **10/10**，L09—L12 **4/4**，R01—R06 仍 **2/6**，不是项目完成百分比。三个 subagent 已交接，无待恢复 Cargo/数据库作业。
 
 依次读取 [技术说明](settings-read-authorization-2026-10-12.md)、[checklist](checklists/settings-read-authorization-2026-10-12.md)、[四份 HANDOFF](handoffs/2026-10-12-settings-read-authorization/README.md) 和 [证据索引](handoffs/2026-10-12-settings-read-authorization/evidence-index.json)，再核对 branch/status/log。

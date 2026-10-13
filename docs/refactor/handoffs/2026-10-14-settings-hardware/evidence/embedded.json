@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-13T16:27:31.261698+00:00",
+  "elapsed_seconds": 50.39,
+  "exit_code": 0,
+  "source_manifest_sha256": "bb52f12217b548c4d152992101dd304448a0581fccb690c1967b97d9967b819c",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "not used",
+  "build_jobs": 2
+}

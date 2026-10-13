@@ -183,6 +183,12 @@ macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798
 
 ## 2026-10-12 Settings GET 后续
 
-- [ ] 下一软件候选：先审计 Settings GET/PATCH 共用 update gate 的排队、各阶段预算和取消所有权。current/final-auth 已有 2 秒，gate/preview/apply 等待尚未故障实证；区分准入前等待与 SQL/desired/module 已发生后的部分成功，不直接套整请求 timeout 或全局回滚，不把客户端断开等同 handler 已取消。
+- [x] Settings 锁等待与取消有界审计完成，新增两项局部取消回归，见 [本轮记录](resume-checkpoint-settings-hardware-2026-10-14.md)。这不表示全部等待已有期限。
 
 未独立动态注入纯更新 gate 排队或 Registry 私有锁等待；最后核验位置由完整 await 静态审查和真实政策等待验证。未运行真实 PTY/Easy-Turn、Linux 全 workspace、release/部署 smoke、外部付费服务、Pi/声学/执行器或长稳。核验是一次响应准入，不承诺后续持续撤权或撤回已发送响应。
+
+## 2026-10-14 主线切换
+
+主要投入转为 R02-A 双流证据/离线重放、R03-A 受信动作资产内容认证，之后按硬件资料接入真实AEC/反馈，再进入R05。H01—H05待当前部署确认，R02/R03/R05保持开放。
+
+- [ ] R05前故障验证：慢模型请求持配置读锁、SoVITS音频额度等待及Settings/隐私共享gate的管理恢复上界，真正handler取消与关闭清理。需要修复时只处理复现缺口，保持已提交SQL/desired/module的部分成功，不直接加整请求timeout或全局回滚。

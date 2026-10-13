@@ -1,0 +1,35 @@
+{
+  "source_commit": "cffbca531cec2478c17b5bcacfd191e7f00a56f9",
+  "input_count": 656,
+  "manifest_sha256": "bb52f12217b548c4d152992101dd304448a0581fccb690c1967b97d9967b819c",
+  "counts": {
+    "settings": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "summaries": 2
+    },
+    "storage": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "summaries": 1
+    },
+    "embedded": {
+      "passed": 177,
+      "failed": 0,
+      "ignored": 0,
+      "summaries": 1
+    }
+  },
+  "settings_split": {
+    "existing": 5,
+    "cancellation": 2
+  },
+  "platform": "macOS 26.6.2 ARM64, Rust 1.95.0",
+  "static_checks": "passed",
+  "production_changes": false,
+  "resource_status": "all validation processes exited; no external database/container/SSH/hardware created or started; embedded software fixtures may use temporary SQLite and loopback sockets",
+  "hardware_inputs": "H01-H05 remain unconfirmed; questions pending",
+  "phase": "bounded audit/preparation complete; R02-A/R03-A next, hardware-specific AEC/feedback and R05 remain open"
+}

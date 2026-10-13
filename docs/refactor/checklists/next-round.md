@@ -1,6 +1,7 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-更新：2026-10-11。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
+**当前执行顺序已切换：R02/R03 → R05。** Settings有界审计与准备8/8完成，最新从 [2026-10-14检查点](../resume-checkpoint-settings-hardware-2026-10-14.md) 继续；硬件/部署事实见 [资料清单](../../operations/hardware-deployment-readiness.md)，待确认项不视为已部署。
+更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
 

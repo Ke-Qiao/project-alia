@@ -1,0 +1,71 @@
+{
+  "source_commit": "cffbca531cec2478c17b5bcacfd191e7f00a56f9",
+  "manifest_sha256": "bb52f12217b548c4d152992101dd304448a0581fccb690c1967b97d9967b819c",
+  "files": [
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 218,
+      "sha256": "e527615059765ddde623c7f5ff3dcfffb8a7d9cfae80d5b195a0c7e12bd5c6d9"
+    },
+    {
+      "path": "evidence/embedded.json",
+      "bytes": 418,
+      "sha256": "15b196851e111c08089634dad1acb1256ecdaa726680afbc380d3b2adcd0ef84"
+    },
+    {
+      "path": "evidence/embedded.log",
+      "bytes": 21205,
+      "sha256": "6d1d7f5c232549198e6eb8059bf67fe9af1ba35377a455485bd6441ab43837d2"
+    },
+    {
+      "path": "evidence/environment.json",
+      "bytes": 888,
+      "sha256": "1b4e23bad3c6bb9aca26e975c2e78a61e280c919a306a504813b92b5304ffce6"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "evidence/settings.json",
+      "bytes": 476,
+      "sha256": "4f2a9fe70ea7b36fe7610ba2ca71d2f26f14a16e855f19ed6919d41ce66f7353"
+    },
+    {
+      "path": "evidence/settings.log",
+      "bytes": 1105,
+      "sha256": "ea409049fd3ec1410419af394098073d4f3de5295f9b037a96538100341be66e"
+    },
+    {
+      "path": "evidence/source-manifest.json",
+      "bytes": 120683,
+      "sha256": "bb52f12217b548c4d152992101dd304448a0581fccb690c1967b97d9967b819c"
+    },
+    {
+      "path": "evidence/static.json",
+      "bytes": 764,
+      "sha256": "dec4c37dbde852635e9ad631e7156d2a3f70b3a00b77adf0f81a29e3083e781d"
+    },
+    {
+      "path": "evidence/storage.json",
+      "bytes": 448,
+      "sha256": "5f9de217e1add7334c45a234599f35cce7a735112597414eabd73fd6cbbdc588"
+    },
+    {
+      "path": "evidence/storage.log",
+      "bytes": 1163,
+      "sha256": "f28d45779ec8e85dbd7108d113d316ef3a13f462cf0ca5682ee79bed065ed295"
+    },
+    {
+      "path": "evidence/validate.py",
+      "bytes": 1741,
+      "sha256": "8f96e9dbfde93e81d6bcb56e89de31aef5691b4e7482b3d2d0d0fc52ff930508"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "bytes": 1068,
+      "sha256": "7c01718ca9e5abff84f6a7a0c299fe2aa20866ac6a3f7b84e461b76b54c69f7c"
+    }
+  ]
+}

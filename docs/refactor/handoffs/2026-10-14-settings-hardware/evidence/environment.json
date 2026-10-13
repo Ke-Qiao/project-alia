@@ -1,0 +1,12 @@
+{
+  "uname": "Darwin arm64",
+  "sw_vers": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+  "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+  "recorded_at": "2026-10-13T16:29:31.345626+00:00",
+  "external_database": "not used",
+  "embedded_fixture_database": "temporary local SQLite can be used by embedded library tests; database=not used in stage records refers to external/PostgreSQL databases",
+  "hardware": "no SSH/recording/playback/serial/actuator actions",
+  "containers": "none created or started",
+  "validation_scope": "macOS scoped Settings and Embedded software tests only; no current Linux/workspace/release/real-model or 24h run"
+}
