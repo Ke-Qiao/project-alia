@@ -1,5 +1,7 @@
-use super::super::context::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe};
-use super::clock::AlsaTimeOrigin;
+use super::super::context::{
+    AudioSampleBoundary, AudioStreamClock, AudioStreamOwner, AudioStreamProbe,
+};
+use super::clock::{AlsaTimeOrigin, observe_capture_samples};
 use super::*;
 use alia_core::audio_clock::*;
 use anyhow::ensure;
@@ -97,7 +99,12 @@ pub(super) fn run_alsa_capture_thread(
                 match io.readi(&mut raw_buffer_i16) {
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
-                        let native = clock.observe(frames as u64, reading);
+                        let native = observe_capture_samples(
+                            &mut clock,
+                            &raw_buffer_i16[..samples_read],
+                            reading,
+                            AudioSampleBoundary::AlsaCaptureRead,
+                        );
                         if native.continuity != continuity {
                             converter.reset();
                             continuity = native.continuity;
@@ -123,6 +130,12 @@ pub(super) fn run_alsa_capture_thread(
                     Ok(frames) => {
                         let samples_read = frames.saturating_mul(input_channels);
                         let raw = &raw_buffer_i32[..samples_read];
+                        let native = observe_capture_samples(
+                            &mut clock,
+                            raw,
+                            reading,
+                            AudioSampleBoundary::AlsaCaptureRead,
+                        );
                         let shift = match detected_s32_shift {
                             Some(shift) => shift,
                             None => {
@@ -145,7 +158,6 @@ pub(super) fn run_alsa_capture_thread(
                             .copied()
                             .map(|sample| i32_sample_to_i16_with_shift(sample, shift))
                             .collect();
-                        let native = clock.observe(frames as u64, reading);
                         if native.continuity != continuity {
                             converter.reset();
                             continuity = native.continuity;
@@ -746,6 +758,7 @@ mod tests {
         let (sender, receiver) = playback::channel(8);
         let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
         let bus = AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
         let reference = bus.clone();
         let task = std::thread::spawn(move || {
             run_alsa_playback_thread(
@@ -804,7 +817,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(1);
         let mut zero_frames = 0;
         while Instant::now() < deadline && zero_frames == 0 {
-            if let Some(block) = bus.try_read() {
+            if let Some(block) = reader.try_read() {
                 if block.content == crate::module::context::ReferenceContent::HeldSilence
                     && block.sample_count > 0
                 {
@@ -821,7 +834,7 @@ mod tests {
         }
         assert!(zero_frames > 0, "real null writes must expose held silence");
         assert_eq!(s.snapshot(1).submitted_source_frames, Some(0));
-        while bus.try_read().is_some() {}
+        while reader.try_read().is_some() {}
         let resume = ControlCommand {
             command_id: uuid::Uuid::new_v4(),
             sequence: 2,
@@ -845,7 +858,7 @@ mod tests {
             Some(alia_core::delivery::ObservationEnd::SubmissionFinished)
         );
         let mut media_frames = 0;
-        while let Some(block) = bus.try_read() {
+        while let Some(block) = reader.try_read() {
             if block.content == crate::module::context::ReferenceContent::Media {
                 media_frames += block.timing.frames;
             }
@@ -872,6 +885,7 @@ mod tests {
         };
         let runtime = create_alsa_playback_runtime(&config, "null").unwrap();
         let bus = AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(
             AudioDirection::Playback,
             AudioFormat {
@@ -881,7 +895,7 @@ mod tests {
         );
         let owner = AudioStreamOwner(clock.probe.clone());
         clock.probe.activate();
-        bus.try_read();
+        reader.try_read();
         let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
         buffer.append(1, vec![1234; 64]);
         write_alsa_chunk(
@@ -894,10 +908,10 @@ mod tests {
             false,
         )
         .unwrap();
-        let block = bus
+        let block = reader
             .try_read()
             .expect("successful native null write must be observable");
-        assert_eq!(block.boundary, Some(SubmissionBoundary::AlsaWriteAccepted));
+        assert_eq!(block.boundary, Some(AudioSampleBoundary::AlsaWriteAccepted));
         assert_eq!(block.timing.frames, 64);
         assert_eq!(block.sample_count, 64);
         assert_eq!(block.timing.clock.quality, AudioTimeQuality::Unknown);
@@ -916,6 +930,7 @@ mod tests {
         };
         let runtime = create_alsa_playback_runtime(&config, "null").unwrap();
         let bus = AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(
             AudioDirection::Playback,
             AudioFormat {
@@ -924,7 +939,7 @@ mod tests {
             },
         );
         clock.probe.activate();
-        bus.try_read();
+        reader.try_read();
         let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
         buffer.append(1, vec![1234; 64]);
         runtime.pcm.drop().unwrap();
@@ -940,7 +955,7 @@ mod tests {
             )
             .is_err()
         );
-        while let Some(block) = bus.try_read() {
+        while let Some(block) = reader.try_read() {
             assert_eq!(block.sample_count, 0);
         }
         let state = bus.snapshot(AudioDirection::Playback).unwrap();
@@ -960,6 +975,7 @@ mod tests {
         )
         .unwrap();
         let bus = AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(
             AudioDirection::Playback,
             AudioFormat {
@@ -969,7 +985,7 @@ mod tests {
         );
         let owner = AudioStreamOwner(clock.probe.clone());
         clock.probe.activate();
-        bus.try_read();
+        reader.try_read();
         let mut buffer = PlaybackBuffer::new(Arc::new(AtomicU64::new(1)));
         buffer.append(1, vec![2345; 64]);
         let (chunk, lease) = buffer.alsa_chunk(64);
@@ -985,8 +1001,11 @@ mod tests {
         clock.probe.mark(AudioDiscontinuity::Cancelled);
         drop(runtime);
         drop(owner);
-        let prefix = bus.try_read().unwrap();
-        assert_eq!(prefix.boundary, Some(SubmissionBoundary::AlsaWriteAccepted));
+        let prefix = reader.try_read().unwrap();
+        assert_eq!(
+            prefix.boundary,
+            Some(AudioSampleBoundary::AlsaWriteAccepted)
+        );
         assert_eq!(prefix.sample_count, accepted);
         assert_eq!(&prefix.samples[..accepted], &[2345.0 / 32768.0; 64]);
         assert_eq!(buffer.len(), 0);

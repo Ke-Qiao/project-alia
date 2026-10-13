@@ -86,9 +86,19 @@ which controls output admission and does not stop microphone upload by itself.
 
 ## Debugging and Limits
 
-Optional debug WAVs record selected capture and playback payloads. They may grow
-quickly, so enable them only for a bounded diagnostic run. Native submission
-receipts and local WAV files do not prove physical presentation, silence,
-echo cancellation, or full-duplex acoustic quality. Hardware AEC and device
-measurement remain deferred. Existing server shadow/default policies are
-unchanged by this voice-path cleanup.
+The old source-WAV recorder and `[audio_debug]` configuration have been removed.
+It recorded a local cue before mixing/native acceptance and did not establish
+dual-stream timing evidence. Remove that obsolete table from local configuration;
+file loading and settings updates reject it even when disabled.
+
+R02-A records bounded native input and final output evidence through one exclusive
+consumer. Its explicit session and offline replay do not start audio devices,
+record automatically, or add AEC. Capture is the data delivered by the backend,
+which may already have been processed by device firmware. It is not proof of raw
+ADC samples or acoustic capture/playback alignment. Missing reference stays
+missing; recorded zero-valued samples are separate evidence.
+
+Native submission receipts and exported software evidence do not prove physical
+presentation, silence, echo cancellation, or full-duplex acoustic quality.
+Hardware AEC and device measurement still require field validation. Existing
+server shadow/default policies are unchanged.

@@ -1174,7 +1174,6 @@ async fn cue_only_retirement_proves_original_native_settled_owner_and_retries_ca
 #[tokio::test(start_paused = true)]
 async fn local_cue_deadline_cancels_and_joins_a_producer_blocked_by_full_native_queue() {
     use crate::module::{
-        audio_debug::AudioDebugRecorder,
         context::{EventBus, ModuleEvent},
         direct_response_playback::play_direct_response,
         playback_session::CaptureControlBarrier,
@@ -1228,7 +1227,6 @@ async fn local_cue_deadline_cancels_and_joins_a_producer_blocked_by_full_native_
         session.clone(),
         scope,
         events,
-        AudioDebugRecorder::new(Default::default()),
         cancel.clone(),
     ));
     assert!(matches!(

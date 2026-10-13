@@ -649,14 +649,15 @@ fn reference_clock(
         },
     );
     clock.probe.activate();
-    bus.try_read();
+    bus.try_claim_reader().unwrap().try_read();
     (bus, clock)
 }
 fn reference_data(
     bus: &crate::module::context::AudioReferenceBus,
 ) -> Vec<crate::module::context::AudioReferenceBlock> {
     let mut out = vec![];
-    while let Some(block) = bus.try_read() {
+    let mut reader = bus.try_claim_reader().unwrap();
+    while let Some(block) = reader.try_read() {
         if block.sample_count > 0 {
             out.push(block);
         }
@@ -719,7 +720,7 @@ fn reference_matches_post_resample_gain_and_native_i8_quantization() {
     assert_eq!(packets[0].timing.frames, 192);
     assert_eq!(
         packets[0].boundary,
-        Some(SubmissionBoundary::CpalCallbackBuffer)
+        Some(crate::module::context::AudioSampleBoundary::CpalCallbackBuffer)
     );
 }
 
@@ -866,7 +867,7 @@ fn alsa_reference_contains_only_accepted_prefix_even_after_cancel_or_missing_tim
             assert_eq!(packets[0].timing.clock.quality, AudioTimeQuality::Unknown);
             assert_eq!(
                 packets[0].boundary,
-                Some(SubmissionBoundary::AlsaWriteAccepted)
+                Some(crate::module::context::AudioSampleBoundary::AlsaWriteAccepted)
             );
             assert_eq!(
                 &packets[0].samples[..accepted * 2],

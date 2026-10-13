@@ -8,7 +8,6 @@ use anyhow::{Context, Result, bail, ensure};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
-use crate::module::audio_debug::AudioDebugRecorder;
 use crate::module::context::{EventBus, ModuleEvent};
 use crate::module::playback_session::{PlaybackLease, PlaybackSession};
 use crate::module::traits::DirectResponseAction;
@@ -40,7 +39,6 @@ pub async fn play_direct_response(
     playback: Arc<PlaybackSession>,
     scope: VoiceScope,
     event_bus: EventBus,
-    audio_debug: AudioDebugRecorder,
     cancel: CancellationToken,
 ) -> bool {
     let Some(audio_path) = action.audio_path.as_deref() else {
@@ -71,7 +69,6 @@ pub async fn play_direct_response(
         lease: lease.clone(),
         events: event_bus.clone(),
     };
-    audio_debug.record_playback("local-cue", &wav.pcm, wav.sample_rate, 1);
     event_bus.publish(ModuleEvent::PlaybackStarted {
         source: "local-cue".into(),
     });

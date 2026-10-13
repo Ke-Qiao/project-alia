@@ -10,7 +10,6 @@ use tracing::warn;
 mod duplex;
 pub mod transport;
 
-use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus};
 use super::lifecycle::{ModuleHealth, ModuleLifecycle};
 use super::playback_session::PlaybackSession;
@@ -28,7 +27,6 @@ pub struct SpeechPipeline {
     direct_response: Arc<dyn DirectResponseEngine>,
     playback_session: Arc<PlaybackSession>,
     binding: Arc<BindingManager>,
-    audio_debug: AudioDebugRecorder,
     speech_config: SpeechConfig,
     device_boot_id: String,
     device_id: String,
@@ -54,7 +52,6 @@ impl SpeechPipeline {
         binding: Arc<BindingManager>,
         speech_config: &SpeechConfig,
         identity_config: &IdentityConfig,
-        audio_debug: AudioDebugRecorder,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -65,7 +62,6 @@ impl SpeechPipeline {
             direct_response,
             playback_session,
             binding,
-            audio_debug,
             speech_config: speech_config.clone(),
             device_boot_id: device_boot_id.to_string(),
             device_id: identity_config.device_id.clone(),
@@ -105,7 +101,6 @@ impl ModuleLifecycle for SpeechPipeline {
             wakeword: self.wakeword.clone(),
             vad: self.vad.clone(),
             direct_response: self.direct_response.clone(),
-            audio_debug: self.audio_debug.clone(),
             playback_session: self.playback_session.clone(),
             binding: self.binding.clone(),
             device_id: self.device_id.clone(),

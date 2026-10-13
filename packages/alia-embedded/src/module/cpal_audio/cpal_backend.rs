@@ -1,5 +1,9 @@
-use super::super::context::{AudioStreamClock, AudioStreamOwner, ReferenceContent};
-use super::clock::{CpalTimeOrigin, NativeReferenceSample, record_samples};
+use super::super::context::{
+    AudioSampleBoundary, AudioStreamClock, AudioStreamOwner, ReferenceContent,
+};
+use super::clock::{
+    CpalTimeOrigin, NativeReferenceSample, observe_capture_samples, record_samples,
+};
 use super::*;
 use alia_core::audio_clock::*;
 
@@ -353,7 +357,7 @@ fn build_input_stream<T>(
     err_fn: impl Fn(cpal::StreamError) + Send + 'static,
 ) -> Result<Stream>
 where
-    T: Copy + ToI16Sample + cpal::SizedSample + Send + 'static,
+    T: ToI16Sample + NativeReferenceSample + cpal::SizedSample + Send + 'static,
 {
     let sample_rate = {
         let converter = lock_mutex(&converter, "capture converter")?;
@@ -376,7 +380,7 @@ where
                 let native_format = clock.probe.format();
                 let complete = data.len() / usize::from(native_format.channels) * usize::from(native_format.channels);
                 if complete != data.len() { clock.probe.mark(AudioDiscontinuity::BackendError); }
-                let native = clock.observe((complete / usize::from(native_format.channels)) as u64, reading);
+                let native = observe_capture_samples(&mut clock, &data[..complete], reading, AudioSampleBoundary::CpalInputCallback);
                 let mut pcm = match converter.lock() {
                     Ok(mut converter) => {
                         if continuity != native.continuity {

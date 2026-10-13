@@ -30,7 +30,6 @@ The example file is `config/embedded.example.toml`.
 | `[identity]` | Device id, friendly name, keypair path. |
 | `[modules]` | Module implementation choices. |
 | `[audio]` | Capture/playback backend, devices, rates, buffers, and volume defaults. |
-| `[audio_debug]` | Optional WAV recording for diagnosing capture/playback. |
 | `[wakeword]` | sherpa-onnx keyword spotting model and keyword config. |
 | `[speech]` | Exact Server channel instance ID, VoiceSession pre-roll, and bounded upload queue. |
 | `[vad]` | sherpa-onnx/Silero activity evidence settings. |
@@ -41,6 +40,12 @@ The example file is `config/embedded.example.toml`.
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 
 ## Voice Configuration
+
+The obsolete `[audio_debug]` source-WAV recorder has been removed. Its table is
+rejected by file loading and settings updates, including `enabled = false`;
+remove that table from local configuration before starting a new version.
+Native dual-stream evidence uses an explicitly owned, bounded software session,
+not an automatic recording configuration. See [audio evidence](audio-and-voice.md#debugging-and-limits).
 
 `[speech].channel_id` names the exact `[[channels]].id` on the bound server.
 The compiled default `"embedded"` means an actual instance with that name, not a

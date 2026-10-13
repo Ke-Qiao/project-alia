@@ -396,7 +396,6 @@ async fn harness_with_channel_id(
         wakeword: local.clone(),
         vad: local.clone(),
         direct_response: Arc::new(crate::module::noop::NoopDirectResponse),
-        audio_debug: crate::module::audio_debug::AudioDebugRecorder::new(Default::default()),
         playback_session: Arc::new(PlaybackSession::new(local.clone())),
         binding,
         device_id: "test-device".into(),

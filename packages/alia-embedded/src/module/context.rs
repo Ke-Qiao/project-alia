@@ -9,8 +9,8 @@ use crate::storage::EmbeddedStore;
 
 mod audio_reference;
 pub use audio_reference::{
-    AudioReferenceBlock, AudioReferenceBus, AudioStreamSnapshot, REFERENCE_BLOCK_SAMPLES,
-    ReferenceContent,
+    AudioReferenceBlock, AudioReferenceBus, AudioReferenceReader, AudioSampleBoundary,
+    AudioStreamSnapshot, NativeSampleFormat, REFERENCE_BLOCK_SAMPLES, ReferenceContent,
 };
 pub(crate) use audio_reference::{AudioStreamClock, AudioStreamOwner, AudioStreamProbe};
 

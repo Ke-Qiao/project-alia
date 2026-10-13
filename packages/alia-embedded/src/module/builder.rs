@@ -14,7 +14,6 @@ use crate::plugin::PluginRegistry;
 use crate::settings::EmbeddedSettingsManager;
 use crate::storage::EmbeddedStore;
 
-use super::audio_debug::AudioDebugRecorder;
 use super::context::{AudioBus, EventBus, ModuleContext};
 use super::factory;
 use super::hmmd_mmwave::HmmdMmWaveModule;
@@ -45,7 +44,6 @@ pub struct EmbeddedNode {
     pub settings_manager: Arc<EmbeddedSettingsManager>,
     pub state_store: EmbeddedStore,
     pub volume_state: AudioVolumeState,
-    pub audio_debug: AudioDebugRecorder,
     pub event_bus: EventBus,
     listener: Option<tokio::net::TcpListener>,
     connections: Arc<Connections>,
@@ -353,7 +351,6 @@ impl EmbeddedBuilder {
         .map(|value| value.sanitized())
         .unwrap_or_else(|| AudioVolumeConfig::from_audio_config(&config.audio));
         let volume_state = AudioVolumeState::new(volume_config);
-        let audio_debug = AudioDebugRecorder::new(config.audio_debug.clone());
         let vision_debug_hub = Arc::new(VisionDebugHub::new(config.vision_debug.clone()));
 
         // Register even a failed/cancelled init before propagating its error.
@@ -481,7 +478,6 @@ impl EmbeddedBuilder {
             binding_manager.clone(),
             &config.speech,
             &config.identity,
-            audio_debug.clone(),
             self.cancel_token.clone(),
         )));
         let discovery = init!(match self.discovery {
@@ -536,7 +532,6 @@ impl EmbeddedBuilder {
             settings_manager,
             state_store,
             volume_state,
-            audio_debug,
             event_bus: ctx.event_bus,
             listener: Some(listener),
             connections,

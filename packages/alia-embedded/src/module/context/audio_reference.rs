@@ -2,18 +2,19 @@
 //! This is a single-consumer stream: a future AEC worker owns that consumer and
 //! must reset on loss or discontinuity, rather than treating missing PCM as zero.
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use alia_core::audio_clock::*;
 use alia_core::delivery::SubmissionBoundary;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const REFERENCE_BLOCK_SAMPLES: usize = 1024;
 const REFERENCE_BLOCK_CAPACITY: usize = 64;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceContent {
     /// Actual zeros written while preserving unsubmitted media behind a hold.
     HeldSilence,
@@ -26,22 +27,57 @@ pub enum ReferenceContent {
     Mixed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudioSampleBoundary {
+    CpalInputCallback,
+    AlsaCaptureRead,
+    CpalCallbackBuffer,
+    AlsaWriteAccepted,
+}
+
+impl From<SubmissionBoundary> for AudioSampleBoundary {
+    fn from(boundary: SubmissionBoundary) -> Self {
+        match boundary {
+            SubmissionBoundary::CpalCallbackBuffer => Self::CpalCallbackBuffer,
+            SubmissionBoundary::AlsaWriteAccepted => Self::AlsaWriteAccepted,
+        }
+    }
+}
+
+/// The native sample container before normalization, not a measured ADC depth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NativeSampleFormat {
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
+}
+
 #[derive(Clone, Debug)]
 pub struct AudioReferenceBlock {
     pub timing: AudioTiming,
-    pub boundary: Option<SubmissionBoundary>,
+    pub boundary: Option<AudioSampleBoundary>,
+    /// None for lifecycle markers, which contain no PCM.
+    pub sample_format: Option<NativeSampleFormat>,
     pub content: ReferenceContent,
     pub discontinuity: Option<AudioDiscontinuity>,
     pub sequence: u64,
     pub lost_blocks_before: u64,
     pub lost_frames_before: u64,
-    /// Normalized samples copied from the actual native output representation.
+    /// Normalized f64 observations at the actual native input/output boundary.
+    /// Integer containers wider than f64's precision are not bit-exact raw PCM.
     /// Storage is fixed and frame-aligned; only samples[..sample_count] is valid.
     pub samples: [f64; REFERENCE_BLOCK_SAMPLES],
     pub sample_count: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioStreamSnapshot {
     pub stream: AudioStreamId,
     pub format: AudioFormat,
@@ -77,6 +113,7 @@ struct ReferenceInner {
     queue: Mutex<VecDeque<AudioReferenceBlock>>,
     capacity: usize,
     streams: Mutex<[Option<Arc<StreamState>>; 2]>,
+    reader_claimed: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -93,15 +130,16 @@ impl AudioReferenceBus {
             queue: Mutex::new(VecDeque::with_capacity(capacity)),
             capacity,
             streams: Mutex::new([None, None]),
+            reader_claimed: AtomicBool::new(false),
         }))
     }
-    /// Consumer side only. Never call from an audio callback.
-    pub fn try_read(&self) -> Option<AudioReferenceBlock> {
+    /// Claim the sole consumer. A cloned bus cannot consume or steal its PCM.
+    pub fn try_claim_reader(&self) -> Option<AudioReferenceReader> {
         self.0
-            .queue
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
+            .reader_claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| AudioReferenceReader(self.clone()))
     }
     /// Independent of the PCM queue, so final overflow and a dropped close marker
     /// remain observable even when no later callback or packet exists.
@@ -142,6 +180,35 @@ impl AudioReferenceBus {
             probe,
             last_callback_ns: None,
         }
+    }
+}
+
+/// A single owned consumer; dropping it releases only consumption, not streams.
+pub struct AudioReferenceReader(AudioReferenceBus);
+
+impl AudioReferenceReader {
+    pub fn boot_id(&self) -> Uuid {
+        self.0.0.boot_id
+    }
+
+    /// Consumer side only. Never call from an audio callback.
+    pub fn try_read(&mut self) -> Option<AudioReferenceBlock> {
+        self.0
+            .0
+            .queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop_front()
+    }
+
+    pub fn snapshot(&self, direction: AudioDirection) -> Option<AudioStreamSnapshot> {
+        self.0.snapshot(direction)
+    }
+}
+
+impl Drop for AudioReferenceReader {
+    fn drop(&mut self) {
+        self.0.0.reader_claimed.store(false, Ordering::Release);
     }
 }
 fn index(direction: AudioDirection) -> usize {
@@ -243,6 +310,7 @@ impl AudioStreamProbe {
         self.publish(AudioReferenceBlock {
             timing,
             boundary: None,
+            sample_format: None,
             content: ReferenceContent::ZeroFill,
             discontinuity: Some(reason),
             sequence: 0,
@@ -268,14 +336,21 @@ impl AudioStreamProbe {
         }
     }
     pub fn publish(&self, mut block: AudioReferenceBlock) {
-        block.sequence = self.state.sequence.fetch_add(1, Ordering::AcqRel) + 1;
-        block.lost_blocks_before = self.state.lost_blocks.load(Ordering::Acquire);
-        block.lost_frames_before = self.state.lost_frames.load(Ordering::Acquire);
         if let Ok(mut queue) = self.bus.0.queue.try_lock() {
+            // Assign while holding the queue so concurrent fault markers cannot
+            // overtake a successful PCM publication's sequence. Failed attempts
+            // still reserve a sequence and count loss without blocking.
+            // Read loss first: concurrent failed attempts may make this snapshot
+            // stale, but cannot make its counters lead this publication's sequence.
+            block.lost_blocks_before = self.state.lost_blocks.load(Ordering::Acquire);
+            block.lost_frames_before = self.state.lost_frames.load(Ordering::Acquire);
+            block.sequence = self.state.sequence.fetch_add(1, Ordering::AcqRel) + 1;
             if queue.len() < self.bus.0.capacity {
                 queue.push_back(block);
                 return;
             }
+        } else {
+            self.state.sequence.fetch_add(1, Ordering::AcqRel);
         }
         self.state.lost_blocks.fetch_add(1, Ordering::AcqRel);
         self.state
@@ -366,7 +441,8 @@ mod tests {
         let timing = clock.observe(frames, clock.probe.unknown_clock());
         AudioReferenceBlock {
             timing,
-            boundary: Some(SubmissionBoundary::CpalCallbackBuffer),
+            boundary: Some(AudioSampleBoundary::CpalCallbackBuffer),
+            sample_format: Some(NativeSampleFormat::F64),
             content: ReferenceContent::Media,
             discontinuity: None,
             sequence: 0,
@@ -376,12 +452,128 @@ mod tests {
             sample_count: frames as usize * 2,
         }
     }
+
+    #[test]
+    fn another_bus_clone_cannot_steal_the_established_consumers_pcm() {
+        let bus = AudioReferenceBus::new(Uuid::new_v4());
+        let mut consumer = bus.try_claim_reader().unwrap();
+        assert_eq!(consumer.boot_id(), bus.0.boot_id);
+        let mut clock = bus.open_stream(AudioDirection::Playback, format());
+        clock.probe.activate();
+        consumer.try_read().unwrap();
+        let pcm = block(&mut clock, 4);
+        clock.probe.publish(pcm);
+        let other = bus.clone();
+        assert!(
+            other.try_claim_reader().is_none(),
+            "a cloned bus could steal the consumer"
+        );
+        assert_eq!(consumer.try_read().unwrap().sample_count, 8);
+        let queued = block(&mut clock, 3);
+        clock.probe.publish(queued);
+        drop(consumer);
+        // Reclaiming consumption neither stops a native stream nor discards PCM.
+        let mut replacement = other.try_claim_reader().unwrap();
+        assert!(
+            replacement
+                .snapshot(AudioDirection::Playback)
+                .unwrap()
+                .running
+        );
+        assert_eq!(replacement.try_read().unwrap().sample_count, 6);
+        clock.probe.close();
+        assert_eq!(
+            replacement.try_read().unwrap().discontinuity,
+            Some(AudioDiscontinuity::StreamStopped)
+        );
+        assert!(bus.try_claim_reader().is_none());
+        drop(replacement);
+        assert!(bus.try_claim_reader().is_some());
+    }
+
+    #[test]
+    fn simultaneous_consumer_claims_have_exactly_one_owner() {
+        let bus = AudioReferenceBus::new(Uuid::new_v4());
+        let barrier = std::sync::Barrier::new(4);
+        let claimed = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        let reader = bus.try_claim_reader();
+                        barrier.wait(); // Keep the winner alive until all attempts finish.
+                        reader.is_some()
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|w| w.join().unwrap())
+                .filter(|&claimed| claimed)
+                .count()
+        });
+        assert_eq!(claimed, 1);
+        assert!(bus.try_claim_reader().is_some());
+    }
+
+    #[test]
+    fn concurrent_marker_and_pcm_publications_preserve_queue_sequence_and_final_loss() {
+        const WORKERS: usize = 4;
+        const ATTEMPTS: usize = 256;
+        let bus = AudioReferenceBus::with_capacity(Uuid::new_v4(), WORKERS * ATTEMPTS + 2);
+        let mut reader = bus.try_claim_reader().unwrap();
+        let mut clock = bus.open_stream(AudioDirection::Playback, format());
+        let pcm = block(&mut clock, 2); // Also publishes Started.
+        reader.try_read().unwrap();
+        let barrier = std::sync::Barrier::new(WORKERS);
+        std::thread::scope(|scope| {
+            for worker in 0..WORKERS {
+                let probe = clock.probe.clone();
+                let pcm = &pcm;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for _ in 0..ATTEMPTS {
+                        if worker % 2 == 0 {
+                            probe.publish(pcm.clone());
+                        } else {
+                            probe.mark(AudioDiscontinuity::BackendError);
+                        }
+                    }
+                });
+            }
+        });
+        clock.probe.close();
+        let final_state = reader.snapshot(AudioDirection::Playback).unwrap();
+        assert!(final_state.closed);
+        assert_eq!(
+            final_state.attempted_blocks,
+            (WORKERS * ATTEMPTS + 2) as u64
+        );
+        let mut sequences = Vec::new();
+        let mut retained_frames = 0;
+        while let Some(record) = reader.try_read() {
+            assert!(record.lost_blocks_before < record.sequence);
+            sequences.push(record.sequence);
+            retained_frames += record.timing.frames;
+        }
+        assert!(sequences.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(
+            final_state.attempted_blocks,
+            sequences.len() as u64 + 1 + final_state.lost_blocks
+        );
+        assert_eq!(
+            final_state.lost_frames + retained_frames,
+            (WORKERS / 2 * ATTEMPTS * 2) as u64
+        );
+    }
     #[test]
     fn full_reference_queue_and_lost_close_remain_visible_without_later_pcm() {
         let bus = AudioReferenceBus::with_capacity(Uuid::new_v4(), 1);
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(AudioDirection::Playback, format());
         clock.probe.activate();
-        bus.try_read().unwrap(); // Started
+        reader.try_read().unwrap(); // Started
         let first = block(&mut clock, 4);
         clock.probe.publish(first);
         let lost = block(&mut clock, 3);
@@ -399,24 +591,25 @@ mod tests {
             state.last_discontinuity,
             Some(AudioDiscontinuity::StreamStopped)
         );
-        assert_eq!(bus.try_read().unwrap().timing.frames, 4);
-        assert!(bus.try_read().is_none());
+        assert_eq!(reader.try_read().unwrap().timing.frames, 4);
+        assert!(reader.try_read().is_none());
     }
     #[test]
     fn resumed_reference_reports_the_missing_cursor_range_without_inventing_silence() {
         let bus = AudioReferenceBus::with_capacity(Uuid::new_v4(), 2);
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(AudioDirection::Playback, format());
         clock.probe.activate();
-        bus.try_read();
+        reader.try_read();
         for frames in [10, 5, 7] {
             let next = block(&mut clock, frames);
             clock.probe.publish(next);
         }
-        assert_eq!(bus.try_read().unwrap().timing.frames, 10);
+        assert_eq!(reader.try_read().unwrap().timing.frames, 10);
         let next = block(&mut clock, 2);
         clock.probe.publish(next);
-        let before_gap = bus.try_read().unwrap();
-        let after_gap = bus.try_read().unwrap();
+        let before_gap = reader.try_read().unwrap();
+        let after_gap = reader.try_read().unwrap();
         assert_eq!(before_gap.timing.start_frame + before_gap.timing.frames, 15);
         assert_eq!(after_gap.timing.start_frame, 22);
         assert_eq!(after_gap.sequence, before_gap.sequence + 2);
@@ -427,9 +620,10 @@ mod tests {
     #[test]
     fn contended_reference_consumer_never_blocks_native_producer_or_close() {
         let bus = AudioReferenceBus::with_capacity(Uuid::new_v4(), 2);
+        let mut reader = bus.try_claim_reader().unwrap();
         let mut clock = bus.open_stream(AudioDirection::Playback, format());
         clock.probe.activate();
-        bus.try_read();
+        reader.try_read();
         let lock = bus.0.queue.lock().unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
@@ -472,6 +666,7 @@ mod tests {
     #[test]
     fn failed_native_start_closes_the_owner_without_a_started_claim_or_reactivation() {
         let bus = AudioReferenceBus::new(Uuid::new_v4());
+        let mut reader = bus.try_claim_reader().unwrap();
         let clock = bus.open_stream(AudioDirection::Playback, format());
         assert!(!bus.snapshot(AudioDirection::Playback).unwrap().running);
         assert_eq!(
@@ -480,17 +675,17 @@ mod tests {
                 .last_discontinuity,
             None
         );
-        assert!(bus.try_read().is_none());
+        assert!(reader.try_read().is_none());
         drop(AudioStreamOwner(clock.probe.clone()));
         clock.probe.activate();
         let state = bus.snapshot(AudioDirection::Playback).unwrap();
         assert!(!state.running && state.closed);
         assert_eq!(state.cursor, 0);
         assert_eq!(
-            bus.try_read().unwrap().discontinuity,
+            reader.try_read().unwrap().discontinuity,
             Some(AudioDiscontinuity::StreamStopped)
         );
-        assert!(bus.try_read().is_none());
+        assert!(reader.try_read().is_none());
     }
     #[test]
     fn final_close_snapshot_waits_for_native_owner_and_includes_lost_terminal_marker() {

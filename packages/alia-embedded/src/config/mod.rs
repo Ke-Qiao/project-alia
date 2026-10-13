@@ -97,7 +97,6 @@ fn resolve_paths(config: &mut EmbeddedConfig, path: &Path) {
     resolve_relative(parent, &mut config.motion.i2c_device);
     resolve_relative(parent, &mut config.vision.yunet_model_path);
     resolve_relative(parent, &mut config.direct_response_defaults.audio_dir);
-    resolve_relative(parent, &mut config.audio_debug.dir);
 
     for response in &mut config.direct_response {
         resolve_relative(parent, &mut response.audio);
@@ -148,7 +147,6 @@ pub fn relativize_runtime_paths(config_path: &Path, settings: &mut EmbeddedRunti
     relativize_path(base, &mut settings.motion.i2c_device);
     relativize_path(base, &mut settings.vision.yunet_model_path);
     relativize_path(base, &mut settings.direct_response_defaults.audio_dir);
-    relativize_path(base, &mut settings.audio_debug.dir);
 }
 
 fn relativize_path(base: &Path, path: &mut PathBuf) {

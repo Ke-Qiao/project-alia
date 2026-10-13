@@ -5,6 +5,40 @@ use alia_embedded::config::{
 };
 
 #[test]
+fn obsolete_source_wav_recorder_configuration_is_rejected() {
+    for enabled in [false, true] {
+        let text = format!("[audio_debug]\nenabled = {enabled}\n");
+        assert!(
+            toml::from_str::<EmbeddedRuntimeSettings>(&text).is_err(),
+            "source WAV recording is not bounded native dual-stream evidence"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("embedded.toml");
+        std::fs::write(&path, &text).unwrap();
+        assert!(alia_embedded::config::load_config(&path).is_err());
+    }
+}
+
+#[tokio::test]
+async fn obsolete_source_wav_update_preserves_memory_and_disk() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("embedded.toml");
+    let config = load_config(&path).unwrap();
+    save_runtime_config(&config).unwrap();
+    let manager = EmbeddedSettingsManager::new(&config);
+    let before_memory = manager.snapshot_json(false).await.unwrap();
+    let before_disk = std::fs::read(&path).unwrap();
+    let update = manager
+        .update_from_json(r#"{"audio_debug":{"enabled":true}}"#)
+        .await;
+    assert!(update.is_err(), "removed recorder must not be re-enabled");
+    assert_eq!(manager.snapshot_json(false).await.unwrap(), before_memory);
+    assert_eq!(std::fs::read(&path).unwrap(), before_disk);
+}
+
+#[test]
 fn removed_voice_and_mixer_selectors_are_rejected_instead_of_ignored() {
     for old in [
         "[speech]\nmode = 'utterance'",
@@ -79,16 +113,15 @@ fn has_vad_model_path_default() {
 }
 
 #[test]
-fn has_audio_debug_defaults() {
+fn defaults_do_not_enable_recording_or_assume_shared_audio_clock() {
     let settings = EmbeddedRuntimeSettings::default();
-
     assert!(!settings.audio.alsa_playback_lock_to_capture_rate);
-    assert!(!settings.audio_debug.enabled);
-    assert_eq!(settings.audio_debug.dir, PathBuf::from("run/audio-debug"));
-    assert!(settings.audio_debug.record_capture_stream);
-    assert!(settings.audio_debug.record_wake_capture);
-    assert!(settings.audio_debug.record_playback);
-    assert_eq!(settings.audio_debug.capture_segment_ms, 10_000);
+    assert!(
+        serde_json::to_value(&settings)
+            .unwrap()
+            .get("audio_debug")
+            .is_none()
+    );
 }
 
 #[test]
@@ -221,7 +254,6 @@ wakeword = "noop"
         config.device_runtime.plugins_dir,
         dir.path().join("isolated/plugins")
     );
-    assert_eq!(config.audio_debug.dir, dir.path().join("run/audio-debug"));
     assert_eq!(
         config.direct_response_defaults.audio_dir,
         dir.path().join("run/direct-responses")

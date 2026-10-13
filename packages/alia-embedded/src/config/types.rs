@@ -14,8 +14,6 @@ pub struct EmbeddedConfig {
     #[serde(default)]
     pub vad: VadConfig,
     pub audio: AudioConfig,
-    #[serde(default)]
-    pub audio_debug: AudioDebugConfig,
     pub discovery: DiscoveryConfig,
     #[serde(default)]
     pub hmmd_mmwave: HmmdMmWaveConfig,
@@ -491,43 +489,6 @@ fn default_upload_buffer_frames() -> u32 {
 }
 fn default_jitter_buffer_ms() -> u32 {
     60
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AudioDebugConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_audio_debug_dir")]
-    pub dir: PathBuf,
-    #[serde(default = "default_true")]
-    pub record_capture_stream: bool,
-    #[serde(default = "default_true")]
-    pub record_wake_capture: bool,
-    #[serde(default = "default_true")]
-    pub record_playback: bool,
-    #[serde(default = "default_audio_debug_capture_segment_ms")]
-    pub capture_segment_ms: u32,
-}
-
-impl Default for AudioDebugConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            dir: default_audio_debug_dir(),
-            record_capture_stream: true,
-            record_wake_capture: true,
-            record_playback: true,
-            capture_segment_ms: default_audio_debug_capture_segment_ms(),
-        }
-    }
-}
-
-fn default_audio_debug_dir() -> PathBuf {
-    PathBuf::from("run/audio-debug")
-}
-
-fn default_audio_debug_capture_segment_ms() -> u32 {
-    10_000
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -1011,8 +972,6 @@ pub struct EmbeddedRuntimeSettings {
     #[serde(default)]
     pub audio: AudioConfig,
     #[serde(default)]
-    pub audio_debug: AudioDebugConfig,
-    #[serde(default)]
     pub speech: SpeechConfig,
     #[serde(default)]
     pub vad: VadConfig,
@@ -1042,7 +1001,6 @@ impl Default for EmbeddedConfig {
             speech: SpeechConfig::default(),
             vad: VadConfig::default(),
             audio: AudioConfig::default(),
-            audio_debug: AudioDebugConfig::default(),
             discovery: DiscoveryConfig::default(),
             hmmd_mmwave: HmmdMmWaveConfig::default(),
             motion: MotionConfig::default(),
@@ -1064,7 +1022,6 @@ impl EmbeddedConfig {
         self.identity = runtime.identity;
         self.wakeword = runtime.wakeword;
         self.audio = runtime.audio;
-        self.audio_debug = runtime.audio_debug;
         self.speech = runtime.speech;
         self.vad = runtime.vad;
         self.discovery = runtime.discovery;
@@ -1087,7 +1044,6 @@ impl EmbeddedConfig {
             identity: self.identity.clone(),
             wakeword: self.wakeword.clone(),
             audio: self.audio.clone(),
-            audio_debug: self.audio_debug.clone(),
             speech: self.speech.clone(),
             vad: self.vad.clone(),
             discovery: self.discovery.clone(),

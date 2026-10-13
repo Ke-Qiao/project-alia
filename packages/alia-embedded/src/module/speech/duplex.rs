@@ -21,7 +21,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use super::super::audio_debug::AudioDebugRecorder;
 use super::super::context::{AudioFrame, EventBus, ModuleEvent};
 use super::super::playback_session::{CaptureControlBarrier, PlaybackSession};
 use super::super::traits::{
@@ -44,7 +43,6 @@ pub(super) struct Runtime {
     pub wakeword: Arc<dyn WakeWordEngine>,
     pub vad: Arc<dyn VoiceActivityEngine>,
     pub direct_response: Arc<dyn DirectResponseEngine>,
-    pub audio_debug: AudioDebugRecorder,
     pub playback_session: Arc<PlaybackSession>,
     pub binding: Arc<BindingManager>,
     pub device_id: String,
@@ -193,7 +191,6 @@ impl Runtime {
             self.direct_response.clone(),
             self.playback_session.clone(),
             self.event_bus.clone(),
-            self.audio_debug.clone(),
             cancel.clone(),
         ));
         let task = tokio::spawn(async move {
@@ -311,7 +308,6 @@ async fn play_ready_cue(
     direct_response: Arc<dyn DirectResponseEngine>,
     playback: Arc<PlaybackSession>,
     event_bus: EventBus,
-    audio_debug: AudioDebugRecorder,
     cancel: CancellationToken,
 ) {
     let scope = tokio::select! {
@@ -327,12 +323,7 @@ async fn play_ready_cue(
         .or_else(|| direct_response.match_keyword(&wake_keyword));
     if let Some(action) = action {
         crate::module::direct_response_playback::play_direct_response(
-            action,
-            playback,
-            scope,
-            event_bus,
-            audio_debug,
-            cancel,
+            action, playback, scope, event_bus, cancel,
         )
         .await;
     }
