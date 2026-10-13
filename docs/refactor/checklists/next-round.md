@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-**当前执行顺序：R03-0 → R03-A，R02-A 可并行；之后进入 R05。** Settings 有界审计与准备 8/8 完成，硬件确认与只读审计见 [最新检查点](../resume-checkpoint-hardware-confirmation-2026-10-14.md)。用户已确认 Mac/Pi、R1 USB、PCA9685A/MG996R、停止保持及校准后启动归中；其余部署/实机门槛见 [资料清单](../../operations/hardware-deployment-readiness.md)。
+**当前执行顺序：R02-A 双流证据/离线重放，R03-A 可信资产内容身份；之后按现场出口进入 R05。** R03-0 软件包 10/10，源码 `b5100d7`，恢复从 [最新检查点](../resume-checkpoint-r03-0-2026-10-14.md) 开始。硬件输入已确认的部分见 [部署资料](../../operations/hardware-deployment-readiness.md)；软件保持不等于物理保持。
 更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
@@ -49,7 +49,7 @@
 
 - [x] 复核已有签名命令/唯一 writer/mock 故障；补真实 gRPC 的 unbound/foreign-controller/重连及旧 boot 拒绝，当前 macOS/Linux 回归通过，见 [motion HANDOFF](../handoffs/2026-10-04/motion.md)。
 - [x] 用户选择 PCA9685A + MG996R、停止/断连保持、机构校准后允许启动归中；实际接线/校准未验收。
-- [ ] R03-0：移除停止自动归中旧路径、落实校准后启动归中门槛；修正 PCA AI 位及 SLEEP 后取消/失败恢复，保留精确取消、短写与 native owner。详见 [Motion 审计](../handoffs/2026-10-14-hardware-confirmation/motion-HANDOFF.md)。
+- [x] R03-0 软件：停止固定保持、校准后启动门槛、旧键拒绝、PCA AI 与 SLEEP/多板初始化恢复已完成；macOS 默认 Embedded 263/0/0，Linux 本轮不可用，见 [10/10 checklist](r03-0-2026-10-14.md)。没有真实校准或硬件动作。
 - [ ] 固定 H04 的实际板卡、供电/OE/通道、反馈接口、机械限位、机构校准和保持失效边界。
 - [ ] 明确动作资产 bytes 的签名验证及所选硬件实际可观测能力；不虚构 PCA9685A 的 MCU boot/ACK/位置反馈，原物理验收仍需外部测量或后续反馈硬件。当前命令签名不覆盖文件内容，UART flush/I²C write 不代表物理到位。
 - [ ] 把签名动作资产、位置/速度限制及停止策略接入选定执行器。

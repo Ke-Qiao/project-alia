@@ -1,0 +1,38 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.14s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 3 tests
+PCA model: cancellation error=body initialization cancelled, mode=0x91, prescale=0x21
+
+thread 'module::motion::servo::pca_tests::pca_cancellation_after_sleep_restores_original_running_configuration' (1706231) panicked at packages/alia-embedded/src/module/motion/servo/pca_tests.rs:145:5:
+assertion `left == right` failed
+  left: 17
+ right: 11
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test module::motion::servo::pca_tests::pca_cancellation_after_sleep_restores_original_running_configuration ... FAILED
+PCA model: prescale error=writing 2 bytes starting at register 0xfe to PCA9685 address 0x40: I2C register transaction: injected prescale failure, mode=0x91, prescale=0x21
+
+thread 'module::motion::servo::pca_tests::pca_prescale_failure_restores_original_running_configuration' (1706233) panicked at packages/alia-embedded/src/module/motion/servo/pca_tests.rs:163:5:
+assertion `left == right` failed
+  left: 17
+ right: 11
+test module::motion::servo::pca_tests::pca_prescale_failure_restores_original_running_configuration ... FAILED
+PCA model: mode=0x01, pwm=[3, 0, 0, 0]
+
+thread 'module::motion::servo::pca_tests::pca_initialization_enables_increment_for_real_pwm_burst' (1706232) panicked at packages/alia-embedded/src/module/motion/servo/pca_tests.rs:124:5:
+assertion `left == right` failed
+  left: [3, 0, 0, 0]
+ right: [35, 1, 69, 3]
+test module::motion::servo::pca_tests::pca_initialization_enables_increment_for_real_pwm_burst ... FAILED
+
+failures:
+
+failures:
+    module::motion::servo::pca_tests::pca_cancellation_after_sleep_restores_original_running_configuration
+    module::motion::servo::pca_tests::pca_initialization_enables_increment_for_real_pwm_burst
+    module::motion::servo::pca_tests::pca_prescale_failure_restores_original_running_configuration
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 178 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

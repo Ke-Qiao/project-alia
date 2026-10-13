@@ -1,0 +1,7 @@
+{
+  "file": "packages/alia-server/tests/server_runtime/delivery.rs",
+  "baseline": "125ea5844284efc39ea80c70c543add74ff5e895",
+  "same_bytes_as_baseline": true,
+  "sha256": "f1c3bbabf0a575161e8a1cadd043d6cb94fb0b57b19fe788cd3a52a6e78d6709",
+  "diagnostic": "cargo fmt --all -- --check reports import ordering in this unchanged Server test file; scoped Embedded formatting checked separately; unrelated file not changed"
+}

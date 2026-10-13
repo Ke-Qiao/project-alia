@@ -1,0 +1,245 @@
+diff --git a/packages/alia-embedded/src/module/motion/runtime/tests.rs b/packages/alia-embedded/src/module/motion/runtime/tests.rs
+index f53a5cd..8febdb5 100644
+--- a/packages/alia-embedded/src/module/motion/runtime/tests.rs
++++ b/packages/alia-embedded/src/module/motion/runtime/tests.rs
+@@ -659,7 +659,7 @@ async fn cancellation_deadline_keeps_native_owner_and_accepts_late_quiescent_che
+ }
+ 
+ #[tokio::test]
+-async fn shutdown_waiter_drop_keeps_join_and_reset_runs_only_after_entered_write_returns() {
++async fn shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns() {
+     let (mut runtime, servo) = unstarted();
+     Arc::make_mut(&mut runtime.config).reset_on_stop = true;
+     Arc::make_mut(&mut runtime.config).reset_duration_ms = 0;
+@@ -693,10 +693,23 @@ async fn shutdown_waiter_drop_keeps_join_and_reset_runs_only_after_entered_write
+     runtime.stop().await.unwrap();
+     let end = terminal(observation, &command).await;
+     assert!(matches!(end.end, Some(BodyEnd::Cancelled { .. })));
+-    assert_eq!(servo.count(), 3, "startup, old entered frame, then reset");
++    assert_eq!(servo.count(), 2, "startup and old entered frame only; stop must hold");
+     assert_eq!(servo.max_active.load(Ordering::Acquire), 1);
+     runtime.stop().await.unwrap();
+-    assert_eq!(servo.count(), 3, "stop is idempotent");
++    assert_eq!(servo.count(), 2, "stop is idempotent and emits no reset");
++}
++
++#[tokio::test]
++async fn unconfirmed_calibration_startup_does_not_submit_native_targets() {
++    let (mut runtime, servo) = unstarted();
++    let mut config = serde_json::to_value(runtime.config.as_ref()).unwrap();
++    config["calibration_confirmed"] = serde_json::json!(false);
++    runtime.config = Arc::new(serde_json::from_value(config).unwrap());
++    runtime.start().await.unwrap();
++    let available = runtime.control_state().available;
++    runtime.stop().await.unwrap();
++    assert_eq!(servo.count(), 0, "uncalibrated startup must not send a center target");
++    assert!(!available, "uncalibrated writer must not admit motion");
+ }
+ 
+ #[tokio::test]
+diff --git a/packages/alia-embedded/src/module/motion/servo.rs b/packages/alia-embedded/src/module/motion/servo.rs
+index 15d1dfb..708afe3 100644
+--- a/packages/alia-embedded/src/module/motion/servo.rs
++++ b/packages/alia-embedded/src/module/motion/servo.rs
+@@ -360,8 +360,8 @@ fn submit_i2c_channels(
+     result
+ }
+ 
+-struct Pca9685Device {
+-    file: std::fs::File,
++struct Pca9685Device<Io = std::fs::File> {
++    file: Io,
+     address: u16,
+     frequency_hz: u16,
+     min_pulse_us: u16,
+@@ -395,7 +395,9 @@ impl Pca9685Device {
+             max_pulse_us,
+         })
+     }
++}
+ 
++impl<Io: Read + Write> Pca9685Device<Io> {
+     fn initialize(&mut self, cancelled: &dyn Fn() -> bool) -> Result<()> {
+         const MODE1: u8 = 0x00;
+         const PRESCALE: u8 = 0xfe;
+@@ -577,6 +579,9 @@ fn set_i2c_slave(file: &std::fs::File, address: u16) -> Result<()> {
+     Ok(())
+ }
+ 
++#[cfg(test)]
++mod pca_tests;
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff --git a/packages/alia-embedded/src/module/motion/servo/pca_tests.rs b/packages/alia-embedded/src/module/motion/servo/pca_tests.rs
+new file mode 100644
+index 0000000..9d0ae59
+--- /dev/null
++++ b/packages/alia-embedded/src/module/motion/servo/pca_tests.rs
+@@ -0,0 +1,165 @@
++use super::*;
++use std::cell::Cell;
++use std::io;
++use std::rc::Rc;
++
++const MODE1: usize = 0x00;
++const PRESCALE: usize = 0xfe;
++const RESTART: u8 = 0x80;
++const AI: u8 = 0x20;
++const SLEEP: u8 = 0x10;
++
++// Models only the documented register rules exercised by the production driver.
++struct Registers {
++    values: [u8; 256],
++    pointer: u8,
++    writes: Vec<Vec<u8>>,
++    cancelled: Rc<Cell<bool>>,
++    cancel_after_sleep: bool,
++    fail_prescale_once: bool,
++}
++
++impl Registers {
++    fn new(mode: u8, prescale: u8) -> Self {
++        let mut values = [0; 256];
++        values[MODE1] = mode;
++        values[PRESCALE] = prescale;
++        // Existing channel contents must survive initialization failures.
++        values[0x08] = 0x80;
++        values[0x09] = 0x01;
++        Self {
++            values,
++            pointer: 0,
++            writes: Vec::new(),
++            cancelled: Rc::new(Cell::new(false)),
++            cancel_after_sleep: false,
++            fail_prescale_once: false,
++        }
++    }
++
++    fn device(self) -> Pca9685Device<Self> {
++        Pca9685Device {
++            file: self,
++            address: 0x40,
++            frequency_hz: 50,
++            min_pulse_us: 500,
++            max_pulse_us: 2500,
++        }
++    }
++
++    fn assert_no_pwm_writes(&self) {
++        assert!(
++            self.writes
++                .iter()
++                .all(|bytes| { bytes.len() == 1 || !(0x06..=0x45).contains(&bytes[0]) })
++        );
++    }
++}
++
++impl Read for Registers {
++    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
++        for byte in out.iter_mut() {
++            *byte = self.values[self.pointer as usize];
++            if self.values[MODE1] & AI != 0 {
++                self.pointer = self.pointer.wrapping_add(1);
++            }
++        }
++        Ok(out.len())
++    }
++}
++
++impl Write for Registers {
++    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
++        self.writes.push(bytes.to_vec());
++        assert!(!bytes.is_empty());
++        if bytes.len() > 1 && bytes[0] as usize == PRESCALE && self.fail_prescale_once {
++            self.fail_prescale_once = false;
++            return Err(io::Error::other("injected prescale failure"));
++        }
++        self.pointer = bytes[0];
++        for &value in &bytes[1..] {
++            let reg = self.pointer as usize;
++            match reg {
++                MODE1 => {
++                    let old = self.values[MODE1];
++                    // RESTART is write-one-to-clear, not a saved configuration bit.
++                    let mut restart = old & RESTART;
++                    if old & SLEEP == 0 && value & SLEEP != 0 {
++                        restart = RESTART;
++                    }
++                    if value & RESTART != 0 && value & SLEEP == 0 {
++                        restart = 0;
++                    }
++                    self.values[MODE1] = (value & !RESTART) | restart;
++                    if value & SLEEP != 0 && self.cancel_after_sleep {
++                        self.cancel_after_sleep = false;
++                        self.cancelled.set(true);
++                    }
++                }
++                PRESCALE if self.values[MODE1] & SLEEP == 0 => {}
++                _ => self.values[reg] = value,
++            }
++            if self.values[MODE1] & AI != 0 {
++                self.pointer = self.pointer.wrapping_add(1);
++            }
++        }
++        Ok(bytes.len())
++    }
++
++    fn flush(&mut self) -> io::Result<()> {
++        Ok(())
++    }
++}
++
++#[test]
++fn pca_initialization_enables_increment_for_real_pwm_burst() {
++    let mut device = Registers::new(0x01, 0x1e).device();
++    device.initialize(&|| false).unwrap();
++    device.set_pwm(2, 0x0123, 0x0345).unwrap();
++    eprintln!(
++        "PCA model: mode={:#04x}, pwm={:?}",
++        device.file.values[MODE1],
++        &device.file.values[0x0e..0x12]
++    );
++    assert_eq!(&device.file.values[0x0e..0x12], &[0x23, 0x01, 0x45, 0x03]);
++    assert_ne!(device.file.values[MODE1] & AI, 0);
++}
++
++#[test]
++fn pca_cancellation_after_sleep_restores_original_running_configuration() {
++    let original_mode = 0x0b;
++    let original_prescale = 0x21;
++    let mut registers = Registers::new(original_mode, original_prescale);
++    registers.cancel_after_sleep = true;
++    let cancelled = Rc::clone(&registers.cancelled);
++    let original_pwm = registers.values[0x06..0x46].to_vec();
++    let mut device = registers.device();
++    let error = device.initialize(&|| cancelled.get()).unwrap_err();
++    eprintln!(
++        "PCA model: cancellation error={error:#}, mode={:#04x}, prescale={:#04x}",
++        device.file.values[MODE1], device.file.values[PRESCALE]
++    );
++    assert!(cancelled.get());
++    device.file.assert_no_pwm_writes();
++    assert_eq!(&device.file.values[0x06..0x46], original_pwm.as_slice());
++    assert_eq!(device.file.values[MODE1] & !RESTART, original_mode);
++    assert_eq!(device.file.values[PRESCALE], original_prescale);
++}
++
++#[test]
++fn pca_prescale_failure_restores_original_running_configuration() {
++    let original_mode = 0x0b;
++    let original_prescale = 0x21;
++    let mut registers = Registers::new(original_mode, original_prescale);
++    registers.fail_prescale_once = true;
++    let mut device = registers.device();
++    let error = device.initialize(&|| false).unwrap_err();
++    eprintln!(
++        "PCA model: prescale error={error:#}, mode={:#04x}, prescale={:#04x}",
++        device.file.values[MODE1], device.file.values[PRESCALE]
++    );
++    assert!(format!("{error:#}").contains("injected prescale failure"));
++    device.file.assert_no_pwm_writes();
++    assert_eq!(device.file.values[MODE1] & !RESTART, original_mode);
++    assert_eq!(device.file.values[PRESCALE], original_prescale);
++}

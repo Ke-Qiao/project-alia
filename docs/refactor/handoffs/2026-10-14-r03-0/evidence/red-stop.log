@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+
+thread 'module::motion::runtime::tests::shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns' (1706934) panicked at packages/alia-embedded/src/module/motion/runtime/tests.rs:696:5:
+assertion `left == right` failed: startup and old entered frame only; stop must hold
+  left: 3
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test module::motion::runtime::tests::shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns ... FAILED
+
+failures:
+
+failures:
+    module::motion::runtime::tests::shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

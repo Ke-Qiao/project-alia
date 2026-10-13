@@ -1,0 +1,37 @@
+{
+  "uname": "Darwin arm64",
+  "sw_vers": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+  "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+  "recorded_at": "2026-10-13T17:12:26.729621+00:00",
+  "baseline": "125ea5844284efc39ea80c70c543add74ff5e895",
+  "hardware": "no Pi/PCM/I2C/serial actions; native paths use mocks and register model",
+  "external_database": "not used; Embedded tests may use task-local SQLite",
+  "linux_validation": {
+    "status": "unavailable",
+    "observed_commands": [
+      {
+        "command": [
+          "docker",
+          "image",
+          "inspect",
+          "--format",
+          "{{.Id}} {{.Architecture}} {{.Os}}",
+          "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70"
+        ],
+        "exit_code": 1,
+        "diagnostic": "Cannot connect to the Docker daemon at unix:///Users/ke-qiao/.orbstack/run/docker.sock"
+      },
+      {
+        "command": [
+          "orbctl",
+          "status"
+        ],
+        "exit_code": 1,
+        "stdout": "Stopped"
+      }
+    ],
+    "decision": "No daemon/machine startup, pulls, containers or hardware actions; preserve current host state",
+    "record_saved_at": "2026-10-13T17:18:18.901472+00:00"
+  }
+}

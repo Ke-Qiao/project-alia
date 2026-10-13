@@ -1,0 +1,24 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "module::motion::runtime::tests::shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-13T17:14:24.461005+00:00",
+  "elapsed_seconds": 0.34,
+  "exit_code": 101,
+  "source_manifest_sha256": "3776a602beb56de64be8c33bd2da3d4fae642b9ae604efe3fd02ec7c761225e3",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "not used",
+  "build_jobs": 2
+}

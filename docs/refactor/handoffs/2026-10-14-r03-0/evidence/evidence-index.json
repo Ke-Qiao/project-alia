@@ -1,0 +1,111 @@
+{
+  "source_commit": "b5100d778a53dda9f3adc55fd0309a5eb5c853e9",
+  "artifacts": [
+    {
+      "path": "commit-verification.json",
+      "bytes": 367,
+      "sha256": "464e80cc5ac57d15e0577d0e7a023180b140feb53ad49cad516bf580447894ed"
+    },
+    {
+      "path": "environment.json",
+      "bytes": 1457,
+      "sha256": "12031205888ddff28620a59406827660856ddf989c774fe668e380989915d731"
+    },
+    {
+      "path": "freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "green-embedded-format.json",
+      "bytes": 415,
+      "sha256": "fed6bcf3e06089b57c84cba05ee97253c988d0608206926f79f0c04fd162e1d1"
+    },
+    {
+      "path": "green-embedded-format.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "green-embedded.json",
+      "bytes": 445,
+      "sha256": "7a9751bc3ba813da820cb91cd05e6f5c45a4b7505ad43875e9fef87d66787fe7"
+    },
+    {
+      "path": "green-embedded.log",
+      "bytes": 29164,
+      "sha256": "e76a6ad0b4d9292efd67b4e897620a7129e5cdfbb5048cfa7feaa1914c5c318f"
+    },
+    {
+      "path": "green-format.json",
+      "bytes": 397,
+      "sha256": "a9fa2516340dac43fd5169cabfff6c76dd49e0730796d42160cf977917b956a3"
+    },
+    {
+      "path": "green-format.log",
+      "bytes": 718,
+      "sha256": "07e6415839e105cbab2b963afd5f9b17495edb35786f14c2dc8bf0b990e729db"
+    },
+    {
+      "path": "green-source-manifest.json",
+      "bytes": 120879,
+      "sha256": "6c79ccc09484f47fd69ca8e5e93a243cb08a4b53dacfe36c3c02f02d349875ff"
+    },
+    {
+      "path": "preexisting-format.json",
+      "bytes": 422,
+      "sha256": "13f88106ae7cf9e32edf9f78d9cd032844541ae7a098ec769d32fdc68c3afa34"
+    },
+    {
+      "path": "red-pca.json",
+      "bytes": 507,
+      "sha256": "ba5e2b3b39ba6b7472e921e5cb38bedfdf1d32b7166f2fe56c84af1f6eb3bb56"
+    },
+    {
+      "path": "red-pca.log",
+      "bytes": 2238,
+      "sha256": "9ea2d96daf4ea9bbd42675101e168f4814ff7aaab9010eab608fd21df193f705"
+    },
+    {
+      "path": "red-source-manifest.json",
+      "bytes": 120877,
+      "sha256": "3776a602beb56de64be8c33bd2da3d4fae642b9ae604efe3fd02ec7c761225e3"
+    },
+    {
+      "path": "red-source.patch",
+      "bytes": 9092,
+      "sha256": "df9e4cb9b378a480a79c1941d299c084ae3323ed0c0ad0661e1cf4311a069f44"
+    },
+    {
+      "path": "red-startup.json",
+      "bytes": 583,
+      "sha256": "b29889024d4b34b7f93065c6c2b55704b0f19e43240a1ad841f5bf6c659c105c"
+    },
+    {
+      "path": "red-startup.log",
+      "bytes": 942,
+      "sha256": "4478bc325546c5d6a0cb9c6aff70c80af57cbcac6e32f3c0bc37e437c6069753"
+    },
+    {
+      "path": "red-stop.json",
+      "bytes": 590,
+      "sha256": "35cf526b432622c9b1eb135967da3d3760089e1d1c164d11cc844ac6fd5839ac"
+    },
+    {
+      "path": "red-stop.log",
+      "bytes": 963,
+      "sha256": "879b83efaba1b7516ed42840214f84d96cd41a07aae11b08747a141c4afa2549"
+    },
+    {
+      "path": "validate.py",
+      "bytes": 1827,
+      "sha256": "f7fdcebae2a0a0691120951b1663ca8a523e0f26557417764cd752f7a7742994"
+    },
+    {
+      "path": "validation-summary.json",
+      "bytes": 1961,
+      "sha256": "367e06bdee4b5277cb7f6fc2cb1381b1018c7a69f4c7e32a16084d6f623e548d"
+    }
+  ],
+  "note": "Original bytes preserved, including RED failures, workspace format baseline finding, and blank log EOF lines. Scripts retain the original run directory layout; they are audit evidence, not launchers for this docs directory."
+}

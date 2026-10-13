@@ -1,0 +1,63 @@
+{
+  "recorded_at": "2026-10-13T17:27:30.725371+00:00",
+  "baseline": "125ea5844284efc39ea80c70c543add74ff5e895",
+  "platform": "macOS arm64",
+  "source_inputs": 657,
+  "manifest_sha256": "6c79ccc09484f47fd69ca8e5e93a243cb08a4b53dacfe36c3c02f02d349875ff",
+  "source_drift": [],
+  "red": {
+    "expected_failed": 5,
+    "unexpected_build_failure": false,
+    "stages": [
+      "red-stop",
+      "red-startup",
+      "red-pca"
+    ]
+  },
+  "green": {
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-embedded",
+      "--all-targets",
+      "--offline",
+      "--locked"
+    ],
+    "library": {
+      "passed": 199,
+      "failed": 0,
+      "ignored": 0
+    },
+    "integration": {
+      "passed": 64,
+      "failed": 0,
+      "ignored": 0
+    },
+    "total": 263,
+    "pca_register_tests": 14,
+    "test_parallelism": "default",
+    "exit_code": 0
+  },
+  "format": {
+    "embedded": "passed",
+    "workspace": "failed only on unchanged baseline Server import ordering; see preexisting-format.json"
+  },
+  "dependencies_changed": false,
+  "linux": "not run: Docker daemon/OrbStack stopped; no machine startup",
+  "resources": {
+    "cargo_stage_finished": true,
+    "task_containers_created": 0,
+    "external_databases_used": 0,
+    "pi_connections": 0,
+    "hardware_io": false,
+    "note": "Embedded fixtures use temporary SQLite/loopback and mocked native backends; this does not establish real device cleanup."
+  },
+  "limitations": [
+    "No real hardware calibration, recording/playback, I2C/serial output or deployment.",
+    "No Linux current run, full workspace tests, release build, physical hold/position feedback or long-duration load.",
+    "Calibration confirmation is a local operator assertion; first actual position remains unknown.",
+    "PCA restoration is bounded in operation count, not in native syscall duration; restoration failure reports unknown."
+  ],
+  "source_commit": "b5100d778a53dda9f3adc55fd0309a5eb5c853e9"
+}

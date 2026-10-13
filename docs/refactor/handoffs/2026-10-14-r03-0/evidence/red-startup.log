@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+
+thread 'module::motion::runtime::tests::unconfirmed_calibration_startup_does_not_submit_native_targets' (1707156) panicked at packages/alia-embedded/src/module/motion/runtime/tests.rs:711:5:
+assertion `left == right` failed: uncalibrated startup must not send a center target
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test module::motion::runtime::tests::unconfirmed_calibration_startup_does_not_submit_native_targets ... FAILED
+
+failures:
+
+failures:
+    module::motion::runtime::tests::unconfirmed_calibration_startup_does_not_submit_native_targets
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`
