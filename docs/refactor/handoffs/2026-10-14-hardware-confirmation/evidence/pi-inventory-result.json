@@ -1,0 +1,8 @@
+{
+  "target": "ke-qiao@192.168.10.221",
+  "started_at": "2026-10-13T16:38:49.661903+00:00",
+  "elapsed_seconds": 0.23,
+  "exit_code": 255,
+  "host_key_policy": "strict existing known_hosts; no accept-new/update",
+  "read_only": true
+}

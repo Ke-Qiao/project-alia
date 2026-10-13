@@ -1,0 +1,66 @@
+{
+  "created_at": "2026-10-13T16:56:00.335716+00:00",
+  "baseline_head": "31314b03e3629217bfdea3615a415029e4dd7c20",
+  "local_date": "2026-10-14 Asia/Shanghai",
+  "scope": "Documentation and bounded read-only Pi inventory; no new build/test execution",
+  "artifacts": [
+    {
+      "path": "inventory-remote.py",
+      "bytes": 1425,
+      "sha256": "7ca39daece14059d0c60f1360ca5758e1cdc21f4569677d46ccf41b951230cb5"
+    },
+    {
+      "path": "pi-access-inventory.json",
+      "bytes": 1798,
+      "sha256": "b7f56c8b08870149809e712cd112e6e45cf6132c9ee9518f67fa204ca2c7f642"
+    },
+    {
+      "path": "pi-inventory-configured-result.json",
+      "bytes": 329,
+      "sha256": "f532bbb94de4ab508e243783d80c9eadc66d119a868532efe17b636bd22d822e"
+    },
+    {
+      "path": "pi-inventory-configured.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pi-inventory-configured.stdout.json",
+      "bytes": 4478,
+      "sha256": "77b6f3781fd0dba8b96374aca441e979198ee47abe9039909127acc2f19fee55"
+    },
+    {
+      "path": "pi-inventory-result.json",
+      "bytes": 235,
+      "sha256": "11c42da66bed6d5811a2d04e326b7b37562360ccb160d42ea03948b3668a897d"
+    },
+    {
+      "path": "pi-inventory.stderr.txt",
+      "bytes": 64,
+      "sha256": "0bd8e28e1cd8e81e5ea43e7f4035b52a3b04aa03f102d91db0bd82ecfaafcc4d"
+    },
+    {
+      "path": "pi-inventory.stdout.json",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pi-toolchain-inventory.json",
+      "bytes": 246,
+      "sha256": "00122bbdcfa03f37ba65d6424c7104d45824e2c2a2428531b798b58313b97ac7"
+    }
+  ],
+  "source_verification": {
+    "previous_manifest": "../../2026-10-14-settings-hardware/evidence/source-manifest.json",
+    "checked_files": 656,
+    "hash_mismatches": [],
+    "changes_outside_docs": false
+  },
+  "limitations": [
+    "First SSH attempt exit 255 is preserved; its stdout .json is intentionally empty, not a JSON document.",
+    "Configured SSH attempt exit 0, ALSA listing still reports no accessible cards; per-command failures preserved.",
+    "Inventory mode label no device open means no PCM capture/playback or I2C/serial open; ALSA listing can attempt control-node access.",
+    "Supplemental stat/access and rustup results have no independent embedded timestamps; collected in the same Root inventory session.",
+    "No Rust tests, compile, deployment, capture/playback, actuator I/O or physical acceptance ran in this package."
+  ]
+}

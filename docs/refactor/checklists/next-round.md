@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-**当前执行顺序已切换：R02/R03 → R05。** Settings有界审计与准备8/8完成，最新从 [2026-10-14检查点](../resume-checkpoint-settings-hardware-2026-10-14.md) 继续；硬件/部署事实见 [资料清单](../../operations/hardware-deployment-readiness.md)，待确认项不视为已部署。
+**当前执行顺序：R03-0 → R03-A，R02-A 可并行；之后进入 R05。** Settings 有界审计与准备 8/8 完成，硬件确认与只读审计见 [最新检查点](../resume-checkpoint-hardware-confirmation-2026-10-14.md)。用户已确认 Mac/Pi、R1 USB、PCA9685A/MG996R、停止保持及校准后启动归中；其余部署/实机门槛见 [资料清单](../../operations/hardware-deployment-readiness.md)。
 更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
@@ -38,7 +38,8 @@
 - [x] 语音/短提示实际混音与最终 post-mix reference、各源取消/暂停/短写证据；macOS/Linux 离线验证通过，见 [audio HANDOFF](../handoffs/2026-10-06/HANDOFF-audio.md)。
 
 - [x] 核对真实 render/reference/capture/wake/VAD 顺序、既有依赖和离线 fixture；补 native continuity 消费与 KWS reset，当前 macOS/Linux 回归通过，见 [audio HANDOFF](../handoffs/2026-10-04/audio.md)。
-- [ ] 固定 H02/H03 的 Pi 系统、采集/播放设备、采样格式及物理布局。
+- [x] Pi 目标/Ubuntu 已只读核对；用户确认 R1 尚未接入、以后 USB 接 Pi。见 [硬件确认 checklist](hardware-confirmation-2026-10-14.md)，该项不表示音频就绪。
+- [ ] 固定 H02/H03 的运行账户音频权限、实物/固件、采集/播放设备、采样格式及物理布局。
 - [ ] 固定 AEC consumer、重分帧、独立时钟/漂移及同步记录格式；现有 1024 样本参考块和上传帧不等于 10 ms AEC 帧。
 - [ ] 基于已有 native 播放参考与独立时钟契约接入实际 AEC，显式处理参考缺口与漂移。
 - [ ] 实测同时播放/说话、附和、明确等待/继续、噪声、失联和重开；区分模型标签与声学质量。
@@ -47,8 +48,10 @@
 ## R03 · D3 动作资产与执行器反馈
 
 - [x] 复核已有签名命令/唯一 writer/mock 故障；补真实 gRPC 的 unbound/foreign-controller/重连及旧 boot 拒绝，当前 macOS/Linux 回归通过，见 [motion HANDOFF](../handoffs/2026-10-04/motion.md)。
-- [ ] 固定 H04 的控制板、执行器、反馈接口、机械限位和安全状态。
-- [ ] 明确动作资产 bytes 的签名验证与控制板 boot/ACK/位置反馈；当前命令签名覆盖文件名/参数，不覆盖文件内容，UART flush 不代表物理到位。
+- [x] 用户选择 PCA9685A + MG996R、停止/断连保持、机构校准后允许启动归中；实际接线/校准未验收。
+- [ ] R03-0：移除停止自动归中旧路径、落实校准后启动归中门槛；修正 PCA AI 位及 SLEEP 后取消/失败恢复，保留精确取消、短写与 native owner。详见 [Motion 审计](../handoffs/2026-10-14-hardware-confirmation/motion-HANDOFF.md)。
+- [ ] 固定 H04 的实际板卡、供电/OE/通道、反馈接口、机械限位、机构校准和保持失效边界。
+- [ ] 明确动作资产 bytes 的签名验证及所选硬件实际可观测能力；不虚构 PCA9685A 的 MCU boot/ACK/位置反馈，原物理验收仍需外部测量或后续反馈硬件。当前命令签名不覆盖文件内容，UART flush/I²C write 不代表物理到位。
 - [ ] 把签名动作资产、位置/速度限制及停止策略接入选定执行器。
 - [ ] 验证迟到命令、断连、重启、限位和停止失败，保留真实执行与反馈证据。
 - [ ] 分开报告接纳、提交、实际位置和完成，不把软件退休或网络 ACK 当作机构到位。

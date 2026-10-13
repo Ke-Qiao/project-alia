@@ -1,4 +1,6 @@
-# 当前检查点：2026-10-14 Settings 有界审计 → R02/R03
+# 历史检查点：2026-10-14 Settings 有界审计 → R02/R03
+
+后续已取得用户硬件选择及 Pi 只读证据，最新恢复请读 [硬件确认检查点](resume-checkpoint-hardware-confirmation-2026-10-14.md)。以下保留本包收口时的事实；后续不再重复询问已确认的主机、接口或启动规则。
 
 分支 `codex/architecture-refactor`，测试源码 `cffbca531cec2478c17b5bcacfd191e7f00a56f9`。本轮审计与准备 **8/8**；H01—H05 的实际部署确认仍开放，R01—R06 **2/6**、L09—L12 **4/4**。这些不是项目完成百分比。
 

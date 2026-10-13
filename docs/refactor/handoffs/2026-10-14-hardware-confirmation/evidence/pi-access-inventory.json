@@ -1,0 +1,82 @@
+{
+  "exit_code": 0,
+  "data": {
+    "snd_nodes": [
+      {
+        "name": "by-path",
+        "mode": "0o755",
+        "owner": "root",
+        "group": "root",
+        "readable": true,
+        "writable": false
+      },
+      {
+        "name": "controlC0",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      },
+      {
+        "name": "controlC1",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      },
+      {
+        "name": "pcmC0D0p",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      },
+      {
+        "name": "pcmC1D0p",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      },
+      {
+        "name": "seq",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      },
+      {
+        "name": "timer",
+        "mode": "0o660",
+        "owner": "root",
+        "group": "audio",
+        "readable": false,
+        "writable": false
+      }
+    ],
+    "toolchain_paths": {
+      "rustc": {
+        "on_path": null,
+        "home_cargo_candidate_exists": true,
+        "home_cargo_candidate_symlink": true
+      },
+      "cargo": {
+        "on_path": null,
+        "home_cargo_candidate_exists": true,
+        "home_cargo_candidate_symlink": true
+      },
+      "protoc": {
+        "on_path": null,
+        "home_cargo_candidate_exists": false,
+        "home_cargo_candidate_symlink": false
+      }
+    }
+  },
+  "stderr": "",
+  "read_only": "stat/access only; no devices opened"
+}

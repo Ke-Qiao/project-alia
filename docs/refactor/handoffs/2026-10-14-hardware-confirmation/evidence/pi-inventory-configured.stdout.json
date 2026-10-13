@@ -1,0 +1,152 @@
+{
+  "recorded_at": "2026-10-13T16:40:02.566325+00:00",
+  "mode": "read-only inventory; no device open, recording, playback, reset or writes",
+  "checks": {
+    "kernel": {
+      "command": [
+        "uname",
+        "-a"
+      ],
+      "exit_code": 0,
+      "stdout": "Linux KeQiaopi 6.8.0-1065-raspi #69-Ubuntu SMP PREEMPT_DYNAMIC Tue Sep  8 18:10:10 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux\n",
+      "stderr": ""
+    },
+    "os": {
+      "command": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "exit_code": 0,
+      "stdout": "PRETTY_NAME=\"Ubuntu 24.04.4 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.4 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+      "stderr": ""
+    },
+    "architecture": {
+      "command": [
+        "uname",
+        "-m"
+      ],
+      "exit_code": 0,
+      "stdout": "aarch64\n",
+      "stderr": ""
+    },
+    "memory": {
+      "command": [
+        "free",
+        "-h"
+      ],
+      "exit_code": 0,
+      "stdout": "               total        used        free      shared  buff/cache   available\nMem:           7.8Gi       370Mi       7.1Gi       3.3Mi       489Mi       7.4Gi\nSwap:             0B          0B          0B\n",
+      "stderr": ""
+    },
+    "disk": {
+      "command": [
+        "df",
+        "-h",
+        "/"
+      ],
+      "exit_code": 0,
+      "stdout": "Filesystem      Size  Used Avail Use% Mounted on\n/dev/mmcblk0p2  117G  8.4G  104G   8% /\n",
+      "stderr": ""
+    },
+    "account": {
+      "command": [
+        "id"
+      ],
+      "exit_code": 0,
+      "stdout": "uid=1000(ke-qiao) gid=1000(ke-qiao) groups=1000(ke-qiao),4(adm),20(dialout),24(cdrom),27(sudo),30(dip),101(lxd),110(i2c)\n",
+      "stderr": ""
+    },
+    "alsa_cards": {
+      "command": [
+        "cat",
+        "/proc/asound/cards"
+      ],
+      "exit_code": 0,
+      "stdout": " 0 [vc4hdmi0       ]: vc4-hdmi - vc4-hdmi-0\n                      vc4-hdmi-0\n 1 [vc4hdmi1       ]: vc4-hdmi - vc4-hdmi-1\n                      vc4-hdmi-1\n",
+      "stderr": ""
+    },
+    "capture_devices": {
+      "command": [
+        "arecord",
+        "-l"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "arecord: device_list:277: no soundcards found...\n"
+    },
+    "playback_devices": {
+      "command": [
+        "aplay",
+        "-l"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "aplay: device_list:277: no soundcards found...\n"
+    },
+    "capture_pcms": {
+      "command": [
+        "arecord",
+        "-L"
+      ],
+      "exit_code": 0,
+      "stdout": "null\n    Discard all samples (playback) or generate zero samples (capture)\n",
+      "stderr": ""
+    },
+    "playback_pcms": {
+      "command": [
+        "aplay",
+        "-L"
+      ],
+      "exit_code": 0,
+      "stdout": "null\n    Discard all samples (playback) or generate zero samples (capture)\n",
+      "stderr": ""
+    },
+    "usb": {
+      "command": [
+        "lsusb"
+      ],
+      "exit_code": 0,
+      "stdout": "Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\nBus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\nBus 003 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub\nBus 004 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\nBus 005 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub\n",
+      "stderr": ""
+    },
+    "serial_ids": {
+      "command": [
+        "ls",
+        "-l",
+        "/dev/serial/by-id",
+        "/dev/serial/by-path"
+      ],
+      "exit_code": 2,
+      "stdout": "",
+      "stderr": "ls: cannot access '/dev/serial/by-id': No such file or directory\nls: cannot access '/dev/serial/by-path': No such file or directory\n"
+    },
+    "rust": {
+      "command": [
+        "rustc",
+        "-Vv"
+      ],
+      "error": "FileNotFoundError"
+    },
+    "cargo": {
+      "command": [
+        "cargo",
+        "-V"
+      ],
+      "error": "FileNotFoundError"
+    },
+    "protoc": {
+      "command": [
+        "protoc",
+        "--version"
+      ],
+      "error": "FileNotFoundError"
+    }
+  },
+  "board_model": "Raspberry Pi 5 Model B Rev 1.0",
+  "thermal_millidegrees": "36400",
+  "i2c_nodes": [
+    "/dev/i2c-1",
+    "/dev/i2c-14",
+    "/dev/i2c-13"
+  ]
+}

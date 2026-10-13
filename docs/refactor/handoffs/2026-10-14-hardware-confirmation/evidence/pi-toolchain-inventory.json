@@ -1,0 +1,11 @@
+{
+  "exit_code": 0,
+  "data": {
+    "command": "~/.cargo/bin/rustup toolchain list",
+    "exit_code": 0,
+    "stdout": "stable-aarch64-unknown-linux-gnu (active, default)\n",
+    "stderr": "",
+    "auto_install": "disabled"
+  },
+  "stderr": ""
+}
