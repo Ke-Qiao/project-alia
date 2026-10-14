@@ -145,6 +145,10 @@ debug = false
 enabled = true
 neck_config_file = "../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json"
 animation_dir = "../packages/alia-embedded/assets/neck/anim_data"
+# Local operator-reviewed pins only; keep empty until the selected mechanism and
+# exact asset version/SHA-256/byte count are reviewed on both server and device.
+# Historical bundled animations are not automatically approved.
+approved_animations = []
 servo_count = 8
 # Hardware output backend. `serial` talks to an Arduino Uno over USB/UART using
 # newline-delimited commands:

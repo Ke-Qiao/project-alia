@@ -1,3 +1,4 @@
+mod assets;
 mod neck_mapper;
 mod plan;
 mod runtime;

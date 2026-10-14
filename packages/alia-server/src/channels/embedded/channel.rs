@@ -59,6 +59,7 @@ mod body_pin_tests {
             owner_user_id: None,
             expected_device_id: None,
             expected_device_public_key: None,
+            approved_animations: vec![],
             endpoint: String::new(),
             discovery_service_name: "_alia-test._tcp".into(),
             discovery_timeout_sec: 1,
@@ -137,6 +138,7 @@ pub struct EmbeddedChannelConfig {
     pub owner_user_id: Option<uuid::Uuid>,
     pub expected_device_id: Option<String>,
     pub expected_device_public_key: Option<String>,
+    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
     pub endpoint: String,
     pub discovery_service_name: String,
     pub discovery_timeout_sec: u64,
@@ -267,7 +269,8 @@ impl EmbeddedChannel {
             ConnectionStatus::Reconnecting { attempt: 0 }
         };
 
-        let body_runtime = EmbeddedBodyRuntime::new(config.id.clone());
+        let body_runtime =
+            EmbeddedBodyRuntime::new(config.id.clone(), config.approved_animations.clone());
         Self {
             config,
             runtime: None,

@@ -42,6 +42,16 @@ struct Fixture {
     server: tokio::task::JoinHandle<std::result::Result<(), tonic::transport::Error>>,
 }
 
+const ANIMATION_BYTES: &[u8] = b"frames\n1 0 0\n";
+fn approved_fixture_animation() -> BodyAnimationAsset {
+    BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version: 1,
+        sha256: body_animation_sha256(ANIMATION_BYTES),
+        bytes: ANIMATION_BYTES.len() as u32,
+    }
+}
+
 impl Fixture {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
@@ -49,12 +59,15 @@ impl Fixture {
         std::fs::write(&matrix, serde_json::json!({"ServoMinMax":{"servo_0":[0,180],"servo_1":[0,180],"servo_2":[0,180]},"NeckAngles":[[0,0,0]],"MatrixSize":[1,3],"sigma":100.0,"Matrix":[[90.0,90.0,90.0]],"NeckAngleMinMax":[-45,45,-45,45,-45,45]}).to_string()).unwrap();
         let config = MotionConfig {
             neck_config_file: matrix,
+            animation_dir: dir.path().into(),
+            approved_animations: vec![approved_fixture_animation()],
             servo_count: 3,
             hardware_enabled: false,
             calibration_confirmed: true,
             fps: 30,
             ..MotionConfig::default()
         };
+        std::fs::write(dir.path().join("reviewed.anim"), ANIMATION_BYTES).unwrap();
         let motion = Arc::new(MotionRuntime::new_with_boot(config, Uuid::new_v4()).unwrap());
         motion.start().await.unwrap();
         let playback = Arc::new(PlaybackSession::with_output_fence(
@@ -154,7 +167,7 @@ impl Fixture {
     }
     fn request(&self, operation: BodyOperation) -> BodyRequest {
         BodyRequest {
-            version: 1,
+            version: BODY_CONTRACT_VERSION,
             request_id: Uuid::new_v4(),
             device_id: "body-test-device".into(),
             issued_at_unix_ms: SystemTime::now()
@@ -207,7 +220,7 @@ impl Fixture {
         let reply: BodyReply = serde_json::from_slice(&envelope.payload)?;
         ensure!(
             reply.request_id == request.request_id
-                && reply.version == 1
+                && reply.version == BODY_CONTRACT_VERSION
                 && reply.device_id == request.device_id,
             "signed reply lost request identity"
         );
@@ -768,7 +781,10 @@ async fn preparation_failure_has_signed_rejection_and_never_gains_a_retry_permis
                 },
             );
             command.actions[0].motion = BodyMotion::Animation {
-                file: "absent-body-test.anim".into(),
+                asset: BodyAnimationAsset {
+                    file: "absent-body-test.anim".into(),
+                    ..approved_fixture_animation()
+                },
                 fps: 30,
                 loops: 1,
             };
@@ -813,6 +829,120 @@ async fn preparation_failure_has_signed_rejection_and_never_gains_a_retry_permis
                 panic!()
             };
             assert_eq!(old, progress);
+        })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn approved_animation_tampering_rejects_new_work_and_preserves_original_receipt() {
+    with_node(|node| {
+        Box::pin(async move {
+            let lease = node.open().await;
+            let mut command = node.command(
+                lease,
+                1,
+                BodyScope::Nonvoice {
+                    scope_id: Uuid::new_v4(),
+                },
+            );
+            command.actions[0].duration_ms = 100;
+            command.actions[0].motion = BodyMotion::Animation {
+                asset: approved_fixture_animation(),
+                fps: 30,
+                loops: 1,
+            };
+            let BodyEvidence::Progress { mut progress } = node
+                .call(BodyOperation::Submit {
+                    command: command.clone(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            while progress.end.is_none() {
+                let BodyEvidence::Progress { progress: updated } = node
+                    .call(BodyOperation::Observe {
+                        identity: command.identity,
+                        after_receipt_sequence: progress.receipt_sequence,
+                    })
+                    .await
+                    .unwrap()
+                else {
+                    panic!()
+                };
+                progress = updated;
+            }
+            assert_eq!(progress.end, Some(BodyEnd::Submitted));
+            assert!(progress.submitted_frames > 0);
+            std::fs::write(node._dir.path().join("reviewed.anim"), b"frames\n7 0 0\n").unwrap();
+            let BodyEvidence::Progress {
+                progress: duplicate,
+            } = node
+                .call(BodyOperation::Submit {
+                    command: command.clone(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(
+                duplicate, progress,
+                "failed re-preparation must retain original execution facts"
+            );
+            let mut fresh = command.clone();
+            fresh.identity.sequence += 1;
+            let BodyEvidence::Progress { progress: rejected } = node
+                .call(BodyOperation::Submit {
+                    command: fresh.clone(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            rejected.validate(None, &fresh).unwrap();
+            assert!(matches!(rejected.end, Some(BodyEnd::Rejected { .. })));
+            assert_eq!(rejected.accepted_actions, 0);
+            assert_eq!(rejected.submitted_frames, 0);
+            assert!(rejected.writer_quiescent);
+            std::fs::remove_file(node._dir.path().join("reviewed.anim")).unwrap();
+            let BodyEvidence::Progress { progress: missing } = node
+                .call(BodyOperation::Submit {
+                    command: command.clone(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(missing, progress);
+            let BodyEvidence::Progress {
+                progress: cancelled,
+            } = node
+                .call(BodyOperation::Cancel {
+                    command: command.clone(),
+                    reason: "exact cancellation after asset removal".into(),
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(cancelled, progress);
+            let BodyEvidence::Progress { progress: observed } = node
+                .call(BodyOperation::Observe {
+                    identity: command.identity,
+                    after_receipt_sequence: progress.receipt_sequence,
+                })
+                .await
+                .unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(observed, progress);
         })
     })
     .await;

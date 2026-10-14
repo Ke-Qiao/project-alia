@@ -45,7 +45,7 @@ pub trait BodyDeliveryStore: Send + Sync {
         &self,
         origin: &BodyDeliveryOrigin,
         channel_id: &str,
-        command: &BodyCommand,
+        owner_id: Uuid,
     ) -> anyhow::Result<Option<BodyDeliveryRecord>>;
     async fn claim(
         &self,
@@ -74,9 +74,9 @@ impl BodyDeliveryStore for BodyDeliveryRepository {
         &self,
         origin: &BodyDeliveryOrigin,
         channel_id: &str,
-        command: &BodyCommand,
+        owner_id: Uuid,
     ) -> anyhow::Result<Option<BodyDeliveryRecord>> {
-        BodyDeliveryRepository::lookup_origin(self, origin, channel_id, command).await
+        BodyDeliveryRepository::lookup_origin(self, origin, channel_id, owner_id).await
     }
     async fn claim(
         &self,
@@ -306,17 +306,18 @@ struct BodyIntent {
 }
 
 impl BodyIntent {
-    fn parse(raw: serde_json::Value) -> anyhow::Result<Self> {
+    fn source(raw: &serde_json::Value) -> anyhow::Result<(BodyDeliveryOrigin, Uuid)> {
         ensure!(
             serde_json::to_vec(&raw)?.len() <= MAX_BODY_PAYLOAD_BYTES,
             "expression body intent exceeds its bounded cache payload"
         );
-        let plan: crate::expression::types::ExpressionPlan = serde_json::from_value(raw.clone())?;
-        let source_id = required_string(&raw, "command_id", 256)?;
-        let owner_id = Uuid::parse_str(&required_string(&raw, "target_user_id", 64)?)?;
-        let response_id = Uuid::parse_str(&required_string(&raw, "response_id", 64)?)?;
-        ensure!(!response_id.is_nil(), "body requires an original Response");
-        let output_key = required_string(&raw, "phase", 32)?;
+        let owner_id = Uuid::parse_str(&required_string(raw, "target_user_id", 64)?)?;
+        let response_id = Uuid::parse_str(&required_string(raw, "response_id", 64)?)?;
+        ensure!(
+            !response_id.is_nil() && !owner_id.is_nil(),
+            "body requires an original Response and owner"
+        );
+        let output_key = required_string(raw, "phase", 32)?;
         ensure!(
             matches!(
                 output_key.as_str(),
@@ -324,8 +325,22 @@ impl BodyIntent {
             ),
             "invalid body response phase"
         );
+        Ok((
+            BodyDeliveryOrigin {
+                response_id,
+                output_key,
+            },
+            owner_id,
+        ))
+    }
+
+    fn parse(raw: serde_json::Value, assets: &[BodyAnimationAsset]) -> anyhow::Result<Self> {
+        validate_animation_catalog(assets)?;
+        let (origin, owner_id) = Self::source(&raw)?;
+        let plan: crate::expression::types::ExpressionPlan = serde_json::from_value(raw.clone())?;
+        let source_id = required_string(&raw, "command_id", 256)?;
         ensure!(
-            source_id == format!("{response_id}:{}:{output_key}", plan.id),
+            source_id == format!("{}:{}:{}", origin.response_id, plan.id, origin.output_key),
             "body source must name the canonical Response, plan and phase"
         );
         let voice: Option<VoiceScope> = serde_json::from_value(
@@ -338,7 +353,7 @@ impl BodyIntent {
             // The original Response is the explicit nonvoice control scope.
             // It survives restart and is never confused with a VoiceScope.
             None => BodyScope::Nonvoice {
-                scope_id: response_id,
+                scope_id: origin.response_id,
             },
         };
         let mut actions = Vec::with_capacity(plan.timeline.len());
@@ -354,11 +369,34 @@ impl BodyIntent {
                 "look_at_user" => BodyMotion::LookAt {
                     target: body_target(&action.params)?,
                 },
-                "play_animation" => BodyMotion::Animation {
-                    file: required_string(&action.params, "file", 128)?,
-                    fps: optional_u32(&action.params, "fps", 30)?,
-                    loops: optional_u32(&action.params, "loops", 1)?,
-                },
+                "play_animation" => {
+                    let params = action
+                        .params
+                        .as_object()
+                        .context("animation parameters must be an object")?;
+                    ensure!(
+                        params
+                            .keys()
+                            .all(|key| matches!(key.as_str(), "file" | "fps" | "loops")),
+                        "animation content identity must come from the approved catalog"
+                    );
+                    let name = required_string(&action.params, "file", 128)?;
+                    let file = if name.ends_with(".anim") {
+                        name
+                    } else {
+                        format!("{name}.anim")
+                    };
+                    let asset = assets
+                        .iter()
+                        .find(|asset| asset.file == file)
+                        .context("animation is absent from the operator-approved catalog")?
+                        .clone();
+                    BodyMotion::Animation {
+                        asset,
+                        fps: optional_u32(&action.params, "fps", 30)?,
+                        loops: optional_u32(&action.params, "loops", 1)?,
+                    }
+                }
                 _ => anyhow::bail!("unsupported typed body action"),
             };
             actions.push(BodyAction {
@@ -370,10 +408,7 @@ impl BodyIntent {
         }
         let intent = Self {
             raw,
-            origin: BodyDeliveryOrigin {
-                response_id,
-                output_key,
-            },
+            origin,
             source_id,
             plan_id: plan.id,
             owner_id,
@@ -402,6 +437,42 @@ impl BodyIntent {
             })
             .validate()?;
         Ok(intent)
+    }
+
+    fn recover(raw: serde_json::Value, record: &BodyDeliveryRecord) -> anyhow::Result<Self> {
+        record.command.validate()?;
+        let mut assets = Vec::new();
+        for action in &record.command.actions {
+            if let BodyMotion::Animation { asset, .. } = &action.motion {
+                if let Some(previous) = assets
+                    .iter()
+                    .find(|old: &&BodyAnimationAsset| old.file == asset.file)
+                {
+                    ensure!(
+                        previous == asset,
+                        "stored animation content identity is inconsistent"
+                    );
+                } else {
+                    assets.push(asset.clone());
+                }
+            }
+        }
+        let intent = Self::parse(raw, &assets)?;
+        intent.verify_record(record)?;
+        Ok(intent)
+    }
+
+    fn verify_record(&self, record: &BodyDeliveryRecord) -> anyhow::Result<()> {
+        ensure!(
+            record.response_id == self.origin.response_id
+                && record.output_key == self.origin.output_key,
+            "body record differs from original Response phase"
+        );
+        ensure!(
+            self.command(record.command.identity) == record.command,
+            "body response phase was reused with different intent"
+        );
+        Ok(())
     }
 
     fn command(&self, identity: BodyCommandIdentity) -> BodyCommand {
@@ -496,6 +567,9 @@ struct Snapshot {
 
 struct Entry {
     intent: BodyIntent,
+    /// Once a durable identity was observed, even later row removal cannot
+    /// turn this source back into a fresh dispatch.
+    recovered: Option<BodyDeliveryRecord>,
     observation: watch::Sender<Snapshot>,
     cancel: CancellationToken,
     cancel_reason: Mutex<String>,
@@ -580,6 +654,7 @@ struct Admission {
 
 struct Inner {
     channel_id: String,
+    approved_animations: Vec<BodyAnimationAsset>,
     instance_id: Uuid,
     admission: Mutex<Admission>,
     requests: mpsc::Sender<Arc<Entry>>,
@@ -596,10 +671,11 @@ struct Inner {
 pub(super) struct EmbeddedBodyRuntime(Arc<Inner>);
 
 impl EmbeddedBodyRuntime {
-    pub(super) fn new(channel_id: String) -> Self {
+    pub(super) fn new(channel_id: String, approved_animations: Vec<BodyAnimationAsset>) -> Self {
         let (requests, receiver) = mpsc::channel(MAX_OWNERS);
         Self(Arc::new(Inner {
             channel_id,
+            approved_animations,
             instance_id: Uuid::new_v4(),
             admission: Mutex::new(Admission {
                 started: false,
@@ -645,6 +721,7 @@ impl EmbeddedBodyRuntime {
     }
 
     pub(super) fn start(&self, background: &mut BackgroundStart<'_>) -> anyhow::Result<()> {
+        validate_animation_catalog(&self.0.approved_animations)?;
         let mut admission = self
             .0
             .admission
@@ -708,12 +785,12 @@ impl EmbeddedBodyRuntime {
         let protocol =
             available.then_some(crate::expression::orchestrator::EXPRESSION_COMMAND_PROTOCOL);
         Ok(
-            serde_json::json!({"adapter":"embedded_body_v1", "command_protocol":protocol,
+            serde_json::json!({"adapter":"embedded_body_v2", "command_protocol":protocol,
             "capabilities": {
                 "small_nod":{"supported":available,"max_intensity":0.45,"max_duration_ms":900},
                 "small_bow":{"supported":available,"max_intensity":0.35,"max_duration_ms":1200},
                 "look_at_user":{"supported":available,"max_intensity":0.45,"max_duration_ms":1200},
-                "play_animation":{"supported":available,"max_intensity":0.45,"max_duration_ms":5000}},
+                "play_animation":{"supported":available && !self.0.approved_animations.is_empty(),"max_intensity":0.45,"max_duration_ms":5000}},
             "current_state":{"busy":state.is_some() && !available,"motion_adapter_registered":available},
             "position_feedback":null}),
         )
@@ -733,11 +810,44 @@ impl EmbeddedBodyRuntime {
                 .is_some_and(|client| !client.revoked.is_cancelled()),
             "body control requires a configured trusted device ID and public key that match the connected device"
         );
-        ensure!(
-            self.0.store.read().await.is_some(),
-            "body durable delivery store is unavailable"
-        );
-        let intent = BodyIntent::parse(params)?;
+        let store = self
+            .0
+            .store
+            .read()
+            .await
+            .clone()
+            .context("body durable delivery store is unavailable")?;
+        let source = required_string(&params, "command_id", 256)?;
+        let cached = self
+            .0
+            .admission
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .sources
+            .get(&source)
+            .cloned();
+        let (intent, recovered) = if let Some(entry) = cached {
+            ensure!(
+                entry.intent.raw == params,
+                "body source identity was reused with different intent"
+            );
+            (entry.intent.clone(), entry.recovered.clone())
+        } else {
+            let (origin, owner_id) = BodyIntent::source(&params)?;
+            if let Some(record) = store
+                .lookup_origin(&origin, &self.0.channel_id, owner_id)
+                .await?
+            {
+                // Old facts keep their original content pins even after a local
+                // catalog replacement; recovery never grants another dispatch.
+                (BodyIntent::recover(params, &record)?, Some(record))
+            } else {
+                (
+                    BodyIntent::parse(params, &self.0.approved_animations)?,
+                    None,
+                )
+            }
+        };
         let entry = {
             let mut admission = self
                 .0
@@ -763,6 +873,7 @@ impl EmbeddedBodyRuntime {
                 let (observation, _) = watch::channel(Snapshot::default());
                 let entry = Arc::new(Entry {
                     intent,
+                    recovered,
                     observation,
                     cancel: CancellationToken::new(),
                     cancel_reason: Mutex::new("body command cancelled".into()),
@@ -803,13 +914,11 @@ impl EmbeddedBodyRuntime {
             .get(&source)
             .cloned();
         let Some(entry) = entry else {
-            let intent = BodyIntent::parse(
-                params
-                    .get("body_intent")
-                    .cloned()
-                    .context("original body intent is unavailable; resubmission is forbidden")?,
-            )?;
-            intent.verify_owner(&params)?;
+            let raw = params
+                .get("body_intent")
+                .cloned()
+                .context("original body intent is unavailable; resubmission is forbidden")?;
+            let (origin, owner_id) = BodyIntent::source(&raw)?;
             let store = self
                 .0
                 .store
@@ -817,23 +926,14 @@ impl EmbeddedBodyRuntime {
                 .await
                 .clone()
                 .context("body delivery ledger unavailable")?;
-            let placeholder = intent.command(BodyCommandIdentity {
-                lease: BodyControlLease {
-                    device_boot_id: intent
-                        .scope
-                        .voice()
-                        .map_or_else(Uuid::new_v4, |scope| scope.device_boot_id),
-                    server_instance_id: self.0.instance_id,
-                    generation: 1,
-                },
-                sequence: 1,
-            });
             let record = store
-                .lookup_origin(&intent.origin, &self.0.channel_id, &placeholder)
+                .lookup_origin(&origin, &self.0.channel_id, owner_id)
                 .await?
                 .context(
                     "original durable body record is unavailable; resubmission is forbidden",
                 )?;
+            let intent = BodyIntent::recover(raw, &record)?;
+            intent.verify_owner(&params)?;
             let evidence = BodyExecutionEvidence {
                 command: record.command,
                 progress: record.latest_checkpoint.or(record.progress),
@@ -1011,6 +1111,9 @@ impl EmbeddedBodyRuntime {
     }
 
     async fn dispatch_and_observe(&self, entry: &Entry) -> anyhow::Result<()> {
+        if let Some(record) = &entry.recovered {
+            return Self::restore_existing(entry, record.clone());
+        }
         let store = self
             .0
             .store
@@ -1018,20 +1121,12 @@ impl EmbeddedBodyRuntime {
             .await
             .clone()
             .context("body delivery ledger unavailable")?;
-        let placeholder = entry.intent.command(BodyCommandIdentity {
-            lease: BodyControlLease {
-                device_boot_id: entry
-                    .intent
-                    .scope
-                    .voice()
-                    .map_or_else(Uuid::new_v4, |scope| scope.device_boot_id),
-                server_instance_id: self.0.instance_id,
-                generation: 1,
-            },
-            sequence: 1,
-        });
         if let Some(record) = store
-            .lookup_origin(&entry.intent.origin, &self.0.channel_id, &placeholder)
+            .lookup_origin(
+                &entry.intent.origin,
+                &self.0.channel_id,
+                entry.intent.owner_id,
+            )
             .await?
         {
             return Self::restore_existing(entry, record);
@@ -1245,6 +1340,7 @@ impl EmbeddedBodyRuntime {
     }
 
     fn restore_existing(entry: &Entry, record: BodyDeliveryRecord) -> anyhow::Result<()> {
+        entry.intent.verify_record(&record)?;
         record.command.validate()?;
         let progress = record.latest_checkpoint.or(record.progress);
         if let Some(progress) = &progress {

@@ -2,16 +2,92 @@
 //! independent of the transport and of any particular servo driver.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::delivery::VoiceScope;
 
-pub const BODY_CONTRACT_VERSION: u32 = 1;
+pub const BODY_CONTRACT_VERSION: u32 = 2;
 pub const MAX_BODY_PAYLOAD_BYTES: usize = 64 * 1024;
 pub const MAX_BODY_ACTIONS: usize = 32;
 pub const MAX_BODY_DURATION_MS: u32 = 5_000;
 pub const MAX_BODY_CHANNELS: usize = 32;
 pub const MAX_BODY_FRAMES: u64 = 3600;
+pub const MAX_BODY_ANIMATION_BYTES: u32 = 65_536;
+pub const MAX_BODY_ANIMATION_ASSETS: usize = 64;
+
+/// Operator-approved content identity, never inferred from a model or filename.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BodyAnimationAsset {
+    pub file: String,
+    pub version: u32,
+    pub sha256: String,
+    pub bytes: u32,
+}
+
+impl BodyAnimationAsset {
+    pub fn validate(&self) -> Result<(), InvalidBodyEvidence> {
+        require(
+            self.file.len() > 5
+                && self.file.len() <= 128
+                && self.file.ends_with(".anim")
+                && self
+                    .file
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')),
+            "invalid canonical animation file name",
+        )?;
+        require(self.version > 0, "invalid animation asset version")?;
+        require(
+            self.sha256.len() == 64
+                && self
+                    .sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "invalid animation SHA-256",
+        )?;
+        require(
+            (1..=MAX_BODY_ANIMATION_BYTES).contains(&self.bytes),
+            "invalid animation byte count",
+        )
+    }
+
+    pub fn verify_bytes(&self, content: &[u8]) -> Result<(), InvalidBodyEvidence> {
+        self.validate()?;
+        require(
+            content.len() == self.bytes as usize,
+            "animation byte count mismatch",
+        )?;
+        require(
+            body_animation_sha256(content) == self.sha256,
+            "animation SHA-256 mismatch",
+        )
+    }
+}
+
+/// Pure digest calculation for explicit tooling; it does not approve an asset.
+pub fn body_animation_sha256(content: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(content))
+}
+
+pub fn validate_animation_catalog(
+    assets: &[BodyAnimationAsset],
+) -> Result<(), InvalidBodyEvidence> {
+    require(
+        assets.len() <= MAX_BODY_ANIMATION_ASSETS,
+        "animation catalog exceeds capacity",
+    )?;
+    let mut names = std::collections::HashSet::new();
+    for asset in assets {
+        asset.validate()?;
+        require(
+            names.insert(&asset.file),
+            "duplicate approved animation file",
+        )?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,8 +168,14 @@ pub enum BodyTarget {
 pub enum BodyMotion {
     SmallNod,
     SmallBow,
-    LookAt { target: BodyTarget },
-    Animation { file: String, fps: u32, loops: u32 },
+    LookAt {
+        target: BodyTarget,
+    },
+    Animation {
+        asset: BodyAnimationAsset,
+        fps: u32,
+        loops: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -196,17 +278,8 @@ impl BodyCommand {
                         "invalid face target",
                     )?;
                 }
-                BodyMotion::Animation { file, fps, loops } => {
-                    require(
-                        !file.is_empty()
-                            && file.len() <= 128
-                            && file != "."
-                            && file != ".."
-                            && file.bytes().all(|b| {
-                                b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
-                            }),
-                        "invalid animation file name",
-                    )?;
+                BodyMotion::Animation { asset, fps, loops } => {
+                    asset.validate()?;
                     require(
                         (1..=120).contains(fps) && (1..=20).contains(loops),
                         "invalid animation playback bounds",
@@ -538,6 +611,69 @@ mod tests {
     }
 
     #[test]
+    fn legacy_animation_without_content_identity_is_rejected() {
+        let mut legacy = serde_json::to_value(command()).unwrap();
+        legacy["actions"][0]["motion"] = serde_json::json!({
+            "kind": "animation", "file": "reviewed.anim", "fps": 30, "loops": 1
+        });
+        let rejected = match serde_json::from_value::<BodyCommand>(legacy) {
+            Err(_) => true,
+            Ok(command) => command.validate().is_err(),
+        };
+        assert!(
+            rejected,
+            "a signed animation without an approved content identity was accepted"
+        );
+    }
+
+    #[test]
+    fn approved_animation_identity_binds_exact_bytes_and_rejects_invalid_catalogs() {
+        let asset = BodyAnimationAsset {
+            file: "reviewed.anim".into(),
+            version: 1,
+            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+            bytes: 3,
+        };
+        assert!(asset.verify_bytes(b"abc").is_ok());
+        assert!(asset.verify_bytes(b"abd").is_err());
+        assert!(asset.verify_bytes(b"abc\n").is_err());
+        for (file, version, sha256, bytes) in [
+            ("../reviewed.anim", 1, asset.sha256.clone(), 3),
+            ("reviewed", 1, asset.sha256.clone(), 3),
+            (".anim", 1, asset.sha256.clone(), 3),
+            ("reviewed.anim", 0, asset.sha256.clone(), 3),
+            ("reviewed.anim", 1, asset.sha256.to_uppercase(), 3),
+            ("reviewed.anim", 1, "a".repeat(63), 3),
+            ("reviewed.anim", 1, asset.sha256.clone(), 0),
+            ("reviewed.anim", 1, asset.sha256.clone(), 65_537),
+        ] {
+            assert!(
+                BodyAnimationAsset {
+                    file: file.into(),
+                    version,
+                    sha256,
+                    bytes
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(validate_animation_catalog(&[]).is_ok());
+        assert!(validate_animation_catalog(std::slice::from_ref(&asset)).is_ok());
+        assert!(validate_animation_catalog(&[asset.clone(), asset.clone()]).is_err());
+        let too_many: Vec<_> = (0..65)
+            .map(|n| BodyAnimationAsset {
+                file: format!("asset-{n}.anim"),
+                ..asset.clone()
+            })
+            .collect();
+        assert!(validate_animation_catalog(&too_many).is_err());
+        let mut unknown = serde_json::to_value(&asset).unwrap();
+        unknown["approved"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<BodyAnimationAsset>(unknown).is_err());
+    }
+
+    #[test]
     fn rejects_nonfinite_unsafe_and_unbounded_intent_before_any_backend() {
         let mut c = command();
         assert!(c.validate().is_ok());
@@ -545,7 +681,12 @@ mod tests {
         assert!(c.validate().is_err());
         c.actions[0].intensity = 0.5;
         c.actions[0].motion = BodyMotion::Animation {
-            file: "../secret.anim".into(),
+            asset: BodyAnimationAsset {
+                file: "../secret.anim".into(),
+                version: 1,
+                sha256: "0".repeat(64),
+                bytes: 1,
+            },
             fps: 30,
             loops: 1,
         };

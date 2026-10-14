@@ -476,6 +476,8 @@ impl MotionRuntime {
 
     pub fn new_with_boot(config: MotionConfig, boot: Uuid) -> Result<Self> {
         ensure!(!boot.is_nil(), "body device boot ID must not be nil");
+        alia_core::body::validate_animation_catalog(&config.approved_animations)
+            .map_err(anyhow::Error::msg)?;
         if !config.enabled {
             return Ok(Self::disabled_with_boot(config, boot));
         }
@@ -929,7 +931,7 @@ impl MotionRuntime {
     }
 
     pub fn enrich_discovery_metadata(&self, metadata: &mut DiscoveryMetadata) {
-        // The persistent BodyDelivery integration must opt into command-v1.
+        // Persistent BodyDelivery must opt into the current Body contract.
         // A native writer alone must never advertise end-to-end completion.
         if self.config.enabled && self.config.calibration_confirmed && self.mapper.is_some() {
             metadata.capabilities.push("motion.native".into());

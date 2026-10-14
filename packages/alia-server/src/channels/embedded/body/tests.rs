@@ -309,6 +309,7 @@ impl BodyControl for DeviceService {
 #[derive(Default)]
 struct Store {
     records: Mutex<HashMap<Uuid, BodyDeliveryRecord>>,
+    remove_after_lookup: AtomicBool,
     allow: AtomicBool,
     progress_facts: Mutex<Vec<BodyProgress>>,
     claims: AtomicUsize,
@@ -320,14 +321,14 @@ impl BodyDeliveryStore for Store {
         &self,
         origin: &BodyDeliveryOrigin,
         _: &str,
-        _: &BodyCommand,
+        _: Uuid,
     ) -> anyhow::Result<Option<BodyDeliveryRecord>> {
-        Ok(self
-            .records
-            .lock()
-            .unwrap()
-            .get(&origin.response_id)
-            .cloned())
+        let mut records = self.records.lock().unwrap();
+        let record = records.get(&origin.response_id).cloned();
+        if self.remove_after_lookup.swap(false, Ordering::SeqCst) {
+            records.remove(&origin.response_id);
+        }
+        Ok(record)
     }
     async fn claim(
         &self,
@@ -406,6 +407,10 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
+        Self::with_assets(vec![]).await
+    }
+
+    async fn with_assets(assets: Vec<BodyAnimationAsset>) -> Self {
         let server_key = SigningKey::from_bytes(&[30; 32]);
         let device = Arc::new(FakeDevice::new(
             server_key.verifying_key().to_bytes().to_vec(),
@@ -435,7 +440,7 @@ impl Harness {
             device.key.verifying_key().to_bytes().to_vec(),
         )
         .unwrap();
-        let mut runtime = EmbeddedBodyRuntime::new("test-channel".into());
+        let mut runtime = EmbeddedBodyRuntime::new("test-channel".into(), assets);
         Arc::get_mut(&mut runtime.0).unwrap().enabled = true;
         let store = Arc::new(Store::default());
         store.allow.store(true, Ordering::SeqCst);
@@ -946,7 +951,7 @@ async fn original_response_record_is_restored_without_opening_control_or_resubmi
     for has_late in [false, true] {
         let h = Harness::new().await;
         let params = params(20);
-        let intent = BodyIntent::parse(params.clone()).unwrap();
+        let intent = BodyIntent::parse(params.clone(), &[]).unwrap();
         let command = intent.command(BodyCommandIdentity {
             lease: BodyControlLease {
                 device_boot_id: Uuid::new_v4(),
@@ -1037,20 +1042,210 @@ async fn revoked_response_cancels_original_command_and_still_records_real_receip
 }
 
 #[test]
+fn animation_without_an_operator_approved_catalog_is_rejected() {
+    let mut value = params(500);
+    value["timeline"][0]["action"] = json!("play_animation");
+    value["timeline"][0]["params"] = json!({"file":"reviewed.anim","fps":30,"loops":1});
+    assert!(
+        BodyIntent::parse(value, &[]).is_err(),
+        "an animation absent from any operator-approved catalog was accepted"
+    );
+}
+
+fn approved_asset(version: u32) -> BodyAnimationAsset {
+    let content = if version == 1 {
+        b"frames\n0 0 0\n"
+    } else {
+        b"frames\n1 0 0\n"
+    };
+    BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version,
+        sha256: body_animation_sha256(content),
+        bytes: content.len() as u32,
+    }
+}
+
+fn animation_params() -> Value {
+    let mut value = params(500);
+    value["timeline"][0]["action"] = json!("play_animation");
+    value["timeline"][0]["params"] = json!({"file":"reviewed.anim","fps":30,"loops":1});
+    value
+}
+
+#[test]
+fn animation_pin_is_resolved_only_from_the_approved_catalog() {
+    let asset = approved_asset(1);
+    let value = animation_params();
+    let intent = BodyIntent::parse(value.clone(), std::slice::from_ref(&asset)).unwrap();
+    assert!(
+        matches!(&intent.actions[0].motion, BodyMotion::Animation { asset: actual, fps: 30, loops: 1 } if actual == &asset)
+    );
+    for (key, supplied) in [
+        ("sha256", json!(asset.sha256)),
+        ("version", json!(99)),
+        ("bytes", json!(1)),
+        ("asset", json!(asset)),
+        ("approved_animations", json!([asset.clone()])),
+    ] {
+        let mut forged = value.clone();
+        forged["timeline"][0]["params"][key] = supplied;
+        assert!(
+            BodyIntent::parse(forged, std::slice::from_ref(&asset)).is_err(),
+            "model supplied {key} was accepted"
+        );
+    }
+    let mut unknown = value.clone();
+    unknown["timeline"][0]["params"]["file"] = json!("unknown.anim");
+    assert!(BodyIntent::parse(unknown, std::slice::from_ref(&asset)).is_err());
+    let mut alias = value;
+    alias["timeline"][0]["params"]["file"] = json!("reviewed");
+    assert_eq!(
+        BodyIntent::parse(alias, &[asset]).unwrap().actions,
+        intent.actions
+    );
+}
+
+#[tokio::test]
+async fn a_known_durable_identity_cannot_become_fresh_when_its_row_disappears() {
+    let h = Harness::new().await;
+    let raw = animation_params();
+    let intent = BodyIntent::parse(raw.clone(), &[approved_asset(1)]).unwrap();
+    let command = intent.command(BodyCommandIdentity {
+        lease: BodyControlLease {
+            device_boot_id: Uuid::new_v4(),
+            server_instance_id: Uuid::new_v4(),
+            generation: 1,
+        },
+        sequence: 1,
+    });
+    h.store.records.lock().unwrap().insert(
+        intent.origin.response_id,
+        BodyDeliveryRecord {
+            delivery_id: Uuid::new_v4(),
+            response_id: intent.origin.response_id,
+            output_key: intent.origin.output_key,
+            dispatch_id: Uuid::new_v4(),
+            command: command.clone(),
+            progress: None,
+            latest_checkpoint: None,
+            status: "unknown".into(),
+            unknown_reason: Some("former owner retired".into()),
+        },
+    );
+    h.store.remove_after_lookup.store(true, Ordering::SeqCst);
+    h.runtime.submit(raw.clone()).await.unwrap();
+    assert_eq!(h.retired(&raw).await.body.unwrap().command, command);
+    assert!(h.store.records.lock().unwrap().is_empty());
+    assert_eq!(h.store.claims.load(Ordering::SeqCst), 0);
+    assert!(h.device.operations().is_empty());
+    h.finish().await;
+}
+
+#[tokio::test]
+async fn restarted_catalog_cannot_rebind_or_hide_the_original_body_intent() {
+    let original = approved_asset(1);
+    let replacement = approved_asset(2);
+    let raw = animation_params();
+    let h = Harness::with_assets(vec![original.clone()]).await;
+    h.runtime.submit(raw.clone()).await.unwrap();
+    let first = h.retired(&raw).await;
+    let command = first.body.unwrap().command;
+    assert!(
+        matches!(&command.actions[0].motion, BodyMotion::Animation { asset, .. } if asset == &original)
+    );
+    let origin: Uuid = serde_json::from_value(raw["response_id"].clone()).unwrap();
+    let record = h
+        .store
+        .records
+        .lock()
+        .unwrap()
+        .get(&origin)
+        .unwrap()
+        .clone();
+    h.finish().await;
+
+    for catalog in [vec![], vec![replacement.clone()]] {
+        let h = Harness::with_assets(catalog.clone()).await;
+        h.store
+            .records
+            .lock()
+            .unwrap()
+            .insert(origin, record.clone());
+        let restored: ExpressionExecutionResult =
+            serde_json::from_value(h.runtime.submit(raw.clone()).await.unwrap()).unwrap();
+        assert_eq!(restored.body.unwrap().command, command);
+        h.retired(&raw).await;
+        let mut changed = raw.clone();
+        changed["timeline"][0]["params"]["fps"] = json!(60);
+        assert!(h.runtime.submit(changed.clone()).await.is_err());
+        h.runtime
+            .0
+            .admission
+            .lock()
+            .unwrap()
+            .sources
+            .remove(raw["command_id"].as_str().unwrap());
+        for cancel in [false, true] {
+            let mut query = owner_params(&raw);
+            query["body_intent"] = raw.clone();
+            let fact: ExpressionExecutionResult =
+                serde_json::from_value(h.runtime.observe(query, cancel).await.unwrap()).unwrap();
+            assert_eq!(fact.body.unwrap().command, command);
+        }
+        assert!(h.runtime.submit(changed.clone()).await.is_err());
+        let mut changed_query = owner_params(&changed);
+        changed_query["body_intent"] = changed;
+        assert!(h.runtime.observe(changed_query, false).await.is_err());
+        let mut other_owner = raw.clone();
+        other_owner["target_user_id"] = json!(Uuid::new_v4());
+        assert!(h.runtime.submit(other_owner).await.is_err());
+        assert!(
+            h.device.operations().is_empty(),
+            "recovery opened control or resubmitted"
+        );
+        assert_eq!(h.store.claims.load(Ordering::SeqCst), 0);
+
+        let fresh = animation_params();
+        if catalog.is_empty() {
+            assert!(h.runtime.submit(fresh).await.is_err());
+            assert!(h.device.operations().is_empty());
+        } else {
+            h.runtime.submit(fresh.clone()).await.unwrap();
+            let next = h.retired(&fresh).await.body.unwrap().command;
+            assert!(
+                matches!(&next.actions[0].motion, BodyMotion::Animation { asset, .. } if asset == &replacement)
+            );
+            let sent: Vec<_> = h
+                .device
+                .operations()
+                .into_iter()
+                .filter_map(|op| match op {
+                    BodyOperation::Submit { command } => Some(command),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(sent, vec![next]);
+        }
+        h.finish().await;
+    }
+}
+
+#[test]
 fn typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_names() {
     let mut value = params(500);
     value["timeline"][0]["action"] = json!("look_at_user");
-    assert!(BodyIntent::parse(value.clone()).is_err());
+    assert!(BodyIntent::parse(value.clone(), &[]).is_err());
     value["timeline"][0]["params"] = json!({"rotation":[10.0,20.0,30.0]});
     assert!(matches!(
-        BodyIntent::parse(value.clone()).unwrap().actions[0].motion,
+        BodyIntent::parse(value.clone(), &[]).unwrap().actions[0].motion,
         BodyMotion::LookAt { .. }
     ));
     value["timeline"][0]["params"] = json!({"rotation":[999.0,0.0,0.0]});
-    assert!(BodyIntent::parse(value.clone()).is_err());
+    assert!(BodyIntent::parse(value.clone(), &[]).is_err());
     value["timeline"][0]["action"] = json!("play_animation");
     value["timeline"][0]["params"] = json!({"file":"../unsafe.anim","fps":30,"loops":1});
-    assert!(BodyIntent::parse(value).is_err());
+    assert!(BodyIntent::parse(value, &[]).is_err());
 }
 
 struct ExpressionChannel(EmbeddedBodyRuntime);

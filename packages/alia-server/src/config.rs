@@ -108,6 +108,9 @@ pub enum ChannelConfig {
         expected_device_id: Option<String>,
         #[serde(default)]
         expected_device_public_key: Option<String>,
+        /// Locally reviewed pins; never learned from the device or model output.
+        #[serde(default)]
+        approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
         #[serde(default = "default_true")]
         enabled: bool,
         #[serde(default)]
@@ -2089,6 +2092,15 @@ impl ServerConfig {
     fn from_merged_content(path: &Path, content: &str) -> anyhow::Result<Self> {
         let config_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut config: ServerConfig = toml::from_str(&content)?;
+        for channel in &config.channels {
+            if let ChannelConfig::Embedded {
+                approved_animations,
+                ..
+            } = channel
+            {
+                alia_core::body::validate_animation_catalog(approved_animations)?;
+            }
+        }
         config.config_dir = config_dir;
         config.providers.ensure_default_llm_provider_profiles();
 

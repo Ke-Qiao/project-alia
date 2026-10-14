@@ -36,11 +36,15 @@ pub fn load_config(path: &Path) -> Result<EmbeddedConfig> {
     }
 
     config.device_runtime.validate()?;
+    alia_core::body::validate_animation_catalog(&config.motion.approved_animations)
+        .map_err(anyhow::Error::msg)?;
     resolve_paths(&mut config, path);
     Ok(config)
 }
 
 pub fn save_runtime_settings(path: &Path, settings: &EmbeddedRuntimeSettings) -> Result<()> {
+    alia_core::body::validate_animation_catalog(&settings.motion.approved_animations)
+        .map_err(anyhow::Error::msg)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating config directory: {}", parent.display()))?;
@@ -65,6 +69,8 @@ pub fn runtime_settings_for_path(config: &EmbeddedConfig) -> EmbeddedRuntimeSett
 /// Normalize a library-supplied configuration using the same rules as file loading.
 pub fn resolve_config_paths(config: &mut EmbeddedConfig) -> Result<()> {
     config.device_runtime.validate()?;
+    alia_core::body::validate_animation_catalog(&config.motion.approved_animations)
+        .map_err(anyhow::Error::msg)?;
     let path = if config.config_path.as_os_str().is_empty() {
         std::env::current_dir()?.join("embedded.toml")
     } else {

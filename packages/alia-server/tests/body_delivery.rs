@@ -140,6 +140,48 @@ async fn concurrent_claims_grant_one_physical_permission_and_preserve_original_i
 }
 
 #[tokio::test]
+async fn animation_ledger_lookup_preserves_owner_response_channel_and_exact_content() {
+    with_db(|f| async move {
+        let response = f.repo().prepare(f.response().await).await.unwrap();
+        let origin = BodyDeliveryOrigin { response_id: response.response_id, output_key: "speech_start".into() };
+        let mut command = command(f.user);
+        let content = b"frames\n0 0 0\n";
+        let asset = BodyAnimationAsset { file: "reviewed.anim".into(), version: 1,
+            sha256: body_animation_sha256(content), bytes: content.len() as u32 };
+        command.actions[0].motion = BodyMotion::Animation { asset: asset.clone(), fps: 30, loops: 1 };
+        let repo = BodyDeliveryRepository::new(f.db.clone());
+        assert!(matches!(repo.claim(&origin, "test-device", &command).await.unwrap(), BodyDispatch::Fresh { .. }));
+        let original = repo.lookup_origin(&origin, "test-device", f.user).await.unwrap().unwrap();
+        assert_eq!(original.command, command);
+
+        let other = Uuid::new_v4();
+        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Other owner','not-a-login','user','active')",
+            vec![other.into(), format!("{other}@body.test").into()])).await.unwrap();
+        assert!(repo.lookup_origin(&origin, "test-device", other).await.unwrap().is_none());
+        assert!(repo.lookup_origin(&origin, "foreign-channel", f.user).await.is_err());
+        assert!(repo.lookup_origin(&BodyDeliveryOrigin { response_id: Uuid::new_v4(), ..origin.clone() }, "test-device", f.user).await.unwrap().is_none());
+        assert!(repo.lookup_origin(&BodyDeliveryOrigin { output_key: "post_speech".into(), ..origin.clone() }, "test-device", f.user).await.unwrap().is_none());
+
+        for changed_asset in [
+            BodyAnimationAsset { version: 2, ..asset.clone() },
+            BodyAnimationAsset { sha256: body_animation_sha256(b"frames\n1 0 0\n"), ..asset.clone() },
+            BodyAnimationAsset { bytes: asset.bytes + 1, ..asset.clone() },
+            BodyAnimationAsset { file: "other.anim".into(), ..asset.clone() },
+        ] {
+            let mut changed = command.clone();
+            changed.actions[0].motion = BodyMotion::Animation { asset: changed_asset, fps: 30, loops: 1 };
+            assert!(repo.claim(&origin, "test-device", &changed).await.is_err());
+        }
+        assert_eq!(f.count("body_deliveries").await, 1);
+        assert_eq!(repo.lookup_origin(&origin, "test-device", f.user).await.unwrap().unwrap().command, command);
+        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "UPDATE users SET status='disabled' WHERE id=$1", vec![f.user.into()])).await.unwrap();
+        assert!(repo.lookup_origin(&origin, "test-device", f.user).await.is_err());
+    }).await;
+}
+
+#[tokio::test]
 async fn audit_failure_rolls_back_permission_before_external_output() {
     with_db(|f| async move {
         let response = f.repo().prepare(f.response().await).await.unwrap();
@@ -164,14 +206,14 @@ async fn revocation_stops_admission_but_keeps_actual_submitted_facts() {
         assert!(repo.authorize(id, permit).await.is_err());
         assert!(repo.claim(&origin, "test-device", &command).await.is_err());
         let original = repo
-            .lookup_origin(&origin, "test-device", &command)
+            .lookup_origin(&origin, "test-device", command.owner_id)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(original.delivery_id, id);
         assert_eq!(original.command, command);
         assert!(
-            repo.lookup_origin(&origin, "wrong-device", &command)
+            repo.lookup_origin(&origin, "wrong-device", command.owner_id)
                 .await
                 .is_err()
         );

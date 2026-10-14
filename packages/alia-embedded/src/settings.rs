@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use tokio::sync::RwLock;
 
@@ -18,6 +18,7 @@ pub struct SettingsSnapshot {
 
 pub struct EmbeddedSettingsManager {
     path: PathBuf,
+    direct_response_audio_dir: PathBuf,
     settings: RwLock<EmbeddedRuntimeSettings>,
 }
 
@@ -25,8 +26,15 @@ impl EmbeddedSettingsManager {
     pub fn new(config: &EmbeddedConfig) -> Self {
         Self {
             path: config.config_path.clone(),
+            direct_response_audio_dir: config.direct_response_defaults.audio_dir.clone(),
             settings: RwLock::new(runtime_settings_for_path(config)),
         }
+    }
+
+    /// The startup directory resolved by config loading or the runtime builder.
+    /// Mutable settings describe the next boot and never redirect live uploads.
+    pub fn direct_response_audio_dir(&self) -> &Path {
+        &self.direct_response_audio_dir
     }
 
     pub async fn snapshot(&self, requires_restart: bool) -> SettingsSnapshot {
@@ -58,12 +66,22 @@ impl EmbeddedSettingsManager {
     }
 
     pub async fn update_from_value(&self, patch: serde_json::Value) -> Result<SettingsSnapshot> {
-        let mut current = serde_json::to_value(self.settings.read().await.clone())
-            .context("serializing current embedded settings")?;
+        let before = self.settings.read().await.clone();
+        let mut current =
+            serde_json::to_value(&before).context("serializing current embedded settings")?;
         merge_values(&mut current, patch)?;
 
         let merged: EmbeddedRuntimeSettings =
             serde_json::from_value(current).context("validating embedded settings patch")?;
+        ensure!(
+            merged.motion.approved_animations == before.motion.approved_animations,
+            "approved animation catalog is local-only; edit local configuration and restart"
+        );
+        ensure!(
+            merged.direct_response_defaults.audio_dir.as_os_str()
+                == before.direct_response_defaults.audio_dir.as_os_str(),
+            "direct response audio directory is local-only; edit local configuration and restart"
+        );
         save_runtime_settings(&self.path, &merged)?;
         *self.settings.write().await = merged;
 

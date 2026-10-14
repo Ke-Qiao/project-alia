@@ -1190,6 +1190,17 @@ async fn queue_and_receipt_cache_are_bounded_and_retired_sequences_cannot_replay
 #[tokio::test]
 async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
     let (mut runtime, _servo) = unstarted();
+    let directory = tempfile::tempdir().unwrap();
+    let bytes = b"frames\n1 0 0\n";
+    std::fs::write(directory.path().join("reviewed.anim"), bytes).unwrap();
+    let asset = alia_core::body::BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version: 1,
+        sha256: alia_core::body::body_animation_sha256(bytes),
+        bytes: bytes.len() as u32,
+    };
+    Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
+    Arc::make_mut(&mut runtime.config).approved_animations = vec![asset.clone()];
     let gate = Arc::new((Mutex::new(false), Condvar::new()));
     let _preparation_release = PreparationRelease(gate.clone());
     let entered = Arc::new(AtomicUsize::new(0));
@@ -1210,7 +1221,13 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
     let mut waiters = Vec::new();
     for sequence in 1..=4 {
         let runtime = runtime.clone();
-        let command = command(lease, sequence);
+        let mut command = command(lease, sequence);
+        command.actions[0].duration_ms = 100;
+        command.actions[0].motion = BodyMotion::Animation {
+            asset: asset.clone(),
+            fps: 30,
+            loops: 1,
+        };
         waiters.push(tokio::spawn(async move {
             runtime
                 .prepare(command.clone(), serde_json::to_vec(&command).unwrap())
@@ -1245,6 +1262,58 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
     gate.1.notify_all();
     runtime.stop().await.unwrap();
     assert!(runtime.preparations.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn prepared_approved_animation_cannot_revive_a_retired_identity_or_revoked_lease() {
+    let (mut runtime, servo) = unstarted();
+    let directory = tempfile::tempdir().unwrap();
+    let bytes = b"frames\n1 0 0\n";
+    let path = directory.path().join("reviewed.anim");
+    std::fs::write(&path, bytes).unwrap();
+    let asset = alia_core::body::BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version: 1,
+        sha256: alia_core::body::body_animation_sha256(bytes),
+        bytes: bytes.len() as u32,
+    };
+    Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
+    Arc::make_mut(&mut runtime.config).approved_animations = vec![asset.clone()];
+    runtime.start().await.unwrap();
+    let lease = open(&runtime);
+    let mut intent = command(lease, 1);
+    intent.actions[0].duration_ms = 100;
+    intent.actions[0].motion = BodyMotion::Animation {
+        asset,
+        fps: 30,
+        loops: 1,
+    };
+    let late = prepared(&runtime, &intent).await;
+    let rejected = runtime
+        .reject(
+            intent.clone(),
+            serde_json::to_vec(&intent).unwrap(),
+            "cancel before admission",
+        )
+        .unwrap()
+        .snapshot();
+    assert_eq!(
+        runtime.submit(late, authorization()).unwrap().snapshot(),
+        rejected
+    );
+    intent.identity.sequence += 1;
+    let prepared_next = prepared(&runtime, &intent).await;
+    std::fs::write(&path, b"frames\n7 0 0\n").unwrap();
+    runtime
+        .close_control(&lease, "lease revoked after preparation")
+        .unwrap();
+    assert!(runtime.submit(prepared_next, authorization()).is_err());
+    assert_eq!(
+        servo.count(),
+        1,
+        "only the confirmed startup target may be submitted"
+    );
+    runtime.stop().await.unwrap();
 }
 
 #[tokio::test]

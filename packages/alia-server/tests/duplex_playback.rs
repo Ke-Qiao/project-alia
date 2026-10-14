@@ -519,6 +519,7 @@ impl Runtime {
                         .verifying_key()
                         .as_bytes(),
                 )),
+                approved_animations: vec![],
                 endpoint,
                 discovery_service_name: "_alia-paired-test._tcp".into(),
                 discovery_timeout_sec: 1,

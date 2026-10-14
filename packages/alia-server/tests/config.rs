@@ -6,6 +6,57 @@ use alia_server::config::{
 };
 
 #[test]
+fn approved_animation_catalog_is_local_empty_by_default_and_validated_on_load() {
+    use alia_core::body::{BodyAnimationAsset, body_animation_sha256};
+    use alia_server::config::ChannelConfig;
+    struct TemporaryConfig(std::path::PathBuf);
+    impl Drop for TemporaryConfig {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let root = TemporaryConfig(
+        std::env::temp_dir().join(format!("alia-approved-assets-{}", uuid::Uuid::new_v4())),
+    );
+    std::fs::create_dir_all(&root.0).unwrap();
+    let path = root.0.join("server.toml");
+    let mut value: toml::Value =
+        toml::from_str(include_str!("../../../config/server.example.toml")).unwrap();
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    let config = ServerConfig::load(&path).unwrap();
+    assert!(
+        matches!(&config.channels[0], ChannelConfig::Embedded { approved_animations, .. } if approved_animations.is_empty())
+    );
+    let content = b"frames\n0 0 0\n";
+    let asset = BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version: 1,
+        sha256: body_animation_sha256(content),
+        bytes: content.len() as u32,
+    };
+    let approved = toml::Value::try_from(&asset).unwrap();
+    value["channels"][0]["approved_animations"] = toml::Value::Array(vec![approved.clone()]);
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    let config = ServerConfig::load(&path).unwrap();
+    assert!(
+        matches!(&config.channels[0], ChannelConfig::Embedded { approved_animations, .. } if approved_animations == &[asset])
+    );
+    value["channels"][0]["approved_animations"] =
+        toml::Value::Array(vec![approved.clone(), approved]);
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    assert!(ServerConfig::load(&path).is_err());
+    value["channels"][0]["approved_animations"] =
+        toml::Value::Array(vec![toml::Value::Table(toml::Table::from_iter([
+            ("file".into(), toml::Value::String("reviewed.anim".into())),
+            ("version".into(), toml::Value::Integer(0)),
+            ("sha256".into(), toml::Value::String("a".repeat(64))),
+            ("bytes".into(), toml::Value::Integer(10)),
+        ]))]);
+    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    assert!(ServerConfig::load(&path).is_err());
+}
+
+#[test]
 fn duplex_hold_budget_defaults_and_explicit_bounds_are_checked_during_deserialization() {
     use alia_server::config::PoliciesSection;
     assert_eq!(PoliciesSection::default().duplex.hold_budget_ms, 60_000);

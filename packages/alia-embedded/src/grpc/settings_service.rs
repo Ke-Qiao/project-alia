@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
+mod cue_files;
+
 use alia_proto::settings::embedded_settings_server::EmbeddedSettings as EmbeddedSettingsTrait;
 use alia_proto::settings::{
     DeleteDirectResponseRequest, DeleteDirectResponseResponse, DirectResponseAudioVariant,
@@ -241,9 +243,7 @@ impl EmbeddedSettingsService {
         &self,
         rule: DirectResponseRule,
     ) -> Result<DirectResponseRuleRecord, Status> {
-        let snapshot = self.settings.snapshot(false).await;
-        let audio_dir = snapshot.settings.direct_response_defaults.audio_dir;
-        proto_to_record(rule, &audio_dir).await
+        proto_to_record(rule, self.settings.direct_response_audio_dir()).await
     }
 }
 
@@ -264,11 +264,6 @@ async fn proto_to_record(
             "direct response requires at least one keyword, action, or slug",
         ));
     }
-    let variant_audio_dir = if slug.is_empty() {
-        audio_dir.to_path_buf()
-    } else {
-        audio_dir.join(&slug)
-    };
     let mut variants = rule.audio_variants;
     if variants.is_empty() && !rule.audio_path.trim().is_empty() {
         variants.push(DirectResponseAudioVariant {
@@ -277,7 +272,7 @@ async fn proto_to_record(
             audio_data: Vec::new(),
         });
     }
-    let audio_variants = write_audio_variants(variants, &variant_audio_dir).await?;
+    let audio_variants = write_audio_variants_in(variants, audio_dir, &slug).await?;
     if audio_variants.is_empty() {
         return Err(Status::invalid_argument(
             "direct response cue requires an audio variant",
@@ -355,9 +350,18 @@ fn sanitize_slug(input: &str) -> String {
         .join("-")
 }
 
+#[cfg(test)]
 async fn write_audio_variants(
     variants: Vec<DirectResponseAudioVariant>,
     audio_dir: &Path,
+) -> Result<Vec<DirectResponseAudioRecord>, Status> {
+    write_audio_variants_in(variants, audio_dir, "").await
+}
+
+async fn write_audio_variants_in(
+    variants: Vec<DirectResponseAudioVariant>,
+    audio_dir: &Path,
+    slug: &str,
 ) -> Result<Vec<DirectResponseAudioRecord>, Status> {
     if variants
         .iter()
@@ -367,6 +371,13 @@ async fn write_audio_variants(
             "cue audio weight must be finite and positive",
         ));
     }
+    let uploads: Vec<_> = variants
+        .iter()
+        .filter(|variant| !variant.audio_data.is_empty())
+        .map(|variant| (variant.audio_path.as_str(), variant.audio_data.as_slice()))
+        .collect();
+    let mut written = cue_files::write_uploads(audio_dir, slug, &uploads)?.into_iter();
+    let variant_audio_dir = audio_dir.join(slug);
     let mut records = Vec::new();
 
     for variant in variants {
@@ -375,19 +386,16 @@ async fn write_audio_variants(
             if requested.is_empty() {
                 String::new()
             } else {
-                audio_file_path(audio_dir, requested).display().to_string()
+                audio_file_path(&variant_audio_dir, requested)
+                    .display()
+                    .to_string()
             }
         } else {
-            let path = audio_file_path(audio_dir, &variant.audio_path);
-            if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|error| Status::internal(error.to_string()))?;
-            }
-            tokio::fs::write(&path, &variant.audio_data)
-                .await
-                .map_err(|error| Status::internal(error.to_string()))?;
-            path.display().to_string()
+            written
+                .next()
+                .expect("one path per uploaded variant")
+                .display()
+                .to_string()
         };
 
         if !audio_path.trim().is_empty() {
@@ -418,6 +426,81 @@ fn audio_file_path(audio_dir: &Path, requested: &str) -> PathBuf {
 #[cfg(test)]
 mod cue_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cue_upload_persists_paths_under_the_fixed_root_and_slug() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap().join("audio");
+        let record = proto_to_record(
+            DirectResponseRule {
+                slug: "Wake up".into(),
+                audio_variants: vec![DirectResponseAudioVariant {
+                    audio_path: "sample.wav".into(),
+                    weight: 0.5,
+                    audio_data: b"pcm fixture".to_vec(),
+                }],
+                ..Default::default()
+            },
+            &root,
+        )
+        .await
+        .unwrap();
+        let path = root.join("wake-up/sample.wav");
+        assert_eq!(
+            record.audio_variants[0].audio_path,
+            path.display().to_string()
+        );
+        assert_eq!(std::fs::read(path).unwrap(), b"pcm fixture");
+        let roundtrip = proto_to_record(record_to_proto(record), &root)
+            .await
+            .unwrap();
+        assert_eq!(roundtrip.audio_variants[0].weight, 0.5);
+        assert_eq!(std::fs::read_dir(root.join("wake-up")).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn cue_reference_without_data_does_not_create_or_overwrite_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("unused");
+        let referenced = directory.path().join("existing.wav");
+        std::fs::write(&referenced, b"old").unwrap();
+        let records = write_audio_variants(
+            vec![DirectResponseAudioVariant {
+                audio_path: referenced.display().to_string(),
+                weight: 1.0,
+                audio_data: Vec::new(),
+            }],
+            &root,
+        )
+        .await
+        .unwrap();
+        assert_eq!(records[0].audio_path, referenced.display().to_string());
+        assert_eq!(std::fs::read(referenced).unwrap(), b"old");
+        assert!(!root.exists());
+    }
+
+    #[tokio::test]
+    async fn cue_upload_cannot_overwrite_a_config_outside_its_audio_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let audio_dir = directory.path().join("audio");
+        let config = directory.path().join("embedded.toml");
+        let original = b"[motion]\napproved_animations = []\n";
+        std::fs::write(&config, original).unwrap();
+        let result = write_audio_variants(
+            vec![DirectResponseAudioVariant {
+                audio_path: config.display().to_string(),
+                weight: 1.0,
+                audio_data: b"replacement config".to_vec(),
+            }],
+            &audio_dir,
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "cue upload accepted an external config path"
+        );
+        assert_eq!(std::fs::read(config).unwrap(), original);
+    }
 
     #[tokio::test]
     async fn cue_management_rejects_action_only_and_invalid_weights_before_writes() {

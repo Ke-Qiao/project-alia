@@ -1,8 +1,10 @@
 use super::neck_mapper::NeckMapper;
 use crate::config::MotionConfig;
-use alia_core::body::{BodyCommand, BodyMotion, BodyTarget, MAX_BODY_PAYLOAD_BYTES};
+use alia_core::body::{
+    BodyAnimationAsset, BodyCommand, BodyMotion, BodyTarget, MAX_BODY_PAYLOAD_BYTES,
+    validate_animation_catalog,
+};
 use anyhow::{Context, Result, ensure};
-use std::io::Read;
 
 /// Preparation performs bounded file reads only. It never claims an identity or
 /// touches hardware; submit rechecks all authority after this work has joined.
@@ -19,6 +21,7 @@ pub(super) fn prepare(
     signed_bytes: Vec<u8>,
 ) -> Result<PreparedBodyCommand> {
     validate_canonical(&command, &signed_bytes)?;
+    validate_animation_catalog(&config.approved_animations).map_err(anyhow::Error::msg)?;
     let mut actions = Vec::new();
     for action in &command.actions {
         let (max_intensity, max_duration) = match action.motion {
@@ -65,8 +68,8 @@ pub(super) fn prepare(
                     } => face_rotation(config, *cx, *cy, *width, *height)?,
                 },
             ],
-            BodyMotion::Animation { file, fps, loops } => {
-                let frames = read_animation(config, file)?;
+            BodyMotion::Animation { asset, fps, loops } => {
+                let frames = read_animation(config, asset)?;
                 let count = frames
                     .len()
                     .checked_mul(*loops as usize)
@@ -123,32 +126,9 @@ pub(super) fn validate_canonical(command: &BodyCommand, canonical: &[u8]) -> Res
     Ok(())
 }
 
-fn read_animation(config: &MotionConfig, name: &str) -> Result<Vec<[f32; 3]>> {
-    let directory = config
-        .animation_dir
-        .canonicalize()
-        .context("resolving animation directory")?;
-    let name = if name.ends_with(".anim") {
-        name.to_owned()
-    } else {
-        format!("{name}.anim")
-    };
-    let path = directory
-        .join(name)
-        .canonicalize()
-        .context("resolving animation")?;
-    ensure!(
-        path.parent() == Some(directory.as_path()),
-        "animation must stay inside configured directory"
-    );
-    let file = std::fs::File::open(path)?;
-    ensure!(
-        file.metadata()?.is_file(),
-        "animation must be a regular file"
-    );
-    let mut content = String::new();
-    file.take(65_537).read_to_string(&mut content)?;
-    ensure!(content.len() <= 65_536, "animation exceeds 64 KiB");
+fn read_animation(config: &MotionConfig, asset: &BodyAnimationAsset) -> Result<Vec<[f32; 3]>> {
+    let bytes = super::assets::read_approved(config, asset)?;
+    let content = std::str::from_utf8(&bytes).context("animation must be UTF-8")?;
     let mut frames = Vec::new();
     for line in content
         .lines()
@@ -277,7 +257,7 @@ mod tests {
     };
     use uuid::Uuid;
 
-    fn animation(file: &str, fps: u32, loops: u32, duration_ms: u32) -> BodyCommand {
+    fn animation(asset: BodyAnimationAsset, fps: u32, loops: u32, duration_ms: u32) -> BodyCommand {
         BodyCommand {
             identity: BodyCommandIdentity {
                 lease: BodyControlLease {
@@ -298,11 +278,7 @@ mod tests {
             actions: vec![BodyAction {
                 duration_ms,
                 intensity: 0.1,
-                motion: BodyMotion::Animation {
-                    file: file.into(),
-                    fps,
-                    loops,
-                },
+                motion: BodyMotion::Animation { asset, fps, loops },
             }],
         }
     }
@@ -312,10 +288,85 @@ mod tests {
         prepare(config, command, bytes)
     }
 
+    // Only isolated test fixtures are pinned here, before the tested mutation.
+    fn approve_fixture(
+        config: &mut MotionConfig,
+        file: &str,
+        fps: u32,
+        loops: u32,
+        duration_ms: u32,
+    ) -> BodyCommand {
+        let name = format!("{file}.anim");
+        let bytes = std::fs::read(config.animation_dir.join(&name)).unwrap();
+        let asset = BodyAnimationAsset {
+            file: name,
+            version: 1,
+            sha256: alia_core::body::body_animation_sha256(&bytes),
+            bytes: bytes.len().min(65_536) as u32,
+        };
+        config.approved_animations = vec![asset.clone()];
+        animation(asset, fps, loops, duration_ms)
+    }
+
+    fn prepared_fixture(
+        config: &mut MotionConfig,
+        file: &str,
+        fps: u32,
+        loops: u32,
+        duration_ms: u32,
+    ) -> Result<PreparedBodyCommand> {
+        let command = approve_fixture(config, file, fps, loops, duration_ms);
+        prepared(config, command)
+    }
+
+    #[test]
+    fn unchanged_signed_animation_cannot_select_replaced_file_contents() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reviewed.anim");
+        let mut config = MotionConfig {
+            animation_dir: directory.path().into(),
+            ..MotionConfig::default()
+        };
+        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
+        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
+        let canonical = serde_json::to_vec(&command).unwrap();
+        let reviewed = prepare(&config, command.clone(), canonical.clone()).unwrap();
+        assert!(
+            reviewed.actions[0]
+                .iter()
+                .all(|frame| *frame == [1.0, 0.0, 0.0])
+        );
+
+        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
+        let replacement = prepare(&config, command, canonical);
+        assert!(
+            replacement.is_err(),
+            "an unchanged signed animation selected different local content"
+        );
+    }
+
+    #[test]
+    fn prepared_animation_is_immutable_after_the_file_is_replaced() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reviewed.anim");
+        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
+        let mut config = MotionConfig {
+            animation_dir: directory.path().into(),
+            ..MotionConfig::default()
+        };
+        let prepared = prepared_fixture(&mut config, "reviewed", 30, 1, 100).unwrap();
+        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
+        assert!(
+            prepared.actions[0]
+                .iter()
+                .all(|frame| *frame == [1.0, 0.0, 0.0])
+        );
+    }
+
     #[test]
     fn validates_every_animation_frame_before_returning_any_plan() {
         let directory = tempfile::tempdir().unwrap();
-        let config = MotionConfig {
+        let mut config = MotionConfig {
             animation_dir: directory.path().into(),
             ..MotionConfig::default()
         };
@@ -324,7 +375,7 @@ mod tests {
             "frames\n0 0 0\n1 2 NaN\n",
         )
         .unwrap();
-        let mut command = animation("bad", 30, 1, 100);
+        let mut command = approve_fixture(&mut config, "bad", 30, 1, 100);
         command.actions.insert(
             0,
             BodyAction {
@@ -338,25 +389,25 @@ mod tests {
             "a valid early action cannot hide an invalid late action"
         );
         std::fs::write(directory.path().join("bad.anim"), "frames\n1 2 3 4\n").unwrap();
-        assert!(prepared(&config, animation("bad", 30, 1, 100)).is_err());
+        assert!(prepared_fixture(&mut config, "bad", 30, 1, 100).is_err());
     }
 
     #[test]
     fn rejects_animation_file_size_frame_count_loops_and_duration_overflow() {
         let directory = tempfile::tempdir().unwrap();
-        let config = MotionConfig {
+        let mut config = MotionConfig {
             animation_dir: directory.path().into(),
             ..MotionConfig::default()
         };
         let path = directory.path().join("large.anim");
         std::fs::write(&path, " ".repeat(65_537)).unwrap();
-        assert!(prepared(&config, animation("large", 120, 1, 5_000)).is_err());
+        assert!(prepared_fixture(&mut config, "large", 120, 1, 5_000).is_err());
         std::fs::write(&path, format!("frames\n{}", "0 0 0\n".repeat(601))).unwrap();
-        assert!(prepared(&config, animation("large", 120, 1, 5_000)).is_err());
+        assert!(prepared_fixture(&mut config, "large", 120, 1, 5_000).is_err());
         std::fs::write(&path, format!("frames\n{}", "0 0 0\n".repeat(31))).unwrap();
-        assert!(prepared(&config, animation("large", 120, 20, 5_000)).is_err());
+        assert!(prepared_fixture(&mut config, "large", 120, 20, 5_000).is_err());
         std::fs::write(&path, "frames\n0 0 0\n1 1 1\n").unwrap();
-        assert!(prepared(&config, animation("large", 1, 1, 100)).is_err());
+        assert!(prepared_fixture(&mut config, "large", 1, 1, 100).is_err());
     }
 
     #[cfg(unix)]
@@ -371,12 +422,19 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir(directory.path().join("directory.anim")).unwrap();
-        let config = MotionConfig {
+        let mut config = MotionConfig {
             animation_dir: directory.path().into(),
             ..MotionConfig::default()
         };
-        assert!(prepared(&config, animation("link", 30, 1, 100)).is_err());
-        assert!(prepared(&config, animation("directory", 30, 1, 100)).is_err());
+        assert!(prepared_fixture(&mut config, "link", 30, 1, 100).is_err());
+        let directory_asset = BodyAnimationAsset {
+            file: "directory.anim".into(),
+            version: 1,
+            sha256: "0".repeat(64),
+            bytes: 1,
+        };
+        config.approved_animations = vec![directory_asset.clone()];
+        assert!(prepared(&config, animation(directory_asset, 30, 1, 100)).is_err());
     }
 
     #[test]
@@ -387,12 +445,12 @@ mod tests {
             "frames\n0 0 0\n10 0 0\n20 0 0\n",
         )
         .unwrap();
-        let config = MotionConfig {
+        let mut config = MotionConfig {
             animation_dir: directory.path().into(),
             fps: 20,
             ..MotionConfig::default()
         };
-        let plan = prepared(&config, animation("path", 10, 1, 400)).unwrap();
+        let plan = prepared_fixture(&mut config, "path", 10, 1, 400).unwrap();
         let path = &plan.actions[0];
         assert_eq!(path.len(), 8);
         assert_eq!(path[0], [5.0, 0.0, 0.0]);
@@ -410,5 +468,76 @@ mod tests {
         assert!(face_rotation(&config, f32::NAN, 1.0, 100.0, 100.0).is_err());
         assert!(face_rotation(&config, 1.0, 1.0, 0.0, 100.0).is_err());
         assert!(face_rotation(&config, 101.0, 1.0, 100.0, 100.0).is_err());
+    }
+
+    #[test]
+    fn local_catalog_must_match_every_signed_asset_field() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("reviewed.anim"), "frames\n1 0 0\n").unwrap();
+        let mut config = MotionConfig {
+            animation_dir: directory.path().into(),
+            ..MotionConfig::default()
+        };
+        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
+        for change in 0..5 {
+            let mut local = config.clone();
+            match change {
+                0 => local.approved_animations.clear(),
+                1 => local.approved_animations[0].version += 1,
+                2 => local.approved_animations[0].bytes += 1,
+                3 => local.approved_animations[0].sha256 = "0".repeat(64),
+                4 => local.approved_animations[0].file = "other.anim".into(),
+                _ => unreachable!(),
+            }
+            assert!(
+                prepared(&local, command.clone())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("local approved catalog")
+            );
+        }
+        prepared(&config, command).unwrap();
+    }
+
+    #[test]
+    fn exact_maximum_file_is_accepted_but_appended_or_truncated_bytes_are_rejected() {
+        use std::io::Write;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reviewed.anim");
+        let bytes = format!("{}\n1 0 0\n", "h".repeat(65_529));
+        assert_eq!(bytes.len(), 65_536);
+        std::fs::write(&path, &bytes).unwrap();
+        let mut config = MotionConfig {
+            animation_dir: directory.path().into(),
+            ..MotionConfig::default()
+        };
+        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
+        prepared(&config, command.clone()).unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
+        assert!(prepared(&config, command.clone()).is_err());
+        std::fs::write(&path, &bytes.as_bytes()[..bytes.len() - 1]).unwrap();
+        assert!(prepared(&config, command).is_err());
+    }
+
+    #[test]
+    fn approved_invalid_utf8_is_not_parsed_as_an_animation() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("bad.anim"), b"frames\n\xff 0 0\n").unwrap();
+        let mut config = MotionConfig {
+            animation_dir: directory.path().into(),
+            ..MotionConfig::default()
+        };
+        let command = approve_fixture(&mut config, "bad", 30, 1, 100);
+        assert!(
+            prepared(&config, command)
+                .unwrap_err()
+                .to_string()
+                .contains("UTF-8")
+        );
     }
 }

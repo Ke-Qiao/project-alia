@@ -59,6 +59,13 @@ enabled = true
 # locally. Discovery/GetBindingStatus never populates or replaces this pin.
 # expected_device_id = "<verified-device-id>"
 # expected_device_public_key = "<base64-encoded-32-byte-Ed25519-public-key>"
+# Local operator-reviewed animation pins, matched independently on the device.
+# Empty keeps file animations unavailable; built-in gestures keep their policy.
+# Never copy a digest from model output or automatically trust existing files.
+approved_animations = []
+# Example only after review: approved_animations = [
+#   { file = "reviewed.anim", version = 1, sha256 = "<64-lowercase-hex>", bytes = 123 }
+# ]
 endpoint = ""
 discovery_service_name = "_alia-embedded._tcp"
 discovery_timeout_sec = 3

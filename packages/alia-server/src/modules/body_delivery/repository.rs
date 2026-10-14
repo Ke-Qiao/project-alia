@@ -30,17 +30,19 @@ impl BodyDeliveryRepository {
 
     /// Consult a known Response phase before even opening device control. This
     /// read keeps old facts available after erasure without granting new output.
+    /// The caller must compare its original intent to the returned command;
+    /// lookup cannot resolve historical asset pins from today's catalog.
     pub async fn lookup_origin(
         &self,
         origin: &BodyDeliveryOrigin,
         channel_id: &str,
-        command: &BodyCommand,
+        owner_id: Uuid,
     ) -> Result<Option<BodyDeliveryRecord>> {
         bounded(async {
-            authorized_owner(&self.db, command.owner_id).await?;
-            let old = record(&self.db, "JOIN delivery_responses r USING(response_id) WHERE b.response_id=$1 AND b.output_key=$2 AND r.user_id=$3", vec![origin.response_id.into(),origin.output_key.clone().into(),command.owner_id.into()]).await?;
+            authorized_owner(&self.db, owner_id).await?;
+            let old = record(&self.db, "JOIN delivery_responses r USING(response_id) WHERE b.response_id=$1 AND b.output_key=$2 AND r.user_id=$3", vec![origin.response_id.into(),origin.output_key.clone().into(),owner_id.into()]).await?;
             if let Some(old) = &old {
-                ensure!(same_intent(&old.command, command), "body response phase was reused with different intent");
+                ensure!(old.command.owner_id == owner_id, "body record differs from original owner");
                 ensure!(self.db.query_one(stmt("SELECT delivery_id FROM body_deliveries WHERE delivery_id=$1 AND channel_id=$2", vec![old.delivery_id.into(),channel_id.into()])).await?.is_some(), "body channel differs from original response");
             }
             Ok(old)

@@ -4,7 +4,8 @@ package alia.body.v1;
 
 // Payloads are strict alia-core BodyRequest / BodyReply JSON bytes. The exact
 // bytes, not a reserialized object, are signed with the direction-specific
-// alia-body-v1 domain. Every reply echoes the signed request nonce and device.
+// alia-body-v2 domain. The envelope RPC namespace stays v1; the signed JSON
+// contract is version 2. Every reply echoes the signed request nonce and device.
 service BodyControl {
   rpc Exchange(SignedBodyPayload) returns (SignedBodyPayload);
 }

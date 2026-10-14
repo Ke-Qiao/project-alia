@@ -28,9 +28,27 @@ files are preserved as calibration/reference assets from the Python toolchain.
 [motion]
 neck_config_file = "../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json"
 animation_dir = "../packages/alia-embedded/assets/neck/anim_data"
+approved_animations = []
 ```
 
 Paths are resolved relative to the embedded config file.
+
+The animation catalog is empty by default. A local operator must review the
+exact asset for the selected mechanism, then configure the same canonical
+`.anim` filename, positive version, lowercase SHA-256 and byte count on both
+server and device. Computing a digest is not approval; shipped historical files
+are not automatically added. Each catalog holds at most 64 unique filenames.
+The local catalog is loaded at startup. Remote settings may preserve it in an
+unchanged snapshot, but cannot add, replace, reorder or remove its entries.
+To change approvals, stop the affected processes, edit both controlled local
+catalogs, then restart. A running settings manager retains its startup snapshot;
+editing its file while it is running can be overwritten by a later ordinary
+settings save.
+
+This catalog boundary protects the Body and Settings data paths. It does not
+isolate host files from an operator or plugin authorized to execute code as the
+embedded process user. The existing plugin deployment and process permissions
+are a separate boundary; see [configuration](configuration.md#runtime-state).
 
 ## Calibration and lifecycle
 
@@ -75,28 +93,59 @@ The `.anim` reader requires:
 ## Expression Action
 
 The native motion runtime accepts animation actions inside the signed
-`alia.body.v1.BodyControl/Exchange` command. The old scope-free generic
-expression execution path is disabled. An animation action has this shape:
+`alia.body.v1.BodyControl/Exchange` command. The service route remains unchanged;
+the JSON Body contract and signing domains are version 2. Version 1 and old
+filename-only animation commands are rejected. The old scope-free generic
+expression execution path is disabled. An action has the following schematic
+shape; the asset fields must come from the operator-reviewed catalog:
 
 ```json
 {
   "duration_ms": 1200,
   "intensity": 0.2,
-  "motion": { "kind": "animation", "file": "neck", "fps": 30, "loops": 1 }
+  "motion": {
+    "kind": "animation",
+    "asset": {
+      "file": "reviewed.anim",
+      "version": 1,
+      "sha256": "REPLACE_WITH_OPERATOR_APPROVED_64_LOWERCASE_HEX_DIGEST",
+      "bytes": 1234
+    },
+    "fps": 30,
+    "loops": 1
+  }
 }
 ```
 
 This is an action fragment, not a complete executable request. The original
 Response/owner, voice or nonvoice scope, boot/control lease, sequence, binding
 and signatures are required; see [the body contract](../../../docs/refactor/body-command-design.md).
-The file must pass the current size/frame/duration validation before admission.
+The signature binds the complete asset pin and playback parameters. The device
+first requires an exact match with its local catalog, then checks byte count and
+SHA-256 against the same bounded buffer that it parses. Invalid UTF-8, frame
+angles, source count, loops or duration remain rejected before admission.
 
-`file` may be `neck`, `neck2`, or an explicit `.anim` file name inside
-`animation_dir`. Paths and symlink escapes are rejected; animations must be
-regular files within the configured asset directory. The command signature
-covers the file name and playback parameters, not the file contents. Local
-asset signatures/hashes and validation against the selected mechanism remain
-R03 work; these historical files are not evidence of hardware safety.
+`asset.file` must be the canonical single-component name ending in `.anim`;
+the signed command cannot use the old extensionless alias. On macOS/Linux, the
+reader opens a directory descriptor and opens the leaf relative to it with
+no-follow/nonblocking flags, then requires a regular file. Symlinks in either
+the final configured directory component or the leaf are rejected. Intermediate
+configuration path components remain under local operator control. Renaming a
+directory after its descriptor opens cannot redirect the read; replacing a file
+after it opens cannot substitute a second path lookup. In-place changes must
+still match the approved bytes. Unsupported platforms fail closed for animation
+asset opening rather than use an unsafe fallback.
+
+Preparation retains the parsed trajectory in memory; execution never reopens
+the file. A later replacement affects new preparations, not the already verified
+trajectory. Expired/revoked authority still blocks admission and individual
+native writes. Four owned preparation workers remain bounded and joined during
+shutdown, even after an RPC times out or its waiter is dropped. A failed repeat
+preparation cannot replace an existing receipt with a false zero-write claim.
+
+Content identity does not certify mechanism safety. Keep hardware output disabled
+and calibration unconfirmed until actual local calibration and hardware checks
+are complete; the historical files remain unapproved reference assets.
 
 ## Delete Boundary
 

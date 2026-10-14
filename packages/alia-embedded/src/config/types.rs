@@ -619,6 +619,9 @@ pub struct MotionConfig {
     pub neck_config_file: PathBuf,
     #[serde(default = "default_motion_animation_dir")]
     pub animation_dir: PathBuf,
+    /// Reviewed local pins; remote settings cannot change this trust catalog.
+    #[serde(default)]
+    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
     #[serde(default = "default_motion_servo_count")]
     pub servo_count: usize,
     #[serde(default = "default_motion_servo_backend")]
@@ -673,6 +676,7 @@ impl Default for MotionConfig {
             enabled: true,
             neck_config_file: default_motion_neck_config_file(),
             animation_dir: default_motion_animation_dir(),
+            approved_animations: Vec::new(),
             servo_count: default_motion_servo_count(),
             servo_backend: default_motion_servo_backend(),
             serial_path: default_motion_serial_path(),

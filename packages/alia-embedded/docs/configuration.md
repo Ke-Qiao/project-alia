@@ -33,9 +33,9 @@ The example file is `config/embedded.example.toml`.
 | `[wakeword]` | sherpa-onnx keyword spotting model and keyword config. |
 | `[speech]` | Exact Server channel instance ID, VoiceSession pre-roll, and bounded upload queue. |
 | `[vad]` | sherpa-onnx/Silero activity evidence settings. |
-| `[direct_response_defaults]`, `[[direct_response]]` | Cue asset directory and metadata. |
+| `[direct_response_defaults]`, `[[direct_response]]` | Local-only cue asset directory and cue metadata. |
 | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
-| `[motion]` | Native neck mapping, animation assets, expression actions, and serial/PCA9685 servo output. |
+| `[motion]` | Native neck mapping, local-only `approved_animations` content pins (empty by default), expression actions, and serial/PCA9685 servo output. |
 | `[vision]` | OpenCV YuNet camera tracking parameters. |
 | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
 
@@ -83,6 +83,21 @@ run/audio-debug/
 The config file should not be used as a database. Server/frontend setting
 updates use embedded gRPC settings APIs and persist runtime-owned state through
 SQLite where appropriate.
+
+`direct_response_defaults.audio_dir` is a local startup setting. The upload
+service uses the resolved directory captured when its settings manager was
+created, rather than a relative path from the serialized settings response.
+Remote settings cannot change its stored spelling, including an absolute or
+relative alias of the same directory. Unchanged complete snapshots and unrelated
+settings patches remain accepted. To move this directory, stop the process,
+edit its local configuration, then restart.
+
+The animation catalog and cue directory restrictions apply to the Body and
+Settings data APIs. Plugin installation and startup are software deployment
+authority: plugins currently run as the host process user. These restrictions
+do not isolate local files from an operator or plugin with that same user’s code
+execution permissions. Plugin installation paths and process isolation require
+their own review; this change does not alter that existing boundary.
 
 ## Restart Boundaries
 
@@ -162,3 +177,29 @@ For hardware bring-up where BLE is not needed yet, keep mDNS enabled and set:
 [discovery]
 ble_provision_enabled = false
 ```
+
+### Cue upload write boundary
+
+Uploads with nonempty `audio_data` accept an empty name (a fresh UUID filename)
+or a single filename. Absolute paths, nested paths and traversal are rejected
+before writing any variant. Uploaded files are new-only: an existing file,
+symlink or hardlink is rejected rather than overwritten. Use a fresh filename
+or leave it empty when replacing a rule's audio; the returned path identifies
+the new file. Existing references with empty `audio_data` remain references and
+do not write files.
+
+On macOS/Linux every directory component is opened relative to its parent with
+no-follow flags, including the configured root and the sanitized rule slug.
+The local startup path must therefore not pass through symlink aliases (for
+example use `/private/var/...` instead of `/var/...` on macOS). Trusted startup
+`..` components are traversed using directory descriptors; request names cannot
+supply them. The upload root is the resolved startup snapshot, not a path from
+subsequent settings patches. Unsupported platforms reject uploads.
+
+A failed file batch removes files created by that batch; it may leave empty
+created directories. Completed uploads are retained when the later database
+operation fails or is cancelled, because its commit may already have happened.
+Filesystem and database publication are not one atomic transaction; unused
+uploaded files require operator cleanup after checking stored references. No
+background file deletion or new task ownership was introduced. File byte writes
+are synchronous within their owning call and do not claim a wall-clock bound.

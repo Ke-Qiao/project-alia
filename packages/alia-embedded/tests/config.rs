@@ -141,7 +141,196 @@ fn has_motion_protection_defaults() {
     assert_eq!(settings.motion.serial_startup_delay_ms, 2_000);
     assert!(!settings.motion.hardware_enabled);
     assert!(!settings.motion.calibration_confirmed);
+    assert!(settings.motion.approved_animations.is_empty());
     assert_eq!(settings.motion.max_servo_speed_deg_per_sec, 60.0);
+}
+
+fn reviewed_fixture_asset() -> alia_core::body::BodyAnimationAsset {
+    let bytes = b"frames\n1 0 0\n";
+    alia_core::body::BodyAnimationAsset {
+        file: "reviewed.anim".into(),
+        version: 1,
+        sha256: alia_core::body::body_animation_sha256(bytes),
+        bytes: bytes.len() as u32,
+    }
+}
+
+#[test]
+fn local_animation_catalog_roundtrips_and_invalid_catalogs_are_rejected_before_save() {
+    use alia_embedded::config::{EmbeddedConfig, load_config, save_runtime_config};
+    let directory = tempfile::tempdir().unwrap();
+    let mut config = EmbeddedConfig {
+        config_path: directory.path().join("embedded.toml"),
+        ..Default::default()
+    };
+    config.motion.approved_animations = vec![reviewed_fixture_asset()];
+    save_runtime_config(&config).unwrap();
+    assert_eq!(
+        load_config(&config.config_path)
+            .unwrap()
+            .motion
+            .approved_animations,
+        config.motion.approved_animations
+    );
+    let valid = std::fs::read(&config.config_path).unwrap();
+    for invalid in [
+        vec![reviewed_fixture_asset(); 2],
+        vec![alia_core::body::BodyAnimationAsset {
+            version: 0,
+            ..reviewed_fixture_asset()
+        }],
+        vec![reviewed_fixture_asset(); 65],
+    ] {
+        config.motion.approved_animations = invalid;
+        assert!(save_runtime_config(&config).is_err());
+        assert_eq!(std::fs::read(&config.config_path).unwrap(), valid);
+        let unchecked = toml::to_string(&config.runtime_settings()).unwrap();
+        std::fs::write(&config.config_path, unchecked).unwrap();
+        assert!(load_config(&config.config_path).is_err());
+        std::fs::write(&config.config_path, &valid).unwrap();
+        config.motion.enabled = false;
+        assert!(alia_embedded::module::motion::MotionRuntime::new(config.motion.clone()).is_err());
+    }
+}
+
+#[tokio::test]
+async fn remote_settings_cannot_create_replace_or_clear_the_local_animation_catalog() {
+    use alia_embedded::config::{EmbeddedConfig, save_runtime_config};
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let directory = tempfile::tempdir().unwrap();
+    let mut config = EmbeddedConfig {
+        config_path: directory.path().join("embedded.toml"),
+        ..Default::default()
+    };
+    let unapproved = EmbeddedSettingsManager::new(&config);
+    assert!(
+        unapproved
+            .update_from_value(
+                serde_json::json!({"motion":{"approved_animations":[reviewed_fixture_asset()]}})
+            )
+            .await
+            .is_err()
+    );
+    assert!(!config.config_path.exists());
+    config.motion.approved_animations = vec![reviewed_fixture_asset()];
+    save_runtime_config(&config).unwrap();
+    let manager = EmbeddedSettingsManager::new(&config);
+    // Unchanged complete snapshots remain compatible; local trust does not change.
+    manager
+        .update_from_json(&manager.snapshot_json(false).await.unwrap())
+        .await
+        .unwrap();
+    manager
+        .update_from_value(serde_json::json!({"motion":{"fps":60}}))
+        .await
+        .unwrap();
+    let before = manager.snapshot_json(false).await.unwrap();
+    let persisted = std::fs::read(&config.config_path).unwrap();
+    let mut changed = reviewed_fixture_asset();
+    changed.version = 2;
+    let mut whole = serde_json::from_str::<serde_json::Value>(&before).unwrap();
+    whole["motion"]["approved_animations"] = serde_json::json!([changed.clone()]);
+    for patch in [
+        serde_json::json!({"motion":{"approved_animations":[]}}),
+        serde_json::json!({"motion":{"approved_animations":[changed]}}),
+        whole,
+        serde_json::json!({"motion":null}),
+    ] {
+        assert!(manager.update_from_value(patch).await.is_err());
+        assert_eq!(manager.snapshot_json(false).await.unwrap(), before);
+        assert_eq!(std::fs::read(&config.config_path).unwrap(), persisted);
+    }
+}
+
+#[tokio::test]
+async fn cue_upload_directory_uses_the_resolved_startup_snapshot() {
+    use alia_embedded::config::load_config;
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("embedded.toml");
+    std::fs::write(
+        &path,
+        "[direct_response_defaults]\naudio_dir = 'isolated/cues'\n",
+    )
+    .unwrap();
+    let mut config = load_config(&path).unwrap();
+    let resolved = directory.path().join("isolated/cues");
+    let manager = EmbeddedSettingsManager::new(&config);
+    assert_eq!(manager.direct_response_audio_dir(), resolved);
+    assert!(manager.direct_response_audio_dir().is_absolute());
+    assert_eq!(
+        manager
+            .snapshot(false)
+            .await
+            .settings
+            .direct_response_defaults
+            .audio_dir,
+        PathBuf::from("isolated/cues")
+    );
+    // A caller changing its config after construction cannot redirect the owner.
+    config.direct_response_defaults.audio_dir = directory.path().join("changed");
+    manager
+        .update_from_json(&manager.snapshot_json(false).await.unwrap())
+        .await
+        .unwrap();
+    manager
+        .update_from_value(serde_json::json!({"motion":{"fps":60}}))
+        .await
+        .unwrap();
+    assert_eq!(manager.direct_response_audio_dir(), resolved);
+    assert_eq!(manager.snapshot(false).await.settings.motion.fps, 60);
+    assert_eq!(
+        load_config(&path)
+            .unwrap()
+            .direct_response_defaults
+            .audio_dir,
+        resolved
+    );
+}
+
+#[tokio::test]
+async fn remote_cue_directory_changes_preserve_memory_disk_and_startup_owner() {
+    use alia_embedded::config::{load_config, save_runtime_config};
+    use alia_embedded::settings::EmbeddedSettingsManager;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("embedded.toml");
+    let mut config = load_config(&path).unwrap();
+    config.direct_response_defaults.audio_dir = directory.path().join("isolated/cues");
+    let manager = EmbeddedSettingsManager::new(&config);
+    let redirect = serde_json::json!({"direct_response_defaults":{"audio_dir":"elsewhere"}});
+    assert!(manager.update_from_value(redirect.clone()).await.is_err());
+    assert!(!path.exists(), "a refused update must not create a config");
+    save_runtime_config(&config).unwrap();
+    let before = manager.snapshot_json(false).await.unwrap();
+    let persisted = std::fs::read(&path).unwrap();
+    let mut whole = serde_json::from_str::<serde_json::Value>(&before).unwrap();
+    whole["direct_response_defaults"]["audio_dir"] = serde_json::json!("elsewhere");
+    for patch in [
+        redirect,
+        // Even equivalent path spellings must not replace the local raw value.
+        serde_json::json!({"direct_response_defaults":{"audio_dir":"./isolated/cues"}}),
+        serde_json::json!({"direct_response_defaults":{"audio_dir":"isolated/./cues"}}),
+        serde_json::json!({"direct_response_defaults":{"audio_dir":config.direct_response_defaults.audio_dir}}),
+        serde_json::json!({"direct_response_defaults":{"audio_dir":""}}),
+        serde_json::json!({"direct_response_defaults":{"audio_dir":null}}),
+        serde_json::json!({"direct_response_defaults":null}),
+        whole,
+    ] {
+        assert!(manager.update_from_value(patch).await.is_err());
+        assert_eq!(manager.snapshot_json(false).await.unwrap(), before);
+        assert_eq!(std::fs::read(&path).unwrap(), persisted);
+        assert_eq!(
+            manager.direct_response_audio_dir(),
+            config.direct_response_defaults.audio_dir
+        );
+    }
+    manager
+        .update_from_value(
+            serde_json::json!({"direct_response_defaults":{"audio_dir":"isolated/cues"}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(manager.snapshot_json(false).await.unwrap(), before);
 }
 
 #[test]
