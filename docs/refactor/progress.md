@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-14：R02／R03 现场前置离线包10/10，六轮仍2/6。** 实现 `e409dc9`；显式只读配置/动作文件检查、全noop staging模板与旧操作资料清理完成。默认Embedded316/0/0，无默认CLI5/0/0；两示例实际离线检查通过，665个提交blob与最终输入一致。用户确认R1仍未接入且允许Mac模拟，R03后续暂停，部署资料待定但Pi可SSH；未启动服务/设备/模型或改共享环境。见[当前检查点](resume-checkpoint-field-prep-2026-10-14.md)、[四份HANDOFF与证据](handoffs/2026-10-14-field-prep/README.md)。以下为历史记录。
+
 **2026-10-14：R03-A 可信动作内容身份10/10，六轮仍2/6。** 实现`e7265f0`；661项输入逐blob匹配。双端默认空本地清单、Body v2内容签名、同次有界读取/解析、原意图恢复及用户确认的cue写入保护完成。macOS默认Core/transport41、Embedded306、Server860，共1207/0/5；保留初始RED、候选DB中止、清理断言和最终证据。task PG已移除，astrbot被后续重启故保留共享OrbStack。当前Linux应用与硬件未验收。见[恢复检查点](resume-checkpoint-r03-a-2026-10-14.md)、[四份HANDOFF/证据](handoffs/2026-10-14-r03-a/README.md)。以下为历史记录。
 
 **2026-10-09：L09 固定核心分层 10/10，L09—L12 1/4，六轮仍 2/6。** 源码 `ffd7af1`，V1 637 输入逐项匹配。Interaction 拥有 Conversation/Cache/Router/Persona/Skills，Platform 拥有 Insights 调度/Sensors；Memory maintenance 与 Cache review 归各自领域。macOS workspace **1056/0/5**、PTY **3/0**、无默认 availability **2/0**；Linux ARM64 Server **774/0/5**、无默认与 release/link 通过。默认 Shadow 和政策保持，任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-09.md)、[最终验证](layering-2026-10-09.md#最终验证与证据)、[L10—L12](checklists/layering-next.md)。以下为历史记录。

@@ -1,0 +1,29 @@
+{
+  "at": "2026-10-14T13:10:04.412327+00:00",
+  "binary_sha256": "37b7fa82679fe0e18f6154dca98ea290276d05ea4050a3f36cf6a2a7600b524c",
+  "runs": [
+    {
+      "command": [
+        "/Users/ke-qiao/Developer/project-alia/target/debug/alia-embedded",
+        "--check-config",
+        "/Users/ke-qiao/Developer/project-alia/config/embedded.example.toml"
+      ],
+      "exit_code": 0,
+      "input_sha256_before": "f084727ced165ca32d196118126b9c0fd06ebaa6081bdf81506307a880da8efa",
+      "input_sha256_after": "f084727ced165ca32d196118126b9c0fd06ebaa6081bdf81506307a880da8efa",
+      "report": "example-report.json"
+    },
+    {
+      "command": [
+        "/Users/ke-qiao/Developer/project-alia/target/debug/alia-embedded",
+        "--check-config",
+        "/Users/ke-qiao/Developer/project-alia/config/embedded.staging.example.toml"
+      ],
+      "exit_code": 0,
+      "input_sha256_before": "c9d380599475f642ca20c6961f111604f44d87ed803e2735aaa0e9a744939ead",
+      "input_sha256_after": "c9d380599475f642ca20c6961f111604f44d87ed803e2735aaa0e9a744939ead",
+      "report": "staging-report.json"
+    }
+  ],
+  "scope": "explicit offline check only; neither ordinary runtime nor staging service started"
+}

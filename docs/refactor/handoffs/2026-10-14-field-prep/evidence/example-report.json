@@ -1,0 +1,75 @@
+{
+  "build_features": {
+    "sherpa_onnx": true,
+    "vision_opencv": false
+  },
+  "checks": [
+    "typed_configuration",
+    "device_runtime_bounds",
+    "speech_contract",
+    "motion_configuration_and_files"
+  ],
+  "config_path": "/Users/ke-qiao/Developer/project-alia/config/embedded.example.toml",
+  "configured_audio": {
+    "alsa_playback_lock_to_capture_rate": false,
+    "capture_backend": "auto",
+    "capture_channels": 1,
+    "capture_device": "default",
+    "capture_sample_rate": 16000,
+    "playback_backend": "auto",
+    "playback_channels": 1,
+    "playback_device": "default",
+    "playback_sample_rate": 24000
+  },
+  "configured_modules": {
+    "audio_capture": "cpal",
+    "audio_playback": "cpal",
+    "direct_response": "keyword",
+    "discovery": "mdns",
+    "face_tracker": "yunet",
+    "vad": "sherpa_onnx",
+    "wakeword": "sherpa_onnx"
+  },
+  "configured_runtime": {
+    "ble_provision_enabled": true,
+    "cue_directory": "/Users/ke-qiao/Developer/project-alia/config/run/direct-responses",
+    "hmmd_enabled": false,
+    "keypair_path": "/Users/ke-qiao/Developer/project-alia/config/device.key",
+    "listen_addr": "0.0.0.0:50051",
+    "plugins_dir": "/Users/ke-qiao/Developer/project-alia/config/plugins",
+    "skip_binding": false,
+    "state_path": "/Users/ke-qiao/Developer/project-alia/config/run/embedded-state.sqlite3",
+    "vision_debug_enabled": false,
+    "vision_enabled": true
+  },
+  "hardware_verified": false,
+  "mode": "offline_configuration_check",
+  "motion": {
+    "approved_animations": [],
+    "calibration": {
+      "path": "/Users/ke-qiao/Developer/project-alia/config/../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json",
+      "reason": null,
+      "servo_count": 8,
+      "status": "checked"
+    },
+    "calibration_confirmed": false,
+    "center_angle": 90.0,
+    "configured_backend": "serial",
+    "enabled": true,
+    "fps": 30,
+    "hardware_enabled": false,
+    "pca_configuration": null,
+    "physical_state": "not_observed",
+    "servo_count": 8
+  },
+  "not_checked": [
+    "module_instantiation",
+    "model_loading",
+    "device_enumeration_and_permissions",
+    "database_or_network",
+    "server_catalog_agreement",
+    "physical_calibration",
+    "aec_and_acoustics"
+  ],
+  "speech_channel_id": "pi-living-room"
+}

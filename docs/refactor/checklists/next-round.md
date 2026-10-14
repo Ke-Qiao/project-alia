@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-**当前执行顺序：R03-A 软件包已完成，继续 R02/R03 现场前置，出口满足后进入 R05。** R03-A 10/10，源码 `e7265f0`，恢复从 [最新检查点](../resume-checkpoint-r03-a-2026-10-14.md) 开始。R03-0/R02-A 继续保持已完成；硬件门槛见 [部署资料](../../operations/hardware-deployment-readiness.md)。
+**当前执行顺序：R02／R03 现场前置离线包10/10完成，R02先推进Mac离线模拟；R03后续按用户要求暂停，恢复并满足现场出口后再进入R05。** 实现 `e409dc9`；显式离线检查、全noop staging和失效操作资料清理完成，默认Embedded316/0/0。恢复从[最新检查点](../resume-checkpoint-field-prep-2026-10-14.md)开始；R03-0/R02-A/R03-A不重复实施，现场门槛见[部署资料](../../operations/hardware-deployment-readiness.md)。
 更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
@@ -35,6 +35,8 @@
 
 ## R02 · AEC、音频时钟映射与双讲
 
+- [x] 现场前置离线检查、全noop模板及音频设备身份/格式/AEC参考待补资料收口，见[10/10 checklist](field-prep-2026-10-14.md)；没有真实录放音。
+
 - [x] 语音/短提示实际混音与最终 post-mix reference、各源取消/暂停/短写证据；macOS/Linux 离线验证通过，见 [audio HANDOFF](../handoffs/2026-10-06/HANDOFF-audio.md)。
 
 - [x] 核对真实 render/reference/capture/wake/VAD 顺序、既有依赖和离线 fixture；补 native continuity 消费与 KWS reset，当前 macOS/Linux 回归通过，见 [audio HANDOFF](../handoffs/2026-10-04/audio.md)。
@@ -47,6 +49,10 @@
 - [ ] 记录端到端暂停/恢复延迟及设备配置；不能只报告模型推理耗时。
 
 ## R03 · D3 动作资产与执行器反馈
+
+**当前后续暂停（用户2026-10-14确认）。** 板卡/通道/供电/OE/限位/校准资料全部未定；已完成的软件包保留，待用户恢复后推进现场。
+
+- [x] 复用配置/矩阵/批准资产的纯文件检查和PCA静态规则，补资产人工审核及校准现场记录；硬件/校准确认仍禁用，见[现场前置包](field-prep-2026-10-14.md)。
 
 - [x] 复核已有签名命令/唯一 writer/mock 故障；补真实 gRPC 的 unbound/foreign-controller/重连及旧 boot 拒绝，当前 macOS/Linux 回归通过，见 [motion HANDOFF](../handoffs/2026-10-04/motion.md)。
 - [x] 用户选择 PCA9685A + MG996R、停止/断连保持、机构校准后允许启动归中；实际接线/校准未验收。

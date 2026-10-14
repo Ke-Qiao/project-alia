@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-14T13:16:29.330350+00:00",
+  "run": "mac-synthetic-replay.json",
+  "fixture_sha256": "374d84a56124ab88aecf40aaaa8225c2df6f813b3c860e9061efa953a38d1b49",
+  "report": {
+    "latest_capture_running": true,
+    "latest_playback_closed": true,
+    "latest_playback_lost_blocks": 2,
+    "latest_playback_lost_frames": 2,
+    "observed_samples": 16,
+    "physical_capture_playback_alignment": "unproven independent clocks",
+    "physical_stream_complete": false,
+    "records": 7,
+    "replaced_capture_final_state": "unknown: neither close marker nor retained snapshot",
+    "reset_signals": 9,
+    "source": "SyntheticFixture",
+    "unobserved_history_possible": true
+  },
+  "scope": "SyntheticFixture only; no real capture/playback, model inference, AEC or physical alignment proof"
+}

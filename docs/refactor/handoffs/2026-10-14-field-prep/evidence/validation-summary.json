@@ -1,0 +1,109 @@
+{
+  "at": "2026-10-14T13:13:47.880413+00:00",
+  "source_commit": "e409dc944a589104d0e2d2c2977f642ad8aaef28",
+  "source_manifest": "final-source-manifest.json",
+  "source_manifest_sha256": "dd888cec2f84c06a213cadc236911d088c89015b144025284e8eab72070d3573",
+  "inputs": 665,
+  "runs": [
+    {
+      "phase": "final",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T13:08:49.665289+00:00",
+      "elapsed_seconds": 45.05,
+      "exit_code": 0,
+      "source_manifest_sha256": "dd888cec2f84c06a213cadc236911d088c89015b144025284e8eab72070d3573",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "name": "final-embedded",
+      "counts": {
+        "passed": 316,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered": 0
+      }
+    },
+    {
+      "phase": "final",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--no-default-features",
+        "--test",
+        "preflight",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T13:10:14.929891+00:00",
+      "elapsed_seconds": 17.77,
+      "exit_code": 0,
+      "source_manifest_sha256": "dd888cec2f84c06a213cadc236911d088c89015b144025284e8eab72070d3573",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "name": "final-no-default-cli",
+      "counts": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered": 0
+      }
+    }
+  ],
+  "distinct_default_tests": 316,
+  "no_default_note": "5 CLI tests repeated with no-default-features; not 5 additional unique cases",
+  "prior_failure": {
+    "name": "green-embedded",
+    "exit_code": 101,
+    "completed_results_before_cargo_stopped": {
+      "passed": 287,
+      "failed": 1,
+      "ignored": 0
+    },
+    "scope": "incomplete all-targets run; test fixture missing existing required identity fields, not a production RED; exact fixture and log retained"
+  },
+  "cli_smoke": "cli-smoke.json",
+  "formatting": "changed Rust and diff check passed; workspace fmt only unchanged baseline delivery.rs import order",
+  "not_run": [
+    "Server regression (no Server source changes)",
+    "Linux/Pi/ALSA application validation",
+    "ordinary staging or hardware runtime startup",
+    "real recording/playback, I2C/UART, models and R05 soak"
+  ],
+  "cleanup": "All four validation wrapper processes exited (candidate101/final0/no-default0/synthetic0); no task service/container/device was started. Tests own temporary files/SQLite/loopback; ignored evidence/build artifacts retained. Existing shared services were not inspected or changed.",
+  "mac_simulation": {
+    "at": "2026-10-14T13:16:29.330350+00:00",
+    "run": "mac-synthetic-replay.json",
+    "fixture_sha256": "374d84a56124ab88aecf40aaaa8225c2df6f813b3c860e9061efa953a38d1b49",
+    "report": {
+      "latest_capture_running": true,
+      "latest_playback_closed": true,
+      "latest_playback_lost_blocks": 2,
+      "latest_playback_lost_frames": 2,
+      "observed_samples": 16,
+      "physical_capture_playback_alignment": "unproven independent clocks",
+      "physical_stream_complete": false,
+      "records": 7,
+      "replaced_capture_final_state": "unknown: neither close marker nor retained snapshot",
+      "reset_signals": 9,
+      "source": "SyntheticFixture",
+      "unobserved_history_possible": true
+    },
+    "scope": "SyntheticFixture only; no real capture/playback, model inference, AEC or physical alignment proof"
+  },
+  "user_followup": "R1 not connected; Mac simulation permitted; R1 AEC wiring/electrical specs unavailable; R03 follow-up paused by user; deployment values pending; existing Pi SSH allowed."
+}

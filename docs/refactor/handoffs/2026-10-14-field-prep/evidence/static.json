@@ -1,0 +1,41 @@
+{
+  "fmt-changed": {
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "packages/alia-embedded/src/lib.rs",
+      "packages/alia-embedded/src/main.rs",
+      "packages/alia-embedded/src/preflight.rs",
+      "packages/alia-embedded/src/module/motion/inspection.rs",
+      "packages/alia-embedded/src/module/motion/runtime.rs",
+      "packages/alia-embedded/src/module/motion/plan.rs",
+      "packages/alia-embedded/src/module/motion/mod.rs",
+      "packages/alia-embedded/tests/preflight.rs"
+    ],
+    "exit_code": 0
+  },
+  "fmt-workspace": {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 1
+  },
+  "diff-check": {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0
+  },
+  "workspace_fmt_baseline": {
+    "file": "packages/alia-server/tests/server_runtime/delivery.rs",
+    "unchanged_from_HEAD": true
+  }
+}
