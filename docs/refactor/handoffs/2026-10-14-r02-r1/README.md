@@ -7,6 +7,8 @@
 - [Host](host-HANDOFF.md)：采播/speech、实际声道语义与单 owner，6/6。
 - [Review](review-HANDOFF.md)：consumer条件与独立证据复核，6/6。
 
-先读 [前置记录](../../r02-r1-aec-preflight.md)、[checklist](../../checklists/r02-r1-2026-10-14.md)和[恢复检查点](../../resume-checkpoint-r02-r1-2026-10-14.md)。当前没有选定或创建主机 AEC，R1 实物、固件和参考电气仍待补；已提出硬件优先建议，等待用户决定。
+先读 [前置记录](../../r02-r1-aec-preflight.md)、[checklist](../../checklists/r02-r1-2026-10-14.md)和[恢复检查点](../../resume-checkpoint-r02-r1-2026-10-14.md)。当前没有选定或创建主机 AEC，R1 实物、固件和参考电气仍待补；用户已确认硬件AEC优先；Pi的SSH访问方式不证明R1接入，本次没有新设备证据。
 
 证据为 [来源元数据](evidence/source-retrieval.json)和[静态检查](evidence/validation.json)。前者记录6次成功官方公开读取；完整厂商正文/图片在ignored `run/validation-20261014-r02-r1/`，不整篇复制入仓库。后者核对来源字节、源码/依赖未变、变更文档链接及diff格式。没有运行Cargo、实际CLI、设备、SSH或模型，上一轮335/260测试只保留为历史证据。
+
+用户回复后的[确认补记](evidence/confirmation-update.json)单独保存；原validation.json中的未回复状态属于首次验证时点，保留原记录。此次只同步决定与文档，不重跑官方读取或运行时验证。

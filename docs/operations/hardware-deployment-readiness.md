@@ -25,7 +25,7 @@
 
 ## R02／R03 现场前置包与资料入口
 
-最新前置续轮为 [R1 硬件 AEC 路由与 consumer 核对](../refactor/r02-r1-aec-preflight.md)，恢复从 [R1 检查点](../refactor/resume-checkpoint-r02-r1-2026-10-14.md) 开始。仅更新资料与契约，源码仍为 `28920fb`；默认 Embedded 335/0/0 是上一轮历史结果，本轮不重跑。已重新读取官方公开正文及引脚图：UAC 处理后单通道采集与功放参考独立；具体电气额定、板/固件与实际格式、模式及延迟仍未确认。当前 converter 会平均所有 native 输入声道，`capture_channels=1` 不代表选中处理声道；先核实端点再决定是否补选路。硬件 AEC 优先建议已集中询问用户，未选定软件 consumer、不预建 worker。R03保持暂停。
+最新前置续轮为 [R1 硬件 AEC 路由与 consumer 核对](../refactor/r02-r1-aec-preflight.md)，恢复从 [R1 检查点](../refactor/resume-checkpoint-r02-r1-2026-10-14.md) 开始。仅更新资料与契约，源码仍为 `28920fb`；默认 Embedded 335/0/0 是上一轮历史结果，本轮不重跑。已重新读取官方公开正文及引脚图：UAC 处理后单通道采集与功放参考独立；具体电气额定、板/固件与实际格式、模式及延迟仍未确认。当前 converter 会平均所有 native 输入声道，`capture_channels=1` 不代表选中处理声道；先核实端点再决定是否补选路。用户已确认硬件 AEC 优先路线，实物/固件与输出链资料仍未确定，未选定主机软件 consumer、不预建 worker。R03保持暂停。
 
 此前现场前置包从 `283f38f` 继续，仅补离线检查与操作资料；没有重新连接 Pi、枚举设备或启动 Server/Embedded 服务 runtime。历史盘点时间与本轮同日也不代表设备状态已再次确认。进度及证据见[本轮 checklist](../refactor/checklists/field-prep-2026-10-14.md)和[四份 HANDOFF](../refactor/handoffs/2026-10-14-field-prep/README.md)。
 
@@ -36,6 +36,8 @@
 另提供[无设备 staging 模板](../../config/embedded.staging.example.toml)，用于未来独立目录中的生命周期验证：七个模块均 noop，所有设备与发现关闭，保留绑定门槛，监听 loopback 临时端口。**正常启动 staging 仍写 key/SQLite 并监听**；本轮只验证模板离线检查，没有启动它。通用 embedded.example.toml 不是 Pi 实际配置，更不是无设备模板。详见[部署步骤](server-embedded.md)。
 
 ### 待用户集中补充的现场记录
+
+R1前置核对后的最新回复：用户采用硬件AEC优先；实物板/固件/厂商附件、扬声器/功放和参考电气/模式/延迟均尚未确定。Pi使用SSH连接，沿用既有目标与只读核对边界；没有新的R1接入确认或枚举结果，本次不执行SSH。以下“尚未接入”保留为先前明确回复的状态，不能把SSH访问当作USB音频已接入。
 
 本轮用户已回复：R1 仍未接入 Pi，允许先用 Mac 模拟，尚无 R1 AEC 参考接法/电气规格；R03 机构资料全部未确定，后续先暂停；部署资料待定，Pi 可通过 SSH 登录。扬声器/功放未补充选型，维持未确定。Mac 模拟先沿用合成 PCM 离线工具，未新增真实录放音或模型服务授权；SSH 可用于既定 Pi 的必要只读核对，本轮没有为重复历史盘点而连接。
 

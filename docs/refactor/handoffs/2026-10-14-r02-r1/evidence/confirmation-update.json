@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-10-14T14:54:12.902755+00:00",
+  "baseline_commit": "6b978b061380dced4024ec0325c3b001538f521c",
+  "user_decision": "hardware AEC first; Pi handles mixing, format conversion, wake/VAD and upload; evaluate host software AEC only if the hardware route cannot meet requirements",
+  "hardware_materials": "R1 board/firmware/vendor attachments, speaker/amplifier and reference electrical/mode/latency specifications remain undetermined",
+  "pi_access": "SSH access reconfirmed; no new R1 USB connection or audio readiness confirmation",
+  "actions": "documentation update only; no SSH, hardware, network retrieval or runtime tests",
+  "historical_evidence": "validation.json retains the original pre-reply timestamp and unanswered-at-that-time fact",
+  "verification": {
+    "only_documentation_changes": true,
+    "relative_paths_checked": 204,
+    "missing_paths": 0,
+    "git_diff_check_exit": 0,
+    "changed_files": [
+      "docs/operations/hardware-deployment-readiness.md",
+      "docs/refactor/checklists/next-round.md",
+      "docs/refactor/checklists/r02-r1-2026-10-14.md",
+      "docs/refactor/deferred.md",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/README.md",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/evidence/confirmation-update.json",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/hardware-HANDOFF.md",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/host-HANDOFF.md",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/review-HANDOFF.md",
+      "docs/refactor/handoffs/2026-10-14-r02-r1/root-HANDOFF.md",
+      "docs/refactor/progress.md",
+      "docs/refactor/r02-r1-aec-preflight.md",
+      "docs/refactor/resume-checkpoint-r02-r1-2026-10-14.md"
+    ]
+  }
+}
