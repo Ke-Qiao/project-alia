@@ -760,23 +760,32 @@ async fn set_remote_weights(
     value: &str,
     timeout: Duration,
 ) -> anyhow::Result<()> {
-    let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4())?;
-    let reservation = budget.reserve(ERROR_BODY_BYTES).await?;
-    let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
-    let response = client
-        .get(format!("{base}/{path}"))
-        .query(&[(param, value)])
-        .timeout(timeout)
-        .send()
-        .await?;
+    // Settings must not wait for audio capacity outside the request deadline.
+    tokio::time::timeout(timeout, async {
+        let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4())?;
+        let reservation = budget.reserve(ERROR_BODY_BYTES).await?;
+        let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
+        let response = client
+            .get(format!("{base}/{path}"))
+            .query(&[(param, value)])
+            .send()
+            .await?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = error_body(response, &reservation).await;
-        anyhow::bail!("GPT-SoVITS {path} failed {status}: {body}");
-    }
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = error_body(response, &reservation).await;
+            anyhow::bail!("GPT-SoVITS {path} failed {status}: {body}");
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "GPT-SoVITS {path} timed out after {}ms including audio capacity admission",
+            timeout.as_millis()
+        )
+    })?
 }
 
 #[async_trait]
@@ -1107,6 +1116,7 @@ impl TtsAdapter for GptSovitsTts {
 #[cfg(test)]
 mod tests {
     mod http;
+    mod settings_waits;
     use super::*;
     use crate::expression::ProsodyControls;
 

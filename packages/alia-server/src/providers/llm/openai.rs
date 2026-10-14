@@ -278,11 +278,11 @@ impl OpenAiLlm {
 
     async fn chat_internal(
         &self,
+        config: &OpenAiConfig,
         messages: &[ChatMessage],
         stream: bool,
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
-        let config = self.config.read().await;
         let tools = tools
             .filter(|tools| !tools.is_empty())
             .map(|tools| tools.iter().map(OpenAiTool::from).collect::<Vec<_>>());
@@ -330,11 +330,11 @@ impl OpenAiLlm {
 
     async fn responses_internal(
         &self,
+        config: &OpenAiConfig,
         messages: &[ChatMessage],
         stream: bool,
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
-        let config = self.config.read().await;
         let tools = tools
             .filter(|tools| !tools.is_empty())
             .map(|tools| tools.iter().map(ResponsesTool::from).collect::<Vec<_>>());
@@ -530,13 +530,16 @@ impl LlmAdapter for OpenAiLlm {
     }
 
     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
-            let response = self.responses_internal(messages, false, None).await?;
+        let config = self.config.read().await.clone();
+        if config.api_family == OpenAiApiFamily::Responses {
+            let response = self
+                .responses_internal(&config, messages, false, None)
+                .await?;
             let value: Value = response.json().await?;
             return Ok(parse_responses_output(&value).content);
         }
 
-        let response = self.chat_internal(messages, false, None).await?;
+        let response = self.chat_internal(&config, messages, false, None).await?;
         let chat_response: ChatResponse = response.json().await?;
 
         chat_response
@@ -551,15 +554,18 @@ impl LlmAdapter for OpenAiLlm {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> anyhow::Result<LlmResponse> {
-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
+        let config = self.config.read().await.clone();
+        if config.api_family == OpenAiApiFamily::Responses {
             let response = self
-                .responses_internal(messages, false, Some(tools))
+                .responses_internal(&config, messages, false, Some(tools))
                 .await?;
             let value: Value = response.json().await?;
             return Ok(parse_responses_output(&value));
         }
 
-        let response = self.chat_internal(messages, false, Some(tools)).await?;
+        let response = self
+            .chat_internal(&config, messages, false, Some(tools))
+            .await?;
         let chat_response: ChatResponse = response.json().await?;
         let message = chat_response
             .choices
@@ -583,10 +589,17 @@ impl LlmAdapter for OpenAiLlm {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> anyhow::Result<LlmResponse> {
-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
-            return self.chat_with_tools(messages, tools).await;
+        let config = self.config.read().await.clone();
+        if config.api_family == OpenAiApiFamily::Responses {
+            let response = self
+                .responses_internal(&config, messages, false, Some(tools))
+                .await?;
+            let value: Value = response.json().await?;
+            return Ok(parse_responses_output(&value));
         }
-        let response = self.chat_internal(messages, true, Some(tools)).await?;
+        let response = self
+            .chat_internal(&config, messages, true, Some(tools))
+            .await?;
         let mut byte_stream = response.bytes_stream();
         let mut decoder = SseDecoder::default();
         let mut aggregate = OpenAiStreamAggregate::default();
@@ -605,11 +618,13 @@ impl LlmAdapter for OpenAiLlm {
         &self,
         messages: &[ChatMessage],
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
-        let family = self.config.read().await.api_family;
+        let config = self.config.read().await.clone();
+        let family = config.api_family;
         let response = if family == OpenAiApiFamily::Responses {
-            self.responses_internal(messages, true, None).await?
+            self.responses_internal(&config, messages, true, None)
+                .await?
         } else {
-            self.chat_internal(messages, true, None).await?
+            self.chat_internal(&config, messages, true, None).await?
         };
 
         let stream = async_stream::stream! {
@@ -893,6 +908,24 @@ mod tests {
             &OpenAiProviderSection::default(),
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
+        for family in [OpenAiApiFamily::ChatCompletions, OpenAiApiFamily::Responses] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mut llm = test_llm();
+            llm.client = Client::builder().no_proxy().build().unwrap();
+            {
+                let mut config = llm.config.write().await;
+                config.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+                config.api_family = family;
+            }
+            super::super::test_support::assert_stalled_generation_releases_settings(
+                &llm, &listener, "openai",
+            )
+            .await;
+        }
     }
 
     #[tokio::test]

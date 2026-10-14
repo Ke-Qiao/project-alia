@@ -173,7 +173,7 @@ impl GeminiLlm {
         messages: &[ChatMessage],
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<GenerateContentResponse> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
         let (system_instruction, contents) = gemini_contents(messages);
         let tools = tools.filter(|tools| !tools.is_empty()).map(|tools| {
             vec![GeminiTool {
@@ -216,7 +216,7 @@ impl GeminiLlm {
         messages: &[ChatMessage],
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
         let (system_instruction, contents) = gemini_contents(messages);
         let tools = tools.filter(|tools| !tools.is_empty()).map(|tools| {
             vec![GeminiTool {
@@ -667,6 +667,19 @@ mod tests {
             .clone();
         profile.provider = "gemini".into();
         GeminiLlm::new("major", &profile, &GeminiProviderSection::default()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut llm = test_llm();
+        llm.client = Client::builder().no_proxy().build().unwrap();
+        llm.config.write().await.base_url =
+            format!("http://{}/v1beta", listener.local_addr().unwrap());
+        super::super::test_support::assert_stalled_generation_releases_settings(
+            &llm, &listener, "gemini",
+        )
+        .await;
     }
 
     async fn accept_probe(listener: &TcpListener) -> (TcpStream, String) {

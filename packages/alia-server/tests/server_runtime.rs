@@ -67,6 +67,9 @@ mod settings_authorization;
 #[path = "server_runtime/settings_read_authorization.rs"]
 mod settings_read_authorization;
 
+#[path = "server_runtime/settings_shutdown.rs"]
+mod settings_shutdown;
+
 #[path = "server_runtime/embedding_profile.rs"]
 mod embedding_profile;
 

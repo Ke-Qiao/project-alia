@@ -138,7 +138,7 @@ impl AnthropicLlm {
         messages: &[ChatMessage],
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<AnthropicResponse> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
         let tools = tools
             .filter(|tools| !tools.is_empty())
             .map(|tools| tools.iter().map(AnthropicTool::from).collect::<Vec<_>>());
@@ -189,7 +189,7 @@ impl AnthropicLlm {
         messages: &[ChatMessage],
         tools: Option<&[ToolDefinition]>,
     ) -> anyhow::Result<reqwest::Response> {
-        let config = self.config.read().await;
+        let config = self.config.read().await.clone();
         let tools = tools
             .filter(|tools| !tools.is_empty())
             .map(|tools| tools.iter().map(AnthropicTool::from).collect::<Vec<_>>());
@@ -659,6 +659,26 @@ fn anthropic_stream_delta(data: &str) -> anyhow::Result<AnthropicStreamDelta> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut profile = crate::config::ProfilesSection::default()
+            .llm_profile("major")
+            .unwrap()
+            .clone();
+        profile.provider = "anthropic".into();
+        let mut llm =
+            AnthropicLlm::new("major", &profile, &AnthropicProviderSection::default()).unwrap();
+        llm.client = Client::builder().no_proxy().build().unwrap();
+        llm.config.write().await.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+        super::super::test_support::assert_stalled_generation_releases_settings(
+            &llm,
+            &listener,
+            "anthropic",
+        )
+        .await;
+    }
 
     #[test]
     fn anthropic_stream_text_extracts_text_delta() {

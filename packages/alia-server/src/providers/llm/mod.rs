@@ -20,6 +20,16 @@ pub mod gemini;
 pub mod openai;
 pub mod streaming;
 
+#[cfg(all(
+    test,
+    any(
+        feature = "llm-openai",
+        feature = "llm-anthropic",
+        feature = "llm-gemini"
+    )
+))]
+mod test_support;
+
 #[cfg(feature = "llm-anthropic")]
 pub use anthropic::AnthropicLlm;
 #[cfg(feature = "llm-gemini")]
