@@ -322,12 +322,8 @@ impl AudioEvidence {
                 );
                 // Active fields are separate atomic observations, not a coherent
                 // transaction. Only a closed snapshot publishes final counters.
-                if snapshot.closed {
-                    ensure!(
-                        snapshot.lost_blocks <= snapshot.attempted_blocks,
-                        "invalid final snapshot loss"
-                    );
-                }
+                let mut observed_records = 0_u64;
+                let mut observed_frames = 0_u64;
                 for record in self
                     .records
                     .iter()
@@ -339,6 +335,12 @@ impl AudioEvidence {
                         "snapshot identity/format changed"
                     );
                     if snapshot.closed {
+                        observed_records = observed_records
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow::anyhow!("observed record count overflow"))?;
+                        observed_frames = observed_frames
+                            .checked_add(record.timing.frames)
+                            .ok_or_else(|| anyhow::anyhow!("observed frame count overflow"))?;
                         ensure!(
                             snapshot.attempted_blocks >= record.sequence
                                 && snapshot.lost_blocks >= record.lost_blocks_before
@@ -351,6 +353,24 @@ impl AudioEvidence {
                             "final snapshot precedes observed timing"
                         );
                     }
+                }
+                if snapshot.closed {
+                    // The file may contain only part of the successful output,
+                    // but observed records/frames cannot also count as lost.
+                    ensure!(
+                        snapshot
+                            .attempted_blocks
+                            .checked_sub(snapshot.lost_blocks)
+                            .is_some_and(|successful| observed_records <= successful),
+                        "final snapshot cannot account for observed records"
+                    );
+                    ensure!(
+                        snapshot
+                            .cursor
+                            .checked_sub(snapshot.lost_frames)
+                            .is_some_and(|successful| observed_frames <= successful),
+                        "final snapshot cannot account for observed frames"
+                    );
                 }
             }
         }

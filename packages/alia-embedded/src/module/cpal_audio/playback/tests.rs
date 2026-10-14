@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::thread;
 mod control;
 mod mixer;
+mod offline_evidence;
 
 pub(super) fn test_submission(generation: u64, rate: u32, channels: u32) -> Arc<AudioSubmission> {
     AudioSubmission::new(

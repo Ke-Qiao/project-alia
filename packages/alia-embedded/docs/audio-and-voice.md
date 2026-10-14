@@ -124,16 +124,48 @@ which may already have been processed by device firmware. It is not proof of raw
 ADC samples or acoustic capture/playback alignment. Missing reference stays
 missing; recorded zero-valued samples are separate evidence.
 
-The existing `audio_evidence_replay` example generates a `SyntheticFixture`,
-publishes it to a new caller-chosen path and reads it back. It does not collect
-live microphone data or accept an existing recording as its CLI input. An
-explicit library caller owns any real `EvidenceSession`, its bounded pumping,
-finish/cancellation and export; no default recorder or runtime daemon is enabled.
-The 512-record / 16 MiB limits bound software retention, not a guaranteed number
-of seconds. Agree the real-audio destination, retention and deletion procedure
-in the central field record before an authorized recording. Exported footer and
-loss information remain necessary; an ended observation is not a complete
-physical stream or synchronized capture/playback measurement.
+The `audio_evidence_replay` example has two explicit operations. From the
+repository root, choose a new output path whose parent already exists:
+
+```sh
+cargo run -p alia-embedded --no-default-features --example audio_evidence_replay --offline --locked -- generate /tmp/alia-synthetic-evidence.json
+cargo run -p alia-embedded --no-default-features --example audio_evidence_replay --offline --locked -- replay /tmp/alia-synthetic-evidence.json
+```
+
+`generate` publishes the bounded `SyntheticFixture` without overwriting and
+reads it back. `replay` only reads an existing ordinary evidence JSON file;
+it does not create files or play audio. The old implicit one-path invocation
+is rejected, as are missing/extra arguments. `--help` only prints usage.
+Input symlinks and special files are rejected; imports retain the library's
+16 MiB cap and schema checks. Local parent directories remain operator-owned;
+synchronous file operations do not have a wall-clock timeout. Returned errors
+clean up unpublished temporary output; process kill or power loss may leave
+a temporary file, and a published file is not rolled back if later reading fails.
+
+The JSON summary derives per-stream record/frame/sample counts, reset reasons,
+observed close markers and matching latest snapshots from the input. Empty,
+single-direction and snapshot-only evidence are supported. A replaced stream
+without its own observed close marker or matching closed snapshot has unknown
+final state. Active snapshot fields are independent observations; a missing
+queue entry is never reconstructed as silence or called a lost PCM block solely
+from a sequence difference. The source tag is an unauthenticated declaration,
+including `ObservedNative`. No report certifies physical completeness or alignment.
+Closed snapshots must leave enough successful attempts and frames to account
+for the records actually present; contradictory loss totals are rejected.
+
+The Mac offline combination tests also send generated PCM through the production
+capture helper, final voice/cue mixer callback and one `EvidenceSession`, then
+export, import and replay it. They cover exact cue cancellation, explicit
+hold/resume, observation cancellation/drop, overflow, a lost close marker and
+stream reopening. They open no native stream; their assertions cover software
+samples, ownership and cleanup, not wall-clock or acoustic latency.
+
+An explicit library caller still owns any real `EvidenceSession`, its bounded
+pumping, finish/cancellation and export; no default recorder or runtime daemon
+is enabled. The 512-record / 16 MiB limits bound software retention, not a
+guaranteed number of seconds. Agree real-audio destination, retention and deletion
+before authorized recording. Always inspect termination, discarded records and
+footer information; an ended observation is not a complete physical stream.
 
 Native submission receipts and exported software evidence do not prove physical
 presentation, silence, echo cancellation, or full-duplex acoustic quality.

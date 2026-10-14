@@ -403,6 +403,88 @@ fn native_representation_cannot_change_within_stream_and_silence_cannot_hide_pcm
 }
 
 #[test]
+fn closed_snapshot_cannot_count_observed_records_or_frames_as_lost() {
+    let original = fixture();
+    let capture = original.observed_latest.capture.as_ref().unwrap();
+    assert!(capture.closed);
+    assert_eq!((capture.lost_blocks, capture.lost_frames), (0, 0));
+    assert!(
+        original
+            .records
+            .iter()
+            .any(|record| { record.timing.stream == capture.stream && record.timing.frames > 0 })
+    );
+    AudioEvidence::read_json(
+        encoded(&original).as_slice(),
+        EvidenceLimits::default(),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+
+    let mut lost_records = original.clone();
+    let snapshot = lost_records.observed_latest.capture.as_mut().unwrap();
+    snapshot.lost_blocks = snapshot.attempted_blocks;
+    let mut lost_frames = original;
+    let snapshot = lost_frames.observed_latest.capture.as_mut().unwrap();
+    snapshot.lost_frames = snapshot.cursor;
+    let accepted: Vec<_> = [("records", lost_records), ("frames", lost_frames)]
+        .into_iter()
+        .filter_map(|(case, evidence)| {
+            let bytes = serde_json::to_vec(&evidence).unwrap();
+            AudioEvidence::read_json(
+                bytes.as_slice(),
+                EvidenceLimits::default(),
+                &CancellationToken::new(),
+            )
+            .is_ok()
+            .then_some(case)
+        })
+        .collect();
+    assert!(
+        accepted.is_empty(),
+        "contradictory closed snapshots accepted: {accepted:?}"
+    );
+}
+
+#[test]
+fn closed_snapshot_allows_partial_observation_but_rejects_loss_underflow() {
+    let mut partial = fixture();
+    partial.records.retain(|record| record.timing.frames > 0);
+    AudioEvidence::read_json(
+        encoded(&partial).as_slice(),
+        EvidenceLimits::default(),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+
+    // Even no observed records is valid: an earlier observer or an early finish
+    // may leave all successful publications outside this observation interval.
+    partial.records.clear();
+    partial.validate(EvidenceLimits::default()).unwrap();
+    let mut lost_records = partial.clone();
+    let snapshot = lost_records.observed_latest.capture.as_mut().unwrap();
+    snapshot.lost_blocks = u64::MAX;
+    let mut lost_frames = partial;
+    lost_frames
+        .observed_latest
+        .capture
+        .as_mut()
+        .unwrap()
+        .lost_frames = u64::MAX;
+    for evidence in [lost_records, lost_frames] {
+        let bytes = serde_json::to_vec(&evidence).unwrap();
+        assert!(
+            AudioEvidence::read_json(
+                bytes.as_slice(),
+                EvidenceLimits::default(),
+                &CancellationToken::new(),
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn active_snapshot_is_an_observation_not_a_coherent_final_transaction() {
     let mut evidence = fixture();
     let snapshot = evidence.observed_latest.capture.as_mut().unwrap();
@@ -412,6 +494,7 @@ fn active_snapshot_is_an_observation_not_a_coherent_final_transaction() {
     snapshot.continuity = 0;
     snapshot.attempted_blocks = 0;
     snapshot.lost_blocks = 1;
+    snapshot.lost_frames = u64::MAX;
     evidence.validate(EvidenceLimits::default()).unwrap();
     evidence.observed_latest.capture.as_mut().unwrap().running = false;
     evidence.observed_latest.capture.as_mut().unwrap().closed = true;

@@ -1,6 +1,6 @@
 # 实际播放参考流与独立音频时钟
 
-状态：2026-10-14，R02-A 在原软件基础上推进 native 双流有界证据与离线重放；本轮最终验证见 [R02-A checklist](checklists/r02-a-2026-10-14.md)。本文末尾 2026-09-20 的平台记录保留为历史证据，不代表本轮 Linux 验证。该接口不声明已经完成声学回声消除、双讲质量或物理播放验收。
+状态：2026-10-14，R02-A 已完成 native 双流有界证据；最新 Mac 离线模拟补 CLI 真实读回、跨组件链路及 closed loss 一致性，见 [R02 Mac checklist](checklists/r02-mac-2026-10-14.md)。本文末尾 2026-09-20 的平台记录保留为历史证据，不代表本轮 Linux 验证。该接口不声明已经完成声学回声消除、双讲质量或物理播放验收。
 
 ## 证据从哪里产生
 
@@ -34,15 +34,16 @@ ALSA 只在 `writei` 成功后记录实际接纳的完整帧前缀。部分写�
 
 软件诊断硬上限为 512 个记录、每记录 1024 个样本、总计 524288 个样本、JSON 16 MiB；调用者可进一步收紧 `EvidenceLimits`。达到限额、取消或遇到非法记录有明确终止原因，被弹出但未保留的块另记 discarded；未读队列和之后产生的数据仍属未知。每个记录保留格式、native 样本容器、归一化 f64 bits、边界、boot/stream、sequence、continuity、loss、原生游标、clock quality、可用 delay 和主机观察时间。f64 bits 包括负零，不经小数 JSON 舍入。
 
-`write_json`、`read_json` 与 `replay` 均为同步调用者所有；读写逐块检查取消，但不能中断已进入的 OS 阻塞调用。导入先限字节和数组大小，再验证 v1 身份、格式、边界、样本长度、有限值、时钟/静音组合、序号及关闭快照；未知字段、截断或不合法组合明确失败。通用 writer 出错时部分目标由调用者处置，不声称完整导出。合成示例使用临时文件、同步和不覆盖的发布方式，不会覆盖已有文件。
+`write_json`、`read_json` 与 `replay` 均为同步调用者所有；读写逐块检查取消，但不能中断已进入的 OS 阻塞调用。导入先限字节和数组大小，再验证 v1 身份、格式、边界、样本长度、有限值、时钟/静音组合、序号及关闭快照；未知字段、截断或不合法组合明确失败。最新校验对Closed再要求已观察成功块数不超过attempted−lost_blocks、已观察PCM帧数不超过cursor−lost_frames；使用checked运算且只取下界，允许缺失前缀/未读尾部/marker错序，不强化活动快照。通用 writer 出错时部分目标由调用者处置，不声称完整导出。合成示例使用临时文件、同步和不覆盖的发布方式，不会覆盖已有文件。
 
 从仓库根目录执行以下命令可生成并重放一份**纯合成**证据；输出父目录必须已存在，文件必须是新路径：
 
 ```sh
-cargo run -p alia-embedded --example audio_evidence_replay --offline --locked -- /tmp/alia-synthetic-evidence.json
+cargo run -p alia-embedded --no-default-features --example audio_evidence_replay --offline --locked -- generate /tmp/alia-synthetic-evidence.json
+cargo run -p alia-embedded --no-default-features --example audio_evidence_replay --offline --locked -- replay /tmp/alia-synthetic-evidence.json
 ```
 
-`replay` 只返回独立双流记录和 reset/gap 信号，不播放音频、不消费真实设备、不补零、不建立采播配准。遍历结束后仍必须检查 `observed_latest`、观测终止原因、discarded 和 `unobserved_history_possible`：最后 close 块可能丢失，而方向快照可能已替换旧流。示例报告同时读取 footer，明确尾部损失与被替换流的 final 未知。`ObservedNative` / `SyntheticFixture` 是来源声明，不是文件认证或硬件证明；格式合法也不意味着内容可信。
+`replay` 只返回独立双流记录和 reset/gap 信号，不播放音频、不消费真实设备、不补零、不建立采播配准。遍历结束后仍必须检查 `observed_latest`、观测终止原因、discarded 和 `unobserved_history_possible`：最后 close 块可能丢失，而方向快照可能已替换旧流。工具严格区分生成与只读重放，拒绝旧隐式参数及额外参数；摘要按实际输入给出各stream记录/帧/样本/reset计数、是否观察到关闭标记及匹配的最新快照，不再硬编码固定fixture状态。空记录、单方向、仅footer都有效；没有自己的关闭标记或匹配closed快照的旧流final保持未知。输入要求普通文件并拒绝末级symlink/特殊文件，沿用有界read_json；输出仍不覆盖。`ObservedNative` / `SyntheticFixture` 是来源声明，不是文件认证或硬件证明；格式合法也不意味着内容可信。
 
 ## 时钟和缺口的解释
 
