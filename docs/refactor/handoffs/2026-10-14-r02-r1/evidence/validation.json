@@ -1,0 +1,56 @@
+{
+  "recorded_at": "2026-10-14T14:37:34.198483+00:00",
+  "baseline_head": "9890bab823a2ab8eb49c3444ee29a65ebab86faa",
+  "validation_kind": "documentation and public-source prerequisite audit; no new runtime or acoustic tests",
+  "changed_files": [
+    "docs/operations/hardware-deployment-readiness.md",
+    "docs/refactor/audio-reference-clock-design.md",
+    "docs/refactor/checklists/next-round.md",
+    "docs/refactor/checklists/r02-r1-2026-10-14.md",
+    "docs/refactor/deferred.md",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/README.md",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/evidence/source-retrieval.json",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/evidence/validation.json",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/hardware-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/host-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/review-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-14-r02-r1/root-HANDOFF.md",
+    "docs/refactor/progress.md",
+    "docs/refactor/r02-r1-aec-preflight.md",
+    "docs/refactor/resume-checkpoint-r02-r1-2026-10-14.md",
+    "packages/alia-embedded/docs/audio-and-voice.md"
+  ],
+  "non_markdown_inputs_outside_docs_checked_against_baseline": 660,
+  "changed_non_documentation_inputs": [],
+  "previous_frozen_manifest_files_checked": 666,
+  "previous_manifest_documentation_only_differences": [
+    "packages/alia-embedded/docs/audio-and-voice.md"
+  ],
+  "official_sources_verified": [
+    "course",
+    "introduction",
+    "product",
+    "uac-pinout",
+    "reference-pinout",
+    "product-specs"
+  ],
+  "relative_document_links_checked": 211,
+  "missing_relative_paths": [],
+  "git_diff_check_exit": 0,
+  "not_run": [
+    "Cargo or CLI tests",
+    "Linux/Pi/SSH",
+    "native recording/playback",
+    "actuators",
+    "models/services/databases"
+  ],
+  "user_confirmation": "hardware-first route and hardware/material update questions sent; unanswered at validation time",
+  "resource_state": "bounded retrieval commands completed; no runtime resources started",
+  "method": "git diff/ls-files against baseline; compare SHA256 with previous frozen 666-file manifest and downloaded sources; inspect relative Markdown paths; git diff --check",
+  "subagent_progress": {
+    "hardware": "6/6",
+    "host": "6/6",
+    "review": "6/6"
+  },
+  "checklist_progress": "10/10; commit and clean-worktree verification performed by Root after preparing this record"
+}

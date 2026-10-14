@@ -25,9 +25,9 @@
 
 ## R02／R03 现场前置包与资料入口
 
-最新软件续轮为[时钟/consumer审计](../refactor/resume-checkpoint-r02-clock-2026-10-14.md)，源码`28920fb`，默认Embedded335/0/0；仅补已复现时间证据缺口，未确认任何新硬件状态。R1参考路由和硬件AEC模式仍未知，不能由软件通过决定再叠加主机AEC；帧长/通道/延迟需随实际consumer确定。R03保持暂停。
+最新前置续轮为 [R1 硬件 AEC 路由与 consumer 核对](../refactor/r02-r1-aec-preflight.md)，恢复从 [R1 检查点](../refactor/resume-checkpoint-r02-r1-2026-10-14.md) 开始。仅更新资料与契约，源码仍为 `28920fb`；默认 Embedded 335/0/0 是上一轮历史结果，本轮不重跑。已重新读取官方公开正文及引脚图：UAC 处理后单通道采集与功放参考独立；具体电气额定、板/固件与实际格式、模式及延迟仍未确认。当前 converter 会平均所有 native 输入声道，`capture_channels=1` 不代表选中处理声道；先核实端点再决定是否补选路。硬件 AEC 优先建议已集中询问用户，未选定软件 consumer、不预建 worker。R03保持暂停。
 
-本轮从 `283f38f` 继续，仅补离线检查与操作资料；没有重新连接 Pi、枚举设备或启动 Server/Embedded 服务 runtime。历史盘点时间与本轮同日也不代表设备状态已再次确认。进度及证据见[本轮 checklist](../refactor/checklists/field-prep-2026-10-14.md)和[四份 HANDOFF](../refactor/handoffs/2026-10-14-field-prep/README.md)。
+此前现场前置包从 `283f38f` 继续，仅补离线检查与操作资料；没有重新连接 Pi、枚举设备或启动 Server/Embedded 服务 runtime。历史盘点时间与本轮同日也不代表设备状态已再次确认。进度及证据见[本轮 checklist](../refactor/checklists/field-prep-2026-10-14.md)和[四份 HANDOFF](../refactor/handoffs/2026-10-14-field-prep/README.md)。
 
 已构建的新版本可运行 `target/debug/alia-embedded --check-config /absolute/path/embedded.toml`。它读取显式存在的配置，以及配置指定的校准文件和已批准动作资产，输出 JSON 后退出，不创建 key/state、不改 key 权限、不启动 runtime、模型、网络或设备。构建本身仍写入 target；缺失配置不会退回默认配置。帮助与错误参数也不会进入正常启动。
 

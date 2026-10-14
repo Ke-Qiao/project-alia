@@ -61,8 +61,17 @@ startup for an explicitly confirmed shared-clock design; it does not establish
 clock synchronization. Keep its default `false` for the proposed R1 USB capture
 and separately selected output chain. USB connection does not prove that R1
 offers playback or consumes USB audio as an AEC reference. Playback never retunes
-the active capture clock. The R1 reference route and electrical compatibility
-remain in the central field record until confirmed.
+the active capture clock.
+
+The public R1 documentation separates processed mono UAC capture from an external
+amplifier reference input; it does not establish USB playback or an internal USB
+reference. The actual board/firmware, electrical compatibility and channel meaning
+remain unverified; see the [R1 preflight record](../../../docs/refactor/r02-r1-aec-preflight.md).
+The current capture converter averages every negotiated native input channel before
+conversion. Setting `capture_channels = 1` does not select a processed channel.
+A confirmed processed mono endpoint can use this path; an endpoint combining
+processed, raw or reference signals needs a verified channel selection first.
+Hardware AEC does not automatically require a second host AEC processor or reader.
 
 Normal Embedded startup opens native playback and capture before the wake word;
 Linux ALSA availability checks can also open PCM handles. Use the

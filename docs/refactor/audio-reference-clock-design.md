@@ -1,6 +1,6 @@
 # 实际播放参考流与独立音频时钟
 
-状态：2026-10-14，R02-A与Mac离线模拟已完成，最新独立时钟审计统一native批次锚点、补历史回放时钟变化提示，并明确未来AEC consumer的帧/对齐契约，见[R02 clock checklist](checklists/r02-clock-2026-10-14.md)。本文末尾2026-09-20平台记录仅为历史，本轮不宣称Linux、声学AEC、双讲或物理播放验收。
+状态：2026-10-14，R02-A与Mac离线模拟已完成，最新独立时钟审计统一native批次锚点、补历史回放时钟变化提示，并明确未来AEC consumer的帧/对齐契约，见[R02 clock checklist](checklists/r02-clock-2026-10-14.md)。后续 [R1 硬件/consumer 前置核对](r02-r1-aec-preflight.md)明确硬件与主机职责，软件 worker 仅在确认需要时接入。本文末尾2026-09-20平台记录仅为历史，本轮不宣称Linux、声学AEC、双讲或物理播放验收。
 
 ## 证据从哪里产生
 
@@ -59,7 +59,7 @@ ALSA `wait` 和 `readi` 采用同一错误路径。`EAGAIN`/`EINTR` 不伪造缺
 
 本包新增的播放参考交接采用固定存储和不等待的锁尝试。**既有采集转换器和 broadcast 路径仍会分配及加锁**，不能由此声称所有生产音频回调已经满足硬实时要求。显式 ALSA 与 Linux 回退路径共用同一采集实现，避免两份实现产生不同的证据语义。
 
-后续 AEC 主线需要实际接入一个拥有参考消费者的音频工作线程，定义丢块/重开时的 reset，建立重采样延迟及采集/播放漂移映射，测量物理输出延迟与设备取消尾音，并完成树莓派 5 上的回声和双讲实验。应使用已核验的依赖和真实硬件结果决定抑制、双讲保真及重收敛策略。这些尚未实现，不能把本包的后端接纳或软件空设备测试作为完成证据。
+后续 AEC 主线先核对 R1 硬件参考路由、固件模式与处理后输出，见 [R1 前置核对](r02-r1-aec-preflight.md)。只有确认仍需主机软件 AEC 时，才接入拥有唯一参考 reader 的音频 worker，并按选定 consumer 定义组帧、延迟/漂移映射及缺口 reset；硬件 AEC 路径不自动要求这一 worker。两种路线都须测量物理输出延迟、取消尾音和树莓派 5 双讲效果，不能把后端接纳或软件空设备测试作为声学完成证据。
 
 本包没有引入 AEC 依赖、完整 WAIT 恢复或 Companion，也不推进 Web/iOS/Android 和通用嵌入适配的延期范围。
 
@@ -97,7 +97,7 @@ ALSA `wait` 和 `readi` 采用同一错误路径。`EAGAIN`/`EINTR` 不伪造缺
 | Silero `window_size` | 当前VAD推理缓冲 | 与回声处理帧长分别确定 |
 | playback rubato `input_rate/100`内部块 | 既有固定比率重采样 | 约10ms（整数截断）只属于该wrapper，不能据此宣称AEC要求10ms |
 
-仓库目前没有AEC processor/feature或自动reference worker；R1尚未接入，内部AEC参考接法与格式未确认，是否还需要主机软件AEC也未决定。既有rubato固定比例wrapper未启用动态ratio调节，不能算作漂移补偿。实际consumer确定后，必须明确支持的采样率/声道、帧时长、输入/输出含义、render先后次序、可接受延迟/等待上界、尾帧处理及gap后的reset/重收敛规则。只在同一有效连续片段内累积完整帧；不足一帧时按已选consumer规则保留或结束，禁止用未知PCM补齐。重采样转换需有其延迟/尾部与映射证明，不能直接把不同采样率的数组配成一对。
+仓库目前没有AEC processor/feature或自动reference worker；R1尚未接入，参考端口的公开拓扑已核对，具体电气接法、固件模式与实际格式未确认，是否还需要主机软件AEC也未决定。既有rubato固定比例wrapper未启用动态ratio调节，不能算作漂移补偿。实际consumer确定后，必须明确支持的采样率/声道、帧时长、输入/输出含义、render先后次序、可接受延迟/等待上界、尾帧处理及gap后的reset/重收敛规则。只在同一有效连续片段内累积完整帧；不足一帧时按已选consumer规则保留或结束，禁止用未知PCM补齐。重采样转换需有其延迟/尾部与映射证明，不能直接把不同采样率的数组配成一对。
 
 现有speech仍从独立的converted AudioBus进入VAD/KWS/upload；只取得reference reader不会让该路径自动经过AEC。实际consumer确定后才选择native或converted接入点及其输出/延迟契约。
 

@@ -1,0 +1,85 @@
+{
+  "scope": "Public official R1 sources, bounded HTTPS reads; no vendor code executed; original bodies/images remain ignored in run/validation-20261014-r02-r1",
+  "attempts_before_success": [
+    "web page extraction returned navigation only",
+    "web public API opens unavailable",
+    "sandbox curl DNS failed; authorized bounded direct HTTPS succeeded"
+  ],
+  "sources": [
+    {
+      "name": "course",
+      "url": "https://api.yahboom.com/api/product?cname=R1_6_MIC&from=study",
+      "retrieved_at": "2026-10-14T14:26:23.514574+00:00",
+      "status": 200,
+      "final_url": "https://api.yahboom.com/api/product?cname=R1_6_MIC&from=study",
+      "bytes": 969,
+      "sha256": "0c76e71f382e9bca8faf479555f6fd1cbced15609674fc1c0ce71d22127d87cf",
+      "path": "run/validation-20261014-r02-r1/course.json",
+      "top_keys": [
+        "code",
+        "msg",
+        "data"
+      ]
+    },
+    {
+      "name": "introduction",
+      "url": "https://api.yahboom.com/api/build?id=16444&cid=743",
+      "retrieved_at": "2026-10-14T14:26:23.839686+00:00",
+      "status": 200,
+      "final_url": "https://api.yahboom.com/api/build?id=16444&cid=743",
+      "bytes": 31453,
+      "sha256": "cb988e7de33ebed13461a569316ca9fe2c292b2fad3b4915c513dedd2a78f503",
+      "path": "run/validation-20261014-r02-r1/introduction.json",
+      "top_keys": [
+        "code",
+        "msg",
+        "data"
+      ]
+    },
+    {
+      "name": "product",
+      "url": "https://api.yahboom.com/api/purchase-detail?id=694",
+      "retrieved_at": "2026-10-14T14:26:24.156220+00:00",
+      "status": 200,
+      "final_url": "https://api.yahboom.com/api/purchase-detail?id=694",
+      "bytes": 5132,
+      "sha256": "31920e68fdf0d44a120fd607ec3fa9d096680003b170206aab705fb38bb9318f",
+      "path": "run/validation-20261014-r02-r1/product.json",
+      "top_keys": [
+        "code",
+        "msg",
+        "data"
+      ]
+    },
+    {
+      "name": "uac-pinout",
+      "url": "https://admin.yahboom.com/public/upload/upload-html/1779334489/image-20260327194244523.png",
+      "retrieved_at": "2026-10-14T14:27:50.607567+00:00",
+      "status": 200,
+      "final_url": "https://admin.yahboom.com/public/upload/upload-html/1779334489/image-20260327194244523.png",
+      "bytes": 24682,
+      "sha256": "f8b0a4fae5f66cff6042801eeae38014694d503699a803bb625dd0b9f501379c",
+      "path": "run/validation-20261014-r02-r1/uac-pinout.png"
+    },
+    {
+      "name": "reference-pinout",
+      "url": "https://admin.yahboom.com/public/upload/upload-html/1779334489/image-20260327194301544.png",
+      "retrieved_at": "2026-10-14T14:27:50.992456+00:00",
+      "status": 200,
+      "final_url": "https://admin.yahboom.com/public/upload/upload-html/1779334489/image-20260327194301544.png",
+      "bytes": 45012,
+      "sha256": "acadefaad8c93c79690c9738f86f00bde2a286c45dd88d2a8b616f9328c5472f",
+      "path": "run/validation-20261014-r02-r1/reference-pinout.png"
+    },
+    {
+      "name": "product-specs",
+      "url": "https://img.yahboom.com/images/store/PC/6M_2/pc%E7%AB%AF_19.jpg",
+      "retrieved_at": "2026-10-14T14:27:51.399068+00:00",
+      "status": 200,
+      "final_url": "https://img.yahboom.com/images/store/PC/6M_2/pc%E7%AB%AF_19.jpg",
+      "bytes": 65205,
+      "sha256": "3613cebc312473e07b326221bbab05b7ea8fc54916144848eb3ca647e45d7e09",
+      "path": "run/validation-20261014-r02-r1/product-specs.jpg"
+    }
+  ]
+}
