@@ -1,0 +1,431 @@
+{
+  "at": "2026-10-14T16:49:16.903141+00:00",
+  "source_manifest": "green-source-manifest.json",
+  "final_source_manifest": "final-source-manifest.json",
+  "format_transition": "format-only-transition.json",
+  "source_manifest_sha256": "2b4524993978bcc30c675b4ffc8bd2b2757e8b2250ebdddbcc912932d9fd105e",
+  "inputs": 669,
+  "platform": "macOS 26.6.2 ARM64 / Rust 1.95.0",
+  "run": {
+    "phase": "green",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-server",
+      "--offline",
+      "--locked",
+      "--all-targets",
+      "--no-fail-fast"
+    ],
+    "started_at": "2026-10-14T16:41:10.617105+00:00",
+    "elapsed_seconds": 431.74,
+    "exit_code": 0,
+    "source_manifest_sha256": "2b4524993978bcc30c675b4ffc8bd2b2757e8b2250ebdddbcc912932d9fd105e",
+    "source_drift": [],
+    "test_parallelism": "default",
+    "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+    "build_jobs": 2
+  },
+  "targets": [
+    {
+      "target": "unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)",
+      "passed": 374,
+      "failed": 0,
+      "ignored": 3,
+      "filtered": 0
+    },
+    {
+      "target": "unittests src/main.rs (target/debug/deps/alia_server-459d3ca46434a4b2)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/appraisal_provenance.rs (target/debug/deps/appraisal_provenance-021d088e7063d7f8)",
+      "passed": 20,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/body_delivery.rs (target/debug/deps/body_delivery-c2cd893d8eefb7d5)",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/cache_context.rs (target/debug/deps/cache_context-8efa4b42226c5245)",
+      "passed": 17,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/channel_registry.rs (target/debug/deps/channel_registry-7640b385eecece7f)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/config.rs (target/debug/deps/config-7e845a04a4dce39f)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/context_lease.rs (target/debug/deps/context_lease-504bc4f776566259)",
+      "passed": 26,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/delivery_repository.rs (target/debug/deps/delivery_repository-4ba8cc2c30d85609)",
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/delivery_service.rs (target/debug/deps/delivery_service-7d1c3b2b0a53defd)",
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/delivery_text.rs (target/debug/deps/delivery_text-d21943bb3f259d8a)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/delivery_text_service.rs (target/debug/deps/delivery_text_service-9a079f9654fe0d87)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/easy_turn_live.rs (target/debug/deps/easy_turn_live-e43b4f432d24f15e)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1,
+      "filtered": 0
+    },
+    {
+      "target": "tests/embedded_channel.rs (target/debug/deps/embedded_channel-6f4a2e44b6cd799c)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/execution_repository.rs (target/debug/deps/execution_repository-93b7396cf1294c60)",
+      "passed": 19,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/execution_service.rs (target/debug/deps/execution_service-399371ee913c9492)",
+      "passed": 30,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/expression_abi.rs (target/debug/deps/expression_abi-41f49bd42be4c0b6)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/expression_appraisal.rs (target/debug/deps/expression_appraisal-3e91298fcec9a6d3)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/expression_eval.rs (target/debug/deps/expression_eval-f36267bbf887b17d)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/expression_regulation.rs (target/debug/deps/expression_regulation-715f333b56232827)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/expression_trace.rs (target/debug/deps/expression_trace-ff0311a20fd3f6ab)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/interaction.rs (target/debug/deps/interaction-6b981f21e60a6f58)",
+      "passed": 17,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/interaction_tools.rs (target/debug/deps/interaction_tools-71b93609a84a36ff)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/llm.rs (target/debug/deps/llm-21bddb47385dc05c)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/llm_providers.rs (target/debug/deps/llm_providers-2f5d655df8683b02)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory.rs (target/debug/deps/memory-9f3b92ca7503cc7e)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory_capture.rs (target/debug/deps/memory_capture-689296d3991e34e7)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory_embedding.rs (target/debug/deps/memory_embedding-71ea650c700ea1dd)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory_embedding_provenance.rs (target/debug/deps/memory_embedding_provenance-48d5672a09ea41d3)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory_message_pins.rs (target/debug/deps/memory_message_pins-4d2b930c074e4580)",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/memory_privacy.rs (target/debug/deps/memory_privacy-e3bf10499869d9c4)",
+      "passed": 31,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/migrations.rs (target/debug/deps/migrations-deafb8621ed30112)",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/output_control.rs (target/debug/deps/output_control-eb8b06728bec560a)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/output_lifecycle.rs (target/debug/deps/output_lifecycle-71aa36af68122d98)",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/persona.rs (target/debug/deps/persona-d2b18201043bb3e6)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/plugin_storage.rs (target/debug/deps/plugin_storage-89d2a57517c6e5d5)",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/provider_adapters.rs (target/debug/deps/provider_adapters-4936cf1212e8f7b8)",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/registry.rs (target/debug/deps/registry-0fd5ab2c1098a579)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/router.rs (target/debug/deps/router-004c6e1a1c37aa39)",
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/rules.rs (target/debug/deps/rules-924340faa84fe5ea)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/scheduler.rs (target/debug/deps/scheduler-23e80ed7439e69ba)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/sensors.rs (target/debug/deps/sensors-8faf7e9f29681aa2)",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/server_background.rs (target/debug/deps/server_background-a420ae80b396842b)",
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)",
+      "passed": 81,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/settings.rs (target/debug/deps/settings-274e646f92db41ea)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/settings_cancellation.rs (target/debug/deps/settings_cancellation-2442819355302da6)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/skills.rs (target/debug/deps/skills-57128c36316cc0af)",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/tools.rs (target/debug/deps/tools-cb6f48d6962a630c)",
+      "passed": 15,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/voice_stream_live.rs (target/debug/deps/voice_stream_live-dd4673602a58fa65)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 1,
+      "filtered": 0
+    }
+  ],
+  "totals": {
+    "passed": 868,
+    "failed": 0,
+    "ignored": 5,
+    "filtered": 0
+  },
+  "ignored": [
+    [
+      "bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation",
+      "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+    ],
+    [
+      "channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown",
+      "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+    ],
+    [
+      "channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal",
+      "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+    ],
+    [
+      "official_audio_through_production_rust_adapter",
+      "requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16"
+    ],
+    [
+      "official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait",
+      "requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL"
+    ]
+  ],
+  "counting": "Last summary per Cargo Running target; child process reentry and targeted/repeated runs not added",
+  "not_run": [
+    "Linux application tests",
+    "Embedded and Pi tests",
+    "real PTY and Easy-Turn ignored cases",
+    "hardware/real capture or playback/actuators",
+    "release deployment and long-duration load"
+  ],
+  "limits": [
+    "No universal Settings deadline; synchronous file IO cannot be preempted",
+    "Local HTTP/1 and mock providers only",
+    "No distinct HTTP gate-queued GET/PATCH stage witness"
+  ],
+  "source_commit": "4e9913414c68b4a78b52c472a04d5a2139785430",
+  "final_manifest_sha256": "313671a7cee06b5485bd1f2eb9e895cc23ee347e0ced02eb87ae758e6b7b24ce",
+  "final_checks": [
+    "final-providers.json",
+    "final-no-default.json",
+    "static.json"
+  ],
+  "cleanup": "cleanup.json"
+}

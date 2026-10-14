@@ -1,0 +1,13 @@
+Diff in /Users/ke-qiao/Developer/project-alia/packages/alia-server/src/providers/llm/mod.rs:22:
+ 
+ #[cfg(all(
+     test,
+-    any(feature = "llm-openai", feature = "llm-anthropic", feature = "llm-gemini")
++    any(
++        feature = "llm-openai",
++        feature = "llm-anthropic",
++        feature = "llm-gemini"
++    )
+ ))]
+ mod test_support;
+ 

@@ -63,4 +63,9 @@ C01 Temporal 与 C02 Rig/rmcp/Home Assistant 的候选门槛不因被提案点�
 
 主要投入转为 R02-A 双流证据/离线重放、R03-A 受信动作资产内容认证，之后按硬件资料接入真实AEC/反馈，再进入R05。H01—H05待当前部署确认，R02/R03/R05保持开放。
 
-- [ ] R05前故障验证：慢模型请求持配置读锁、SoVITS音频额度等待及Settings/隐私共享gate的管理恢复上界，真正handler取消与关闭清理。需要修复时只处理复现缺口，保持已提交SQL/desired/module的部分成功，不直接加整请求timeout或全局回滚。
+- [x] 2026-10-15有界软件故障包：慢模型持锁、SoVITS权重额度期限已修复；真实HTTP/1 handler取消、同值重试与privacy共享锁关闭已验证，见[本轮10/10](settings-waits-2026-10-15.md)。已提交SQL/desired/module部分成功保持，未增加整请求timeout或全局回滚。
+- [ ] 整体Settings没有统一SLA；同步文件I/O、任意扩展和真实模型/部署取消仍需对应验证。纯GET/PATCH update gate排队未单独取得HTTP阶段见证，不能把局部Registry证据推广成全协议保证。
+
+## 2026-10-15 Settings 等待与关闭收口
+
+源码`4e99134`。Server全目标868/0/5通过（真实PTY3、Easy-Turn2未运行），随后仅cfg格式调整，最终provider51/0/0及无默认all-targets检查通过。669个最终输入逐blob匹配提交；精确格式转换、原RED、基线关闭PASS及实际清理证据见[四份HANDOFF](../handoffs/2026-10-15-settings-waits/README.md)。本轮独立数据库已删除，共享运行时保留；R03暂停和R05现场门槛不变。

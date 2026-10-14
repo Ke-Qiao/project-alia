@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-14T16:30:48.086203+00:00",
+  "user_authorization": "User explicitly approved shared OrbStack start, including potential restoration of existing shared services, and an isolated cached-image PostgreSQL; cleanup only this task database",
+  "command": [
+    "orbctl",
+    "start"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "OrbStack is already running. Docker engine is ready to use.\nUse --all to start all machines.\n"
+}

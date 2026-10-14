@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-14T16:56:00.039530+00:00",
+  "new_markdown_files": [
+    "docs/refactor/checklists/settings-waits-2026-10-15.md",
+    "docs/refactor/settings-waits-2026-10-15.md",
+    "docs/refactor/resume-checkpoint-settings-waits-2026-10-15.md",
+    "docs/refactor/handoffs/2026-10-15-settings-waits/README.md",
+    "docs/refactor/handoffs/2026-10-15-settings-waits/audio-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-15-settings-waits/model-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-15-settings-waits/review-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-15-settings-waits/root-HANDOFF.md"
+  ],
+  "relative_links_checked": 33,
+  "missing_links": [],
+  "evidence_hashes_checked": 39,
+  "checklist_completed": 10,
+  "checklist_total": 10,
+  "git_diff_check": 0,
+  "source_commit": "4e9913414c68b4a78b52c472a04d5a2139785430"
+}

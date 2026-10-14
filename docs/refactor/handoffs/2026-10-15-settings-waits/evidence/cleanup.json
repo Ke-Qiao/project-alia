@@ -1,0 +1,81 @@
+{
+  "at": "2026-10-14T16:52:28.352575+00:00",
+  "removed_task_container": "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c",
+  "task_absent": true,
+  "other_containers_modified": false,
+  "shared_runtime_left_running": true,
+  "records": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}}",
+        "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c"
+      ],
+      "exit_code": 0,
+      "stdout": "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c settings-waits-20261015\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "10",
+        "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c"
+      ],
+      "exit_code": 0,
+      "stdout": "Flag --time has been deprecated, use --timeout instead\n0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.State.Running}}",
+        "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c"
+      ],
+      "exit_code": 0,
+      "stdout": "false\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c"
+      ],
+      "exit_code": 0,
+      "stdout": "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "id=0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Status}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot Up 8 hours\n",
+      "stderr": ""
+    }
+  ]
+}

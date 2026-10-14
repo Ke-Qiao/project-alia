@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-14T16:38:22.740346+00:00",
+  "base_head": "e89d34c4b7dad97a0aa3e2ea02bf00229b81c20f",
+  "checked_inputs": 669,
+  "production_prefix_reconstructed_from_base": [
+    "packages/alia-server/src/providers/llm/anthropic.rs",
+    "packages/alia-server/src/providers/llm/gemini.rs",
+    "packages/alia-server/src/providers/llm/openai.rs",
+    "packages/alia-server/src/providers/tts/gpt_sovits.rs"
+  ],
+  "all_red_bytes_match_frozen_manifest": true,
+  "patch_sha256": "65a45d5cd22cd25cfef0165b9125fff386125fcae79b20cc2db799d108c673e5"
+}

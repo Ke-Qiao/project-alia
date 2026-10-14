@@ -1,0 +1,40 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 2 tests
+
+running 1 test
+
+running 1 test
+
+thread 'providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission' (3948275) panicked at packages/alia-server/src/providers/tts/gpt_sovits/tests/settings_waits.rs:77:17:
+weight setup deadline must include its audio capacity wait
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... FAILED
+
+failures:
+
+failures:
+    providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 376 filtered out; finished in 2.53s
+
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 2.53s
+
+
+thread 'providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission' (3948271) panicked at packages/alia-server/src/providers/tts/gpt_sovits/tests/settings_waits.rs:30:17:
+isolated SoVITS budget case failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... FAILED
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+
+failures:
+
+failures:
+    providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 375 filtered out; finished in 2.54s
+
+error: test failed, to rerun pass `-p alia-server --lib`

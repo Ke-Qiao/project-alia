@@ -1,0 +1,883 @@
+--- a/packages/alia-server/src/providers/llm/anthropic.rs
++++ b/packages/alia-server/src/providers/llm/anthropic.rs
+@@ -138,7 +138,7 @@
+         messages: &[ChatMessage],
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<AnthropicResponse> {
+-        let config = self.config.read().await;
++        let config = self.config.read().await.clone();
+         let tools = tools
+             .filter(|tools| !tools.is_empty())
+             .map(|tools| tools.iter().map(AnthropicTool::from).collect::<Vec<_>>());
+@@ -189,7 +189,7 @@
+         messages: &[ChatMessage],
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<reqwest::Response> {
+-        let config = self.config.read().await;
++        let config = self.config.read().await.clone();
+         let tools = tools
+             .filter(|tools| !tools.is_empty())
+             .map(|tools| tools.iter().map(AnthropicTool::from).collect::<Vec<_>>());
+@@ -660,6 +660,26 @@
+ mod tests {
+     use super::*;
+ 
++    #[tokio::test]
++    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
++        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut profile = crate::config::ProfilesSection::default()
++            .llm_profile("major")
++            .unwrap()
++            .clone();
++        profile.provider = "anthropic".into();
++        let mut llm =
++            AnthropicLlm::new("major", &profile, &AnthropicProviderSection::default()).unwrap();
++        llm.client = Client::builder().no_proxy().build().unwrap();
++        llm.config.write().await.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
++        super::super::test_support::assert_stalled_generation_releases_settings(
++            &llm,
++            &listener,
++            "anthropic",
++        )
++        .await;
++    }
++
+     #[test]
+     fn anthropic_stream_text_extracts_text_delta() {
+         let data = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+--- a/packages/alia-server/src/providers/llm/gemini.rs
++++ b/packages/alia-server/src/providers/llm/gemini.rs
+@@ -173,7 +173,7 @@
+         messages: &[ChatMessage],
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<GenerateContentResponse> {
+-        let config = self.config.read().await;
++        let config = self.config.read().await.clone();
+         let (system_instruction, contents) = gemini_contents(messages);
+         let tools = tools.filter(|tools| !tools.is_empty()).map(|tools| {
+             vec![GeminiTool {
+@@ -216,7 +216,7 @@
+         messages: &[ChatMessage],
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<reqwest::Response> {
+-        let config = self.config.read().await;
++        let config = self.config.read().await.clone();
+         let (system_instruction, contents) = gemini_contents(messages);
+         let tools = tools.filter(|tools| !tools.is_empty()).map(|tools| {
+             vec![GeminiTool {
+@@ -667,6 +667,19 @@
+             .clone();
+         profile.provider = "gemini".into();
+         GeminiLlm::new("major", &profile, &GeminiProviderSection::default()).unwrap()
++    }
++
++    #[tokio::test]
++    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
++        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let mut llm = test_llm();
++        llm.client = Client::builder().no_proxy().build().unwrap();
++        llm.config.write().await.base_url =
++            format!("http://{}/v1beta", listener.local_addr().unwrap());
++        super::super::test_support::assert_stalled_generation_releases_settings(
++            &llm, &listener, "gemini",
++        )
++        .await;
+     }
+ 
+     async fn accept_probe(listener: &TcpListener) -> (TcpStream, String) {
+--- a/packages/alia-server/src/providers/llm/mod.rs
++++ b/packages/alia-server/src/providers/llm/mod.rs
+@@ -19,6 +19,16 @@
+ #[cfg(feature = "llm-openai")]
+ pub mod openai;
+ pub mod streaming;
++
++#[cfg(all(
++    test,
++    any(
++        feature = "llm-openai",
++        feature = "llm-anthropic",
++        feature = "llm-gemini"
++    )
++))]
++mod test_support;
+ 
+ #[cfg(feature = "llm-anthropic")]
+ pub use anthropic::AnthropicLlm;
+--- a/packages/alia-server/src/providers/llm/openai.rs
++++ b/packages/alia-server/src/providers/llm/openai.rs
+@@ -278,11 +278,11 @@
+ 
+     async fn chat_internal(
+         &self,
++        config: &OpenAiConfig,
+         messages: &[ChatMessage],
+         stream: bool,
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<reqwest::Response> {
+-        let config = self.config.read().await;
+         let tools = tools
+             .filter(|tools| !tools.is_empty())
+             .map(|tools| tools.iter().map(OpenAiTool::from).collect::<Vec<_>>());
+@@ -330,11 +330,11 @@
+ 
+     async fn responses_internal(
+         &self,
++        config: &OpenAiConfig,
+         messages: &[ChatMessage],
+         stream: bool,
+         tools: Option<&[ToolDefinition]>,
+     ) -> anyhow::Result<reqwest::Response> {
+-        let config = self.config.read().await;
+         let tools = tools
+             .filter(|tools| !tools.is_empty())
+             .map(|tools| tools.iter().map(ResponsesTool::from).collect::<Vec<_>>());
+@@ -530,13 +530,16 @@
+     }
+ 
+     async fn chat(&self, messages: &[ChatMessage]) -> anyhow::Result<String> {
+-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
+-            let response = self.responses_internal(messages, false, None).await?;
++        let config = self.config.read().await.clone();
++        if config.api_family == OpenAiApiFamily::Responses {
++            let response = self
++                .responses_internal(&config, messages, false, None)
++                .await?;
+             let value: Value = response.json().await?;
+             return Ok(parse_responses_output(&value).content);
+         }
+ 
+-        let response = self.chat_internal(messages, false, None).await?;
++        let response = self.chat_internal(&config, messages, false, None).await?;
+         let chat_response: ChatResponse = response.json().await?;
+ 
+         chat_response
+@@ -551,15 +554,18 @@
+         messages: &[ChatMessage],
+         tools: &[ToolDefinition],
+     ) -> anyhow::Result<LlmResponse> {
+-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
++        let config = self.config.read().await.clone();
++        if config.api_family == OpenAiApiFamily::Responses {
+             let response = self
+-                .responses_internal(messages, false, Some(tools))
++                .responses_internal(&config, messages, false, Some(tools))
+                 .await?;
+             let value: Value = response.json().await?;
+             return Ok(parse_responses_output(&value));
+         }
+ 
+-        let response = self.chat_internal(messages, false, Some(tools)).await?;
++        let response = self
++            .chat_internal(&config, messages, false, Some(tools))
++            .await?;
+         let chat_response: ChatResponse = response.json().await?;
+         let message = chat_response
+             .choices
+@@ -583,10 +589,17 @@
+         messages: &[ChatMessage],
+         tools: &[ToolDefinition],
+     ) -> anyhow::Result<LlmResponse> {
+-        if self.config.read().await.api_family == OpenAiApiFamily::Responses {
+-            return self.chat_with_tools(messages, tools).await;
+-        }
+-        let response = self.chat_internal(messages, true, Some(tools)).await?;
++        let config = self.config.read().await.clone();
++        if config.api_family == OpenAiApiFamily::Responses {
++            let response = self
++                .responses_internal(&config, messages, false, Some(tools))
++                .await?;
++            let value: Value = response.json().await?;
++            return Ok(parse_responses_output(&value));
++        }
++        let response = self
++            .chat_internal(&config, messages, true, Some(tools))
++            .await?;
+         let mut byte_stream = response.bytes_stream();
+         let mut decoder = SseDecoder::default();
+         let mut aggregate = OpenAiStreamAggregate::default();
+@@ -605,11 +618,13 @@
+         &self,
+         messages: &[ChatMessage],
+     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<String>> + Send>>> {
+-        let family = self.config.read().await.api_family;
++        let config = self.config.read().await.clone();
++        let family = config.api_family;
+         let response = if family == OpenAiApiFamily::Responses {
+-            self.responses_internal(messages, true, None).await?
++            self.responses_internal(&config, messages, true, None)
++                .await?
+         } else {
+-            self.chat_internal(messages, true, None).await?
++            self.chat_internal(&config, messages, true, None).await?
+         };
+ 
+         let stream = async_stream::stream! {
+@@ -893,6 +908,24 @@
+             &OpenAiProviderSection::default(),
+         )
+         .unwrap()
++    }
++
++    #[tokio::test]
++    async fn stalled_generation_does_not_block_settings_and_cancels_connection() {
++        for family in [OpenAiApiFamily::ChatCompletions, OpenAiApiFamily::Responses] {
++            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++            let mut llm = test_llm();
++            llm.client = Client::builder().no_proxy().build().unwrap();
++            {
++                let mut config = llm.config.write().await;
++                config.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
++                config.api_family = family;
++            }
++            super::super::test_support::assert_stalled_generation_releases_settings(
++                &llm, &listener, "openai",
++            )
++            .await;
++        }
+     }
+ 
+     #[tokio::test]
+--- /dev/null
++++ b/packages/alia-server/src/providers/llm/test_support.rs
+@@ -0,0 +1,129 @@
++use std::collections::BTreeMap;
++use std::time::Duration;
++
++use futures::StreamExt;
++use serde_json::json;
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::{TcpListener, TcpStream};
++
++use crate::providers::adapter::LlmAdapter;
++
++async fn accept_request(listener: &TcpListener) -> (TcpStream, String) {
++    let (mut socket, _) = listener.accept().await.unwrap();
++    let mut bytes = Vec::new();
++    while !bytes.ends_with(b"\r\n\r\n") {
++        bytes.push(socket.read_u8().await.unwrap());
++        assert!(bytes.len() <= 8192, "bounded request headers");
++    }
++    let headers = String::from_utf8(bytes).unwrap();
++    let body_len = headers
++        .lines()
++        .find_map(|line| {
++            let (name, value) = line.split_once(':')?;
++            name.eq_ignore_ascii_case("content-length")
++                .then(|| value.trim().parse::<usize>().unwrap())
++        })
++        .unwrap();
++    assert!(body_len <= 16384, "bounded local request body");
++    let mut body = vec![0; body_len];
++    socket.read_exact(&mut body).await.unwrap();
++    (
++        socket,
++        format!("{headers}{}", String::from_utf8(body).unwrap()),
++    )
++}
++
++pub(super) async fn assert_stalled_generation_releases_settings(
++    llm: &dyn LlmAdapter,
++    listener: &TcpListener,
++    provider: &str,
++) {
++    let model_key = "core.profiles.llm.major.model";
++    let api_key = format!("core.providers.llm.{provider}.api_key");
++    let mut model = "before-model".to_string();
++    let mut key = "before-key".to_string();
++    llm.apply_settings(&BTreeMap::from([
++        (model_key.into(), json!(model)),
++        (api_key.clone(), json!(key)),
++    ]))
++    .await
++    .unwrap();
++
++    // Cover each public entry once, with headers, successful body and error body stalls.
++    for mode in 0..4 {
++        let mut generation = Box::pin(async {
++            match mode {
++                0 => llm.chat(&[]).await.map(|_| ()),
++                1 => llm.chat_with_tools(&[], &[]).await.map(|_| ()),
++                2 => {
++                    let mut stream = llm.chat_stream(&[]).await?;
++                    while let Some(chunk) = stream.next().await {
++                        chunk?;
++                    }
++                    Ok(())
++                }
++                _ => llm.chat_stream_with_tools(&[], &[]).await.map(|_| ()),
++            }
++        });
++        let (mut socket, request) = tokio::time::timeout(Duration::from_secs(2), async {
++            tokio::select! {
++                result = &mut generation => panic!("generation ended before request: {result:?}"),
++                request = accept_request(listener) => request,
++            }
++        })
++        .await
++        .expect("local generation request must arrive");
++        assert!(request.contains(&model), "request uses one model snapshot");
++        assert!(
++            request.contains(&key),
++            "request uses one credential snapshot"
++        );
++
++        if mode != 2 {
++            let status = if mode == 1 {
++                "503 Service Unavailable"
++            } else {
++                "200 OK"
++            };
++            socket
++                .write_all(
++                    format!(
++                        "HTTP/1.1 {status}\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{{"
++                    )
++                    .as_bytes(),
++                )
++                .await
++                .unwrap();
++        }
++        model = format!("after-model-{mode}");
++        key = format!("after-key-{mode}");
++        let updates = BTreeMap::from([
++            (model_key.into(), json!(model)),
++            (api_key.clone(), json!(key)),
++        ]);
++        tokio::time::timeout(Duration::from_secs(1), async {
++            tokio::select! {
++                biased;
++                result = &mut generation => panic!("generation ended during peer stall: {result:?}"),
++                applied = llm.apply_settings(&updates) => assert_eq!(applied.unwrap().len(), 2),
++            }
++        })
++        .await
++        .expect("stalled generation must not retain the settings read lock");
++
++        drop(generation);
++        let mut byte = [0; 1];
++        let closed = tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte))
++            .await
++            .expect("dropping the owned generation must close its incomplete response");
++        match closed {
++            Ok(0) => {}
++            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {}
++            other => panic!("generation connection still active: {other:?}"),
++        }
++    }
++    assert_eq!(
++        llm.llm_capabilities().await.provider_specific["model"],
++        json!(model)
++    );
++}
+--- a/packages/alia-server/src/providers/tts/gpt_sovits.rs
++++ b/packages/alia-server/src/providers/tts/gpt_sovits.rs
+@@ -760,23 +760,32 @@
+     value: &str,
+     timeout: Duration,
+ ) -> anyhow::Result<()> {
+-    let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4())?;
+-    let reservation = budget.reserve(ERROR_BODY_BYTES).await?;
+-    let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
+-    let response = client
+-        .get(format!("{base}/{path}"))
+-        .query(&[(param, value)])
+-        .timeout(timeout)
+-        .send()
+-        .await?;
+-
+-    if !response.status().is_success() {
+-        let status = response.status();
+-        let body = error_body(response, &reservation).await;
+-        anyhow::bail!("GPT-SoVITS {path} failed {status}: {body}");
+-    }
+-
+-    Ok(())
++    // Settings must not wait for audio capacity outside the request deadline.
++    tokio::time::timeout(timeout, async {
++        let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4())?;
++        let reservation = budget.reserve(ERROR_BODY_BYTES).await?;
++        let base = endpoint.trim_end_matches("/tts").trim_end_matches('/');
++        let response = client
++            .get(format!("{base}/{path}"))
++            .query(&[(param, value)])
++            .send()
++            .await?;
++
++        if !response.status().is_success() {
++            let status = response.status();
++            let body = error_body(response, &reservation).await;
++            anyhow::bail!("GPT-SoVITS {path} failed {status}: {body}");
++        }
++
++        Ok(())
++    })
++    .await
++    .map_err(|_| {
++        anyhow::anyhow!(
++            "GPT-SoVITS {path} timed out after {}ms including audio capacity admission",
++            timeout.as_millis()
++        )
++    })?
+ }
+ 
+ #[async_trait]
+@@ -1107,6 +1116,7 @@
+ #[cfg(test)]
+ mod tests {
+     mod http;
++    mod settings_waits;
+     use super::*;
+     use crate::expression::ProsodyControls;
+ 
+--- /dev/null
++++ b/packages/alia-server/src/providers/tts/gpt_sovits/tests/settings_waits.rs
+@@ -0,0 +1,147 @@
++//! Isolated admission tests own the real global budget without allocating audio.
++use super::*;
++use crate::modules::delivery::audio::{AudioReservation, MAX_GLOBAL_ENCODED_BYTES};
++use futures::poll;
++use std::{future::Future, task::Poll};
++
++fn isolated_budget_case(name: &str, case: impl Future<Output = ()>) {
++    const CHILD: &str = "ALIA_SOVITS_SETTINGS_BUDGET_TEST";
++    let name = name.strip_prefix("alia_server::").unwrap();
++    if std::env::var(CHILD).as_deref() == Ok(name) {
++        tokio::runtime::Builder::new_current_thread()
++            .enable_all()
++            .start_paused(true)
++            .build()
++            .unwrap()
++            .block_on(case);
++        return;
++    }
++
++    // A separate process prevents quota exhaustion from blocking parallel tests.
++    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
++        .args(["--exact", name, "--nocapture"])
++        .env(CHILD, name)
++        .spawn()
++        .unwrap();
++    let deadline = std::time::Instant::now() + Duration::from_secs(10);
++    loop {
++        match child.try_wait() {
++            Ok(Some(status)) => {
++                assert!(status.success(), "isolated SoVITS budget case failed");
++                return;
++            }
++            Ok(None) if std::time::Instant::now() < deadline => {
++                std::thread::sleep(Duration::from_millis(10));
++            }
++            outcome => {
++                let _ = child.kill();
++                let joined = child.wait();
++                panic!("SoVITS budget child did not finish: {outcome:?}; joined: {joined:?}");
++            }
++        }
++    }
++}
++
++async fn reserve_global_capacity() -> Vec<AudioReservation> {
++    let mut held = Vec::new();
++    for _ in 0..MAX_GLOBAL_ENCODED_BYTES / MAX_RESPONSE_ENCODED_BYTES {
++        let budget = ResponseAudioBudget::for_standalone_request(uuid::Uuid::new_v4()).unwrap();
++        for _ in 0..MAX_RESPONSE_ENCODED_BYTES / MAX_ENCODED_PAYLOAD_BYTES {
++            held.push(budget.reserve(MAX_ENCODED_PAYLOAD_BYTES).await.unwrap());
++        }
++    }
++    held
++}
++
++#[test]
++fn weight_setup_deadline_includes_audio_capacity_admission() {
++    isolated_budget_case(
++        concat!(
++            module_path!(),
++            "::weight_setup_deadline_includes_audio_capacity_admission"
++        ),
++        async {
++            let held = reserve_global_capacity().await;
++            let client = Client::new();
++            let mut operation = Box::pin(tokio::task::unconstrained(set_remote_weights(
++                &client,
++                "http://127.0.0.1:9/tts",
++                "set_gpt_weights",
++                "weights_path",
++                "test.ckpt",
++                Duration::from_millis(100),
++            )));
++            assert!(poll!(operation.as_mut()).is_pending());
++            tokio::time::advance(Duration::from_millis(101)).await;
++            let Poll::Ready(result) = poll!(operation.as_mut()) else {
++                panic!("weight setup deadline must include its audio capacity wait");
++            };
++            assert!(
++                result.is_err(),
++                "quota exhaustion must not report remote success"
++            );
++            drop((operation, held));
++            let reclaimed = tokio::time::timeout(Duration::from_secs(1), reserve_global_capacity())
++                .await
++                .expect("expired weight setup retained audio capacity");
++            assert_eq!(
++                reclaimed.len(),
++                MAX_GLOBAL_ENCODED_BYTES / MAX_ENCODED_PAYLOAD_BYTES
++            );
++        },
++    );
++}
++
++#[test]
++fn cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity() {
++    isolated_budget_case(
++        concat!(
++            module_path!(),
++            "::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity"
++        ),
++        async {
++            let held = reserve_global_capacity().await;
++            let tts = GptSovitsTts::new(
++                &GptSovitsProviderSection::default(),
++                "default",
++                &BTreeMap::new(),
++                &BTreeMap::new(),
++            );
++            let updates = BTreeMap::from([
++                (
++                    "core.providers.gpt_sovits.endpoint".to_owned(),
++                    serde_json::json!("http://127.0.0.1:9/tts"),
++                ),
++                (
++                    "core.profiles.voice.default.provider_specific.gpt_weights_path".to_owned(),
++                    serde_json::json!("new-local.ckpt"),
++                ),
++            ]);
++            let mut operation = Box::pin(tokio::task::unconstrained(tts.apply_settings(&updates)));
++            assert!(poll!(operation.as_mut()).is_pending());
++            assert_eq!(
++                tts.config
++                    .read()
++                    .await
++                    .default_profile
++                    .gpt_weights_path
++                    .as_deref(),
++                Some("new-local.ckpt")
++            );
++            drop(operation);
++            assert_eq!(
++                tts.config.read().await.endpoint,
++                "http://127.0.0.1:9/tts",
++                "cancelling remote setup must not roll back local configuration"
++            );
++            drop(held);
++            let reclaimed = tokio::time::timeout(Duration::from_secs(1), reserve_global_capacity())
++                .await
++                .expect("cancelled settings apply retained audio capacity");
++            assert_eq!(
++                reclaimed.len(),
++                MAX_GLOBAL_ENCODED_BYTES / MAX_ENCODED_PAYLOAD_BYTES
++            );
++        },
++    );
++}
+--- a/packages/alia-server/tests/server_runtime.rs
++++ b/packages/alia-server/tests/server_runtime.rs
+@@ -66,6 +66,9 @@
+ 
+ #[path = "server_runtime/settings_read_authorization.rs"]
+ mod settings_read_authorization;
++
++#[path = "server_runtime/settings_shutdown.rs"]
++mod settings_shutdown;
+ 
+ #[path = "server_runtime/embedding_profile.rs"]
+ mod embedding_profile;
+--- /dev/null
++++ b/packages/alia-server/tests/server_runtime/settings_shutdown.rs
+@@ -0,0 +1,286 @@
++//! A buffered HTTP request must not keep Settings alive after server shutdown.
++use super::*;
++use serde_json::{Value, json};
++use std::collections::BTreeMap;
++use tokio::io::AsyncWriteExt;
++
++const VALUE: &str = "plugin.settings_shutdown.value";
++
++struct ApplyGate {
++    entered: Semaphore,
++    release: Semaphore,
++    dropped: Semaphore,
++    active: AtomicUsize,
++    values: Mutex<Vec<Value>>,
++}
++
++impl ApplyGate {
++    fn new() -> Arc<Self> {
++        Arc::new(Self {
++            entered: Semaphore::new(0),
++            release: Semaphore::new(0),
++            dropped: Semaphore::new(0),
++            active: AtomicUsize::new(0),
++            values: Mutex::new(Vec::new()),
++        })
++    }
++}
++
++struct ApplyDrop(Arc<ApplyGate>);
++
++impl Drop for ApplyDrop {
++    fn drop(&mut self) {
++        self.0.active.fetch_sub(1, Ordering::SeqCst);
++        self.0.dropped.add_permits(1);
++    }
++}
++
++struct HangingSettings(Arc<ApplyGate>);
++
++#[async_trait]
++impl ModuleLifecycle for HangingSettings {
++    fn name(&self) -> &'static str {
++        "settings-shutdown-probe"
++    }
++
++    async fn apply_settings(
++        &self,
++        updates: &BTreeMap<String, Value>,
++    ) -> anyhow::Result<Vec<String>> {
++        let Some(value) = updates.get(VALUE) else {
++            return Ok(Vec::new());
++        };
++        self.0.values.lock().unwrap().push(value.clone());
++        self.0.active.fetch_add(1, Ordering::SeqCst);
++        let _drop = ApplyDrop(self.0.clone());
++        self.0.entered.add_permits(1);
++        self.0.release.acquire().await.unwrap().forget();
++        Ok(vec![VALUE.into()])
++    }
++}
++
++async fn apply_exit(disconnect: bool) {
++    with_fixture(move |f| async move {
++        let probe = ApplyGate::new();
++        let runtime = f
++            .builder()
++            .with_extension(HangingSettings(probe.clone()))
++            .build()
++            .await
++            .unwrap();
++        let state = runtime.state().clone();
++        let address = runtime.http_addr();
++        let grpc = runtime.grpc_addr();
++        let shutdown = runtime.shutdown_handle();
++        let stop = state.cancel_token.clone();
++        let mut serving = tokio::spawn(runtime.run());
++        let mut socket = None;
++        let assertions = AssertUnwindSafe(async {
++            let (_, token) = delivery::account(&state, "admin").await;
++            let initial = state.modules.context.policy_store().current().await.unwrap();
++            assert!(!initial.policy.memory_enabled);
++            state.settings.set(VALUE, json!(1)).await;
++            state.settings.save().await.unwrap();
++            let path = f.dir.join("settings.toml");
++            let original = std::fs::read(&path).unwrap();
++            let body = json!({
++                (VALUE): 2,
++                "core.policies.memory.enabled": true,
++            })
++            .to_string();
++            // Buffered pipeline bytes prevent relying only on a later socket read
++            // to wake Hyper while the first response is waiting in application code.
++            let mut wire = format!(
++                "PATCH /api/v1/settings HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
++                body.len(),
++            );
++            if !disconnect {
++                wire.push_str(&format!(
++                    "GET /api/v1/health HTTP/1.1\r\nHost: {address}\r\n\r\n",
++                ));
++            }
++            socket = Some(tokio::net::TcpStream::connect(address).await.unwrap());
++            socket.as_mut().unwrap().write_all(wire.as_bytes()).await.unwrap();
++            signalled(&probe.entered).await;
++            assert_eq!(probe.active.load(Ordering::SeqCst), 1);
++            assert_eq!(*probe.values.lock().unwrap(), [json!(2)]);
++            assert!(state.settings.lock_updates().now_or_never().is_none());
++            assert_eq!(state.settings.get(VALUE).await, Some(json!(2)));
++            let committed = state.modules.context.policy_store().current().await.unwrap();
++            assert_eq!(committed.version, initial.version + 1);
++            assert!(committed.policy.memory_enabled);
++
++            if disconnect {
++                drop(socket.take());
++            } else {
++                stop.cancel();
++                tokio::time::timeout(Duration::from_secs(1), shutdown.wait())
++                    .await
++                    .expect("buffered Settings handler must not block runtime shutdown")
++                    .unwrap();
++                assert!(shutdown.is_finished());
++            }
++            tokio::time::timeout(Duration::from_secs(1), probe.dropped.acquire())
++                .await
++                .expect("the server apply future must actually drop")
++                .unwrap()
++                .forget();
++            assert_eq!(probe.active.load(Ordering::SeqCst), 0);
++            assert_eq!(probe.release.available_permits(), 0);
++            assert_eq!(state.runtime_tasks.active(), 0);
++            let gate = tokio::time::timeout(Duration::from_secs(1), state.settings.lock_updates())
++                .await
++                .expect("cancelled handler must release the Settings gate");
++            drop(gate);
++            assert_eq!(*probe.values.lock().unwrap(), [json!(2)]);
++            assert_eq!(state.settings.get(VALUE).await, Some(json!(2)));
++            assert_eq!(std::fs::read(&path).unwrap(), original);
++            let after = state.modules.context.policy_store().current().await.unwrap();
++            assert_eq!(after.version, committed.version);
++            assert!(after.policy.memory_enabled);
++            eprintln!(
++                "[settings-apply-exit] disconnect={disconnect} apply_dropped=1 active_tasks=0 desired_preserved=true sql_version={} file_unchanged=true",
++                after.version,
++            );
++            if disconnect {
++                assert!(!stop.is_cancelled());
++                assert!(!serving.is_finished());
++                probe.release.add_permits(1);
++                let retried = skills::response(
++                    skills::client()
++                        .patch(format!("http://{address}/api/v1/settings"))
++                        .bearer_auth(&token)
++                        .header("content-type", "application/json")
++                        .body(body),
++                    200,
++                )
++                .await;
++                assert_eq!(retried["success"], true, "{retried}");
++                assert!(retried["changed"].as_array().unwrap().is_empty());
++                assert_eq!(*probe.values.lock().unwrap(), [json!(2), json!(2)]);
++                let saved: BTreeMap<String, Value> =
++                    toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
++                assert_eq!(saved.get(VALUE), Some(&json!(2)));
++            } else {
++                let _http = tokio::net::TcpListener::bind(address).await.unwrap();
++                if let Some(address) = grpc {
++                    let _grpc = tokio::net::TcpListener::bind(address).await.unwrap();
++                }
++            }
++        })
++        .catch_unwind()
++        .await;
++
++        // Also release the unfixed baseline after RED so its owned cleanup joins.
++        probe.release.add_permits(1);
++        drop(socket);
++        stop.cancel();
++        let cleanup = tokio::time::timeout(Duration::from_secs(5), shutdown.wait()).await;
++        let joined = tokio::time::timeout(Duration::from_secs(5), &mut serving).await;
++        if joined.is_err() {
++            serving.abort();
++            let _ = serving.await;
++        }
++        cleanup.expect("Settings cleanup must remain joinable").unwrap();
++        joined.expect("Settings runtime owner must join").unwrap().unwrap();
++        assert_eq!(probe.active.load(Ordering::SeqCst), 0);
++        if let Err(error) = assertions {
++            std::panic::resume_unwind(error);
++        }
++    })
++    .await;
++}
++
++#[tokio::test]
++async fn shutdown_drops_pipelined_settings_apply_and_preserves_partial_outcome() {
++    apply_exit(false).await;
++}
++
++#[tokio::test]
++async fn client_disconnect_drops_apply_and_same_value_retry_completes() {
++    apply_exit(true).await;
++}
++
++#[tokio::test]
++async fn shutdown_releases_privacy_gate_while_waiting_for_shared_policy_lock() {
++    with_fixture(|f| async move {
++        let runtime = f.builder().build().await.unwrap();
++        let state = runtime.state().clone();
++        let address = runtime.http_addr();
++        let shutdown = runtime.shutdown_handle();
++        let stop = state.cancel_token.clone();
++        let mut serving = tokio::spawn(runtime.run());
++        let mut blocker = None;
++        let mut socket = None;
++        let assertions = AssertUnwindSafe(async {
++            let (_, token) = delivery::account(&state, "admin").await;
++            let initial = state.modules.context.policy_store().current().await.unwrap();
++            assert!(!initial.policy.memory_enabled);
++            state.settings.save().await.unwrap();
++            let path = f.dir.join("settings.toml");
++            let original = std::fs::read(&path).unwrap();
++            blocker = Some(state.interaction_policies.write().await);
++            let body = json!({"enabled": true}).to_string();
++            let wire = format!(
++                "PATCH /api/v1/memories/privacy HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
++                body.len(),
++            );
++            socket = Some(tokio::net::TcpStream::connect(address).await.unwrap());
++            socket.as_mut().unwrap().write_all(wire.as_bytes()).await.unwrap();
++            // Privacy projects SQL into the registry immediately before awaiting
++            // the policy lock held above. Observe this actual stage, not a delay.
++            tokio::time::timeout(Duration::from_secs(1), async {
++                while state.settings.get("core.policies.memory.enabled").await != Some(json!(true)) {
++                    tokio::task::yield_now().await;
++                }
++            })
++            .await
++            .expect("privacy request must commit and reach the shared policy lock");
++            let committed = state.modules.context.policy_store().current().await.unwrap();
++            assert_eq!(committed.version, initial.version + 1);
++            assert!(committed.policy.memory_enabled);
++            assert!(state.settings.lock_updates().now_or_never().is_none());
++            assert!(!blocker.as_ref().unwrap().memory.enabled);
++
++            stop.cancel();
++            let gate = tokio::time::timeout(Duration::from_secs(1), state.settings.lock_updates())
++                .await
++                .expect("shutdown must drop the privacy handler and release update admission");
++            // The policy write lock is still held: this handler could not have
++            // completed normally and acquired the lock to apply its projection.
++            assert!(!blocker.as_ref().unwrap().memory.enabled);
++            assert_eq!(state.settings.get("core.policies.memory.enabled").await, Some(json!(true)));
++            assert_eq!(std::fs::read(&path).unwrap(), original);
++            let after = state.modules.context.policy_store().current().await.unwrap();
++            assert_eq!(after.version, committed.version);
++            assert!(after.policy.memory_enabled);
++            drop(gate);
++            blocker.take();
++            tokio::time::timeout(Duration::from_secs(1), shutdown.wait())
++                .await
++                .expect("shared-lock Settings shutdown must join")
++                .unwrap();
++            assert!(shutdown.is_finished());
++            assert_eq!(state.runtime_tasks.active(), 0);
++            eprintln!("[settings-shared-lock] privacy_sql_preserved=true registry_projection_preserved=true file_unchanged=true update_gate_released=true active_tasks=0");
++        })
++        .catch_unwind()
++        .await;
++
++        blocker.take();
++        drop(socket);
++        stop.cancel();
++        let cleanup = tokio::time::timeout(Duration::from_secs(5), shutdown.wait()).await;
++        let joined = tokio::time::timeout(Duration::from_secs(5), &mut serving).await;
++        if joined.is_err() {
++            serving.abort();
++            let _ = serving.await;
++        }
++        cleanup.expect("privacy cleanup must remain joinable").unwrap();
++        joined.expect("privacy runtime owner must join").unwrap().unwrap();
++        if let Err(error) = assertions {
++            std::panic::resume_unwind(error);
++        }
++    })
++    .await;
++}

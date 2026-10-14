@@ -1,0 +1,24 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--offline",
+    "--locked",
+    "--test",
+    "server_runtime",
+    "settings_shutdown::shutdown_drops_pipelined_settings_apply_and_preserves_partial_outcome",
+    "--",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-14T16:35:02.961306+00:00",
+  "elapsed_seconds": 19.97,
+  "exit_code": 0,
+  "source_manifest_sha256": "6c15c1053908e4cf9c3fca572798cd73aef50ad9f82e099df65fbdc9e4d78490",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL and temporary SQLite",
+  "build_jobs": 2
+}

@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-14T16:49:16.808155+00:00",
+  "file": "packages/alia-server/src/providers/llm/mod.rs",
+  "before_sha256": "0fb5129fe761fdce30050063d4287119cedd7a387511a2afba71ad04a93483c0",
+  "after_sha256": "6c4618d5e9838c9634afae64de3dd9f8bbd7849d8047b5f98a26132a54537d8c",
+  "transformation": "rustfmt 2024 expands cfg(any(...)) onto multiple lines; exact byte replacement checked; only indentation/newlines differ",
+  "production_or_test_logic_changed": false,
+  "all_other_inputs_identical": true,
+  "inputs": 669,
+  "green_manifest_sha256": "2b4524993978bcc30c675b4ffc8bd2b2757e8b2250ebdddbcc912932d9fd105e",
+  "final_manifest_sha256": "313671a7cee06b5485bd1f2eb9e895cc23ee347e0ced02eb87ae758e6b7b24ce"
+}

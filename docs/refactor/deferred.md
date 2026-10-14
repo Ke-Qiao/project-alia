@@ -258,3 +258,13 @@ macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798
 ## 2026-10-14：R02 R1 硬件参考与 consumer 前置
 
 已重新读取官方公开资料并核对现有采播/speech/单 reader 路径，详见 [R1 前置记录](r02-r1-aec-preflight.md)。这是信息门槛核对，不是取消 R02：板/固件与厂商资料、实际端点/通道/格式、功放参考电气、模式和延迟仍待补齐。用户已确认硬件AEC优先路线；上述实物/厂商与输出链资料仍未确定。Pi使用SSH连接仅说明访问方式，不是R1接入或音频就绪证据；本次不新增设备动作。若硬件 processed mono 满足需求则复用现有转换/speech，只有明确需要软件 AEC 时才选择算法和帧/owner 契约。保持真实音频禁用、R03暂停及 R05 现场门槛；本轮没有生产源码或依赖改动。
+
+## 2026-10-15：Settings 等待与关闭软件收尾
+
+- [x] 本软件包10/10，源码`4e99134`。三个LLM持锁慢请求与SoVITS额度期限缺口经RED复现后修复；真实HTTP/1 pipeline关闭、客户端断开后同值重试及privacy共享policy锁关闭通过。Server全目标868/0/5；格式后provider51/0/0与无默认all-targets检查、669提交输入匹配，见[恢复检查点](resume-checkpoint-settings-waits-2026-10-15.md)。
+- [x] 本轮独立PostgreSQL已清理。用户授权共享运行时启动，实际命令返回already running；其它共享服务/OrbStack保持运行，没有扩大硬件范围。
+- [ ] 整体Settings没有统一期限；同步文件I/O无法被Tokio抢占，任意扩展与真实模型副作用/取消仍需对应部署验证。本轮不预建全局超时或回滚机制。纯GET/PATCH update gate排队没有独立HTTP阶段见证，已有Registry入队/持锁取消与静态顺序证据保持。
+- [ ] V01仍开放；本次整包通过不证明历史配对超时根因已修复。可信服务账户、部署目录/文件系统、staging启停、真实模型和长稳仍待既有部署步骤。
+- [ ] R02硬件AEC优先已确认，但R1实物/固件、厂商资料与输出/参考链仍待补齐；R03后续继续用户暂停。R05及其它既定延期不变，本轮没有Linux应用、Embedded/Pi或现场声学/机械验收。
+
+最新恢复从[Settings收尾检查点](resume-checkpoint-settings-waits-2026-10-15.md)继续。四份HANDOFF和证据已保存，前述历史“Settings剩余故障”中慢模型锁、权重额度期限与本轮HTTP/1关闭场景已由本包覆盖，其余边界如上，不把它们统称为用户明确延期。

@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-14T16:31:23.820273+00:00",
+  "container_id": "0aff1b531b5d2a3323f5f617f30307c570668f16f0924619ceb741d41d078a9c",
+  "published": "127.0.0.1:32769",
+  "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+  "command": [
+    "docker",
+    "run",
+    "-d",
+    "--pull=never",
+    "--name",
+    "alia-settings-waits-20261015-db",
+    "--label",
+    "alia.validation=settings-waits-20261015",
+    "-e",
+    "POSTGRES_USER=alia_test",
+    "-e",
+    "POSTGRES_PASSWORD=alia_test",
+    "-e",
+    "POSTGRES_DB=alia_settings_waits_20261015",
+    "-p",
+    "127.0.0.1::5432",
+    "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3"
+  ],
+  "other_services_modified": false
+}

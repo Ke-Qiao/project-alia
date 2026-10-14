@@ -1,0 +1,71 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.56s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 51 tests
+test providers::llm::gemini::tests::gemini_stream_url_uses_sse_endpoint ... ok
+test providers::llm::anthropic::tests::anthropic_stream_text_ignores_non_text_events ... ok
+test providers::llm::anthropic::tests::anthropic_stream_text_extracts_text_delta ... ok
+test providers::llm::errors::tests::classifies_common_http_errors ... ok
+test providers::llm::anthropic::tests::anthropic_stream_aggregate_collects_tool_call_arguments ... ok
+test providers::llm::gemini::tests::gemini_stream_text_extracts_candidate_parts ... ok
+test providers::llm::gemini::tests::gemini_stream_aggregate_collects_function_calls ... ok
+test providers::llm::openai::tests::openai_stream_text_ignores_done_marker ... ok
+test providers::llm::openai::tests::parses_responses_output_text_and_function_call ... ok
+test providers::llm::openai::tests::responses_stream_text_extracts_delta ... ok
+test providers::llm::openai::tests::openai_stream_text_extracts_delta_content ... ok
+test providers::llm::openai::tests::openai_stream_aggregate_collects_tool_call_arguments ... ok
+test providers::llm::response::tests::composed_model_labels_retain_each_actual_provider_once ... ok
+test providers::llm::response::tests::json_object_slices_handles_braces_inside_strings ... ok
+test providers::llm::streaming::tests::joins_multiline_data ... ok
+test providers::llm::streaming::tests::decodes_split_sse_event ... ok
+test providers::stt::whisper::tests::parses_verbose_json_segment_quality_metadata ... ok
+test providers::embedding::openai::tests::identified_settings_reject_wrong_types_and_leave_configuration_unchanged ... ok
+test providers::llm::openai::tests::health_probe_connection_refusal_is_distinct_and_redacted ... ok
+test providers::llm::gemini::tests::health_probe_connection_refusal_is_distinct_and_redacted ... ok
+test providers::embedding::openai::tests::preview_is_pure_and_credential_rotation_does_not_change_vector_identity ... ok
+test providers::tts::gpt_sovits::tests::http::pitch_does_not_rewrite_an_unproven_fixed_offset_or_accept_partial_header ... ok
+test providers::llm::gemini::tests::cancelled_health_probe_releases_its_stalled_connection ... ok
+test providers::tts::gpt_sovits::tests::http::dropped_http_stream_does_not_release_a_delivered_clone ... ok
+test providers::embedding::openai::tests::held_request_keeps_its_original_profile_and_settings_do_not_wait_for_network ... ok
+test providers::tts::gpt_sovits::tests::http::cancelling_partial_body_and_dropping_unpolled_stream_release_credits ... ok
+test providers::tts::gpt_sovits::tests::http::error_body_stops_at_four_kib_without_waiting_for_eof ... ok
+test providers::tts::gpt_sovits::tests::pause_bias_expands_fragment_interval ... ok
+test providers::tts::gpt_sovits::tests::pitch_degradation_is_reported_as_provider_adjustment ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_mapping_requires_sample_rate_fallback_opt_in ... ok
+test providers::tts::gpt_sovits::tests::pitch_shift_rewrites_wav_sample_rate ... ok
+test providers::tts::gpt_sovits::tests::prosody_maps_to_sovits_generation_params_with_limits ... ok
+test providers::tts::gpt_sovits::tests::http::oversized_content_length_rejects_without_consuming_a_body ... ok
+test providers::tts::gpt_sovits::tests::http::small_wav_buffered_and_fragmented_pitch_stream_keep_bytes_and_owner ... ok
+test providers::tts::gpt_sovits::tests::streaming_pitch_rewriter_buffers_until_wav_header_is_available ... ok
+test providers::embedding::openai::tests::malformed_provider_replies_never_acquire_a_profile ... ok
+test providers::llm::openai::tests::health_probe_preserves_http_status_without_disclosing_request_or_body ... ok
+test providers::llm::gemini::tests::health_probe_preserves_http_status_without_disclosing_request_or_body ... ok
+test providers::llm::anthropic::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... ok
+test providers::llm::gemini::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... ok
+test providers::llm::openai::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... ok
+test providers::tts::gpt_sovits::tests::http::unknown_length_buffered_body_rejects_cumulative_overflow ... ok
+
+running 1 test
+
+running 1 test
+test providers::tts::gpt_sovits::tests::http::unending_chunked_stream_has_a_total_bound_even_if_consumer_drops_every_chunk ... ok
+test providers::llm::gemini::tests::health_probe_default_disabled_and_missing_key_do_not_connect ... ok
+test providers::llm::openai::tests::health_probe_default_disabled_and_missing_key_do_not_connect ... ok
+test providers::tts::gpt_sovits::tests::http::remote_weights_wait_for_init_and_setup_failure_is_nonfatal ... ok
+test providers::embedding::openai::tests::total_request_deadline_covers_a_stalled_body_and_next_request_recovers ... ok
+test providers::tts::gpt_sovits::tests::http::incomplete_pitch_header_and_idle_timeout_are_errors_not_normal_eof ... ok
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... ok
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 2.56s
+
+; finished in 2.56s
+
+test providers::tts::gpt_sovits::tests::settings_waits::weight_setup_deadline_includes_audio_capacity_admission ... ok
+test providers::tts::gpt_sovits::tests::settings_waits::cancelling_weight_setup_keeps_local_settings_and_releases_queued_capacity ... ok
+test providers::llm::gemini::tests::stalled_health_probe_times_out_without_blocking_settings_updates ... ok
+
+test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 326 filtered out; finished in 6.33s
+

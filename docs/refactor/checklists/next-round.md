@@ -107,3 +107,9 @@
 ## 2026-10-12 Settings GET 身份重验证续轮
 
 本轮 **10/10**，源码 `d080710`，六轮仍 **2/6**。最后响应准入、GET六项和PATCH八项回归已同源双平台验收。最新恢复从 [GET检查点](../resume-checkpoint-settings-read-authorization-2026-10-12.md) 开始。下一软件候选：先审计 Settings GET/PATCH 共用 update gate 的排队、各阶段预算和取消所有权。current/final-auth 已有 2 秒，gate/preview/apply 等待尚未故障实证；区分准入前等待与 SQL/desired/module 已发生后的部分成功，不直接套整请求 timeout 或全局回滚，不把客户端断开等同 handler 已取消。
+
+## 2026-10-15 Settings 慢模型、额度与关闭收尾
+
+本软件包 **10/10**，源码`4e99134`；六轮仍 **2/6**。三个LLM配置快照、SoVITS权重额度期限、HTTP/1实际Drop与同值重试、privacy共享锁关闭证据已完成，保留政策/管理员边界/部分成功。Server868/0/5，格式后最终provider51/0/0与无默认检查通过，669提交输入匹配；见[恢复检查点](../resume-checkpoint-settings-waits-2026-10-15.md)。
+
+下一步按用户新指令选择已有软件/部署待办；V01根因、同步文件I/O不可抢占及可信部署边界仍开放，不自动延伸为Settings框架。R02继续硬件AEC优先与资料核对；R03后续暂停；R05必须等待实际音频/机构/部署出口。无新增硬件或外部模型授权。

@@ -1,0 +1,14 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.68s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 3 tests
+[settings-apply-exit] disconnect=true apply_dropped=1 active_tasks=0 desired_preserved=true sql_version=2 file_unchanged=true
+[settings-apply-exit] disconnect=false apply_dropped=1 active_tasks=0 desired_preserved=true sql_version=2 file_unchanged=true
+test settings_shutdown::shutdown_drops_pipelined_settings_apply_and_preserves_partial_outcome ... ok
+[settings-shared-lock] privacy_sql_preserved=true registry_projection_preserved=true file_unchanged=true update_gate_released=true active_tasks=0
+test settings_shutdown::shutdown_releases_privacy_gate_while_waiting_for_shared_policy_lock ... ok
+test settings_shutdown::client_disconnect_drops_apply_and_same_value_retry_completes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 78 filtered out; finished in 2.23s
+

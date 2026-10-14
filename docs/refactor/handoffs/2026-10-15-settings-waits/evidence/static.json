@@ -1,0 +1,48 @@
+{
+  "at": "2026-10-14T16:50:33.272269+00:00",
+  "checks": [
+    {
+      "name": "format-changed",
+      "command": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--check",
+        "--config",
+        "skip_children=true",
+        "packages/alia-server/src/providers/llm/anthropic.rs",
+        "packages/alia-server/src/providers/llm/gemini.rs",
+        "packages/alia-server/src/providers/llm/mod.rs",
+        "packages/alia-server/src/providers/llm/openai.rs",
+        "packages/alia-server/src/providers/llm/test_support.rs",
+        "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+        "packages/alia-server/src/providers/tts/gpt_sovits/tests/settings_waits.rs",
+        "packages/alia-server/tests/server_runtime.rs",
+        "packages/alia-server/tests/server_runtime/settings_shutdown.rs"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "changed_rust_files": [
+    "packages/alia-server/src/providers/llm/anthropic.rs",
+    "packages/alia-server/src/providers/llm/gemini.rs",
+    "packages/alia-server/src/providers/llm/mod.rs",
+    "packages/alia-server/src/providers/llm/openai.rs",
+    "packages/alia-server/src/providers/llm/test_support.rs",
+    "packages/alia-server/src/providers/tts/gpt_sovits.rs",
+    "packages/alia-server/src/providers/tts/gpt_sovits/tests/settings_waits.rs",
+    "packages/alia-server/tests/server_runtime.rs",
+    "packages/alia-server/tests/server_runtime/settings_shutdown.rs"
+  ],
+  "dependency_manifest_or_lock_changes": [],
+  "scope": "Changed Rust only; unrelated baseline workspace formatting was not rewritten"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-14T16:52:55.064879+00:00",
+  "source_commit": "4e9913414c68b4a78b52c472a04d5a2139785430",
+  "manifest_sha256": "313671a7cee06b5485bd1f2eb9e895cc23ee347e0ced02eb87ae758e6b7b24ce",
+  "checked_inputs": 669,
+  "mismatches": [],
+  "extra_inputs": [],
+  "missing_inputs": []
+}

@@ -1,0 +1,212 @@
+{
+  "at": "2026-10-14T16:54:32.351489+00:00",
+  "source_commit": "4e9913414c68b4a78b52c472a04d5a2139785430",
+  "entries": [
+    {
+      "path": "evidence/cleanup.json",
+      "bytes": 2088,
+      "sha256": "d668695945718d8182eaaa20081114a502e8fcbd7a7fe4213ea63b4911031f40"
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "bytes": 1605,
+      "sha256": "d05654219a2d2269439a259a2101187394ee0ad2602d68cc45edec2bfd6cf216"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 290,
+      "sha256": "4eac267e8f92a910f6220ab48224c6a8cf1a42779054c02c32ceb879bc9e30b8"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "bytes": 734,
+      "sha256": "87bc92ab4f826fc5f5e701a81a925c73c5bcfb2897f0c0119d502da37166504a"
+    },
+    {
+      "path": "evidence/diff-check.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/environment.json",
+      "bytes": 799,
+      "sha256": "e9bea25e26286b894b3c34633af1aaa79c8d567ad3a5cdc1854abf8f807479eb"
+    },
+    {
+      "path": "evidence/final-no-default.json",
+      "bytes": 555,
+      "sha256": "749dcc424d34a64a1ffa676b88ee7173b26a108861bf1283a3c36491138ef383"
+    },
+    {
+      "path": "evidence/final-no-default.log",
+      "bytes": 526,
+      "sha256": "703d49f87ca6c087b206af639b524349b95baa4bf035e4b69fadac95e796745c"
+    },
+    {
+      "path": "evidence/final-providers.json",
+      "bytes": 536,
+      "sha256": "7fd7e1cf0c653cd26c310a3f42a5b80a5b0968bb004921bc948225ec88b0a3f6"
+    },
+    {
+      "path": "evidence/final-providers.log",
+      "bytes": 6079,
+      "sha256": "bd63c6156b78e84f08ccde32f147ce887cf589f2840f4da90ab21cac1ee420f6"
+    },
+    {
+      "path": "evidence/final-source-manifest.json",
+      "bytes": 123175,
+      "sha256": "313671a7cee06b5485bd1f2eb9e895cc23ee347e0ced02eb87ae758e6b7b24ce"
+    },
+    {
+      "path": "evidence/final-source.patch",
+      "bytes": 35705,
+      "sha256": "c1d3d22ab2ff7d007b0a15491c7e7ae9e0227f9faa7756e56d4bf657e794b409"
+    },
+    {
+      "path": "evidence/format-changed-first.log",
+      "bytes": 349,
+      "sha256": "951f2dee0d86b01e89e023b9dd08710e870541799e37c888009f6037472925f9"
+    },
+    {
+      "path": "evidence/format-changed.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/format-only-transition.json",
+      "bytes": 713,
+      "sha256": "8a92ad58b7cda98d354850c0ba5d9f08d82f013794a92a3b8eb88216e52956f4"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "bytes": 1155,
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34"
+    },
+    {
+      "path": "evidence/green-providers.json",
+      "bytes": 565,
+      "sha256": "db02db711ecda230a327f0bd06d967a4311946b0a3fc5f70e00e79b2bfb90cf1"
+    },
+    {
+      "path": "evidence/green-providers.log",
+      "bytes": 6079,
+      "sha256": "a4c8272ec3444544600f410c3a22c2d206fd2f97fe41814c81f6c48661b304aa"
+    },
+    {
+      "path": "evidence/green-server.json",
+      "bytes": 548,
+      "sha256": "d3a8e1428764e6c02936b9511b3ca11d2848321a0dd530c0476351320e7dd0b3"
+    },
+    {
+      "path": "evidence/green-server.log",
+      "bytes": 94414,
+      "sha256": "44ec675eb665277730d9091035ff799a72c5e61466028bd8c8d62d14e0a5a9af"
+    },
+    {
+      "path": "evidence/green-shutdown.json",
+      "bytes": 596,
+      "sha256": "16ea31afd7030d16d9b136dce243fffa93341ed0598fd2f4ea59e913ed708ebd"
+    },
+    {
+      "path": "evidence/green-shutdown.log",
+      "bytes": 1061,
+      "sha256": "b885593f470170fd4aeb034a4afc6e8e292b6157545e23821ce0a68528ff3557"
+    },
+    {
+      "path": "evidence/green-source-manifest.json",
+      "bytes": 123175,
+      "sha256": "2b4524993978bcc30c675b4ffc8bd2b2757e8b2250ebdddbcc912932d9fd105e"
+    },
+    {
+      "path": "evidence/red-audio.json",
+      "bytes": 523,
+      "sha256": "b8173814a2a2c0a233df9477d448ae4a83e461f82949e3c0c98b8022f517c906"
+    },
+    {
+      "path": "evidence/red-audio.log",
+      "bytes": 2040,
+      "sha256": "ed8a3c978945746fa32ed2a4b5f799ca5bc0134d524428e0ce93c953bd835abd"
+    },
+    {
+      "path": "evidence/red-model.json",
+      "bytes": 582,
+      "sha256": "042382513731da45129809ae8fcc71ae5f60371abab97b3832169a2c62291a45"
+    },
+    {
+      "path": "evidence/red-model.log",
+      "bytes": 2063,
+      "sha256": "fdad66da3647d273f8c6ba3070e59de93a5cbaab0cedf7658859a856894c8b44"
+    },
+    {
+      "path": "evidence/red-reconstruction.json",
+      "bytes": 548,
+      "sha256": "194c9d2426a71f6c8a52b36b98e73325c6765352d11fb1c686e008099294b518"
+    },
+    {
+      "path": "evidence/red-shutdown.json",
+      "bytes": 619,
+      "sha256": "9bbcbcd212d83d1dbfd9191696a4a2f42e37efd1ee53cfdf60a325f63c4b9131"
+    },
+    {
+      "path": "evidence/red-shutdown.log",
+      "bytes": 592,
+      "sha256": "30479391e82d2bb1e2eba3c9f58800545e9e1c5d328d4505649a3a8846ce0626"
+    },
+    {
+      "path": "evidence/red-source-manifest.json",
+      "bytes": 123174,
+      "sha256": "6c15c1053908e4cf9c3fca572798cd73aef50ad9f82e099df65fbdc9e4d78490"
+    },
+    {
+      "path": "evidence/red-source.patch",
+      "bytes": 21531,
+      "sha256": "65a45d5cd22cd25cfef0165b9125fff386125fcae79b20cc2db799d108c673e5"
+    },
+    {
+      "path": "evidence/runtime-start.json",
+      "bytes": 447,
+      "sha256": "782022db967e1657f366429f83126ef8160526bcb81458c00df7af2128766de8"
+    },
+    {
+      "path": "evidence/static-first.json",
+      "bytes": 1726,
+      "sha256": "11b889ef76cb46626ec12f567b25e450d241fc3ec1530209f269ddbfac2d724a"
+    },
+    {
+      "path": "evidence/static.json",
+      "bytes": 1722,
+      "sha256": "3fd5e1e6975e48bd62932c6c92a82c9d7e5ec7de9c3390c59c3301f89fcbeb96"
+    },
+    {
+      "path": "evidence/summarize.py",
+      "bytes": 2021,
+      "sha256": "feb84427cb361c9be9a3289f771fec7a242da0f22303676afaf7b22ac9f2b1ea"
+    },
+    {
+      "path": "evidence/validate.py",
+      "bytes": 2394,
+      "sha256": "289e4fe6fc7e78d00e1025bd2659088d3a79a60c9847a49e1158ed689aab2cc5"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "bytes": 12142,
+      "sha256": "624585d58fa3f0034bf92935577a89417221bb38502ed9345f03ba5c4c285b1b"
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "bytes": 1626,
+      "sha256": "7b9c2c2dc3025931e3bb436523824b122205348de24789e0d2b4274afff72dd3"
+    },
+    {
+      "path": "evidence/documentation-validation.json",
+      "bytes": 842,
+      "sha256": "98f4b2196d6414161075096b4fdab40b3fc0a44b68827bc3fe03142ab8b617bb"
+    }
+  ],
+  "notes": [
+    "Full Server run uses green manifest; final source differs only by verified cfg formatting.",
+    "Final provider tests and no-default check use final manifest; commit blobs match final manifest.",
+    "Database metadata on unit test records means endpoint availability, not a claim the unit tests used PostgreSQL.",
+    "Unrelated shared-service labels/paths and approval dialogue remain only in ignored run directory."
+  ]
+}

@@ -1,0 +1,30 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 41.82s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 3 tests
+
+thread 'providers::llm::gemini::tests::stalled_generation_does_not_block_settings_and_cancels_connection' (3946829) panicked at packages/alia-server/src/providers/llm/test_support.rs:112:10:
+stalled generation must not retain the settings read lock: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'providers::llm::anthropic::tests::stalled_generation_does_not_block_settings_and_cancels_connection' (3946828) panicked at packages/alia-server/src/providers/llm/test_support.rs:112:10:
+stalled generation must not retain the settings read lock: Elapsed(())
+test providers::llm::gemini::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... FAILED
+
+thread 'providers::llm::openai::tests::stalled_generation_does_not_block_settings_and_cancels_connection' (3946830) panicked at packages/alia-server/src/providers/llm/test_support.rs:112:10:
+stalled generation must not retain the settings read lock: Elapsed(())
+test providers::llm::anthropic::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... FAILED
+test providers::llm::openai::tests::stalled_generation_does_not_block_settings_and_cancels_connection ... FAILED
+
+failures:
+
+failures:
+    providers::llm::anthropic::tests::stalled_generation_does_not_block_settings_and_cancels_connection
+    providers::llm::gemini::tests::stalled_generation_does_not_block_settings_and_cancels_connection
+    providers::llm::openai::tests::stalled_generation_does_not_block_settings_and_cancels_connection
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 374 filtered out; finished in 2.31s
+
+error: test failed, to rerun pass `-p alia-server --lib`

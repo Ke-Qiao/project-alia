@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-15：Settings 慢模型、额度与关闭收尾10/10，六轮仍2/6。** 源码`4e99134`；三个provider每请求完整配置快照、SoVITS权重期限包含额度准入，已复现缺口关闭。现有HTTP/1关闭基线通过，保留API/Runtime；新增真实断开重试和privacy共享锁关闭证据。Server整包868/0/5，随后仅cfg换行，最终provider51/0/0、无默认检查及669提交输入核对通过；具体版本边界见[恢复检查点](resume-checkpoint-settings-waits-2026-10-15.md)和[证据](handoffs/2026-10-15-settings-waits/README.md)。任务DB已删除，共享运行时保留；R03暂停、R02硬件资料与R05现场门槛不变。以下为历史。
+
 **2026-10-14：R02 R1 硬件参考路由与 consumer 前置核对10/10。** 本轮仅文档和官方公开来源核验，音频实现仍为`28920fb`，六轮仍2/6。公开处理后mono UAC与功放参考分离；实际板/固件、电气、模式、格式/声道和延迟待补。用户已确认硬件AEC优先，实物/固件和输出链资料仍未确定；Pi的SSH访问不代表R1接入，不预建软件AEC，R03暂停。当前恢复从[R1检查点](resume-checkpoint-r02-r1-2026-10-14.md)开始，见[本轮checklist](checklists/r02-r1-2026-10-14.md)。以下为历史。
 
 **2026-10-14：R02 时钟/参考缺口/consumer帧需求审计10/10，六轮仍2/6。** 实现`28920fb`；整批native时钟与私有分块发布统一，sample回退及历史replay时钟提示缺口已修复，AEC帧/漂移/对齐条件明确。真实RED3项；同源默认Embedded335/0/0、无默认260/0/0（重复）、实际CLI两项通过，666提交输入匹配。首轮loopback沙箱43项EPERM与成功重跑分别保留；R03暂停，没有新增依赖/算法或硬件操作。见[当前检查点](resume-checkpoint-r02-clock-2026-10-14.md)及[四份HANDOFF/证据](handoffs/2026-10-14-r02-clock/README.md)。以下为历史。
