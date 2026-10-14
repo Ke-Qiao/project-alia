@@ -1,0 +1,256 @@
+diff --git a/packages/alia-embedded/src/module/audio_evidence/tests.rs b/packages/alia-embedded/src/module/audio_evidence/tests.rs
+index fa1d00b..f8080b0 100644
+--- a/packages/alia-embedded/src/module/audio_evidence/tests.rs
++++ b/packages/alia-embedded/src/module/audio_evidence/tests.rs
+@@ -320,6 +320,144 @@ fn replay_preserves_marker_pcm_interleaving_and_resets_on_gaps_without_zero_fill
+     );
+ }
+ 
++#[test]
++fn historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples() {
++    use AudioTimeQuality::{BackendEstimate, Unknown};
++
++    // No producer marker is assumed: previously exported files can carry a
++    // clock change while sequence, frames and continuity remain consecutive.
++    // Every pair must remain importable, with its original PCM and clock data.
++    let cases = [
++        (
++            "quality lost",
++            BackendEstimate,
++            Unknown,
++            Some(1000),
++            Some(2000),
++            Some(500),
++            Some(1500),
++        ),
++        (
++            "quality restored",
++            Unknown,
++            BackendEstimate,
++            Some(1000),
++            Some(2000),
++            Some(500),
++            Some(1500),
++        ),
++        (
++            "callback missing",
++            Unknown,
++            Unknown,
++            Some(1000),
++            None,
++            Some(500),
++            Some(1500),
++        ),
++        (
++            "callback restored",
++            Unknown,
++            Unknown,
++            None,
++            Some(2000),
++            Some(500),
++            Some(1500),
++        ),
++        (
++            "sample missing",
++            Unknown,
++            Unknown,
++            Some(1000),
++            Some(2000),
++            Some(500),
++            None,
++        ),
++        (
++            "sample restored",
++            Unknown,
++            Unknown,
++            Some(1000),
++            Some(2000),
++            None,
++            Some(1500),
++        ),
++        (
++            "callback regressed",
++            BackendEstimate,
++            BackendEstimate,
++            Some(1000),
++            Some(999),
++            Some(500),
++            Some(1500),
++        ),
++        (
++            "sample regressed",
++            BackendEstimate,
++            BackendEstimate,
++            Some(1000),
++            Some(2000),
++            Some(500),
++            Some(499),
++        ),
++    ];
++    let mut silent_changes = Vec::new();
++    for (
++        name,
++        first_quality,
++        next_quality,
++        first_callback,
++        next_callback,
++        first_sample,
++        next_sample,
++    ) in cases
++    {
++        let mut evidence = fixture();
++        evidence.observed_latest = ObservedLatest::default();
++        let mut first = evidence
++            .records
++            .iter()
++            .find(|r| r.timing.frames > 0)
++            .unwrap()
++            .clone();
++        first.sequence = 1;
++        first.timing.clock.quality = first_quality;
++        first.timing.clock.callback_ns = first_callback;
++        first.timing.clock.sample_ns = first_sample;
++        let mut next = first.clone();
++        next.sequence = 2;
++        next.timing.start_frame += first.timing.frames;
++        next.timing.clock.quality = next_quality;
++        next.timing.clock.callback_ns = next_callback;
++        next.timing.clock.sample_ns = next_sample;
++        evidence.records = vec![first, next.clone()];
++        let bytes = serde_json::to_vec(&evidence).unwrap();
++        let imported = AudioEvidence::read_json(
++            bytes.as_slice(),
++            EvidenceLimits::default(),
++            &CancellationToken::new(),
++        )
++        .unwrap();
++        let steps: Vec<_> = imported
++            .replay(EvidenceLimits::default())
++            .unwrap()
++            .collect();
++        assert_eq!(steps.len(), 2);
++        assert_eq!(steps[1].record.timing, next.timing, "{name}");
++        assert_eq!(
++            steps[1].record.samples_f64_bits, next.samples_f64_bits,
++            "{name}"
++        );
++        if steps[1].resets.is_empty() {
++            silent_changes.push(name);
++        }
++    }
++    assert!(
++        silent_changes.is_empty(),
++        "historical PCM clock changes replayed without reset: {silent_changes:?}"
++    );
++}
++
+ #[test]
+ fn input_rejects_invalid_schema_identity_format_sample_and_sequence_contracts() {
+     let original = serde_json::to_value(fixture()).unwrap();
+diff --git a/packages/alia-embedded/src/module/context/audio_reference.rs b/packages/alia-embedded/src/module/context/audio_reference.rs
+index 4af732b..259f1f9 100644
+--- a/packages/alia-embedded/src/module/context/audio_reference.rs
++++ b/packages/alia-embedded/src/module/context/audio_reference.rs
+@@ -732,6 +732,32 @@ mod tests {
+             Some(AudioDiscontinuity::StreamStopped)
+         );
+     }
++    #[test]
++    fn backwards_sample_time_changes_continuity_without_rewinding_frames() {
++        let bus = AudioReferenceBus::new(Uuid::new_v4());
++        let mut clock = bus.open_stream(AudioDirection::Capture, format());
++        let stream_id = clock.probe.stream_id();
++        let reading = |callback_ns, sample_ns| AudioClockReading {
++            clock_id: stream_id,
++            callback_ns: Some(callback_ns),
++            sample_ns: Some(sample_ns),
++            queued_frames: None,
++            quality: AudioTimeQuality::BackendEstimate,
++        };
++        let first = clock.observe(20, reading(100, -10));
++        let regressed = clock.observe(10, reading(200, -20));
++        assert!(
++            regressed.continuity > first.continuity,
++            "sample timestamp regressed while callback advanced without a clock discontinuity"
++        );
++        assert_eq!(regressed.start_frame, 20);
++        assert_eq!(regressed.clock.quality, AudioTimeQuality::Unknown);
++        let next = clock.observe(5, reading(300, -15));
++        assert_eq!(next.continuity, regressed.continuity);
++        assert_eq!(next.start_frame, 30);
++        assert_eq!(next.clock.sample_ns, Some(-15));
++    }
++
+     #[test]
+     fn backwards_backend_time_changes_continuity_without_rewinding_frames() {
+         let bus = AudioReferenceBus::new(Uuid::new_v4());
+diff --git a/packages/alia-embedded/src/module/cpal_audio/clock.rs b/packages/alia-embedded/src/module/cpal_audio/clock.rs
+index c74bc1a..4e89c13 100644
+--- a/packages/alia-embedded/src/module/cpal_audio/clock.rs
++++ b/packages/alia-embedded/src/module/cpal_audio/clock.rs
+@@ -312,6 +312,65 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn playback_batch_clock_regression_downgrades_every_split_block() {
++        let bus = crate::module::context::AudioBus::new(2).reference();
++        let mut reader = bus.try_claim_reader().unwrap();
++        let mut clock = bus.open_stream(
++            AudioDirection::Playback,
++            AudioFormat {
++                sample_rate_hz: 48000,
++                channels: 2,
++            },
++        );
++        let stream_id = clock.probe.stream_id();
++        let reading = |callback_ns, sample_ns| AudioClockReading {
++            clock_id: stream_id,
++            callback_ns: Some(callback_ns),
++            sample_ns: Some(sample_ns),
++            queued_frames: None,
++            quality: AudioTimeQuality::BackendEstimate,
++        };
++        record_samples(
++            &mut clock,
++            &[0_i16; 2],
++            reading(100_000_000, 200_000_000),
++            SubmissionBoundary::CpalCallbackBuffer,
++            ReferenceContent::Media,
++        );
++        while reader.try_read().is_some() {}
++        record_samples(
++            &mut clock,
++            &[1200_i16; 2052],
++            reading(50_000_000, 150_000_000),
++            SubmissionBoundary::CpalCallbackBuffer,
++            ReferenceContent::Media,
++        );
++        let mut blocks = Vec::new();
++        while let Some(block) = reader.try_read() {
++            if block.sample_count > 0 {
++                blocks.push(block);
++            }
++        }
++        assert_eq!(blocks.len(), 3);
++        assert_eq!(
++            blocks
++                .iter()
++                .map(|block| block.timing.clock.quality)
++                .collect::<Vec<_>>(),
++            vec![AudioTimeQuality::Unknown; 3],
++            "one native callback must not regain a rejected clock reading while splitting PCM"
++        );
++        assert_eq!(
++            blocks
++                .iter()
++                .map(|block| (block.timing.start_frame, block.timing.frames))
++                .collect::<Vec<_>>(),
++            [(1, 512), (513, 512), (1025, 2)]
++        );
++        assert_eq!(bus.snapshot(AudioDirection::Playback).unwrap().cursor, 1027);
++    }
++
+     #[test]
+     fn native_capture_keeps_s32_before_conversion_and_nonfinite_float_evidence() {
+         let bus = crate::module::context::AudioBus::new(2).reference();

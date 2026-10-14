@@ -1,0 +1,174 @@
+{
+  "recorded_at": "2026-10-14T14:19:12.311235+00:00",
+  "source_commit": "28920fb92e1785f0e8880309f1b4c7b1193905fa",
+  "source_directory": "run/validation-20261014-r02-clock",
+  "copy_method": "byte-for-byte; raw log and patch whitespace retained",
+  "index_scope": "all evidence files except this index itself",
+  "files": [
+    {
+      "path": "clock-transition-synthetic.json",
+      "bytes": 2160,
+      "sha256": "d65f4e96880c22428405fde6f680b751e9b6c8eb5d647b65f2889cf789f68264"
+    },
+    {
+      "path": "clock-transition.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "clock-transition.stdout.log",
+      "bytes": 1166,
+      "sha256": "0db7fff1cf0b939c484c08d1befa9ac1b1c2b72422ec11dd0b5eabfc76a1c708"
+    },
+    {
+      "path": "commit-verification.json",
+      "bytes": 364,
+      "sha256": "989dc46f241630c0f262ee3269ac8cfb83436f59ae5fa604214704da390884d8"
+    },
+    {
+      "path": "diff-check.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "environment.json",
+      "bytes": 652,
+      "sha256": "6621aea01e0c1ca858d88c13bdb720d9661528e1496029ed65b4160d5389bd91"
+    },
+    {
+      "path": "final-cli-build.json",
+      "bytes": 544,
+      "sha256": "8c6324c683d67367e42efa14d950bb307d9c4b24a1f4d08f7bc0e194e0125b2d"
+    },
+    {
+      "path": "final-cli-build.log",
+      "bytes": 169,
+      "sha256": "28504ed305545438f78511102c17c7822095f2e8050fc86397a8a5eacc0831ac"
+    },
+    {
+      "path": "final-embedded-loopback.json",
+      "bytes": 490,
+      "sha256": "513a3117299632f840413157234df32286375d1e14ec75371cea05be2f9d1cf0"
+    },
+    {
+      "path": "final-embedded-loopback.log",
+      "bytes": 37281,
+      "sha256": "634bdc1f6c33e87f0cd68a607bb08a8fd50e76029ba78a6215d5c24f6b7f961d"
+    },
+    {
+      "path": "final-embedded.json",
+      "bytes": 491,
+      "sha256": "6a9e03114f3587ea92a395723d9005f424693d74193cb3acbf01bcb24b341807"
+    },
+    {
+      "path": "final-embedded.log",
+      "bytes": 53597,
+      "sha256": "1cbe1516fa028f78e87570ce2aa572c6695b711462e7318748ccfdb5324dc682"
+    },
+    {
+      "path": "final-no-default.json",
+      "bytes": 557,
+      "sha256": "901fb22334578f6f48a98b73872efd13bc3afb6933052043b504b0989b833770"
+    },
+    {
+      "path": "final-no-default.log",
+      "bytes": 30475,
+      "sha256": "dbbbb820cc1f4c8648f9dd05053ce0b23cd5246482aa5f2cda9a861c5e20fec2"
+    },
+    {
+      "path": "final-replay-smoke.json",
+      "bytes": 450,
+      "sha256": "fa1e4c0cb4d64c5ebd492ec90cabcb1a4e41eedddc49877c4eb7bf94c366d4e1"
+    },
+    {
+      "path": "final-replay-smoke.log",
+      "bytes": 686,
+      "sha256": "d387a4e1154d71aa5cb945a1eb6c087d1a62a1ecc6e0f3a4874fcfe793e1d2fc"
+    },
+    {
+      "path": "final-source-manifest.json",
+      "bytes": 122580,
+      "sha256": "fb4a641051ef77125d788d7013487dcc7fda488e43c74044a0690c5767144fe7"
+    },
+    {
+      "path": "fmt-changed.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "fmt-workspace.log",
+      "bytes": 718,
+      "sha256": "07e6415839e105cbab2b963afd5f9b17495edb35786f14c2dc8bf0b990e729db"
+    },
+    {
+      "path": "freeze-source.py",
+      "bytes": 1068,
+      "sha256": "09005616c2e65897a99ebf91c95dedb80e6d02420cdf99027dbdef7c642999be"
+    },
+    {
+      "path": "historical-replay.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "historical-replay.stdout.log",
+      "bytes": 3437,
+      "sha256": "c84fb443169885b26754bb5672a3b26dd613f9c3411b5e1f46b53d7a3291ea4c"
+    },
+    {
+      "path": "red-clock-contract.json",
+      "bytes": 745,
+      "sha256": "75a024b0a279e714703bea533fab0afb5a64aed74b3542c76df5c2c71efd82e4"
+    },
+    {
+      "path": "red-clock-contract.log",
+      "bytes": 2668,
+      "sha256": "91b43835690a9cda293e12c7a8ea0207da71c74c64147691c256b87cda56fdd6"
+    },
+    {
+      "path": "red-source-manifest.json",
+      "bytes": 122580,
+      "sha256": "f492372c783673beac85b356b3e0d01fdd1e4b165ceed22d679a77d5d9816272"
+    },
+    {
+      "path": "red-source.patch",
+      "bytes": 8904,
+      "sha256": "c038dcb30c16d42610f1d8d3bf9d5a872c3034edc01bfa167b0106ce434b1ffb"
+    },
+    {
+      "path": "replay-smoke.json",
+      "bytes": 794,
+      "sha256": "e2f3546bf5858670dd8a3413cd6d091c62a1029d823dde7a78df5c947c4f47dc"
+    },
+    {
+      "path": "replay-smoke.py",
+      "bytes": 2690,
+      "sha256": "6526176ca246753af0e41c2cc2bb1eca7985dc6be6780a77cb711805ef16986f"
+    },
+    {
+      "path": "sandbox-failure-analysis.json",
+      "bytes": 679,
+      "sha256": "57fe7b87adb61807159062dfb55db5b0944c32fbba6e5013c25937ce64d22b4b"
+    },
+    {
+      "path": "static.json",
+      "bytes": 828,
+      "sha256": "cd520305f85f55fda8eb6f160ef0a2187cb5921221e549ea718ecbed4daa2635"
+    },
+    {
+      "path": "validate.py",
+      "bytes": 1887,
+      "sha256": "641e4de4e6af09cd2bee1e3afa3b1b6846adaabf31e6b421a7a73d77a798122f"
+    },
+    {
+      "path": "validation-summary.json",
+      "bytes": 8246,
+      "sha256": "fed96489abb9dc06dd6098258f1161c020ad71cda6ad5854f7f336ad39280666"
+    },
+    {
+      "path": "verify-commit.py",
+      "bytes": 1211,
+      "sha256": "c22c0047be4100aace3cf3685b67dbebf03fb33b958e1e83c5d5216c4efb248c"
+    }
+  ]
+}

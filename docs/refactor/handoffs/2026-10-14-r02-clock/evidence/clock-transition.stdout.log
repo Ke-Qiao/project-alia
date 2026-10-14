@@ -1,0 +1,38 @@
+{
+  "boot_id": "00000000-0000-0000-0000-00000000a11a",
+  "discarded_records": 0,
+  "discarded_samples": 0,
+  "end": "Finished",
+  "observed_samples": 12,
+  "physical_capture_playback_alignment": "unproven independent clocks",
+  "physical_stream_complete": false,
+  "records": 3,
+  "reset_signals": 3,
+  "snapshot_semantics": "latest per direction only; active fields are independent observations; a stream without a close marker or matching closed snapshot has unknown final state",
+  "source": "SyntheticFixture",
+  "source_authenticated": false,
+  "streams": [
+    {
+      "close_marker_observed": false,
+      "format": {
+        "channels": 2,
+        "sample_rate_hz": 48000
+      },
+      "last_observed_sequence": 3,
+      "latest_snapshot": null,
+      "observed_frames": 6,
+      "observed_records": 3,
+      "observed_samples": 12,
+      "reset_counts": {
+        "ClockDiscontinuity": 2,
+        "FirstObservation": 1
+      },
+      "stream": {
+        "boot_id": "00000000-0000-0000-0000-00000000a11a",
+        "direction": "Capture",
+        "stream_id": "00000000-0000-0000-0000-000000000001"
+      }
+    }
+  ],
+  "unobserved_history_possible": true
+}

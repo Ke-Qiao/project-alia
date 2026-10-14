@@ -1,0 +1,16 @@
+{
+  "attempt": "final-embedded",
+  "exit_code": 101,
+  "passed": 212,
+  "failed": 43,
+  "ignored": 0,
+  "panic_sites": {
+    "packages/alia-embedded/src/grpc/playback_service/tests.rs:294:75": 21,
+    "packages/alia-embedded/src/grpc/body_service/tests.rs:115:75": 9,
+    "packages/alia-embedded/src/module/speech/duplex/tests.rs:363:71": 13
+  },
+  "cause": "sandbox denied TcpListener::bind(127.0.0.1:0) in three existing fixture constructors; all 43 panic messages match EPERM",
+  "source_changed_for_retry": false,
+  "retry": "final-embedded-loopback; same frozen manifest, normal parallelism and full targets; allow host loopback test sockets",
+  "not_a_product_red": true
+}

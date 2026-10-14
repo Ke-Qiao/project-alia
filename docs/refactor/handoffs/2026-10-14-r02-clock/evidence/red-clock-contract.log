@@ -1,0 +1,38 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.51s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4b39181abf19ec9)
+
+running 3 tests
+test module::context::audio_reference::tests::backwards_sample_time_changes_continuity_without_rewinding_frames ... FAILED
+test module::cpal_audio::clock::tests::playback_batch_clock_regression_downgrades_every_split_block ... FAILED
+test module::audio_evidence::tests::historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples ... FAILED
+
+failures:
+
+---- module::context::audio_reference::tests::backwards_sample_time_changes_continuity_without_rewinding_frames stdout ----
+
+thread 'module::context::audio_reference::tests::backwards_sample_time_changes_continuity_without_rewinding_frames' (3634526) panicked at packages/alia-embedded/src/module/context/audio_reference.rs:749:9:
+sample timestamp regressed while callback advanced without a clock discontinuity
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- module::cpal_audio::clock::tests::playback_batch_clock_regression_downgrades_every_split_block stdout ----
+
+thread 'module::cpal_audio::clock::tests::playback_batch_clock_regression_downgrades_every_split_block' (3634527) panicked at packages/alia-embedded/src/module/cpal_audio/clock.rs:356:9:
+assertion `left == right` failed: one native callback must not regain a rejected clock reading while splitting PCM
+  left: [Unknown, BackendEstimate, BackendEstimate]
+ right: [Unknown, Unknown, Unknown]
+
+---- module::audio_evidence::tests::historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples stdout ----
+
+thread 'module::audio_evidence::tests::historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples' (3634525) panicked at packages/alia-embedded/src/module/audio_evidence/tests.rs:455:5:
+historical PCM clock changes replayed without reset: ["quality lost", "quality restored", "callback missing", "callback restored", "sample missing", "sample restored", "callback regressed", "sample regressed"]
+
+
+failures:
+    module::audio_evidence::tests::historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples
+    module::context::audio_reference::tests::backwards_sample_time_changes_continuity_without_rewinding_frames
+    module::cpal_audio::clock::tests::playback_batch_clock_regression_downgrades_every_split_block
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 247 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

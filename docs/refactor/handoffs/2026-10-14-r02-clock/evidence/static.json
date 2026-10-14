@@ -1,0 +1,39 @@
+{
+  "fmt-changed": {
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "--config",
+      "skip_children=true",
+      "packages/alia-embedded/src/module/audio_evidence.rs",
+      "packages/alia-embedded/src/module/audio_evidence/tests.rs",
+      "packages/alia-embedded/src/module/context/audio_reference.rs",
+      "packages/alia-embedded/src/module/cpal_audio/clock.rs"
+    ],
+    "exit_code": 0
+  },
+  "fmt-workspace": {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit_code": 1
+  },
+  "diff-check": {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0
+  },
+  "workspace_fmt_baseline": {
+    "file": "packages/alia-server/tests/server_runtime/delivery.rs",
+    "unchanged_from_HEAD": true
+  }
+}

@@ -88,7 +88,7 @@ ALSA `wait` 和 `readi` 采用同一错误路径。`EAGAIN`/`EINTR` 不伪造缺
 
 现有队列的sequence gap、producer loss、PCM frame gap、continuity变化和显式marker分别保留原始含义；它们不是可互换的丢失样本数量。队列尾部无后续记录时还须看latest closed快照；被换流覆盖且缺少关闭标记的旧终态未知。真实HeldSilence/ZeroFill保留其实际零样本，缺失记录不补零、不拉伸、不拼接为连续帧。
 
-回放应明确给出时钟证据变化提示，保留合法历史记录的原时间与PCM，不通过拒绝整个旧文件掩盖异常。时钟提示比较同stream相邻实际PCM；生命周期marker本来没有时钟，不把每个marker的Unknown误当独立测量。时钟提示说明对齐状态不可沿用，不自动声明声学中断或丢帧；consumer结合原有gap/reset决定其算法状态。
+回放应明确给出时钟证据变化提示，保留合法历史记录的原时间与PCM，不通过拒绝整个旧文件掩盖异常。时钟提示比较同stream相邻实际PCM；生命周期marker本来没有时钟，不把每个marker的Unknown误当独立测量。时钟提示说明对齐状态不可沿用，不自动声明声学中断或丢帧；consumer结合原有gap/reset决定其算法状态。逐条sample时间可能含前一批名义分块offset，所以回放的保守提示也不等于生产端原始batch锚点倒退。
 
 | 现有粒度 | 实际用途 | 对AEC的约束 |
 | --- | --- | --- |

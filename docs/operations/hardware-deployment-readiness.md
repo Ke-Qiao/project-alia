@@ -1,6 +1,6 @@
 # Mac + Pi 硬件与部署资料
 
-更新：2026-10-14。当前目标由用户确认：当前开发 Mac 运行 Server，Pi 5 / 8 GB 运行 Embedded，Easy-Turn 仅部署于 Server。R02 的本轮 Mac 离线模拟已完成，真实音频验收仍待现场条件；用户将 R03 后续现场工作暂停，待资料与恢复指令齐备后接续，R05 仍需两者现场出口；前端、通用 Embedded 适配、端侧 Easy-Turn 与其它 Server 平台仍延期。本文区分用户提供的部署输入、历史记录和待核实项，不将型号确认视为已经部署或实测通过。
+更新：2026-10-14。当前目标由用户确认：当前开发 Mac 运行 Server，Pi 5 / 8 GB 运行 Embedded，Easy-Turn 仅部署于 Server。R02 的 Mac 离线模拟及独立时钟/consumer帧需求审计已完成，真实音频验收仍待现场条件；用户将 R03 后续现场工作暂停，待资料与恢复指令齐备后接续，R05 仍需两者现场出口；前端、通用 Embedded 适配、端侧 Easy-Turn 与其它 Server 平台仍延期。本文区分用户提供的部署输入、历史记录和待核实项，不将型号确认视为已经部署或实测通过。
 
 ## 已确认与待核实的部署清单
 
@@ -24,6 +24,8 @@
 - 存在 `/dev/i2c-1`、`/dev/i2c-13`、`/dev/i2c-14`，没有扫描总线或读写寄存器；节点存在不证明 PCA9685 板卡在线。没有 USB 串口稳定标识目录，不能据此推断 I²C 板卡缺失。
 
 ## R02／R03 现场前置包与资料入口
+
+最新软件续轮为[时钟/consumer审计](../refactor/resume-checkpoint-r02-clock-2026-10-14.md)，源码`28920fb`，默认Embedded335/0/0；仅补已复现时间证据缺口，未确认任何新硬件状态。R1参考路由和硬件AEC模式仍未知，不能由软件通过决定再叠加主机AEC；帧长/通道/延迟需随实际consumer确定。R03保持暂停。
 
 本轮从 `283f38f` 继续，仅补离线检查与操作资料；没有重新连接 Pi、枚举设备或启动 Server/Embedded 服务 runtime。历史盘点时间与本轮同日也不代表设备状态已再次确认。进度及证据见[本轮 checklist](../refactor/checklists/field-prep-2026-10-14.md)和[四份 HANDOFF](../refactor/handoffs/2026-10-14-field-prep/README.md)。
 

@@ -1,0 +1,25 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--no-default-features",
+    "--lib",
+    "--offline",
+    "--locked",
+    "--",
+    "backwards_sample_time_changes_continuity_without_rewinding_frames",
+    "playback_batch_clock_regression_downgrades_every_split_block",
+    "historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples"
+  ],
+  "started_at": "2026-10-14T14:03:29.492710+00:00",
+  "elapsed_seconds": 11.08,
+  "exit_code": 101,
+  "source_manifest_sha256": "f492372c783673beac85b356b3e0d01fdd1e4b165ceed22d679a77d5d9816272",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

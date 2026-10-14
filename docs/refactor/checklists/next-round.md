@@ -1,6 +1,6 @@
 # 暂停纵向整合后的首轮任务 checklist
 
-**当前执行顺序：R02 Mac 离线模拟10/10完成；R02仍需实际consumer/时钟对齐及声学出口，R03后续按用户要求暂停，两者满足现场出口后再进入R05。** 实现 `1607045`；默认Embedded327/0/0，无默认252/0/0为重复feature验证，实际CLI九场景符合预期。恢复从[最新检查点](../resume-checkpoint-r02-mac-2026-10-14.md)开始；已完成包不重复实施，现场门槛见[部署资料](../../operations/hardware-deployment-readiness.md)。
+**当前执行顺序：R02独立时钟/参考缺口/consumer帧需求审计10/10完成；实际AEC路径/consumer选型和声学出口仍待确认。R03后续按用户要求暂停，两者满足现场出口后再进入R05。** 实现`28920fb`，同源默认Embedded335/0/0，无默认260/0/0为重复配置验证；实际CLI两项通过。恢复从[最新检查点](../resume-checkpoint-r02-clock-2026-10-14.md)开始；本轮不是部署AEC或启用硬件的授权，现场门槛见[部署资料](../../operations/hardware-deployment-readiness.md)。
 更新：2026-10-14。本表承接 [DU01—DU11](duplex-integration.md)，不是新一轮范围授权。以下六项仍属于已确认首轮目标或明确的后续技术评估；不得用软件测试通过代替真机出口。前端与通用 Embedded 适配继续按 [延期台账](../deferred.md) 处理。
 
 当前 **2 / 6 完成**（R01 `a79cb1f`；R04 `8f5bb83`，见 [R01 checklist](companion.md) 与 [R04 checklist](management.md)）。六项规模不同，不把该数字换算成项目完成百分比。R04不依赖外设的软件包已完成；R02/R03/R05 的实际接入与验收需要台账 H01—H05 对应信息。
@@ -34,6 +34,8 @@
 - [x] 记录确定性回放结果、代码提交和真实输出边界，完成独立验收。
 
 ## R02 · AEC、音频时钟映射与双讲
+
+- [x] 独立时钟/参考缺口/consumer帧需求审计：固定batch锚点与nominal offset契约，修sample回退/分块误恢复及旧replay时钟提示；见[10/10 checklist](r02-clock-2026-10-14.md)。未选择AEC consumer或建立物理映射。
 
 - [x] Mac离线模拟：严格生成/只读重放CLI、closed统计下界与capture/post-mix/单consumer/导出重放组合回归完成；见[10/10 checklist](r02-mac-2026-10-14.md)，不等于AEC或真实声学验收。
 

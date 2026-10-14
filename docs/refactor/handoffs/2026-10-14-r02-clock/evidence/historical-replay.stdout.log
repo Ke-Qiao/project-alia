@@ -1,0 +1,122 @@
+{
+  "boot_id": "00000000-0000-0000-0000-00000000a11a",
+  "discarded_records": 0,
+  "discarded_samples": 0,
+  "end": "Finished",
+  "observed_samples": 16,
+  "physical_capture_playback_alignment": "unproven independent clocks",
+  "physical_stream_complete": false,
+  "records": 7,
+  "reset_signals": 9,
+  "snapshot_semantics": "latest per direction only; active fields are independent observations; a stream without a close marker or matching closed snapshot has unknown final state",
+  "source": "SyntheticFixture",
+  "source_authenticated": false,
+  "streams": [
+    {
+      "close_marker_observed": false,
+      "format": {
+        "channels": 2,
+        "sample_rate_hz": 48000
+      },
+      "last_observed_sequence": 5,
+      "latest_snapshot": null,
+      "observed_frames": 4,
+      "observed_records": 4,
+      "observed_samples": 8,
+      "reset_counts": {
+        "Discontinuity": 2,
+        "FirstObservation": 1,
+        "FrameGap": 1,
+        "ProducerLoss": 1,
+        "SequenceGap": 1
+      },
+      "stream": {
+        "boot_id": "00000000-0000-0000-0000-00000000a11a",
+        "direction": "Capture",
+        "stream_id": "00000000-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "close_marker_observed": false,
+      "format": {
+        "channels": 2,
+        "sample_rate_hz": 48000
+      },
+      "last_observed_sequence": 2,
+      "latest_snapshot": {
+        "attempted_blocks": 4,
+        "closed": true,
+        "closing": false,
+        "continuity": 2,
+        "cursor": 4,
+        "format": {
+          "channels": 2,
+          "sample_rate_hz": 48000
+        },
+        "last_discontinuity": "StreamStopped",
+        "last_fault": null,
+        "lost_blocks": 2,
+        "lost_frames": 2,
+        "running": false,
+        "stream": {
+          "boot_id": "00000000-0000-0000-0000-00000000a11a",
+          "direction": "Playback",
+          "stream_id": "00000000-0000-0000-0000-000000000002"
+        }
+      },
+      "observed_frames": 2,
+      "observed_records": 2,
+      "observed_samples": 4,
+      "reset_counts": {
+        "Discontinuity": 1,
+        "FirstObservation": 1
+      },
+      "stream": {
+        "boot_id": "00000000-0000-0000-0000-00000000a11a",
+        "direction": "Playback",
+        "stream_id": "00000000-0000-0000-0000-000000000002"
+      }
+    },
+    {
+      "close_marker_observed": false,
+      "format": {
+        "channels": 2,
+        "sample_rate_hz": 48000
+      },
+      "last_observed_sequence": 2,
+      "latest_snapshot": {
+        "attempted_blocks": 2,
+        "closed": false,
+        "closing": false,
+        "continuity": 1,
+        "cursor": 2,
+        "format": {
+          "channels": 2,
+          "sample_rate_hz": 48000
+        },
+        "last_discontinuity": "StreamStarted",
+        "last_fault": null,
+        "lost_blocks": 0,
+        "lost_frames": 0,
+        "running": true,
+        "stream": {
+          "boot_id": "00000000-0000-0000-0000-00000000a11a",
+          "direction": "Capture",
+          "stream_id": "00000000-0000-0000-0000-000000000003"
+        }
+      },
+      "observed_frames": 2,
+      "observed_records": 1,
+      "observed_samples": 4,
+      "reset_counts": {
+        "StreamChanged": 1
+      },
+      "stream": {
+        "boot_id": "00000000-0000-0000-0000-00000000a11a",
+        "direction": "Capture",
+        "stream_id": "00000000-0000-0000-0000-000000000003"
+      }
+    }
+  ],
+  "unobserved_history_possible": true
+}
