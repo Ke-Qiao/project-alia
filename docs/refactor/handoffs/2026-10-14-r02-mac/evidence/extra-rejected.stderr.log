@@ -1,0 +1,4 @@
+Error: Usage: audio_evidence_replay generate <new-output.json>
+       audio_evidence_replay replay <existing-input.json>
+
+Offline only: no audio devices, models or services. Generation never overwrites files.

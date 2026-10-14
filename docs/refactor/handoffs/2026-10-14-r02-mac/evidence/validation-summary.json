@@ -1,0 +1,188 @@
+{
+  "recorded_at": "2026-10-14T13:36:38.373057+00:00",
+  "base_head": "ea3f0e4b3c6c7e7920fa9c4be2d4480dabeadce2",
+  "final_source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+  "source_inputs": 666,
+  "baseline_cli_reproduced": true,
+  "red_closed_footer": {
+    "phase": "red",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "alia-embedded",
+      "--no-default-features",
+      "--lib",
+      "module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost",
+      "--offline",
+      "--locked"
+    ],
+    "started_at": "2026-10-14T13:26:38.290816+00:00",
+    "elapsed_seconds": 16.85,
+    "exit_code": 101,
+    "source_manifest_sha256": "1f7c36444fe03f3c8b6fc3a60747c3446b8cb5f50a9e227244e0be6470c17e4e",
+    "source_drift": [],
+    "test_parallelism": "default",
+    "database": "no external database; temporary SQLite fixtures only",
+    "build_jobs": 2
+  },
+  "final": {
+    "final-embedded": {
+      "phase": "final",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T13:29:24.834152+00:00",
+      "elapsed_seconds": 84.0,
+      "exit_code": 0,
+      "source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "counts": {
+        "passed": 327,
+        "failed": 0,
+        "ignored": 0,
+        "filtered_out": 0,
+        "suites": 14
+      }
+    },
+    "final-no-default": {
+      "phase": "final",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--no-default-features",
+        "--lib",
+        "--example",
+        "audio_evidence_replay",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T13:31:09.042694+00:00",
+      "elapsed_seconds": 35.63,
+      "exit_code": 0,
+      "source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "counts": {
+        "passed": 252,
+        "failed": 0,
+        "ignored": 0,
+        "filtered_out": 0,
+        "suites": 2
+      }
+    },
+    "final-cli-build": {
+      "phase": "final",
+      "command": [
+        "cargo",
+        "build",
+        "-p",
+        "alia-embedded",
+        "--no-default-features",
+        "--example",
+        "audio_evidence_replay",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T13:32:30.943132+00:00",
+      "elapsed_seconds": 1.43,
+      "exit_code": 0,
+      "source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2
+    },
+    "final-cli-smoke": {
+      "phase": "final",
+      "command": [
+        "python3",
+        "run/validation-20261014-r02-mac/cli-smoke.py"
+      ],
+      "started_at": "2026-10-14T13:32:53.576006+00:00",
+      "elapsed_seconds": 0.7,
+      "exit_code": 0,
+      "source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2
+    }
+  },
+  "actual_cli_cases": 9,
+  "actual_cli_all_assertions_passed": true,
+  "counting": "327 default Embedded tests; 252 no-default tests overlap and are not additional unique tests; 9 CLI cases include expected rejection exits",
+  "static": {
+    "fmt-changed": {
+      "command": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--check",
+        "packages/alia-embedded/examples/audio_evidence_replay.rs",
+        "packages/alia-embedded/src/module/audio_evidence.rs",
+        "packages/alia-embedded/src/module/cpal_audio/playback/tests.rs"
+      ],
+      "exit_code": 0
+    },
+    "fmt-workspace": {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 1
+    },
+    "diff-check": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    "workspace_fmt_baseline": {
+      "file": "packages/alia-server/tests/server_runtime/delivery.rs",
+      "unchanged_from_HEAD": true
+    }
+  },
+  "resources": {
+    "all_validation_wrapper_processes_collected": true,
+    "cli_temporary_directory_removed": true,
+    "services_or_devices_started": false,
+    "ssh_used": false,
+    "dependencies_added": false,
+    "retained": "ignored local build cache and validation artifacts; byte-for-byte evidence copy committed separately"
+  },
+  "not_run": [
+    "real capture/playback or acoustic/AEC testing",
+    "Easy-Turn or other model runtime",
+    "Server regression or external database",
+    "Linux/Pi/ALSA runtime",
+    "staging services or long soak"
+  ],
+  "r03": "paused by user; existing software unchanged",
+  "commit_verification": {
+    "recorded_at": "2026-10-14T13:37:01.320443+00:00",
+    "source_commit": "160704578cd79d23898e6c8225d18c8511895d39",
+    "final_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+    "git_blobs_checked": 666,
+    "mismatches": [],
+    "method": "git cat-file --batch; SHA256 of committed blob bytes compared with final frozen inputs"
+  }
+}

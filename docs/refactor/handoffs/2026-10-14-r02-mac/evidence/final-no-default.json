@@ -1,0 +1,23 @@
+{
+  "phase": "final",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--no-default-features",
+    "--lib",
+    "--example",
+    "audio_evidence_replay",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-14T13:31:09.042694+00:00",
+  "elapsed_seconds": 35.63,
+  "exit_code": 0,
+  "source_manifest_sha256": "ef33fcd714968f0236f42a065783c9967f23f7b0ac22deee6f120b376efef7f8",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-14T13:23:15.508252+00:00",
+  "head": "ea3f0e4b3c6c7e7920fa9c4be2d4480dabeadce2",
+  "source_sha256": "9b2fdc07b3ad3a0f4d8c5325c02b485fe3bcced030dd6734cf3822e81d5ea8ae",
+  "binary_sha256": "869bf1ddd9016f0906b8cfd2f329ee9f3bfd1d563525bdc507fce4930365614f",
+  "command": [
+    "/Users/ke-qiao/Developer/project-alia/target/debug/examples/audio_evidence_replay",
+    "--help"
+  ],
+  "cwd_kind": "isolated temporary directory",
+  "exit_code": 0,
+  "expected": "help prints usage without writing a fixture",
+  "actual_files": [
+    "--help"
+  ],
+  "regression_reproduced": true,
+  "stdout": "{\n  \"latest_capture_running\": true,\n  \"latest_playback_closed\": true,\n  \"latest_playback_lost_blocks\": 2,\n  \"latest_playback_lost_frames\": 2,\n  \"observed_samples\": 16,\n  \"physical_capture_playback_alignment\": \"unproven independent clocks\",\n  \"physical_stream_complete\": false,\n  \"records\": 7,\n  \"replaced_capture_final_state\": \"unknown: neither close marker nor retained snapshot\",\n  \"reset_signals\": 9,\n  \"source\": \"SyntheticFixture\",\n  \"unobserved_history_possible\": true\n}\n",
+  "stderr": ""
+}

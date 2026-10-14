@@ -1,0 +1,22 @@
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.66s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4b39181abf19ec9)
+
+running 1 test
+test module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost ... FAILED
+
+failures:
+
+---- module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost stdout ----
+
+thread 'module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost' (3565550) panicked at packages/alia-embedded/src/module/audio_evidence/tests.rs:443:5:
+contradictory closed snapshots accepted: ["records", "frames"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 245 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

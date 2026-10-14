@@ -1,0 +1,411 @@
+diff --git a/packages/alia-embedded/examples/audio_evidence_replay.rs b/packages/alia-embedded/examples/audio_evidence_replay.rs
+index 0355b2c..b255bcc 100644
+--- a/packages/alia-embedded/examples/audio_evidence_replay.rs
++++ b/packages/alia-embedded/examples/audio_evidence_replay.rs
+@@ -1,14 +1,17 @@
+-//! Offline only. Writes a new synthetic evidence file, reads it back and reports
+-//! gaps/unknowns. Does not open an audio device or overwrite an existing file.
++//! Offline generation and inspection of bounded evidence; never opens audio devices.
++use std::collections::BTreeMap;
++use std::ffi::OsString;
+ use std::io::Write;
+-use std::path::PathBuf;
++use std::path::{Path, PathBuf};
+ 
+ use alia_core::audio_clock::*;
+ use alia_embedded::module::audio_evidence::*;
+ use alia_embedded::module::context::{
+     AudioSampleBoundary, AudioStreamSnapshot, NativeSampleFormat, ReferenceContent,
+ };
+-use anyhow::{Context, Result};
++use anyhow::{Context, Result, bail, ensure};
++use serde::Serialize;
++use serde_json::{Value, json};
+ use tokio_util::sync::CancellationToken;
+ use uuid::Uuid;
+ 
+@@ -139,52 +142,282 @@ fn synthetic_fixture() -> AudioEvidence {
+         observed_latest,
+     }
+ }
++const USAGE: &str = "Usage: audio_evidence_replay generate <new-output.json>\n       audio_evidence_replay replay <existing-input.json>\n\nOffline only: no audio devices, models or services. Generation never overwrites files.";
++
+ fn main() -> Result<()> {
+-    let path = PathBuf::from(
+-        std::env::args_os()
+-            .nth(1)
+-            .context("usage: audio_evidence_replay <new-output.json>")?,
+-    );
+-    let cancel = CancellationToken::new();
++    let args: Vec<_> = std::env::args_os().skip(1).collect();
++    match execute(&args, &CancellationToken::new())? {
++        Some(report) => println!("{}", serde_json::to_string_pretty(&report)?),
++        None => println!("{USAGE}"),
++    }
++    Ok(())
++}
++
++fn execute(args: &[OsString], cancel: &CancellationToken) -> Result<Option<Value>> {
++    let (generate, path) = match args {
++        [help] if help == "--help" || help == "-h" => return Ok(None),
++        [command, path] if command == "generate" => (true, PathBuf::from(path)),
++        [command, path] if command == "replay" => (false, PathBuf::from(path)),
++        _ => bail!("{USAGE}"),
++    };
+     let limits = EvidenceLimits::default();
+-    let evidence = synthetic_fixture();
++    if generate {
++        publish_fixture(&path, limits, cancel)?;
++    }
++    let evidence = read_file(&path, limits, cancel)?;
++    Ok(Some(summarize(&evidence, limits)?))
++}
++
++fn publish_fixture(path: &Path, limits: EvidenceLimits, cancel: &CancellationToken) -> Result<()> {
+     let mut bytes = Vec::new();
+-    evidence.write_json(&mut bytes, limits, &cancel)?;
++    synthetic_fixture().write_json(&mut bytes, limits, cancel)?;
+     let parent = path
+         .parent()
+         .filter(|p| !p.as_os_str().is_empty())
+-        .unwrap_or_else(|| std::path::Path::new("."));
++        .unwrap_or_else(|| Path::new("."));
+     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+     temporary.write_all(&bytes)?;
+     temporary.as_file().sync_all()?;
++    ensure!(!cancel.is_cancelled(), "fixture generation cancelled");
+     temporary
+-        .persist_noclobber(&path)
++        .persist_noclobber(path)
+         .context("publishing new synthetic fixture without overwriting")?;
+-    let decoded = AudioEvidence::read_json(std::fs::File::open(&path)?, limits, &cancel)?;
+-    let mut reset_count = 0;
+-    let mut sample_count = 0;
+-    for step in decoded.replay(limits)? {
+-        reset_count += step.resets.len();
+-        sample_count += step.record.samples_f64_bits.len();
++    Ok(())
++}
++
++fn read_file(
++    path: &Path,
++    limits: EvidenceLimits,
++    cancel: &CancellationToken,
++) -> Result<AudioEvidence> {
++    ensure!(!cancel.is_cancelled(), "audio import cancelled");
++    ensure!(
++        std::fs::symlink_metadata(path)?.is_file(),
++        "evidence input must be a regular file, not a symlink or device"
++    );
++    let mut options = std::fs::OpenOptions::new();
++    options.read(true);
++    #[cfg(unix)]
++    {
++        use std::os::unix::fs::OpenOptionsExt;
++        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC);
+     }
+-    // The footer is mandatory evidence: playback lost both a PCM block and its
+-    // close marker, while the replaced capture stream has no proven final state.
+-    let playback = decoded.observed_latest.playback.as_ref().unwrap();
+-    let capture = decoded.observed_latest.capture.as_ref().unwrap();
+-    println!(
+-        "{}",
+-        serde_json::to_string_pretty(&serde_json::json!({
+-            "source": decoded.source,
+-            "records": decoded.records.len(), "observed_samples": sample_count,
+-            "reset_signals": reset_count, "unobserved_history_possible": decoded.unobserved_history_possible,
+-            "latest_playback_closed": playback.closed,
+-            "latest_playback_lost_blocks": playback.lost_blocks,
+-            "latest_playback_lost_frames": playback.lost_frames,
+-            "latest_capture_running": capture.running,
+-            "replaced_capture_final_state": "unknown: neither close marker nor retained snapshot",
+-            "physical_capture_playback_alignment": "unproven independent clocks",
+-            "physical_stream_complete": false
+-        }))?
++    let file = options.open(path).context("opening evidence input")?;
++    ensure!(
++        file.metadata()?.is_file(),
++        "evidence input must be a regular file"
+     );
+-    Ok(())
++    AudioEvidence::read_json(file, limits, cancel)
++}
++
++#[derive(Serialize)]
++struct StreamSummary {
++    stream: AudioStreamId,
++    format: AudioFormat,
++    observed_records: usize,
++    observed_frames: u64,
++    observed_samples: usize,
++    last_observed_sequence: Option<u64>,
++    reset_counts: BTreeMap<String, usize>,
++    close_marker_observed: bool,
++    latest_snapshot: Option<AudioStreamSnapshot>,
++}
++
++fn summarize(evidence: &AudioEvidence, limits: EvidenceLimits) -> Result<Value> {
++    let mut streams = BTreeMap::new();
++    for step in evidence.replay(limits)? {
++        let record = step.record;
++        let stream = streams
++            .entry(record.timing.stream.stream_id)
++            .or_insert_with(|| StreamSummary {
++                stream: record.timing.stream,
++                format: record.timing.format,
++                observed_records: 0,
++                observed_frames: 0,
++                observed_samples: 0,
++                last_observed_sequence: None,
++                reset_counts: BTreeMap::new(),
++                close_marker_observed: false,
++                latest_snapshot: None,
++            });
++        stream.observed_records += 1;
++        stream.observed_frames += record.timing.frames;
++        stream.observed_samples += record.samples_f64_bits.len();
++        stream.last_observed_sequence = Some(record.sequence);
++        stream.close_marker_observed |=
++            record.discontinuity == Some(AudioDiscontinuity::StreamStopped);
++        for reset in step.resets {
++            *stream.reset_counts.entry(format!("{reset:?}")).or_default() += 1;
++        }
++    }
++    for snapshot in [
++        &evidence.observed_latest.capture,
++        &evidence.observed_latest.playback,
++    ]
++    .into_iter()
++    .flatten()
++    {
++        streams
++            .entry(snapshot.stream.stream_id)
++            .or_insert_with(|| StreamSummary {
++                stream: snapshot.stream,
++                format: snapshot.format,
++                observed_records: 0,
++                observed_frames: 0,
++                observed_samples: 0,
++                last_observed_sequence: None,
++                reset_counts: BTreeMap::new(),
++                close_marker_observed: false,
++                latest_snapshot: None,
++            })
++            .latest_snapshot = Some(snapshot.clone());
++    }
++    Ok(json!({
++        "source": evidence.source,
++        "source_authenticated": false,
++        "boot_id": evidence.boot_id,
++        "end": evidence.end,
++        "records": evidence.records.len(),
++        "observed_samples": streams.values().map(|s| s.observed_samples).sum::<usize>(),
++        "reset_signals": streams.values().flat_map(|s| s.reset_counts.values()).sum::<usize>(),
++        "discarded_records": evidence.discarded_records,
++        "discarded_samples": evidence.discarded_samples,
++        "unobserved_history_possible": evidence.unobserved_history_possible,
++        "streams": streams.values().collect::<Vec<_>>(),
++        "physical_capture_playback_alignment": "unproven independent clocks",
++        "physical_stream_complete": false,
++        "snapshot_semantics": "latest per direction only; active fields are independent observations; a stream without a close marker or matching closed snapshot has unknown final state",
++    }))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn args(command: &str, path: &Path) -> Vec<OsString> {
++        vec![command.into(), path.as_os_str().into()]
++    }
++
++    #[test]
++    fn cli_requires_explicit_operation_and_exact_arguments_before_writing() {
++        let root = tempfile::tempdir().unwrap();
++        let output = root.path().join("must-not-exist.json");
++        for invalid in [
++            vec![],
++            vec![output.as_os_str().into()],
++            args("--input", &output),
++            vec!["generate".into()],
++            vec!["generate".into(), output.as_os_str().into(), "extra".into()],
++            vec!["--help".into(), output.as_os_str().into()],
++        ] {
++            assert!(execute(&invalid, &CancellationToken::new()).is_err());
++        }
++        for help in ["--help", "-h"] {
++            assert!(
++                execute(&[help.into()], &CancellationToken::new())
++                    .unwrap()
++                    .is_none()
++            );
++        }
++        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
++    }
++
++    #[test]
++    fn generate_then_replay_preserves_input_and_derives_each_stream_summary() {
++        let root = tempfile::tempdir().unwrap();
++        let path = root.path().join("evidence.json");
++        let cancel = CancellationToken::new();
++        let generated = execute(&args("generate", &path), &cancel).unwrap().unwrap();
++        let bytes = std::fs::read(&path).unwrap();
++        let replayed = execute(&args("replay", &path), &cancel).unwrap().unwrap();
++        assert_eq!(replayed, generated);
++        assert_eq!(std::fs::read(&path).unwrap(), bytes);
++        assert_eq!(replayed["records"], 7);
++        assert_eq!(replayed["observed_samples"], 16);
++        assert_eq!(replayed["reset_signals"], 9);
++        assert_eq!(replayed["source_authenticated"], false);
++        assert_eq!(replayed["physical_stream_complete"], false);
++        let streams = replayed["streams"].as_array().unwrap();
++        assert_eq!(streams.len(), 3);
++        assert!(streams[0]["latest_snapshot"].is_null());
++        assert_eq!(streams[0]["close_marker_observed"], false);
++        assert_eq!(streams[1]["latest_snapshot"]["closed"], true);
++        assert_eq!(streams[1]["latest_snapshot"]["lost_blocks"], 2);
++        assert_eq!(streams[1]["close_marker_observed"], false);
++        assert_eq!(streams[2]["latest_snapshot"]["running"], true);
++        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
++    }
++
++    #[test]
++    fn summary_handles_empty_single_direction_and_snapshot_only_without_inventing_records() {
++        let limits = EvidenceLimits::default();
++        let mut evidence = synthetic_fixture();
++        evidence
++            .records
++            .retain(|r| r.timing.stream.direction == AudioDirection::Capture);
++        evidence.observed_latest.playback = None;
++        let capture = summarize(&evidence, limits).unwrap();
++        assert!(
++            capture["streams"]
++                .as_array()
++                .unwrap()
++                .iter()
++                .all(|s| s["stream"]["direction"] == "Capture")
++        );
++        evidence.records.clear();
++        let footer = summarize(&evidence, limits).unwrap();
++        assert_eq!(footer["records"], 0);
++        assert_eq!(footer["streams"].as_array().unwrap().len(), 1);
++        assert_eq!(footer["streams"][0]["observed_frames"], 0);
++        assert!(footer["streams"][0]["last_observed_sequence"].is_null());
++        evidence.observed_latest = ObservedLatest::default();
++        evidence.source = EvidenceSource::ObservedNative;
++        let empty = summarize(&evidence, limits).unwrap();
++        assert_eq!(empty["streams"], json!([]));
++        assert_eq!(empty["source"], "ObservedNative");
++        assert_eq!(empty["source_authenticated"], false);
++    }
++
++    #[test]
++    fn failure_cancel_and_existing_destination_preserve_files_without_temporary_leaks() {
++        let root = tempfile::tempdir().unwrap();
++        let path = root.path().join("existing.json");
++        let cancel = CancellationToken::new();
++        std::fs::write(&path, b"original bytes").unwrap();
++        assert!(execute(&args("generate", &path), &cancel).is_err());
++        assert!(execute(&args("replay", &path), &cancel).is_err());
++        assert_eq!(std::fs::read(&path).unwrap(), b"original bytes");
++        let missing = root.path().join("missing.json");
++        assert!(execute(&args("replay", &missing), &cancel).is_err());
++        cancel.cancel();
++        assert!(execute(&args("generate", &missing), &cancel).is_err());
++        assert!(execute(&args("replay", &path), &cancel).is_err());
++        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
++    }
++
++    #[cfg(unix)]
++    #[test]
++    fn file_input_rejects_symlinks_directories_and_fifos_without_modifying_targets() {
++        let root = tempfile::tempdir().unwrap();
++        let path = root.path().join("fixture.json");
++        let cancel = CancellationToken::new();
++        execute(&args("generate", &path), &cancel).unwrap();
++        let bytes = std::fs::read(&path).unwrap();
++        let link = root.path().join("link.json");
++        std::os::unix::fs::symlink(&path, &link).unwrap();
++        let fifo = root.path().join("fifo");
++        let c_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
++        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
++        for input in [&link, &fifo, &root.path().to_path_buf()] {
++            assert!(
++                read_file(input, EvidenceLimits::default(), &cancel)
++                    .unwrap_err()
++                    .to_string()
++                    .contains("regular file")
++            );
++        }
++        assert!(execute(&args("generate", &link), &cancel).is_err());
++        assert_eq!(std::fs::read(&path).unwrap(), bytes);
++        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 3);
++    }
+ }
+diff --git a/packages/alia-embedded/src/module/audio_evidence/tests.rs b/packages/alia-embedded/src/module/audio_evidence/tests.rs
+index 44c6e7a..ac5a3ea 100644
+--- a/packages/alia-embedded/src/module/audio_evidence/tests.rs
++++ b/packages/alia-embedded/src/module/audio_evidence/tests.rs
+@@ -402,6 +402,50 @@ fn native_representation_cannot_change_within_stream_and_silence_cannot_hide_pcm
+     evidence.validate(EvidenceLimits::default()).unwrap();
+ }
+ 
++#[test]
++fn closed_snapshot_cannot_count_observed_records_or_frames_as_lost() {
++    let original = fixture();
++    let capture = original.observed_latest.capture.as_ref().unwrap();
++    assert!(capture.closed);
++    assert_eq!((capture.lost_blocks, capture.lost_frames), (0, 0));
++    assert!(
++        original
++            .records
++            .iter()
++            .any(|record| { record.timing.stream == capture.stream && record.timing.frames > 0 })
++    );
++    AudioEvidence::read_json(
++        encoded(&original).as_slice(),
++        EvidenceLimits::default(),
++        &CancellationToken::new(),
++    )
++    .unwrap();
++
++    let mut lost_records = original.clone();
++    let snapshot = lost_records.observed_latest.capture.as_mut().unwrap();
++    snapshot.lost_blocks = snapshot.attempted_blocks;
++    let mut lost_frames = original;
++    let snapshot = lost_frames.observed_latest.capture.as_mut().unwrap();
++    snapshot.lost_frames = snapshot.cursor;
++    let accepted: Vec<_> = [("records", lost_records), ("frames", lost_frames)]
++        .into_iter()
++        .filter_map(|(case, evidence)| {
++            let bytes = serde_json::to_vec(&evidence).unwrap();
++            AudioEvidence::read_json(
++                bytes.as_slice(),
++                EvidenceLimits::default(),
++                &CancellationToken::new(),
++            )
++            .is_ok()
++            .then_some(case)
++        })
++        .collect();
++    assert!(
++        accepted.is_empty(),
++        "contradictory closed snapshots accepted: {accepted:?}"
++    );
++}
++
+ #[test]
+ fn active_snapshot_is_an_observation_not_a_coherent_final_transaction() {
+     let mut evidence = fixture();
+diff --git a/packages/alia-embedded/src/module/cpal_audio/playback/tests.rs b/packages/alia-embedded/src/module/cpal_audio/playback/tests.rs
+index 7990af8..27aa537 100644
+--- a/packages/alia-embedded/src/module/cpal_audio/playback/tests.rs
++++ b/packages/alia-embedded/src/module/cpal_audio/playback/tests.rs
+@@ -4,6 +4,7 @@ use std::sync::mpsc;
+ use std::thread;
+ mod control;
+ mod mixer;
++mod offline_evidence;
+ 
+ pub(super) fn test_submission(generation: u64, rate: u32, channels: u32) -> Arc<AudioSubmission> {
+     AudioSubmission::new(

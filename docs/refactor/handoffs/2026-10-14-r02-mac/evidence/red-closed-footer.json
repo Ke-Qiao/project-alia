@@ -1,0 +1,22 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--no-default-features",
+    "--lib",
+    "module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-14T13:26:38.290816+00:00",
+  "elapsed_seconds": 16.85,
+  "exit_code": 101,
+  "source_manifest_sha256": "1f7c36444fe03f3c8b6fc3a60747c3446b8cb5f50a9e227244e0be6470c17e4e",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}
