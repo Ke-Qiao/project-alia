@@ -40,9 +40,35 @@ than dropping audio and preserving a false contiguous clock.
 CPAL and Linux ALSA backends support explicit device selection, fixed output
 format, capture/playback volume, bounded buffers, and native timing evidence.
 Capture sent to the server is mono 16 kHz; frames include sample offsets and VAD
-activity. Playback sources are converted to the selected fixed native format.
-On shared Pi I2S clocks, the configured playback rate can follow capture at
-startup. Playback never retunes the active capture clock.
+activity. That configured target is distinct from the negotiated native input:
+CPAL selects a supported configuration and ALSA negotiates nearby rates/channels
+before software conversion. Playback sources are converted to the selected
+fixed native format. Record both the requested values and actual startup/native
+evidence; configuration alone does not prove a device's format or channel meaning.
+
+For the Pi field setup, use explicit `audio.capture_backend = "alsa"` and
+`audio.playback_backend = "alsa"` only with PCM names verified for the selected
+devices. Match the named `CARD` and `DEV` to USB identity, serial or physical path
+from enumeration; do not assume a numeric card index remains stable after
+reconnect. `default` delegates selection to the host, and CPAL currently selects
+the first device whose name contains the configured string. Neither proves that
+the intended R1 input or speaker was selected. Keep the actual values in the
+[central field record](../../../docs/operations/hardware-deployment-readiness.md)
+rather than copying an unverified `hw:0,0` example.
+
+`alsa_playback_lock_to_capture_rate` selects the configured capture rate at
+startup for an explicitly confirmed shared-clock design; it does not establish
+clock synchronization. Keep its default `false` for the proposed R1 USB capture
+and separately selected output chain. USB connection does not prove that R1
+offers playback or consumes USB audio as an AEC reference. Playback never retunes
+the active capture clock. The R1 reference route and electrical compatibility
+remain in the central field record until confirmed.
+
+Normal Embedded startup opens native playback and capture before the wake word;
+Linux ALSA availability checks can also open PCM handles. Use the
+[read-only configuration check](configuration.md#config-path) and the separate
+staging profile during preparation. Do not start the native runtime or query its
+audio health as a way to avoid opening the devices.
 
 Native playback has exactly two sources: conversation **1.0** and local cue
 **0.2**. The sum is clamped to PCM range. Both retain the original session/control
@@ -97,6 +123,17 @@ record automatically, or add AEC. Capture is the data delivered by the backend,
 which may already have been processed by device firmware. It is not proof of raw
 ADC samples or acoustic capture/playback alignment. Missing reference stays
 missing; recorded zero-valued samples are separate evidence.
+
+The existing `audio_evidence_replay` example generates a `SyntheticFixture`,
+publishes it to a new caller-chosen path and reads it back. It does not collect
+live microphone data or accept an existing recording as its CLI input. An
+explicit library caller owns any real `EvidenceSession`, its bounded pumping,
+finish/cancellation and export; no default recorder or runtime daemon is enabled.
+The 512-record / 16 MiB limits bound software retention, not a guaranteed number
+of seconds. Agree the real-audio destination, retention and deletion procedure
+in the central field record before an authorized recording. Exported footer and
+loss information remain necessary; an ended observation is not a complete
+physical stream or synchronized capture/playback measurement.
 
 Native submission receipts and exported software evidence do not prove physical
 presentation, silence, echo cancellation, or full-duplex acoustic quality.

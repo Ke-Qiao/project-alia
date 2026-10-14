@@ -1,16 +1,32 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-11。本轮以 macOS Server、Pi 5 Embedded 为目标，Easy-Turn 位于 Server。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。真机部署仍需确定 Pi 系统、音频设备及执行器。
+更新：2026-10-14。本轮以当前开发 Mac Server、Pi 5 / 8 GB Embedded 为目标，Easy-Turn 位于 Server。Pi 的 Ubuntu24.04.4 / aarch64 已经只读核对；实际音频链、执行器接线/校准、服务目录和模型服务仍待现场资料。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 ## 配置与启动
 
 从仓库根目录按 [本地开发](local-development.md) 准备主文件和 `.d` 分片；[Server 配置](../../packages/alia-server/docs/configuration.md)与 [Embedded 配置](../../packages/alia-embedded/docs/configuration.md)分别管理业务/模型和设备实时运行时。`ALIA_CONFIG_PATH` 可以选择 Server 主文件，配套分片目录为同名 `.d`；Embedded 使用独立的 `ALIA_EMBEDDED_CONFIG_PATH`。
 
+正常启动会产生实际副作用。Embedded 可能创建或调整设备密钥权限、保存配置、创建/迁移 SQLite、绑定监听地址，然后在 `Builder.build()` 返回前启动选定的播放、motion、camera、capture 和 discovery。未配对不代表麦克风尚未开始采集；`motion.hardware_enabled=false` 只限制执行器，不能关闭其他设备。通用 [embedded.example.toml](../../config/embedded.example.toml) 是配置说明示例，其中原生采播、模型、vision 和发现仍按模块选择启用，不能直接当本轮 Pi 现场预设。
+
+已有二进制提供独立的只读检查入口，必须指定实际存在的配置文件：
+
+```sh
+./target/debug/alia-embedded --check-config /absolute/path/embedded.toml
+```
+
+此入口只读配置，以及配置指向的校准文件和已批准动作文件，执行静态验证；不创建/调整 key，不进入 Builder、不打开数据库、模型、PCM、camera、串口或 I²C，不执行绑定、网络发现或启动服务。缺少配置明确报错，不将 compiled defaults 当作已检查的文件。报告指出配置选择与前置条件，不能证明真实设备、模型、机构安全或目录写权限已经可用，也不核对 Server 的批准清单。构建二进制本身会写入构建目录，应与这次只读运行区分；不要用普通 `cargo run` 或视觉 setup 脚本代替预检。
+
+如需后续验证无设备的正常生命周期，使用专门的 [embedded.staging.example.toml](../../config/embedded.staging.example.toml)，先复制到新的私有配置目录，再检查复制后的文件。模板显式关闭全部 module 槽位、motion、vision/debug、毫米波和 mDNS/BLE，监听 `127.0.0.1:0`，保留正常绑定边界；state、key、plugin、cue 使用相对配置文件的独立 `staging/` 路径。不要与已部署设备共用这些目录。正常 staging 启动仍会写 key/state/config 并创建 loopback listener，**不属于只读操作**；它也不检验真实录放音或执行器。
+
 ```sh
 ALIA_CONFIG_PATH=/absolute/path/server.toml cargo run -p alia-server
 ALIA_EMBEDDED_CONFIG_PATH=/absolute/path/embedded.toml cargo run -p alia-embedded
 ```
+
+上面是正常运行命令，现场前置未完成时不执行硬件配置的启动。staging 需要正常运行时，应把第二行路径明确指向复制后的 staging 文件。使用该前台进程的 Ctrl+C 或针对其 PID 的 SIGTERM 请求正常关闭，并核对进程退出与清理结果；超时不证明 native 工作或物理输出已安全停止，不使用按名称批量 kill 或顺带停止共享服务。
+
+仓内 `pnpm dev:backend` 会同时启动开发数据库、Server 和 Embedded，`pnpm dev` 还包含前端；这些便利入口不负责本轮隔离目录、设备权限或测试资源归属。`scripts/setup-embedded-vision-pi.sh` 是安装/模型/摄像头配置工具，可能安装依赖、下载文件和查询设备节点，`--run` 会启动完整 Embedded；它不是无设备只读预检。Server 普通配置加载也可能执行已有发布恢复；不能把正常 Server 启动称为纯只读解析。
 
 未找到 Server 配置时进入 OOBE；配置已存在但不能加载时会报错退出，不自动改写成样例。stdin/stdout 都是交互终端时，输入 `c` 再按 Enter 可生成主文件加 `.d` 的完整布局，该操作拒绝覆盖已有主文件或分片树。
 

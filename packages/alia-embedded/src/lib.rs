@@ -6,6 +6,7 @@ pub mod grpc;
 pub mod identity;
 pub mod module;
 pub mod plugin;
+pub mod preflight;
 pub mod settings;
 pub mod storage;
 

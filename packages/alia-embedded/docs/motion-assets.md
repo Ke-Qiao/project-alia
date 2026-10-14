@@ -50,6 +50,87 @@ isolate host files from an operator or plugin authorized to execute code as the
 embedded process user. The existing plugin deployment and process permissions
 are a separate boundary; see [configuration](configuration.md#runtime-state).
 
+## Offline configuration and asset check
+
+Use the built binary's explicit inspection mode from the repository root:
+
+```sh
+./target/debug/alia-embedded --check-config /absolute/path/embedded.toml
+```
+
+This reads an existing configuration and ordinary local motion files; it does
+not start a runtime, create identity/state files, load models, open a configured
+servo device, or confirm calibration. Missing config is an error. The report's
+`hardware_verified` is always false and `motion.physical_state` is
+`not_observed`; configured hardware/confirmation flags describe the input, not
+the result of this check. Do not use normal startup as a substitute.
+
+The check reuses the runtime's static motion rules. For a selected `pca9685`/`i2c`
+backend it checks address range, duplicate addresses and channel coverage even
+while hardware is disabled. It checks PWM ordering and the existing positive
+frequency condition, not electrical compatibility or measured pulse frequency.
+The current driver computes prescale using a nominal 25 MHz clock and clamps its
+register/duty calculations; passing this check is not evidence that a requested
+frequency or pulse range is correct for the physical board or servo.
+
+An existing matrix is parsed and checked for dimensions, limits, channel count
+and configured center even when `calibration_confirmed=false`. The report then
+says `calibration.status=checked` without changing that confirmation flag. An
+unconfirmed missing matrix yields `not_checked` with reason `missing`; confirmed
+missing calibration, malformed files, invalid dimensions or an out-of-limit
+center are errors. Final file symlinks, directories and special files are
+rejected; calibration reads are bounded to 1 MiB. Local parent directories remain
+under operator control, and bounded byte reads do not promise a filesystem
+wall-clock deadline.
+
+For each already approved animation, inspection uses the production bounded
+read, exact tuple verification and frame parser, then reports the original
+`asset` and `source_frames`. It does not add approvals or create a Body command.
+An empty catalog stays empty. This check does not validate a future action's
+fps/loops/duration combination, instantiate other modules, compare the Server
+catalog, or certify physical motion.
+
+### Preparing a candidate content identity
+
+Select one ordinary `.anim` file for the actual mechanism. Stop any editor or
+writer that might change it while reviewing; keep it outside deployed approved
+directories until reviewed. On macOS the existing `shasum` and `wc` tools can
+show a **candidate** digest and byte count:
+
+```sh
+ALIA_MOTION_CANDIDATE=/absolute/path/reviewed.anim
+if [ -f "$ALIA_MOTION_CANDIDATE" ] && [ ! -L "$ALIA_MOTION_CANDIDATE" ]; then
+  wc -c < "$ALIA_MOTION_CANDIDATE"
+  shasum -a 256 -- "$ALIA_MOTION_CANDIDATE"
+else
+  printf '%s\n' 'Choose an existing regular file, not a symlink.' >&2
+fi
+```
+
+On Linux, `sha256sum -- "$ALIA_MOTION_CANDIDATE"` is the equivalent digest
+command when installed. These two reads are not an atomic snapshot: a changing
+file must be reviewed and measured again. Neither command validates frame format
+or grants approval. Assign a positive version only as part of the operator's
+review record; versions are identifiers, not automatic rollback protection.
+
+After actual content review, stop the affected Server and Embedded processes.
+Record the reviewer/date, target mechanism/calibration revision, canonical file,
+version, digest and exact byte count. Copy the exact reviewed file to the
+controlled Embedded animation directory, then set the same tuple in
+`motion.approved_animations` and the intended Server `[[channels]]` entry's
+`approved_animations`. Check the exact channel ID and any Server `.d` fragment
+overrides; matching only filenames is insufficient. Do not call Server startup
+or configuration recovery a read-only catalog comparison.
+
+Run `--check-config` against the installed Embedded configuration after copying:
+it verifies the deployed bytes and parser using one bounded buffer. Compare its
+reported tuples to the effective Server catalog, including entries missing from
+either side. The tool explicitly reports Server catalog agreement as unchecked;
+this comparison remains the operator's responsibility. Keep both hardware and
+calibration flags false until the separate physical checks below are complete.
+Restart only after these gates are satisfied; catalog changes never authorize
+replaying an old command.
+
 ## Calibration and lifecycle
 
 `motion.calibration_confirmed` defaults to `false`. Set it only after the local
@@ -79,6 +160,30 @@ instead of silently accepting an ineffective or contradictory setting. Remove
 these keys when replacing a local configuration; keep `hardware_enabled=false`
 and `calibration_confirmed=false` until actual calibration is confirmed. This
 change does not edit deployed configurations or certify the sample assets.
+
+### Field calibration record
+
+The selected project hardware is PCA9685A with MG996R, but the example config's
+serial backend, eight channels, 50 Hz, 500–2500 µs and 90° center are reference
+values, not measured deployment settings. Before enabling output, fill the
+following record from the actual mechanism and corresponding board information:
+
+| Required evidence | Record before enabling output |
+| --- | --- |
+| Board/servo identity | Exact board revision, address jumpers, servo source/model and count; photo or matching documentation |
+| Wiring and power | Separate servo supply specification, actual common ground, Pi-to-board wiring, OE connection/default and power sequencing |
+| Channel mapping | Each logical channel → board/address/output → physical servo/joint; installation direction and load |
+| Calibrated limits | Per-joint measured safe motion/pulse limits, center, matrix file revision and person/date performing calibration |
+| Stop/disconnect hold | Last-target behavior under maintained power, control loss, Pi/board restart and power loss; external position observation where needed |
+| Deployment | Exact service account, config/asset paths and permissions on both machines; approved tuple comparison record |
+
+The existing mapper and offline checker validate the recorded numbers; they do
+not measure or produce this calibration. No maintained Python/Windows calibration
+application is provided by this repository. Do not use the historical matrix as
+evidence or set `calibration_confirmed=true` just to make an offline report pass.
+The agreed behavior remains hold on stop/disconnect and one startup center target
+only after actual calibration is confirmed. A host I²C submission is not position
+feedback or proof of mechanical hold.
 
 ## Animation Format
 
@@ -147,9 +252,10 @@ Content identity does not certify mechanism safety. Keep hardware output disable
 and calibration unconfirmed until actual local calibration and hardware checks
 are complete; the historical files remain unapproved reference assets.
 
-## Delete Boundary
+## Historical asset source
 
-After the migrated files above are present and the embedded config points to
-them, `neck_control` is no longer needed for Rust runtime motion, face tracking,
-or animation playback. Keep a backup only if you still need the old Python web
-calibration UI or Windows calibration tools.
+The files above came from the earlier Python `neck_control` toolchain. That
+runtime is no longer required or supplied for Rust motion, face tracking or
+animation playback. Its historical calibration/reference files remain available
+as source material; they do not constitute a current calibration tool or approval
+for the selected mechanism.

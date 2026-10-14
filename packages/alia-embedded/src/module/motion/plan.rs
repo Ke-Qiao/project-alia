@@ -126,7 +126,10 @@ pub(super) fn validate_canonical(command: &BodyCommand, canonical: &[u8]) -> Res
     Ok(())
 }
 
-fn read_animation(config: &MotionConfig, asset: &BodyAnimationAsset) -> Result<Vec<[f32; 3]>> {
+pub(super) fn read_animation(
+    config: &MotionConfig,
+    asset: &BodyAnimationAsset,
+) -> Result<Vec<[f32; 3]>> {
     let bytes = super::assets::read_approved(config, asset)?;
     let content = std::str::from_utf8(&bytes).context("animation must be UTF-8")?;
     let mut frames = Vec::new();

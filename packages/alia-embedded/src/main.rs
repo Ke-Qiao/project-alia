@@ -14,6 +14,22 @@ use alia_embedded::module;
 use alia_embedded::module::traits::WakeWordEngine;
 
 fn main() -> Result<()> {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    match args.as_slice() {
+        [] => {}
+        [help] if help == "--help" || help == "-h" => {
+            println!(
+                "Usage: alia-embedded [--check-config <path>]\n\nNo arguments: start the device runtime.\n--check-config: inspect an existing configuration and motion files without starting devices, models or services."
+            );
+            return Ok(());
+        }
+        [check, path] if check == "--check-config" => {
+            let report = alia_embedded::preflight::check_config(&PathBuf::from(path))?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(());
+        }
+        _ => anyhow::bail!("expected no arguments, --help, or --check-config <path>"),
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

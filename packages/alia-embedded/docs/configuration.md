@@ -1,8 +1,9 @@
 # Embedded Configuration
 
-`alia-embedded` uses compiled defaults when `config/embedded.toml` is
-missing; selected backends still need their build features, models, and devices. User-editable settings live in the config file; runtime-owned state is
-stored in SQLite.
+Normal `alia-embedded` startup uses compiled defaults when `config/embedded.toml`
+is missing; selected backends still need their build features, models, and devices.
+User-editable settings live in the config file; runtime-owned state is stored in
+SQLite. The explicit configuration check below instead requires an existing file.
 
 ## Config Path
 
@@ -18,9 +19,33 @@ Override with:
 export ALIA_EMBEDDED_CONFIG_PATH=config/embedded.toml
 ```
 
+To inspect a candidate without starting the runtime:
+
+```bash
+cargo run -p alia-embedded -- --check-config /absolute/path/embedded.toml
+```
+
+The application check reads the configuration and applicable motion files. It
+does not open audio/camera/actuator devices, load inference models, create
+identity or state files, or start listeners. Missing configuration and unknown
+or incomplete arguments fail; they never fall through to normal startup. Cargo
+may compile normal build artifacts before running the check. Successful
+validation does not establish hardware readiness, native audio formats, model
+availability, permissions or calibration.
+
+Use [`embedded.staging.example.toml`](../../../config/embedded.staging.example.toml)
+for preparation with device modules disabled. Running that profile normally
+still creates runtime state and starts its configured service; only the check
+path above is a read-only application operation. Keep field-specific identities
+and deployment values in the [central field record](../../../docs/operations/hardware-deployment-readiness.md).
+
 ## Main Sections
 
-The example file is `config/embedded.example.toml`.
+The general example is `config/embedded.example.toml`. Its default native audio
+modules use `auto` / `default` device selection, and normal startup opens playback
+and microphone capture before a wake word. Other selected modules can initialize
+camera, sensors or discovery; `motion.hardware_enabled=false` only disables
+native actuator output. This general example is not a no-device preflight profile.
 
 | Section | Purpose |
 | --- | --- |
@@ -56,14 +81,19 @@ setting requires restart. Binding does not choose or rewrite the instance ID.
 
 The other settings are `pre_roll_ms` (default 200) and `upload_queue_frames`
 (default 32). The sole path requires mono 16 kHz capture and an available VAD;
-there is no `mode`, edge STT, local interrupt, thinking, or continuous-dialogue
-section. `[modules]` has no `mixer` or `edge_stt` slot. Native playback always
+there is no `speech.enabled` toggle, `mode`, edge STT, local interrupt, thinking,
+or continuous-dialogue section. `[modules]` has no `mixer` or `edge_stt` slot. Native playback always
 mixes scoped voice/cue sources at fixed gains 1.0/0.2.
 
 Set `modules.audio_capture = "noop"` for a service-only host with no microphone.
 The speech worker then stays inactive with degraded health; do not select a
 Noop VAD while claiming real capture is active. Choose `audio_playback = "noop"`
 when output is intentionally disabled. Noop backends do not prove audio readiness.
+The staging example also disables wake/VAD and the other device modules. Use the
+[audio guide](audio-and-voice.md#capture-and-playback) for explicit Pi ALSA device
+selection and the distinction between requested speech format and native format.
+Embedded ALSA availability/health checks may open PCM handles; they are not a
+device-free configuration inspection.
 
 Production voice also requires the configured server Easy-Turn provider. A
 failed provider or interrupted stream requires a fresh wake, not a fallback to
@@ -72,13 +102,15 @@ local utterance/STT. Current runtime policies and shadow defaults remain unchang
 ## Runtime State
 
 Resource paths are resolved relative to the config file directory. Runtime-owned
-state and cue/debug assets commonly use:
+state and cue assets commonly use:
 
 ```text
 run/embedded-state.sqlite3
 run/direct-responses/
-run/audio-debug/
 ```
+
+Audio evidence has no default recording directory. Its explicit caller chooses
+a new export path; the synthetic replay example does not record real devices.
 
 The config file should not be used as a database. Server/frontend setting
 updates use embedded gRPC settings APIs and persist runtime-owned state through

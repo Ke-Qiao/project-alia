@@ -1087,7 +1087,7 @@ impl Drop for MotionRuntime {
     }
 }
 
-fn validate_config(config: &MotionConfig) -> Result<()> {
+pub(super) fn validate_config(config: &MotionConfig) -> Result<()> {
     ensure!(
         !config.hardware_enabled || config.calibration_confirmed,
         "native body output requires confirmed mechanism calibration"
@@ -1140,22 +1140,27 @@ fn validate_config(config: &MotionConfig) -> Result<()> {
         "invalid body PWM configuration"
     );
     if config.hardware_enabled && matches!(config.servo_backend.as_str(), "pca9685" | "i2c") {
-        ensure!(
-            config.pca9685_addresses.len() * 16 >= config.servo_count
-                && config
-                    .pca9685_addresses
-                    .iter()
-                    .all(|address| (0x03..=0x77).contains(address)),
-            "PCA9685 board configuration does not cover channels"
-        );
-        let mut sorted = config.pca9685_addresses.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        ensure!(
-            sorted.len() == config.pca9685_addresses.len(),
-            "duplicate PCA9685 board addresses"
-        );
+        validate_pca_addresses(config)?;
     }
+    Ok(())
+}
+
+pub(super) fn validate_pca_addresses(config: &MotionConfig) -> Result<()> {
+    ensure!(
+        config.pca9685_addresses.len() * 16 >= config.servo_count
+            && config
+                .pca9685_addresses
+                .iter()
+                .all(|address| (0x03..=0x77).contains(address)),
+        "PCA9685 board configuration does not cover channels"
+    );
+    let mut sorted = config.pca9685_addresses.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    ensure!(
+        sorted.len() == config.pca9685_addresses.len(),
+        "duplicate PCA9685 board addresses"
+    );
     Ok(())
 }
 

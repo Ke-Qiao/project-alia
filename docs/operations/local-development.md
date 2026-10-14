@@ -48,7 +48,34 @@ Detailed package setup lives in:
 - [alia-server configuration](../../packages/alia-server/docs/configuration.md)
 - [alia-embedded configuration](../../packages/alia-embedded/docs/configuration.md)
 
+For preparation before devices are enabled, use the separate
+[`config/embedded.staging.example.toml`](../../config/embedded.staging.example.toml)
+as the starting point for an isolated instance. It explicitly disables audio and
+other device modules. The general Embedded example selects native audio with
+`auto` / `default`; it is not a no-device preparation profile. Keep actual Pi
+device identities, permissions and AEC reference details in the
+[central field record](hardware-deployment-readiness.md).
+
+Check an existing candidate file before starting its runtime:
+
+```bash
+cargo run -p alia-embedded -- --check-config /absolute/path/embedded.toml
+```
+
+The application check reads configuration and the applicable motion files. It
+does not open devices, load inference models, create identity/state files or
+start a listener. A missing file is an error, not permission to check defaults;
+unknown or incomplete arguments are errors. Cargo may still build the binary in
+its normal target directory. A successful check is configuration evidence, not
+proof of device permissions, negotiated audio formats, AEC or physical readiness.
+
 ## Run Components
+
+These commands start services. With the general Embedded example, startup opens
+native playback and microphone capture before a wake word, and may initialize
+the configured camera and discovery services. It can also create identity and
+state files and listen for gRPC. Even the staging runtime is a service with
+state and a listener; use `--check-config` for a read-only application check.
 
 ```bash
 cargo run -p alia-server
@@ -87,10 +114,13 @@ restart Server after this file change. Embedded development binding does not
 assign an account owner or bypass Server voice authorization.
 
 For continuous voice, enable `[providers.easy_turn]` in the Server provider
-fragment and `[speech].enabled` in Embedded. The device has one continuous
-VoiceSession path; capture must be 16 kHz mono. Build and deploy Server and
-Embedded together: voice v2
-requires software hold capability and playback v3; old versions are rejected.
+fragment, configure the Embedded audio/wake/VAD modules and set
+`speech.channel_id` to the exact Server channel ID. There is no `speech.enabled`
+setting; unknown speech fields are rejected. The device has one continuous
+VoiceSession path; the configured capture format sent to speech must be 16 kHz
+mono, while the backend's negotiated native format may differ. Build and deploy
+Server and Embedded together: voice v2 requires software hold capability and
+playback v3; old versions are rejected.
 After reconnecting or rebinding, require a fresh wake and a new voice session.
 An optional wake cue starts only after Ready and uses the same scoped native
 mixer as conversation audio.
@@ -122,8 +152,9 @@ path separately before treating a local software run as a hardware result.
   channel traces.
 - Embedded native audio evidence uses an explicit bounded session and synthetic
   offline replay. The obsolete `[audio_debug]` table is rejected; remove it from
-  local configuration. See [audio evidence](../../packages/alia-embedded/docs/audio-and-voice.md#debugging-and-limits).
-- Use `/health` for aggregated module health. A responding HTTP endpoint is not proof that every provider is ready; inspect `status` and each module.
+  local configuration. Its example creates and reads a synthetic fixture, not a
+  live recording. There is no automatic evidence directory. See [audio evidence](../../packages/alia-embedded/docs/audio-and-voice.md#debugging-and-limits).
+- Use Server `/health` for aggregated module health. A responding HTTP endpoint is not proof that every provider is ready; inspect `status` and each module.
 - Health aggregation has a 6-second overall budget, at most 8 concurrent checks,
   shared-profile deduplication and one active round per Registry. The router
   checks its local dependencies. Keep the default `probe=false` for routine
@@ -131,6 +162,8 @@ path separately before treating a local software run as a hardware result.
   results. Readiness still does not prove model or hardware performance.
 - Use authenticated `/api/v1/settings` to inspect runtime settings; durable policy changes require the documented revision and administrator permissions.
 - Check embedded gRPC settings for volume and direct response state.
+- Embedded native audio availability checks can open ALSA PCM handles. They are
+  not the read-only configuration check or a substitute for device enumeration.
 
 ## Common Local Paths
 
@@ -139,7 +172,6 @@ path separately before treating a local software run as a hardware result.
 - Embedded config: `config/embedded.toml`
 - Direct response example bundles: `config/direct_response.example/`
 - Embedded direct response runtime directory: `run/direct-responses/`
-- Embedded audio debug directory: `run/audio-debug/`
 
 
 ## Administration without a frontend
