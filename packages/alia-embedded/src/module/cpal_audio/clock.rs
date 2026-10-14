@@ -92,35 +92,13 @@ pub(super) fn observe_capture_samples<T: NativeReferenceSample>(
         clock.probe.mark(AudioDiscontinuity::BackendError);
     }
     let native = clock.observe((complete / channels) as u64, reading);
-    let block_samples = REFERENCE_BLOCK_SAMPLES / channels * channels;
-    let mut offset_frames = 0_u64;
-    for chunk in samples[..complete].chunks(block_samples) {
-        let mut timing = native;
-        timing.start_frame += offset_frames;
-        timing.frames = (chunk.len() / channels) as u64;
-        timing.clock.sample_ns = native.clock.sample_ns.and_then(|ns| {
-            let offset =
-                u128::from(offset_frames) * 1_000_000_000 / u128::from(format.sample_rate_hz);
-            ns.checked_add(i64::try_from(offset).ok()?)
-        });
-        let mut block = AudioReferenceBlock {
-            timing,
-            boundary: Some(boundary),
-            sample_format: Some(T::FORMAT),
-            content: ReferenceContent::Media,
-            discontinuity: None,
-            sequence: 0,
-            lost_blocks_before: 0,
-            lost_frames_before: 0,
-            samples: [0.0; REFERENCE_BLOCK_SAMPLES],
-            sample_count: chunk.len(),
-        };
-        for (output, sample) in block.samples.iter_mut().zip(chunk) {
-            *output = sample.normalized();
-        }
-        clock.probe.publish(block);
-        offset_frames += timing.frames;
-    }
+    publish_native_samples(
+        &clock.probe,
+        &samples[..complete],
+        native,
+        boundary,
+        ReferenceContent::Media,
+    );
     native
 }
 
@@ -137,20 +115,45 @@ pub(super) fn record_samples<T: NativeReferenceSample>(
     if complete != samples.len() {
         clock.probe.mark(AudioDiscontinuity::BackendError);
     }
+    if complete == 0 {
+        return;
+    }
+    // One backend reading describes the whole accepted native batch. Splitting
+    // must not revalidate a rejected reading or promote derived sample offsets
+    // into the anchor history used by the next callback/write.
+    let native = clock.observe((complete / channels) as u64, reading);
+    publish_native_samples(
+        &clock.probe,
+        &samples[..complete],
+        native,
+        boundary.into(),
+        content,
+    );
+}
+
+fn publish_native_samples<T: NativeReferenceSample>(
+    probe: &AudioStreamProbe,
+    samples: &[T],
+    native: AudioTiming,
+    boundary: AudioSampleBoundary,
+    content: ReferenceContent,
+) {
+    let format = native.format;
+    let channels = usize::from(format.channels);
     let block_samples = REFERENCE_BLOCK_SAMPLES / channels * channels;
     let mut offset_frames = 0_u64;
-    for chunk in samples[..complete].chunks(block_samples) {
-        let frames = (chunk.len() / channels) as u64;
-        let mut chunk_reading = reading;
-        chunk_reading.sample_ns = reading.sample_ns.and_then(|ns| {
+    for chunk in samples.chunks(block_samples) {
+        let mut timing = native;
+        timing.start_frame += offset_frames;
+        timing.frames = (chunk.len() / channels) as u64;
+        timing.clock.sample_ns = native.clock.sample_ns.and_then(|ns| {
             let offset =
                 u128::from(offset_frames) * 1_000_000_000 / u128::from(format.sample_rate_hz);
             ns.checked_add(i64::try_from(offset).ok()?)
         });
-        let timing = clock.observe(frames, chunk_reading);
         let mut block = AudioReferenceBlock {
             timing,
-            boundary: Some(boundary.into()),
+            boundary: Some(boundary),
             sample_format: Some(T::FORMAT),
             content,
             discontinuity: None,
@@ -163,8 +166,8 @@ pub(super) fn record_samples<T: NativeReferenceSample>(
         for (output, sample) in block.samples.iter_mut().zip(chunk) {
             *output = sample.normalized();
         }
-        clock.probe.publish(block);
-        offset_frames += frames;
+        probe.publish(block);
+        offset_frames += timing.frames;
     }
 }
 
@@ -309,6 +312,213 @@ mod tests {
                 Some(20_000_000 + (block.timing.start_frame * 1_000_000_000 / 48000) as i64)
             );
             assert_eq!(block.sample_format, Some(NativeSampleFormat::I16));
+        }
+    }
+
+    #[test]
+    fn playback_batch_clock_regression_downgrades_every_split_block() {
+        let bus = crate::module::context::AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
+        let mut clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: 48000,
+                channels: 2,
+            },
+        );
+        let stream_id = clock.probe.stream_id();
+        let reading = |callback_ns, sample_ns| AudioClockReading {
+            clock_id: stream_id,
+            callback_ns: Some(callback_ns),
+            sample_ns: Some(sample_ns),
+            queued_frames: None,
+            quality: AudioTimeQuality::BackendEstimate,
+        };
+        record_samples(
+            &mut clock,
+            &[0_i16; 2],
+            reading(100_000_000, 200_000_000),
+            SubmissionBoundary::CpalCallbackBuffer,
+            ReferenceContent::Media,
+        );
+        while reader.try_read().is_some() {}
+        record_samples(
+            &mut clock,
+            &[1200_i16; 2052],
+            reading(50_000_000, 150_000_000),
+            SubmissionBoundary::CpalCallbackBuffer,
+            ReferenceContent::Media,
+        );
+        let mut blocks = Vec::new();
+        let mut regressions = 0;
+        while let Some(block) = reader.try_read() {
+            regressions +=
+                usize::from(block.discontinuity == Some(AudioDiscontinuity::ClockRegression));
+            if block.sample_count > 0 {
+                blocks.push(block);
+            }
+        }
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(
+            blocks
+                .iter()
+                .map(|block| block.timing.clock.quality)
+                .collect::<Vec<_>>(),
+            vec![AudioTimeQuality::Unknown; 3],
+            "one native callback must not regain a rejected clock reading while splitting PCM"
+        );
+        assert_eq!(
+            blocks
+                .iter()
+                .map(|block| (block.timing.start_frame, block.timing.frames))
+                .collect::<Vec<_>>(),
+            [(1, 512), (513, 512), (1025, 2)]
+        );
+        assert_eq!(bus.snapshot(AudioDirection::Playback).unwrap().cursor, 1027);
+        assert_eq!(regressions, 1);
+        assert!(blocks.iter().all(|block| {
+            block.timing.continuity == blocks[0].timing.continuity
+                && block.timing.observed_boot_ns == blocks[0].timing.observed_boot_ns
+                && block.timing.clock.callback_ns.is_none()
+                && block.timing.clock.sample_ns.is_none()
+        }));
+        record_samples(
+            &mut clock,
+            &[1300_i16; 2],
+            reading(60_000_000, 160_000_000),
+            SubmissionBoundary::CpalCallbackBuffer,
+            ReferenceContent::Media,
+        );
+        let recovered = reader.try_read().unwrap();
+        assert_eq!(recovered.timing.start_frame, 1027);
+        assert_eq!(recovered.timing.continuity, blocks[0].timing.continuity);
+        assert_eq!(
+            recovered.timing.clock.quality,
+            AudioTimeQuality::BackendEstimate
+        );
+        assert!(reader.try_read().is_none());
+    }
+
+    #[test]
+    fn playback_split_offsets_do_not_replace_the_next_native_batch_anchor() {
+        let bus = crate::module::context::AudioBus::new(2).reference();
+        let mut reader = bus.try_claim_reader().unwrap();
+        let mut clock = bus.open_stream(
+            AudioDirection::Playback,
+            AudioFormat {
+                sample_rate_hz: 48000,
+                channels: 2,
+            },
+        );
+        let reading = AudioClockReading {
+            clock_id: clock.probe.stream_id(),
+            callback_ns: Some(100_000_000),
+            sample_ns: Some(200_000_000),
+            queued_frames: None,
+            quality: AudioTimeQuality::BackendEstimate,
+        };
+        record_samples(
+            &mut clock,
+            &[1200_i16; 2052],
+            reading,
+            SubmissionBoundary::CpalCallbackBuffer,
+            ReferenceContent::Media,
+        );
+        let started = reader.try_read().unwrap();
+        assert_eq!(
+            started.discontinuity,
+            Some(AudioDiscontinuity::StreamStarted)
+        );
+        let blocks: Vec<_> = std::iter::from_fn(|| reader.try_read()).collect();
+        assert_eq!(blocks.len(), 3);
+        for (block, offset) in blocks.iter().zip([0, 512, 1024]) {
+            assert_eq!(block.timing.clock.callback_ns, reading.callback_ns);
+            assert_eq!(
+                block.timing.clock.sample_ns,
+                Some(200_000_000 + offset * 1_000_000_000 / 48000)
+            );
+            assert_eq!(
+                block.timing.clock.quality,
+                AudioTimeQuality::BackendEstimate
+            );
+            assert_eq!(block.timing.continuity, blocks[0].timing.continuity);
+            assert_eq!(
+                block.timing.observed_boot_ns,
+                blocks[0].timing.observed_boot_ns
+            );
+        }
+
+        // This native estimate advances from the previous native anchor but is
+        // earlier than that batch's nominally derived final chunk timestamp.
+        let next_reading = AudioClockReading {
+            sample_ns: Some(201_000_000),
+            ..reading
+        };
+        record_samples(
+            &mut clock,
+            &[1300_i16; 2],
+            next_reading,
+            SubmissionBoundary::CpalCallbackBuffer,
+            ReferenceContent::Media,
+        );
+        let next = reader.try_read().unwrap();
+        assert_eq!(next.timing.start_frame, 1026);
+        assert_eq!(next.timing.continuity, blocks[0].timing.continuity);
+        assert_eq!(next.timing.clock, next_reading);
+        assert!(reader.try_read().is_none());
+    }
+
+    #[test]
+    fn split_sample_offset_overflow_keeps_the_available_callback_estimate() {
+        for direction in [AudioDirection::Capture, AudioDirection::Playback] {
+            let bus = crate::module::context::AudioBus::new(2).reference();
+            let mut reader = bus.try_claim_reader().unwrap();
+            let mut clock = bus.open_stream(
+                direction,
+                AudioFormat {
+                    sample_rate_hz: 48000,
+                    channels: 2,
+                },
+            );
+            let reading = AudioClockReading {
+                clock_id: clock.probe.stream_id(),
+                callback_ns: Some(20),
+                sample_ns: Some(i64::MAX - 1),
+                queued_frames: None,
+                quality: AudioTimeQuality::BackendEstimate,
+            };
+            match direction {
+                AudioDirection::Capture => {
+                    observe_capture_samples(
+                        &mut clock,
+                        &[1200_i16; 2052],
+                        reading,
+                        AudioSampleBoundary::CpalInputCallback,
+                    );
+                }
+                AudioDirection::Playback => record_samples(
+                    &mut clock,
+                    &[1200_i16; 2052],
+                    reading,
+                    SubmissionBoundary::CpalCallbackBuffer,
+                    ReferenceContent::Media,
+                ),
+            }
+            reader.try_read().unwrap(); // Started has no sample timestamp.
+            let blocks: Vec<_> = std::iter::from_fn(|| reader.try_read()).collect();
+            assert_eq!(blocks.len(), 3);
+            assert_eq!(
+                blocks
+                    .iter()
+                    .map(|block| block.timing.clock.sample_ns)
+                    .collect::<Vec<_>>(),
+                [Some(i64::MAX - 1), None, None]
+            );
+            assert!(blocks.iter().all(|block| {
+                block.timing.clock.callback_ns == Some(20)
+                    && block.timing.clock.quality == AudioTimeQuality::BackendEstimate
+                    && block.timing.continuity == blocks[0].timing.continuity
+            }));
         }
     }
 

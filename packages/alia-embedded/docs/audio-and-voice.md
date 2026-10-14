@@ -153,6 +153,26 @@ including `ObservedNative`. No report certifies physical completeness or alignme
 Closed snapshots must leave enough successful attempts and frames to account
 for the records actually present; contradictory loss totals are rejected.
 
+Timing belongs to each native stream. A native batch is observed once before
+being split into reference blocks; split sample timestamps use nominal-rate
+offsets, not independent device measurements. A backward callback or sample
+anchor marks a new continuity segment and makes that entire batch's reading
+unknown without deleting its PCM or rewinding its frame cursor.
+
+Replay also reports `ClockDiscontinuity` when adjacent PCM in the same stream
+changes clock quality or callback/sample timestamp availability, or either
+timestamp moves backwards. Marker records are not clock measurements. This
+preserves old evidence and its original samples; it tells consumers to discard
+stale timing assumptions, not that a physical clock failure or PCM gap was proven.
+Equal callback timestamps, negative sample origins, and changing queue-delay or
+host-observation values alone do not establish clock discontinuity or drift.
+
+There is no selected AEC consumer. Reference blocks, speech transport blocks,
+VAD windows and resampler chunks have separate sizes and purposes. Claiming the
+reference reader does not insert AEC into the converted speech path. Alignment,
+drift estimation and algorithm framing require confirmed consumer and device
+contracts; see the [clock and consumer contract](../../../docs/refactor/audio-reference-clock-design.md#r02-时钟缺口与-consumer-契约2026-10-14).
+
 The Mac offline combination tests also send generated PCM through the production
 capture helper, final voice/cue mixer callback and one `EvidenceSession`, then
 export, import and replay it. They cover exact cue cancellation, explicit

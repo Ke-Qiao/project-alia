@@ -179,6 +179,7 @@ impl AudioReferenceBus {
         AudioStreamClock {
             probe,
             last_callback_ns: None,
+            last_sample_ns: None,
         }
     }
 }
@@ -369,6 +370,7 @@ impl Drop for AudioStreamOwner {
 pub(crate) struct AudioStreamClock {
     pub probe: AudioStreamProbe,
     last_callback_ns: Option<i64>,
+    last_sample_ns: Option<i64>,
 }
 impl AudioStreamClock {
     pub fn observe(&mut self, frames: u64, mut clock: AudioClockReading) -> AudioTiming {
@@ -378,12 +380,18 @@ impl AudioStreamClock {
                 .callback_ns
                 .zip(self.last_callback_ns)
                 .is_some_and(|(new, old)| new < old)
+            || clock
+                .sample_ns
+                .zip(self.last_sample_ns)
+                .is_some_and(|(new, old)| new < old)
         {
             self.probe.mark(AudioDiscontinuity::ClockRegression);
             self.last_callback_ns = clock.callback_ns;
+            self.last_sample_ns = clock.sample_ns;
             clock = self.probe.unknown_clock();
         } else {
             self.last_callback_ns = clock.callback_ns.or(self.last_callback_ns);
+            self.last_sample_ns = clock.sample_ns.or(self.last_sample_ns);
         }
         let start = self.probe.state.cursor.fetch_add(frames, Ordering::AcqRel);
         AudioTiming {
@@ -732,6 +740,90 @@ mod tests {
             Some(AudioDiscontinuity::StreamStopped)
         );
     }
+    #[test]
+    fn backwards_sample_time_changes_continuity_without_rewinding_frames() {
+        let bus = AudioReferenceBus::new(Uuid::new_v4());
+        let mut clock = bus.open_stream(AudioDirection::Capture, format());
+        let stream_id = clock.probe.stream_id();
+        let reading = |callback_ns, sample_ns| AudioClockReading {
+            clock_id: stream_id,
+            callback_ns: Some(callback_ns),
+            sample_ns: Some(sample_ns),
+            queued_frames: None,
+            quality: AudioTimeQuality::BackendEstimate,
+        };
+        let first = clock.observe(20, reading(100, -10));
+        let regressed = clock.observe(10, reading(200, -20));
+        assert!(
+            regressed.continuity > first.continuity,
+            "sample timestamp regressed while callback advanced without a clock discontinuity"
+        );
+        assert_eq!(regressed.start_frame, 20);
+        assert_eq!(regressed.clock.quality, AudioTimeQuality::Unknown);
+        let next = clock.observe(5, reading(300, -15));
+        assert_eq!(next.continuity, regressed.continuity);
+        assert_eq!(next.start_frame, 30);
+        assert_eq!(next.clock.sample_ns, Some(-15));
+    }
+
+    #[test]
+    fn equal_negative_and_missing_clock_anchors_do_not_invent_gaps() {
+        let bus = AudioReferenceBus::new(Uuid::new_v4());
+        let mut clock = bus.open_stream(AudioDirection::Capture, format());
+        let stream_id = clock.probe.stream_id();
+        let reading = |callback_ns, sample_ns, queued_frames| AudioClockReading {
+            clock_id: stream_id,
+            callback_ns,
+            sample_ns,
+            queued_frames,
+            quality: AudioTimeQuality::BackendEstimate,
+        };
+        let first = clock.observe(2, reading(Some(100), Some(-100), None));
+        let equal = clock.observe(2, reading(Some(100), Some(-100), None));
+        assert_eq!(equal.continuity, first.continuity);
+        assert_eq!(equal.clock.quality, AudioTimeQuality::BackendEstimate);
+        assert_eq!(equal.clock.sample_ns, Some(-100));
+
+        let missing = clock.observe(2, clock.probe.unknown_clock());
+        assert_eq!(missing.continuity, first.continuity);
+        assert_eq!(missing.clock.quality, AudioTimeQuality::Unknown);
+        let restored = clock.observe(2, reading(Some(200), Some(-90), None));
+        assert_eq!(restored.continuity, first.continuity);
+        assert_eq!(restored.clock.quality, AudioTimeQuality::BackendEstimate);
+
+        // ALSA may have a valid status timestamp/delay but no sample timestamp.
+        let status = clock.observe(2, reading(Some(300), None, Some(12)));
+        assert_eq!(status.continuity, first.continuity);
+        assert_eq!(status.clock.quality, AudioTimeQuality::BackendEstimate);
+        assert_eq!(status.clock.queued_frames, Some(12));
+        assert_eq!(status.clock.sample_ns, None);
+        let next = clock.observe(2, reading(Some(400), Some(-80), None));
+        assert_eq!(next.continuity, first.continuity);
+
+        // Missing readings must not erase the last comparable native anchor.
+        clock.observe(2, clock.probe.unknown_clock());
+        let regressed = clock.observe(2, reading(Some(500), Some(-85), None));
+        assert!(regressed.continuity > first.continuity);
+        assert_eq!(regressed.clock.quality, AudioTimeQuality::Unknown);
+        assert_eq!((regressed.start_frame, regressed.frames), (14, 2));
+
+        clock.probe.close();
+        let mut reopened = bus.open_stream(AudioDirection::Capture, format());
+        let fresh = reopened.observe(
+            1,
+            AudioClockReading {
+                clock_id: reopened.probe.stream_id(),
+                callback_ns: Some(0),
+                sample_ns: Some(-1000),
+                queued_frames: None,
+                quality: AudioTimeQuality::BackendEstimate,
+            },
+        );
+        assert_ne!(fresh.stream.stream_id, first.stream.stream_id);
+        assert_eq!((fresh.start_frame, fresh.continuity), (0, 1));
+        assert_eq!(fresh.clock.quality, AudioTimeQuality::BackendEstimate);
+    }
+
     #[test]
     fn backwards_backend_time_changes_continuity_without_rewinding_frames() {
         let bus = AudioReferenceBus::new(Uuid::new_v4());

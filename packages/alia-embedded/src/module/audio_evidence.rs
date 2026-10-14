@@ -691,6 +691,9 @@ pub enum ReplayReset {
     SequenceGap,
     FrameGap,
     ProducerLoss,
+    /// Adjacent PCM clock metadata no longer supports the prior relation.
+    /// This is not a measured device fault, drift or capture/playback alignment.
+    ClockDiscontinuity,
 }
 pub struct ReplayStep<'a> {
     pub record: &'a EvidenceRecord,
@@ -753,6 +756,25 @@ impl<'a> Iterator for Replay<'a> {
             {
                 if prior.timing.start_frame + prior.timing.frames != record.timing.start_frame {
                     resets.push(ReplayReset::FrameGap);
+                }
+                // Markers have no sample clock. Compare only the preceding PCM
+                // in this stream, preserving anomalous historical observations.
+                // Delay and host observation time do not establish alignment.
+                let before = prior.timing.clock;
+                let current = record.timing.clock;
+                if before.quality != current.quality
+                    || before.callback_ns.is_some() != current.callback_ns.is_some()
+                    || before.sample_ns.is_some() != current.sample_ns.is_some()
+                    || current
+                        .callback_ns
+                        .zip(before.callback_ns)
+                        .is_some_and(|(new, old)| new < old)
+                    || current
+                        .sample_ns
+                        .zip(before.sample_ns)
+                        .is_some_and(|(new, old)| new < old)
+                {
+                    resets.push(ReplayReset::ClockDiscontinuity);
                 }
             }
         }

@@ -321,6 +321,272 @@ fn replay_preserves_marker_pcm_interleaving_and_resets_on_gaps_without_zero_fill
 }
 
 #[test]
+fn historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples() {
+    use AudioTimeQuality::{BackendEstimate, Unknown};
+
+    // No producer marker is assumed: previously exported files can carry a
+    // clock change while sequence, frames and continuity remain consecutive.
+    // Every pair must remain importable, with its original PCM and clock data.
+    let cases = [
+        (
+            "quality lost",
+            BackendEstimate,
+            Unknown,
+            Some(1000),
+            Some(2000),
+            Some(500),
+            Some(1500),
+        ),
+        (
+            "quality restored",
+            Unknown,
+            BackendEstimate,
+            Some(1000),
+            Some(2000),
+            Some(500),
+            Some(1500),
+        ),
+        (
+            "callback missing",
+            Unknown,
+            Unknown,
+            Some(1000),
+            None,
+            Some(500),
+            Some(1500),
+        ),
+        (
+            "callback restored",
+            Unknown,
+            Unknown,
+            None,
+            Some(2000),
+            Some(500),
+            Some(1500),
+        ),
+        (
+            "sample missing",
+            Unknown,
+            Unknown,
+            Some(1000),
+            Some(2000),
+            Some(500),
+            None,
+        ),
+        (
+            "sample restored",
+            Unknown,
+            Unknown,
+            Some(1000),
+            Some(2000),
+            None,
+            Some(1500),
+        ),
+        (
+            "callback regressed",
+            BackendEstimate,
+            BackendEstimate,
+            Some(1000),
+            Some(999),
+            Some(500),
+            Some(1500),
+        ),
+        (
+            "sample regressed",
+            BackendEstimate,
+            BackendEstimate,
+            Some(1000),
+            Some(2000),
+            Some(500),
+            Some(499),
+        ),
+    ];
+    let mut silent_changes = Vec::new();
+    for (
+        name,
+        first_quality,
+        next_quality,
+        first_callback,
+        next_callback,
+        first_sample,
+        next_sample,
+    ) in cases
+    {
+        let mut evidence = fixture();
+        evidence.observed_latest = ObservedLatest::default();
+        let mut first = evidence
+            .records
+            .iter()
+            .find(|r| r.timing.frames > 0)
+            .unwrap()
+            .clone();
+        first.sequence = 1;
+        first.timing.clock.quality = first_quality;
+        first.timing.clock.callback_ns = first_callback;
+        first.timing.clock.sample_ns = first_sample;
+        let mut next = first.clone();
+        next.sequence = 2;
+        next.timing.start_frame += first.timing.frames;
+        next.timing.clock.quality = next_quality;
+        next.timing.clock.callback_ns = next_callback;
+        next.timing.clock.sample_ns = next_sample;
+        evidence.records = vec![first, next.clone()];
+        let bytes = serde_json::to_vec(&evidence).unwrap();
+        let imported = AudioEvidence::read_json(
+            bytes.as_slice(),
+            EvidenceLimits::default(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let steps: Vec<_> = imported
+            .replay(EvidenceLimits::default())
+            .unwrap()
+            .collect();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[1].record.timing, next.timing, "{name}");
+        assert_eq!(
+            steps[1].record.samples_f64_bits, next.samples_f64_bits,
+            "{name}"
+        );
+        if !steps[1].resets.contains(&ReplayReset::ClockDiscontinuity) {
+            silent_changes.push(name);
+        }
+    }
+    assert!(
+        silent_changes.is_empty(),
+        "historical PCM clock changes replayed without reset: {silent_changes:?}"
+    );
+}
+
+#[test]
+fn replay_clock_checks_skip_markers_and_allow_equal_callback_with_negative_sample_origin() {
+    let mut evidence = fixture();
+    evidence.observed_latest = ObservedLatest::default();
+    let mut first = evidence
+        .records
+        .iter()
+        .find(|r| r.timing.frames > 0)
+        .unwrap()
+        .clone();
+    first.sequence = 1;
+    first.timing.clock.quality = AudioTimeQuality::BackendEstimate;
+    first.timing.clock.callback_ns = Some(0);
+    first.timing.clock.sample_ns = Some(-500);
+    first.timing.observed_boot_ns = 999;
+    let mut marker = first.clone();
+    marker.sequence = 2;
+    marker.timing.continuity = 7;
+    marker.timing.start_frame = 20;
+    marker.timing.frames = 0;
+    marker.timing.clock.quality = AudioTimeQuality::Unknown;
+    marker.timing.clock.callback_ns = None;
+    marker.timing.clock.sample_ns = None;
+    marker.samples_f64_bits.clear();
+    marker.discontinuity = Some(AudioDiscontinuity::BackendError);
+    marker.boundary = None;
+    marker.sample_format = None;
+    marker.content = ReferenceContent::ZeroFill;
+    let mut next = first.clone();
+    next.sequence = 3;
+    next.timing.start_frame += first.timing.frames;
+    next.timing.clock.sample_ns = Some(-250);
+    next.timing.observed_boot_ns = 0;
+    evidence.records = vec![first, marker, next.clone()];
+    let bytes = serde_json::to_vec(&evidence).unwrap();
+    let imported = AudioEvidence::read_json(
+        bytes.as_slice(),
+        EvidenceLimits::default(),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let steps: Vec<_> = imported
+        .replay(EvidenceLimits::default())
+        .unwrap()
+        .collect();
+    assert_eq!(steps[1].resets, [ReplayReset::Discontinuity]);
+    // The error marker retains its independent continuity reset. Its Unknown
+    // clock and later cursor never replace the preceding actual PCM clock.
+    assert_eq!(steps[2].resets, [ReplayReset::Discontinuity]);
+    assert_eq!(steps[2].record.timing, next.timing);
+    assert_eq!(steps[2].record.samples_f64_bits, next.samples_f64_bits);
+}
+
+#[test]
+fn replay_clock_checks_stay_per_stream_and_ignore_alsa_queue_delay_changes() {
+    let mut evidence = fixture();
+    evidence.observed_latest = ObservedLatest::default();
+    let mut first = evidence
+        .records
+        .iter()
+        .find(|r| r.timing.frames > 0)
+        .unwrap()
+        .clone();
+    first.sequence = 1;
+    first.boundary = Some(AudioSampleBoundary::AlsaCaptureRead);
+    first.sample_format = Some(NativeSampleFormat::I16);
+    first.timing.clock.quality = AudioTimeQuality::BackendEstimate;
+    first.timing.clock.callback_ns = Some(100);
+    first.timing.clock.sample_ns = None;
+    first.timing.clock.queued_frames = None;
+
+    let mut playback = first.clone();
+    playback.timing.stream.stream_id = Uuid::new_v4();
+    playback.timing.stream.direction = AudioDirection::Playback;
+    playback.timing.clock.clock_id = playback.timing.stream.stream_id;
+    playback.timing.clock.callback_ns = Some(0);
+    playback.boundary = Some(AudioSampleBoundary::AlsaWriteAccepted);
+
+    let mut next = first.clone();
+    next.sequence = 2;
+    next.timing.start_frame += first.timing.frames;
+    next.timing.clock.queued_frames = Some(-12);
+    let mut later = next.clone();
+    later.sequence = 3;
+    later.timing.start_frame += next.timing.frames;
+    later.timing.clock.callback_ns = Some(101);
+    later.timing.clock.queued_frames = Some(6);
+
+    let mut replacement = first.clone();
+    replacement.timing.stream.stream_id = Uuid::new_v4();
+    replacement.timing.clock.clock_id = replacement.timing.stream.stream_id;
+    replacement.timing.clock.callback_ns = Some(0);
+    let mut original_again = later.clone();
+    original_again.sequence = 4;
+    original_again.timing.start_frame += later.timing.frames;
+    original_again.timing.clock.callback_ns = Some(102);
+    original_again.timing.clock.queued_frames = None;
+    evidence.records = vec![first, playback, next, later, replacement, original_again];
+    let bytes = serde_json::to_vec(&evidence).unwrap();
+    let imported = AudioEvidence::read_json(
+        bytes.as_slice(),
+        EvidenceLimits::default(),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let steps: Vec<_> = imported
+        .replay(EvidenceLimits::default())
+        .unwrap()
+        .collect();
+    assert_eq!(steps[1].resets, [ReplayReset::FirstObservation]);
+    assert!(steps[2].resets.is_empty());
+    assert!(steps[3].resets.is_empty());
+    assert_eq!(steps[4].resets, [ReplayReset::StreamChanged]);
+    assert_eq!(steps[5].resets, [ReplayReset::StreamChanged]);
+    assert!(
+        steps
+            .iter()
+            .all(|step| !step.resets.contains(&ReplayReset::ClockDiscontinuity))
+    );
+    assert_eq!(
+        steps
+            .iter()
+            .map(|step| step.record.samples_f64_bits.len())
+            .sum::<usize>(),
+        24
+    );
+}
+
+#[test]
 fn input_rejects_invalid_schema_identity_format_sample_and_sequence_contracts() {
     let original = serde_json::to_value(fixture()).unwrap();
     let pcm = original["records"]
