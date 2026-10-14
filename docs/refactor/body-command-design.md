@@ -6,7 +6,7 @@
 
 ## 当前实现
 
-Core 的 `body` 模块定义无数据库/网络依赖的命令、作用域和回执。`alia.body.v1.BodyControl/Exchange` 承载严格、有界的 JSON payload；请求和设备响应分别以域分离 Ed25519 签名覆盖原始字节。响应回显本次 nonce、设备 ID 和版本，旧签名不能冒充新控制状态。
+Core 的 `body` 模块定义无数据库/网络依赖的命令、作用域和回执。`alia.body.v1.BodyControl/Exchange` 保留外层 RPC namespace，当前 JSON 契约为 version 2；请求和设备响应分别以 `alia-body-v2-request` / `alia-body-v2-reply` 域分离 Ed25519 签名覆盖原始字节。响应回显本次 nonce、设备 ID 和版本，旧签名不能冒充新控制状态。Server 与 Embedded 需同步升级；没有旧动画命令兼容分支。
 
 设备身份固定到 Server channel 配置的 `expected_device_id` 与 `expected_device_public_key`，后者是 Base64 编码的 32 字节公钥。两项应从可信设备本地启动日志取得：`identity loaded` 的 device_id 和 `device keypair ready` 的 expected_device_public_key；日志不输出私钥。发现服务和无签名的 GetBindingStatus 不更新公钥。缺少 pin 时身体输出不可用，签名不匹配时拒绝身体链路。用户 owner、规范 Response 和持久身体账本也是生产准入条件。
 
@@ -18,13 +18,29 @@ Motion 独占一个保留句柄的 native writer，设备打开、初始化、�
 
 Server 以 `(response_id, phase)` 固定同一身体意图，先查原账本，才允许对新意图打开控制。新发送必须在 PostgreSQL 原子保存 intent、唯一 dispatch permit 和审计后发生。最多 64 个活跃账本项、每 Response 32 项；短租约不延长绝对观察期限。传输丢 ACK 后只查询/精确取消原身份；重启不重播。同实例观察 owner、native 依赖和最终 join 纳入 Server 关闭流程。
 
-Submitted 只表示指定串口主机/I²C 寄存器/模拟边界已提交；v1 不提供位置反馈。表达编排可以在 quiescent 的 Submitted/Cancelled 后解除软件占用，`completion_acknowledged` 仍为 false。Unknown 保留原前缀；迟到回执独立审计，已确认终态不能被后续检查点改写。查询接口见 [Delivery API](delivery-api.md)。
+Submitted 只表示指定串口主机/I²C 寄存器/模拟边界已提交；当前契约不提供位置反馈。表达编排可以在 quiescent 的 Submitted/Cancelled 后解除软件占用，`completion_acknowledged` 仍为 false。Unknown 保留原前缀；迟到回执独立审计，已确认终态不能被后续检查点改写。查询接口见 [Delivery API](delivery-api.md)。
 
 ### R03-0 生命周期更新（2026-10-14）
 
 本地 `motion.calibration_confirmed` 默认 false，历史矩阵能解析不代表实际机构完成校准。未确认的 mock 不发启动帧且不提供 motion 准入；硬件未确认时在 backend 创建前拒绝。校准确认后仍验证矩阵、通道、中心与限位，只完整提交一次中心目标后建立上次软件目标；初始实际姿态未知，不宣称物理平滑归中。
 
 停止、lease Close/到期及 binding 撤销不追加归中或 disable 写入；保留在途 native owner 与精确取消，observer drop 不触发全局撤权。旧 soft-start、stop-reset 四个配置键已移除并拒绝解析。下方历史基线中“关闭回中/沿用 reset_on_stop”不再代表当前行为；当前契约见 [Motion 使用说明](../../packages/alia-embedded/docs/motion-assets.md)。软件保持不证明 PWM、力矩或机械位置保持。
+
+### R03-A 内容身份（2026-10-14）
+
+用户确认的信任来源是受信操作者人工审核、分别部署到 Server 与 Embedded 本地受控配置的 `approved_animations`。清单默认空，最多64项；历史 `.anim` 文件不会因随仓库分发而自动批准。每项固定唯一单叶 `.anim` 文件名、非零 version、64位小写 SHA-256 和1—65536字节的精确长度。版本是操作者标识，不是回滚防护或机构安全证明；摘要工具只计算身份，不授予批准。
+
+Server 每个 channel 使用启动时的不可变清单，模型仅可选择文件及原有播放参数。第一次身体意图准入时，将匹配的完整内容身份固定到 Entry、持久账本及签名命令的 `motion.asset`；模型自报摘要/版本不能新增信任。清单不替代原 Response owner、政策事务、工具执行批准、作用域、lease、取消或设备校准。尚无持久身体意图的 ExpressionPlan 文件名没有历史版本绑定，本包没有把内容审核前移到 Response 生成阶段。
+
+已有身体意图的查询、恢复和精确取消从原账本恢复原内容身份，并核对同一 Response phase 与完整意图，不按新启动清单重绑定。同一来源的新内容拒绝；重启、清单删除或变更均不授予再次 Submit。账本读取继续检查当前用户有效性、Response归属和channel；原事实可读与新动作可授权是不同边界。
+
+Embedded 在原 prepare owner 内验证命令资产与本地清单完全一致，然后从已打开的目录 fd 打开单叶文件；Unix/macOS/Linux 通过 no-follow、nonblocking 与 regular-file检查拒绝符号链接和特殊文件，目录换名不会改变已持有的目录身份。同一个有界 bytes buffer先检查长度/SHA-256，再作UTF-8和逐帧解析。准备后保留内存轨迹，不重新打开文件；校验后同名替换不会改变已准备动作。配置路径祖先与本地文件权限仍由部署操作者控制，非Unix不提供不安全的动画打开回退。
+
+准备仍受原并发上限、保留句柄和关闭join管理，RPC取消/超时不能丢失执行owner；文件I/O的字节上限不代表底层系统调用墙钟时间上界。设备准入仍在准备后重新检查绑定、作用域和lease；原命令已有回执时优先保持原事实，不因文件随后缺失而重复输出。
+
+远端 Settings 不可改清单与提示音写入根；cue 上传使用启动时目录快照、逐组件 no-follow 和新建独占文件，不能覆盖配置或已有链接。原无 data 的文件引用不写盘。既有插件 Install/Start 具有同用户宿主代码部署权限，本包不提供 OS 隔离；本地操作者、目录权限与代码部署主体仍属于信任前提。
+
+本轮验证和迁移结果见 [R03-A checklist](checklists/r03-a-2026-10-14.md)。只证明软件内容绑定；实际PCA9685A/MG996R校准、限位、保持与位置结果仍待现场验证。
 
 ## 设计时源码与可复用边界（历史基线）
 

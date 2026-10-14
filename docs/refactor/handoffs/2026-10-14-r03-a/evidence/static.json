@@ -1,0 +1,66 @@
+{
+  "at": "2026-10-14T11:55:39.592632+00:00",
+  "checks": [
+    {
+      "name": "fmt-changed",
+      "command": [
+        "rustfmt",
+        "--check",
+        "--edition",
+        "2024",
+        "--config",
+        "skip_children=true",
+        "crates/alia-core/src/body.rs",
+        "crates/transport/src/lib.rs",
+        "crates/transport/tests/transport.rs",
+        "packages/alia-embedded/src/config/mod.rs",
+        "packages/alia-embedded/src/config/types.rs",
+        "packages/alia-embedded/src/grpc/body_service/tests.rs",
+        "packages/alia-embedded/src/grpc/settings_service.rs",
+        "packages/alia-embedded/src/grpc/settings_service/cue_files.rs",
+        "packages/alia-embedded/src/module/motion/assets.rs",
+        "packages/alia-embedded/src/module/motion/mod.rs",
+        "packages/alia-embedded/src/module/motion/plan.rs",
+        "packages/alia-embedded/src/module/motion/runtime.rs",
+        "packages/alia-embedded/src/module/motion/runtime/tests.rs",
+        "packages/alia-embedded/src/settings.rs",
+        "packages/alia-embedded/tests/config.rs",
+        "packages/alia-server/src/bootstrap/factory.rs",
+        "packages/alia-server/src/channels/embedded/body.rs",
+        "packages/alia-server/src/channels/embedded/body/tests.rs",
+        "packages/alia-server/src/channels/embedded/channel.rs",
+        "packages/alia-server/src/config.rs",
+        "packages/alia-server/src/modules/body_delivery/repository.rs",
+        "packages/alia-server/tests/body_delivery.rs",
+        "packages/alia-server/tests/config.rs",
+        "packages/alia-server/tests/duplex_playback.rs",
+        "packages/alia-server/tests/server_background.rs"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "fmt-workspace",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 1
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "baseline_fmt_path": "packages/alia-server/tests/server_runtime/delivery.rs",
+      "unchanged_from_HEAD": true
+    }
+  ]
+}

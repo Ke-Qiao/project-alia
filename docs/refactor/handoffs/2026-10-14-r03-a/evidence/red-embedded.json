@@ -1,0 +1,23 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact"
+  ],
+  "started_at": "2026-10-14T08:40:06.690702+00:00",
+  "elapsed_seconds": 10.5,
+  "exit_code": 101,
+  "source_manifest_sha256": "aff613f253280c38dc44b35f420533153eb04c07f802d00b16d6f39de3a31771",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

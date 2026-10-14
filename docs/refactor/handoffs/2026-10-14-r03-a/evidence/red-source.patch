@@ -1,0 +1,104 @@
+diff --git a/crates/alia-core/src/body.rs b/crates/alia-core/src/body.rs
+index 2084982..0ad6349 100644
+--- a/crates/alia-core/src/body.rs
++++ b/crates/alia-core/src/body.rs
+@@ -537,6 +537,22 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn legacy_animation_without_content_identity_is_rejected() {
++        let mut legacy = serde_json::to_value(command()).unwrap();
++        legacy["actions"][0]["motion"] = serde_json::json!({
++            "kind": "animation", "file": "reviewed.anim", "fps": 30, "loops": 1
++        });
++        let rejected = match serde_json::from_value::<BodyCommand>(legacy) {
++            Err(_) => true,
++            Ok(command) => command.validate().is_err(),
++        };
++        assert!(
++            rejected,
++            "a signed animation without an approved content identity was accepted"
++        );
++    }
++
+     #[test]
+     fn rejects_nonfinite_unsafe_and_unbounded_intent_before_any_backend() {
+         let mut c = command();
+diff --git a/packages/alia-embedded/src/module/motion/plan.rs b/packages/alia-embedded/src/module/motion/plan.rs
+index 0657943..8c1b5b8 100644
+--- a/packages/alia-embedded/src/module/motion/plan.rs
++++ b/packages/alia-embedded/src/module/motion/plan.rs
+@@ -312,6 +312,50 @@ mod tests {
+         prepare(config, command, bytes)
+     }
+ 
++    #[test]
++    fn unchanged_signed_animation_cannot_select_replaced_file_contents() {
++        let directory = tempfile::tempdir().unwrap();
++        let path = directory.path().join("reviewed.anim");
++        let config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
++        let command = animation("reviewed", 30, 1, 100);
++        let canonical = serde_json::to_vec(&command).unwrap();
++        let reviewed = prepare(&config, command.clone(), canonical.clone()).unwrap();
++        assert!(
++            reviewed.actions[0]
++                .iter()
++                .all(|frame| *frame == [1.0, 0.0, 0.0])
++        );
++
++        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
++        let replacement = prepare(&config, command, canonical);
++        assert!(
++            replacement.is_err(),
++            "an unchanged signed animation selected different local content"
++        );
++    }
++
++    #[test]
++    fn prepared_animation_is_immutable_after_the_file_is_replaced() {
++        let directory = tempfile::tempdir().unwrap();
++        let path = directory.path().join("reviewed.anim");
++        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
++        let config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        let prepared = prepared(&config, animation("reviewed", 30, 1, 100)).unwrap();
++        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
++        assert!(
++            prepared.actions[0]
++                .iter()
++                .all(|frame| *frame == [1.0, 0.0, 0.0])
++        );
++    }
++
+     #[test]
+     fn validates_every_animation_frame_before_returning_any_plan() {
+         let directory = tempfile::tempdir().unwrap();
+diff --git a/packages/alia-server/src/channels/embedded/body/tests.rs b/packages/alia-server/src/channels/embedded/body/tests.rs
+index 0adca2a..70b4c7b 100644
+--- a/packages/alia-server/src/channels/embedded/body/tests.rs
++++ b/packages/alia-server/src/channels/embedded/body/tests.rs
+@@ -1036,6 +1036,17 @@ async fn revoked_response_cancels_original_command_and_still_records_real_receip
+     h.finish().await;
+ }
+ 
++#[test]
++fn animation_without_an_operator_approved_catalog_is_rejected() {
++    let mut value = params(500);
++    value["timeline"][0]["action"] = json!("play_animation");
++    value["timeline"][0]["params"] = json!({"file":"reviewed.anim","fps":30,"loops":1});
++    assert!(
++        BodyIntent::parse(value).is_err(),
++        "an animation absent from any operator-approved catalog was accepted"
++    );
++}
++
+ #[test]
+ fn typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_names() {
+     let mut value = params(500);

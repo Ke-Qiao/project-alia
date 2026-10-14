@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-10-14T09:06:16.009382+00:00",
+  "container": "alia-r03-a-20261014-db",
+  "id": "b6c25625616e033953c6a4643d39f4d5d44fb88d1435d78900f1f26efb71d67e",
+  "observed_state": {
+    "Status": "exited",
+    "ExitCode": 0,
+    "OOMKilled": false,
+    "StartedAt": "2026-10-14T08:45:31.06537687Z",
+    "FinishedAt": "2026-10-14T08:48:23.644381327Z"
+  },
+  "logs": "fast shutdown request at 08:48:23.607 UTC; clean stop; initiator unknown",
+  "events_query": "exact-container docker events 08:45-08:50 UTC returned no records",
+  "test": "candidate-server",
+  "test_started_at": "2026-10-14T08:55:29.650319+00:00",
+  "termination": "Root sent SIGTERM only to test child PID49953 after DB connection failures; wrapper and Cargo reaped child and recorded exit101 at505.86s",
+  "recovery": [
+    "docker start alia-r03-a-20261014-db succeeded",
+    "docker exec task container psql -U alia_test -d alia_r03_a_20261014 -tAc SELECT1 returned1",
+    "docker port retained127.0.0.1:32768"
+  ],
+  "retry": "candidate-server-retry; unchanged source"
+}

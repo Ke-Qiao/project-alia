@@ -1,0 +1,24 @@
+   Compiling alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+   Compiling alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.36s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+test module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents ... FAILED
+
+failures:
+
+---- module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents stdout ----
+
+thread 'module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents' (3003788) panicked at packages/alia-embedded/src/module/motion/plan.rs:335:9:
+an unchanged signed animation selected different local content
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 219 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

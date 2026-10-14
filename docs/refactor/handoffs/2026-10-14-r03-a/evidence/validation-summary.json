@@ -1,0 +1,116 @@
+{
+  "at": "2026-10-14T12:01:51.915659+00:00",
+  "source_manifest": "green-source-manifest.json",
+  "source_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+  "inputs": 661,
+  "platform": "macOS26.6.2 ARM64 / Rust1.95",
+  "runs": [
+    {
+      "name": "green-core-transport",
+      "phase": "green",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-core",
+        "-p",
+        "alia-transport",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T11:54:17.221550+00:00",
+      "elapsed_seconds": 2.42,
+      "exit_code": 0,
+      "source_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "totals": {
+        "passed": 41,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    },
+    {
+      "name": "green-embedded",
+      "phase": "green",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-embedded",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T11:53:05.566954+00:00",
+      "elapsed_seconds": 98.74,
+      "exit_code": 0,
+      "source_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "no external database; temporary SQLite fixtures only",
+      "build_jobs": 2,
+      "totals": {
+        "passed": 306,
+        "failed": 0,
+        "ignored": 0,
+        "filtered": 0
+      }
+    },
+    {
+      "name": "green-server",
+      "phase": "green",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "alia-server",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "started_at": "2026-10-14T11:54:47.367129+00:00",
+      "elapsed_seconds": 410.01,
+      "exit_code": 0,
+      "source_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+      "source_drift": [],
+      "test_parallelism": "default",
+      "database": "isolated task PostgreSQL and temporary SQLite",
+      "build_jobs": 2,
+      "totals": {
+        "passed": 860,
+        "failed": 0,
+        "ignored": 5,
+        "filtered": 0
+      }
+    }
+  ],
+  "aggregate": {
+    "passed": 1207,
+    "failed": 0,
+    "ignored": 5,
+    "filtered": 0
+  },
+  "not_run": [
+    "Linux application/Embedded tests",
+    "Pi/hardware/real audio",
+    "real PTY3 and model integration2 ignored tests",
+    "release builds and long-running load"
+  ],
+  "prior_failures": [
+    "three initial assertion RED",
+    "cue upload boundary assertion RED",
+    "candidate Server DB unavailable; owned test child terminated, original log retained"
+  ],
+  "environment_notes": [
+    "OrbStack startup auto-restarted three existing services; exact services restored stopped; no application requests sent",
+    "task PostgreSQL clean-stopped before first candidate Server test, initiator unknown; SELECT1 verified after restart; successful retry recorded"
+  ],
+  "formatting": "changed Rust passed; workspace fmt only unchanged baseline Server import ordering",
+  "source_commit": "e7265f0d0e9be8d6e663bfcabd53739b32206e27",
+  "cleanup": "task database removed with rm -v; astrbot later restarted by unknown initiator, shared runtime preserved. Initial cleanup assertion failed and read-only follow-up verified state; see cleanup.json"
+}

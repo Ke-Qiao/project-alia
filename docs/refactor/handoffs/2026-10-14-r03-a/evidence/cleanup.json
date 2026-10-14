@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-14T12:04:08.800160+00:00",
+  "initial_cleanup_script_exit": 1,
+  "initial_cleanup_failure": "cleanup.py assertion at line18 failed on third pre-existing container: astrbot is running again. Prior assertions confirm owned task container id+label, stop, stopped state and rm -v succeeded. First attempt stdout records were held in memory and not saved after assertion; this read-only follow-up is the persisted verification.",
+  "task_database_removed": true,
+  "task_database_anonymous_volume_removal": "docker rm -v completed successfully before assertion",
+  "existing_services": "Home Assistant and old alia-postgres stopped; astrbot restarted08:48:26UTC after prior restoration, initiator unknown",
+  "runtime_policy": "Leave astrbot and OrbStack active; no further stop of unrelated workload",
+  "records": [
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "name=alia-r03-a-20261014-db",
+        "--format",
+        "{{.ID}} {{.Names}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Name}} {{json .State}}",
+        "965d0a454d15",
+        "905470a16802",
+        "c5aaca070870"
+      ],
+      "exit_code": 0,
+      "stdout": "/alia-home-assistant-dev-home-assistant-1 {\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-14T08:44:14.0440855Z\",\"FinishedAt\":\"2026-10-14T08:44:51.164004559Z\"}\n/alia-postgres {\"Status\":\"exited\",\"Running\":false,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":0,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-14T08:44:14.038638667Z\",\"FinishedAt\":\"2026-10-14T08:44:47.424949016Z\"}\n/astrbot {\"Status\":\"running\",\"Running\":true,\"Paused\":false,\"Restarting\":false,\"OOMKilled\":false,\"Dead\":false,\"Pid\":411,\"ExitCode\":0,\"Error\":\"\",\"StartedAt\":\"2026-10-14T08:48:26.514272125Z\",\"FinishedAt\":\"2026-10-14T08:44:57.447731937Z\"}\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "orbctl",
+        "status"
+      ],
+      "exit_code": 0,
+      "stdout": "Running\n",
+      "stderr": ""
+    }
+  ]
+}

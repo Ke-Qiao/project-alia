@@ -1,0 +1,25 @@
+   Compiling alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+   Compiling alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.90s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 1 test
+test channels::embedded::body::tests::animation_without_an_operator_approved_catalog_is_rejected ... FAILED
+
+failures:
+
+---- channels::embedded::body::tests::animation_without_an_operator_approved_catalog_is_rejected stdout ----
+
+thread 'channels::embedded::body::tests::animation_without_an_operator_approved_catalog_is_rejected' (3001854) panicked at packages/alia-server/src/channels/embedded/body/tests.rs:1044:5:
+an animation absent from any operator-approved catalog was accepted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    channels::embedded::body::tests::animation_without_an_operator_approved_catalog_is_rejected
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 368 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-server --lib`

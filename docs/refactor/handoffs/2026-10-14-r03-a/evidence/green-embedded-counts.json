@@ -1,0 +1,102 @@
+{
+  "targets": [
+    {
+      "target": "unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)",
+      "passed": 236,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "unittests src/main.rs (target/debug/deps/alia_embedded-88e1956e362a0aed)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/audio.rs (target/debug/deps/audio-222ad2b25c35ae55)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/binding.rs (target/debug/deps/binding-61f4f29c42830977)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/config.rs (target/debug/deps/config-0d959533d9af1540)",
+      "passed": 21,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/direct_response.rs (target/debug/deps/direct_response-615d7a11dcfc1e54)",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/discovery.rs (target/debug/deps/discovery-24516413210ac88c)",
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/identity.rs (target/debug/deps/identity-b0cd9e0d1d79f0a7)",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/runtime.rs (target/debug/deps/runtime-56dfc2f26feecf47)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/sensors.rs (target/debug/deps/sensors-cc38363fa29e7cd7)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/speech.rs (target/debug/deps/speech-0a033ef51438ffbc)",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "tests/storage.rs (target/debug/deps/storage-07357acdee86727e)",
+      "passed": 9,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    {
+      "target": "unittests examples/audio_evidence_replay.rs (target/debug/examples/audio_evidence_replay-0ce0979aa2eee663)",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    }
+  ],
+  "totals": {
+    "passed": 306,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "method": "last test result per Cargo Running target; nested child summaries excluded"
+}

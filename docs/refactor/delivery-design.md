@@ -63,7 +63,7 @@ CLI 文本复用 DeliveryService 的有界监督与唯一发送许可，使用�
 
 ## 表达与下一主线
 
-Server 表达归 ExpressionRuntime 实例，已删除全局活跃表与 legacy JSON 自动升级 completed。回执须匹配命令、scope 和 typed actions。当前身体动作接入签名 body v1 与独立账本，旧无身份 JSON 不执行动作；缺少可信 pin/Response/账本时不会开放身体能力。Affect 持久化使用实例有界队列并随 runtime 排空，见 [Expression D1](expression-evidence.md)。
+Server 表达归 ExpressionRuntime 实例，已删除全局活跃表与 legacy JSON 自动升级 completed。回执须匹配命令、scope 和 typed actions。当前身体动作接入签名 body v2 与独立账本，旧无身份 JSON 不执行动作；缺少可信 pin/Response/账本时不会开放身体能力。Affect 持久化使用实例有界队列并随 runtime 排空，见 [Expression D1](expression-evidence.md)。
 
 以下仍是本轮未完成主线，不能归入用户延期项：
 

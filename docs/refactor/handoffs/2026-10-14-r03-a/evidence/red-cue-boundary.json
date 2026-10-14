@@ -1,0 +1,23 @@
+{
+  "phase": "boundary-red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-embedded",
+    "--lib",
+    "grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact"
+  ],
+  "started_at": "2026-10-14T08:51:46.522185+00:00",
+  "elapsed_seconds": 19.11,
+  "exit_code": 101,
+  "source_manifest_sha256": "412ba53ed2f412768299a0c47c704f175919f692e6e7de02f96b69609a0d11c0",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

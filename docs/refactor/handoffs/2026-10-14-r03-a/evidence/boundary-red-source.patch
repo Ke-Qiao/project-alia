@@ -1,0 +1,2239 @@
+diff --git a/config/embedded.example.toml b/config/embedded.example.toml
+index c70e3da..08a2b23 100644
+--- a/config/embedded.example.toml
++++ b/config/embedded.example.toml
+@@ -145,6 +145,10 @@ debug = false
+ enabled = true
+ neck_config_file = "../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json"
+ animation_dir = "../packages/alia-embedded/assets/neck/anim_data"
++# Local operator-reviewed pins only; keep empty until the selected mechanism and
++# exact asset version/SHA-256/byte count are reviewed on both server and device.
++# Historical bundled animations are not automatically approved.
++approved_animations = []
+ servo_count = 8
+ # Hardware output backend. `serial` talks to an Arduino Uno over USB/UART using
+ # newline-delimited commands:
+diff --git a/config/server.example.toml b/config/server.example.toml
+index 8997d85..7dcf301 100644
+--- a/config/server.example.toml
++++ b/config/server.example.toml
+@@ -59,6 +59,13 @@ enabled = true
+ # locally. Discovery/GetBindingStatus never populates or replaces this pin.
+ # expected_device_id = "<verified-device-id>"
+ # expected_device_public_key = "<base64-encoded-32-byte-Ed25519-public-key>"
++# Local operator-reviewed animation pins, matched independently on the device.
++# Empty keeps file animations unavailable; built-in gestures keep their policy.
++# Never copy a digest from model output or automatically trust existing files.
++approved_animations = []
++# Example only after review: approved_animations = [
++#   { file = "reviewed.anim", version = 1, sha256 = "<64-lowercase-hex>", bytes = 123 }
++# ]
+ endpoint = ""
+ discovery_service_name = "_alia-embedded._tcp"
+ discovery_timeout_sec = 3
+diff --git a/crates/alia-core/src/body.rs b/crates/alia-core/src/body.rs
+index 2084982..5e2c22a 100644
+--- a/crates/alia-core/src/body.rs
++++ b/crates/alia-core/src/body.rs
+@@ -2,16 +2,92 @@
+ //! independent of the transport and of any particular servo driver.
+ 
+ use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
+ use uuid::Uuid;
+ 
+ use crate::delivery::VoiceScope;
+ 
+-pub const BODY_CONTRACT_VERSION: u32 = 1;
++pub const BODY_CONTRACT_VERSION: u32 = 2;
+ pub const MAX_BODY_PAYLOAD_BYTES: usize = 64 * 1024;
+ pub const MAX_BODY_ACTIONS: usize = 32;
+ pub const MAX_BODY_DURATION_MS: u32 = 5_000;
+ pub const MAX_BODY_CHANNELS: usize = 32;
+ pub const MAX_BODY_FRAMES: u64 = 3600;
++pub const MAX_BODY_ANIMATION_BYTES: u32 = 65_536;
++pub const MAX_BODY_ANIMATION_ASSETS: usize = 64;
++
++/// Operator-approved content identity, never inferred from a model or filename.
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct BodyAnimationAsset {
++    pub file: String,
++    pub version: u32,
++    pub sha256: String,
++    pub bytes: u32,
++}
++
++impl BodyAnimationAsset {
++    pub fn validate(&self) -> Result<(), InvalidBodyEvidence> {
++        require(
++            self.file.len() > 5
++                && self.file.len() <= 128
++                && self.file.ends_with(".anim")
++                && self
++                    .file
++                    .bytes()
++                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')),
++            "invalid canonical animation file name",
++        )?;
++        require(self.version > 0, "invalid animation asset version")?;
++        require(
++            self.sha256.len() == 64
++                && self
++                    .sha256
++                    .bytes()
++                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
++            "invalid animation SHA-256",
++        )?;
++        require(
++            (1..=MAX_BODY_ANIMATION_BYTES).contains(&self.bytes),
++            "invalid animation byte count",
++        )
++    }
++
++    pub fn verify_bytes(&self, content: &[u8]) -> Result<(), InvalidBodyEvidence> {
++        self.validate()?;
++        require(
++            content.len() == self.bytes as usize,
++            "animation byte count mismatch",
++        )?;
++        require(
++            body_animation_sha256(content) == self.sha256,
++            "animation SHA-256 mismatch",
++        )
++    }
++}
++
++/// Pure digest calculation for explicit tooling; it does not approve an asset.
++pub fn body_animation_sha256(content: &[u8]) -> String {
++    format!("{:x}", Sha256::digest(content))
++}
++
++pub fn validate_animation_catalog(
++    assets: &[BodyAnimationAsset],
++) -> Result<(), InvalidBodyEvidence> {
++    require(
++        assets.len() <= MAX_BODY_ANIMATION_ASSETS,
++        "animation catalog exceeds capacity",
++    )?;
++    let mut names = std::collections::HashSet::new();
++    for asset in assets {
++        asset.validate()?;
++        require(
++            names.insert(&asset.file),
++            "duplicate approved animation file",
++        )?;
++    }
++    Ok(())
++}
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+ #[serde(deny_unknown_fields)]
+@@ -92,8 +168,14 @@ pub enum BodyTarget {
+ pub enum BodyMotion {
+     SmallNod,
+     SmallBow,
+-    LookAt { target: BodyTarget },
+-    Animation { file: String, fps: u32, loops: u32 },
++    LookAt {
++        target: BodyTarget,
++    },
++    Animation {
++        asset: BodyAnimationAsset,
++        fps: u32,
++        loops: u32,
++    },
+ }
+ 
+ #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+@@ -196,17 +278,8 @@ impl BodyCommand {
+                         "invalid face target",
+                     )?;
+                 }
+-                BodyMotion::Animation { file, fps, loops } => {
+-                    require(
+-                        !file.is_empty()
+-                            && file.len() <= 128
+-                            && file != "."
+-                            && file != ".."
+-                            && file.bytes().all(|b| {
+-                                b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')
+-                            }),
+-                        "invalid animation file name",
+-                    )?;
++                BodyMotion::Animation { asset, fps, loops } => {
++                    asset.validate()?;
+                     require(
+                         (1..=120).contains(fps) && (1..=20).contains(loops),
+                         "invalid animation playback bounds",
+@@ -537,6 +610,69 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn legacy_animation_without_content_identity_is_rejected() {
++        let mut legacy = serde_json::to_value(command()).unwrap();
++        legacy["actions"][0]["motion"] = serde_json::json!({
++            "kind": "animation", "file": "reviewed.anim", "fps": 30, "loops": 1
++        });
++        let rejected = match serde_json::from_value::<BodyCommand>(legacy) {
++            Err(_) => true,
++            Ok(command) => command.validate().is_err(),
++        };
++        assert!(
++            rejected,
++            "a signed animation without an approved content identity was accepted"
++        );
++    }
++
++    #[test]
++    fn approved_animation_identity_binds_exact_bytes_and_rejects_invalid_catalogs() {
++        let asset = BodyAnimationAsset {
++            file: "reviewed.anim".into(),
++            version: 1,
++            sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
++            bytes: 3,
++        };
++        assert!(asset.verify_bytes(b"abc").is_ok());
++        assert!(asset.verify_bytes(b"abd").is_err());
++        assert!(asset.verify_bytes(b"abc\n").is_err());
++        for (file, version, sha256, bytes) in [
++            ("../reviewed.anim", 1, asset.sha256.clone(), 3),
++            ("reviewed", 1, asset.sha256.clone(), 3),
++            (".anim", 1, asset.sha256.clone(), 3),
++            ("reviewed.anim", 0, asset.sha256.clone(), 3),
++            ("reviewed.anim", 1, asset.sha256.to_uppercase(), 3),
++            ("reviewed.anim", 1, "a".repeat(63), 3),
++            ("reviewed.anim", 1, asset.sha256.clone(), 0),
++            ("reviewed.anim", 1, asset.sha256.clone(), 65_537),
++        ] {
++            assert!(
++                BodyAnimationAsset {
++                    file: file.into(),
++                    version,
++                    sha256,
++                    bytes
++                }
++                .validate()
++                .is_err()
++            );
++        }
++        assert!(validate_animation_catalog(&[]).is_ok());
++        assert!(validate_animation_catalog(std::slice::from_ref(&asset)).is_ok());
++        assert!(validate_animation_catalog(&[asset.clone(), asset.clone()]).is_err());
++        let too_many: Vec<_> = (0..65)
++            .map(|n| BodyAnimationAsset {
++                file: format!("asset-{n}.anim"),
++                ..asset.clone()
++            })
++            .collect();
++        assert!(validate_animation_catalog(&too_many).is_err());
++        let mut unknown = serde_json::to_value(&asset).unwrap();
++        unknown["approved"] = serde_json::json!(true);
++        assert!(serde_json::from_value::<BodyAnimationAsset>(unknown).is_err());
++    }
++
+     #[test]
+     fn rejects_nonfinite_unsafe_and_unbounded_intent_before_any_backend() {
+         let mut c = command();
+@@ -545,7 +681,12 @@ mod tests {
+         assert!(c.validate().is_err());
+         c.actions[0].intensity = 0.5;
+         c.actions[0].motion = BodyMotion::Animation {
+-            file: "../secret.anim".into(),
++            asset: BodyAnimationAsset {
++                file: "../secret.anim".into(),
++                version: 1,
++                sha256: "0".repeat(64),
++                bytes: 1,
++            },
+             fps: 30,
+             loops: 1,
+         };
+diff --git a/crates/proto/proto/body.proto b/crates/proto/proto/body.proto
+index d3aa9c0..160e983 100644
+--- a/crates/proto/proto/body.proto
++++ b/crates/proto/proto/body.proto
+@@ -4,7 +4,8 @@ package alia.body.v1;
+ 
+ // Payloads are strict alia-core BodyRequest / BodyReply JSON bytes. The exact
+ // bytes, not a reserialized object, are signed with the direction-specific
+-// alia-body-v1 domain. Every reply echoes the signed request nonce and device.
++// alia-body-v2 domain. The envelope RPC namespace stays v1; the signed JSON
++// contract is version 2. Every reply echoes the signed request nonce and device.
+ service BodyControl {
+   rpc Exchange(SignedBodyPayload) returns (SignedBodyPayload);
+ }
+diff --git a/crates/transport/src/lib.rs b/crates/transport/src/lib.rs
+index 8f3d398..8b91278 100644
+--- a/crates/transport/src/lib.rs
++++ b/crates/transport/src/lib.rs
+@@ -224,11 +224,11 @@ pub fn sign_payload(signing_key: &SigningKey, payload: &[u8]) -> Vec<u8> {
+ /// Sign the exact bounded body request bytes. A request signature cannot be
+ /// reused as a device receipt, a bearer token or another control protocol.
+ pub fn body_request_payload(payload: &[u8]) -> Vec<u8> {
+-    framed_payload(&[b"alia-body-v1-request", payload])
++    framed_payload(&[b"alia-body-v2-request", payload])
+ }
+ 
+ pub fn body_reply_payload(payload: &[u8]) -> Vec<u8> {
+-    framed_payload(&[b"alia-body-v1-reply", payload])
++    framed_payload(&[b"alia-body-v2-reply", payload])
+ }
+ 
+ pub fn verify_payload(public_key: &[u8], payload: &[u8], signature: &[u8]) -> Result<()> {
+diff --git a/crates/transport/tests/transport.rs b/crates/transport/tests/transport.rs
+index c9efb11..9777119 100644
+--- a/crates/transport/tests/transport.rs
++++ b/crates/transport/tests/transport.rs
+@@ -7,6 +7,38 @@ use alia_transport::{
+ };
+ use ed25519_dalek::SigningKey;
+ 
++#[test]
++fn body_v2_signature_binds_content_and_rejects_old_or_opposite_domains() {
++    use alia_transport::{body_reply_payload, body_request_payload};
++    let key = SigningKey::from_bytes(&[29; 32]);
++    let public = key.verifying_key().to_bytes();
++    let payload =
++        br#"{"version":2,"asset":{"file":"reviewed.anim","version":1,"sha256":"abc","bytes":3}}"#;
++    let request = body_request_payload(payload);
++    let signature = sign_payload(&key, &request);
++    assert!(verify_payload(&public, &request, &signature).is_ok());
++    assert!(verify_payload(&public, &body_reply_payload(payload), &signature).is_err());
++    let changed = String::from_utf8(payload.to_vec())
++        .unwrap()
++        .replace("abc", "def");
++    assert!(
++        verify_payload(
++            &public,
++            &body_request_payload(changed.as_bytes()),
++            &signature
++        )
++        .is_err()
++    );
++    // Match the length-framed v1 bytes explicitly; no downgrade verifier exists.
++    let mut old_domain = Vec::new();
++    for part in [b"alia-body-v1-request".as_slice(), payload.as_slice()] {
++        old_domain.extend_from_slice(&(part.len() as u32).to_be_bytes());
++        old_domain.extend_from_slice(part);
++    }
++    let old_signature = sign_payload(&key, &old_domain);
++    assert!(verify_payload(&public, &request, &old_signature).is_err());
++}
++
+ #[test]
+ fn normalizes_embedded_service_name() {
+     assert_eq!(
+diff --git a/packages/alia-embedded/docs/configuration.md b/packages/alia-embedded/docs/configuration.md
+index 28e7065..ce0e4fd 100644
+--- a/packages/alia-embedded/docs/configuration.md
++++ b/packages/alia-embedded/docs/configuration.md
+@@ -35,7 +35,7 @@ The example file is `config/embedded.example.toml`.
+ | `[vad]` | sherpa-onnx/Silero activity evidence settings. |
+ | `[direct_response_defaults]`, `[[direct_response]]` | Cue asset directory and metadata. |
+ | `[hmmd_mmwave]` | Optional Waveshare HMMD UART presence sensor. |
+-| `[motion]` | Native neck mapping, animation assets, expression actions, and serial/PCA9685 servo output. |
++| `[motion]` | Native neck mapping, local-only `approved_animations` content pins (empty by default), expression actions, and serial/PCA9685 servo output. |
+ | `[vision]` | OpenCV YuNet camera tracking parameters. |
+ | `[discovery]` | mDNS/BLE advertisement and binding discovery. |
+ 
+diff --git a/packages/alia-embedded/docs/motion-assets.md b/packages/alia-embedded/docs/motion-assets.md
+index 72c8b50..e5ca58e 100644
+--- a/packages/alia-embedded/docs/motion-assets.md
++++ b/packages/alia-embedded/docs/motion-assets.md
+@@ -28,10 +28,23 @@ files are preserved as calibration/reference assets from the Python toolchain.
+ [motion]
+ neck_config_file = "../packages/alia-embedded/assets/neck/controller/neck_matrix_config.json"
+ animation_dir = "../packages/alia-embedded/assets/neck/anim_data"
++approved_animations = []
+ ```
+ 
+ Paths are resolved relative to the embedded config file.
+ 
++The animation catalog is empty by default. A local operator must review the
++exact asset for the selected mechanism, then configure the same canonical
++`.anim` filename, positive version, lowercase SHA-256 and byte count on both
++server and device. Computing a digest is not approval; shipped historical files
++are not automatically added. Each catalog holds at most 64 unique filenames.
++The local catalog is loaded at startup. Remote settings may preserve it in an
++unchanged snapshot, but cannot add, replace, reorder or remove its entries.
++To change approvals, stop the affected processes, edit both controlled local
++catalogs, then restart. A running settings manager retains its startup snapshot;
++editing its file while it is running can be overwritten by a later ordinary
++settings save.
++
+ ## Calibration and lifecycle
+ 
+ `motion.calibration_confirmed` defaults to `false`. Set it only after the local
+@@ -75,28 +88,59 @@ The `.anim` reader requires:
+ ## Expression Action
+ 
+ The native motion runtime accepts animation actions inside the signed
+-`alia.body.v1.BodyControl/Exchange` command. The old scope-free generic
+-expression execution path is disabled. An animation action has this shape:
++`alia.body.v1.BodyControl/Exchange` command. The service route remains unchanged;
++the JSON Body contract and signing domains are version 2. Version 1 and old
++filename-only animation commands are rejected. The old scope-free generic
++expression execution path is disabled. An action has the following schematic
++shape; the asset fields must come from the operator-reviewed catalog:
+ 
+ ```json
+ {
+   "duration_ms": 1200,
+   "intensity": 0.2,
+-  "motion": { "kind": "animation", "file": "neck", "fps": 30, "loops": 1 }
++  "motion": {
++    "kind": "animation",
++    "asset": {
++      "file": "reviewed.anim",
++      "version": 1,
++      "sha256": "REPLACE_WITH_OPERATOR_APPROVED_64_LOWERCASE_HEX_DIGEST",
++      "bytes": 1234
++    },
++    "fps": 30,
++    "loops": 1
++  }
+ }
+ ```
+ 
+ This is an action fragment, not a complete executable request. The original
+ Response/owner, voice or nonvoice scope, boot/control lease, sequence, binding
+ and signatures are required; see [the body contract](../../../docs/refactor/body-command-design.md).
+-The file must pass the current size/frame/duration validation before admission.
+-
+-`file` may be `neck`, `neck2`, or an explicit `.anim` file name inside
+-`animation_dir`. Paths and symlink escapes are rejected; animations must be
+-regular files within the configured asset directory. The command signature
+-covers the file name and playback parameters, not the file contents. Local
+-asset signatures/hashes and validation against the selected mechanism remain
+-R03 work; these historical files are not evidence of hardware safety.
++The signature binds the complete asset pin and playback parameters. The device
++first requires an exact match with its local catalog, then checks byte count and
++SHA-256 against the same bounded buffer that it parses. Invalid UTF-8, frame
++angles, source count, loops or duration remain rejected before admission.
++
++`asset.file` must be the canonical single-component name ending in `.anim`;
++the signed command cannot use the old extensionless alias. On macOS/Linux, the
++reader opens a directory descriptor and opens the leaf relative to it with
++no-follow/nonblocking flags, then requires a regular file. Symlinks in either
++the final configured directory component or the leaf are rejected. Intermediate
++configuration path components remain under local operator control. Renaming a
++directory after its descriptor opens cannot redirect the read; replacing a file
++after it opens cannot substitute a second path lookup. In-place changes must
++still match the approved bytes. Unsupported platforms fail closed for animation
++asset opening rather than use an unsafe fallback.
++
++Preparation retains the parsed trajectory in memory; execution never reopens
++the file. A later replacement affects new preparations, not the already verified
++trajectory. Expired/revoked authority still blocks admission and individual
++native writes. Four owned preparation workers remain bounded and joined during
++shutdown, even after an RPC times out or its waiter is dropped. A failed repeat
++preparation cannot replace an existing receipt with a false zero-write claim.
++
++Content identity does not certify mechanism safety. Keep hardware output disabled
++and calibration unconfirmed until actual local calibration and hardware checks
++are complete; the historical files remain unapproved reference assets.
+ 
+ ## Delete Boundary
+ 
+diff --git a/packages/alia-embedded/src/config/mod.rs b/packages/alia-embedded/src/config/mod.rs
+index c7e780f..e530851 100644
+--- a/packages/alia-embedded/src/config/mod.rs
++++ b/packages/alia-embedded/src/config/mod.rs
+@@ -36,11 +36,15 @@ pub fn load_config(path: &Path) -> Result<EmbeddedConfig> {
+     }
+ 
+     config.device_runtime.validate()?;
++    alia_core::body::validate_animation_catalog(&config.motion.approved_animations)
++        .map_err(anyhow::Error::msg)?;
+     resolve_paths(&mut config, path);
+     Ok(config)
+ }
+ 
+ pub fn save_runtime_settings(path: &Path, settings: &EmbeddedRuntimeSettings) -> Result<()> {
++    alia_core::body::validate_animation_catalog(&settings.motion.approved_animations)
++        .map_err(anyhow::Error::msg)?;
+     if let Some(parent) = path.parent() {
+         std::fs::create_dir_all(parent)
+             .with_context(|| format!("creating config directory: {}", parent.display()))?;
+@@ -65,6 +69,8 @@ pub fn runtime_settings_for_path(config: &EmbeddedConfig) -> EmbeddedRuntimeSett
+ /// Normalize a library-supplied configuration using the same rules as file loading.
+ pub fn resolve_config_paths(config: &mut EmbeddedConfig) -> Result<()> {
+     config.device_runtime.validate()?;
++    alia_core::body::validate_animation_catalog(&config.motion.approved_animations)
++        .map_err(anyhow::Error::msg)?;
+     let path = if config.config_path.as_os_str().is_empty() {
+         std::env::current_dir()?.join("embedded.toml")
+     } else {
+diff --git a/packages/alia-embedded/src/config/types.rs b/packages/alia-embedded/src/config/types.rs
+index b91307e..e3eeec4 100644
+--- a/packages/alia-embedded/src/config/types.rs
++++ b/packages/alia-embedded/src/config/types.rs
+@@ -619,6 +619,9 @@ pub struct MotionConfig {
+     pub neck_config_file: PathBuf,
+     #[serde(default = "default_motion_animation_dir")]
+     pub animation_dir: PathBuf,
++    /// Reviewed local pins; remote settings cannot change this trust catalog.
++    #[serde(default)]
++    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+     #[serde(default = "default_motion_servo_count")]
+     pub servo_count: usize,
+     #[serde(default = "default_motion_servo_backend")]
+@@ -673,6 +676,7 @@ impl Default for MotionConfig {
+             enabled: true,
+             neck_config_file: default_motion_neck_config_file(),
+             animation_dir: default_motion_animation_dir(),
++            approved_animations: Vec::new(),
+             servo_count: default_motion_servo_count(),
+             servo_backend: default_motion_servo_backend(),
+             serial_path: default_motion_serial_path(),
+diff --git a/packages/alia-embedded/src/grpc/body_service/tests.rs b/packages/alia-embedded/src/grpc/body_service/tests.rs
+index 023927b..194fb2a 100644
+--- a/packages/alia-embedded/src/grpc/body_service/tests.rs
++++ b/packages/alia-embedded/src/grpc/body_service/tests.rs
+@@ -42,6 +42,16 @@ struct Fixture {
+     server: tokio::task::JoinHandle<std::result::Result<(), tonic::transport::Error>>,
+ }
+ 
++const ANIMATION_BYTES: &[u8] = b"frames\n1 0 0\n";
++fn approved_fixture_animation() -> BodyAnimationAsset {
++    BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version: 1,
++        sha256: body_animation_sha256(ANIMATION_BYTES),
++        bytes: ANIMATION_BYTES.len() as u32,
++    }
++}
++
+ impl Fixture {
+     async fn new() -> Self {
+         let dir = tempfile::tempdir().unwrap();
+@@ -49,12 +59,15 @@ impl Fixture {
+         std::fs::write(&matrix, serde_json::json!({"ServoMinMax":{"servo_0":[0,180],"servo_1":[0,180],"servo_2":[0,180]},"NeckAngles":[[0,0,0]],"MatrixSize":[1,3],"sigma":100.0,"Matrix":[[90.0,90.0,90.0]],"NeckAngleMinMax":[-45,45,-45,45,-45,45]}).to_string()).unwrap();
+         let config = MotionConfig {
+             neck_config_file: matrix,
++            animation_dir: dir.path().into(),
++            approved_animations: vec![approved_fixture_animation()],
+             servo_count: 3,
+             hardware_enabled: false,
+             calibration_confirmed: true,
+             fps: 30,
+             ..MotionConfig::default()
+         };
++        std::fs::write(dir.path().join("reviewed.anim"), ANIMATION_BYTES).unwrap();
+         let motion = Arc::new(MotionRuntime::new_with_boot(config, Uuid::new_v4()).unwrap());
+         motion.start().await.unwrap();
+         let playback = Arc::new(PlaybackSession::with_output_fence(
+@@ -154,7 +167,7 @@ impl Fixture {
+     }
+     fn request(&self, operation: BodyOperation) -> BodyRequest {
+         BodyRequest {
+-            version: 1,
++            version: BODY_CONTRACT_VERSION,
+             request_id: Uuid::new_v4(),
+             device_id: "body-test-device".into(),
+             issued_at_unix_ms: SystemTime::now()
+@@ -207,7 +220,7 @@ impl Fixture {
+         let reply: BodyReply = serde_json::from_slice(&envelope.payload)?;
+         ensure!(
+             reply.request_id == request.request_id
+-                && reply.version == 1
++                && reply.version == BODY_CONTRACT_VERSION
+                 && reply.device_id == request.device_id,
+             "signed reply lost request identity"
+         );
+@@ -768,7 +781,10 @@ async fn preparation_failure_has_signed_rejection_and_never_gains_a_retry_permis
+                 },
+             );
+             command.actions[0].motion = BodyMotion::Animation {
+-                file: "absent-body-test.anim".into(),
++                asset: BodyAnimationAsset {
++                    file: "absent-body-test.anim".into(),
++                    ..approved_fixture_animation()
++                },
+                 fps: 30,
+                 loops: 1,
+             };
+@@ -818,6 +834,120 @@ async fn preparation_failure_has_signed_rejection_and_never_gains_a_retry_permis
+     .await;
+ }
+ 
++#[tokio::test]
++async fn approved_animation_tampering_rejects_new_work_and_preserves_original_receipt() {
++    with_node(|node| {
++        Box::pin(async move {
++            let lease = node.open().await;
++            let mut command = node.command(
++                lease,
++                1,
++                BodyScope::Nonvoice {
++                    scope_id: Uuid::new_v4(),
++                },
++            );
++            command.actions[0].duration_ms = 100;
++            command.actions[0].motion = BodyMotion::Animation {
++                asset: approved_fixture_animation(),
++                fps: 30,
++                loops: 1,
++            };
++            let BodyEvidence::Progress { mut progress } = node
++                .call(BodyOperation::Submit {
++                    command: command.clone(),
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            while progress.end.is_none() {
++                let BodyEvidence::Progress { progress: updated } = node
++                    .call(BodyOperation::Observe {
++                        identity: command.identity,
++                        after_receipt_sequence: progress.receipt_sequence,
++                    })
++                    .await
++                    .unwrap()
++                else {
++                    panic!()
++                };
++                progress = updated;
++            }
++            assert_eq!(progress.end, Some(BodyEnd::Submitted));
++            assert!(progress.submitted_frames > 0);
++            std::fs::write(node._dir.path().join("reviewed.anim"), b"frames\n7 0 0\n").unwrap();
++            let BodyEvidence::Progress {
++                progress: duplicate,
++            } = node
++                .call(BodyOperation::Submit {
++                    command: command.clone(),
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            assert_eq!(
++                duplicate, progress,
++                "failed re-preparation must retain original execution facts"
++            );
++            let mut fresh = command.clone();
++            fresh.identity.sequence += 1;
++            let BodyEvidence::Progress { progress: rejected } = node
++                .call(BodyOperation::Submit {
++                    command: fresh.clone(),
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            rejected.validate(None, &fresh).unwrap();
++            assert!(matches!(rejected.end, Some(BodyEnd::Rejected { .. })));
++            assert_eq!(rejected.accepted_actions, 0);
++            assert_eq!(rejected.submitted_frames, 0);
++            assert!(rejected.writer_quiescent);
++            std::fs::remove_file(node._dir.path().join("reviewed.anim")).unwrap();
++            let BodyEvidence::Progress { progress: missing } = node
++                .call(BodyOperation::Submit {
++                    command: command.clone(),
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            assert_eq!(missing, progress);
++            let BodyEvidence::Progress {
++                progress: cancelled,
++            } = node
++                .call(BodyOperation::Cancel {
++                    command: command.clone(),
++                    reason: "exact cancellation after asset removal".into(),
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            assert_eq!(cancelled, progress);
++            let BodyEvidence::Progress { progress: observed } = node
++                .call(BodyOperation::Observe {
++                    identity: command.identity,
++                    after_receipt_sequence: progress.receipt_sequence,
++                })
++                .await
++                .unwrap()
++            else {
++                panic!()
++            };
++            assert_eq!(observed, progress);
++        })
++    })
++    .await;
++}
++
+ #[tokio::test]
+ async fn token_expiry_cancels_native_plan_without_observer_renewing_it() {
+     with_node(|node| {
+diff --git a/packages/alia-embedded/src/grpc/settings_service.rs b/packages/alia-embedded/src/grpc/settings_service.rs
+index 00dbf9f..27b7b1a 100644
+--- a/packages/alia-embedded/src/grpc/settings_service.rs
++++ b/packages/alia-embedded/src/grpc/settings_service.rs
+@@ -419,6 +419,26 @@ fn audio_file_path(audio_dir: &Path, requested: &str) -> PathBuf {
+ mod cue_tests {
+     use super::*;
+ 
++    #[tokio::test]
++    async fn cue_upload_cannot_overwrite_a_config_outside_its_audio_directory() {
++        let directory = tempfile::tempdir().unwrap();
++        let audio_dir = directory.path().join("audio");
++        let config = directory.path().join("embedded.toml");
++        let original = b"[motion]\napproved_animations = []\n";
++        std::fs::write(&config, original).unwrap();
++        let result = write_audio_variants(
++            vec![DirectResponseAudioVariant {
++                audio_path: config.display().to_string(),
++                weight: 1.0,
++                audio_data: b"replacement config".to_vec(),
++            }],
++            &audio_dir,
++        )
++        .await;
++        assert!(result.is_err(), "cue upload accepted an external config path");
++        assert_eq!(std::fs::read(config).unwrap(), original);
++    }
++
+     #[tokio::test]
+     async fn cue_management_rejects_action_only_and_invalid_weights_before_writes() {
+         let directory = tempfile::tempdir().unwrap();
+diff --git a/packages/alia-embedded/src/module/motion/mod.rs b/packages/alia-embedded/src/module/motion/mod.rs
+index 8b42b56..e685db5 100644
+--- a/packages/alia-embedded/src/module/motion/mod.rs
++++ b/packages/alia-embedded/src/module/motion/mod.rs
+@@ -1,3 +1,4 @@
++mod assets;
+ mod neck_mapper;
+ mod plan;
+ mod runtime;
+diff --git a/packages/alia-embedded/src/module/motion/plan.rs b/packages/alia-embedded/src/module/motion/plan.rs
+index 0657943..06a14b8 100644
+--- a/packages/alia-embedded/src/module/motion/plan.rs
++++ b/packages/alia-embedded/src/module/motion/plan.rs
+@@ -1,8 +1,10 @@
+ use super::neck_mapper::NeckMapper;
+ use crate::config::MotionConfig;
+-use alia_core::body::{BodyCommand, BodyMotion, BodyTarget, MAX_BODY_PAYLOAD_BYTES};
++use alia_core::body::{
++    BodyAnimationAsset, BodyCommand, BodyMotion, BodyTarget, MAX_BODY_PAYLOAD_BYTES,
++    validate_animation_catalog,
++};
+ use anyhow::{Context, Result, ensure};
+-use std::io::Read;
+ 
+ /// Preparation performs bounded file reads only. It never claims an identity or
+ /// touches hardware; submit rechecks all authority after this work has joined.
+@@ -19,6 +21,7 @@ pub(super) fn prepare(
+     signed_bytes: Vec<u8>,
+ ) -> Result<PreparedBodyCommand> {
+     validate_canonical(&command, &signed_bytes)?;
++    validate_animation_catalog(&config.approved_animations).map_err(anyhow::Error::msg)?;
+     let mut actions = Vec::new();
+     for action in &command.actions {
+         let (max_intensity, max_duration) = match action.motion {
+@@ -65,8 +68,8 @@ pub(super) fn prepare(
+                     } => face_rotation(config, *cx, *cy, *width, *height)?,
+                 },
+             ],
+-            BodyMotion::Animation { file, fps, loops } => {
+-                let frames = read_animation(config, file)?;
++            BodyMotion::Animation { asset, fps, loops } => {
++                let frames = read_animation(config, asset)?;
+                 let count = frames
+                     .len()
+                     .checked_mul(*loops as usize)
+@@ -123,32 +126,9 @@ pub(super) fn validate_canonical(command: &BodyCommand, canonical: &[u8]) -> Res
+     Ok(())
+ }
+ 
+-fn read_animation(config: &MotionConfig, name: &str) -> Result<Vec<[f32; 3]>> {
+-    let directory = config
+-        .animation_dir
+-        .canonicalize()
+-        .context("resolving animation directory")?;
+-    let name = if name.ends_with(".anim") {
+-        name.to_owned()
+-    } else {
+-        format!("{name}.anim")
+-    };
+-    let path = directory
+-        .join(name)
+-        .canonicalize()
+-        .context("resolving animation")?;
+-    ensure!(
+-        path.parent() == Some(directory.as_path()),
+-        "animation must stay inside configured directory"
+-    );
+-    let file = std::fs::File::open(path)?;
+-    ensure!(
+-        file.metadata()?.is_file(),
+-        "animation must be a regular file"
+-    );
+-    let mut content = String::new();
+-    file.take(65_537).read_to_string(&mut content)?;
+-    ensure!(content.len() <= 65_536, "animation exceeds 64 KiB");
++fn read_animation(config: &MotionConfig, asset: &BodyAnimationAsset) -> Result<Vec<[f32; 3]>> {
++    let bytes = super::assets::read_approved(config, asset)?;
++    let content = std::str::from_utf8(&bytes).context("animation must be UTF-8")?;
+     let mut frames = Vec::new();
+     for line in content
+         .lines()
+@@ -277,7 +257,7 @@ mod tests {
+     };
+     use uuid::Uuid;
+ 
+-    fn animation(file: &str, fps: u32, loops: u32, duration_ms: u32) -> BodyCommand {
++    fn animation(asset: BodyAnimationAsset, fps: u32, loops: u32, duration_ms: u32) -> BodyCommand {
+         BodyCommand {
+             identity: BodyCommandIdentity {
+                 lease: BodyControlLease {
+@@ -298,11 +278,7 @@ mod tests {
+             actions: vec![BodyAction {
+                 duration_ms,
+                 intensity: 0.1,
+-                motion: BodyMotion::Animation {
+-                    file: file.into(),
+-                    fps,
+-                    loops,
+-                },
++                motion: BodyMotion::Animation { asset, fps, loops },
+             }],
+         }
+     }
+@@ -312,10 +288,85 @@ mod tests {
+         prepare(config, command, bytes)
+     }
+ 
++    // Only isolated test fixtures are pinned here, before the tested mutation.
++    fn approve_fixture(
++        config: &mut MotionConfig,
++        file: &str,
++        fps: u32,
++        loops: u32,
++        duration_ms: u32,
++    ) -> BodyCommand {
++        let name = format!("{file}.anim");
++        let bytes = std::fs::read(config.animation_dir.join(&name)).unwrap();
++        let asset = BodyAnimationAsset {
++            file: name,
++            version: 1,
++            sha256: alia_core::body::body_animation_sha256(&bytes),
++            bytes: bytes.len().min(65_536) as u32,
++        };
++        config.approved_animations = vec![asset.clone()];
++        animation(asset, fps, loops, duration_ms)
++    }
++
++    fn prepared_fixture(
++        config: &mut MotionConfig,
++        file: &str,
++        fps: u32,
++        loops: u32,
++        duration_ms: u32,
++    ) -> Result<PreparedBodyCommand> {
++        let command = approve_fixture(config, file, fps, loops, duration_ms);
++        prepared(config, command)
++    }
++
++    #[test]
++    fn unchanged_signed_animation_cannot_select_replaced_file_contents() {
++        let directory = tempfile::tempdir().unwrap();
++        let path = directory.path().join("reviewed.anim");
++        let mut config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
++        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
++        let canonical = serde_json::to_vec(&command).unwrap();
++        let reviewed = prepare(&config, command.clone(), canonical.clone()).unwrap();
++        assert!(
++            reviewed.actions[0]
++                .iter()
++                .all(|frame| *frame == [1.0, 0.0, 0.0])
++        );
++
++        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
++        let replacement = prepare(&config, command, canonical);
++        assert!(
++            replacement.is_err(),
++            "an unchanged signed animation selected different local content"
++        );
++    }
++
++    #[test]
++    fn prepared_animation_is_immutable_after_the_file_is_replaced() {
++        let directory = tempfile::tempdir().unwrap();
++        let path = directory.path().join("reviewed.anim");
++        std::fs::write(&path, "frames\n1 0 0\n").unwrap();
++        let mut config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        let prepared = prepared_fixture(&mut config, "reviewed", 30, 1, 100).unwrap();
++        std::fs::write(&path, "frames\n7 0 0\n").unwrap();
++        assert!(
++            prepared.actions[0]
++                .iter()
++                .all(|frame| *frame == [1.0, 0.0, 0.0])
++        );
++    }
++
+     #[test]
+     fn validates_every_animation_frame_before_returning_any_plan() {
+         let directory = tempfile::tempdir().unwrap();
+-        let config = MotionConfig {
++        let mut config = MotionConfig {
+             animation_dir: directory.path().into(),
+             ..MotionConfig::default()
+         };
+@@ -324,7 +375,7 @@ mod tests {
+             "frames\n0 0 0\n1 2 NaN\n",
+         )
+         .unwrap();
+-        let mut command = animation("bad", 30, 1, 100);
++        let mut command = approve_fixture(&mut config, "bad", 30, 1, 100);
+         command.actions.insert(
+             0,
+             BodyAction {
+@@ -338,25 +389,25 @@ mod tests {
+             "a valid early action cannot hide an invalid late action"
+         );
+         std::fs::write(directory.path().join("bad.anim"), "frames\n1 2 3 4\n").unwrap();
+-        assert!(prepared(&config, animation("bad", 30, 1, 100)).is_err());
++        assert!(prepared_fixture(&mut config, "bad", 30, 1, 100).is_err());
+     }
+ 
+     #[test]
+     fn rejects_animation_file_size_frame_count_loops_and_duration_overflow() {
+         let directory = tempfile::tempdir().unwrap();
+-        let config = MotionConfig {
++        let mut config = MotionConfig {
+             animation_dir: directory.path().into(),
+             ..MotionConfig::default()
+         };
+         let path = directory.path().join("large.anim");
+         std::fs::write(&path, " ".repeat(65_537)).unwrap();
+-        assert!(prepared(&config, animation("large", 120, 1, 5_000)).is_err());
++        assert!(prepared_fixture(&mut config, "large", 120, 1, 5_000).is_err());
+         std::fs::write(&path, format!("frames\n{}", "0 0 0\n".repeat(601))).unwrap();
+-        assert!(prepared(&config, animation("large", 120, 1, 5_000)).is_err());
++        assert!(prepared_fixture(&mut config, "large", 120, 1, 5_000).is_err());
+         std::fs::write(&path, format!("frames\n{}", "0 0 0\n".repeat(31))).unwrap();
+-        assert!(prepared(&config, animation("large", 120, 20, 5_000)).is_err());
++        assert!(prepared_fixture(&mut config, "large", 120, 20, 5_000).is_err());
+         std::fs::write(&path, "frames\n0 0 0\n1 1 1\n").unwrap();
+-        assert!(prepared(&config, animation("large", 1, 1, 100)).is_err());
++        assert!(prepared_fixture(&mut config, "large", 1, 1, 100).is_err());
+     }
+ 
+     #[cfg(unix)]
+@@ -371,12 +422,19 @@ mod tests {
+         )
+         .unwrap();
+         std::fs::create_dir(directory.path().join("directory.anim")).unwrap();
+-        let config = MotionConfig {
++        let mut config = MotionConfig {
+             animation_dir: directory.path().into(),
+             ..MotionConfig::default()
+         };
+-        assert!(prepared(&config, animation("link", 30, 1, 100)).is_err());
+-        assert!(prepared(&config, animation("directory", 30, 1, 100)).is_err());
++        assert!(prepared_fixture(&mut config, "link", 30, 1, 100).is_err());
++        let directory_asset = BodyAnimationAsset {
++            file: "directory.anim".into(),
++            version: 1,
++            sha256: "0".repeat(64),
++            bytes: 1,
++        };
++        config.approved_animations = vec![directory_asset.clone()];
++        assert!(prepared(&config, animation(directory_asset, 30, 1, 100)).is_err());
+     }
+ 
+     #[test]
+@@ -387,12 +445,12 @@ mod tests {
+             "frames\n0 0 0\n10 0 0\n20 0 0\n",
+         )
+         .unwrap();
+-        let config = MotionConfig {
++        let mut config = MotionConfig {
+             animation_dir: directory.path().into(),
+             fps: 20,
+             ..MotionConfig::default()
+         };
+-        let plan = prepared(&config, animation("path", 10, 1, 400)).unwrap();
++        let plan = prepared_fixture(&mut config, "path", 10, 1, 400).unwrap();
+         let path = &plan.actions[0];
+         assert_eq!(path.len(), 8);
+         assert_eq!(path[0], [5.0, 0.0, 0.0]);
+@@ -411,4 +469,75 @@ mod tests {
+         assert!(face_rotation(&config, 1.0, 1.0, 0.0, 100.0).is_err());
+         assert!(face_rotation(&config, 101.0, 1.0, 100.0, 100.0).is_err());
+     }
++
++    #[test]
++    fn local_catalog_must_match_every_signed_asset_field() {
++        let directory = tempfile::tempdir().unwrap();
++        std::fs::write(directory.path().join("reviewed.anim"), "frames\n1 0 0\n").unwrap();
++        let mut config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
++        for change in 0..5 {
++            let mut local = config.clone();
++            match change {
++                0 => local.approved_animations.clear(),
++                1 => local.approved_animations[0].version += 1,
++                2 => local.approved_animations[0].bytes += 1,
++                3 => local.approved_animations[0].sha256 = "0".repeat(64),
++                4 => local.approved_animations[0].file = "other.anim".into(),
++                _ => unreachable!(),
++            }
++            assert!(
++                prepared(&local, command.clone())
++                    .unwrap_err()
++                    .to_string()
++                    .contains("local approved catalog")
++            );
++        }
++        prepared(&config, command).unwrap();
++    }
++
++    #[test]
++    fn exact_maximum_file_is_accepted_but_appended_or_truncated_bytes_are_rejected() {
++        use std::io::Write;
++        let directory = tempfile::tempdir().unwrap();
++        let path = directory.path().join("reviewed.anim");
++        let bytes = format!("{}\n1 0 0\n", "h".repeat(65_529));
++        assert_eq!(bytes.len(), 65_536);
++        std::fs::write(&path, &bytes).unwrap();
++        let mut config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        let command = approve_fixture(&mut config, "reviewed", 30, 1, 100);
++        prepared(&config, command.clone()).unwrap();
++        std::fs::OpenOptions::new()
++            .append(true)
++            .open(&path)
++            .unwrap()
++            .write_all(b"x")
++            .unwrap();
++        assert!(prepared(&config, command.clone()).is_err());
++        std::fs::write(&path, &bytes.as_bytes()[..bytes.len() - 1]).unwrap();
++        assert!(prepared(&config, command).is_err());
++    }
++
++    #[test]
++    fn approved_invalid_utf8_is_not_parsed_as_an_animation() {
++        let directory = tempfile::tempdir().unwrap();
++        std::fs::write(directory.path().join("bad.anim"), b"frames\n\xff 0 0\n").unwrap();
++        let mut config = MotionConfig {
++            animation_dir: directory.path().into(),
++            ..MotionConfig::default()
++        };
++        let command = approve_fixture(&mut config, "bad", 30, 1, 100);
++        assert!(
++            prepared(&config, command)
++                .unwrap_err()
++                .to_string()
++                .contains("UTF-8")
++        );
++    }
+ }
+diff --git a/packages/alia-embedded/src/module/motion/runtime.rs b/packages/alia-embedded/src/module/motion/runtime.rs
+index 4377009..67693d8 100644
+--- a/packages/alia-embedded/src/module/motion/runtime.rs
++++ b/packages/alia-embedded/src/module/motion/runtime.rs
+@@ -476,6 +476,8 @@ impl MotionRuntime {
+ 
+     pub fn new_with_boot(config: MotionConfig, boot: Uuid) -> Result<Self> {
+         ensure!(!boot.is_nil(), "body device boot ID must not be nil");
++        alia_core::body::validate_animation_catalog(&config.approved_animations)
++            .map_err(anyhow::Error::msg)?;
+         if !config.enabled {
+             return Ok(Self::disabled_with_boot(config, boot));
+         }
+diff --git a/packages/alia-embedded/src/module/motion/runtime/tests.rs b/packages/alia-embedded/src/module/motion/runtime/tests.rs
+index 63eb8fc..bfd352f 100644
+--- a/packages/alia-embedded/src/module/motion/runtime/tests.rs
++++ b/packages/alia-embedded/src/module/motion/runtime/tests.rs
+@@ -1190,6 +1190,17 @@ async fn queue_and_receipt_cache_are_bounded_and_retired_sequences_cannot_replay
+ #[tokio::test]
+ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
+     let (mut runtime, _servo) = unstarted();
++    let directory = tempfile::tempdir().unwrap();
++    let bytes = b"frames\n1 0 0\n";
++    std::fs::write(directory.path().join("reviewed.anim"), bytes).unwrap();
++    let asset = alia_core::body::BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version: 1,
++        sha256: alia_core::body::body_animation_sha256(bytes),
++        bytes: bytes.len() as u32,
++    };
++    Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
++    Arc::make_mut(&mut runtime.config).approved_animations = vec![asset.clone()];
+     let gate = Arc::new((Mutex::new(false), Condvar::new()));
+     let _preparation_release = PreparationRelease(gate.clone());
+     let entered = Arc::new(AtomicUsize::new(0));
+@@ -1210,7 +1221,13 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
+     let mut waiters = Vec::new();
+     for sequence in 1..=4 {
+         let runtime = runtime.clone();
+-        let command = command(lease, sequence);
++        let mut command = command(lease, sequence);
++        command.actions[0].duration_ms = 100;
++        command.actions[0].motion = BodyMotion::Animation {
++            asset: asset.clone(),
++            fps: 30,
++            loops: 1,
++        };
+         waiters.push(tokio::spawn(async move {
+             runtime
+                 .prepare(command.clone(), serde_json::to_vec(&command).unwrap())
+@@ -1247,6 +1264,58 @@ async fn preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters() {
+     assert!(runtime.preparations.lock().await.is_empty());
+ }
+ 
++#[tokio::test]
++async fn prepared_approved_animation_cannot_revive_a_retired_identity_or_revoked_lease() {
++    let (mut runtime, servo) = unstarted();
++    let directory = tempfile::tempdir().unwrap();
++    let bytes = b"frames\n1 0 0\n";
++    let path = directory.path().join("reviewed.anim");
++    std::fs::write(&path, bytes).unwrap();
++    let asset = alia_core::body::BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version: 1,
++        sha256: alia_core::body::body_animation_sha256(bytes),
++        bytes: bytes.len() as u32,
++    };
++    Arc::make_mut(&mut runtime.config).animation_dir = directory.path().into();
++    Arc::make_mut(&mut runtime.config).approved_animations = vec![asset.clone()];
++    runtime.start().await.unwrap();
++    let lease = open(&runtime);
++    let mut intent = command(lease, 1);
++    intent.actions[0].duration_ms = 100;
++    intent.actions[0].motion = BodyMotion::Animation {
++        asset,
++        fps: 30,
++        loops: 1,
++    };
++    let late = prepared(&runtime, &intent).await;
++    let rejected = runtime
++        .reject(
++            intent.clone(),
++            serde_json::to_vec(&intent).unwrap(),
++            "cancel before admission",
++        )
++        .unwrap()
++        .snapshot();
++    assert_eq!(
++        runtime.submit(late, authorization()).unwrap().snapshot(),
++        rejected
++    );
++    intent.identity.sequence += 1;
++    let prepared_next = prepared(&runtime, &intent).await;
++    std::fs::write(&path, b"frames\n7 0 0\n").unwrap();
++    runtime
++        .close_control(&lease, "lease revoked after preparation")
++        .unwrap();
++    assert!(runtime.submit(prepared_next, authorization()).is_err());
++    assert_eq!(
++        servo.count(),
++        1,
++        "only the confirmed startup target may be submitted"
++    );
++    runtime.stop().await.unwrap();
++}
++
+ #[tokio::test]
+ async fn face_latest_slot_and_expression_use_one_writer() {
+     let (runtime, servo) = unstarted();
+diff --git a/packages/alia-embedded/src/settings.rs b/packages/alia-embedded/src/settings.rs
+index e3750bb..8083094 100644
+--- a/packages/alia-embedded/src/settings.rs
++++ b/packages/alia-embedded/src/settings.rs
+@@ -1,6 +1,6 @@
+ use std::path::PathBuf;
+ 
+-use anyhow::{Context, Result, bail};
++use anyhow::{Context, Result, bail, ensure};
+ use serde::Serialize;
+ use tokio::sync::RwLock;
+ 
+@@ -58,12 +58,17 @@ impl EmbeddedSettingsManager {
+     }
+ 
+     pub async fn update_from_value(&self, patch: serde_json::Value) -> Result<SettingsSnapshot> {
+-        let mut current = serde_json::to_value(self.settings.read().await.clone())
+-            .context("serializing current embedded settings")?;
++        let before = self.settings.read().await.clone();
++        let mut current =
++            serde_json::to_value(&before).context("serializing current embedded settings")?;
+         merge_values(&mut current, patch)?;
+ 
+         let merged: EmbeddedRuntimeSettings =
+             serde_json::from_value(current).context("validating embedded settings patch")?;
++        ensure!(
++            merged.motion.approved_animations == before.motion.approved_animations,
++            "approved animation catalog is local-only; edit local configuration and restart"
++        );
+         save_runtime_settings(&self.path, &merged)?;
+         *self.settings.write().await = merged;
+ 
+diff --git a/packages/alia-embedded/tests/config.rs b/packages/alia-embedded/tests/config.rs
+index 64b2ad8..55462f8 100644
+--- a/packages/alia-embedded/tests/config.rs
++++ b/packages/alia-embedded/tests/config.rs
+@@ -141,9 +141,107 @@ fn has_motion_protection_defaults() {
+     assert_eq!(settings.motion.serial_startup_delay_ms, 2_000);
+     assert!(!settings.motion.hardware_enabled);
+     assert!(!settings.motion.calibration_confirmed);
++    assert!(settings.motion.approved_animations.is_empty());
+     assert_eq!(settings.motion.max_servo_speed_deg_per_sec, 60.0);
+ }
+ 
++fn reviewed_fixture_asset() -> alia_core::body::BodyAnimationAsset {
++    let bytes = b"frames\n1 0 0\n";
++    alia_core::body::BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version: 1,
++        sha256: alia_core::body::body_animation_sha256(bytes),
++        bytes: bytes.len() as u32,
++    }
++}
++
++#[test]
++fn local_animation_catalog_roundtrips_and_invalid_catalogs_are_rejected_before_save() {
++    use alia_embedded::config::{EmbeddedConfig, load_config, save_runtime_config};
++    let directory = tempfile::tempdir().unwrap();
++    let mut config = EmbeddedConfig {
++        config_path: directory.path().join("embedded.toml"),
++        ..Default::default()
++    };
++    config.motion.approved_animations = vec![reviewed_fixture_asset()];
++    save_runtime_config(&config).unwrap();
++    assert_eq!(
++        load_config(&config.config_path)
++            .unwrap()
++            .motion
++            .approved_animations,
++        config.motion.approved_animations
++    );
++    let valid = std::fs::read(&config.config_path).unwrap();
++    for invalid in [
++        vec![reviewed_fixture_asset(); 2],
++        vec![alia_core::body::BodyAnimationAsset {
++            version: 0,
++            ..reviewed_fixture_asset()
++        }],
++        vec![reviewed_fixture_asset(); 65],
++    ] {
++        config.motion.approved_animations = invalid;
++        assert!(save_runtime_config(&config).is_err());
++        assert_eq!(std::fs::read(&config.config_path).unwrap(), valid);
++        let unchecked = toml::to_string(&config.runtime_settings()).unwrap();
++        std::fs::write(&config.config_path, unchecked).unwrap();
++        assert!(load_config(&config.config_path).is_err());
++        std::fs::write(&config.config_path, &valid).unwrap();
++        config.motion.enabled = false;
++        assert!(alia_embedded::module::motion::MotionRuntime::new(config.motion.clone()).is_err());
++    }
++}
++
++#[tokio::test]
++async fn remote_settings_cannot_create_replace_or_clear_the_local_animation_catalog() {
++    use alia_embedded::config::{EmbeddedConfig, save_runtime_config};
++    use alia_embedded::settings::EmbeddedSettingsManager;
++    let directory = tempfile::tempdir().unwrap();
++    let mut config = EmbeddedConfig {
++        config_path: directory.path().join("embedded.toml"),
++        ..Default::default()
++    };
++    let unapproved = EmbeddedSettingsManager::new(&config);
++    assert!(
++        unapproved
++            .update_from_value(
++                serde_json::json!({"motion":{"approved_animations":[reviewed_fixture_asset()]}})
++            )
++            .await
++            .is_err()
++    );
++    assert!(!config.config_path.exists());
++    config.motion.approved_animations = vec![reviewed_fixture_asset()];
++    save_runtime_config(&config).unwrap();
++    let manager = EmbeddedSettingsManager::new(&config);
++    // Unchanged complete snapshots remain compatible; local trust does not change.
++    manager
++        .update_from_json(&manager.snapshot_json(false).await.unwrap())
++        .await
++        .unwrap();
++    manager
++        .update_from_value(serde_json::json!({"motion":{"fps":60}}))
++        .await
++        .unwrap();
++    let before = manager.snapshot_json(false).await.unwrap();
++    let persisted = std::fs::read(&config.config_path).unwrap();
++    let mut changed = reviewed_fixture_asset();
++    changed.version = 2;
++    let mut whole = serde_json::from_str::<serde_json::Value>(&before).unwrap();
++    whole["motion"]["approved_animations"] = serde_json::json!([changed.clone()]);
++    for patch in [
++        serde_json::json!({"motion":{"approved_animations":[]}}),
++        serde_json::json!({"motion":{"approved_animations":[changed]}}),
++        whole,
++        serde_json::json!({"motion":null}),
++    ] {
++        assert!(manager.update_from_value(patch).await.is_err());
++        assert_eq!(manager.snapshot_json(false).await.unwrap(), before);
++        assert_eq!(std::fs::read(&config.config_path).unwrap(), persisted);
++    }
++}
++
+ #[test]
+ fn removed_motion_reset_and_soft_start_options_are_rejected_instead_of_ignored() {
+     use alia_embedded::config::{load_config, save_runtime_config};
+diff --git a/packages/alia-server/src/bootstrap/factory.rs b/packages/alia-server/src/bootstrap/factory.rs
+index 4b044e7..2a4f438 100644
+--- a/packages/alia-server/src/bootstrap/factory.rs
++++ b/packages/alia-server/src/bootstrap/factory.rs
+@@ -194,6 +194,7 @@ pub fn create_channel(
+             owner_user_id,
+             expected_device_id,
+             expected_device_public_key,
++            approved_animations,
+             endpoint,
+             discovery_service_name,
+             discovery_timeout_sec,
+@@ -210,6 +211,7 @@ pub fn create_channel(
+                         owner_user_id: *owner_user_id,
+                         expected_device_id: expected_device_id.clone(),
+                         expected_device_public_key: expected_device_public_key.clone(),
++                        approved_animations: approved_animations.clone(),
+                         endpoint: endpoint.clone(),
+                         discovery_service_name: discovery_service_name.clone(),
+                         discovery_timeout_sec: *discovery_timeout_sec,
+@@ -276,6 +278,7 @@ mod tests {
+             owner_user_id: None,
+             expected_device_id: None,
+             expected_device_public_key: None,
++            approved_animations: vec![],
+             enabled: true,
+             endpoint: String::new(),
+             discovery_service_name: "_alia-embedded._tcp".to_string(),
+diff --git a/packages/alia-server/src/channels/embedded/body.rs b/packages/alia-server/src/channels/embedded/body.rs
+index eacc11f..09886e8 100644
+--- a/packages/alia-server/src/channels/embedded/body.rs
++++ b/packages/alia-server/src/channels/embedded/body.rs
+@@ -45,7 +45,7 @@ pub trait BodyDeliveryStore: Send + Sync {
+         &self,
+         origin: &BodyDeliveryOrigin,
+         channel_id: &str,
+-        command: &BodyCommand,
++        owner_id: Uuid,
+     ) -> anyhow::Result<Option<BodyDeliveryRecord>>;
+     async fn claim(
+         &self,
+@@ -74,9 +74,9 @@ impl BodyDeliveryStore for BodyDeliveryRepository {
+         &self,
+         origin: &BodyDeliveryOrigin,
+         channel_id: &str,
+-        command: &BodyCommand,
++        owner_id: Uuid,
+     ) -> anyhow::Result<Option<BodyDeliveryRecord>> {
+-        BodyDeliveryRepository::lookup_origin(self, origin, channel_id, command).await
++        BodyDeliveryRepository::lookup_origin(self, origin, channel_id, owner_id).await
+     }
+     async fn claim(
+         &self,
+@@ -306,17 +306,18 @@ struct BodyIntent {
+ }
+ 
+ impl BodyIntent {
+-    fn parse(raw: serde_json::Value) -> anyhow::Result<Self> {
++    fn source(raw: &serde_json::Value) -> anyhow::Result<(BodyDeliveryOrigin, Uuid)> {
+         ensure!(
+             serde_json::to_vec(&raw)?.len() <= MAX_BODY_PAYLOAD_BYTES,
+             "expression body intent exceeds its bounded cache payload"
+         );
+-        let plan: crate::expression::types::ExpressionPlan = serde_json::from_value(raw.clone())?;
+-        let source_id = required_string(&raw, "command_id", 256)?;
+-        let owner_id = Uuid::parse_str(&required_string(&raw, "target_user_id", 64)?)?;
+-        let response_id = Uuid::parse_str(&required_string(&raw, "response_id", 64)?)?;
+-        ensure!(!response_id.is_nil(), "body requires an original Response");
+-        let output_key = required_string(&raw, "phase", 32)?;
++        let owner_id = Uuid::parse_str(&required_string(raw, "target_user_id", 64)?)?;
++        let response_id = Uuid::parse_str(&required_string(raw, "response_id", 64)?)?;
++        ensure!(
++            !response_id.is_nil() && !owner_id.is_nil(),
++            "body requires an original Response and owner"
++        );
++        let output_key = required_string(raw, "phase", 32)?;
+         ensure!(
+             matches!(
+                 output_key.as_str(),
+@@ -324,8 +325,22 @@ impl BodyIntent {
+             ),
+             "invalid body response phase"
+         );
++        Ok((
++            BodyDeliveryOrigin {
++                response_id,
++                output_key,
++            },
++            owner_id,
++        ))
++    }
++
++    fn parse(raw: serde_json::Value, assets: &[BodyAnimationAsset]) -> anyhow::Result<Self> {
++        validate_animation_catalog(assets)?;
++        let (origin, owner_id) = Self::source(&raw)?;
++        let plan: crate::expression::types::ExpressionPlan = serde_json::from_value(raw.clone())?;
++        let source_id = required_string(&raw, "command_id", 256)?;
+         ensure!(
+-            source_id == format!("{response_id}:{}:{output_key}", plan.id),
++            source_id == format!("{}:{}:{}", origin.response_id, plan.id, origin.output_key),
+             "body source must name the canonical Response, plan and phase"
+         );
+         let voice: Option<VoiceScope> = serde_json::from_value(
+@@ -338,7 +353,7 @@ impl BodyIntent {
+             // The original Response is the explicit nonvoice control scope.
+             // It survives restart and is never confused with a VoiceScope.
+             None => BodyScope::Nonvoice {
+-                scope_id: response_id,
++                scope_id: origin.response_id,
+             },
+         };
+         let mut actions = Vec::with_capacity(plan.timeline.len());
+@@ -354,11 +369,34 @@ impl BodyIntent {
+                 "look_at_user" => BodyMotion::LookAt {
+                     target: body_target(&action.params)?,
+                 },
+-                "play_animation" => BodyMotion::Animation {
+-                    file: required_string(&action.params, "file", 128)?,
+-                    fps: optional_u32(&action.params, "fps", 30)?,
+-                    loops: optional_u32(&action.params, "loops", 1)?,
+-                },
++                "play_animation" => {
++                    let params = action
++                        .params
++                        .as_object()
++                        .context("animation parameters must be an object")?;
++                    ensure!(
++                        params
++                            .keys()
++                            .all(|key| matches!(key.as_str(), "file" | "fps" | "loops")),
++                        "animation content identity must come from the approved catalog"
++                    );
++                    let name = required_string(&action.params, "file", 128)?;
++                    let file = if name.ends_with(".anim") {
++                        name
++                    } else {
++                        format!("{name}.anim")
++                    };
++                    let asset = assets
++                        .iter()
++                        .find(|asset| asset.file == file)
++                        .context("animation is absent from the operator-approved catalog")?
++                        .clone();
++                    BodyMotion::Animation {
++                        asset,
++                        fps: optional_u32(&action.params, "fps", 30)?,
++                        loops: optional_u32(&action.params, "loops", 1)?,
++                    }
++                }
+                 _ => anyhow::bail!("unsupported typed body action"),
+             };
+             actions.push(BodyAction {
+@@ -370,10 +408,7 @@ impl BodyIntent {
+         }
+         let intent = Self {
+             raw,
+-            origin: BodyDeliveryOrigin {
+-                response_id,
+-                output_key,
+-            },
++            origin,
+             source_id,
+             plan_id: plan.id,
+             owner_id,
+@@ -404,6 +439,42 @@ impl BodyIntent {
+         Ok(intent)
+     }
+ 
++    fn recover(raw: serde_json::Value, record: &BodyDeliveryRecord) -> anyhow::Result<Self> {
++        record.command.validate()?;
++        let mut assets = Vec::new();
++        for action in &record.command.actions {
++            if let BodyMotion::Animation { asset, .. } = &action.motion {
++                if let Some(previous) = assets
++                    .iter()
++                    .find(|old: &&BodyAnimationAsset| old.file == asset.file)
++                {
++                    ensure!(
++                        previous == asset,
++                        "stored animation content identity is inconsistent"
++                    );
++                } else {
++                    assets.push(asset.clone());
++                }
++            }
++        }
++        let intent = Self::parse(raw, &assets)?;
++        intent.verify_record(record)?;
++        Ok(intent)
++    }
++
++    fn verify_record(&self, record: &BodyDeliveryRecord) -> anyhow::Result<()> {
++        ensure!(
++            record.response_id == self.origin.response_id
++                && record.output_key == self.origin.output_key,
++            "body record differs from original Response phase"
++        );
++        ensure!(
++            self.command(record.command.identity) == record.command,
++            "body response phase was reused with different intent"
++        );
++        Ok(())
++    }
++
+     fn command(&self, identity: BodyCommandIdentity) -> BodyCommand {
+         BodyCommand {
+             identity,
+@@ -496,6 +567,9 @@ struct Snapshot {
+ 
+ struct Entry {
+     intent: BodyIntent,
++    /// Once a durable identity was observed, even later row removal cannot
++    /// turn this source back into a fresh dispatch.
++    recovered: Option<BodyDeliveryRecord>,
+     observation: watch::Sender<Snapshot>,
+     cancel: CancellationToken,
+     cancel_reason: Mutex<String>,
+@@ -580,6 +654,7 @@ struct Admission {
+ 
+ struct Inner {
+     channel_id: String,
++    approved_animations: Vec<BodyAnimationAsset>,
+     instance_id: Uuid,
+     admission: Mutex<Admission>,
+     requests: mpsc::Sender<Arc<Entry>>,
+@@ -596,10 +671,11 @@ struct Inner {
+ pub(super) struct EmbeddedBodyRuntime(Arc<Inner>);
+ 
+ impl EmbeddedBodyRuntime {
+-    pub(super) fn new(channel_id: String) -> Self {
++    pub(super) fn new(channel_id: String, approved_animations: Vec<BodyAnimationAsset>) -> Self {
+         let (requests, receiver) = mpsc::channel(MAX_OWNERS);
+         Self(Arc::new(Inner {
+             channel_id,
++            approved_animations,
+             instance_id: Uuid::new_v4(),
+             admission: Mutex::new(Admission {
+                 started: false,
+@@ -645,6 +721,7 @@ impl EmbeddedBodyRuntime {
+     }
+ 
+     pub(super) fn start(&self, background: &mut BackgroundStart<'_>) -> anyhow::Result<()> {
++        validate_animation_catalog(&self.0.approved_animations)?;
+         let mut admission = self
+             .0
+             .admission
+@@ -708,12 +785,12 @@ impl EmbeddedBodyRuntime {
+         let protocol =
+             available.then_some(crate::expression::orchestrator::EXPRESSION_COMMAND_PROTOCOL);
+         Ok(
+-            serde_json::json!({"adapter":"embedded_body_v1", "command_protocol":protocol,
++            serde_json::json!({"adapter":"embedded_body_v2", "command_protocol":protocol,
+             "capabilities": {
+                 "small_nod":{"supported":available,"max_intensity":0.45,"max_duration_ms":900},
+                 "small_bow":{"supported":available,"max_intensity":0.35,"max_duration_ms":1200},
+                 "look_at_user":{"supported":available,"max_intensity":0.45,"max_duration_ms":1200},
+-                "play_animation":{"supported":available,"max_intensity":0.45,"max_duration_ms":5000}},
++                "play_animation":{"supported":available && !self.0.approved_animations.is_empty(),"max_intensity":0.45,"max_duration_ms":5000}},
+             "current_state":{"busy":state.is_some() && !available,"motion_adapter_registered":available},
+             "position_feedback":null}),
+         )
+@@ -733,11 +810,44 @@ impl EmbeddedBodyRuntime {
+                 .is_some_and(|client| !client.revoked.is_cancelled()),
+             "body control requires a configured trusted device ID and public key that match the connected device"
+         );
+-        ensure!(
+-            self.0.store.read().await.is_some(),
+-            "body durable delivery store is unavailable"
+-        );
+-        let intent = BodyIntent::parse(params)?;
++        let store = self
++            .0
++            .store
++            .read()
++            .await
++            .clone()
++            .context("body durable delivery store is unavailable")?;
++        let source = required_string(&params, "command_id", 256)?;
++        let cached = self
++            .0
++            .admission
++            .lock()
++            .unwrap_or_else(|error| error.into_inner())
++            .sources
++            .get(&source)
++            .cloned();
++        let (intent, recovered) = if let Some(entry) = cached {
++            ensure!(
++                entry.intent.raw == params,
++                "body source identity was reused with different intent"
++            );
++            (entry.intent.clone(), entry.recovered.clone())
++        } else {
++            let (origin, owner_id) = BodyIntent::source(&params)?;
++            if let Some(record) = store
++                .lookup_origin(&origin, &self.0.channel_id, owner_id)
++                .await?
++            {
++                // Old facts keep their original content pins even after a local
++                // catalog replacement; recovery never grants another dispatch.
++                (BodyIntent::recover(params, &record)?, Some(record))
++            } else {
++                (
++                    BodyIntent::parse(params, &self.0.approved_animations)?,
++                    None,
++                )
++            }
++        };
+         let entry = {
+             let mut admission = self
+                 .0
+@@ -763,6 +873,7 @@ impl EmbeddedBodyRuntime {
+                 let (observation, _) = watch::channel(Snapshot::default());
+                 let entry = Arc::new(Entry {
+                     intent,
++                    recovered,
+                     observation,
+                     cancel: CancellationToken::new(),
+                     cancel_reason: Mutex::new("body command cancelled".into()),
+@@ -803,13 +914,11 @@ impl EmbeddedBodyRuntime {
+             .get(&source)
+             .cloned();
+         let Some(entry) = entry else {
+-            let intent = BodyIntent::parse(
+-                params
+-                    .get("body_intent")
+-                    .cloned()
+-                    .context("original body intent is unavailable; resubmission is forbidden")?,
+-            )?;
+-            intent.verify_owner(&params)?;
++            let raw = params
++                .get("body_intent")
++                .cloned()
++                .context("original body intent is unavailable; resubmission is forbidden")?;
++            let (origin, owner_id) = BodyIntent::source(&raw)?;
+             let store = self
+                 .0
+                 .store
+@@ -817,23 +926,14 @@ impl EmbeddedBodyRuntime {
+                 .await
+                 .clone()
+                 .context("body delivery ledger unavailable")?;
+-            let placeholder = intent.command(BodyCommandIdentity {
+-                lease: BodyControlLease {
+-                    device_boot_id: intent
+-                        .scope
+-                        .voice()
+-                        .map_or_else(Uuid::new_v4, |scope| scope.device_boot_id),
+-                    server_instance_id: self.0.instance_id,
+-                    generation: 1,
+-                },
+-                sequence: 1,
+-            });
+             let record = store
+-                .lookup_origin(&intent.origin, &self.0.channel_id, &placeholder)
++                .lookup_origin(&origin, &self.0.channel_id, owner_id)
+                 .await?
+                 .context(
+                     "original durable body record is unavailable; resubmission is forbidden",
+                 )?;
++            let intent = BodyIntent::recover(raw, &record)?;
++            intent.verify_owner(&params)?;
+             let evidence = BodyExecutionEvidence {
+                 command: record.command,
+                 progress: record.latest_checkpoint.or(record.progress),
+@@ -1011,6 +1111,9 @@ impl EmbeddedBodyRuntime {
+     }
+ 
+     async fn dispatch_and_observe(&self, entry: &Entry) -> anyhow::Result<()> {
++        if let Some(record) = &entry.recovered {
++            return Self::restore_existing(entry, record.clone());
++        }
+         let store = self
+             .0
+             .store
+@@ -1018,20 +1121,12 @@ impl EmbeddedBodyRuntime {
+             .await
+             .clone()
+             .context("body delivery ledger unavailable")?;
+-        let placeholder = entry.intent.command(BodyCommandIdentity {
+-            lease: BodyControlLease {
+-                device_boot_id: entry
+-                    .intent
+-                    .scope
+-                    .voice()
+-                    .map_or_else(Uuid::new_v4, |scope| scope.device_boot_id),
+-                server_instance_id: self.0.instance_id,
+-                generation: 1,
+-            },
+-            sequence: 1,
+-        });
+         if let Some(record) = store
+-            .lookup_origin(&entry.intent.origin, &self.0.channel_id, &placeholder)
++            .lookup_origin(
++                &entry.intent.origin,
++                &self.0.channel_id,
++                entry.intent.owner_id,
++            )
+             .await?
+         {
+             return Self::restore_existing(entry, record);
+@@ -1245,6 +1340,7 @@ impl EmbeddedBodyRuntime {
+     }
+ 
+     fn restore_existing(entry: &Entry, record: BodyDeliveryRecord) -> anyhow::Result<()> {
++        entry.intent.verify_record(&record)?;
+         record.command.validate()?;
+         let progress = record.latest_checkpoint.or(record.progress);
+         if let Some(progress) = &progress {
+diff --git a/packages/alia-server/src/channels/embedded/body/tests.rs b/packages/alia-server/src/channels/embedded/body/tests.rs
+index 0adca2a..bfb426e 100644
+--- a/packages/alia-server/src/channels/embedded/body/tests.rs
++++ b/packages/alia-server/src/channels/embedded/body/tests.rs
+@@ -309,6 +309,7 @@ impl BodyControl for DeviceService {
+ #[derive(Default)]
+ struct Store {
+     records: Mutex<HashMap<Uuid, BodyDeliveryRecord>>,
++    remove_after_lookup: AtomicBool,
+     allow: AtomicBool,
+     progress_facts: Mutex<Vec<BodyProgress>>,
+     claims: AtomicUsize,
+@@ -320,14 +321,14 @@ impl BodyDeliveryStore for Store {
+         &self,
+         origin: &BodyDeliveryOrigin,
+         _: &str,
+-        _: &BodyCommand,
++        _: Uuid,
+     ) -> anyhow::Result<Option<BodyDeliveryRecord>> {
+-        Ok(self
+-            .records
+-            .lock()
+-            .unwrap()
+-            .get(&origin.response_id)
+-            .cloned())
++        let mut records = self.records.lock().unwrap();
++        let record = records.get(&origin.response_id).cloned();
++        if self.remove_after_lookup.swap(false, Ordering::SeqCst) {
++            records.remove(&origin.response_id);
++        }
++        Ok(record)
+     }
+     async fn claim(
+         &self,
+@@ -406,6 +407,10 @@ struct Harness {
+ 
+ impl Harness {
+     async fn new() -> Self {
++        Self::with_assets(vec![]).await
++    }
++
++    async fn with_assets(assets: Vec<BodyAnimationAsset>) -> Self {
+         let server_key = SigningKey::from_bytes(&[30; 32]);
+         let device = Arc::new(FakeDevice::new(
+             server_key.verifying_key().to_bytes().to_vec(),
+@@ -435,7 +440,7 @@ impl Harness {
+             device.key.verifying_key().to_bytes().to_vec(),
+         )
+         .unwrap();
+-        let mut runtime = EmbeddedBodyRuntime::new("test-channel".into());
++        let mut runtime = EmbeddedBodyRuntime::new("test-channel".into(), assets);
+         Arc::get_mut(&mut runtime.0).unwrap().enabled = true;
+         let store = Arc::new(Store::default());
+         store.allow.store(true, Ordering::SeqCst);
+@@ -946,7 +951,7 @@ async fn original_response_record_is_restored_without_opening_control_or_resubmi
+     for has_late in [false, true] {
+         let h = Harness::new().await;
+         let params = params(20);
+-        let intent = BodyIntent::parse(params.clone()).unwrap();
++        let intent = BodyIntent::parse(params.clone(), &[]).unwrap();
+         let command = intent.command(BodyCommandIdentity {
+             lease: BodyControlLease {
+                 device_boot_id: Uuid::new_v4(),
+@@ -1036,21 +1041,211 @@ async fn revoked_response_cancels_original_command_and_still_records_real_receip
+     h.finish().await;
+ }
+ 
++#[test]
++fn animation_without_an_operator_approved_catalog_is_rejected() {
++    let mut value = params(500);
++    value["timeline"][0]["action"] = json!("play_animation");
++    value["timeline"][0]["params"] = json!({"file":"reviewed.anim","fps":30,"loops":1});
++    assert!(
++        BodyIntent::parse(value, &[]).is_err(),
++        "an animation absent from any operator-approved catalog was accepted"
++    );
++}
++
++fn approved_asset(version: u32) -> BodyAnimationAsset {
++    let content = if version == 1 {
++        b"frames\n0 0 0\n"
++    } else {
++        b"frames\n1 0 0\n"
++    };
++    BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version,
++        sha256: body_animation_sha256(content),
++        bytes: content.len() as u32,
++    }
++}
++
++fn animation_params() -> Value {
++    let mut value = params(500);
++    value["timeline"][0]["action"] = json!("play_animation");
++    value["timeline"][0]["params"] = json!({"file":"reviewed.anim","fps":30,"loops":1});
++    value
++}
++
++#[test]
++fn animation_pin_is_resolved_only_from_the_approved_catalog() {
++    let asset = approved_asset(1);
++    let value = animation_params();
++    let intent = BodyIntent::parse(value.clone(), std::slice::from_ref(&asset)).unwrap();
++    assert!(
++        matches!(&intent.actions[0].motion, BodyMotion::Animation { asset: actual, fps: 30, loops: 1 } if actual == &asset)
++    );
++    for (key, supplied) in [
++        ("sha256", json!(asset.sha256)),
++        ("version", json!(99)),
++        ("bytes", json!(1)),
++        ("asset", json!(asset)),
++        ("approved_animations", json!([asset.clone()])),
++    ] {
++        let mut forged = value.clone();
++        forged["timeline"][0]["params"][key] = supplied;
++        assert!(
++            BodyIntent::parse(forged, std::slice::from_ref(&asset)).is_err(),
++            "model supplied {key} was accepted"
++        );
++    }
++    let mut unknown = value.clone();
++    unknown["timeline"][0]["params"]["file"] = json!("unknown.anim");
++    assert!(BodyIntent::parse(unknown, std::slice::from_ref(&asset)).is_err());
++    let mut alias = value;
++    alias["timeline"][0]["params"]["file"] = json!("reviewed");
++    assert_eq!(
++        BodyIntent::parse(alias, &[asset]).unwrap().actions,
++        intent.actions
++    );
++}
++
++#[tokio::test]
++async fn a_known_durable_identity_cannot_become_fresh_when_its_row_disappears() {
++    let h = Harness::new().await;
++    let raw = animation_params();
++    let intent = BodyIntent::parse(raw.clone(), &[approved_asset(1)]).unwrap();
++    let command = intent.command(BodyCommandIdentity {
++        lease: BodyControlLease {
++            device_boot_id: Uuid::new_v4(),
++            server_instance_id: Uuid::new_v4(),
++            generation: 1,
++        },
++        sequence: 1,
++    });
++    h.store.records.lock().unwrap().insert(
++        intent.origin.response_id,
++        BodyDeliveryRecord {
++            delivery_id: Uuid::new_v4(),
++            response_id: intent.origin.response_id,
++            output_key: intent.origin.output_key,
++            dispatch_id: Uuid::new_v4(),
++            command: command.clone(),
++            progress: None,
++            latest_checkpoint: None,
++            status: "unknown".into(),
++            unknown_reason: Some("former owner retired".into()),
++        },
++    );
++    h.store.remove_after_lookup.store(true, Ordering::SeqCst);
++    h.runtime.submit(raw.clone()).await.unwrap();
++    assert_eq!(h.retired(&raw).await.body.unwrap().command, command);
++    assert!(h.store.records.lock().unwrap().is_empty());
++    assert_eq!(h.store.claims.load(Ordering::SeqCst), 0);
++    assert!(h.device.operations().is_empty());
++    h.finish().await;
++}
++
++#[tokio::test]
++async fn restarted_catalog_cannot_rebind_or_hide_the_original_body_intent() {
++    let original = approved_asset(1);
++    let replacement = approved_asset(2);
++    let raw = animation_params();
++    let h = Harness::with_assets(vec![original.clone()]).await;
++    h.runtime.submit(raw.clone()).await.unwrap();
++    let first = h.retired(&raw).await;
++    let command = first.body.unwrap().command;
++    assert!(
++        matches!(&command.actions[0].motion, BodyMotion::Animation { asset, .. } if asset == &original)
++    );
++    let origin: Uuid = serde_json::from_value(raw["response_id"].clone()).unwrap();
++    let record = h
++        .store
++        .records
++        .lock()
++        .unwrap()
++        .get(&origin)
++        .unwrap()
++        .clone();
++    h.finish().await;
++
++    for catalog in [vec![], vec![replacement.clone()]] {
++        let h = Harness::with_assets(catalog.clone()).await;
++        h.store
++            .records
++            .lock()
++            .unwrap()
++            .insert(origin, record.clone());
++        let restored: ExpressionExecutionResult =
++            serde_json::from_value(h.runtime.submit(raw.clone()).await.unwrap()).unwrap();
++        assert_eq!(restored.body.unwrap().command, command);
++        h.retired(&raw).await;
++        let mut changed = raw.clone();
++        changed["timeline"][0]["params"]["fps"] = json!(60);
++        assert!(h.runtime.submit(changed.clone()).await.is_err());
++        h.runtime
++            .0
++            .admission
++            .lock()
++            .unwrap()
++            .sources
++            .remove(raw["command_id"].as_str().unwrap());
++        for cancel in [false, true] {
++            let mut query = owner_params(&raw);
++            query["body_intent"] = raw.clone();
++            let fact: ExpressionExecutionResult =
++                serde_json::from_value(h.runtime.observe(query, cancel).await.unwrap()).unwrap();
++            assert_eq!(fact.body.unwrap().command, command);
++        }
++        assert!(h.runtime.submit(changed.clone()).await.is_err());
++        let mut changed_query = owner_params(&changed);
++        changed_query["body_intent"] = changed;
++        assert!(h.runtime.observe(changed_query, false).await.is_err());
++        let mut other_owner = raw.clone();
++        other_owner["target_user_id"] = json!(Uuid::new_v4());
++        assert!(h.runtime.submit(other_owner).await.is_err());
++        assert!(
++            h.device.operations().is_empty(),
++            "recovery opened control or resubmitted"
++        );
++        assert_eq!(h.store.claims.load(Ordering::SeqCst), 0);
++
++        let fresh = animation_params();
++        if catalog.is_empty() {
++            assert!(h.runtime.submit(fresh).await.is_err());
++            assert!(h.device.operations().is_empty());
++        } else {
++            h.runtime.submit(fresh.clone()).await.unwrap();
++            let next = h.retired(&fresh).await.body.unwrap().command;
++            assert!(
++                matches!(&next.actions[0].motion, BodyMotion::Animation { asset, .. } if asset == &replacement)
++            );
++            let sent: Vec<_> = h
++                .device
++                .operations()
++                .into_iter()
++                .filter_map(|op| match op {
++                    BodyOperation::Submit { command } => Some(command),
++                    _ => None,
++                })
++                .collect();
++            assert_eq!(sent, vec![next]);
++        }
++        h.finish().await;
++    }
++}
++
+ #[test]
+ fn typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_names() {
+     let mut value = params(500);
+     value["timeline"][0]["action"] = json!("look_at_user");
+-    assert!(BodyIntent::parse(value.clone()).is_err());
++    assert!(BodyIntent::parse(value.clone(), &[]).is_err());
+     value["timeline"][0]["params"] = json!({"rotation":[10.0,20.0,30.0]});
+     assert!(matches!(
+-        BodyIntent::parse(value.clone()).unwrap().actions[0].motion,
++        BodyIntent::parse(value.clone(), &[]).unwrap().actions[0].motion,
+         BodyMotion::LookAt { .. }
+     ));
+     value["timeline"][0]["params"] = json!({"rotation":[999.0,0.0,0.0]});
+-    assert!(BodyIntent::parse(value.clone()).is_err());
++    assert!(BodyIntent::parse(value.clone(), &[]).is_err());
+     value["timeline"][0]["action"] = json!("play_animation");
+     value["timeline"][0]["params"] = json!({"file":"../unsafe.anim","fps":30,"loops":1});
+-    assert!(BodyIntent::parse(value).is_err());
++    assert!(BodyIntent::parse(value, &[]).is_err());
+ }
+ 
+ struct ExpressionChannel(EmbeddedBodyRuntime);
+diff --git a/packages/alia-server/src/channels/embedded/channel.rs b/packages/alia-server/src/channels/embedded/channel.rs
+index 511a587..73bb9ee 100644
+--- a/packages/alia-server/src/channels/embedded/channel.rs
++++ b/packages/alia-server/src/channels/embedded/channel.rs
+@@ -59,6 +59,7 @@ mod body_pin_tests {
+             owner_user_id: None,
+             expected_device_id: None,
+             expected_device_public_key: None,
++            approved_animations: vec![],
+             endpoint: String::new(),
+             discovery_service_name: "_alia-test._tcp".into(),
+             discovery_timeout_sec: 1,
+@@ -137,6 +138,7 @@ pub struct EmbeddedChannelConfig {
+     pub owner_user_id: Option<uuid::Uuid>,
+     pub expected_device_id: Option<String>,
+     pub expected_device_public_key: Option<String>,
++    pub approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+     pub endpoint: String,
+     pub discovery_service_name: String,
+     pub discovery_timeout_sec: u64,
+@@ -267,7 +269,8 @@ impl EmbeddedChannel {
+             ConnectionStatus::Reconnecting { attempt: 0 }
+         };
+ 
+-        let body_runtime = EmbeddedBodyRuntime::new(config.id.clone());
++        let body_runtime =
++            EmbeddedBodyRuntime::new(config.id.clone(), config.approved_animations.clone());
+         Self {
+             config,
+             runtime: None,
+diff --git a/packages/alia-server/src/config.rs b/packages/alia-server/src/config.rs
+index c783779..9bde49e 100644
+--- a/packages/alia-server/src/config.rs
++++ b/packages/alia-server/src/config.rs
+@@ -108,6 +108,9 @@ pub enum ChannelConfig {
+         expected_device_id: Option<String>,
+         #[serde(default)]
+         expected_device_public_key: Option<String>,
++        /// Locally reviewed pins; never learned from the device or model output.
++        #[serde(default)]
++        approved_animations: Vec<alia_core::body::BodyAnimationAsset>,
+         #[serde(default = "default_true")]
+         enabled: bool,
+         #[serde(default)]
+@@ -2089,6 +2092,15 @@ impl ServerConfig {
+     fn from_merged_content(path: &Path, content: &str) -> anyhow::Result<Self> {
+         let config_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+         let mut config: ServerConfig = toml::from_str(&content)?;
++        for channel in &config.channels {
++            if let ChannelConfig::Embedded {
++                approved_animations,
++                ..
++            } = channel
++            {
++                alia_core::body::validate_animation_catalog(approved_animations)?;
++            }
++        }
+         config.config_dir = config_dir;
+         config.providers.ensure_default_llm_provider_profiles();
+ 
+diff --git a/packages/alia-server/src/modules/body_delivery/repository.rs b/packages/alia-server/src/modules/body_delivery/repository.rs
+index a0a3f8a..e11ab41 100644
+--- a/packages/alia-server/src/modules/body_delivery/repository.rs
++++ b/packages/alia-server/src/modules/body_delivery/repository.rs
+@@ -30,17 +30,19 @@ impl BodyDeliveryRepository {
+ 
+     /// Consult a known Response phase before even opening device control. This
+     /// read keeps old facts available after erasure without granting new output.
++    /// The caller must compare its original intent to the returned command;
++    /// lookup cannot resolve historical asset pins from today's catalog.
+     pub async fn lookup_origin(
+         &self,
+         origin: &BodyDeliveryOrigin,
+         channel_id: &str,
+-        command: &BodyCommand,
++        owner_id: Uuid,
+     ) -> Result<Option<BodyDeliveryRecord>> {
+         bounded(async {
+-            authorized_owner(&self.db, command.owner_id).await?;
+-            let old = record(&self.db, "JOIN delivery_responses r USING(response_id) WHERE b.response_id=$1 AND b.output_key=$2 AND r.user_id=$3", vec![origin.response_id.into(),origin.output_key.clone().into(),command.owner_id.into()]).await?;
++            authorized_owner(&self.db, owner_id).await?;
++            let old = record(&self.db, "JOIN delivery_responses r USING(response_id) WHERE b.response_id=$1 AND b.output_key=$2 AND r.user_id=$3", vec![origin.response_id.into(),origin.output_key.clone().into(),owner_id.into()]).await?;
+             if let Some(old) = &old {
+-                ensure!(same_intent(&old.command, command), "body response phase was reused with different intent");
++                ensure!(old.command.owner_id == owner_id, "body record differs from original owner");
+                 ensure!(self.db.query_one(stmt("SELECT delivery_id FROM body_deliveries WHERE delivery_id=$1 AND channel_id=$2", vec![old.delivery_id.into(),channel_id.into()])).await?.is_some(), "body channel differs from original response");
+             }
+             Ok(old)
+diff --git a/packages/alia-server/tests/body_delivery.rs b/packages/alia-server/tests/body_delivery.rs
+index 76b6d2c..0f61d31 100644
+--- a/packages/alia-server/tests/body_delivery.rs
++++ b/packages/alia-server/tests/body_delivery.rs
+@@ -139,6 +139,48 @@ async fn concurrent_claims_grant_one_physical_permission_and_preserve_original_i
+     .await;
+ }
+ 
++#[tokio::test]
++async fn animation_ledger_lookup_preserves_owner_response_channel_and_exact_content() {
++    with_db(|f| async move {
++        let response = f.repo().prepare(f.response().await).await.unwrap();
++        let origin = BodyDeliveryOrigin { response_id: response.response_id, output_key: "speech_start".into() };
++        let mut command = command(f.user);
++        let content = b"frames\n0 0 0\n";
++        let asset = BodyAnimationAsset { file: "reviewed.anim".into(), version: 1,
++            sha256: body_animation_sha256(content), bytes: content.len() as u32 };
++        command.actions[0].motion = BodyMotion::Animation { asset: asset.clone(), fps: 30, loops: 1 };
++        let repo = BodyDeliveryRepository::new(f.db.clone());
++        assert!(matches!(repo.claim(&origin, "test-device", &command).await.unwrap(), BodyDispatch::Fresh { .. }));
++        let original = repo.lookup_origin(&origin, "test-device", f.user).await.unwrap().unwrap();
++        assert_eq!(original.command, command);
++
++        let other = Uuid::new_v4();
++        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
++            "INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Other owner','not-a-login','user','active')",
++            vec![other.into(), format!("{other}@body.test").into()])).await.unwrap();
++        assert!(repo.lookup_origin(&origin, "test-device", other).await.unwrap().is_none());
++        assert!(repo.lookup_origin(&origin, "foreign-channel", f.user).await.is_err());
++        assert!(repo.lookup_origin(&BodyDeliveryOrigin { response_id: Uuid::new_v4(), ..origin.clone() }, "test-device", f.user).await.unwrap().is_none());
++        assert!(repo.lookup_origin(&BodyDeliveryOrigin { output_key: "post_speech".into(), ..origin.clone() }, "test-device", f.user).await.unwrap().is_none());
++
++        for changed_asset in [
++            BodyAnimationAsset { version: 2, ..asset.clone() },
++            BodyAnimationAsset { sha256: body_animation_sha256(b"frames\n1 0 0\n"), ..asset.clone() },
++            BodyAnimationAsset { bytes: asset.bytes + 1, ..asset.clone() },
++            BodyAnimationAsset { file: "other.anim".into(), ..asset.clone() },
++        ] {
++            let mut changed = command.clone();
++            changed.actions[0].motion = BodyMotion::Animation { asset: changed_asset, fps: 30, loops: 1 };
++            assert!(repo.claim(&origin, "test-device", &changed).await.is_err());
++        }
++        assert_eq!(f.count("body_deliveries").await, 1);
++        assert_eq!(repo.lookup_origin(&origin, "test-device", f.user).await.unwrap().unwrap().command, command);
++        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,
++            "UPDATE users SET status='disabled' WHERE id=$1", vec![f.user.into()])).await.unwrap();
++        assert!(repo.lookup_origin(&origin, "test-device", f.user).await.is_err());
++    }).await;
++}
++
+ #[tokio::test]
+ async fn audit_failure_rolls_back_permission_before_external_output() {
+     with_db(|f| async move {
+@@ -164,14 +206,14 @@ async fn revocation_stops_admission_but_keeps_actual_submitted_facts() {
+         assert!(repo.authorize(id, permit).await.is_err());
+         assert!(repo.claim(&origin, "test-device", &command).await.is_err());
+         let original = repo
+-            .lookup_origin(&origin, "test-device", &command)
++            .lookup_origin(&origin, "test-device", command.owner_id)
+             .await
+             .unwrap()
+             .unwrap();
+         assert_eq!(original.delivery_id, id);
+         assert_eq!(original.command, command);
+         assert!(
+-            repo.lookup_origin(&origin, "wrong-device", &command)
++            repo.lookup_origin(&origin, "wrong-device", command.owner_id)
+                 .await
+                 .is_err()
+         );
+diff --git a/packages/alia-server/tests/config.rs b/packages/alia-server/tests/config.rs
+index 026ab37..ecf2936 100644
+--- a/packages/alia-server/tests/config.rs
++++ b/packages/alia-server/tests/config.rs
+@@ -5,6 +5,57 @@ use alia_server::config::{
+     load_config_with_fragments,
+ };
+ 
++#[test]
++fn approved_animation_catalog_is_local_empty_by_default_and_validated_on_load() {
++    use alia_core::body::{BodyAnimationAsset, body_animation_sha256};
++    use alia_server::config::ChannelConfig;
++    struct TemporaryConfig(std::path::PathBuf);
++    impl Drop for TemporaryConfig {
++        fn drop(&mut self) {
++            let _ = std::fs::remove_dir_all(&self.0);
++        }
++    }
++    let root = TemporaryConfig(
++        std::env::temp_dir().join(format!("alia-approved-assets-{}", uuid::Uuid::new_v4())),
++    );
++    std::fs::create_dir_all(&root.0).unwrap();
++    let path = root.0.join("server.toml");
++    let mut value: toml::Value =
++        toml::from_str(include_str!("../../../config/server.example.toml")).unwrap();
++    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
++    let config = ServerConfig::load(&path).unwrap();
++    assert!(
++        matches!(&config.channels[0], ChannelConfig::Embedded { approved_animations, .. } if approved_animations.is_empty())
++    );
++    let content = b"frames\n0 0 0\n";
++    let asset = BodyAnimationAsset {
++        file: "reviewed.anim".into(),
++        version: 1,
++        sha256: body_animation_sha256(content),
++        bytes: content.len() as u32,
++    };
++    let approved = toml::Value::try_from(&asset).unwrap();
++    value["channels"][0]["approved_animations"] = toml::Value::Array(vec![approved.clone()]);
++    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
++    let config = ServerConfig::load(&path).unwrap();
++    assert!(
++        matches!(&config.channels[0], ChannelConfig::Embedded { approved_animations, .. } if approved_animations == &[asset])
++    );
++    value["channels"][0]["approved_animations"] =
++        toml::Value::Array(vec![approved.clone(), approved]);
++    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
++    assert!(ServerConfig::load(&path).is_err());
++    value["channels"][0]["approved_animations"] =
++        toml::Value::Array(vec![toml::Value::Table(toml::Table::from_iter([
++            ("file".into(), toml::Value::String("reviewed.anim".into())),
++            ("version".into(), toml::Value::Integer(0)),
++            ("sha256".into(), toml::Value::String("a".repeat(64))),
++            ("bytes".into(), toml::Value::Integer(10)),
++        ]))]);
++    std::fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
++    assert!(ServerConfig::load(&path).is_err());
++}
++
+ #[test]
+ fn duplex_hold_budget_defaults_and_explicit_bounds_are_checked_during_deserialization() {
+     use alia_server::config::PoliciesSection;
+diff --git a/packages/alia-server/tests/duplex_playback.rs b/packages/alia-server/tests/duplex_playback.rs
+index d812b16..a3ab695 100644
+--- a/packages/alia-server/tests/duplex_playback.rs
++++ b/packages/alia-server/tests/duplex_playback.rs
+@@ -519,6 +519,7 @@ impl Runtime {
+                         .verifying_key()
+                         .as_bytes(),
+                 )),
++                approved_animations: vec![],
+                 endpoint,
+                 discovery_service_name: "_alia-paired-test._tcp".into(),
+                 discovery_timeout_sec: 1,
+diff --git a/packages/alia-server/tests/server_background.rs b/packages/alia-server/tests/server_background.rs
+index 4621506..0ffb2f1 100644
+--- a/packages/alia-server/tests/server_background.rs
++++ b/packages/alia-server/tests/server_background.rs
+@@ -335,6 +335,7 @@ async fn embedded_stop_interrupts_stalled_http2_connect_and_discovery() {
+             owner_user_id: None,
+             expected_device_id: None,
+             expected_device_public_key: None,
++            approved_animations: vec![],
+             endpoint: format!("http://{}", listener.local_addr().unwrap()),
+             discovery_service_name: format!("_alia-test-{}._tcp", uuid::Uuid::new_v4().simple()),
+             discovery_timeout_sec: 60,

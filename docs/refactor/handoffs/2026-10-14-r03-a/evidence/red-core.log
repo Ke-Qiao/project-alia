@@ -1,0 +1,26 @@
+   Compiling cpufeatures v0.2.17
+   Compiling memchr v2.8.0
+   Compiling sha2 v0.10.9
+   Compiling serde_json v1.0.149
+   Compiling alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.28s
+     Running unittests src/lib.rs (target/debug/deps/alia_core-e0dce29c81803ed8)
+
+running 1 test
+test body::tests::legacy_animation_without_content_identity_is_rejected ... FAILED
+
+failures:
+
+---- body::tests::legacy_animation_without_content_identity_is_rejected stdout ----
+
+thread 'body::tests::legacy_animation_without_content_identity_is_rejected' (2998161) panicked at crates/alia-core/src/body.rs:550:9:
+a signed animation without an approved content identity was accepted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    body::tests::legacy_animation_without_content_identity_is_rejected
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p alia-core --lib`

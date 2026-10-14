@@ -1,0 +1,23 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-core",
+    "--lib",
+    "body::tests::legacy_animation_without_content_identity_is_rejected",
+    "--offline",
+    "--locked",
+    "--",
+    "--exact"
+  ],
+  "started_at": "2026-10-14T08:38:02.524084+00:00",
+  "elapsed_seconds": 16.33,
+  "exit_code": 101,
+  "source_manifest_sha256": "aff613f253280c38dc44b35f420533153eb04c07f802d00b16d6f39de3a31771",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2
+}

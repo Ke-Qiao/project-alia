@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-10-14T08:45:07.406224+00:00",
+  "reason": "Existing PostgreSQL integration fixtures require isolated disposable PostgreSQL; cached existing image only.",
+  "before": "OrbStack Stopped",
+  "start_command": [
+    "orbctl",
+    "start"
+  ],
+  "exit_code": 0,
+  "automatically_restarted": [
+    {
+      "id": "965d0a454d15",
+      "name": "alia-home-assistant-dev-home-assistant-1"
+    },
+    {
+      "id": "905470a16802",
+      "name": "alia-postgres"
+    },
+    {
+      "id": "c5aaca070870",
+      "name": "astrbot"
+    }
+  ],
+  "recovery": "Stopped exact automatically restarted containers to restore their prior stopped state; no queries or mutations sent to their application services. No hardware interface deliberately accessed.",
+  "cached_image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3"
+}

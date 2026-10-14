@@ -1,0 +1,25 @@
+   Compiling alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+   Compiling alia-proto v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/proto)
+   Compiling alia-transport v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/transport)
+   Compiling alia-embedded v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-embedded)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.24s
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-d4ba607b9876c4a6)
+
+running 1 test
+test grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory ... FAILED
+
+failures:
+
+---- grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory stdout ----
+
+thread 'grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory' (3028066) panicked at packages/alia-embedded/src/grpc/settings_service.rs:438:9:
+cue upload accepted an external config path
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 229 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-embedded --lib`

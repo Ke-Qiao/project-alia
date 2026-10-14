@@ -1,0 +1,20 @@
+{
+  "phase": "green",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--all-targets",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-14T11:54:47.367129+00:00",
+  "elapsed_seconds": 410.01,
+  "exit_code": 0,
+  "source_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL and temporary SQLite",
+  "build_jobs": 2
+}

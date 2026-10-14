@@ -1,0 +1,63 @@
+   Compiling ed25519-dalek v2.2.0
+   Compiling alia-core v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/alia-core)
+   Compiling alia-transport v0.1.0 (/Users/ke-qiao/Developer/project-alia/crates/transport)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 33.36s
+     Running unittests src/lib.rs (target/debug/deps/alia_core-e8a83c29bb5d1d82)
+
+running 33 tests
+test delivery::tests::cancellation_keeps_the_known_submitted_prefix ... ok
+test delivery::tests::input_end_keeps_submission_observable_without_inventing_presentation ... ok
+test delivery::tests::rejects_changed_identity_backend_and_regressed_or_impossible_counts ... ok
+test playback_control::tests::duplicate_pause_does_not_renew_and_retired_cannot_resume ... ok
+test playback_control::tests::explicit_wait_confirmation_strengthens_same_hold_without_refreshing_deadline ... ok
+test body::tests::rejects_nonfinite_unsafe_and_unbounded_intent_before_any_backend ... ok
+test capture::tests::continued_speech_extends_the_same_window_and_changes_revision ... ok
+test body::tests::preserves_partial_native_facts_and_rejects_forged_monotonic_receipts ... ok
+test capture::tests::retained_frame_time_survives_partial_trim_snapshots_and_busy_retries ... ok
+test capture::tests::idle_snapshot_requires_semantic_completion_and_preserves_frame_time ... ok
+test body::tests::submission_does_not_supply_position_or_cancel_quiescence ... ok
+test body::tests::approved_animation_identity_binds_exact_bytes_and_rejects_invalid_catalogs ... ok
+test capture::tests::gaps_overlong_input_and_bad_frame_sizes_are_rejected ... ok
+test body::tests::legacy_animation_without_content_identity_is_rejected ... ok
+test playback_control::tests::initiative_capture_requires_original_clock_and_local_deadline_never_refreshes ... ok
+test output_control::tests::initiative_none_preserves_binding_json_and_some_binds_the_original_zero_watermark ... ok
+test playback_control::tests::initiative_local_hold_survives_old_applied_resume_and_transfers_to_next_hold ... ok
+test playback_control::tests::new_speech_rejects_old_resume_and_rejection_cannot_be_rewritten ... ok
+test playback_control::tests::retained_capture_initialization_and_engineering_hold_limit_are_exact ... ok
+test playback_control::tests::two_reasons_require_the_confirmed_distinct_authorizations ... ok
+test text_delivery::tests::partial_utf8_write_is_a_prefix_not_read_or_complete_evidence ... ok
+test output_control::tests::immutable_digest_binds_original_output_and_backend_and_budget ... ok
+test turn::tests::cancelled_replaced_and_duplicate_evidence_cannot_restart_output ... ok
+test turn::tests::incomplete_and_backchannel_keep_epoch_while_complete_advances_it ... ok
+test turn::tests::new_speech_during_inference_invalidates_the_incomplete_snapshot ... ok
+test turn::tests::wait_advances_epoch_and_invalidates_prior_or_duplicate_evidence ... ok
+test playback_control::tests::write_inflight_capture_gap_capacity_and_cancel_do_not_release ... ok
+test turn::tests::wait_epoch_exhaustion_fails_without_wrapping ... ok
+test voice::tests::audio_format_and_size_are_validated_before_inference ... ok
+test voice::tests::rejected_frames_do_not_mutate_buffer_or_advance_sequence ... ok
+test voice::tests::utterance_clear_keeps_stream_sequence_and_drops_prior_speech ... ok
+test capture::tests::discarded_pre_roll_times_are_bounded_and_do_not_date_a_later_utterance ... ok
+test capture::tests::continuous_silence_is_bounded_and_cannot_trigger_inference ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/alia_transport-2d8bfba8dbd0504c)
+
+running 3 tests
+test connections::tests::sealed_owner_rejects_new_connections_even_after_drain ... ok
+test connections::tests::close_wakes_idle_read_and_waits_for_the_actual_socket_drop ... ok
+test discovery_lifecycle_tests::dropping_discovery_waiter_preserves_owner_through_native_shutdown_ack ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/transport.rs (target/debug/deps/transport-538c083c425a9a3c)
+
+running 5 tests
+test normalizes_embedded_service_name ... ok
+test signs_and_verifies_payload ... ok
+test mints_and_verifies_auth_token ... ok
+test device_ingress_auth_subject_falls_back_to_public_key ... ok
+test body_v2_signature_binds_content_and_rejects_old_or_opposite_domains ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-14：R03-A 可信动作内容身份10/10，六轮仍2/6。** 实现`e7265f0`；661项输入逐blob匹配。双端默认空本地清单、Body v2内容签名、同次有界读取/解析、原意图恢复及用户确认的cue写入保护完成。macOS默认Core/transport41、Embedded306、Server860，共1207/0/5；保留初始RED、候选DB中止、清理断言和最终证据。task PG已移除，astrbot被后续重启故保留共享OrbStack。当前Linux应用与硬件未验收。见[恢复检查点](resume-checkpoint-r03-a-2026-10-14.md)、[四份HANDOFF/证据](handoffs/2026-10-14-r03-a/README.md)。以下为历史记录。
+
 **2026-10-09：L09 固定核心分层 10/10，L09—L12 1/4，六轮仍 2/6。** 源码 `ffd7af1`，V1 637 输入逐项匹配。Interaction 拥有 Conversation/Cache/Router/Persona/Skills，Platform 拥有 Insights 调度/Sensors；Memory maintenance 与 Cache review 归各自领域。macOS workspace **1056/0/5**、PTY **3/0**、无默认 availability **2/0**；Linux ARM64 Server **774/0/5**、无默认与 release/link 通过。默认 Shadow 和政策保持，任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-09.md)、[最终验证](layering-2026-10-09.md#最终验证与证据)、[L10—L12](checklists/layering-next.md)。以下为历史记录。
 
 **2026-10-08：目录与依赖分层本轮 8/8，后续分层 0/4，六轮仍 2/6。** 实现 `08c54be`、最终源码 `978af9c`，V4 630 个输入逐项匹配。Memory 固定核心迁入模块；旧 Pipeline 拆为 Interaction 用例；Bootstrap / Platform 分离装配和生命周期。macOS workspace **1053/0/5**、PTY **3**；Linux ARM64 Server 全包 **771/0/5**、默认 release/native link 与无默认检查通过。V3 Linux 原失败及 V4 仅测试夹具修正分别保留。默认 Shadow 和政策不变；本轮任务资源已停止。见 [当前检查点](resume-checkpoint-2026-10-08.md)、[最终验证](layering-2026-10-08.md#最终验证与证据)、[后续 L09—L12](checklists/layering-next.md)。以下为历史记录。

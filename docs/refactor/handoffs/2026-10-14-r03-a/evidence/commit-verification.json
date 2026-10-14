@@ -1,0 +1,8 @@
+{
+  "recorded_at": "2026-10-14T12:02:58.713904+00:00",
+  "source_commit": "e7265f0d0e9be8d6e663bfcabd53739b32206e27",
+  "green_manifest_sha256": "76a90d0416ae60e8d316a27ff06a0a0457c785659feb8d5235b2d121dfcdf4b0",
+  "git_blobs_checked": 661,
+  "mismatches": [],
+  "method": "git cat-file --batch; SHA256 of committed blob bytes compared with final frozen inputs"
+}
