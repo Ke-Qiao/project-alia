@@ -270,17 +270,23 @@ async fn count(s: &Scene, table: &str) -> i64 {
 
 /// Failure-only evidence before shutdown changes candidate states. Never print
 /// identities, source text, private grants or raw database errors.
-async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> String {
-    let progress = state.modules.companion.scan_progress();
+async fn failure_state(
+    db: &sea_orm::DatabaseConnection,
+    shadow_scan: impl std::fmt::Debug,
+) -> String {
     let started = std::time::Instant::now();
     let rows = tokio::time::timeout(Duration::from_secs(1), async {
         let row =
-            s.f.db
+            db
                 .query_one(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT jsonb_build_object(
                 'appraisals', (SELECT count(*) FROM appraisal_records),
                 'responses', (SELECT count(*) FROM delivery_responses),
+                'source_claims', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
+                    SELECT origin_mode, count(*) AS count
+                    FROM companion_source_claims GROUP BY origin_mode ORDER BY origin_mode) v),
+                'rejected_sources', (SELECT count(*) FROM companion_rejected_sources),
                 'pending', (SELECT coalesce(jsonb_agg(v), '[]'::jsonb) FROM (
                     SELECT state, retirement_reason, count(*) AS count
                     FROM companion_live_pending GROUP BY state, retirement_reason
@@ -306,7 +312,7 @@ async fn timeout_state(s: &Scene, state: &alia_server::state::AppState) -> Strin
         Err(_) => "diagnostic deadline exceeded".into(),
     };
     format!(
-        "scan={progress:?}; diagnostic_wait_ms={} (test_process_monotonic, pool/query combined); rows={rows}",
+        "shadow_scan={shadow_scan:?}; diagnostic_wait_ms={} (test_process_monotonic, pool/query combined); rows={rows}",
         started.elapsed().as_millis()
     )
 }
@@ -375,7 +381,7 @@ async fn complete_invitation(scenario: Scenario) {
     // Only fixed, identity-free admission diagnostics are enabled. Never
     // inherit a broad RUST_LOG filter that could include requests or grants.
     let _ = tracing_subscriber::fmt()
-        .with_env_filter("off,alia_server::modules::companion::runner=debug")
+        .with_env_filter("off,alia_server::modules::companion::runner=debug,alia_server::modules::companion::service=warn")
         .without_time()
         .with_ansi(false)
         .with_test_writer()
@@ -541,8 +547,10 @@ async fn complete_invitation(scenario: Scenario) {
             assert_eq!(count(&s,"companion_admissions").await,1,"control recovery cannot charge another initiative");
             assert_eq!(count(&s,"execution_effects").await,0);
         })).catch_unwind().await;
-        let timeout_diagnostic = if matches!(&result, Ok(Err(_))) {
-            Some(timeout_state(&s, &state).await)
+        let failure_diagnostic = if !matches!(&result, Ok(Ok(()))) {
+            let diagnostic = failure_state(&s.f.db, state.modules.companion.scan_progress()).await;
+            eprintln!("complete companion path failed before cleanup at {stage}; {diagnostic}");
+            Some(diagnostic)
         } else {
             None
         };
@@ -560,7 +568,7 @@ async fn complete_invitation(scenario: Scenario) {
             // publish the synthesis that was just released above.
             assert_eq!(s.wire.pushes.load(Ordering::SeqCst), 0);
         }
-        match result {Ok(Ok(()))=>(),Ok(Err(_))=>panic!("complete companion path exceeded 25 seconds at {stage}; {}",timeout_diagnostic.unwrap()),Err(error)=>std::panic::resume_unwind(error)}
+        match result {Ok(Ok(()))=>(),Ok(Err(_))=>panic!("complete companion path exceeded 25 seconds at {stage}; {}",failure_diagnostic.unwrap()),Err(error)=>std::panic::resume_unwind(error)}
     }).await;
 }
 #[tokio::test]
@@ -575,4 +583,44 @@ async fn source_erasure_during_original_tts_prevents_first_media_and_preserves_c
 #[tokio::test]
 async fn applied_resume_lost_ack_and_new_local_speech_handoff_to_h2_on_original_output() {
     complete_invitation(Scenario::ResumeRace).await;
+}
+
+#[tokio::test]
+async fn failure_diagnostic_reports_live_claims_without_private_values() {
+    with_db(|f| async move {
+        let source = Uuid::new_v4();
+        let appraisal = Uuid::new_v4();
+        let generator = "private-diagnostic-generator";
+        f.db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO companion_source_claims(owner_id,source_event_id,kind,generator_version,origin_mode,policy_revision) VALUES($1,$2,'follow_up_invitation',$3,'enabled',1)",
+            vec![f.user.into(), source.into(), generator.into()],
+        )).await.unwrap();
+        f.db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO companion_rejected_sources(owner_id,appraisal_id) VALUES($1,$2)",
+            vec![f.user.into(), appraisal.into()],
+        )).await.unwrap();
+        let companion = alia_server::modules::companion::CompanionService::new(
+            f.db.clone(),
+            alia_server::modules::interaction::initiative::VoiceInitiativeHandle::default(),
+            CancellationToken::new(),
+        );
+        let progress = companion.scan_progress();
+        assert_eq!((progress.batches_started, progress.batches_completed), (0, 0));
+        let summary = failure_state(&f.db, progress).await;
+        assert!(summary.starts_with("shadow_scan="));
+        let rows: serde_json::Value =
+            serde_json::from_str(summary.split_once("; rows=").unwrap().1).unwrap();
+        assert_eq!(rows["source_claims"], json!([{"origin_mode":"enabled","count":1}]));
+        assert_eq!(rows["rejected_sources"], 1);
+        for private in [f.user.to_string(), source.to_string(), appraisal.to_string(), generator.into()] {
+            assert!(!summary.contains(&private), "diagnostic leaked a private value");
+        }
+
+        f.db.execute_unprepared("ALTER TABLE companion_source_claims RENAME COLUMN origin_mode TO private_missing_origin_mode")
+            .await.unwrap();
+        let unavailable = failure_state(&f.db, companion.scan_progress()).await;
+        assert_eq!(unavailable.split_once("; rows=").unwrap().1, "unavailable");
+    }).await;
 }
