@@ -1,0 +1,32 @@
+{
+  "phase": "green",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--test",
+    "server_runtime",
+    "--offline",
+    "--locked",
+    "--",
+    "startup::",
+    "partial_init_and_start_failures_stop_workers_once_in_reverse_order",
+    "cancelling_or_dropping_build_future_rolls_back_partial_init",
+    "failed_startup_returns_pending_handle_until_native_rollback_finishes",
+    "joined_stop_error_does_not_skip_remaining_cleanup_or_become_success",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-15T14:40:41.150105+00:00",
+  "elapsed_seconds": 40.38,
+  "exit_code": 0,
+  "source_manifest_sha256": "99e269a7aae1f750decfc7777d12f14e976babd56806292b92999c8a8b458c8f",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+  "build_jobs": 2,
+  "process_watchdog_seconds": 900,
+  "process_watchdog_expired": false,
+  "binary_sha256": null,
+  "binary_unchanged": null
+}

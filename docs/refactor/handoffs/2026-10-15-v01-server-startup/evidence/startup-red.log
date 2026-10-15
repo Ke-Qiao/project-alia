@@ -1,0 +1,23 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.49s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 1 test
+test startup::cancelled_buffered_startup_rejects_ready_and_rolls_back ... FAILED
+
+failures:
+
+---- startup::cancelled_buffered_startup_rejects_ready_and_rolls_back stdout ----
+buffered startup cancellation: ready_notified=true, returned_ready=true, cleanup_finished=true, pending_empty=true, workers_left=0, stops=1, owned_pool_closed=true, http_released=true
+
+thread 'startup::cancelled_buffered_startup_rejects_ready_and_rolls_back' (924235) panicked at packages/alia-server/tests/server_runtime/startup.rs:195:17:
+cancelled startup delivered a buffered ready runtime
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    startup::cancelled_buffered_startup_rejects_ready_and_rolls_back
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 81 filtered out; finished in 0.61s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-15：V01 ServerStartup初始化取消10/10完成，历史根因仍open。** 源码`9e3a934`；一次RED确认已取消的缓冲成功仍交付，交付前检查与原rollback复用修复，原错误/typed incomplete/完成句柄保留。四项新回归加四旧GREEN8/0/0；一次workspace1270/0/5（既有ignored、0filtered），server_runtime85/0/0，676提交输入匹配。同库结束约0.248秒0/0，任务容器/卷已回收。原期限、并发、默认shadow/政策不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-server-startup-2026-10-15.md)和[checklist](checklists/v01-server-startup-2026-10-15.md)继续，以下为历史。
+
 **2026-10-15：V01初始数据库构造取消10/10完成，历史根因仍open。** 源码`8bcda7a`；独立测试owner保留原SQL、Fixture与CASE许可至清理结束，四项取消回归覆盖未poll/缓冲ready与真实CREATE drain。保留RED0/2和V1全量1265/1/5失败；只修测试阶段门与observer清理后，V2 workspace1266/0/5（既有ignored、0filtered）、duplex31/0/0，675提交输入匹配。结束约0.175秒同库PG0/0，任务容器/卷已回收。原期限、并发、默认shadow/政策不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-db-cancel-2026-10-15.md)和[checklist](checklists/v01-db-cancel-2026-10-15.md)继续，以下为历史。
 
 **2026-10-15：V01部分初始化与paired late-drain 10/10完成，历史根因仍open。** 源码`dc3ec17`；三项确定性RED确认schema遗留后统一初始化失败清理，补充真实SQL等待取消与原write跨10秒shutdown的迟到排空证据。一次workspace1262/0/5（既有ignored、0filtered）、duplex27/0/0；674提交输入一致。结束后约0.584秒同库PG0/0，任务容器/卷已移除。默认shadow/政策/原期限/并发不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-partial-2026-10-15.md)和[checklist](checklists/v01-partial-2026-10-15.md)继续，以下为历史。

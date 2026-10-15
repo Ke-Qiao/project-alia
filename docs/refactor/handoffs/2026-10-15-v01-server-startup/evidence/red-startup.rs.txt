@@ -1,0 +1,206 @@
+//! Startup cancellation keeps the original waiter and cleanup owner until joined.
+use super::*;
+use alia_server::bootstrap::{ServerRuntime, ShutdownHandle};
+use futures::future::LocalBoxFuture;
+use std::task::{Context as TaskContext, Wake, Waker};
+
+#[path = "../delivery_support/mod.rs"]
+mod case_support;
+
+#[derive(Default)]
+struct StartupContext {
+    parent: CancellationToken,
+    init_gate: Option<Arc<Semaphore>>,
+    shutdown: Option<ShutdownHandle>,
+    waiter: Option<LocalBoxFuture<'static, anyhow::Result<ServerRuntime>>>,
+    runtime: Option<ServerRuntime>,
+}
+
+impl StartupContext {
+    async fn wait(&mut self) -> anyhow::Result<()> {
+        let result = self
+            .waiter
+            .as_mut()
+            .expect("startup waiter installed")
+            .await;
+        self.waiter.take();
+        self.runtime = Some(result?);
+        Ok(())
+    }
+
+    async fn close(&mut self) -> bool {
+        self.parent.cancel();
+        if let Some(gate) = &self.init_gate {
+            gate.add_permits(1);
+        }
+        // A timed body only borrows this future. Retain and await its original
+        // JoinHandle even when the body stopped waiting before ready delivery.
+        if self.waiter.is_some() {
+            let _ = self.wait().await;
+        }
+        let runtime_stopped = if let Some(runtime) = self.runtime.take() {
+            matches!(
+                AssertUnwindSafe(runtime.shutdown()).catch_unwind().await,
+                Ok(Ok(()))
+            )
+        } else {
+            true
+        };
+        let cleanup_finished = if let Some(handle) = &self.shutdown {
+            // Startup cancellation remains an error in the final report;
+            // completion, rather than that expected error, proves resources left.
+            let _ = handle.wait().await;
+            handle.is_finished() && handle.pending_modules().is_empty()
+        } else {
+            true
+        };
+        runtime_stopped && cleanup_finished
+    }
+}
+
+struct ReadyWake(Arc<tokio::sync::Notify>);
+
+impl Wake for ReadyWake {
+    fn wake(self: Arc<Self>) {
+        self.0.notify_one();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.notify_one();
+    }
+}
+
+#[tokio::test]
+async fn cancelled_buffered_startup_rejects_ready_and_rolls_back() {
+    let _permit = DATABASE_CASES.acquire().await.unwrap();
+    let fixture = Fixture::new().await;
+    let mut f = fixture.clone();
+    case_support::run_context(
+        StartupContext::default(),
+        move |owner| {
+            Box::pin(async move {
+                let http_reservation = tokio::net::TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .unwrap();
+                let http = http_reservation.local_addr().unwrap();
+                f.config.server.port = http.port();
+                #[cfg(feature = "channel-embedded")]
+                let grpc_reservation = tokio::net::TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .unwrap();
+                #[cfg(feature = "channel-embedded")]
+                let grpc = grpc_reservation.local_addr().unwrap();
+                #[cfg(feature = "channel-embedded")]
+                {
+                    f.config.server.grpc_port = Some(grpc.port());
+                }
+                drop(http_reservation);
+                #[cfg(feature = "channel-embedded")]
+                drop(grpc_reservation);
+
+                let application = format!("startup_buffered_{}", Uuid::new_v4().simple());
+                f.config
+                    .database
+                    .url
+                    .push_str(&format!("&application_name={application}"));
+                let init_gate = Arc::new(Semaphore::new(0));
+                owner.init_gate = Some(init_gate.clone());
+                let mut state = ProbeState::new(Arc::default());
+                Arc::get_mut(&mut state).unwrap().init_gate = Some(init_gate.clone());
+                let startup = ServerBuilder::from_config(
+                    Arc::new(f.config),
+                    owner.parent.clone(),
+                )
+                .with_extension(Probe::new("buffered_startup", state.clone()))
+                .start_build();
+                owner.shutdown = Some(startup.shutdown_handle());
+                owner.waiter = Some(Box::pin(startup.wait()));
+
+                // Admission and executable identity work precede this real
+                // stage. The original waiter remains owned and unpolled here.
+                state.initialized.acquire().await.unwrap().forget();
+                let notification = Arc::new(tokio::sync::Notify::new());
+                let waker = Waker::from(Arc::new(ReadyWake(notification.clone())));
+                let mut context = TaskContext::from_waker(&waker);
+                // Only this manual poll is unconstrained, so a cooperative
+                // budget wake cannot impersonate the JoinHandle's completion.
+                let initially_pending = Box::pin(tokio::task::unconstrained(
+                    owner.waiter.as_mut().unwrap().as_mut(),
+                ))
+                .as_mut()
+                .poll(&mut context)
+                .is_pending();
+                // Only the completed owner notification belongs to this window.
+                init_gate.add_permits(1);
+                let notified = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    notification.notified(),
+                )
+                .await
+                .is_ok();
+                let worker_active_before = state.active.load(Ordering::SeqCst);
+                let owned_pool_before = owned_pool_connections(&f.admin, &application).await;
+                let http_bound_before = tokio::net::TcpStream::connect(http).await.is_ok();
+                #[cfg(feature = "channel-embedded")]
+                let grpc_bound_before = tokio::net::TcpStream::connect(grpc).await.is_ok();
+
+                owner.parent.cancel();
+                let startup_result = owner.wait().await;
+                let returned_ready = startup_result.is_ok();
+                let startup_error = startup_result.err().map(|error| format!("{error:#}"));
+                let returned_pool = owner.runtime.as_ref().map(|runtime| runtime.state().db.clone());
+                // Keep the old implementation's successful handoff evidence,
+                // then reclaim that runtime before making the RED assertion.
+                let cleanup_completed = owner.close().await;
+                let handle = owner.shutdown.as_ref().unwrap();
+                let cleanup_finished = handle.is_finished();
+                let pending_empty = handle.pending_modules().is_empty();
+                let failures = handle.failures();
+                let owned_pool_closed = tokio::time::timeout(Duration::from_secs(2), async {
+                    while owned_pool_connections(&f.admin, &application).await != 0 {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .is_ok();
+                let returned_pool_closed = match returned_pool {
+                    Some(pool) => pool.execute_unprepared("SELECT 1").await.is_err(),
+                    None => true,
+                };
+                let shared_pool_usable = f.db.execute_unprepared("SELECT 1").await.is_ok();
+                let http_released = tokio::net::TcpListener::bind(http).await.is_ok();
+                #[cfg(feature = "channel-embedded")]
+                let grpc_released = tokio::net::TcpListener::bind(grpc).await.is_ok();
+                let workers_left = state.active.load(Ordering::SeqCst);
+                let stops = state.stops.load(Ordering::SeqCst);
+                eprintln!(
+                    "buffered startup cancellation: ready_notified={notified}, returned_ready={returned_ready}, cleanup_finished={cleanup_finished}, pending_empty={pending_empty}, workers_left={workers_left}, stops={stops}, owned_pool_closed={owned_pool_closed}, http_released={http_released}",
+                );
+
+                assert!(cleanup_completed, "startup cleanup did not complete");
+                assert!(cleanup_finished && pending_empty, "original cleanup owner did not finish");
+                assert_eq!(workers_left, 0, "startup worker survived rollback");
+                assert_eq!(stops, 1, "startup worker was not stopped exactly once");
+                assert!(owned_pool_closed && returned_pool_closed, "owned startup pool survived rollback");
+                assert!(shared_pool_usable, "startup closed the fixture's separate pool");
+                assert!(http_released, "startup HTTP listener survived rollback");
+                #[cfg(feature = "channel-embedded")]
+                assert!(grpc_released, "startup gRPC listener survived rollback");
+                assert!(initially_pending, "startup output was consumed on first poll");
+                assert!(notified, "startup completion did not wake the registered waiter");
+                assert_eq!(worker_active_before, 1, "controlled worker was not active before cancellation");
+                assert!(owned_pool_before > 0 && http_bound_before, "startup resources were not present before cancellation");
+                #[cfg(feature = "channel-embedded")]
+                assert!(grpc_bound_before, "startup gRPC listener was not bound");
+                assert!(!returned_ready, "cancelled startup delivered a buffered ready runtime");
+                assert!(startup_error.as_deref().is_some_and(|error| error.contains("startup cancelled")), "cancellation was not returned as a startup failure");
+                assert!(failures.iter().any(|error| error.contains("startup cancelled")), "cancellation was not retained by the original cleanup handle");
+            })
+        },
+        |mut owner| async move {
+            assert!(owner.close().await, "startup context cleanup did not finish");
+        },
+        || fixture.cleanup(),
+    )
+    .await;
+}

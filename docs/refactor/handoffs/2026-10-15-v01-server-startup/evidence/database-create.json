@@ -1,0 +1,29 @@
+{
+  "at": "2026-10-15T14:21:33.177111+00:00",
+  "container_id": "857ab743c07698eed70640d54a17a83de59a45c883fc2df23a72a17aaff80a33",
+  "published": "127.0.0.1:32771",
+  "image": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+  "command": [
+    "docker",
+    "run",
+    "-d",
+    "--pull=never",
+    "--name",
+    "alia-v01-server-startup-20261015-db",
+    "--label",
+    "alia.validation=v01-server-startup-20261015",
+    "-e",
+    "POSTGRES_USER=alia_test",
+    "-e",
+    "POSTGRES_PASSWORD=alia_test",
+    "-e",
+    "POSTGRES_DB=alia_v01_startup_20261015",
+    "-p",
+    "127.0.0.1::5432",
+    "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3"
+  ],
+  "shared_services_before": [
+    "c5aaca070870 astrbot"
+  ],
+  "other_services_modified": false
+}

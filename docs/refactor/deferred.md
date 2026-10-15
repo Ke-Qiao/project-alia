@@ -306,3 +306,12 @@ R02硬件AEC路线和资料门槛、R03用户暂停、R05现场出口、前端/�
 - [ ] 所有完成句柄丢弃、runtime结束/强杀、DB永久失联、native poisoning、supervisor自身panic及任意ServerStartup点仍不作完成承诺；Drop仅请求取消，原completion才是完成见证。初始DB与最终SQL teardown仍在45秒之外，不预建全局supervisor。
 
 R02硬件AEC优先与资料门槛、R03用户暂停、R05现场出口及其他既定延期保持；本轮未验证Linux/Pi、真实模型或硬件，六轮仍2/6。
+
+## 2026-10-15：V01 ServerStartup初始化取消收口
+
+- [x] 本包10/10，源码`9e3a934`。一次RED确认取消后交付缓冲Ready；交付前检查复用原回滚，保留原错误、grace、typed incomplete和完成句柄。GREEN8/0/0，workspace1270/0/5、server_runtime85/0/0，676提交输入一致。见[恢复检查点](resume-checkpoint-v01-server-startup-2026-10-15.md)与[四份HANDOFF](handoffs/2026-10-15-v01-server-startup/README.md)。
+- [x] 同库退出约0.248秒后0 schema/0其他client，任务容器及卷已回收；原期限、默认并发、shadow、政策、权限与执行批准保持。
+- [ ] **历史V01根因仍open**，本轮修复不倒推历史25秒超时原因，无新失败/原件/可区分条件不重复求绿。
+- [ ] from_config connect返回pool前取消、SQL未知确认、discovery注册失败局部shutdown、旧全局with_fixture body失败的owner顺序未在本轮动态证明；native poisoning/supervisor panic/runtime强杀和永不退出仍不作完成承诺。这些是证据边界，不是用户明确延期；不预建统一框架。
+
+后续可先有界核对Database::connect已有取消清理机制。R02硬件AEC路线和资料、R03用户暂停、R05现场出口及其它既定延期保持；无新增依赖、Linux/Pi、真实模型或硬件验收，六轮仍2/6。

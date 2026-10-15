@@ -1,0 +1,24 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.98s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 8 tests
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+unpolled startup cancellation: rollback_finished=true, parent_cancelled=false
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered startup failure: finished_before_cancel=true, returned_ready=false, failure_report_unchanged=true
+test startup::dropping_unpolled_startup_wait_rolls_back_partial_initialization ... ok
+test startup::buffered_startup_failures_survive_later_parent_cancellation ... ok
+test joined_stop_error_does_not_skip_remaining_cleanup_or_become_success ... ok
+test cancelling_or_dropping_build_future_rolls_back_partial_init ... ok
+test partial_init_and_start_failures_stop_workers_once_in_reverse_order ... ok
+test failed_startup_returns_pending_handle_until_native_rollback_finishes ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered startup cancellation: ready_notified=true, returned_ready=false, cleanup_finished=true
+test startup::cancelled_buffered_startup_rejects_ready_and_rolls_back ... ok
+startup resources: owned_pool_closed=true, shared_pool_usable=true, http_released=true, grpc_released=true, workers_left=0, stops=1
+buffered native rollback: incomplete=true, unfinished=true, pending_module=true, pool_retained=true, wait_pending=true, typed_handle_finished=true
+test startup::buffered_startup_cancellation_retains_incomplete_native_rollback ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 77 filtered out; finished in 4.34s
+

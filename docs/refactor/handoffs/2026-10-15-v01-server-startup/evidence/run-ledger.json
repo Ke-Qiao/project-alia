@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-15T14:26:37.865350+00:00",
+  "base_commit": "4ab48fea79046b9fb80e2bf9dc5c468a463c872f",
+  "scope": "ServerStartup buffered successful output revoked by parent cancellation before delivery; preserve original rollback and failure semantics",
+  "unchanged": [
+    "production shutdown and business deadlines",
+    "default libtest concurrency",
+    "DATABASE_CASES=2",
+    "delivery CASES=3",
+    "default shadow and current policies",
+    "R03 paused"
+  ],
+  "red_status": "confirmed exit 101, 0 passed / 1 failed / 81 filtered; buffered cancelled runtime returned; cleanup observations passed before target assertion",
+  "remaining_dynamic_limits": [
+    "early connect and SQL confirmation windows",
+    "discovery registration failure cleanup",
+    "legacy server_runtime global with_fixture body failure ownership",
+    "runtime kill/native poisoning/supervisor panic"
+  ],
+  "implementation_status": "builder and four tests frozen; two independent reviewers GO",
+  "green_status": "8 passed / 0 failed / 0 ignored / 77 filtered, 4.34s target, 40.38s command, source drift empty; same task PG 0/0 immediately afterwards",
+  "final_status": "single complete workspace: 1270 passed / 0 failed / 5 existing ignored / 0 filtered, 505.0s, 676 frozen inputs unchanged; server_runtime 85/0/0; same task PG 0/0 about 0.248s after exit",
+  "source_commit": "9e3a93401aea481f729b21512431b980dfc3b02c",
+  "commit_inputs": "676/676 blob matches; no extra/missing inputs",
+  "resources_status": "exact ID/label task container and volume removed; shared services retained"
+}

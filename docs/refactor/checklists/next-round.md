@@ -121,3 +121,9 @@
 本软件包 **10/10**，源码`4e99134`；六轮仍 **2/6**。三个LLM配置快照、SoVITS权重额度期限、HTTP/1实际Drop与同值重试、privacy共享锁关闭证据已完成，保留政策/管理员边界/部分成功。Server868/0/5，格式后最终provider51/0/0与无默认检查通过，669提交输入匹配；见[恢复检查点](../resume-checkpoint-settings-waits-2026-10-15.md)。
 
 下一步按用户新指令选择已有软件/部署待办；V01根因、同步文件I/O不可抢占及可信部署边界仍开放，不自动延伸为Settings框架。R02继续硬件AEC优先与资料核对；R03后续暂停；R05必须等待实际音频/机构/部署出口。无新增硬件或外部模型授权。
+
+## 2026-10-15 V01 ServerStartup 初始化取消收口
+
+本包10/10，源码`9e3a934`；成功结果已缓冲后取消仍交付的缺口经RED确认并修复，四项新回归和四项既有回滚通过。一次workspace1270/0/5、server_runtime85/0/0，676提交输入一致；同库约0.248秒0/0，任务容器与卷回收。见[恢复检查点](../resume-checkpoint-v01-server-startup-2026-10-15.md)及[四份HANDOFF](../handoffs/2026-10-15-v01-server-startup/README.md)。
+
+下一软件候选只作有界审计：核对from_config的Database::connect返回owned pool之前的取消与SQLx既有清理能力，先复现再补确认缺口。SQL未知确认、discovery局部失败及旧全局with_fixture异常清理顺序仍未动态证明，不预建全局完成框架。历史V01根因open，无新条件不重复求绿。原期限/默认并发/政策/shadow不变，R03用户暂停，R02资料及R05现场门槛保持，六轮仍2/6。

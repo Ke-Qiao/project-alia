@@ -1,0 +1,143 @@
+{
+  "created_at": "2026-10-15T14:55:18.890931+00:00",
+  "source_commit": "9e3a93401aea481f729b21512431b980dfc3b02c",
+  "source_inputs": 676,
+  "files": [
+    {
+      "path": "evidence/after-green-resources.json",
+      "bytes": 171,
+      "sha256": "514dc84ec58e4da5bb1f58354406cc9f434e23d32d84e08bbf227f13ef88623d"
+    },
+    {
+      "path": "evidence/after-red-resources.json",
+      "bytes": 171,
+      "sha256": "55312ccc1b6921fd95c77dda7378507b824cb4b6be0d008cd1399788df76af81"
+    },
+    {
+      "path": "evidence/cleanup.json",
+      "bytes": 1774,
+      "sha256": "936dc23ff6560e8239f5aac4b9bec374adafed38401918ffe93533108265b347"
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "bytes": 1364,
+      "sha256": "574a038709cb834fd1740a5b3f7b542516113ce84c00778f773bff9395e6e4bf"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 290,
+      "sha256": "72716862ecfa37956c1ef95eab9e5a652b8792b5e7ad79453c28febe3ece010e"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "bytes": 801,
+      "sha256": "235d9c00ff32d46d481b9e7d51a00abf636b3d9326525b0565f8c745b2d5cedb"
+    },
+    {
+      "path": "evidence/final-resources.json",
+      "bytes": 171,
+      "sha256": "a417529c515a284aadc943ad2455c26fc5f6a82991ee78faf9b298d5876e620c"
+    },
+    {
+      "path": "evidence/final-source-manifest.json",
+      "bytes": 124528,
+      "sha256": "34595bfb7a942b17a3941474ae8c2c7392caa8c95f4f2e3847fdbf997011f205"
+    },
+    {
+      "path": "evidence/final-workspace.json",
+      "bytes": 641,
+      "sha256": "dbcab56dc0d3166f07be2de889b933370a86565d99526a7f403eb9dff1bef1e1"
+    },
+    {
+      "path": "evidence/final-workspace.log",
+      "bytes": 138742,
+      "sha256": "16e572e4f664e40039bcdc5c6e25320c1aa0627280effaaa941005444a8f36ad"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "bytes": 1155,
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34"
+    },
+    {
+      "path": "evidence/green-source-manifest.json",
+      "bytes": 124528,
+      "sha256": "99e269a7aae1f750decfc7777d12f14e976babd56806292b92999c8a8b458c8f"
+    },
+    {
+      "path": "evidence/red-builder.rs.txt",
+      "bytes": 42621,
+      "sha256": "95f2a3e04136efcc2045a042ef760d0de2987adbe596627883cca6f654c59249"
+    },
+    {
+      "path": "evidence/red-source-manifest.json",
+      "bytes": 124527,
+      "sha256": "1212dd000134d14f998c3547333e6b8ae952e9649864055948c264c921b67b76"
+    },
+    {
+      "path": "evidence/red-startup.rs.txt",
+      "bytes": 9985,
+      "sha256": "561d1e87e00ae0db3a06116e576c1c168bbd0e4c8d737b24d45a3793bfa83cab"
+    },
+    {
+      "path": "evidence/resources.py",
+      "bytes": 1093,
+      "sha256": "e269d6aef7c753dbf3560502197b7564a0dd6ddd0f80face8fe0a6106b9f3331"
+    },
+    {
+      "path": "evidence/run-ledger.json",
+      "bytes": 1582,
+      "sha256": "b66ce7e0b63fce6b374aca5f4d07314bdc2b5846473d8f8ccedd65501de23a18"
+    },
+    {
+      "path": "evidence/startup-green.json",
+      "bytes": 1003,
+      "sha256": "b046bcf02ad0ca5977e1ab1c4f87c18a8af6dcd1e5e993c1c38f3b85b4f47674"
+    },
+    {
+      "path": "evidence/startup-green.log",
+      "bytes": 1968,
+      "sha256": "dc270f61a316a3be082f7ac7e16920f320cdeaf4ba4cd5ac5075e928ca4a54c1"
+    },
+    {
+      "path": "evidence/startup-red.json",
+      "bytes": 747,
+      "sha256": "7732fb66608ae048160873a51d07baa39595725ec016746173a218e918bbe554"
+    },
+    {
+      "path": "evidence/startup-red.log",
+      "bytes": 1173,
+      "sha256": "8c4f0219c84321f7dd9278eeda510214fe0f72ee115bdcbbdb348d141b9e7bef"
+    },
+    {
+      "path": "evidence/summarize.py",
+      "bytes": 2895,
+      "sha256": "e9cc25c2e3c709d75821e5184a8779cda75d7a6ba41234dae9a31a01a6c0d9dd"
+    },
+    {
+      "path": "evidence/validate.py",
+      "bytes": 3152,
+      "sha256": "dab9c39e1aacf7f0a88885b6b324f6eb8cfea5309fd5cca3f2fc34b5f9152f40"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "bytes": 19250,
+      "sha256": "e5fb74eee5c0bc74a57a1e2ff7a4a8e37b5a72d66c86f428eb8e7368a754c4b4"
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "bytes": 1626,
+      "sha256": "7b9c2c2dc3025931e3bb436523824b122205348de24789e0d2b4274afff72dd3"
+    }
+  ],
+  "retained_binary": {
+    "original_path": "target/debug/deps/server_runtime-026d8941a3d4790f",
+    "retained_path": "run/validation-20261015-v01-server-startup/final-server-runtime",
+    "sha256": "8c71aee1321865e7dfa80df087746712cd5148cdad656948f011eca0069caf6a",
+    "bytes": 122971584
+  },
+  "notes": [
+    "Original RED and successful logs retained byte-for-byte; no repeat run to obtain green",
+    "Scripts retain original run layout and are not general tools for executing from evidence directory",
+    "Binary remains in ignored run directory; its identity is recorded, not stored in Git"
+  ]
+}
