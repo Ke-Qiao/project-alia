@@ -95,8 +95,21 @@ impl ServerStartup {
             .await
             .context("server startup owner failed")?;
         self.task.take();
-        self.handed_off = result.is_ok();
-        result
+        match result {
+            Ok(runtime) if self.cancel.is_cancelled() => {
+                let error = rollback_startup(
+                    &self.cleanup,
+                    anyhow::anyhow!("server startup cancelled before ready delivery"),
+                )
+                .await;
+                drop(runtime);
+                Err(error)
+            }
+            result => {
+                self.handed_off = result.is_ok();
+                result
+            }
+        }
     }
 }
 impl Drop for ServerStartup {
@@ -213,13 +226,7 @@ impl ServerBuilder {
             )
             .await;
             if let Err(error) = result {
-                owner.record_failure(format!("startup: {error:#}"));
-                return match owner.start().wait_until(owner.deadline()).await {
-                    Ok(()) => Err(error),
-                    Err(cleanup) => {
-                        Err(cleanup.context(format!("server startup failed: {error:#}")))
-                    }
-                };
+                return Err(rollback_startup(&owner, error).await);
             }
             result
         });
@@ -1007,6 +1014,14 @@ impl ServerBuilder {
             .await?;
 
         crate::bootstrap::ServerRuntime::assembled(state, requested_config, cleanup, wiring).await
+    }
+}
+
+async fn rollback_startup(cleanup: &RuntimeCleanup, error: anyhow::Error) -> anyhow::Error {
+    cleanup.record_failure(format!("startup: {error:#}"));
+    match cleanup.start().wait_until(cleanup.deadline()).await {
+        Ok(()) => error,
+        Err(cleanup) => cleanup.context(format!("server startup failed: {error:#}")),
     }
 }
 
