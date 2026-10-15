@@ -24,8 +24,21 @@ pub struct Fixture {
     schema: String,
     pub user: Uuid,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InitializationStep {
+    WorkPool,
+    UserSeed,
+    Policy,
+}
+
 impl Fixture {
     async fn new() -> Self {
+        Self::new_with(|_, _| Box::pin(async {})).await
+    }
+    async fn new_with<H>(mut checkpoint: H) -> Self
+    where
+        H: for<'a> FnMut(InitializationStep, &'a Self) -> LocalBoxFuture<'a, ()>,
+    {
         let url = std::env::var("ALIA_TEST_DATABASE_URL")
             .expect("set ALIA_TEST_DATABASE_URL to disposable PostgreSQL");
         let mut options = ConnectOptions::new(url.clone());
@@ -33,49 +46,66 @@ impl Fixture {
         let admin = Database::connect(options)
             .await
             .expect("PostgreSQL must be reachable");
-        let schema = format!("delivery_test_{}", Uuid::new_v4().simple());
-        admin
-            .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
-            .await
-            .unwrap();
-        let mut options = ConnectOptions::new(url);
-        options
-            .max_connections(4)
-            .set_schema_search_path(format!("{schema},public"))
-            .sqlx_logging(false);
-        let db = Database::connect(options).await.unwrap();
-        let user = Uuid::new_v4();
-        let f = Self {
+        let mut f = Self {
             admin,
-            db,
-            schema,
-            user,
+            db: DatabaseConnection::Disconnected,
+            schema: format!("delivery_test_{}", Uuid::new_v4().simple()),
+            user: Uuid::new_v4(),
         };
-        if let Err(error) = migrations::run(&f.db).await {
-            f.cleanup().await;
-            panic!("install migrations: {error:#}");
-        }
-        f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login','user','active')",vec![user.into(),format!("{user}@delivery.test").into()])).await.unwrap();
-        f.context()
-            .initialize_policy(
-                ContextPolicy::from_config(
-                    &alia_server::config::MemorySection::default(),
-                    &alia_server::config::ConversationSection::default(),
+        let initialized = AssertUnwindSafe(async {
+            f.admin
+                .execute_unprepared(&format!("CREATE SCHEMA {}", f.schema))
+                .await
+                .unwrap();
+            checkpoint(InitializationStep::WorkPool, &f).await;
+            let mut options = ConnectOptions::new(url);
+            options
+                .max_connections(4)
+                .set_schema_search_path(format!("{},public", f.schema))
+                .sqlx_logging(false);
+            f.db = Database::connect(options).await.unwrap();
+            if let Err(error) = migrations::run(&f.db).await {
+                panic!("install migrations: {error:#}");
+            }
+            checkpoint(InitializationStep::UserSeed, &f).await;
+            f.db.execute(Statement::from_sql_and_values(DatabaseBackend::Postgres,"INSERT INTO users(id,email,name,password_hash,role,status) VALUES($1,$2,'Delivery test','not-a-login','user','active')",vec![f.user.into(),format!("{}@delivery.test", f.user).into()])).await.unwrap();
+            checkpoint(InitializationStep::Policy, &f).await;
+            f.context()
+                .initialize_policy(
+                    ContextPolicy::from_config(
+                        &alia_server::config::MemorySection::default(),
+                        &alia_server::config::ConversationSection::default(),
+                    )
+                    .unwrap(),
                 )
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-        alia_server::modules::memory::source::capture_source_epoch(&f.db, user)
-            .await
-            .unwrap();
+                .await
+                .unwrap();
+            alia_server::modules::memory::source::capture_source_epoch(&f.db, f.user)
+                .await
+                .unwrap();
+        })
+        .catch_unwind()
+        .await;
+        if let Err(error) = initialized {
+            if AssertUnwindSafe(f.cleanup()).catch_unwind().await.is_err() {
+                eprintln!("Delivery initialization cleanup failed");
+            }
+            std::panic::resume_unwind(error);
+        }
         f
     }
+    pub(crate) fn schema_name(&self) -> &str {
+        &self.schema
+    }
     async fn cleanup(self) {
-        let work_pool = self.db.close().await;
+        let work_pool = if matches!(self.db, DatabaseConnection::Disconnected) {
+            Ok(())
+        } else {
+            self.db.close().await
+        };
         let schema = self
             .admin
-            .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.schema))
+            .execute_unprepared(&format!("DROP SCHEMA IF EXISTS {} CASCADE", self.schema))
             .await;
         let admin_pool = self.admin.close().await;
         assert!(
@@ -224,6 +254,15 @@ pub fn receipt(identity: PlaybackIdentity, seq: u64, accepted: u64) -> PlaybackP
         observation_end: None,
     }
 }
+pub(crate) async fn probe_initialization<H>(checkpoint: H)
+where
+    H: for<'a> FnMut(InitializationStep, &'a Fixture) -> LocalBoxFuture<'a, ()>,
+{
+    let _slot = CASES.acquire().await.unwrap();
+    let f = Fixture::new_with(checkpoint).await;
+    f.cleanup().await;
+}
+
 pub async fn with_db<F, Fut>(test: F)
 where
     F: FnOnce(Fixture) -> Fut,

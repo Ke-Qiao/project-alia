@@ -1066,3 +1066,12 @@ mod cleanup;
 
 #[path = "duplex_playback/db_cleanup.rs"]
 mod db_cleanup;
+
+#[path = "duplex_playback/initialization.rs"]
+mod initialization;
+
+#[path = "duplex_playback/partial_runtime.rs"]
+mod partial_runtime;
+
+#[path = "duplex_playback/late_drain.rs"]
+mod late_drain;
