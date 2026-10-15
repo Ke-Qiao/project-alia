@@ -377,6 +377,186 @@ async fn seed(state: &alia_server::state::AppState, owner: Uuid) -> Uuid {
     source
 }
 
+#[derive(Default)]
+struct CompanionFixture {
+    paired: Option<Runtime>,
+    runtime: Option<alia_server::bootstrap::ServerRuntime>,
+    shutdown: Option<alia_server::bootstrap::ShutdownHandle>,
+    voice_server: Option<RpcServer>,
+    heartbeat: Option<tokio::task::JoinHandle<()>>,
+    stop: CancellationToken,
+    tts: Option<FixedTts>,
+    stage: &'static str,
+    verify_revoke: bool,
+}
+impl CompanionFixture {
+    async fn initialize(
+        &mut self,
+        f: Fixture,
+    ) -> (
+        Scene,
+        alia_server::state::AppState,
+        FixedTts,
+        String,
+        mpsc::Receiver<ModelCall>,
+    ) {
+        self.stage = "initialize paired runtime";
+        Runtime::initialize(&mut self.paired, f, 4096).await;
+        let paired = self.paired.as_ref().unwrap();
+        let mut s = paired.scene.clone();
+        // This case uses the builder-owned Delivery/Companion lifecycle.
+        self.stage = "replace paired Delivery owner";
+        s.service.shutdown().await.unwrap();
+        let mut config: alia_server::config::ServerConfig =
+            toml::from_str(include_str!("../../../../config/server.example.toml")).unwrap();
+        config.config_dir = paired._directory.0.clone();
+        config.auth.server_keypair_path = paired._directory.0.join("server.key");
+        config.server.id = "server".into();
+        config.server.host = "127.0.0.1".into();
+        config.server.port = 0;
+        config.server.grpc_port = None;
+        config.server.discovery_enabled = false;
+        config.server.shutdown_grace_ms = 5000;
+        config.channels.clear();
+        config.modules.stt = "noop".into();
+        config.modules.tts = "noop".into();
+        config.llm.roles.minor = "noop".into();
+        config.llm.roles.major = "noop".into();
+        config.llm.roles.default = "noop".into();
+        config.llm.roles.embedding = "noop".into();
+        config.llm.roles.memory_capture = None;
+        config.llm.roles.sentence_expression = None;
+        config.policies.insights.enabled = false;
+        config.plugins.home_assistant.enabled = false;
+        config.providers.easy_turn.enabled = false;
+        let tts = FixedTts {
+            calls: Arc::new(AtomicUsize::new(0)),
+            entered: Arc::new(Semaphore::new(0)),
+            release: Arc::new(Semaphore::new(0)),
+        };
+        self.tts = Some(tts.clone());
+        self.stage = "build server runtime";
+        let startup = ServerBuilder::new(
+            Arc::new(config),
+            s.f.db.clone(),
+            EventBus::new(64),
+            CancellationToken::new(),
+        )
+        .with_tts(tts.clone())
+        .start_build();
+        self.shutdown = Some(startup.shutdown_handle());
+        self.runtime = Some(startup.wait().await.unwrap());
+        let state = self.runtime.as_ref().unwrap().state().clone();
+        self.stage = "register paired channel";
+        state.channels.register(s.channel.clone()).await.unwrap();
+        // The real connection hydrates its bound peer from DeviceBindingService;
+        // a configured pin alone cannot replace that runtime identity.
+        self.stage = "hydrate paired binding";
+        s.channel.binding_client().await.unwrap();
+        s.service = state.delivery.clone();
+        let stop = self.stop.clone();
+        let auth = VoiceIngressAuth::new(state.channels.clone());
+        let (model_tx, model_calls) = mpsc::channel(2);
+        let voice = VoiceSessionService::new(
+            auth,
+            Some(Arc::new(ControlledDetector(model_tx))),
+            state.voice_input.clone(),
+            state.delivery.clone(),
+            Duration::from_secs(30),
+            stop.clone(),
+            state.runtime_tasks.clone(),
+        )
+        .with_initiatives(
+            state.voice_initiatives.clone(),
+            state.modules.context.clone(),
+        );
+        self.stage = "bind voice listener";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let shutdown = stop.clone();
+        let task = tokio::spawn(async move {
+            let incoming = async_stream::stream! {loop {yield listener.accept().await.map(|(stream,_)|stream);}};
+            tonic::transport::Server::builder()
+                .add_service(VoiceSessionServer::new(voice))
+                .serve_with_incoming_shutdown(incoming, shutdown.cancelled())
+                .await
+                .unwrap();
+        });
+        self.voice_server = Some(RpcServer {
+            stop,
+            task: Some(task),
+        });
+        (s, state, tts, endpoint, model_calls)
+    }
+
+    async fn close(mut self) {
+        if self.stage != "body complete" {
+            eprintln!("Companion fixture cleanup entered at {}", self.stage);
+        }
+        self.stop.cancel();
+        if let Some(tts) = &self.tts {
+            tts.release.add_permits(1);
+        }
+        let scene = self.paired.as_ref().map(|paired| paired.scene.clone());
+        let mut failed = Vec::new();
+        if let Some(scene) = &scene {
+            scene.wire.release_registration.add_permits(8);
+            scene.wire.release_resume.add_permits(8);
+            if !matches!(
+                std::panic::catch_unwind(AssertUnwindSafe(|| scene.session.revoke_all())),
+                Ok(Ok(()))
+            ) {
+                failed.push("revoke playback");
+            }
+        }
+        if let Some(task) = self.heartbeat.take() {
+            if task.await.is_err() {
+                failed.push("heartbeat join");
+            }
+        }
+        if let Some(runtime) = self.runtime.take() {
+            if !matches!(
+                AssertUnwindSafe(runtime.shutdown()).catch_unwind().await,
+                Ok(Ok(()))
+            ) {
+                failed.push("server shutdown");
+            }
+        }
+        if let Some(server) = self.voice_server.take() {
+            if AssertUnwindSafe(server.close())
+                .catch_unwind()
+                .await
+                .is_err()
+            {
+                failed.push("voice RPC join");
+            }
+        }
+        if let Some(paired) = self.paired.take() {
+            if AssertUnwindSafe(paired.close())
+                .catch_unwind()
+                .await
+                .is_err()
+            {
+                failed.push("paired cleanup");
+            }
+        }
+        // The existing shutdown owner survives an incomplete waiter; join before SQL teardown.
+        if let Some(shutdown) = &self.shutdown {
+            if shutdown.wait().await.is_err() {
+                failed.push("server cleanup completion");
+            }
+            assert!(
+                shutdown.is_finished(),
+                "server owner must finish before database cleanup"
+            );
+        }
+        if self.verify_revoke {
+            assert_eq!(scene.unwrap().wire.pushes.load(Ordering::SeqCst), 0);
+        }
+        assert!(failed.is_empty(), "Companion cleanup failed at {failed:?}");
+    }
+}
+
 async fn complete_invitation(scenario: Scenario) {
     // Only fixed, identity-free admission diagnostics are enabled. Never
     // inherit a broad RUST_LOG filter that could include requests or grants.
@@ -387,44 +567,10 @@ async fn complete_invitation(scenario: Scenario) {
         .with_test_writer()
         .try_init();
     let revoke_during_tts = scenario == Scenario::Revoke;
-    with_db(|f| async move {
-        let paired = Runtime::new(f,4096).await;
-        let mut s = paired.scene.clone();
-        // This case uses the builder-owned Delivery/Companion lifecycle.
-        s.service.shutdown().await.unwrap();
-        let mut config: alia_server::config::ServerConfig = toml::from_str(include_str!("../../../../config/server.example.toml")).unwrap();
-        config.config_dir = paired._directory.0.clone();
-        config.auth.server_keypair_path = paired._directory.0.join("server.key");
-        config.server.id = "server".into();
-        config.server.host = "127.0.0.1".into(); config.server.port = 0; config.server.grpc_port = None;
-        config.server.discovery_enabled = false; config.server.shutdown_grace_ms = 5000;
-        config.channels.clear(); config.modules.stt="noop".into(); config.modules.tts="noop".into();
-        config.llm.roles.minor="noop".into(); config.llm.roles.major="noop".into(); config.llm.roles.default="noop".into(); config.llm.roles.embedding="noop".into();
-        config.llm.roles.memory_capture=None;config.llm.roles.sentence_expression=None;
-        config.policies.insights.enabled=false;config.plugins.home_assistant.enabled=false;config.providers.easy_turn.enabled=false;
-        let tts=FixedTts {calls:Arc::new(AtomicUsize::new(0)),entered:Arc::new(Semaphore::new(0)),release:Arc::new(Semaphore::new(0))};
-        let runtime = ServerBuilder::new(Arc::new(config),s.f.db.clone(),EventBus::new(64),CancellationToken::new()).with_tts(tts.clone()).build().await.unwrap();
-        let state=runtime.state().clone();
-        state.channels.register(s.channel.clone()).await.unwrap();
-        // The real connection hydrates its bound peer from DeviceBindingService;
-        // a configured pin alone cannot replace that runtime identity.
-        s.channel.binding_client().await.unwrap();
-        s.service = state.delivery.clone();
-        let stop=CancellationToken::new();
-        let auth=VoiceIngressAuth::new(state.channels.clone());
-        let (model_tx,mut model_calls)=mpsc::channel(2);
-        let voice=VoiceSessionService::new(auth,Some(Arc::new(ControlledDetector(model_tx))),state.voice_input.clone(),state.delivery.clone(),Duration::from_secs(30),stop.clone(),state.runtime_tasks.clone())
-            .with_initiatives(state.voice_initiatives.clone(),state.modules.context.clone());
-        let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint=format!("http://{}",listener.local_addr().unwrap());
-        let shutdown=stop.clone();
-        let task=tokio::spawn(async move {
-            let incoming=async_stream::stream! {loop {yield listener.accept().await.map(|(stream,_)|stream);}};
-            tonic::transport::Server::builder().add_service(VoiceSessionServer::new(voice)).serve_with_incoming_shutdown(incoming,shutdown.cancelled()).await.unwrap();
-        });
-        let voice_server=RpcServer{stop:stop.clone(),task:Some(task)};
-        let mut heartbeat=None;
-        let mut stage="connect voice client";
+    with_db_context(CompanionFixture::default(), move |f, owner| Box::pin(async move {
+        let (mut s, state, tts, endpoint, mut model_calls) = owner.initialize(f).await;
+        let stop = owner.stop.clone();
+        owner.stage="connect voice client";
         let result=AssertUnwindSafe(tokio::time::timeout(Duration::from_secs(25),async {
             let (tx,rx)=mpsc::channel(8);
             let boot=Uuid::new_v4();
@@ -438,9 +584,9 @@ async fn complete_invitation(scenario: Scenario) {
             request.metadata_mut().insert("authorization",format!("Bearer {token}").parse().unwrap());
             request.metadata_mut().insert("x-alia-channel-id", "test-device".parse().unwrap());
             let mut client=VoiceSessionClient::connect(endpoint).await.unwrap();
-            stage="open voice stream";
+            owner.stage="open voice stream";
             let mut events=client.stream(request).await.unwrap().into_inner();
-            stage="receive Ready";
+            owner.stage="receive Ready";
             let ready=events.message().await.unwrap().unwrap();
             assert!(matches!(ready.payload,Some(session_event::Payload::Ready(ref v)) if v.initiative_capture_gate_version==1));
             s.scope=VoiceScope{session_id:ready.session_id.parse().unwrap(),device_boot_id:boot,generation_epoch:ready.generation_epoch};
@@ -448,7 +594,7 @@ async fn complete_invitation(scenario: Scenario) {
             s.session.activate_with_capture(&s.scope,s.capture.clone(),MAX_HOLD_MS).unwrap();
             let capture=s.capture.clone();let session=s.session.clone();let shutdown=stop.clone();
             let (capture_tx,mut capture_rx)=mpsc::channel(2);
-            heartbeat=Some(tokio::spawn(async move {
+            owner.heartbeat=Some(tokio::spawn(async move {
                 let mut sequence=0;let mut tick=tokio::time::interval(Duration::from_millis(100));
                 tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut withheld:Option<(voice::DeviceFrame,u64)>=None;
@@ -461,7 +607,7 @@ async fn complete_invitation(scenario: Scenario) {
                     let (speech_active,upload,reply)=match command {
                         Some(CaptureCommand::Flush(reply))=>{
                             let (frame,n)=withheld.take().expect("original local frame must be retained");
-                            if tx.send(frame).await.is_err(){break;}
+                            if tokio::select! { biased; _=shutdown.cancelled()=>true, result=tx.send(frame)=>result.is_err() } {break;}
                             let _=reply.send(n);continue;
                         },
                         Some(CaptureCommand::Speech{upload,reply})=>(true,upload,Some(reply)),
@@ -472,26 +618,26 @@ async fn complete_invitation(scenario: Scenario) {
                         sequence,sample_offset:sequence*1600,pcm_s16le:vec![0;3200],speech_active,
                     }))};
                     if session.accept_capture(&capture,sequence,speech_active,||Ok(())).is_err(){break;}
-                    if upload { if tx.send(frame).await.is_err(){break;} }
+                    if upload { if tokio::select! { biased; _=shutdown.cancelled()=>true, result=tx.send(frame)=>result.is_err() } {break;} }
                     else {withheld=Some((frame,sequence));}
                     if let Some(reply)=reply {let _=reply.send(sequence);}
                     sequence+=1;
                 }
             }));
-            stage="enable companion policy";
+            owner.stage="enable companion policy";
             let policy=state.modules.companion.policy(s.f.user).await.unwrap();
             assert_eq!(policy.policy.mode,CompanionMode::Shadow);
             state.modules.companion.replace_policy(s.f.user,policy.revision,CompanionPolicy{mode:CompanionMode::Enabled,..policy.policy}).await.unwrap();
-            stage="seed source and appraisal";
+            owner.stage="seed source and appraisal";
             let source=seed(&state,s.f.user).await;
-            stage="receive InitiativeAdmitted";
+            owner.stage="receive InitiativeAdmitted";
             let event=events.message().await.unwrap().unwrap();
             let admission=match event.payload {Some(session_event::Payload::InitiativeAdmitted(v))=>v,other=>panic!("expected initiative: {other:?}")};
             s.scope.generation_epoch=event.generation_epoch;
             s.session.admit_initiative_event(&s.scope,InitiativeCapture{initiative_id:admission.initiative_id.parse().unwrap(),request_id:admission.request_id.parse().unwrap(),through_sequence:admission.through_sequence},admission.context_id.parse().unwrap()).unwrap();
-            stage="enter original TTS";
+            owner.stage="enter original TTS";
             signal(&tts.entered).await;
-            stage="verify original admission";
+            owner.stage="verify original admission";
             assert_eq!(count(&s,"companion_admissions").await,1);
             assert_eq!(count(&s,"delivery_responses").await,1);
             assert_eq!(s.wire.registrations.lock().unwrap().len(),1);
@@ -506,12 +652,12 @@ async fn complete_invitation(scenario: Scenario) {
             assert_eq!(registered.binding.context_id.to_string(),admission.context_id);
             assert_eq!(registered.binding.initiative_capture.unwrap().through_sequence,admission.through_sequence);
             if revoke_during_tts {
-                stage="revoke original source";
+                owner.stage="revoke original source";
                 state.modules.context.clear_relationship(s.f.user,Uuid::new_v4(),0).await.unwrap();
             }
             tts.release.add_permits(1);
             if revoke_during_tts {
-                stage="observe retired admission";
+                owner.stage="observe retired admission";
                 eventually(||async {
                     let row=s.f.db.query_one(Statement::from_string(DatabaseBackend::Postgres,"SELECT state FROM companion_admissions".to_string())).await.unwrap().unwrap();
                     row.try_get::<String>("","state").unwrap()=="retired"
@@ -519,10 +665,10 @@ async fn complete_invitation(scenario: Scenario) {
                 assert_eq!(s.wire.pushes.load(Ordering::SeqCst),0);
                 assert_eq!(count(&s,"companion_admissions").await,1,"erasure cannot refund charge");
             } else {
-                stage="accept original media end";
+                owner.stage="accept original media end";
                 eventually(||async {s.submission().is_some_and(|v|v.snapshot(1).end_accepted)}).await;
                 if scenario == Scenario::ResumeRace {
-                    stage="complete H1 to H2 handoff";
+                    owner.stage="complete H1 to H2 handoff";
                     let response=s.service.get_response(s.f.user,response_id).await.unwrap();
                     resume_race(&s,&response,&capture_tx,&mut model_calls).await;
                     assert_eq!(s.drain(),vec![17;120],"resume must keep exactly the original unsubmitted suffix");
@@ -530,7 +676,7 @@ async fn complete_invitation(scenario: Scenario) {
                     assert!(model_calls.try_recv().is_err(),"silent invitation cannot invoke turn inference");
                     assert_eq!(s.drain(),vec![17;160]);
                 }
-                stage="observe original submission";
+                owner.stage="observe original submission";
                 eventually(||async {
                     let records=s.service.list_deliveries(s.f.user,response_id).await.unwrap();
                     records.len()==1 && records[0].status==DeliveryStatus::Submitted
@@ -541,7 +687,7 @@ async fn complete_invitation(scenario: Scenario) {
                 assert_eq!(s.wire.pushes.load(Ordering::SeqCst),1);
                 assert_eq!(s.device.submissions.lock().unwrap().len(),1);
             }
-            stage="verify completed output";
+            owner.stage="verify completed output";
             assert_eq!(tts.calls.load(Ordering::SeqCst),1);
             assert_eq!(count(&s,"delivery_responses").await,1,"H2 must retain the sole original Response");
             assert_eq!(count(&s,"companion_admissions").await,1,"control recovery cannot charge another initiative");
@@ -549,27 +695,18 @@ async fn complete_invitation(scenario: Scenario) {
         })).catch_unwind().await;
         let failure_diagnostic = if !matches!(&result, Ok(Ok(()))) {
             let diagnostic = failure_state(&s.f.db, state.modules.companion.scan_progress()).await;
-            eprintln!("complete companion path failed before cleanup at {stage}; {diagnostic}");
+            eprintln!("complete companion path failed before cleanup at {}; {diagnostic}", owner.stage);
             Some(diagnostic)
         } else {
             None
         };
-        stop.cancel();
-        if let Some(task)=heartbeat {task.await.unwrap();}
-        tts.release.add_permits(1);
-        s.wire.release_resume.add_permits(8);
-        let shutdown=runtime.shutdown().await;
-        voice_server.close().await;
-        paired.close().await;
-        shutdown.unwrap();
-        if revoke_during_tts {
-            // Retirement is recorded immediately by erasure. Only completed
-            // shutdown proves the original runner/native owners cannot later
-            // publish the synthesis that was just released above.
-            assert_eq!(s.wire.pushes.load(Ordering::SeqCst), 0);
+        owner.verify_revoke = revoke_during_tts;
+        match result {
+            Ok(Ok(())) => owner.stage = "body complete",
+            Ok(Err(_)) => panic!("complete companion path exceeded 25 seconds at {}; {}", owner.stage, failure_diagnostic.unwrap()),
+            Err(error) => std::panic::resume_unwind(error),
         }
-        match result {Ok(Ok(()))=>(),Ok(Err(_))=>panic!("complete companion path exceeded 25 seconds at {stage}; {}",failure_diagnostic.unwrap()),Err(error)=>std::panic::resume_unwind(error)}
-    }).await;
+    }), CompanionFixture::close).await;
 }
 #[tokio::test]
 async fn scanner_commits_one_fixed_invitation_through_real_voice_and_paired_playback() {
@@ -623,4 +760,121 @@ async fn failure_diagnostic_reports_live_claims_without_private_values() {
         let unavailable = failure_state(&f.db, companion.scan_progress()).await;
         assert_eq!(unavailable.split_once("; rows=").unwrap().1, "unavailable");
     }).await;
+}
+
+async fn injected_outer_failure(timeout: bool) {
+    let evidence = Arc::new(Mutex::new(None));
+    let owners_cleaned_before_database = Arc::new(AtomicBool::new(false));
+    let cleanup_verified = owners_cleaned_before_database.clone();
+    let observed = evidence.clone();
+    let before_database_cleanup = evidence.clone();
+    let (heartbeat_gone, mut heartbeat_exit) = oneshot::channel();
+    let result = AssertUnwindSafe(with_db_context(
+        CompanionFixture::default(),
+        move |f, owner| {
+            Box::pin(async move {
+                let (scene, state, _, endpoint, _) = owner.initialize(f).await;
+                let directory = owner.paired.as_ref().unwrap()._directory.0.clone();
+                let shutdown = owner.shutdown.as_ref().unwrap().clone();
+                *observed.lock().unwrap() = Some((scene, state, shutdown, directory, endpoint));
+                let stop = owner.stop.clone();
+                let (entered, entry) = oneshot::channel();
+                owner.heartbeat = Some(tokio::spawn(async move {
+                    let _exit = HeartbeatExit(Some(heartbeat_gone));
+                    entered.send(()).unwrap();
+                    if !timeout {
+                        panic!("injected heartbeat failure");
+                    }
+                    stop.cancelled().await;
+                }));
+                entry.await.unwrap();
+                owner.stage = "injected setup boundary before inner timer";
+                if timeout {
+                    // Real runtime/database timers must not be advanced by a test clock.
+                    std::future::pending::<()>().await;
+                } else {
+                    panic!("injected primary failure");
+                }
+            })
+        },
+        move |owner| async move {
+            let cleanup = AssertUnwindSafe(owner.close()).catch_unwind().await;
+            let (scene, state, shutdown, directory, _) = before_database_cleanup
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .clone();
+            assert!(shutdown.is_finished());
+            assert_eq!(state.runtime_tasks.active(), 0);
+            assert!(!state.delivery.shutdown_pending());
+            assert!(!scene.service.shutdown_pending());
+            assert!(!scene.session.is_active());
+            assert!(!directory.exists());
+            assert!(
+                scene.f.db.execute_unprepared("SELECT 1").await.is_ok(),
+                "owners must finish while the database is still open"
+            );
+            cleanup_verified.store(true, Ordering::SeqCst);
+            if let Err(error) = cleanup {
+                std::panic::resume_unwind(error);
+            }
+        },
+    ))
+    .catch_unwind()
+    .await;
+    let error = result.expect_err("injected boundary must remain a test failure");
+    let text = error
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| error.downcast_ref::<&str>().copied())
+        .unwrap();
+    assert_eq!(
+        text,
+        if timeout {
+            "Delivery test exceeded 45s"
+        } else {
+            "injected primary failure"
+        }
+    );
+    assert!(
+        owners_cleaned_before_database.load(Ordering::SeqCst),
+        "cleanup assertions must not be masked by the expected body failure"
+    );
+    assert!(
+        heartbeat_exit.try_recv().is_ok(),
+        "heartbeat must actually exit"
+    );
+    let (scene, state, shutdown, directory, endpoint) = evidence.lock().unwrap().take().unwrap();
+    assert!(shutdown.is_finished());
+    assert!(shutdown.failures().is_empty());
+    assert_eq!(state.runtime_tasks.active(), 0);
+    assert!(!state.delivery.shutdown_pending());
+    assert!(!scene.service.shutdown_pending());
+    assert!(!scene.session.is_active());
+    assert!(!directory.exists());
+    let address = endpoint.strip_prefix("http://").unwrap();
+    let _listener = tokio::net::TcpListener::bind(address).await.unwrap();
+    assert!(
+        scene.f.db.execute_unprepared("SELECT 1").await.is_err(),
+        "work pool must be closed after owner cleanup"
+    );
+}
+struct HeartbeatExit(Option<oneshot::Sender<()>>);
+impl Drop for HeartbeatExit {
+    fn drop(&mut self) {
+        if let Some(exit) = self.0.take() {
+            let _ = exit.send(());
+        }
+    }
+}
+
+#[tokio::test]
+async fn outer_45_second_timeout_joins_real_owners_before_database_cleanup() {
+    injected_outer_failure(true).await;
+}
+
+#[tokio::test]
+async fn heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners() {
+    injected_outer_failure(false).await;
 }

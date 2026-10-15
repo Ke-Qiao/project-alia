@@ -7,6 +7,7 @@ use alia_server::modules::{
     platform::migrations,
 };
 use futures::FutureExt;
+use futures::future::LocalBoxFuture;
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
 };
@@ -14,6 +15,7 @@ use serde_json::json;
 use std::{future::Future, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 use uuid::Uuid;
 static CASES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
+const CASE_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Clone)]
 pub struct Fixture {
@@ -70,12 +72,19 @@ impl Fixture {
         f
     }
     async fn cleanup(self) {
-        self.db.close().await.unwrap();
-        self.admin
+        let work_pool = self.db.close().await;
+        let schema = self
+            .admin
             .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.schema))
-            .await
-            .unwrap();
-        self.admin.close().await.unwrap();
+            .await;
+        let admin_pool = self.admin.close().await;
+        assert!(
+            work_pool.is_ok() && schema.is_ok() && admin_pool.is_ok(),
+            "Delivery database cleanup failed: work_pool={}, schema={}, admin_pool={}",
+            work_pool.is_ok(),
+            schema.is_ok(),
+            admin_pool.is_ok()
+        );
     }
     pub fn repo(&self) -> DeliveryRepository {
         DeliveryRepository::new(self.db.clone())
@@ -222,15 +231,109 @@ where
 {
     let _slot = CASES.acquire().await.unwrap();
     let f = Fixture::new().await;
-    let result = AssertUnwindSafe(tokio::time::timeout(
-        Duration::from_secs(45),
-        test(f.clone()),
-    ))
+    let result = AssertUnwindSafe(tokio::time::timeout(CASE_TIMEOUT, async {
+        test(f.clone()).await
+    }))
     .catch_unwind()
     .await;
-    f.cleanup().await;
+    finish_case(result, None, || async {}, || f.cleanup()).await;
+}
+
+/// Keep resource owners outside the timed body so cancellation can still join
+/// them before the database closes. Body and context cleanup share the same 45s.
+pub async fn with_db_context<C, F, Cleanup, CleanupFuture>(context: C, test: F, cleanup: Cleanup)
+where
+    F: for<'a> FnOnce(Fixture, &'a mut C) -> LocalBoxFuture<'a, ()>,
+    Cleanup: FnOnce(C) -> CleanupFuture,
+    CleanupFuture: Future<Output = ()>,
+{
+    let _slot = CASES.acquire().await.unwrap();
+    let f = Fixture::new().await;
+    let body_fixture = f.clone();
+    run_context(
+        context,
+        move |context| test(body_fixture, context),
+        cleanup,
+        || f.cleanup(),
+    )
+    .await;
+}
+
+pub(crate) async fn run_context<C, F, Cleanup, CleanupFuture, DatabaseCleanup, DatabaseFuture>(
+    mut context: C,
+    test: F,
+    cleanup: Cleanup,
+    database_cleanup: DatabaseCleanup,
+) where
+    F: for<'a> FnOnce(&'a mut C) -> LocalBoxFuture<'a, ()>,
+    Cleanup: FnOnce(C) -> CleanupFuture,
+    CleanupFuture: Future<Output = ()>,
+    DatabaseCleanup: FnOnce() -> DatabaseFuture,
+    DatabaseFuture: Future<Output = ()>,
+{
+    let deadline = tokio::time::Instant::now() + CASE_TIMEOUT;
+    let result = AssertUnwindSafe(tokio::time::timeout_at(deadline, async {
+        test(&mut context).await
+    }))
+    .catch_unwind()
+    .await;
+    finish_case(
+        result,
+        Some(deadline),
+        || cleanup(context),
+        database_cleanup,
+    )
+    .await;
+}
+
+async fn finish_case<Cleanup, CleanupFuture, DatabaseCleanup, DatabaseFuture>(
+    result: std::thread::Result<Result<(), tokio::time::error::Elapsed>>,
+    deadline: Option<tokio::time::Instant>,
+    cleanup: Cleanup,
+    database_cleanup: DatabaseCleanup,
+) where
+    Cleanup: FnOnce() -> CleanupFuture,
+    CleanupFuture: Future<Output = ()>,
+    DatabaseCleanup: FnOnce() -> DatabaseFuture,
+    DatabaseFuture: Future<Output = ()>,
+{
+    let cleanup = AssertUnwindSafe(async { cleanup().await }).catch_unwind();
+    tokio::pin!(cleanup);
+    let mut cleanup_expired = false;
+    let cleanup = if let Some(deadline) = deadline {
+        match tokio::time::timeout_at(deadline, cleanup.as_mut()).await {
+            Ok(result) => {
+                cleanup_expired = tokio::time::Instant::now() >= deadline;
+                result
+            }
+            Err(_) => {
+                cleanup_expired = true;
+                // Expiry fails the case; it cannot release a still-owned cleanup.
+                cleanup.await
+            }
+        }
+    } else {
+        cleanup.await
+    };
+    let database_cleanup = AssertUnwindSafe(async { database_cleanup().await })
+        .catch_unwind()
+        .await;
+    if cleanup.is_err() {
+        eprintln!("Delivery context cleanup failed");
+    }
+    if database_cleanup.is_err() {
+        eprintln!("Delivery database cleanup failed");
+    }
     match result {
-        Ok(Ok(())) => {}
+        Ok(Ok(())) if cleanup_expired => panic!("Delivery test exceeded 45s"),
+        Ok(Ok(())) => {
+            if let Err(error) = cleanup {
+                std::panic::resume_unwind(error);
+            }
+            if let Err(error) = database_cleanup {
+                std::panic::resume_unwind(error);
+            }
+        }
         Ok(Err(_)) => panic!("Delivery test exceeded 45s"),
         Err(error) => std::panic::resume_unwind(error),
     }

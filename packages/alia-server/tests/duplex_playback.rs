@@ -34,7 +34,7 @@ use alia_server::{
         platform::{lifecycle::ModuleLifecycle as ServerLifecycle, sensors::SensorRegistry},
     },
 };
-use delivery_support::{Fixture, with_db};
+use delivery_support::{Fixture, with_db, with_db_context};
 use futures::FutureExt;
 use sea_orm::ConnectionTrait;
 use serde_json::json;
@@ -375,10 +375,15 @@ impl Drop for RpcServer {
 impl RpcServer {
     async fn close(mut self) {
         self.stop.cancel();
-        tokio::time::timeout(Duration::from_secs(3), self.task.take().unwrap())
-            .await
-            .unwrap()
-            .unwrap();
+        let result =
+            tokio::time::timeout(Duration::from_secs(3), self.task.as_mut().unwrap()).await;
+        if result.is_err() {
+            let task = self.task.as_mut().unwrap();
+            task.abort();
+            let _ = task.await;
+        }
+        self.task.take();
+        result.unwrap().unwrap();
     }
 }
 #[derive(Clone)]
@@ -398,7 +403,7 @@ struct Runtime {
     _directory: Directory,
 }
 impl Runtime {
-    async fn new(f: Fixture, capacity: usize) -> Self {
+    async fn initialize(slot: &mut Option<Self>, f: Fixture, capacity: usize) {
         let directory =
             Directory(std::env::temp_dir().join(format!("alia-duplex-pair-{}", Uuid::new_v4())));
         std::fs::create_dir(&directory.0).unwrap();
@@ -508,7 +513,7 @@ impl Runtime {
         config.server.id = "server".into();
         config.auth.server_keypair_path = key_path;
         let events = EventBus::new(16);
-        let mut channel = EmbeddedChannel::new(
+        let channel = EmbeddedChannel::new(
             EmbeddedChannelConfig {
                 id: "test-device".into(),
                 owner_user_id: Some(f.user),
@@ -535,10 +540,8 @@ impl Runtime {
             server: config.server,
             server_keypair_path: config.auth.server_keypair_path,
         });
-        channel.init().await.unwrap();
         let service = DeliveryService::new(f.repo(), &CancellationToken::new());
-        service.start().await.unwrap();
-        Self {
+        *slot = Some(Self {
             scene: Scene {
                 f,
                 service,
@@ -551,23 +554,59 @@ impl Runtime {
             },
             server,
             _directory: directory,
-        }
+        });
+        // Retain partial initialization before channel/database awaits can cancel.
+        let runtime = slot.as_mut().unwrap();
+        Arc::get_mut(&mut runtime.scene.channel)
+            .unwrap()
+            .init()
+            .await
+            .unwrap();
+        runtime.scene.service.start().await.unwrap();
     }
     async fn close(self) {
         self.scene.wire.release_registration.add_permits(8);
         self.scene.wire.release_resume.add_permits(8);
-        // Free native queue waiters before joining either production supervisor.
-        self.scene.session.revoke_all().unwrap();
-        let delivery = self.scene.service.shutdown().await;
+        // Attempt every owner before reporting failure; a failed join is not cleanup.
+        let revoke = std::panic::catch_unwind(AssertUnwindSafe(|| self.scene.session.revoke_all()));
+        let delivery = AssertUnwindSafe(self.scene.service.shutdown())
+            .catch_unwind()
+            .await;
+        let pending = self.scene.service.shutdown_pending();
+        let embedded = AssertUnwindSafe(self.scene.session.stop())
+            .catch_unwind()
+            .await;
+        let channel = AssertUnwindSafe(self.scene.channel.stop())
+            .catch_unwind()
+            .await;
+        let rpc = AssertUnwindSafe(self.server.close()).catch_unwind().await;
+        // Never close the database while the retained supervisor still uses it.
+        // A deadline failure remains a failure even when the late drain completes.
+        if pending {
+            while self.scene.service.shutdown_pending() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            let _ = AssertUnwindSafe(self.scene.service.shutdown())
+                .catch_unwind()
+                .await;
+        }
         assert!(
-            !self.scene.service.shutdown_pending(),
-            "Delivery did not join: {delivery:?}"
+            matches!(revoke, Ok(Ok(()))),
+            "paired playback revoke failed"
         );
-        let embedded = self.scene.session.stop().await;
-        self.scene.channel.stop().await.unwrap();
-        self.server.close().await;
-        embedded.unwrap();
-        delivery.unwrap();
+        assert!(
+            matches!(delivery, Ok(Ok(()))) && !pending,
+            "paired Delivery cleanup failed"
+        );
+        assert!(
+            matches!(embedded, Ok(Ok(()))),
+            "paired playback cleanup failed"
+        );
+        assert!(
+            matches!(channel, Ok(Ok(()))),
+            "paired channel cleanup failed"
+        );
+        assert!(rpc.is_ok(), "paired RPC cleanup failed");
     }
 }
 impl Scene {
@@ -713,24 +752,33 @@ async fn media_signal(
 }
 async fn with_scene<F, Fut>(capacity: usize, test: F)
 where
-    F: FnOnce(Scene) -> Fut,
-    Fut: Future<Output = ()>,
+    F: FnOnce(Scene) -> Fut + 'static,
+    Fut: Future<Output = ()> + 'static,
 {
-    with_db(|f| async move {
-        let runtime = Runtime::new(f, capacity).await;
-        let result = AssertUnwindSafe(tokio::time::timeout(
-            Duration::from_secs(32),
-            test(runtime.scene.clone()),
-        ))
-        .catch_unwind()
-        .await;
-        runtime.close().await;
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) => panic!("paired playback exceeded 32 seconds"),
-            Err(panic) => std::panic::resume_unwind(panic),
-        }
-    })
+    with_db_context(
+        None,
+        move |f, slot| {
+            Box::pin(async move {
+                Runtime::initialize(slot, f, capacity).await;
+                let result = AssertUnwindSafe(tokio::time::timeout(
+                    Duration::from_secs(32),
+                    test(slot.as_ref().unwrap().scene.clone()),
+                ))
+                .catch_unwind()
+                .await;
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(_)) => panic!("paired playback exceeded 32 seconds"),
+                    Err(panic) => std::panic::resume_unwind(panic),
+                }
+            })
+        },
+        |slot| async move {
+            if let Some(runtime) = slot {
+                runtime.close().await;
+            }
+        },
+    )
     .await;
 }
 fn submitted(record: &DeliveryRecord, count: u64) {
@@ -1012,3 +1060,9 @@ async fn replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_u
 
 #[path = "duplex_playback/companion.rs"]
 mod companion;
+
+#[path = "duplex_playback/cleanup.rs"]
+mod cleanup;
+
+#[path = "duplex_playback/db_cleanup.rs"]
+mod db_cleanup;
