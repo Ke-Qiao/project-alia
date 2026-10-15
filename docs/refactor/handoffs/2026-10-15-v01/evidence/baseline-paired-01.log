@@ -1,0 +1,26 @@
+
+running 9 tests
+test replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up ... ok
+test held_full_native_queue_keeps_original_pcm_and_control_lane_available ... ok
+test registration_reply_after_fence_never_repopulates_obsolete_channel_binding ... ok
+test control_ack_loss_is_observed_from_original_device_command ... ok
+test held_before_first_start_survives_handshake_idle_and_resumes_one_original_output ... ok
+test held_after_end_preserves_unsubmitted_tail_beyond_media_idle ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=3 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1979 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=44 clock="server_process_monotonic"
+test companion::source_erasure_during_original_tts_prevents_first_media_and_preserves_charge ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=4 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1956 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=51 clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=2 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1968 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=38 clock="server_process_monotonic"
+test companion::scanner_commits_one_fixed_invitation_through_real_voice_and_paired_playback ... ok
+test companion::applied_resume_lost_ack_and_new_local_speech_handoff_to_h2_on_original_output ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.22s
+

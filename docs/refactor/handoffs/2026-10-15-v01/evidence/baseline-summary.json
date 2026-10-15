@@ -1,0 +1,172 @@
+{
+  "at": "2026-10-14T17:08:57.292003+00:00",
+  "runs": [
+    {
+      "name": "baseline-paired-01",
+      "record": {
+        "phase": "baseline",
+        "command": [
+          "run/validation-20261015-v01/baseline-duplex-playback",
+          "--nocapture"
+        ],
+        "started_at": "2026-10-14T17:06:05.422961+00:00",
+        "elapsed_seconds": 14.4,
+        "exit_code": 0,
+        "source_manifest_sha256": "2258c3ecfac2bc19caf2ea2bf3b76f8c640b1d8da18833e99da0a4e8d39e2535",
+        "source_drift": [],
+        "test_parallelism": "default",
+        "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+        "build_jobs": 2,
+        "binary_sha256": "f1c4756de285b49cf183acba7d4db6069ad7d012dd33e98c09e6f8ebc183539e",
+        "binary_unchanged": true
+      },
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "original_admission_remaining_ms": [
+        1979,
+        1956,
+        1968
+      ],
+      "anonymous_phase_samples": [
+        [
+          "voice_snapshot",
+          "3",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ],
+        [
+          "voice_snapshot",
+          "4",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ],
+        [
+          "voice_snapshot",
+          "2",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ]
+      ],
+      "anonymous_admission_samples": [
+        [
+          "0",
+          "fresh",
+          "44"
+        ],
+        [
+          "0",
+          "fresh",
+          "51"
+        ],
+        [
+          "0",
+          "fresh",
+          "38"
+        ]
+      ]
+    },
+    {
+      "name": "baseline-paired-02",
+      "record": {
+        "phase": "baseline",
+        "command": [
+          "run/validation-20261015-v01/baseline-duplex-playback",
+          "--nocapture"
+        ],
+        "started_at": "2026-10-14T17:06:34.289321+00:00",
+        "elapsed_seconds": 13.28,
+        "exit_code": 0,
+        "source_manifest_sha256": "2258c3ecfac2bc19caf2ea2bf3b76f8c640b1d8da18833e99da0a4e8d39e2535",
+        "source_drift": [],
+        "test_parallelism": "default",
+        "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+        "build_jobs": 2,
+        "binary_sha256": "f1c4756de285b49cf183acba7d4db6069ad7d012dd33e98c09e6f8ebc183539e",
+        "binary_unchanged": true
+      },
+      "counts": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "original_admission_remaining_ms": [
+        1956,
+        1959,
+        1957
+      ],
+      "anonymous_phase_samples": [
+        [
+          "voice_snapshot",
+          "8",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ],
+        [
+          "voice_snapshot",
+          "4",
+          "true"
+        ],
+        [
+          "voice_snapshot",
+          "4",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ],
+        [
+          "freeze_intent",
+          "1",
+          "true"
+        ]
+      ],
+      "anonymous_admission_samples": [
+        [
+          "0",
+          "fresh",
+          "50"
+        ],
+        [
+          "0",
+          "fresh",
+          "45"
+        ],
+        [
+          "0",
+          "fresh",
+          "45"
+        ]
+      ]
+    }
+  ],
+  "unique_tests": 9,
+  "executions": 18,
+  "reproduced": false,
+  "v01_status": "open",
+  "limits": [
+    "Default libtest threads, existing CASES=3 admission unchanged",
+    "Anonymous concurrent phase samples are not assigned to scenario identities",
+    "Two current workspace binary batches do not recreate missing original V3 failure conditions"
+  ]
+}

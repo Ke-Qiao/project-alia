@@ -1,0 +1,163 @@
+{
+  "recorded_at": "2026-10-15T06:43:43.630775+00:00",
+  "files": [
+    {
+      "path": "evidence/baseline-binary.json",
+      "bytes": 1030,
+      "sha256": "ab672e37f15bbf20206e83e38edb4fcca0fa24868dc7702430f76faed561bda7",
+      "original": "run/validation-20261015-v01/baseline-binary.json"
+    },
+    {
+      "path": "evidence/baseline-build.json",
+      "bytes": 596,
+      "sha256": "81a14d589c033979f698e09f735cb3b6e2a82edc3f43b9e8c3cd91f5692aed57",
+      "original": "run/validation-20261015-v01/baseline-build.json"
+    },
+    {
+      "path": "evidence/baseline-build.log",
+      "bytes": 444182,
+      "sha256": "ce425bfb05d7d2f4958313d795caab1772c97b9332702c90d56de88c4ddc93b7",
+      "original": "run/validation-20261015-v01/baseline-build.log"
+    },
+    {
+      "path": "evidence/baseline-paired-01.json",
+      "bytes": 613,
+      "sha256": "a913724fc889c32b46735e318568109469479b2342ba56c3304f1752fa5e3408",
+      "original": "run/validation-20261015-v01/baseline-paired-01.json"
+    },
+    {
+      "path": "evidence/baseline-paired-01.log",
+      "bytes": 2751,
+      "sha256": "ad53e9124f3048fe1d6fb5edf18fcee5f01b1afffacd1422586aadb3e00b3384",
+      "original": "run/validation-20261015-v01/baseline-paired-01.log"
+    },
+    {
+      "path": "evidence/baseline-paired-02.json",
+      "bytes": 614,
+      "sha256": "87ad165cded97217345a29ff3f0853e3db780628a99fec091aaba061ad2ad666",
+      "original": "run/validation-20261015-v01/baseline-paired-02.json"
+    },
+    {
+      "path": "evidence/baseline-paired-02.log",
+      "bytes": 2751,
+      "sha256": "c9e4cc3fccaf2dd491a60aa50c391906e0b32777a23413242b2de00d4282139f",
+      "original": "run/validation-20261015-v01/baseline-paired-02.log"
+    },
+    {
+      "path": "evidence/baseline-resources.json",
+      "bytes": 608,
+      "sha256": "0ade572fc530fa149d401b3e331ca1b907f547b44ea3d18997295a99795334ae",
+      "original": "run/validation-20261015-v01/baseline-resources.json"
+    },
+    {
+      "path": "evidence/baseline-source-manifest.json",
+      "bytes": 123175,
+      "sha256": "2258c3ecfac2bc19caf2ea2bf3b76f8c640b1d8da18833e99da0a4e8d39e2535",
+      "original": "run/validation-20261015-v01/baseline-source-manifest.json"
+    },
+    {
+      "path": "evidence/baseline-summary.json",
+      "bytes": 3900,
+      "sha256": "f0a28fd1f5e0eee6e20371079e90385c25a23cdaf6374736020eb937b7b0e5d2",
+      "original": "run/validation-20261015-v01/baseline-summary.json"
+    },
+    {
+      "path": "evidence/cleanup.json",
+      "bytes": 2084,
+      "sha256": "c4788fb4010e4c7796b6926f339d63561b28a9a8866be026a508502faa132a90",
+      "original": "run/validation-20261015-v01/cleanup.json"
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "bytes": 1597,
+      "sha256": "7ecbfd673d90e6a14de62a09f1b226ff944e76d4bba18f6f27e34490ba758d71",
+      "original": "run/validation-20261015-v01/cleanup.py"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "bytes": 290,
+      "sha256": "24d1ba5c3be0993425471894e1dcfe07890b17566353e4a8956ed982001d75e5",
+      "original": "run/validation-20261015-v01/commit-verification.json"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "bytes": 816,
+      "sha256": "824242a3eb90f424eda394a9eac8959c140cf4b1d8a2cd7652c8260849f8b85b",
+      "original": "run/validation-20261015-v01/database-create.json"
+    },
+    {
+      "path": "evidence/environment.json",
+      "bytes": 376,
+      "sha256": "ac1dcf987dd34a10dca015b39614fc2b128a4b2c5aa475f8678f27f993569452",
+      "original": "run/validation-20261015-v01/environment.json"
+    },
+    {
+      "path": "evidence/final-binary.json",
+      "bytes": 529,
+      "sha256": "371d58c2310a1cf7a953f2539700a9f9aa5a3a6e470dc9268cb29450a4034b99",
+      "original": "run/validation-20261015-v01/final-binary.json"
+    },
+    {
+      "path": "evidence/final-resources.json",
+      "bytes": 1389,
+      "sha256": "01ea4156f945f1c5e6a7e834bdd38dd7284ca1e4742681eb18df043a45f11909",
+      "original": "run/validation-20261015-v01/final-resources.json"
+    },
+    {
+      "path": "evidence/final-source-manifest.json",
+      "bytes": 123175,
+      "sha256": "27d16d5b28bc4b0dcc60a92b2522d72a330fb56e2da9a1ace2483835ad769093",
+      "original": "run/validation-20261015-v01/final-source-manifest.json"
+    },
+    {
+      "path": "evidence/final-workspace.json",
+      "bytes": 570,
+      "sha256": "10372217c0a1cf7cdc420b4a8c260a0ddc5ca5542b24140b8dc88252f6bb41c3",
+      "original": "run/validation-20261015-v01/final-workspace.json"
+    },
+    {
+      "path": "evidence/final-workspace.log",
+      "bytes": 136605,
+      "sha256": "c5f9875af42d93dd968ff32a03f29a25c67f66a6e518912dd287c153cbdd1cde",
+      "original": "run/validation-20261015-v01/final-workspace.log"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "bytes": 1155,
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34",
+      "original": "run/validation-20261015-v01/freeze-source.py"
+    },
+    {
+      "path": "evidence/recovery-verification.json",
+      "bytes": 615,
+      "sha256": "7465be6e251a69c8c9c77984fc6690a880a7798d311d364dbbc0d5f9109ad2ba",
+      "original": "run/validation-20261015-v01/recovery-verification.json"
+    },
+    {
+      "path": "evidence/summarize.py",
+      "bytes": 3553,
+      "sha256": "a61664b94c834be520c2aca2746ca49026c3d6451153032904bc3e17cb6663e4",
+      "original": "run/validation-20261015-v01/summarize.py"
+    },
+    {
+      "path": "evidence/validate.py",
+      "bytes": 2630,
+      "sha256": "d433704615e017c4e8eca2e2f6d4faa82cbde64623f777c07d3355c794ad5e54",
+      "original": "run/validation-20261015-v01/validate.py"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "bytes": 19122,
+      "sha256": "082453c720ea604fb18e6876d151d06bc0fe0986c3162cbe2e0b774851650e64",
+      "original": "run/validation-20261015-v01/validation-summary.json"
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "bytes": 1626,
+      "sha256": "7b9c2c2dc3025931e3bb436523824b122205348de24789e0d2b4274afff72dd3",
+      "original": "run/validation-20261015-v01/verify-commit.py"
+    }
+  ],
+  "excluded": "Two retained executable binaries remain in ignored run/validation-20261015-v01 with hashed receipts; no binary copied to Git",
+  "scripts": "Archived evidence scripts preserve their original run-directory assumptions; inspect before reuse, not portable launchers"
+}

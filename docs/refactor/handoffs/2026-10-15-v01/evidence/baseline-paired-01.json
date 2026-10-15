@@ -1,0 +1,17 @@
+{
+  "phase": "baseline",
+  "command": [
+    "run/validation-20261015-v01/baseline-duplex-playback",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-14T17:06:05.422961+00:00",
+  "elapsed_seconds": 14.4,
+  "exit_code": 0,
+  "source_manifest_sha256": "2258c3ecfac2bc19caf2ea2bf3b76f8c640b1d8da18833e99da0a4e8d39e2535",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+  "build_jobs": 2,
+  "binary_sha256": "f1c4756de285b49cf183acba7d4db6069ad7d012dd33e98c09e6f8ebc183539e",
+  "binary_unchanged": true
+}

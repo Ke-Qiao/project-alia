@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-14T17:08:59.740765+00:00",
+  "command": [
+    "docker",
+    "exec",
+    "alia-v01-20261015-db",
+    "psql",
+    "-U",
+    "alia_test",
+    "-d",
+    "alia_v01_20261015",
+    "-tAc",
+    "SELECT json_build_object('fixture_schemas', (SELECT count(*) FROM information_schema.schemata WHERE schema_name LIKE 'delivery_test_%'), 'other_client_connections', (SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND backend_type='client backend' AND pid<>pg_backend_pid()))"
+  ],
+  "exit_code": 0,
+  "state": {
+    "fixture_schemas": 0,
+    "other_client_connections": 0
+  }
+}

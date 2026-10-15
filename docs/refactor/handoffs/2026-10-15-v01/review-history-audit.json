@@ -1,0 +1,228 @@
+{
+  "observed_at_utc": "2026-10-14T17:07:40.818652+00:00",
+  "method": "Read-only Python stdlib SHA-256 of explicit archived files and bounded named binary candidates; no Cargo/Git/PG/binary execution. Binary paths are mutable build outputs; this snapshot is observation-time identity only.",
+  "historical_artifacts": {
+    "checked": 15,
+    "matched": 15,
+    "files": [
+      {
+        "path": "run/validation-20260928-r04/paired-workspace-binary-v3-result.json",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "8b493adc5925215b32deb31a1a079a3e006d306f085f9aa7c9c2821d5495aa25",
+        "actual_sha256": "8b493adc5925215b32deb31a1a079a3e006d306f085f9aa7c9c2821d5495aa25",
+        "bytes": 604,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20260928-r04/paired-workspace-binary-v3.log",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "f4cdcad29db0f2eee1cfb8d20997254a49d692c4e4c40c52b96c184caa76ef55",
+        "actual_sha256": "f4cdcad29db0f2eee1cfb8d20997254a49d692c4e4c40c52b96c184caa76ef55",
+        "bytes": 900,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20260928-r04/workspace-v3-counts.json",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "a94e960681dec31b5ea2388cb18f20758174110bdf999eb573686342ce5bab27",
+        "actual_sha256": "a94e960681dec31b5ea2388cb18f20758174110bdf999eb573686342ce5bab27",
+        "bytes": 19332,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20260928-r04/workspace-v3-counts.txt",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "62889f82686e36d0df72ddcd99e1971a7a932fe09ec6f17068a756b80602a3f0",
+        "actual_sha256": "62889f82686e36d0df72ddcd99e1971a7a932fe09ec6f17068a756b80602a3f0",
+        "bytes": 4973,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20260928-r04/workspace-v3-result.json",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "f02a4d6bfa6fbc4ea17a0f1c087688fa1a0eae3892049727585c9cb75d80733b",
+        "actual_sha256": "f02a4d6bfa6fbc4ea17a0f1c087688fa1a0eae3892049727585c9cb75d80733b",
+        "bytes": 607,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20260928-r04/workspace-v3.log",
+        "index": "docs/refactor/handoffs/2026-09-28-r04/runtime-evidence-index.json",
+        "expected_sha256": "d9636102ce50b257e0ad57d8dd4aec6944d62a368eb3150002d0c7d4fb51ffde",
+        "actual_sha256": "d9636102ce50b257e0ad57d8dd4aec6944d62a368eb3150002d0c7d4fb51ffde",
+        "bytes": 76376,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/paired-diagnostic-v1-result.json",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "7a66987ca686342b375fd4e30749edaa5bf37e7697819d7ae7e1cdb8028c2570",
+        "actual_sha256": "7a66987ca686342b375fd4e30749edaa5bf37e7697819d7ae7e1cdb8028c2570",
+        "bytes": 603,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/paired-diagnostic-v1.log",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "0e166e80ddfbdb7c9fc353e019125b7d3c067a194db3ca3e7048d36206b4f8da",
+        "actual_sha256": "0e166e80ddfbdb7c9fc353e019125b7d3c067a194db3ca3e7048d36206b4f8da",
+        "bytes": 2751,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/paired-review-v1-binary.json",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "5e50e3523f5d8e881218bce55ac8e1b1caa978196c830ab5181b2819d4da193e",
+        "actual_sha256": "5e50e3523f5d8e881218bce55ac8e1b1caa978196c830ab5181b2819d4da193e",
+        "bytes": 1755,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-01-result.json",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "a3e0fc98295657580a6f0116cd8ff22a538f8843ae0d36100e87602a8ac21806",
+        "actual_sha256": "a3e0fc98295657580a6f0116cd8ff22a538f8843ae0d36100e87602a8ac21806",
+        "bytes": 605,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-01.log",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "49e55f944ac9b897b999b9b2f7754893d80ff024d6261c46449fec2cd60689c6",
+        "actual_sha256": "49e55f944ac9b897b999b9b2f7754893d80ff024d6261c46449fec2cd60689c6",
+        "bytes": 900,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-02-result.json",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "97c0835ec67b85f3a241baa7207673327faded8a03a4b5e1d5e52981b3dd08e8",
+        "actual_sha256": "97c0835ec67b85f3a241baa7207673327faded8a03a4b5e1d5e52981b3dd08e8",
+        "bytes": 605,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-02.log",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "494d96745daee711f21cd892fed8440bc67c96fe5aa57b1889d61a9e4a03c99f",
+        "actual_sha256": "494d96745daee711f21cd892fed8440bc67c96fe5aa57b1889d61a9e4a03c99f",
+        "bytes": 900,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-03-result.json",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "2ae4852aef769a6abf2a804f620ef84e5be36f1b4bdb101e1b42f4bd8c233740",
+        "actual_sha256": "2ae4852aef769a6abf2a804f620ef84e5be36f1b4bdb101e1b42f4bd8c233740",
+        "bytes": 605,
+        "matches": true
+      },
+      {
+        "path": "run/validation-20261004/v01-baseline-03.log",
+        "index": "docs/refactor/handoffs/2026-10-04/runtime-evidence-index.json",
+        "expected_sha256": "abe438bddee927995136b2ea86db3bafbc4b575e46f7bd708ed1e1ad9fe08928",
+        "actual_sha256": "abe438bddee927995136b2ea86db3bafbc4b575e46f7bd708ed1e1ad9fe08928",
+        "bytes": 900,
+        "matches": true
+      }
+    ]
+  },
+  "binary_search": {
+    "scope": "target/debug/deps named duplex_playback executables; integration worktree equivalent; two explicitly retained 10/04 artifacts. No whole-host/backup search.",
+    "expected_original_v3_sha256": "b30c9aa9ac17f9fc8f5ab3b106f7945dad8c76f2cdc983e323170479d6151059",
+    "expected_digest_source": "docs/refactor/handoffs/2026-10-04/runtime.md historical quotation; original 09/28 result records no binary SHA",
+    "checked": 10,
+    "matches": 0,
+    "files": [
+      {
+        "path": "run/validation-20261004/duplex-playback-review-v1",
+        "bytes": 111367904,
+        "sha256": "32a8c0f51c9df30ea343e4f1bc5bc821882f93547515aec23b888051e0dc2a59",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "run/validation-20261004/duplex-playback-v4-retained",
+        "bytes": 107330192,
+        "sha256": "e529ff72ad2e1805040a07291cf152f1625b6c38c9aea4400ba35a801d6fe087",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "run/worktrees/alia-duplex-integration/target/debug/deps/duplex_playback-debfc4d3753dc8c4",
+        "bytes": 62781728,
+        "sha256": "6da051e4f0ead84f9fabbfe0dcc9362a124c15fae0877387d805cecd107b1ec7",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-0c6a1968bf9e5647",
+        "bytes": 108668272,
+        "sha256": "88422c6173494adedf86861d907bd0745193edce414b03d2978497d3f2607774",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-a8401cddf3efdf70",
+        "bytes": 106846544,
+        "sha256": "3cb790a4e601410d43ccfe8a79ab0341fb8ff1d0ccf1856a38b7540a93f301de",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-b2f5fe887b014d60",
+        "bytes": 108583968,
+        "sha256": "e33d9111441555db07e17a3050c1927d083df2f4138837c0eaa1475681a72fb6",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-debfc4d3753dc8c4",
+        "bytes": 63585936,
+        "sha256": "844691bdb43ed6c6205da9a16ff30d72dc21aee9c1cfd6ca39930cbdae848bf7",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-e65e790efe7810e2",
+        "bytes": 109467984,
+        "sha256": "4384319fac0c4b5e99fdab7bdf800fcfd69f97b540f73e84d54498c3bdbe24ba",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-f25f5ef79fc98f53",
+        "bytes": 109011920,
+        "sha256": "f1c4756de285b49cf183acba7d4db6069ad7d012dd33e98c09e6f8ebc183539e",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      },
+      {
+        "path": "target/debug/deps/duplex_playback-f8ee79984e360ef4",
+        "bytes": 64018304,
+        "sha256": "a250a91f7709f4cae61e0a27f8cc08c0faeec8d81a8b76df6806b13c7cc36987",
+        "unchanged_during_hash": true,
+        "matches_historical_v3_sha": false
+      }
+    ]
+  },
+  "source_comparison": {
+    "v3_manifest": "run/validation-20260928-r04/final-source-manifest-v3.json",
+    "v3_manifest_sha256": "b3ff3f99531932bd169d9c73b92cc16d7d6b341e655d37e68b972df3e913897a",
+    "v3_inputs": 633,
+    "v4_manifest": "run/validation-20260928-r04/final-source-manifest-v4.json",
+    "v4_manifest_sha256": "35efd1807b5c2820b3024fc6142bf769ace5973cc13275e0b5649f8bec011a8b",
+    "v4_inputs": 633,
+    "changed": [
+      {
+        "path": "packages/alia-server/tests/duplex_playback/companion.rs",
+        "v3_sha256": "b0ceecdb91429109a5d163e9806c30c121e242dfd95788eee49ab0e05d6f64cb",
+        "v4_sha256": "b26fe00068e0e4c44e3f6b1ebca28ed60ad4be336be9a973847e8536f067b9c2"
+      }
+    ],
+    "verified_v4_archive": "run/validation-20260928-r04/linux-arm64-v4/source",
+    "verified_archive_inputs": 633,
+    "archive_mismatches": []
+  },
+  "conclusion": "Original failing V3 binary is not found in the bounded candidates. Retained V4 and 10/04 diagnostics have distinct verified identities; subsequent current builds cannot be called original V3 or same-source V4 reruns."
+}

@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-14T18:46:04.328313+00:00",
+  "original_path": "target/debug/deps/duplex_playback-f25f5ef79fc98f53",
+  "retained_path": "run/validation-20261015-v01/final-duplex-playback",
+  "sha256": "c26bf833583ad6b9dd8b737d2ddef8414d86ed498b49137d163658d51458fa33",
+  "bytes": 109059760,
+  "captured_after": "final-workspace exit 0",
+  "source_manifest": "final-source-manifest.json",
+  "build_context": "Same --workspace default feature selection as baseline-build; test source changed, not the original baseline binary"
+}

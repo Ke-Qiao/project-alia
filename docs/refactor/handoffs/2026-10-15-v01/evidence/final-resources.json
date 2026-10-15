@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-15T06:41:37.530245+00:00",
+  "task_identity_verified": true,
+  "task_container_running": false,
+  "current_relevant_processes": [],
+  "final_fixture_schemas": null,
+  "final_other_client_connections": null,
+  "collection_boundary": "Shared runtime was stopped before recovery; final immediate-post-test schema/connection snapshot was not retained. Task container is stopped; do not restart database solely to synthesize a post-test snapshot.",
+  "initial_recovery_attempt": "Docker socket absent, orb status Stopped; no SQL executed. After orb start, exact task container remained stopped.",
+  "runtime_recovery": "orb start completed to inspect/remove retained task container; no tests or PostgreSQL restarted",
+  "records": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}} {{.State.Running}}",
+        "64ca33fbf823dd7b0ec9eb71b8f0e12dfe02fc0f30d9656ee2b38d7ebb04c9b9"
+      ],
+      "exit_code": 0,
+      "stdout": "64ca33fbf823dd7b0ec9eb71b8f0e12dfe02fc0f30d9656ee2b38d7ebb04c9b9 v01-20261015 false\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Status}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot Up About a minute\n",
+      "stderr": ""
+    }
+  ]
+}

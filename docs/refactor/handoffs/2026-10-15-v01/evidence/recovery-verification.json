@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-15T06:38:40.823172+00:00",
+  "retained_evidence_reverified": true,
+  "final_inputs_verified": 669,
+  "drift": [],
+  "baseline_to_final_changed_inputs": [
+    "packages/alia-server/tests/duplex_playback/companion.rs"
+  ],
+  "binaries_verified": 2,
+  "cargo_targets": 72,
+  "running_targets": 67,
+  "doc_targets": 5,
+  "totals": {
+    "passed": 1245,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered": 0
+  },
+  "source_manifest_sha256": "27d16d5b28bc4b0dcc60a92b2522d72a330fb56e2da9a1ace2483835ad769093",
+  "rustfmt_exit": 0,
+  "diff_check_exit": 0,
+  "new_test_executions": 0
+}

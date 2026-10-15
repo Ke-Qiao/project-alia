@@ -1,0 +1,33 @@
+{
+  "at": "2026-10-14T17:06:01.016559+00:00",
+  "source_manifest": "baseline-source-manifest.json",
+  "build_record": "baseline-build.json",
+  "build_log_sha256": "ce425bfb05d7d2f4958313d795caab1772c97b9332702c90d56de88c4ddc93b7",
+  "original_path": "/Users/ke-qiao/Developer/project-alia/target/debug/deps/duplex_playback-f25f5ef79fc98f53",
+  "retained_path": "run/validation-20261015-v01/baseline-duplex-playback",
+  "bytes": 109011920,
+  "sha256": "f1c4756de285b49cf183acba7d4db6069ad7d012dd33e98c09e6f8ebc183539e",
+  "features": [
+    "channel-embedded",
+    "default",
+    "embed-openai",
+    "insights",
+    "llm-anthropic",
+    "llm-gemini",
+    "llm-openai",
+    "plugin-home-assistant",
+    "stt-whisper",
+    "tools-http",
+    "tts-sovits",
+    "turn-easy"
+  ],
+  "profile": {
+    "opt_level": "0",
+    "debuginfo": 2,
+    "debug_assertions": true,
+    "overflow_checks": true,
+    "test": true
+  },
+  "test_artifacts": 70,
+  "native_archive_path": "run/worktrees/alia-audio-clock-a33ec67/target/sherpa-onnx-prebuilt"
+}

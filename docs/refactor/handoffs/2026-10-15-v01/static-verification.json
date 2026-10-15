@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-15T06:47:52.118520+00:00",
+  "source_commit": "f81762395de0ad75efa9c1e7afe60f46b620cac1",
+  "remaining_changes_documentation_only": true,
+  "relative_paths_checked": 206,
+  "missing_paths": [],
+  "original_evidence_files_verified": 26,
+  "current_frozen_inputs_verified": 669,
+  "source_manifest_sha256": "27d16d5b28bc4b0dcc60a92b2522d72a330fb56e2da9a1ace2483835ad769093",
+  "diff_check_exit": 0,
+  "paired_batches": 3,
+  "additional_test_runs_during_recovery": 0,
+  "independent_final_review": "no blocking findings; three subagents completed and stopped editing",
+  "diff_check_scope": "source and authored documents; immutable evidence copies excluded",
+  "staged_all_diff_check_exit": 2,
+  "immutable_evidence_whitespace": [
+    "baseline-paired-01.log:26 blank line at EOF",
+    "baseline-paired-02.log:26 blank line at EOF",
+    "final-workspace.log:1762 blank line at EOF",
+    "validate.py:25 trailing whitespace"
+  ],
+  "immutable_evidence_whitespace_reason": "Original evidence bytes and hashes preserved; no runtime source or authored documentation exceptions."
+}
