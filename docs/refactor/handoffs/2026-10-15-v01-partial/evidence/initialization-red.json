@@ -1,0 +1,26 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--test",
+    "duplex_playback",
+    "initialization::",
+    "--offline",
+    "--locked"
+  ],
+  "started_at": "2026-10-15T08:44:44.028836+00:00",
+  "elapsed_seconds": 12.54,
+  "exit_code": 101,
+  "source_manifest_sha256": "8212333794bb5d34b94386269ab6fb9129a0f65cead61e89739d37c43f8fe108",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+  "build_jobs": 2,
+  "process_watchdog_seconds": 900,
+  "process_watchdog_expired": false,
+  "binary_sha256": null,
+  "binary_unchanged": null
+}

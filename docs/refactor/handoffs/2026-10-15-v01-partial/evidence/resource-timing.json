@@ -1,0 +1,8 @@
+{
+  "run_finished_at_approx": "2026-10-15T09:17:31.451417+00:00",
+  "snapshot_at": "2026-10-15T09:17:32.035430+00:00",
+  "seconds_after_exit": 0.584,
+  "same_database_without_restart": true,
+  "schemas": 0,
+  "other_clients": 0
+}

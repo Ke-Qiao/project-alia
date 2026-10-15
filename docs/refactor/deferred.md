@@ -287,3 +287,13 @@ R02保持用户确认的硬件AEC优先与资料门槛，R03继续暂停，R05�
 - [ ] 部分初始化/native锁中毒/paired late-drain/永不退出supervisor未穷举动态注入。已有生产running标志极端panic不复位时应保留owner与DB并报告未完成；不能把进程watchdog终止算作清理成功。本轮不新增生产completion框架。建库迁移与最终SQL teardown仍在原45秒窗口外。
 
 R02硬件AEC优先和资料门槛、R03暂停、R05现场出口、Settings及其它既定延期保持；没有新增依赖、Linux/Pi或真实模型/硬件验证。六轮仍2/6。
+
+
+## 2026-10-15：V01部分初始化与paired late-drain收口
+
+- [x] 本包10/10，源码`dc3ec17`。共享fixture初始化schema遗留经RED确认并修复；真实paired channel SQL失败/等待取消、原SubmissionWrite跨原10秒shutdown后晚排空和首次失败保留均通过。一次workspace1262/0/5、duplex27/0/0，674提交输入匹配；见[恢复检查点](resume-checkpoint-v01-partial-2026-10-15.md)及[四份HANDOFF](handoffs/2026-10-15-v01-partial/README.md)。
+- [x] 退出约0.584秒后同库资源0 schema/0其他client，随后只删除本轮任务容器与卷；原始RED/GREEN/最终证据分别留存。原期限、CASES=3、默认libtest并发、shadow和政策保持。
+- [ ] **历史V01根因仍open**；无新增失败/原artifact/可区分条件时不重复历史测试求绿。本轮已收口具体部分初始化和paired late-drain路径，不能扩大为所有阶段完备。
+- [ ] 任意drop整个初始Fixture::new、所有ServerStartup等待点、native poisoning与supervisor自身panic/后代永不退出仍未穷举。未证明quiescent时保留owner/DB并报告未完成，watchdog不是清理保证；建库/迁移和最终SQL teardown仍在45秒窗口外，不新增生产框架。
+
+R02硬件AEC路线和资料门槛、R03用户暂停、R05现场出口、前端/通用Embedded及其它既定延期保持；没有新增依赖、Linux/Pi、模型或真实硬件验证。六轮仍2/6。

@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-15T09:21:43.824443+00:00",
+  "source_commit": "dc3ec17ff7da45ed02f7d69d3615de69217bd352",
+  "relative_paths_checked": 28,
+  "missing_paths": [],
+  "original_evidence_files_verified": 24,
+  "current_frozen_inputs_verified": 674,
+  "manifest_sha256": "3f15e093efd3863143d5bcff0be0540ac4fb5c306b01b0650b69935abfd24747",
+  "independent_review": "no blocking findings; initialization6/6 drain5/5 review5/5 complete",
+  "source_rustfmt_exit": 0,
+  "source_diff_check_exit": 0,
+  "remaining_changes_documentation_only": true,
+  "staged_all_diff_check_exit": 2,
+  "immutable_evidence_whitespace": [
+    "docs/refactor/handoffs/2026-10-15-v01-partial/evidence/boundary-green.log:14: new blank line at EOF.",
+    "docs/refactor/handoffs/2026-10-15-v01-partial/evidence/final-workspace.log:1779: new blank line at EOF."
+  ],
+  "immutable_evidence_whitespace_reason": "Original log bytes and hashes retained; source and authored documentation have no whitespace exceptions",
+  "authored_documents_diff_check_exit": 0
+}

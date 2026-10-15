@@ -1,0 +1,153 @@
+{
+  "recorded_at": "2026-10-15T09:19:20.260238+00:00",
+  "files": [
+    {
+      "path": "evidence/after-boundary-resources.json",
+      "original": "run/validation-20261015-v01-partial/after-boundary-resources.json",
+      "bytes": 171,
+      "sha256": "c52423e46c634182e7b29eb4145a5bb0e2eb6cb85407081327a42dc56de5cc26"
+    },
+    {
+      "path": "evidence/after-red-resources.json",
+      "original": "run/validation-20261015-v01-partial/after-red-resources.json",
+      "bytes": 171,
+      "sha256": "eff87b64ef95987675d59dd5f92f515f7a05be6b1b72f8ee0cb31e4394adcaa2"
+    },
+    {
+      "path": "evidence/boundary-green.json",
+      "original": "run/validation-20261015-v01-partial/boundary-green.json",
+      "bytes": 745,
+      "sha256": "30a01e7bbec412ea85ae5b0ab0daa046d081a2f9f48ef159d33c1d27435a1b20"
+    },
+    {
+      "path": "evidence/boundary-green.log",
+      "original": "run/validation-20261015-v01-partial/boundary-green.log",
+      "bytes": 929,
+      "sha256": "024c0ab99f76c1a22d639eb160630146d0d92451f6cc4874b28700b3ecfe5f8e"
+    },
+    {
+      "path": "evidence/cleanup.json",
+      "original": "run/validation-20261015-v01-partial/cleanup.json",
+      "bytes": 1767,
+      "sha256": "05c648f65fe2843a4b995abee796ed34b6c67c7e47bded5e49521b063c3126a1"
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "original": "run/validation-20261015-v01-partial/cleanup.py",
+      "bytes": 1357,
+      "sha256": "07a3213a7902142859a3a279d1fcc050d5fe1fe1676b32329c33acb9cab5ce8f"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "original": "run/validation-20261015-v01-partial/commit-verification.json",
+      "bytes": 290,
+      "sha256": "3d0728dfece9c8d1840ad02b53e0b0ceccd95c3aebc85c19336b679f70531416"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "original": "run/validation-20261015-v01-partial/database-create.json",
+      "bytes": 787,
+      "sha256": "74ff9501e210d84b783a330148f6520f0abeea34835aecf2533c497bf5f81e25"
+    },
+    {
+      "path": "evidence/final-resources.json",
+      "original": "run/validation-20261015-v01-partial/final-resources.json",
+      "bytes": 171,
+      "sha256": "790d2ae2dd3c892953377a38ebe76175bd03ede990400a05012e2163fef35fd6"
+    },
+    {
+      "path": "evidence/final-source-manifest.json",
+      "original": "run/validation-20261015-v01-partial/final-source-manifest.json",
+      "bytes": 124137,
+      "sha256": "3f15e093efd3863143d5bcff0be0540ac4fb5c306b01b0650b69935abfd24747"
+    },
+    {
+      "path": "evidence/final-workspace.json",
+      "original": "run/validation-20261015-v01-partial/final-workspace.json",
+      "bytes": 641,
+      "sha256": "d2845883ad58b6b4dabf04b855b687e6f99d4f7963664a10e350fbc6f532d522"
+    },
+    {
+      "path": "evidence/final-workspace.log",
+      "original": "run/validation-20261015-v01-partial/final-workspace.log",
+      "bytes": 138037,
+      "sha256": "92a16c03b29df42ad88f542ec780611572742e58e1bde09e19c70b73989070bf"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "original": "run/validation-20261015-v01-partial/freeze-source.py",
+      "bytes": 1155,
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34"
+    },
+    {
+      "path": "evidence/green-source-manifest.json",
+      "original": "run/validation-20261015-v01-partial/green-source-manifest.json",
+      "bytes": 124137,
+      "sha256": "25bfee8a75f0782b5668194ac9a34c740ff0429ec6239834f3d29e7ed9e043ef"
+    },
+    {
+      "path": "evidence/initialization-red.json",
+      "original": "run/validation-20261015-v01-partial/initialization-red.json",
+      "bytes": 690,
+      "sha256": "4622c735d41923278a6c6e32698df21e3c9a881d0285b7b0a4eead355583b0b5"
+    },
+    {
+      "path": "evidence/initialization-red.log",
+      "original": "run/validation-20261015-v01-partial/initialization-red.log",
+      "bytes": 3340,
+      "sha256": "7aeae25283b043b4e41eadc2128160cc1a18fc5cda5ab0eddfa70a3ebcd1befd"
+    },
+    {
+      "path": "evidence/red-source-manifest.json",
+      "original": "run/validation-20261015-v01-partial/red-source-manifest.json",
+      "bytes": 123750,
+      "sha256": "8212333794bb5d34b94386269ab6fb9129a0f65cead61e89739d37c43f8fe108"
+    },
+    {
+      "path": "evidence/resource-timing.json",
+      "original": "run/validation-20261015-v01-partial/resource-timing.json",
+      "bytes": 230,
+      "sha256": "a3de18b05cbf391a7587495a0ab5c35bcc0703777611e77efd00ae7afd61bcaa"
+    },
+    {
+      "path": "evidence/resources.py",
+      "original": "run/validation-20261015-v01-partial/resources.py",
+      "bytes": 1086,
+      "sha256": "10970e80d12a51b20f9fbe0f95256931e8a065a9c67b511ce555e45256826aad"
+    },
+    {
+      "path": "evidence/run-ledger.json",
+      "original": "run/validation-20261015-v01-partial/run-ledger.json",
+      "bytes": 665,
+      "sha256": "2577f33f423d738d15610752ee9c265d43f3f938335932bf43a98446aaf9220b"
+    },
+    {
+      "path": "evidence/summarize.py",
+      "original": "run/validation-20261015-v01-partial/summarize.py",
+      "bytes": 2714,
+      "sha256": "1c4cc05a4c1efc00d334e4b07e28ef5c91e1ed466d658ac5959006f8db53b516"
+    },
+    {
+      "path": "evidence/validate.py",
+      "original": "run/validation-20261015-v01-partial/validate.py",
+      "bytes": 3152,
+      "sha256": "fb54043a7d29073f4bf0a58bf56b1e6c5e7d49f5ed3894fa862088732469280b"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "original": "run/validation-20261015-v01-partial/validation-summary.json",
+      "bytes": 19123,
+      "sha256": "e8d05bf7f2c21477d4cf8320323bf717925bd60023c901c7e94eed904a2ba491"
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "original": "run/validation-20261015-v01-partial/verify-commit.py",
+      "bytes": 1626,
+      "sha256": "7b9c2c2dc3025931e3bb436523824b122205348de24789e0d2b4274afff72dd3"
+    }
+  ],
+  "notes": [
+    "Original bytes retained; source manifests include per-phase identities; RED and targeted GREEN are not added to final totals.",
+    "Large test binary retained only in ignored run directory; scripts retain original run-directory layout assumptions."
+  ]
+}

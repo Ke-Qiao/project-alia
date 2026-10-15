@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-15T09:14:00.625964+00:00",
+  "base_commit": "af5b35b59c4a6776940651ef131b946fdd5a7ce6",
+  "red_scope": "Original fixture cleanup with per-call checkpoint and three deterministic tests; partial Fixture only exposes the same gap after CREATE",
+  "red": {
+    "passed": 0,
+    "failed": 3,
+    "ignored": 0,
+    "filtered": 21
+  },
+  "targeted_green": {
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 21
+  },
+  "final_scope": "All workspace targets; default libtest concurrency and CASES=3; original deadlines; no new ignored tests",
+  "no_production_or_dependency_changes": true,
+  "no_repeated_historical_v01_batches": true
+}

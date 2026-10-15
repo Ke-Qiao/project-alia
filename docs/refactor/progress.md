@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-15：V01部分初始化与paired late-drain 10/10完成，历史根因仍open。** 源码`dc3ec17`；三项确定性RED确认schema遗留后统一初始化失败清理，补充真实SQL等待取消与原write跨10秒shutdown的迟到排空证据。一次workspace1262/0/5（既有ignored、0filtered）、duplex27/0/0；674提交输入一致。结束后约0.584秒同库PG0/0，任务容器/卷已移除。默认shadow/政策/原期限/并发不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-partial-2026-10-15.md)和[checklist](checklists/v01-partial-2026-10-15.md)继续，以下为历史。
+
 **2026-10-15：V01 外层45秒与失败清理10/10完成，历史根因仍open。** 源码`a73e6e8`；保留RPC原join、部分初始化owner与现有ShutdownHandle，body+cleanup共用原45秒成功截止，过期仍排空并失败，DB回收在owner完成后。workspace1256/0/5（既有ignored），duplex21/0/0，671提交输入匹配；结束后56.106秒PG快照0schema/0client，任务容器/卷已删除。三份分工和Root交接已收口。默认shadow/政策/期限/并发不变，R03暂停，六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-outer-2026-10-15.md)和[checklist](checklists/v01-outer-2026-10-15.md)继续，以下为历史。
 
 **2026-10-15：V01有界调查包10/10，历史根因仍open。** 测试诊断`f817623`；两批原baseline各9/0/0，诊断版workspace1245/0/5（既有ignored），duplex10/0/0。三批未复现，只补失败观测，不改变生产、期限或默认并发；669提交输入匹配。任务PG容器已移除，最终即时连接快照缺失如实保留。恢复从[V01检查点](resume-checkpoint-v01-2026-10-15.md)开始，详见[checklist](checklists/v01-2026-10-15.md)。默认shadow/政策不变，R03暂停、六轮仍2/6。以下为历史。

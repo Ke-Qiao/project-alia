@@ -1,0 +1,14 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.93s
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)
+
+running 6 tests
+test partial_runtime::channel_initialization_sql_error_closes_partial_pair_before_database ... ok
+test partial_runtime::cancelling_channel_initialization_sql_closes_partial_pair_before_database ... ok
+test initialization::work_pool_initialization_panic_removes_created_schema ... ok
+test initialization::policy_sql_failure_removes_schema_and_closes_work_pool ... ok
+test initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool ... ok
+test late_drain::paired_late_drain_joins_original_write_before_database_cleanup_and_keeps_failure ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 11.53s
+

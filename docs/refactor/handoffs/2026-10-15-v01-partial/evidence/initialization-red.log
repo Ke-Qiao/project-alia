@@ -1,0 +1,50 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.85s
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)
+
+running 3 tests
+test initialization::work_pool_initialization_panic_removes_created_schema ... FAILED
+test initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool ... FAILED
+test initialization::policy_sql_failure_removes_schema_and_closes_work_pool ... FAILED
+
+failures:
+
+---- initialization::work_pool_initialization_panic_removes_created_schema stdout ----
+
+thread 'initialization::work_pool_initialization_panic_removes_created_schema' (304536) panicked at packages/alia-server/tests/duplex_playback/initialization.rs:27:49:
+injected work pool initialization failure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'initialization::work_pool_initialization_panic_removes_created_schema' (304536) panicked at packages/alia-server/tests/duplex_playback/initialization.rs:85:5:
+failed initialization left its schema behind
+
+---- initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool stdout ----
+
+thread 'initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool' (304535) panicked at packages/alia-server/tests/delivery_support/mod.rs:72:271:
+called `Result::unwrap()` on an `Err` value: Exec(SqlxError(Database(PgDatabaseError { severity: Error, code: "42703", message: "column \"password_hash\" of relation \"users\" does not exist", detail: None, hint: None, position: Some(Original(33)), where: None, schema: None, table: None, column: None, data_type: None, constraint: None, file: Some("parse_target.c"), line: Some(1065), routine: Some("checkInsertTargets") })))
+
+thread 'initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool' (304535) panicked at packages/alia-server/tests/duplex_playback/initialization.rs:85:5:
+failed initialization left its schema behind
+
+---- initialization::policy_sql_failure_removes_schema_and_closes_work_pool stdout ----
+
+thread 'initialization::policy_sql_failure_removes_schema_and_closes_work_pool' (304534) panicked at packages/alia-server/tests/delivery_support/mod.rs:83:14:
+called `Result::unwrap()` on an `Err` value: Execution Error: error returned from database: column "policy" of relation "context_policy" does not exist
+
+Caused by:
+    0: error returned from database: column "policy" of relation "context_policy" does not exist
+    1: error returned from database: column "policy" of relation "context_policy" does not exist
+    2: column "policy" of relation "context_policy" does not exist
+
+thread 'initialization::policy_sql_failure_removes_schema_and_closes_work_pool' (304534) panicked at packages/alia-server/tests/duplex_playback/initialization.rs:85:5:
+failed initialization left its schema behind
+
+
+failures:
+    initialization::policy_sql_failure_removes_schema_and_closes_work_pool
+    initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool
+    initialization::work_pool_initialization_panic_removes_created_schema
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.32s
+
+error: test failed, to rerun pass `-p alia-server --test duplex_playback`
