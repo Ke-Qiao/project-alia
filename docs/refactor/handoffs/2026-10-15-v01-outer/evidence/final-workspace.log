@@ -1,0 +1,672 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.54s
+     Running unittests src/lib.rs (target/debug/deps/alia_core-e279538a78e015c2)
+
+running 33 tests
+test delivery::tests::input_end_keeps_submission_observable_without_inventing_presentation ... ok
+test playback_control::tests::duplicate_pause_does_not_renew_and_retired_cannot_resume ... ok
+test delivery::tests::cancellation_keeps_the_known_submitted_prefix ... ok
+test delivery::tests::rejects_changed_identity_backend_and_regressed_or_impossible_counts ... ok
+test capture::tests::retained_frame_time_survives_partial_trim_snapshots_and_busy_retries ... ok
+test playback_control::tests::explicit_wait_confirmation_strengthens_same_hold_without_refreshing_deadline ... ok
+test capture::tests::idle_snapshot_requires_semantic_completion_and_preserves_frame_time ... ok
+test capture::tests::continued_speech_extends_the_same_window_and_changes_revision ... ok
+test body::tests::preserves_partial_native_facts_and_rejects_forged_monotonic_receipts ... ok
+test body::tests::rejects_nonfinite_unsafe_and_unbounded_intent_before_any_backend ... ok
+test body::tests::submission_does_not_supply_position_or_cancel_quiescence ... ok
+test capture::tests::gaps_overlong_input_and_bad_frame_sizes_are_rejected ... ok
+test body::tests::approved_animation_identity_binds_exact_bytes_and_rejects_invalid_catalogs ... ok
+test playback_control::tests::initiative_capture_requires_original_clock_and_local_deadline_never_refreshes ... ok
+test playback_control::tests::initiative_local_hold_survives_old_applied_resume_and_transfers_to_next_hold ... ok
+test output_control::tests::initiative_none_preserves_binding_json_and_some_binds_the_original_zero_watermark ... ok
+test playback_control::tests::new_speech_rejects_old_resume_and_rejection_cannot_be_rewritten ... ok
+test playback_control::tests::retained_capture_initialization_and_engineering_hold_limit_are_exact ... ok
+test playback_control::tests::two_reasons_require_the_confirmed_distinct_authorizations ... ok
+test body::tests::legacy_animation_without_content_identity_is_rejected ... ok
+test turn::tests::cancelled_replaced_and_duplicate_evidence_cannot_restart_output ... ok
+test turn::tests::incomplete_and_backchannel_keep_epoch_while_complete_advances_it ... ok
+test playback_control::tests::write_inflight_capture_gap_capacity_and_cancel_do_not_release ... ok
+test turn::tests::new_speech_during_inference_invalidates_the_incomplete_snapshot ... ok
+test turn::tests::wait_advances_epoch_and_invalidates_prior_or_duplicate_evidence ... ok
+test text_delivery::tests::partial_utf8_write_is_a_prefix_not_read_or_complete_evidence ... ok
+test turn::tests::wait_epoch_exhaustion_fails_without_wrapping ... ok
+test output_control::tests::immutable_digest_binds_original_output_and_backend_and_budget ... ok
+test voice::tests::audio_format_and_size_are_validated_before_inference ... ok
+test voice::tests::rejected_frames_do_not_mutate_buffer_or_advance_sequence ... ok
+test voice::tests::utterance_clear_keeps_stream_sequence_and_drops_prior_speech ... ok
+test capture::tests::discarded_pre_roll_times_are_bounded_and_do_not_date_a_later_utterance ... ok
+test capture::tests::continuous_silence_is_bounded_and_cannot_trigger_inference ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/alia_embedded-2158b437de08d101)
+
+running 255 tests
+test binding::state::admission_tests::verified_admission_and_binding_retirement_have_one_order ... ok
+test grpc::playback_service::tests::dropping_receipts_unblocks_and_joins_native_media_admission ... ok
+test grpc::playback_service::tests::control::capture_gap_queue_failure_close_and_replacement_never_revive_old_registration ... ok
+test grpc::playback_service::tests::control::dropped_control_ack_is_observed_without_reapplying_or_renewing ... ok
+test grpc::body_service::tests::forged_target_signature_timestamp_and_binding_retirement_prevent_writes ... ok
+test grpc::playback_service::tests::control::registration_is_exact_observe_unknown_does_not_apply_and_old_contract_cannot_register ... ok
+test grpc::body_service::tests::exact_cancel_before_submit_retires_unaccepted_identity_and_keeps_new_work_available ... ok
+test grpc::body_service::tests::preparation_failure_has_signed_rejection_and_never_gains_a_retry_permission ... ok
+test grpc::body_service::tests::public_status_reachability_and_reconnect_cannot_authorize_unbound_or_foreign_body_control ... ok
+test grpc::playback_service::tests::receipts_never_invent_device_presentation_evidence ... ok
+test grpc::playback_service::tests::control::held_freezes_media_idle_but_preserves_absolute_deadline_and_revocation ... ok
+test grpc::body_service::tests::original_voice_scope_and_exact_old_cancel_cannot_reach_replacement ... ok
+test grpc::playback_service::tests::grpc_rejects_media_after_end_and_revocation_retires_queued_audio ... ok
+test grpc::playback_service::tests::old_contract_is_rejected_before_any_media_admission ... ok
+test grpc::playback_service::tests::retirement::retirement_capacity_never_evicts_entered_writes_and_evicted_is_unknown ... ok
+test grpc::settings_service::cue_files::tests::directory_links_leaf_links_and_hardlinks_cannot_overwrite_config ... ok
+test grpc::settings_service::cue_files::tests::invalid_later_filename_is_rejected_before_any_writes ... ok
+test grpc::settings_service::cue_files::tests::new_uploads_keep_existing_files_and_rollback_a_partial_batch ... ok
+test grpc::settings_service::cue_files::tests::trusted_startup_parent_components_work_without_allowing_upload_traversal ... ok
+test grpc::settings_service::cue_tests::cue_management_rejects_action_only_and_invalid_weights_before_writes ... ok
+test grpc::settings_service::cue_tests::cue_reference_without_data_does_not_create_or_overwrite_files ... ok
+test grpc::body_service::tests::replacement_runtime_boot_rejects_original_control_and_command_without_replaying ... ok
+test grpc::settings_service::cue_tests::cue_upload_cannot_overwrite_a_config_outside_its_audio_directory ... ok
+test grpc::playback_service::tests::control::independent_control_passes_a_full_media_queue_and_retains_original_bytes ... ok
+test grpc::playback_service::tests::control::pause_before_start_preserves_end_tail_and_old_resume_cannot_cross_new_local_speech ... ok
+test grpc::playback_service::tests::retirement::no_native_retirement_fences_late_registration_but_unknown_and_conflicts_fail ... ok
+test grpc::playback_service::tests::precise_fence_ack_waits_for_final_inflight_submission_snapshot ... ok
+test module::audio_evidence::tests::active_snapshot_is_an_observation_not_a_coherent_final_transaction ... ok
+test grpc::playback_service::tests::revocation_while_waiting_for_start_cannot_advance_playback_epoch ... ok
+test grpc::settings_service::cue_tests::cue_upload_persists_paths_under_the_fixed_root_and_slug ... ok
+test module::audio_evidence::tests::closed_snapshot_allows_partial_observation_but_rejects_loss_underflow ... ok
+test module::audio_evidence::tests::invalid_native_sample_stops_observation_and_retains_prior_valid_records ... ok
+test module::audio_evidence::tests::import_export_caps_cancellation_and_writer_failure_are_explicit ... ok
+test module::audio_evidence::tests::observer_cancel_finish_and_drop_release_claim_without_closing_native_owner ... ok
+test module::audio_evidence::tests::native_representation_cannot_change_within_stream_and_silence_cannot_hide_pcm ... ok
+test module::audio_evidence::tests::closed_snapshot_cannot_count_observed_records_or_frames_as_lost ... ok
+test module::audio_evidence::tests::record_sample_and_byte_budgets_stop_explicitly_without_closing_stream ... ok
+test module::audio_evidence::tests::native_dual_stream_round_trip_preserves_bits_clocks_boundaries_and_markers ... ok
+test module::audio_evidence::tests::replay_clock_checks_skip_markers_and_allow_equal_callback_with_negative_sample_origin ... ok
+test module::audio_evidence::tests::replay_preserves_marker_pcm_interleaving_and_resets_on_gaps_without_zero_fill ... ok
+test module::audio_evidence::tests::replay_clock_checks_stay_per_stream_and_ignore_alsa_queue_delay_changes ... ok
+test module::context::audio_reference::tests::another_bus_clone_cannot_steal_the_established_consumers_pcm ... ok
+test module::context::audio_reference::tests::backwards_backend_time_changes_continuity_without_rewinding_frames ... ok
+test module::context::audio_reference::tests::backwards_sample_time_changes_continuity_without_rewinding_frames ... ok
+test module::context::audio_reference::tests::capture_playback_and_restart_have_distinct_clock_and_sample_domains ... ok
+test module::audio_evidence::tests::overflow_and_lost_close_marker_use_only_observed_latest_final_snapshot ... ok
+test module::audio_evidence::tests::reopened_stream_never_inherits_prior_stream_final_state ... ok
+test module::context::audio_reference::tests::contended_reference_consumer_never_blocks_native_producer_or_close ... ok
+test module::context::audio_reference::tests::equal_negative_and_missing_clock_anchors_do_not_invent_gaps ... ok
+test module::context::audio_reference::tests::failed_native_start_closes_the_owner_without_a_started_claim_or_reactivation ... ok
+test module::context::audio_reference::tests::full_reference_queue_and_lost_close_remain_visible_without_later_pcm ... ok
+test module::audio_evidence::tests::historical_pcm_clock_changes_require_replay_reset_without_rejecting_samples ... ok
+test module::context::audio_reference::tests::final_close_snapshot_waits_for_native_owner_and_includes_lost_terminal_marker ... ok
+test module::context::audio_reference::tests::resumed_reference_reports_the_missing_cursor_range_without_inventing_silence ... ok
+test module::cpal_audio::clock::tests::alsa_clock_loss_does_not_create_a_timestamp_or_reset_the_old_origin ... ok
+test module::audio_evidence::tests::write_failure_and_mid_export_cancel_leave_partial_sink_owned_by_caller ... ok
+test module::cpal_audio::clock::tests::capture_conversion_reset_cannot_blend_samples_from_before_a_native_gap ... ok
+test module::context::audio_reference::tests::simultaneous_consumer_claims_have_exactly_one_owner ... ok
+test module::cpal_audio::clock::tests::native_capture_entry_publishes_actual_pcm_in_the_bounded_dual_stream_bus ... ok
+test module::cpal_audio::clock::tests::capture_evidence_split_preserves_one_native_batch_and_clock_offsets ... ok
+test module::cpal_audio::clock::tests::native_capture_keeps_s32_before_conversion_and_nonfinite_float_evidence ... ok
+test module::cpal_audio::clock::tests::playback_batch_clock_regression_downgrades_every_split_block ... ok
+test module::cpal_audio::playback::resampler::tests::end_is_single_use_and_unity_ratio_is_bit_exact ... ok
+test module::cpal_audio::clock::tests::playback_split_offsets_do_not_replace_the_next_native_batch_anchor ... ok
+test module::cpal_audio::clock::tests::split_sample_offset_overflow_keeps_the_available_callback_estimate ... ok
+test module::cpal_audio::playback::tests::alsa_reference_contains_only_accepted_prefix_even_after_cancel_or_missing_timestamp ... ok
+test module::cpal_audio::playback::tests::callback_contention_writes_and_references_silence_without_consuming_media ... ok
+test module::context::audio_reference::tests::concurrent_marker_and_pcm_publications_preserve_queue_sequence_and_final_loss ... ok
+test module::cpal_audio::playback::tests::cancel_waits_for_actual_partial_alsa_result_and_failed_write_settles_zero ... ok
+test module::cpal_audio::playback::tests::cancel_waits_for_inflight_cpal_frame_and_preserves_stereo_alignment ... ok
+test module::cpal_audio::playback::tests::control::confirming_wait_does_not_release_output_or_admit_backchannel ... ok
+test module::cpal_audio::playback::tests::control::cue_only_retirement_proves_original_native_settled_owner_and_retries_cannot_touch_replacement ... ok
+test module::cpal_audio::playback::tests::control::held_atomic_rejection_survives_resume_between_admission_and_buffer_handling ... ok
+test grpc::playback_service::tests::grpc_fence_unblocks_full_media_queue_and_old_fence_cannot_stop_new_epoch ... ok
+test module::cpal_audio::playback::tests::control::hold_settles_entered_stereo_frame_and_keeps_later_same_scope_segment ... ok
+test module::audio_evidence::tests::input_rejects_invalid_schema_identity_format_sample_and_sequence_contracts ... ok
+test module::cpal_audio::playback::tests::control::initiative_capture_before_registration_rejects_without_allocating_a_native_owner ... ok
+test module::cpal_audio::playback::tests::control::initiative_register_then_speech_before_start_retains_original_media_for_cpal_and_alsa ... ok
+test module::cpal_audio::playback::tests::control::local_cue_deadline_cancels_and_joins_a_producer_blocked_by_full_native_queue ... ok
+test module::audio_evidence::tests::json_arrays_are_capped_while_parsing_before_contract_validation ... ok
+test module::cpal_audio::playback::tests::control::local_session_dropped_waiter_keeps_native_write_and_cancel_never_revives_it ... ok
+test module::cpal_audio::playback::tests::control::partial_alsa_submission_is_not_replayed_after_explicit_wait ... ok
+test module::cpal_audio::playback::tests::control::public_session_replays_original_receipts_after_scope_gate_or_backend_retirement ... ok
+test module::cpal_audio::playback::tests::control::ready_cue_precedes_response_registration_without_consuming_remote_identity_or_progress ... ok
+test grpc::playback_service::tests::end_preserves_tail_observation_and_exact_cancel_does_not_touch_fifo_successor ... ok
+test module::cpal_audio::playback::tests::device_failure_wakes_worker_and_rejects_further_media ... ok
+test module::cpal_audio::playback::tests::disconnect_shuts_down_without_waiting_for_the_device_to_drain ... ok
+test module::cpal_audio::playback::tests::disconnect_wakes_an_idle_worker ... ok
+test module::cpal_audio::playback::tests::end_keeps_observation_open_and_precise_cancel_preserves_later_fifo_audio ... ok
+test module::cpal_audio::playback::tests::full_device_buffer_and_full_media_queue_do_not_delay_stop ... ok
+test module::cpal_audio::playback::tests::mixer::cancelling_one_mixed_source_preserves_the_other_and_complete_stereo_frame ... ok
+test module::cpal_audio::playback::tests::mixer::cpal_mixes_voice_and_quiet_cue_limits_peaks_and_references_final_samples ... ok
+test module::cpal_audio::playback::tests::mixer::explicit_hold_then_immediate_resume_never_replays_cue_but_retains_voice_tail ... ok
+test module::cpal_audio::playback::tests::mixer::mixed_alsa_chunk_stops_at_lane_boundary_without_inserting_silence_before_next_block ... ok
+test module::cpal_audio::playback::tests::mixer::mixed_alsa_short_write_settles_both_original_prefixes_and_references_only_accepted_mix ... ok
+test module::cpal_audio::playback::tests::control::hold_control_bypasses_full_media_queue_and_blocks_conversion_until_resume ... ok
+test module::cpal_audio::playback::tests::native_float_reference_preserves_the_actual_written_float_values ... ok
+test module::cpal_audio::playback::tests::offline_evidence::cancelling_or_dropping_observer_leaves_actual_playback_owner_and_pending_pcm_live ... ok
+test module::cpal_audio::playback::tests::offline_evidence::capture_mix_exact_cancel_and_single_observer_round_trip_the_actual_pcm ... ok
+test module::cpal_audio::playback::tests::offline_evidence::explicit_hold_records_real_silence_and_resume_retains_only_voice_tail ... ok
+test module::cpal_audio::playback::tests::control::held_reference_is_actual_zero_and_resume_keeps_resample_gain_and_quantization ... ok
+test module::cpal_audio::playback::tests::partial_alsa_writes_count_complete_frames_and_never_count_underrun_silence ... ok
+test module::cpal_audio::playback::tests::receiver_failure_releases_a_producer_when_the_queue_is_full ... ok
+test module::cpal_audio::playback::tests::reference_blocks_are_frame_aligned_bounded_and_keep_native_clock_offsets ... ok
+test module::cpal_audio::playback::tests::control::hold_wakes_an_already_idle_worker_and_expires_with_no_media_or_waiter ... ok
+test module::cpal_audio::playback::tests::repeated_stop_coalesces_without_a_control_backlog ... ok
+test module::cpal_audio::playback::tests::restarting_a_worker_never_reuses_a_token_or_invalidates_it_from_an_old_drop ... ok
+test module::cpal_audio::playback::tests::scoped_ingress_never_initializes_or_resurrects_native_audio ... ok
+test module::cpal_audio::playback::tests::control::retained_source_and_rendered_bytes_are_bounded_even_when_count_capacity_is_large ... ok
+test module::cpal_audio::playback::tests::software_mute_and_callback_zero_fill_are_actual_samples_with_distinct_content ... ok
+test module::cpal_audio::playback::tests::scoped_media_waiting_for_capacity_cannot_revive_after_stop ... ok
+test module::cpal_audio::playback::tests::stop_invalidates_rendered_audio_and_a_block_already_in_flight ... ok
+test module::cpal_audio::playback::tests::stop_discards_queued_media_and_allows_new_playback ... ok
+test module::cpal_audio::playback::tests::stop_retires_the_remainder_of_a_partly_consumed_clip ... ok
+test module::cpal_audio::playback::tests::submillisecond_device_tail_is_not_idle ... ok
+test module::cpal_audio::playback::tests::unaligned_callback_never_leaves_a_partially_submitted_media_frame ... ok
+test module::discovery::tests::builds_nmcli_wifi_connect_args_without_shell_interpolation ... ok
+test module::cpal_audio::playback::tests::offline_evidence::producer_overflow_lost_close_and_reopen_keep_missing_audio_and_old_final_state_unknown ... ok
+test module::discovery::tests::parses_network_provisioning_payload ... ok
+test module::discovery::tests::rejects_invalid_network_provisioning_payloads ... ok
+test module::discovery::tests::mdns_and_ble_metadata_use_the_bound_runtime_port ... ok
+test module::motion::assets::tests::guarded_temporary_fifo_is_rejected_as_non_regular ... ok
+test module::motion::assets::tests::opened_file_bytes_are_verified_without_reopening_the_replaced_name ... ok
+test module::motion::assets::tests::opened_directory_remains_anchored_when_its_path_is_replaced ... ok
+test module::motion::inspection::tests::approved_animation_verifies_original_pin_and_production_frame_parser ... ok
+test module::motion::assets::tests::symlink_replacement_is_rejected_and_regular_fd_is_nonblocking_and_cloexec ... ok
+test module::motion::inspection::tests::calibration_and_asset_special_files_are_rejected_before_reading ... ok
+test module::motion::inspection::tests::malformed_dimensions_center_pwm_and_confirmation_are_rejected_offline ... ok
+test module::motion::inspection::tests::missing_unconfirmed_calibration_reports_unchecked_without_creating_files ... ok
+test module::motion::neck_mapper::tests::maps_identity_matrix_like_python_rbf ... ok
+test module::motion::inspection::tests::valid_matrix_is_checked_without_claiming_calibration_or_opening_native_device ... ok
+test module::motion::plan::tests::approved_invalid_utf8_is_not_parsed_as_an_animation ... ok
+test module::motion::plan::tests::face_coordinates_must_be_finite_and_inside_the_image ... ok
+test module::motion::plan::tests::local_catalog_must_match_every_signed_asset_field ... ok
+test module::motion::plan::tests::exact_maximum_file_is_accepted_but_appended_or_truncated_bytes_are_rejected ... ok
+test module::motion::plan::tests::prepared_animation_is_immutable_after_the_file_is_replaced ... ok
+test module::motion::plan::tests::preserves_animation_cadence_and_complete_tail_instead_of_stretching_to_deadline ... ok
+test module::cpal_audio::playback::tests::control::owned_worker_expires_hold_without_a_waiter_and_rejects_late_same_scope_start ... ok
+test grpc::playback_service::tests::heartbeats_cannot_extend_absolute_observation_deadline ... ok
+test module::motion::plan::tests::unchanged_signed_animation_cannot_select_replaced_file_contents ... ok
+test module::motion::plan::tests::rejects_symlink_escape_and_non_regular_animation_files ... ok
+test module::motion::plan::tests::validates_every_animation_frame_before_returning_any_plan ... ok
+test module::motion::plan::tests::rejects_animation_file_size_frame_count_loops_and_duration_overflow ... ok
+test module::motion::runtime::tests::confirmed_calibration_still_requires_matching_dimensions_and_valid_center ... ok
+test module::motion::runtime::tests::confirmed_startup_waits_for_one_complete_center_submission_before_admission ... ok
+test module::cpal_audio::playback::tests::reference_matches_post_resample_gain_and_native_i8_quantization ... ok
+test grpc::body_service::tests::approved_animation_tampering_rejects_new_work_and_preserves_original_receipt ... ok
+test module::motion::runtime::tests::absent_old_lease_receipt_cannot_be_called_rejected_after_it_already_executed ... ok
+test module::motion::runtime::tests::dropping_library_runtime_seals_admission_and_finishes_its_existing_writer ... ok
+test module::motion::runtime::tests::entire_speed_expansion_is_checked_before_the_first_command_frame ... ok
+test module::motion::runtime::tests::dropping_observer_keeps_the_native_owner_and_current_control_lease ... ok
+test module::motion::runtime::tests::duplicate_identity_reuses_original_receipt_and_changed_intent_is_rejected ... ok
+test module::motion::runtime::tests::dropping_start_waiter_does_not_lose_the_entered_native_initialization_owner ... ok
+test module::motion::runtime::tests::concurrent_submit_and_reject_publish_one_immutable_outcome ... ok
+test module::motion::runtime::tests::invalid_native_configuration_and_calibration_are_rejected_before_backend_construction ... ok
+test module::motion::runtime::tests::face_latest_slot_and_expression_use_one_writer ... ok
+test module::motion::runtime::tests::invalid_or_unknown_lease_commands_cannot_fabricate_rejection_or_consume_current_waterline ... ok
+test module::motion::runtime::tests::native_panic_is_unknown_and_no_replacement_writer_is_spawned ... ok
+test module::motion::runtime::tests::lease_close_and_binding_revocation_hold_after_the_entered_write ... ok
+test module::motion::runtime::tests::partial_startup_never_admits_commands_or_retries_the_center_target ... ok
+test module::motion::runtime::tests::native_partial_failure_preserves_complete_and_uncertain_channels_and_seals_writer ... ok
+test module::motion::runtime::tests::preparation_join_error_does_not_skip_joining_the_native_writer ... ok
+test module::motion::runtime::tests::prepared_approved_animation_cannot_revive_a_retired_identity_or_revoked_lease ... ok
+test module::motion::runtime::tests::proven_rejection_consumes_identity_and_cannot_turn_into_late_submission ... ok
+test module::motion::runtime::tests::preparation_capacity_and_stop_ownership_survive_dropped_rpc_waiters ... ok
+test module::motion::runtime::tests::global_speed_clock_applies_across_consecutive_command_identities ... ok
+test module::motion::runtime::tests::rejected_receipt_eviction_preserves_waterline_and_does_not_allow_a_late_prepared_command ... ok
+test module::motion::runtime::tests::rejection_fences_preparation_that_has_not_yet_returned_to_its_rpc_waiter ... ok
+test module::motion::runtime::tests::queued_cancellation_is_immediately_quiescent_even_when_another_native_call_is_stuck ... ok
+test module::motion::runtime::tests::rejection_must_return_existing_live_and_terminal_facts_without_replacing_them ... ok
+test module::motion::runtime::tests::rollback_before_start_does_not_move_hardware_and_disabled_control_is_unavailable ... ok
+test module::motion::runtime::tests::shutdown_join_error_is_sticky_and_a_completed_writer_handle_is_not_polled_twice ... ok
+test module::motion::runtime::tests::expired_authority_can_prove_unadmitted_identity_without_reviving_write_permission ... ok
+test module::motion::runtime::tests::submitted_receipts_are_monotonic_and_do_not_claim_motor_position ... ok
+test module::motion::runtime::tests::unconfirmed_calibration_startup_does_not_submit_native_targets ... ok
+test module::motion::runtime::tests::unconfirmed_mock_does_not_load_a_matrix_or_advertise_motion ... ok
+test module::motion::runtime::tests::unconfirmed_native_calibration_is_rejected_before_construction_or_start ... ok
+test module::motion::runtime::tests::shutdown_waiter_drop_keeps_join_and_holds_after_entered_write_returns ... ok
+test module::motion::servo::pca_tests::pca_cancellation_after_committed_initialization_blocks_first_target_frame ... ok
+test module::motion::servo::pca_tests::pca_cancellation_after_sleep_restores_original_running_configuration ... ok
+test module::motion::runtime::tests::replacing_control_cannot_overlap_native_output_or_let_old_close_revoke_new_owner ... ok
+test module::motion::servo::pca_tests::pca_cancellation_at_construction_commit_recovers_all_completed_boards ... ok
+test module::motion::servo::pca_tests::pca_cancellation_at_each_initialization_stage_restores_awake_or_sleeping_state ... ok
+test module::motion::servo::pca_tests::pca_initialization_enables_increment_for_real_pwm_burst ... ok
+test module::motion::servo::pca_tests::pca_later_board_init_failure_or_cancellation_restores_every_uncommitted_board ... ok
+test module::motion::servo::pca_tests::pca_failed_or_short_initialization_writes_restore_without_suffix_retries ... ok
+test module::motion::servo::pca_tests::pca_prescale_failure_restores_original_running_configuration ... ok
+test module::motion::servo::pca_tests::pca_later_board_open_failure_restores_prior_boards_in_reverse_order ... ok
+test module::motion::servo::pca_tests::pca_real_pwm_short_write_retains_uncertain_channel_and_never_replays_suffix ... ok
+test module::motion::servo::pca_tests::pca_prior_board_recovery_failure_does_not_abandon_remaining_board_recovery ... ok
+test module::motion::servo::pca_tests::pca_snapshot_read_failure_and_external_clock_rejection_change_no_registers ... ok
+test module::motion::runtime::tests::voice_epoch_fence_preserves_old_checkpoint_without_cancelling_new_epoch ... ok
+test module::motion::servo::tests::deferred_backend_does_not_open_hardware_until_owned_submission ... ok
+test module::motion::servo::tests::formats_servo_frame_serial_command_as_deci_degrees ... ok
+test module::motion::servo::tests::i2c_authorization_is_checked_before_each_channel ... ok
+test module::motion::servo::tests::i2c_channel_failure_distinguishes_prior_channels_from_the_uncertain_channel ... ok
+test module::motion::servo::tests::i2c_short_transaction_is_never_retried_as_a_suffix_register_write ... ok
+test module::motion::servo::tests::invalid_target_is_rejected_before_any_native_submission ... ok
+test module::motion::servo::tests::serial_cancellation_is_checked_before_every_short_write_segment ... ok
+test module::motion::servo::tests::serial_full_host_write_remains_a_fact_after_flush_failure ... ok
+test module::motion::servo::tests::serial_partial_failure_has_uncertain_channels_and_does_not_retry ... ok
+test module::motion::servo::tests::serial_short_writes_keep_exact_byte_prefix_without_replaying_frames ... ok
+test module::playback_session::submission::tests::source_prefix_mapping_is_monotonic_across_rate_ratios_and_partial_submissions ... ok
+test module::motion::servo::pca_tests::pca_success_preserves_address_modes_and_keeps_ai_through_sleep_and_restart ... ok
+test module::playback_session::tests::hardware_stop_failure_never_leaves_a_stale_scope_admissible ... ok
+test module::playback_session::tests::newer_epoch_fences_queued_audio_and_late_network_fences_are_harmless ... ok
+test module::playback_session::tests::prior_native_and_body_retirement_failures_survive_later_successful_close ... ok
+test module::playback_session::tests::same_epoch_pushes_append_fifo_and_require_end_and_increasing_sequence ... ok
+test module::playback_session::tests::observation_capacity_counts_ended_inputs_until_submission_or_cancel ... ok
+test module::motion::servo::pca_tests::pca_recovery_failures_keep_both_causes_and_unknown_without_new_targets ... ok
+test module::speech::duplex::tests::binding_admission::late_ready_after_same_persisted_binding_reload_is_rejected ... ok
+test module::speech::duplex::tests::binding_admission::late_ready_after_rebind_is_rejected ... ok
+test module::speech::duplex::tests::audio_bus_lag_ends_active_stream_instead_of_hiding_a_gap ... ok
+test module::speech::duplex::tests::binding_admission::late_ready_after_unbind_is_rejected ... ok
+test module::speech::duplex::tests::binding_admission::loopback_late_ready_after_rebind_never_activates ... ok
+test module::speech::duplex::tests::binding_admission::loopback_late_ready_after_unbind_never_activates ... ok
+test module::speech::duplex::tests::binding_admission::loopback_old_evidence_and_disconnect_preserve_replacement_owner ... ok
+test module::speech::duplex::tests::binding_admission::ready_admission_holds_original_binding_until_synchronous_activation_finishes ... ok
+test module::speech::duplex::tests::binding_admission::old_evidence_and_old_guard_cannot_change_new_binding_capture ... ok
+test module::speech::duplex::tests::bounded_pre_roll_and_server_turn_config_survive_runtime_roundtrip ... ok
+test module::speech::duplex::tests::configured_channel_instance_reaches_open_and_auth_metadata_unchanged ... ok
+test module::speech::duplex::tests::captures_during_playback_receives_all_turn_states_and_reconnects ... ok
+test module::speech::duplex::tests::cues::cancellation_before_ready_joins_cue_worker_without_local_playback ... ok
+test module::speech::duplex::tests::cues::local_wake_cue_waits_for_authenticated_ready_and_does_not_gate_capture ... ok
+test module::speech::duplex::tests::full_upload_queue_cancels_and_joins_without_waiting_for_network ... ok
+test module::speech::duplex::tests::initiative::initiative_rejects_identity_epoch_and_watermark_changes_without_fencing ... ok
+test module::speech::duplex::tests::initiative::initiative_requires_negotiation_and_real_capture_watermark ... ok
+test module::speech::duplex::tests::late_old_guard_close_cannot_close_replacement_playback_session ... ok
+test module::speech::duplex::tests::cues::loopback_missing_or_foreign_scope_retires_capture_and_never_replays_wake_cue ... ok
+test module::speech::duplex::tests::native_capture_timing_validates_format_cursor_and_evidence_without_aligning_clocks ... ok
+test module::speech::duplex::tests::native_capture_loss_clears_partial_wake_before_accepting_new_audio ... ok
+test module::speech::duplex::tests::outgoing_waits_for_ready_and_refreshes_without_consuming_capture_sequence ... ok
+test module::speech::duplex::tests::paired_output_decision_validates_epoch_and_never_resumes_from_semantic_evidence ... ok
+test module::speech::duplex::tests::queued_capture_before_wire_ready_fences_resume_and_seeds_later_generation ... ok
+test module::speech::duplex::tests::ready_rejects_previous_version_and_missing_or_excessive_hold_capability ... ok
+test module::speech::duplex::tests::rejects_format_changes_clock_gaps_and_untrusted_server_identity ... ok
+test module::vision::tests::face_update_delta_uses_pixel_distance ... ok
+test module::vision::tests::primary_face_prefers_confident_large_face ... ok
+test module::speech::duplex::tests::native_xrun_or_restart_retires_active_output_before_fresh_wake ... ok
+test module::motion::runtime::tests::expired_authority_cannot_be_renewed_to_revive_an_entered_command ... ok
+test grpc::body_service::tests::signed_body_submission_is_observed_without_position_or_replay ... ok
+test module::cpal_audio::playback::tests::mixer::per_source_resampler_history_survives_interleaved_worker_blocks ... ok
+test module::speech::duplex::tests::binding_changes_close_idle_session_and_completed_playback_tail ... ok
+test module::motion::runtime::tests::queue_and_receipt_cache_are_bounded_and_retired_sequences_cannot_replay ... ok
+test grpc::body_service::tests::token_expiry_cancels_native_plan_without_observer_renewing_it ... ok
+test grpc::playback_service::tests::end_ack_waits_until_input_lease_is_released ... ok
+test module::cpal_audio::playback::tests::worker_blocks_preserve_resampling_phase_and_duration ... ok
+test grpc::playback_service::tests::precise_fence_times_out_without_claiming_native_quiescence ... ok
+test grpc::playback_service::tests::retirement::retirement_rechecks_token_after_original_write_settles ... ok
+test grpc::playback_service::tests::retirement::retirement_after_replacement_waits_original_write_and_preserves_precise_cancel ... ok
+test module::cpal_audio::playback::resampler::tests::impulse_alignment_and_final_impulse_survive_delay_compensation ... ok
+test grpc::playback_service::tests::control::held_keeps_checking_original_push_token_expiry_and_input_disconnect ... ok
+test module::motion::runtime::tests::cancellation_deadline_keeps_native_owner_and_accepts_late_quiescent_checkpoint ... ok
+test module::cpal_audio::playback::resampler::tests::packet_boundaries_preserve_phase_and_tail_for_short_and_long_clips ... ok
+test module::cpal_audio::playback::resampler::tests::sinc_spectral_quality_is_preserved_including_extreme_downsampling ... ok
+
+test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.13s
+
+     Running unittests src/main.rs (target/debug/deps/alia_embedded-eac6256ae76e6b16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/audio.rs (target/debug/deps/audio-dab809ffbf845f69)
+
+running 9 tests
+test applies_saturating_gain ... ok
+test computes_buffer_frames_for_milliseconds ... ok
+test clamps_volume_state ... ok
+test computes_buffered_playback_milliseconds ... ok
+test detects_left_justified_alsa_s32_capture_with_noisy_low_byte ... ok
+test detects_right_justified_alsa_s32_capture ... ok
+test respects_explicit_backend_selection ... ok
+test detects_left_justified_alsa_s32_capture ... ok
+test resolves_explicit_alsa_backend_from_device_name ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/binding.rs (target/debug/deps/binding-2d3aefe3b440e058)
+
+running 1 test
+test persists_binding_state_to_sqlite ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/config.rs (target/debug/deps/config-f475afa00faa82d0)
+
+running 21 tests
+test keeps_config_prefix_when_cwd_is_project_root ... ok
+test has_motion_protection_defaults ... ok
+test has_hmmd_debug_default ... ok
+test has_vad_model_path_default ... ok
+test has_vision_debug_defaults ... ok
+test keeps_runtime_asset_dirs_relative_to_runtime_root ... ok
+test saves_keypair_path_relative_to_config_file ... ok
+test strips_duplicate_config_prefix_when_cwd_is_config_dir ... ok
+test defaults_do_not_enable_recording_or_assume_shared_audio_clock ... ok
+test removed_voice_and_mixer_selectors_are_rejected_instead_of_ignored ... ok
+test obsolete_source_wav_update_preserves_memory_and_disk ... ok
+test obsolete_source_wav_recorder_configuration_is_rejected ... ok
+test shipped_embedded_example_loads_through_the_runtime_loader ... ok
+test runtime_paths_roundtrip_relative_to_config_directory_and_module_selection_persists ... ok
+test invalid_voice_instance_ids_do_not_replace_runtime_settings ... ok
+test removed_motion_json_options_do_not_replace_or_persist_runtime_settings ... ok
+test cue_upload_directory_uses_the_resolved_startup_snapshot ... ok
+test removed_motion_reset_and_soft_start_options_are_rejected_instead_of_ignored ... ok
+test remote_settings_cannot_create_replace_or_clear_the_local_animation_catalog ... ok
+test remote_cue_directory_changes_preserve_memory_disk_and_startup_owner ... ok
+test local_animation_catalog_roundtrips_and_invalid_catalogs_are_rejected_before_save ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/direct_response.rs (target/debug/deps/direct_response-ef2b30dca870e876)
+
+running 8 tests
+test ignores_action_only_rule_without_audio ... ok
+test ignores_keyword_only_rule_without_audio_or_action ... ok
+test empty_configuration_does_not_invent_cancel_controls ... ok
+test ignores_audio_variants_without_valid_path_or_weight ... ok
+test matches_normalized_keyword ... ok
+test supports_weighted_audio_variants ... ok
+test configured_cue_alias_resolves_only_its_audio_metadata ... ok
+test resolves_named_response_by_slug ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/discovery.rs (target/debug/deps/discovery-bb4daa15c95b61d5)
+
+running 2 tests
+test normalizes_mdns_service_type ... ok
+test builds_compact_ble_payload ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/identity.rs (target/debug/deps/identity-43e852c0c6208730)
+
+running 1 test
+test round_trips_device_keypair ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/preflight.rs (target/debug/deps/preflight-7f1f53e388ebc17a)
+
+running 5 tests
+test check_precedes_runtime_and_kws_and_preserves_files_and_key_permissions ... ok
+test staging_profile_checks_without_creating_runtime_directories ... ok
+test symlink_directory_and_fifo_inputs_are_rejected_before_opening ... ok
+test help_and_invalid_arguments_never_enter_normal_startup ... ok
+test missing_invalid_obsolete_and_oversized_configs_fail_without_writes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+
+     Running tests/runtime.rs (target/debug/deps/runtime-0a568da7e9a12bc0)
+
+running 9 tests
+test occupied_listener_fails_before_resources_or_modules_are_initialized ... ok
+test partially_started_worker_is_joined_before_failed_build_returns ... ok
+test factory_and_partial_init_failure_roll_back_in_reverse_order ... ok
+test cancellation_during_discovery_publication_rolls_back_started_modules ... ok
+test unimplemented_modules_are_errors_but_explicit_disable_is_valid ... ok
+test microphone_start_and_service_setup_errors_are_not_degraded_success ... ok
+test independent_instances_use_config_relative_state_and_actual_discovery_ports ... ok
+test cancellation_and_dropped_build_future_finish_partial_init_cleanup ... ok
+test blocking_native_stop_has_bounded_return_and_retains_waitable_completion ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/sensors.rs (target/debug/deps/sensors-301a95faa20d4d00)
+
+running 5 tests
+test parses_hmmd_report_payload_presence_and_distance ... ok
+test parses_hmmd_binary_report_frame_from_serial_buffer ... ok
+test parses_hmmd_ascii_fallback_lines ... ok
+test registry_rejects_unknown_sensor_reads ... ok
+test registry_lists_reads_and_invokes_modular_sensor_provider ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/speech.rs (target/debug/deps/speech-304e67a2122cec4a)
+
+running 5 tests
+test derives_voice_endpoint_from_bound_server_endpoint ... ok
+test cue_wav_downmixes_stereo_by_mean_without_clipping ... ok
+test cue_wav_rejects_oversized_file_before_decoding ... ok
+test reads_pcm16_wav ... ok
+test cue_wav_rejects_invalid_format_and_unbounded_duration ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/storage.rs (target/debug/deps/storage-6715fb5a2acb4148)
+
+running 9 tests
+test rejects_direct_response_records_without_valid_audio ... ok
+test round_trips_json_state ... ok
+test loads_direct_response_rules ... ok
+test imports_direct_response_bundle_and_removes_config ... ok
+test rejects_action_only_bundle_and_keeps_import_source ... ok
+test upserts_and_deletes_direct_response_rules ... ok
+test rejects_legacy_schema_without_rewriting_stored_audio ... ok
+test scans_direct_response_alias_roots ... ok
+test updates_existing_direct_response_slug_and_removes_config ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/alia_proto-ffad5122e064fba8)
+
+running 5 tests
+test output_control::tests::capabilities_and_unknown_enums_fail_closed ... ok
+test output_control::tests::retirement_requires_exact_owner_and_explicit_settled_or_no_native_evidence ... ok
+test output_control::tests::initiative_binding_requires_exact_capability_and_local_hold_survives_codec ... ok
+test output_control::tests::receipt_distinguishes_original_outcome_from_current_retirement ... ok
+test output_control::tests::all_commands_roundtrip_with_one_canonical_intent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/alia_server-5e5a7edaca97f77f)
+
+running 377 tests
+test adapters::easy_turn::tests::rejects_invalid_config_before_starting_work ... ok
+test api::skills::tests::skill_change_errors_preserve_database_and_internal_responses ... ok
+test api::skills::tests::update_skill_request_rejects_legacy_tools_field ... ok
+test api::skills::tests::create_skill_request_rejects_legacy_tools_field ... ok
+test bootstrap::setup::tests::cancelled_setup_does_not_bind_or_read_terminal ... ok
+test api::skills::tests::create_skill_request_accepts_preferred_tools ... ok
+test api::deliveries::tests::unconfirmed_database_errors_never_expose_private_diagnostics_or_advise_replay ... ok
+test bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test bootstrap::setup::tests::unauthenticated_setup_listener_is_loopback_only ... ok
+test bootstrap::registry::tests::total_deadline_keeps_finished_results_and_releases_every_running_probe ... ok
+test bootstrap::registry::tests::concurrency_limit_also_bounds_queued_checks_by_the_original_deadline ... ok
+test channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test bootstrap::registry::tests::stopping_releases_pending_checks_and_rejects_future_probe_admission ... ok
+test bootstrap::registry::tests::busy_requests_do_not_queue_and_dropped_callers_release_admission ... ok
+test api::channels::tests::rejected_restart_request_does_not_poison_runtime_shutdown ... ok
+test channels::cli::tests::output_without_a_running_worker_fails_explicitly ... ok
+test api::channels::tests::dropped_http_receiver_does_not_hide_restart_rollback_failure ... ok
+test channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal ... ignored, requires a real PTY; run with --ignored --nocapture --test-threads=1
+test channels::cli::text::tests::old_exact_cancel_cannot_close_a_new_text_writer ... ok
+test api::effects::tests::database_errors_are_sanitized_and_invalid_json_uses_the_machine_error_envelope ... ok
+test bootstrap::registry::tests::aliases_share_one_probe_but_same_names_do_not_merge_distinct_instances ... ok
+test bootstrap::builder::llm_tests::configured_roles_share_one_init_and_cleanup_owner_but_overrides_do_not ... ok
+test channels::cli::text::tests::failed_durable_offer_and_foreign_identity_never_reach_native_source_write ... ok
+test channels::cli::text::tests::model_terminal_control_sequences_are_rejected_before_native_write ... ok
+test bootstrap::factory::tests::adapters_require_explicit_valid_selection ... ok
+test channels::embedded::body::tests::animation_without_an_operator_approved_catalog_is_rejected ... ok
+test adapters::easy_turn::tests::sends_valid_pcm_and_checks_correlated_model_observation ... ok
+test adapters::easy_turn::tests::cancels_in_flight_request_and_releases_local_capacity ... ok
+test channels::embedded::body::tests::animation_pin_is_resolved_only_from_the_approved_catalog ... ok
+test adapters::easy_turn::tests::rejects_late_generation_and_unknown_state ... ok
+test bootstrap::setup::tests::cancellation_rejects_an_accepted_save_whose_body_finishes_during_drain ... ok
+test channels::embedded::body::tests::missing_trusted_pin_rejects_raw_body_submission_before_ledger_or_control ... ok
+test channels::embedded::body::tests::a_known_durable_identity_cannot_become_fresh_when_its_row_disappears ... ok
+test channels::cli::text::tests::full_text_requires_end_and_stdout_failure_keeps_partial_utf8_fact ... ok
+test channels::embedded::body::tests::original_response_record_is_restored_without_opening_control_or_resubmitting ... ok
+test channels::embedded::body::tests::lost_submit_ack_is_unknown_and_exact_cancel_never_replays ... ok
+test channels::cli::tests::cancelled_stop_waiter_retains_real_blocking_worker_until_join ... ok
+test channels::embedded::body::tests::typed_motion_mapping_rejects_implicit_targets_nonfinite_and_unsafe_animation_names ... ok
+test channels::embedded::channel::body_pin_tests::body_pin_is_optional_but_partial_malformed_and_wrong_length_pins_are_rejected ... ok
+test channels::embedded::body::tests::missing_response_and_other_owner_cancel_have_no_physical_dispatch_authority ... ok
+test channels::embedded::channel::body_pin_tests::unsigned_binding_status_cannot_populate_a_body_pin_or_replace_its_configured_key ... ok
+test channels::embedded::playback::tests::decoder_rejects_truncation_and_format_changes_without_speaking_headers ... ok
+test channels::embedded::playback::tests::decoder_copy_limits_include_an_incomplete_native_frame ... ok
+test channels::embedded::playback::tests::decoder_rejects_unimplemented_presentation_and_wrong_identity_or_contract ... ok
+test channels::embedded::playback::tests::fence_receipt_must_prove_matching_session_and_minimum_epoch ... ok
+test channels::embedded::playback::tests::fragmented_wav_preserves_original_scope_sequence_and_actual_rate ... ok
+test channels::embedded::playback::tests::durable_gates_precede_wire_and_end_continues_monotonic_submission_evidence ... ok
+test channels::embedded::body::tests::forged_identity_or_position_receipt_is_unknown_and_cannot_retire_the_original_writer ... ok
+test channels::embedded::body::tests::signed_exchange_rejects_wrong_nonce_device_version_and_pinned_key ... ok
+test channels::embedded::playback::tests::precise_cancel_merges_final_prefix_and_bare_control_ack_is_unknown ... ok
+test channels::embedded::playback::tests::heartbeats_do_not_extend_delivery_deadline_and_exact_cancel_keeps_prefix ... ok
+test channels::cli::text::tests::exact_cancel_waits_for_native_write_and_survives_dropped_delivery_waiter ... ok
+test adapters::easy_turn::tests::bounds_deadline_response_size_and_upstream_errors ... ok
+test channels::embedded::body::tests::first_signed_snapshot_may_already_contain_complete_submission_evidence ... ok
+test channels::embedded::playback::tests::idle_receipt_timeout_cancels_and_joins_the_audio_producer ... ok
+test config::publication::tests::invalid_input_and_pre_marker_failure_preserve_unowned_files ... ok
+test config::publication::tests::an_exclusive_marker_conflict_never_removes_the_other_record ... ok
+test config::publication::tests::existing_marker_mismatch_remains_typed_and_does_not_start_another_intent ... ok
+test discovery::tests::normalizes_service_type ... ok
+test discovery::tests::uses_public_endpoint_when_configured ... ok
+test expression::abi::tests::plugin_contract_excludes_mutable_snapshot_reducers ... ok
+test expression::affect::tests::disabled_affect_has_no_snapshot_effect ... ok
+test expression::affect::tests::event_is_inactive_at_exact_expiry_and_before_its_source_time ... ok
+test expression::affect::tests::expired_events_are_absent_from_snapshot_and_relationship ... ok
+test config::publication::tests::marker_removal_failure_requires_the_in_memory_intent_until_sync_succeeds ... ok
+test expression::affect::tests::nonlinear_saturation_softens_near_bounds ... ok
+test expression::affect::tests::gratitude_and_frustration_have_distinct_bounded_effects ... ok
+test expression::affect::tests::profile_does_not_promote_turn_scoped_signals_to_relationship ... ok
+test expression::affect::tests::relationship_axes_change_more_slowly_than_affect ... ok
+test expression::affect::tests::replay_order_comes_from_canonical_time_and_identity ... ok
+test expression::affect::tests::single_event_delta_is_rate_limited ... ok
+test expression::affect::tests::relationship_profile_uses_live_reason_codes_and_never_private_evidence ... ok
+test expression::affect::tests::user_scope_uses_policy_sticky_decay ... ok
+test expression::orchestrator::tests::accepted_is_not_completion_and_cannot_start_another_phase ... ok
+test expression::orchestrator::tests::cancellation_unknown_or_failed_does_not_confirm_or_preempt ... ok
+test expression::orchestrator::tests::command_timeout_preserves_uncertainty_and_exact_cancel_identity ... ok
+test expression::orchestrator::tests::concurrent_same_plan_executes_once_and_old_completion_cannot_clear_new_plan ... ok
+test expression::orchestrator::tests::dropped_execution_retains_exact_unconfirmed_command_until_confirmed_cancel ... ok
+test expression::orchestrator::tests::delayed_cancel_and_old_scope_never_cancel_the_new_plan ... ok
+test expression::orchestrator::tests::missing_body_evidence_and_local_skip_cannot_retire_a_writer ... ok
+test expression::orchestrator::tests::missing_canonical_response_never_reaches_the_adapter ... ok
+test expression::orchestrator::tests::invalid_or_legacy_receipts_never_retire_the_original_writer ... ok
+test expression::orchestrator::tests::phases_filter_and_duplicate_phase_reuses_original_evidence ... ok
+test expression::orchestrator::tests::two_runtimes_and_users_have_independent_plan_owners ... ok
+test config::publication::tests::recovery_rejects_path_escape_and_cleans_only_its_matching_descriptor_temporary ... ok
+test expression::orchestrator::tests::unsupported_command_protocol_has_no_body_or_cancel_side_effects ... ok
+test expression::orchestrator::tests::unknown_body_outcome_retires_only_with_original_quiescence_evidence ... ok
+test expression::runtime::tests::appraisal_engine_requires_persisted_implementation_approval ... ok
+test expression::runtime::tests::affect_state_can_shift_expression_towards_cheerful ... ok
+test channels::embedded::body::tests::revoked_response_cancels_original_command_and_still_records_real_receipts ... ok
+test channels::embedded::body::tests::orchestrator_refreshes_accepted_body_to_submitted_without_position_completion_or_resubmit ... ok
+test expression::runtime::tests::builtin_safety_removes_actions_that_exceed_plan_risk_or_interruptibility ... ok
+test expression::runtime::tests::dialogue_act_maps_apology_to_gentle_intent ... ok
+test expression::runtime::tests::dialogue_act_and_content_tone_steer_intent_before_realization ... ok
+test expression::runtime::tests::builtin_safety_enforces_motion_frequency_limit ... ok
+test channels::embedded::body::tests::all_users_and_voice_nonvoice_share_one_ordered_device_sequence ... ok
+test expression::runtime::tests::external_abi_plugin_can_contribute_appraisal_and_intent ... ok
+test channels::embedded::body::tests::first_cancel_loss_retries_original_command_without_repeating_submission ... ok
+test channels::embedded::body::tests::shutdown_waiter_drop_retains_owner_and_dependencies_until_writer_quiesces ... ok
+test expression::runtime::tests::motion_requires_negotiated_capability ... ok
+test expression::runtime::tests::external_abi_plugin_timeout_is_recoverable ... ok
+test expression::runtime::tests::planner_and_safety_plugins_can_adjust_expression_plan ... ok
+test expression::runtime::tests::safety_context_can_force_minimal_expression ... ok
+test grpc::voice_auth::tests::source_keeps_original_epochs_and_rejects_each_revocation ... ok
+test grpc::voice_auth::tests::removed_or_replaced_channel_cannot_lend_authority_to_a_source ... ok
+test expression::runtime::tests::regulation_prevents_negative_affect_from_overexpressing ... ok
+test grpc::voice_auth::tests::signed_device_requires_an_active_configured_owner ... ok
+test grpc::voice_auth::tests::voice_admission_requires_explicit_instance_id_without_type_alias_fallback ... ok
+test grpc::voice_auth::tests::invalid_or_revoked_credentials_never_authenticate ... ok
+test grpc::voice_session::tests::authenticated_refresh_frame_extends_transport_idle_but_not_capture_freshness ... ok
+test grpc::voice_session::tests::initiative_closed_output_gate_cannot_advance_scope_or_read_context ... ok
+test grpc::voice_session::tests::initiative_snapshot_polling_cannot_extend_capture_idle_deadline ... ok
+test config::publication::tests::retry_syncs_all_ancestors_left_visible_by_an_earlier_preparation_failure ... ok
+test config::publication::tests::fragment_tree_and_new_ancestors_are_synced_before_the_marker_and_base ... ok
+test config::publication::tests::a_base_symlink_keeps_its_canonical_overlay_but_a_candidate_symlink_is_rejected ... ok
+test config::publication::tests::recovery_rejects_target_candidate_and_fragment_changes_without_overwriting ... ok
+test grpc::voice_session::tests::paired_v2_requires_explicit_bounded_software_hold_capabilities ... ok
+test channels::embedded::body::tests::immutable_source_and_bounded_retirement_map_do_not_create_replay_permission ... ok
+test channels::embedded::body::tests::expired_idle_control_is_reopened_only_for_new_intent_and_generation_never_rewinds ... ok
+test grpc::voice_session::tests::dropping_last_producer_ends_output_even_while_voice_session_stays_alive ... ok
+test grpc::voice_session::tests::capture_gap_fails_and_invalidates_already_enqueued_response ... ok
+test grpc::voice_session::tests::binding_revocation_closes_on_periodic_revalidation ... ok
+test grpc::voice_session::tests::replacing_a_session_cancels_the_old_owner_and_old_drop_preserves_new_owner ... ok
+test channels::embedded::body::tests::restarted_catalog_cannot_rebind_or_hide_the_original_body_intent ... ok
+test grpc::voice_session::tests::continuously_ready_capture_does_not_starve_model_or_control ... ok
+test grpc::voice_session::tests::semantic_controls_match_whole_complete_utterances_not_substrings ... ok
+test grpc::voice_session::tests::slow_control_blocks_same_channel_replacement_but_not_other_channels ... ok
+test grpc::voice_session::tests::explicit_wait_needs_complete_explicit_continue_and_stop_never_resumes ... ok
+test grpc::voice_session::tests::busy_model_retries_bounded_window_without_requiring_another_utterance ... ok
+test grpc::voice_session::tests::complete_wait_keeps_owner_and_only_close_sends_terminal_fence ... ok
+test grpc::voice_session::tests::initiative_snapshot_rechecks_speech_arriving_during_authentication ... ok
+test modules::companion::decision::tests::candidate_identity_survives_policy_and_appraisal_rebuild_without_refreshing_expiry ... ok
+test modules::companion::decision::tests::daily_budget_cooldown_dedup_and_response_gates_are_independent ... ok
+test modules::companion::decision::tests::expiry_is_half_open_and_invalid_frozen_times_are_rejected ... ok
+test modules::companion::decision::tests::hard_gates_override_enabled_and_idle_state ... ok
+test modules::companion::decision::tests::live_capture_must_be_fresh_and_limits_the_decision_deadline ... ok
+test modules::companion::decision::tests::old_shadow_cannot_be_promoted_and_policy_content_changes_also_revoke ... ok
+test modules::companion::decision::tests::replay_is_stable_across_json_key_order_and_keeps_nanosecond_observations ... ok
+test modules::companion::decision::tests::simulated_opportunity_never_allows_output_and_defaults_remain_shadow ... ok
+test modules::companion::decision::tests::source_expiry_shortens_candidate_and_canonical_reference_order_is_stable ... ok
+test modules::companion::decision::tests::unknown_fields_and_malformed_or_excessive_inputs_are_rejected ... ok
+test modules::companion::decision::tests::utc_midnight_limits_frozen_budget_validity ... ok
+test grpc::voice_session::tests::initiative_snapshot_rejects_original_output_even_when_held ... ok
+test grpc::voice_session::tests::initiative_snapshot_requires_capture_and_never_allocates_output ... ok
+test grpc::voice_session::tests::newer_captured_speech_rejects_old_continue_and_new_topic_replaces_original_owner ... ok
+test modules::companion::live::tests::capacity_lock_serializes_distinct_owners_in_the_same_schema ... ok
+test grpc::voice_session::tests::privacy_change_retires_idle_session_and_cancels_queued_response ... ok
+test modules::companion::live::tests::atomic_admission_rollback_and_original_pending_lock_reconcile_without_second_permit ... ok
+test grpc::voice_session::tests::recognized_speech_bypasses_stt_and_backchannel_preserves_generation ... ok
+test modules::companion::live::tests::committed_original_transaction_returns_existing_and_cleanup_survives_revocation ... ok
+test bootstrap::setup::tests::setup_completion_delivers_response_and_closes_stalled_connections ... ok
+test bootstrap::setup::tests::pending_publication_keeps_setup_available_until_confirmed_response_drains ... ok
+test modules::companion::live::tests::last_daily_budget_is_serialized_and_erased_charge_is_not_refunded ... ok
+test modules::companion::live::tests::pending_capacity_original_expiry_and_source_erasure_remain_bounded ... ok
+test modules::companion::live::tests::shadow_sources_and_limited_worklist_never_upgrade_to_live ... ok
+test modules::companion::repository::tests::absent_opportunity_uses_database_time_while_future_observations_are_rejected ... ok
+test grpc::voice_session::tests::saturated_recognized_queue_fails_closed_without_leaking_output_producer ... ok
+test modules::companion::repository::tests::bounded_page_and_explicit_simulated_opportunity_never_acquire_output_authority ... ok
+test modules::companion::repository::tests::privacy_erasure_is_owner_scoped_and_policy_cas_cannot_revive_a_shadow_candidate ... ok
+test modules::companion::repository::tests::fixed_shadow_receipt_survives_competing_workers_restart_and_duplicate_trigger ... ok
+test modules::companion::live::tests::commit_checks_original_short_admission_deadline_without_refreshing_output_deadline ... ok
+test modules::companion::repository::tests::private_retention_and_capacity_are_bounded_while_erasure_keeps_identity ... ok
+test channels::embedded::body::tests::five_second_command_keeps_owned_observation_after_initial_waiter_is_dropped ... ok
+test modules::delivery::audio::tests::clones_slices_queue_derived_pcm_and_http_bytes_share_last_drop ... ok
+test modules::delivery::audio::tests::global_capacity_is_shared_and_cancelled_waiter_releases_local_credit ... ok
+test grpc::voice_session::tests::renewed_credentials_survive_repeated_periodic_revalidation ... ok
+test modules::delivery::audio::tests::same_response_cannot_renew_or_bypass_held_capacity ... ok
+test modules::delivery::audio::tests::seal_accounts_retained_capacity_and_rejects_oversized_allocations ... ok
+test modules::delivery::audio::tests::standalone_request_is_not_a_canonical_response_budget ... ok
+test modules::delivery::audio::tests::registry_has_no_historical_uuid_growth_and_live_owners_are_bounded ... ok
+test modules::delivery::service::output::gate::tests::applied_resume_handoff_keeps_owner_closed_and_never_refreshes_original_deadline ... ok
+test modules::delivery::service::output::gate::tests::confirmation_keeps_original_deadline_and_requires_explicit_continue ... ok
+test modules::delivery::service::output::gate::tests::expiry_cancellation_and_new_speech_never_release_old_hold ... ok
+test modules::delivery::service::output::gate::tests::original_output_lifetime_and_real_owner_counts_bound_retention ... ok
+test modules::interaction::cache::review::tests::parses_cache_review_with_surrounding_text ... ok
+test modules::interaction::cache::review::tests::parses_fenced_cache_review_decision ... ok
+test modules::companion::repository::tests::receipt_and_candidate_failure_rolls_back_the_entire_admission ... ok
+test modules::interaction::dialogue_policy::tests::classifies_user_semantics ... ok
+test modules::interaction::dialogue_policy::tests::preserves_cache_minimality ... ok
+test modules::interaction::dialogue_policy::tests::uses_configured_phrase_lists ... ok
+test modules::interaction::error_notice::tests::builds_chinese_notice_without_raw_error ... ok
+test modules::interaction::error_notice::tests::builds_english_notice_for_non_cjk_input ... ok
+test modules::interaction::error_notice::tests::cancelled_error_does_not_dispatch_voice_or_text ... ok
+test modules::interaction::error_notice::tests::unadmitted_error_notice_never_starts_tts_or_side_effects ... ok
+test modules::interaction::initiative::tests::dropping_reservation_waiter_cancels_original_request ... ok
+test modules::interaction::initiative::tests::replacement_keeps_new_mailbox_and_rejects_old_scope ... ok
+test modules::interaction::initiative::tests::reservation_timeout_cancels_original_without_enqueuing_a_retry ... ok
+test grpc::voice_session::tests::source_epoch_is_fixed_at_ready_before_first_audio_and_not_renewed_by_auth ... ok
+test modules::companion::repository::tests::source_erasure_triggers_ignore_cache_hits_but_cover_graph_node_projections ... ok
+test grpc::voice_session::tests::speech_arriving_during_inference_rejects_old_snapshot_and_reevaluates ... ok
+test modules::companion::repository::tests::source_revision_and_relationship_clear_erase_private_replay_but_keep_tombstones ... ok
+test modules::companion::repository::tests::stale_sources_are_retired_without_starving_discovery_or_refreshing_original_time ... ok
+test modules::companion::runner::tests::existing_acknowledged_transaction_returns_receipt_without_reserve_or_tts ... ok
+test modules::interaction::integration_tests::failed_user_source_prevents_model_and_tool_processing ... ok
+test modules::companion::runner::tests::lost_reserve_reply_cancels_original_identity_without_second_permit_or_tts ... ok
+test modules::companion::runner::tests::rejected_reserve_cancels_original_identity_without_second_permit_or_tts ... ok
+test modules::companion::runner::tests::shutdown_during_original_reserve_joins_failure_and_preserves_charge ... ok
+test grpc::voice_session::tests::speech_queued_during_resume_revalidation_invalidates_the_original_detection ... ok
+test modules::interaction::conversation::service::tests::durable_input_provenance_preserves_time_owner_and_atomicity ... ok
+test grpc::voice_session::tests::privacy_change_during_detection_retires_session_and_new_session_gets_new_epoch ... ok
+test modules::companion::service::tests::same_channel_has_one_outstanding_snapshot_and_close_drains_its_original_attempt ... ok
+test modules::interaction::integration_tests::missing_source_does_not_publish_completion_or_memory_capture ... ok
+test modules::delivery::repository::control::initiative_tests::initiative_registration_requires_canonical_capture_and_original_output_deadline ... ok
+test grpc::voice_session::tests::relationship_change_during_detection_retires_session_and_new_session_gets_new_epoch ... ok
+test modules::interaction::integration_tests::cache::cancelled_generation_leaves_blocked_catalog_finish_without_persistence ... ok
+test grpc::voice_session::tests::resume_revalidates_original_privacy_relationship_and_binding_before_enqueue ... ok
+test grpc::voice_session::tests::wrong_or_stale_signed_refresh_is_rejected_and_closes_scoped_output ... ok
+test modules::interaction::integration_tests::context::corrected_transcript_keeps_the_single_persisted_raw_source_and_lease ... ok
+test modules::interaction::integration_tests::memory_search::disabled_memory_search_cannot_read_through_a_stale_tool_list ... ok

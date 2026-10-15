@@ -1,0 +1,21 @@
+struct RpcServer {
+    stop: CancellationToken,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+impl Drop for RpcServer {
+    fn drop(&mut self) {
+        self.stop.cancel();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+impl RpcServer {
+    async fn close(mut self) {
+        self.stop.cancel();
+        tokio::time::timeout(Duration::from_secs(3), self.task.take().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}

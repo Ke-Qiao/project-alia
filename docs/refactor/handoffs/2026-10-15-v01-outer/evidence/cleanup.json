@@ -1,0 +1,69 @@
+{
+  "at": "2026-10-15T07:32:17.777528+00:00",
+  "removed_task_container": "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464",
+  "task_absent": true,
+  "other_containers_modified": false,
+  "shared_runtime_left_running": true,
+  "records": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}}",
+        "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464"
+      ],
+      "exit_code": 0,
+      "stdout": "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464 v01-outer-20261015\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--time",
+        "10",
+        "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464"
+      ],
+      "exit_code": 0,
+      "stdout": "Flag --time has been deprecated, use --timeout instead\nf160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464"
+      ],
+      "exit_code": 0,
+      "stdout": "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "id=f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Image}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot astrbot:kimi-code\n",
+      "stderr": ""
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "at": "2026-10-15T07:22:44.500136+00:00",
+  "container_id": "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464",
+  "reason": "Interrupted obsolete test run after confirmed false-positive assertion; removed two isolated test schemas",
+  "commands": [
+    [
+      "docker",
+      "exec",
+      "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464",
+      "dropdb",
+      "-U",
+      "alia_test",
+      "alia_v01_outer_20261015"
+    ],
+    [
+      "docker",
+      "exec",
+      "f160b5cfa550d5345aa879ebcbc4d88686d339423624bcf43433d2a609603464",
+      "createdb",
+      "-U",
+      "alia_test",
+      "alia_v01_outer_20261015"
+    ]
+  ],
+  "exit_code": 0
+}

@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-15T07:33:46.922917+00:00",
+  "source_commit": "a73e6e8bc37e4103cb5fc0ffef2aa31d809ff3d6",
+  "resources_observed_seconds_after_run": 56.106,
+  "database_restarted_between_run_and_observation": false,
+  "scope": "all non-public/non-system schemas in isolated task database; other client backends exclude observer",
+  "matching_test_processes": [],
+  "process_check": "ps filters for cargo test, duplex_playback, server_runtime, final-v2 validator; no matches",
+  "scoped_rustfmt_exit": 0,
+  "source_diff_check_exit": 0
+}

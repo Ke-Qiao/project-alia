@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-15T07:27:14.609141+00:00",
+  "base_commit": "99c946db1e7ffec3917298091ecd357a206b2f30",
+  "red_manifest": "red-source-manifest.json",
+  "red_scope": "Original RpcServer implementation with three new tests; in-progress delivery_support context helper was compiled but not used by RPC tests",
+  "preflight": "Initial invocation rejected source drift before Cargo launch; red-preflight-source-manifest.json retained, no test result counted",
+  "red": {
+    "passed": 1,
+    "failed": 2,
+    "ignored": 0,
+    "filtered": 10
+  },
+  "first_green": {
+    "passed": 18,
+    "failed": 1,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "interrupted_full": {
+    "exit_code": -15,
+    "elapsed_seconds": 73.33,
+    "counted_as_pass": false,
+    "reason": "Confirmed false-positive cleanup assertion, superseded by outer independent evidence flag"
+  },
+  "final_scope": "All workspace targets, default test parallelism, original deadlines and no new ignored tests",
+  "no_production_or_dependency_changes": true
+}

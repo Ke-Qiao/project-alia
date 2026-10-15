@@ -277,3 +277,13 @@ macOS workspace **1080/0/5**；Linux ARM64 Server 默认并行完整回归 **798
 - [ ] 初始化、外层45秒drop、cleanup本身失败的完整阶段见证仍有限；本轮未动态强制触发paired失败分支。最终全量后即时schema/连接快照未保留，不能从重启后的无连接追认原时点。任务container/卷已移除，无当前测试进程；共享runtime/astrbot保留运行。
 
 R02保持用户确认的硬件AEC优先与资料门槛，R03继续暂停，R05等待现场出口，六轮仍2/6。没有新增依赖、真实模型/硬件或Linux应用验证；既有部署、Settings其它边界及前端/平台延期保持，不从本轮另建框架。
+
+
+## 2026-10-15：V01 外层与失败清理边界收口
+
+- [x] 本包10/10，源码`a73e6e8`。RPC句柄丢失经RED复现；外层context保留、部分初始化、原失败优先及共同45秒截止已修复。完整workspace1256/0/5，duplex21/0/0，671提交输入吻合；见[恢复检查点](resume-checkpoint-v01-outer-2026-10-15.md)及[四份HANDOFF](handoffs/2026-10-15-v01-outer/README.md)。
+- [x] 外层真实45秒、heartbeat失败与清理前DB仍开放的独立证据通过；日志和原始失败/中断分别保留。退出后56.106秒PG0schema/0client快照已保存（非退出当刻），随后任务容器/卷移除；没有改共享服务。
+- [ ] **历史V01根因仍open**；本轮fixture问题不能倒推旧25秒失败原因，不重复历史批次求绿。
+- [ ] 部分初始化/native锁中毒/paired late-drain/永不退出supervisor未穷举动态注入。已有生产running标志极端panic不复位时应保留owner与DB并报告未完成；不能把进程watchdog终止算作清理成功。本轮不新增生产completion框架。建库迁移与最终SQL teardown仍在原45秒窗口外。
+
+R02硬件AEC优先和资料门槛、R03暂停、R05现场出口、Settings及其它既定延期保持；没有新增依赖、Linux/Pi或真实模型/硬件验证。六轮仍2/6。

@@ -1,0 +1,101 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.50s
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)
+
+running 19 tests
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (123893) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:74:30:
+Box<dyn Any>
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'db_cleanup::cleanup_panic_still_attempts_database_cleanup_and_fails_case' (123890) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:103:21:
+context failure
+
+thread 'db_cleanup::database_cleanup_panic_fails_otherwise_successful_case' (123891) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:121:20:
+database failure
+Delivery database cleanup failed
+
+thread 'cleanup::rpc_task_panic_is_reported_after_listener_release' (123882) panicked at packages/alia-server/tests/duplex_playback/cleanup.rs:40:13:
+injected rpc task panic
+
+thread 'db_cleanup::outer_deadline_drops_body_then_cleans_context_before_database' (123892) panicked at packages/alia-server/tests/delivery_support/mod.rs:313:23:
+Delivery test exceeded 45s
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (123893) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:77:13:
+secondary context failure
+test db_cleanup::database_cleanup_panic_fails_otherwise_successful_case ... ok
+
+thread 'db_cleanup::primary_panic_survives_both_cleanup_failures' (123893) panicked at packages/alia-server/tests/duplex_playback/db_cleanup.rs:81:13:
+secondary database failure
+Delivery context cleanup failed
+Delivery context cleanup failed
+Delivery database cleanup failed
+test db_cleanup::outer_deadline_drops_body_then_cleans_context_before_database ... ok
+test db_cleanup::primary_panic_survives_both_cleanup_failures ... ok
+test db_cleanup::cleanup_panic_still_attempts_database_cleanup_and_fails_case ... ok
+
+thread 'cleanup::rpc_close_timeout_joins_task_before_reporting_failure' (123881) panicked at packages/alia-server/tests/duplex_playback.rs:386:16:
+called `Result::unwrap()` on an `Err` value: Elapsed(())
+
+thread 'cleanup::rpc_task_panic_is_reported_after_listener_release' (123882) panicked at packages/alia-server/tests/duplex_playback.rs:386:25:
+called `Result::unwrap()` on an `Err` value: JoinError::Panic(Id(2), "injected rpc task panic", ...)
+test cleanup::cancelling_rpc_close_keeps_task_abort_owned ... ok
+test cleanup::rpc_close_timeout_joins_task_before_reporting_failure ... ok
+test cleanup::rpc_task_panic_is_reported_after_listener_release ... ok
+test companion::failure_diagnostic_reports_live_claims_without_private_values ... ok
+test registration_reply_after_fence_never_repopulates_obsolete_channel_binding ... ok
+test held_full_native_queue_keeps_original_pcm_and_control_lane_available ... ok
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (123885) panicked at packages/alia-server/tests/duplex_playback/companion.rs:785:25:
+injected heartbeat failure
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (123885) panicked at packages/alia-server/tests/duplex_playback/companion.rs:798:21:
+injected primary failure
+Companion fixture cleanup entered at injected setup boundary before inner timer
+
+thread 'companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners' (123885) panicked at packages/alia-server/tests/duplex_playback/companion.rs:557:9:
+Companion cleanup failed at ["heartbeat join"]
+Delivery context cleanup failed
+test companion::heartbeat_cleanup_failure_preserves_primary_and_joins_other_owners ... ok
+test control_ack_loss_is_observed_from_original_device_command ... ok
+Companion fixture cleanup entered at injected setup boundary before inner timer
+ WARN alia_server::modules::companion::service: companion shadow source unavailable stage="prune" class="unavailable"
+
+thread 'companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup' (123886) panicked at packages/alia-server/tests/duplex_playback/companion.rs:557:9:
+Companion cleanup failed at ["server shutdown", "server cleanup completion"]
+Delivery context cleanup failed
+
+thread 'companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup' (123886) panicked at packages/alia-server/tests/delivery_support/mod.rs:313:23:
+Delivery test exceeded 45s
+
+thread 'companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup' (123886) panicked at packages/alia-server/tests/duplex_playback/companion.rs:847:5:
+assertion failed: shutdown.failures().is_empty()
+test companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup ... FAILED
+test replacement_session_keeps_new_native_owner_when_old_output_is_cleaned_up ... ok
+test held_before_first_start_survives_handshake_idle_and_resumes_one_original_output ... ok
+test held_after_end_preserves_unsubmitted_tail_beyond_media_idle ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=4 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1977 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=47 clock="server_process_monotonic"
+test companion::scanner_commits_one_fixed_invitation_through_real_voice_and_paired_playback ... ok
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=2 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1956 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="voice_snapshot" wait_ms=3 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="freeze_intent" wait_ms=1 ready=true clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion original admission budget phase="admit" attempt=0 remaining_ms=1970 clock="server_utc_deadline_evaluation"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=63 clock="server_process_monotonic"
+DEBUG alia_server::modules::companion::runner: Companion admission wait phase="admit" attempt=0 outcome="fresh" wait_ms=63 clock="server_process_monotonic"
+ WARN alia_server::modules::companion::service: original Companion attempt ended without confirmed output stage="original_output"
+test companion::source_erasure_during_original_tts_prevents_first_media_and_preserves_charge ... ok
+test companion::applied_resume_lost_ack_and_new_local_speech_handoff_to_h2_on_original_output ... ok
+
+failures:
+
+failures:
+    companion::outer_45_second_timeout_joins_real_owners_before_database_cleanup
+
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.55s
+
+error: test failed, to rerun pass `-p alia-server --test duplex_playback`

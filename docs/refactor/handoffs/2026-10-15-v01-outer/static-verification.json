@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-15T07:36:28.990689+00:00",
+  "source_commit": "a73e6e8bc37e4103cb5fc0ffef2aa31d809ff3d6",
+  "relative_paths_checked": 33,
+  "missing_paths": [],
+  "original_evidence_files_verified": 30,
+  "current_frozen_inputs_verified": 671,
+  "manifest_sha256": "021b2fb3d46d64ddd98c2344cb078647b66bc143dc1f41d4b5d1326e19b6a6d2",
+  "independent_review": "no blocking findings; flow7/7 fixture6/6 review5/5 completed",
+  "source_rustfmt_exit": 0,
+  "source_diff_check_exit": 0,
+  "remaining_changes_documentation_only": true,
+  "staged_all_diff_check_exit": 2,
+  "immutable_evidence_whitespace": [
+    "evidence/final-v2-workspace.log:1773 new blank line at EOF"
+  ],
+  "immutable_evidence_whitespace_reason": "Original log bytes/hash retained; source and authored documents have no whitespace exceptions",
+  "authored_documents_diff_check_exit": 0
+}
