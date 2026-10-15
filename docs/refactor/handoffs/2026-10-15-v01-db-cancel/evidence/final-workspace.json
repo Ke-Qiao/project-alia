@@ -1,0 +1,23 @@
+{
+  "phase": "final",
+  "command": [
+    "cargo",
+    "test",
+    "--workspace",
+    "--offline",
+    "--locked",
+    "--no-fail-fast"
+  ],
+  "started_at": "2026-10-15T13:11:39.132578+00:00",
+  "elapsed_seconds": 368.88,
+  "exit_code": 101,
+  "source_manifest_sha256": "d406435ee26b4e303476a61aeddc5c1204251f320278530479559b6241c7eada",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+  "build_jobs": 2,
+  "process_watchdog_seconds": 900,
+  "process_watchdog_expired": false,
+  "binary_sha256": null,
+  "binary_unchanged": null
+}

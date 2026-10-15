@@ -297,3 +297,12 @@ R02硬件AEC优先和资料门槛、R03暂停、R05现场出口、Settings及其
 - [ ] 任意drop整个初始Fixture::new、所有ServerStartup等待点、native poisoning与supervisor自身panic/后代永不退出仍未穷举。未证明quiescent时保留owner/DB并报告未完成，watchdog不是清理保证；建库/迁移和最终SQL teardown仍在45秒窗口外，不新增生产框架。
 
 R02硬件AEC路线和资料门槛、R03用户暂停、R05现场出口、前端/通用Embedded及其它既定延期保持；没有新增依赖、Linux/Pi、模型或真实硬件验证。六轮仍2/6。
+
+## 2026-10-15：V01初始数据库构造取消收口
+
+- [x] 本包10/10，源码`8bcda7a`。独立测试owner保留原操作与许可；4项取消覆盖与原3项初始化失败完成验证；9个共享fixture引用目标纳入workspace，voice_stream_live仍是既有ignored。V1真实失败与修订理由保留；最终V2 workspace1266/0/5、duplex31/0/0，675提交输入一致。见[恢复检查点](resume-checkpoint-v01-db-cancel-2026-10-15.md)和[四份HANDOFF](handoffs/2026-10-15-v01-db-cancel/README.md)。
+- [x] 同库退出约0.175秒资源0/0，任务容器与卷回收；没有改变原期限、CASES=3、默认并发、shadow、政策或依赖。
+- [ ] **历史V01根因仍open**；没有新增失败/原artifact/可区分条件时不重复求绿。上条“drop整个Fixture::new”中的普通初始化取消已由本包覆盖，不等于穷举所有等待点。
+- [ ] 所有完成句柄丢弃、runtime结束/强杀、DB永久失联、native poisoning、supervisor自身panic及任意ServerStartup点仍不作完成承诺；Drop仅请求取消，原completion才是完成见证。初始DB与最终SQL teardown仍在45秒之外，不预建全局supervisor。
+
+R02硬件AEC优先与资料门槛、R03用户暂停、R05现场出口及其他既定延期保持；本轮未验证Linux/Pi、真实模型或硬件，六轮仍2/6。

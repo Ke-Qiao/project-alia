@@ -1,0 +1,15 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.54s
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)
+
+running 7 tests
+test initialization::user_seed_sql_failure_removes_schema_and_closes_work_pool ... ok
+test initialization::policy_sql_failure_removes_schema_and_closes_work_pool ... ok
+test initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema ... ok
+test initialization_cancel::cancelled_after_schema_creation_removes_schema ... ok
+test initialization::work_pool_initialization_panic_removes_created_schema ... ok
+test initialization_cancel::cancelled_inflight_create_is_drained_before_schema_cleanup ... ok
+test initialization_cancel::cancelled_buffered_ready_cannot_be_retried_as_a_closed_fixture ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.62s
+

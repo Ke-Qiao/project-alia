@@ -1,0 +1,117 @@
+//! Dropping the whole constructor must reclaim its already-created resources.
+use super::delivery_support::{InitializationStep, probe_initialization};
+use sea_orm::{
+    ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement,
+};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+
+struct CheckpointDrop(Arc<AtomicBool>);
+
+impl Drop for CheckpointDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+async fn cancelled_initialization(step: InitializationStep) {
+    let mut options = ConnectOptions::new(std::env::var("ALIA_TEST_DATABASE_URL").unwrap());
+    options.max_connections(1).sqlx_logging(false);
+    let observer = Database::connect(options).await.unwrap();
+    let evidence = Arc::new(Mutex::new(None));
+    let observed = evidence.clone();
+    let checkpoint_dropped = Arc::new(AtomicBool::new(false));
+    let dropped = checkpoint_dropped.clone();
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let mut entered_tx = Some(entered_tx);
+    let mut construction = Box::pin(probe_initialization(move |current, fixture| {
+        let observed = observed.clone();
+        let dropped = dropped.clone();
+        let entered_tx = (current == step).then(|| entered_tx.take().unwrap());
+        Box::pin(async move {
+            let Some(entered_tx) = entered_tx else {
+                return;
+            };
+            let _drop = CheckpointDrop(dropped);
+            *observed.lock().unwrap() =
+                Some((fixture.schema_name().to_string(), fixture.db.clone()));
+            entered_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        })
+    }));
+    tokio::select! {
+        () = &mut construction => panic!("constructor returned before cancellation checkpoint"),
+        entered = entered_rx => entered.unwrap(),
+    }
+    // This cancels the entire construction future, rather than injecting a panic.
+    drop(construction);
+    let (schema, work_pool) = evidence.lock().unwrap().take().unwrap();
+    let schema_query = observer
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=$1) AS present",
+            [schema.clone().into()],
+        ))
+        .await;
+    let work_pool_remains = work_pool.execute_unprepared("SELECT 1").await.is_ok();
+    let schema_remains = schema_query
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref)
+        .and_then(|row| row.try_get::<bool>("", "present").ok());
+    let stage = match step {
+        InitializationStep::WorkPool => "after_schema",
+        InitializationStep::UserSeed => "after_work_pool",
+        InitializationStep::Policy => unreachable!("this probe covers the two resource boundaries"),
+    };
+    eprintln!(
+        "initialization cancellation: stage={stage}, checkpoint_dropped={}, schema_remains={schema_remains:?}, work_pool_remains={work_pool_remains}",
+        checkpoint_dropped.load(Ordering::SeqCst),
+    );
+    // Preserve the old implementation's leak evidence before reclaiming it.
+    let work_pool_cleanup = if matches!(work_pool, DatabaseConnection::Disconnected) {
+        Ok(())
+    } else {
+        work_pool.close().await
+    };
+    assert!(
+        schema
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    );
+    let schema_cleanup = observer
+        .execute_unprepared(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        .await;
+    let observer_cleanup = observer.close().await;
+    assert!(
+        work_pool_cleanup.is_ok(),
+        "fallback work pool cleanup failed"
+    );
+    assert!(schema_cleanup.is_ok(), "fallback schema cleanup failed");
+    assert!(observer_cleanup.is_ok(), "observer cleanup failed");
+    assert!(
+        checkpoint_dropped.load(Ordering::SeqCst),
+        "constructor was not dropped"
+    );
+    let schema_remains = schema_remains.expect("schema observation failed");
+    assert!(
+        !schema_remains,
+        "cancelled initialization left its schema behind"
+    );
+    assert!(
+        !work_pool_remains,
+        "cancelled initialization left its work pool open"
+    );
+}
+
+#[tokio::test]
+async fn cancelled_after_schema_creation_removes_schema() {
+    cancelled_initialization(InitializationStep::WorkPool).await;
+}
+
+#[tokio::test]
+async fn cancelled_after_work_pool_creation_closes_pool_and_removes_schema() {
+    cancelled_initialization(InitializationStep::UserSeed).await;
+}

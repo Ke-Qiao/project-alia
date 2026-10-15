@@ -1,0 +1,203 @@
+{
+  "recorded_at": "2026-10-15T13:30:17.248227+00:00",
+  "source_commit": "8bcda7af892ba36aea98b9de785afa68e3935940",
+  "files": [
+    {
+      "path": "evidence/after-green-resources.json",
+      "original": "run/validation-20261015-v01-db-cancel/after-green-resources.json",
+      "bytes": 171,
+      "sha256": "2888456c86629182cd7158cc922a629bf6980378864f972945e81e1c578ff1b6"
+    },
+    {
+      "path": "evidence/after-red-resources.json",
+      "original": "run/validation-20261015-v01-db-cancel/after-red-resources.json",
+      "bytes": 171,
+      "sha256": "d3889bab3a34bbf3b523a59b0d11e328d464a0aabd39ecc9397ac9a3aa3f3391"
+    },
+    {
+      "path": "evidence/cancellation-red.json",
+      "original": "run/validation-20261015-v01-db-cancel/cancellation-red.json",
+      "bytes": 697,
+      "sha256": "10b4c704eb236d8707831d187bd83cd665396ecd05e1bbacd1992b08bec16a04"
+    },
+    {
+      "path": "evidence/cancellation-red.log",
+      "original": "run/validation-20261015-v01-db-cancel/cancellation-red.log",
+      "bytes": 1820,
+      "sha256": "20d071aa7b707a6e17dfcbb57600cf076bfb5dff3206f79e03d8b7339a09b8a3"
+    },
+    {
+      "path": "evidence/cleanup.json",
+      "original": "run/validation-20261015-v01-db-cancel/cleanup.json",
+      "bytes": 1769,
+      "sha256": "25933ff188633d75acb6013b9b23b3447dfa7f2efb1d0b08d8f563067f102843"
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "original": "run/validation-20261015-v01-db-cancel/cleanup.py",
+      "bytes": 1365,
+      "sha256": "65dfa5065a887c10e0e3e0b1a197cefed9c4f0708fd0c8e90bcf5dc9e70dc4e6"
+    },
+    {
+      "path": "evidence/commit-verification.json",
+      "original": "run/validation-20261015-v01-db-cancel/commit-verification.json",
+      "bytes": 290,
+      "sha256": "503d4575a3396c8e5bb29abbf9b36b1f117645511f29f73614d2390fc9ca07c6"
+    },
+    {
+      "path": "evidence/database-create.json",
+      "original": "run/validation-20261015-v01-db-cancel/database-create.json",
+      "bytes": 793,
+      "sha256": "6ea5adece73c07142812d0b210fbf583ad16f82194a9e488fc8aaabbd13a2e89"
+    },
+    {
+      "path": "evidence/final-resources.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-resources.json",
+      "bytes": 171,
+      "sha256": "36db7b54ba88afc6ca446f871318d034a1d85873a0f7dc6299ea84c86acc745f"
+    },
+    {
+      "path": "evidence/final-source-manifest.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-source-manifest.json",
+      "bytes": 124340,
+      "sha256": "d406435ee26b4e303476a61aeddc5c1204251f320278530479559b6241c7eada"
+    },
+    {
+      "path": "evidence/final-v2-resources.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-v2-resources.json",
+      "bytes": 171,
+      "sha256": "d46ee83f3b5d6c4251050f720e0890cbad2216c156e8ada2470bde5964d4aba0"
+    },
+    {
+      "path": "evidence/final-v2-source-manifest.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-v2-source-manifest.json",
+      "bytes": 124340,
+      "sha256": "51b11511010fedfa47cf8f01b814eb17731ded45b5404fb7ad01ff2e4ce9c553"
+    },
+    {
+      "path": "evidence/final-v2-workspace.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-v2-workspace.json",
+      "bytes": 645,
+      "sha256": "e8c1004f3de31e5487fb5b9c643af83fe954ebf994e2ee03f780cb0bc2688c6e"
+    },
+    {
+      "path": "evidence/final-v2-workspace.log",
+      "original": "run/validation-20261015-v01-db-cancel/final-v2-workspace.log",
+      "bytes": 138411,
+      "sha256": "c1234f23d3d0fb7343350233bf0cd238f3a3f2f58a9aed7f7f1f2db03911f9e2"
+    },
+    {
+      "path": "evidence/final-workspace.json",
+      "original": "run/validation-20261015-v01-db-cancel/final-workspace.json",
+      "bytes": 644,
+      "sha256": "1c7a176c806b35c1658e76c31a1d47b55f398fb69602ad2264f2987f023ff54a"
+    },
+    {
+      "path": "evidence/final-workspace.log",
+      "original": "run/validation-20261015-v01-db-cancel/final-workspace.log",
+      "bytes": 139234,
+      "sha256": "e58371bfad2f43b18d2f9d3221545e1e1cbe570dbb36079fd7a99e4897a7e423"
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "original": "run/validation-20261015-v01-db-cancel/freeze-source.py",
+      "bytes": 1155,
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34"
+    },
+    {
+      "path": "evidence/green-source-manifest.json",
+      "original": "run/validation-20261015-v01-db-cancel/green-source-manifest.json",
+      "bytes": 124340,
+      "sha256": "eda0048366781af3fcd7a1602c7d84ee2fd5810a92c3125383a7cd9c037d5561"
+    },
+    {
+      "path": "evidence/initialization-green.json",
+      "original": "run/validation-20261015-v01-db-cancel/initialization-green.json",
+      "bytes": 731,
+      "sha256": "936385237c4a160b421806c935cebd0e0388c62b0dd21ffd6ca4063fe07a7806"
+    },
+    {
+      "path": "evidence/initialization-green.log",
+      "original": "run/validation-20261015-v01-db-cancel/initialization-green.log",
+      "bytes": 997,
+      "sha256": "3b0951abf7fd2328fb34f6c50501a80872cdb77f290cc1e69109079686a4fd2f"
+    },
+    {
+      "path": "evidence/red-delivery-support.rs.txt",
+      "original": "run/validation-20261015-v01-db-cancel/red-delivery-support.rs.txt",
+      "bytes": 14026,
+      "sha256": "d165d6e18d72997bdb9a8526dfa8f7ac0729f97171ed5418fbeb11158e9a8e34"
+    },
+    {
+      "path": "evidence/red-initialization-cancel.rs.txt",
+      "original": "run/validation-20261015-v01-db-cancel/red-initialization-cancel.rs.txt",
+      "bytes": 4529,
+      "sha256": "0b5af15e8b8ebf1a2d7cabc92a7ae382d7a9aab45d6729a3cafedd92cce3c0f7"
+    },
+    {
+      "path": "evidence/red-source-manifest.json",
+      "original": "run/validation-20261015-v01-db-cancel/red-source-manifest.json",
+      "bytes": 124339,
+      "sha256": "0243d535656e1ffb6d7ccae8631d08f51d5265ccdcd915f52b63431b939c0a49"
+    },
+    {
+      "path": "evidence/resources.py",
+      "original": "run/validation-20261015-v01-db-cancel/resources.py",
+      "bytes": 1090,
+      "sha256": "7973b47d4a01fe471dcfab71d41224f0db8090d82956029e8bbbf197e1e5edbb"
+    },
+    {
+      "path": "evidence/run-ledger.json",
+      "original": "run/validation-20261015-v01-db-cancel/run-ledger.json",
+      "bytes": 20261,
+      "sha256": "cdfe6e8ad2f5187aa2d4e0055a858955159f0fbde012f91db7af304a0543051b"
+    },
+    {
+      "path": "evidence/summarize.py",
+      "original": "run/validation-20261015-v01-db-cancel/summarize.py",
+      "bytes": 2832,
+      "sha256": "64abbab4ce5abf606147e9357b96b52141dafabcd0c2fc781c043ebdd6dcae80"
+    },
+    {
+      "path": "evidence/v1-failure-summary.json",
+      "original": "run/validation-20261015-v01-db-cancel/v1-failure-summary.json",
+      "bytes": 17070,
+      "sha256": "e5b4cbc79aaed0d36eecb16d8f7ebcf6f537ed381d0d43493a314d02af5d0c71"
+    },
+    {
+      "path": "evidence/v1-initialization-cancel.rs.txt",
+      "original": "run/validation-20261015-v01-db-cancel/v1-initialization-cancel.rs.txt",
+      "bytes": 15894,
+      "sha256": "cab9d11ff306f38a8af9d3a765110110a1f255f8a98abd23de67d3fadef2c241"
+    },
+    {
+      "path": "evidence/validate.py",
+      "original": "run/validation-20261015-v01-db-cancel/validate.py",
+      "bytes": 3154,
+      "sha256": "0e38f6139c3a9bd6fd92242f86bf0b7724aed8cc6cea5c5c7d593cb76e995cdc"
+    },
+    {
+      "path": "evidence/validation-summary.json",
+      "original": "run/validation-20261015-v01-db-cancel/validation-summary.json",
+      "bytes": 19187,
+      "sha256": "d8dc110b002976bfce6ca4375483c47fa373d96e64f12165e17fc06d8ae777f1"
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "original": "run/validation-20261015-v01-db-cancel/verify-commit.py",
+      "bytes": 1629,
+      "sha256": "ca384ba97bdad8dbad5fa400d9211170239daa5d258971b04eca6d7a4aaaa3ea"
+    }
+  ],
+  "binary_retained_locally": {
+    "original_path": "target/debug/deps/duplex_playback-f25f5ef79fc98f53",
+    "retained_path": "run/validation-20261015-v01-db-cancel/final-duplex-playback",
+    "sha256": "30cbf2e52f05ca128342b45d011e791c52ccf4b51294081bfbb20bc85aa5ab45",
+    "bytes": 112289696
+  },
+  "v1_binary_retained_locally": {
+    "path": "run/validation-20261015-v01-db-cancel/v1-duplex-playback",
+    "sha256": "362fed52e55cb93756f047fa5d69f99dea6ac92a665d01d34f70274b26a4b8ef"
+  },
+  "note": "Original log/snapshot bytes retained; binaries stay in ignored run directory. Scripts preserve the original run directory layout, not a new reusable framework."
+}

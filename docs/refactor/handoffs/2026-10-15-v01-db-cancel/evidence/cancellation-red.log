@@ -1,0 +1,31 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.47s
+     Running tests/duplex_playback.rs (target/debug/deps/duplex_playback-0c6a1968bf9e5647)
+
+running 2 tests
+test initialization_cancel::cancelled_after_schema_creation_removes_schema ... FAILED
+test initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema ... FAILED
+
+failures:
+
+---- initialization_cancel::cancelled_after_schema_creation_removes_schema stdout ----
+initialization cancellation: stage=after_schema, checkpoint_dropped=true, schema_remains=Some(true), work_pool_remains=false
+
+thread 'initialization_cancel::cancelled_after_schema_creation_removes_schema' (765645) panicked at packages/alia-server/tests/duplex_playback/initialization_cancel.rs:99:5:
+cancelled initialization left its schema behind
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema stdout ----
+initialization cancellation: stage=after_work_pool, checkpoint_dropped=true, schema_remains=Some(true), work_pool_remains=true
+
+thread 'initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema' (765646) panicked at packages/alia-server/tests/duplex_playback/initialization_cancel.rs:99:5:
+cancelled initialization left its schema behind
+
+
+failures:
+    initialization_cancel::cancelled_after_schema_creation_removes_schema
+    initialization_cancel::cancelled_after_work_pool_creation_closes_pool_and_removes_schema
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.26s
+
+error: test failed, to rerun pass `-p alia-server --test duplex_playback`
