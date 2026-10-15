@@ -1075,3 +1075,6 @@ mod partial_runtime;
 
 #[path = "duplex_playback/late_drain.rs"]
 mod late_drain;
+
+#[path = "duplex_playback/initialization_cancel.rs"]
+mod initialization_cancel;

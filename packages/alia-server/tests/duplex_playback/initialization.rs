@@ -24,6 +24,7 @@ async fn failed_initialization(step: InitializationStep) {
             *observed.lock().unwrap() =
                 Some((fixture.schema_name().to_string(), fixture.db.clone()));
             match step {
+                InitializationStep::CreateSchema => unreachable!("failure probe starts after CREATE"),
                 InitializationStep::WorkPool => panic!("injected work pool initialization failure"),
                 InitializationStep::UserSeed => {
                     fixture.db.execute_unprepared(
@@ -74,6 +75,7 @@ async fn failed_initialization(step: InitializationStep) {
         .or_else(|| error.downcast_ref::<&str>().copied())
         .unwrap();
     let expected = match step {
+        InitializationStep::CreateSchema => unreachable!("failure probe starts after CREATE"),
         InitializationStep::WorkPool => "injected work pool initialization failure",
         InitializationStep::UserSeed => "password_hash",
         InitializationStep::Policy => "policy",
