@@ -1,0 +1,1768 @@
+{
+  "log_path": "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/evidence/workspace-default.log",
+  "log_sha256": "20a7b25d3f468756b81d909213bc77dfd851c02c3bbc176da504b389bc8ec211",
+  "counting_rule": "last libtest summary per sequential Cargo Running / Doc-tests boundary",
+  "target_count": 72,
+  "running_targets": 67,
+  "doctest_targets": 5,
+  "totals": {
+    "passed": 1285,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "running_totals": {
+    "passed": 1285,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "doctest_totals": {
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "excluded_nested_summary_count": 3,
+  "excluded_nested_totals": {
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 1149
+  },
+  "nested_harness_start_count": 4,
+  "orphan_summaries": [],
+  "cargo_errors": [],
+  "parse_issues": [],
+  "targets": [
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_core-ea458b4280c5ae3d)",
+      "heading_line": 19,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 21,
+        "selected": 33
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 33,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 56
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_embedded-752ec18b5e31d3c3)",
+      "heading_line": 58,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 61,
+        "selected": 262
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 262,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 26.25,
+        "line": 325
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/main.rs (/cache/target/debug/deps/alia_embedded-4cae793200b6de16)",
+      "heading_line": 327,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 329,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 331
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/audio.rs (/cache/target/debug/deps/audio-c3bab0a592dcbfec)",
+      "heading_line": 333,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 336,
+        "selected": 10
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 348
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/binding.rs (/cache/target/debug/deps/binding-c9ad4e46a19a0b9d)",
+      "heading_line": 350,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 353,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 356
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/config.rs (/cache/target/debug/deps/config-1d25b30d73d5ebd4)",
+      "heading_line": 358,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 361,
+        "selected": 21
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 21,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 384
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/direct_response.rs (/cache/target/debug/deps/direct_response-d970363b5dbe1412)",
+      "heading_line": 386,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 389,
+        "selected": 8
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 399
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/discovery.rs (/cache/target/debug/deps/discovery-ac14c3406ce6182b)",
+      "heading_line": 401,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 404,
+        "selected": 2
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 408
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/identity.rs (/cache/target/debug/deps/identity-f990530860d3f26c)",
+      "heading_line": 410,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 413,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 416
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/preflight.rs (/cache/target/debug/deps/preflight-8a61f6405a64c20f)",
+      "heading_line": 418,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 420,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 427
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/runtime.rs (/cache/target/debug/deps/runtime-3cb006a06ae8c52b)",
+      "heading_line": 429,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 432,
+        "selected": 9
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.05,
+        "line": 443
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/sensors.rs (/cache/target/debug/deps/sensors-a76065055174c5ed)",
+      "heading_line": 445,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 448,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 455
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/speech.rs (/cache/target/debug/deps/speech-7e66189254feb612)",
+      "heading_line": 457,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 460,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 467
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/storage.rs (/cache/target/debug/deps/storage-488165c129f1854e)",
+      "heading_line": 469,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 472,
+        "selected": 9
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.03,
+        "line": 483
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_proto-1370c9b13ff5bd54)",
+      "heading_line": 485,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 487,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 494
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_server-88f14cc3258a1963)",
+      "heading_line": 496,
+      "nonpassing_test_lines": [
+        {
+          "line": 510,
+          "name": "bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        },
+        {
+          "line": 512,
+          "name": "channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        },
+        {
+          "line": 517,
+          "name": "channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal",
+          "status": "ignored",
+          "reason": "requires a real PTY; run with --ignored --nocapture --test-threads=1"
+        }
+      ],
+      "outer_harness_start": {
+        "line": 498,
+        "selected": 384
+      },
+      "nested_harness_starts": [
+        {
+          "line": 779,
+          "selected": 1
+        },
+        {
+          "line": 859,
+          "selected": 1
+        },
+        {
+          "line": 866,
+          "selected": 1
+        }
+      ],
+      "excluded_earlier_summaries": [
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 383,
+          "status": "ok",
+          "seconds": 0.07,
+          "line": 786
+        },
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 383,
+          "status": "ok",
+          "seconds": 0.03,
+          "line": 862
+        },
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0,
+          "measured": 0,
+          "filtered_out": 383,
+          "status": "ok",
+          "seconds": 0.03,
+          "line": 876
+        }
+      ],
+      "counted_summary": {
+        "passed": 381,
+        "failed": 0,
+        "ignored": 3,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 17.07,
+        "line": 906
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/main.rs (/cache/target/debug/deps/alia_server-c5a3f1c9bba3e839)",
+      "heading_line": 908,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 910,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 912
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/appraisal_provenance.rs (/cache/target/debug/deps/appraisal_provenance-117dda89bb0a0a84)",
+      "heading_line": 914,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 916,
+        "selected": 20
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 20,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 3.69,
+        "line": 938
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/body_delivery.rs (/cache/target/debug/deps/body_delivery-e043535938eca081)",
+      "heading_line": 940,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 942,
+        "selected": 8
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.05,
+        "line": 952
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/cache_context.rs (/cache/target/debug/deps/cache_context-85730d90342aadd0)",
+      "heading_line": 954,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 956,
+        "selected": 17
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 2.67,
+        "line": 975
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/channel_registry.rs (/cache/target/debug/deps/channel_registry-7dd76f680d4aad89)",
+      "heading_line": 977,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 979,
+        "selected": 3
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 984
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/config.rs (/cache/target/debug/deps/config-a5735840f64b3fd9)",
+      "heading_line": 986,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 988,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 995
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/context_lease.rs (/cache/target/debug/deps/context_lease-28e2815225453aa4)",
+      "heading_line": 997,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 999,
+        "selected": 26
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 26,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 3.34,
+        "line": 1027
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/delivery_repository.rs (/cache/target/debug/deps/delivery_repository-eb4398cc6d052269)",
+      "heading_line": 1029,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1031,
+        "selected": 15
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.81,
+        "line": 1048
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/delivery_service.rs (/cache/target/debug/deps/delivery_service-dfaf99bc942e9c2f)",
+      "heading_line": 1050,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1052,
+        "selected": 12
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 11.25,
+        "line": 1066
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/delivery_text.rs (/cache/target/debug/deps/delivery_text-29cc5b21e42dbabe)",
+      "heading_line": 1068,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1070,
+        "selected": 6
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.72,
+        "line": 1078
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/delivery_text_service.rs (/cache/target/debug/deps/delivery_text_service-25ffbc3eaa14bf27)",
+      "heading_line": 1080,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1082,
+        "selected": 4
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.56,
+        "line": 1088
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-2f4fe6777053c391)",
+      "heading_line": 1090,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1093,
+        "selected": 31
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 45.45,
+        "line": 1126
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/easy_turn_live.rs (/cache/target/debug/deps/easy_turn_live-824035ec0d8ddb82)",
+      "heading_line": 1128,
+      "nonpassing_test_lines": [
+        {
+          "line": 1131,
+          "name": "official_audio_through_production_rust_adapter",
+          "status": "ignored",
+          "reason": "requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16"
+        }
+      ],
+      "outer_harness_start": {
+        "line": 1130,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1133
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/embedded_channel.rs (/cache/target/debug/deps/embedded_channel-c1319f150e36cda6)",
+      "heading_line": 1135,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1137,
+        "selected": 3
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1142
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/execution_repository.rs (/cache/target/debug/deps/execution_repository-8e415b3100222311)",
+      "heading_line": 1144,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1146,
+        "selected": 19
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.98,
+        "line": 1167
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/execution_service.rs (/cache/target/debug/deps/execution_service-9da65eefc446b703)",
+      "heading_line": 1169,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1171,
+        "selected": 30
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 30,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 18.63,
+        "line": 1203
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/expression_abi.rs (/cache/target/debug/deps/expression_abi-ef8aaf7c0b39ca2e)",
+      "heading_line": 1205,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1207,
+        "selected": 2
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1211
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/expression_appraisal.rs (/cache/target/debug/deps/expression_appraisal-7bd17137fc45fe3a)",
+      "heading_line": 1213,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1215,
+        "selected": 2
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1219
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/expression_eval.rs (/cache/target/debug/deps/expression_eval-76d48ada31441092)",
+      "heading_line": 1221,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1223,
+        "selected": 6
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 1231
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/expression_regulation.rs (/cache/target/debug/deps/expression_regulation-1a12287fa4ba0a61)",
+      "heading_line": 1233,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1235,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1238
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/expression_trace.rs (/cache/target/debug/deps/expression_trace-db7b89a364749cfa)",
+      "heading_line": 1240,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1242,
+        "selected": 2
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1246
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/interaction.rs (/cache/target/debug/deps/interaction-c36f68a3f88defc7)",
+      "heading_line": 1248,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1250,
+        "selected": 17
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1269
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/interaction_tools.rs (/cache/target/debug/deps/interaction_tools-f59362903a2f432c)",
+      "heading_line": 1271,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1273,
+        "selected": 13
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1288
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/llm.rs (/cache/target/debug/deps/llm-bb881341f4ccf3d7)",
+      "heading_line": 1290,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1292,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1295
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/llm_providers.rs (/cache/target/debug/deps/llm_providers-bf23c8fd53949bd5)",
+      "heading_line": 1297,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1299,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.12,
+        "line": 1306
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory.rs (/cache/target/debug/deps/memory-0ccc7c8745fb72d5)",
+      "heading_line": 1308,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1310,
+        "selected": 13
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.21,
+        "line": 1325
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory_capture.rs (/cache/target/debug/deps/memory_capture-cd5c47474db43028)",
+      "heading_line": 1327,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1329,
+        "selected": 6
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.7,
+        "line": 1337
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory_embedding.rs (/cache/target/debug/deps/memory_embedding-e25b5f9ef07f830e)",
+      "heading_line": 1339,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1341,
+        "selected": 13
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 5.21,
+        "line": 1356
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory_embedding_provenance.rs (/cache/target/debug/deps/memory_embedding_provenance-fe2dbb3788eb1a25)",
+      "heading_line": 1358,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1360,
+        "selected": 7
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 1.49,
+        "line": 1369
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory_message_pins.rs (/cache/target/debug/deps/memory_message_pins-e4b3f06913729575)",
+      "heading_line": 1371,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1373,
+        "selected": 3
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.8,
+        "line": 1378
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/memory_privacy.rs (/cache/target/debug/deps/memory_privacy-bf6b080e03fd6161)",
+      "heading_line": 1380,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1382,
+        "selected": 31
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 31,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 6.09,
+        "line": 1415
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/migrations.rs (/cache/target/debug/deps/migrations-a35247e69166f18b)",
+      "heading_line": 1417,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1419,
+        "selected": 7
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.33,
+        "line": 1428
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/output_control.rs (/cache/target/debug/deps/output_control-6ef8ab24d2234032)",
+      "heading_line": 1430,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1432,
+        "selected": 13
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 3.0,
+        "line": 1447
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/output_lifecycle.rs (/cache/target/debug/deps/output_lifecycle-a3cf6107d043e1b0)",
+      "heading_line": 1449,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1451,
+        "selected": 11
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 6.34,
+        "line": 1464
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/persona.rs (/cache/target/debug/deps/persona-8b1cc9ba10a96d2b)",
+      "heading_line": 1466,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1468,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1471
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/plugin_storage.rs (/cache/target/debug/deps/plugin_storage-242354d77c754e64)",
+      "heading_line": 1473,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1475,
+        "selected": 4
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.03,
+        "line": 1481
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/provider_adapters.rs (/cache/target/debug/deps/provider_adapters-594fb40f195b245b)",
+      "heading_line": 1483,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1485,
+        "selected": 6
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.03,
+        "line": 1493
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/registry.rs (/cache/target/debug/deps/registry-189bbac4cffc15f2)",
+      "heading_line": 1495,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1497,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1500
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/router.rs (/cache/target/debug/deps/router-26ad96885c4f01d9)",
+      "heading_line": 1502,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1504,
+        "selected": 15
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1521
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/rules.rs (/cache/target/debug/deps/rules-4572672b0097710a)",
+      "heading_line": 1523,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1525,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1528
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/scheduler.rs (/cache/target/debug/deps/scheduler-88bf7f34e5ef4de2)",
+      "heading_line": 1530,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1532,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1535
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/sensors.rs (/cache/target/debug/deps/sensors-8c17282d80aac0db)",
+      "heading_line": 1537,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1539,
+        "selected": 8
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1549
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/server_background.rs (/cache/target/debug/deps/server_background-810e68b0d33b9d0b)",
+      "heading_line": 1551,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1553,
+        "selected": 13
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.06,
+        "line": 1568
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-4cbbb8548bbbea75)",
+      "heading_line": 1570,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1572,
+        "selected": 85
+      },
+      "nested_harness_starts": [
+        {
+          "line": 1576,
+          "selected": 1
+        }
+      ],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 85,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 76.73,
+        "line": 1715
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/settings.rs (/cache/target/debug/deps/settings-dc519765d9151cc9)",
+      "heading_line": 1717,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1719,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.02,
+        "line": 1726
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/settings_cancellation.rs (/cache/target/debug/deps/settings_cancellation-c0050c78881ad3cb)",
+      "heading_line": 1728,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1730,
+        "selected": 2
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1734
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/skills.rs (/cache/target/debug/deps/skills-2b704cb30a6d22dc)",
+      "heading_line": 1736,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1738,
+        "selected": 11
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1751
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/tools.rs (/cache/target/debug/deps/tools-1ccbc4ef66f18e6a)",
+      "heading_line": 1753,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1755,
+        "selected": 15
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.01,
+        "line": 1772
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/voice_stream_live.rs (/cache/target/debug/deps/voice_stream_live-29cf24cfb5415eb0)",
+      "heading_line": 1774,
+      "nonpassing_test_lines": [
+        {
+          "line": 1777,
+          "name": "official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait",
+          "status": "ignored",
+          "reason": "requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL"
+        }
+      ],
+      "outer_harness_start": {
+        "line": 1776,
+        "selected": 1
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1779
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "unittests src/lib.rs (/cache/target/debug/deps/alia_transport-04c06a8791982179)",
+      "heading_line": 1781,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1783,
+        "selected": 3
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.06,
+        "line": 1788
+      }
+    },
+    {
+      "kind": "Running",
+      "target": "tests/transport.rs (/cache/target/debug/deps/transport-ec3f05cd5c1bfc15)",
+      "heading_line": 1790,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1792,
+        "selected": 5
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1799
+      }
+    },
+    {
+      "kind": "Doc-tests",
+      "target": "alia_core",
+      "heading_line": 1801,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1803,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1805
+      }
+    },
+    {
+      "kind": "Doc-tests",
+      "target": "alia_embedded",
+      "heading_line": 1807,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1809,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1811
+      }
+    },
+    {
+      "kind": "Doc-tests",
+      "target": "alia_proto",
+      "heading_line": 1813,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1815,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1817
+      }
+    },
+    {
+      "kind": "Doc-tests",
+      "target": "alia_server",
+      "heading_line": 1819,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1821,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1823
+      }
+    },
+    {
+      "kind": "Doc-tests",
+      "target": "alia_transport",
+      "heading_line": 1825,
+      "nonpassing_test_lines": [],
+      "outer_harness_start": {
+        "line": 1827,
+        "selected": 0
+      },
+      "nested_harness_starts": [],
+      "excluded_earlier_summaries": [],
+      "counted_summary": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0,
+        "measured": 0,
+        "filtered_out": 0,
+        "status": "ok",
+        "seconds": 0.0,
+        "line": 1829
+      }
+    }
+  ],
+  "adjacent_pre_heading_starts": [],
+  "delayed_previous_target_tails": [],
+  "run_metadata": {
+    "started": "2026-10-16T16:34:54.580153+00:00",
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--offline",
+      "--locked"
+    ],
+    "container": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005",
+    "environment": {
+      "ALIA_TEST_DATABASE_URL": "isolated task PostgreSQL",
+      "DATABASE_URL": "unset",
+      "CARGO_HOME": "/cache/cargo",
+      "CARGO_TARGET_DIR": "/cache/target",
+      "CARGO_BUILD_JOBS": "2",
+      "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+      "RUST_TEST_THREADS": "unset",
+      "RUST_MIN_STACK": "unset",
+      "DOCS_RS": "unset",
+      "SHERPA_ONNX_LIB_DIR": "unset"
+    },
+    "manifest_sha256": "c239c76799e4f70096c2c7e5898e396534beb2a762fb7628203c671d2941c5bf",
+    "container_watchdog_seconds": 1800,
+    "container_kill_after_seconds": 10,
+    "host_watchdog_seconds": 1850,
+    "exit_code": 0,
+    "source_before": {
+      "file_count": 677,
+      "errors": []
+    },
+    "source_after": {
+      "file_count": 677,
+      "errors": []
+    },
+    "source_drift": [],
+    "elapsed_seconds": 483.737,
+    "finished_at": "2026-10-16T16:42:58.317576+00:00"
+  },
+  "invocation": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--offline",
+      "--locked"
+    ],
+    "workspace_requested": true,
+    "all_features_requested": false,
+    "default_features_disabled": false,
+    "explicit_features": [],
+    "target_argument": null,
+    "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"
+  },
+  "run_completion_confirmed": true,
+  "source_drift_recorded": false,
+  "assessment": "PASSED_RECORDED_RUN"
+}

@@ -1,0 +1,10 @@
+    Checking sha2 v0.10.9
+   Compiling alia-proto v0.1.0 (/workspace/crates/proto)
+    Checking sqlx-core v0.8.6
+    Checking ed25519-dalek v2.2.0
+    Checking sqlx-sqlite v0.8.6
+    Checking alia-core v0.1.0 (/workspace/crates/alia-core)
+    Checking alia-transport v0.1.0 (/workspace/crates/transport)
+    Checking sqlx v0.8.6
+    Checking alia-embedded v0.1.0 (/workspace/packages/alia-embedded)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.95s

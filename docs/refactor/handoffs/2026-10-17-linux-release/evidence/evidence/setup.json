@@ -1,0 +1,176 @@
+{
+  "at": "2026-10-16T16:30:52.219277+00:00",
+  "cache_mode": "APFS clone of previous task cache; this run writes only its private clone",
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Status}} {{.Image}}"
+      ],
+      "exit_code": 0,
+      "stdout": "f1848826e3d1 alia-settings-read-authorization-linux-20261012-v3 Exited (137) 4 days ago 6cd7a7a06976\nf89f6f89c1c3 alia-settings-read-authorization-linux-20261012-v1 Exited (137) 4 days ago 6cd7a7a06976\n28a195e4285a alia-settings-read-authorization-20261012-db Exited (0) 4 days ago 306e00ca1290\n2ca420624192 alia-settings-authorization-linux-20261012-v1 Exited (137) 5 days ago 6cd7a7a06976\ncef49d87ba53 alia-settings-authorization-20261012-db Exited (0) 5 days ago 306e00ca1290\n01dceb7a73d0 alia-settings-recovery-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\nb1afbd57917b alia-settings-recovery-20261011-db Exited (0) 5 days ago 306e00ca1290\ne610b22fc7f6 alia-config-durability-linux-20261011-v3 Exited (137) 5 days ago 6cd7a7a06976\n20997cefb139 alia-config-durability-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n2b55652b30dc alia-config-durability-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n855c6b584f4f alia-config-durability-20261011-db Exited (0) 5 days ago 306e00ca1290\n19ad2873dd29 alia-health-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n57bddadc51eb alia-health-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n8bd33f2dd752 alia-health-20261011-db Exited (0) 5 days ago 306e00ca1290\nf5c1b984dc3e alia-classifier-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\nf9cd39494560 alia-classifier-20261011-db Exited (0) 5 days ago 306e00ca1290\n55d1a0aa72aa alia-skills-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n58bd401313b6 alia-skills-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n1319a90070a6 alia-skills-20261011-db Exited (0) 5 days ago 306e00ca1290\n9bb31eba6aaa alia-l12-linux-20261010-v4 Exited (137) 6 days ago 6cd7a7a06976\n3a33dbb804a3 alia-l12-linux-20261010-v3 Exited (137) 6 days ago 6cd7a7a06976\n6f11e6144de7 alia-l12-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\ne88886f8926f alia-l12-linux-20261010-v1-cache Exited (137) 6 days ago 6cd7a7a06976\n0b408560e17d alia-l12-linux-20261010-v1 Exited (137) 6 days ago 6cd7a7a06976\nc6626354e2bb alia-l12-20261010-db Exited (0) 6 days ago 306e00ca1290\n44c3cda9b85d alia-l11-linux-20261010-v4 Exited (137) 6 days ago 6cd7a7a06976\nd09d50e199f8 alia-l11-linux-20261010-v3 Exited (137) 6 days ago 6cd7a7a06976\nf37ef00fa819 alia-l11-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\ne3ffff2c8f11 alia-l11-20261010-db Exited (0) 6 days ago 306e00ca1290\nfc3b77293558 alia-l10-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\nd8b396eb8886 alia-l10-linux-20261010-v1 Exited (137) 6 days ago 6cd7a7a06976\n240b89097260 alia-l10-20261010-db Exited (0) 6 days ago 306e00ca1290\nca3203b69892 alia-l09-linux-20261009-v1 Exited (137) 7 days ago 6cd7a7a06976\n3fc6d6011973 alia-l09-20261009-db Exited (0) 7 days ago 306e00ca1290\n59fda9b500b0 alia-layering-linux-20261008-v2 Exited (137) 8 days ago 6cd7a7a06976\n242a30220f8f alia-layering-linux-20261008-v1 Exited (137) 8 days ago 6cd7a7a06976\n7e194358e500 alia-layering-20261008-db Exited (0) 8 days ago pgvector/pgvector:pg17\n5b61a1d13a6a alia-cleanup-linux-20261006-v3 Exited (137) 10 days ago 6cd7a7a06976\n372d14771aad alia-cleanup-linux-20261006-v2 Exited (137) 10 days ago 6cd7a7a06976\n3476eac59436 alia-cleanup-20261006-db Exited (0) 10 days ago pgvector/pgvector:pg17\n69b859362770 alia-review-linux-20261004-v1 Exited (137) 12 days ago 6cd7a7a06976\n616068ade5a1 alia-review-20261004-db Exited (0) 12 days ago pgvector/pgvector:pg17\nc8d3c3d09af2 alia-r04-arm64-20260928-v4 Exited (137) 2 weeks ago 6cd7a7a06976\n62d58b979c77 alia-r04-arm64-20260928-v2 Exited (137) 2 weeks ago 6cd7a7a06976\n13ad6f93de47 alia-r04-arm64-20260928-v1 Created 6cd7a7a06976\n502c9f41d177 alia-cp-arm64-20260928-v1 Exited (137) 2 weeks ago 6cd7a7a06976\n25ca66db858e alia-refactor-test-db Exited (0) 13 days ago pgvector/pgvector:pg17\n488d5b784518 alia-companion-arm64-20260926-v3 Exited (137) 2 weeks ago 6cd7a7a06976\nc6a81063d66c alia-companion-arm64-20260926-v2 Exited (137) 2 weeks ago rust\n965d0a454d15 alia-home-assistant-dev-home-assistant-1 Exited (0) 2 days ago ghcr.io/home-assistant/home-assistant:stable\n905470a16802 alia-postgres Exited (0) 2 days ago pgvector/pgvector:pg17\n7365984e79e5 alia-python-postgres Exited (0) 3 months ago pgvector/pgvector:pg17\nf29c4066877c astrbot_shipyard Exited (0) 3 months ago soulter/shipyard-bay:latest\nff11509546b7 ship-d724212e-936e-43d8-9e1e-3e667a5f70cc Exited (0) 3 months ago soulter/shipyard-ship:latest\nc5aaca070870 astrbot Up 34 hours astrbot:kimi-code\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "create",
+        "--internal",
+        "--label",
+        "alia.validation=linux-release-20261017",
+        "alia-linux-release-20261017-net"
+      ],
+      "exit_code": 0,
+      "stdout": "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "run",
+        "-d",
+        "--pull=never",
+        "--name",
+        "alia-linux-release-20261017-db",
+        "--label",
+        "alia.validation=linux-release-20261017",
+        "--network",
+        "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e",
+        "-e",
+        "POSTGRES_USER=alia_test",
+        "-e",
+        "POSTGRES_PASSWORD=alia_test",
+        "-e",
+        "POSTGRES_DB=alia_linux_release_20261017",
+        "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3"
+      ],
+      "exit_code": 0,
+      "stdout": "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+        "psql",
+        "-U",
+        "alia_test",
+        "-d",
+        "alia_linux_release_20261017",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-Atc",
+        "SELECT current_database(),current_user,version();"
+      ],
+      "exit_code": 0,
+      "stdout": "alia_linux_release_20261017|alia_test|PostgreSQL 17.10 (Debian 17.10-1.pgdg12+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "run",
+        "-d",
+        "--pull=never",
+        "--platform",
+        "linux/arm64",
+        "--name",
+        "alia-linux-release-20261017",
+        "--label",
+        "alia.validation=linux-release-20261017",
+        "--network",
+        "container:7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+        "--workdir",
+        "/workspace",
+        "-e",
+        "CARGO_HOME=/cache/cargo",
+        "-e",
+        "CARGO_TARGET_DIR=/cache/target",
+        "-e",
+        "CARGO_BUILD_JOBS=2",
+        "-e",
+        "CARGO_TERM_COLOR=never",
+        "-e",
+        "SHERPA_ONNX_ARCHIVE_DIR=/native",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/cache,dst=/cache",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/registry,dst=/cache/cargo/registry",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/source,dst=/workspace,readonly",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/native,dst=/native,readonly",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/evidence,dst=/evidence",
+        "--mount",
+        "type=bind,src=/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/runtime,dst=/runtime",
+        "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+        "sleep",
+        "infinity"
+      ],
+      "exit_code": 0,
+      "stdout": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005\n",
+      "stderr": ""
+    }
+  ],
+  "images": [
+    {
+      "Id": "sha256:6cd7a7a06976f8651cdb57fcde457e9dc7e2abe20587900dd750e1f373a25c70",
+      "Architecture": "arm64",
+      "Os": "linux",
+      "RepoDigests": [],
+      "Created": "2026-09-26T05:57:22.722281806Z",
+      "RootFS": {
+        "Layers": [
+          "sha256:a1ea3521f7b82c7449178568397141f88a60345d3a93eeede3213346b4957488",
+          "sha256:f949a780fa7d2c3e6c1c5730764472c7343e36c5d8ab89d3b77b1117a5670095",
+          "sha256:76180d018a70275eac1e4e11e4bc62480b09cca9e0ccf87187c6db34e7c84790",
+          "sha256:d5fbff28e790d028fe61d655f2766359d2de4f30f984d1872a7038ec415a5625",
+          "sha256:7e45dbfbfc80b6a7ccc8250264b2854aa3e469dbbf0c0303b5b0286fc986342c",
+          "sha256:53b9d5855724aa2c062193474d622b30b1a9941bf3786f5978e148da8e1cb889"
+        ],
+        "Type": "layers"
+      }
+    },
+    {
+      "Id": "sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3",
+      "Architecture": "arm64",
+      "Os": "linux",
+      "RepoDigests": [
+        "pgvector/pgvector@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966"
+      ],
+      "Created": "2026-05-15T14:24:51.565861965Z",
+      "RootFS": {
+        "Type": "layers",
+        "Layers": [
+          "sha256:7a926e09be014ed6f5df3666f96de7cf91f8452492a7fd714d42eeee9c6ee246",
+          "sha256:d3eeb26ea634dac50a9a4d8cdbc346eaf84565d10e92092eb2c2ce7f40e06ec7",
+          "sha256:a58b039285d64c782442926b0ea9deef286f6a7ea591df114a05b276cfe46be0",
+          "sha256:2899ad85d92c1a86b68404ab53b9b87fa3d165d3078362dfa927821cb559489e",
+          "sha256:c5b3996196b4a88b836ddd464d0c7d6ddc9ffad0c978087ad053e43be30b8a96",
+          "sha256:09cd03300e87b9001a1aef62a0203a9cdaca0a6efc8b126ecd5b4fd96ff8b573",
+          "sha256:2639186f9ba7289c5f580f2375b0d2681ddacd41de6a21226c89638d4407679d",
+          "sha256:5159060540f0ed25fc51961ddd7138843b06f6f857d66a490363d77f112c6a99",
+          "sha256:ad6248522feeb7e7e4d31caf7f07d0a4c6985011fb7880806d0cf07283a1620d",
+          "sha256:ac023906a43f7da31ca03303c4a6e00087736c78485ab9456f85beae4e99c723",
+          "sha256:41869444fde308f3bc87fae78bcc0e6bf11060511b7ba73aa927c532dfc7dcb7",
+          "sha256:01442a94d18cbb0e634a5a8bf7c304d20e3339c1bcca2ec67ed78a5b1e70a9a9",
+          "sha256:167b807a10847032f7b26913539efa36a5e04452d56bd9992ce86fbdb92cd8f7",
+          "sha256:8583df97409448c7f575ddab1aba504f8927aa13b8efd6e1c1cecffd1dffcd47",
+          "sha256:967f7f84202fe95fdd837e230463219f09e8bfd041578339198d6053da706767",
+          "sha256:e82df6ccc9cd2bfb2e400d61ae803b7fe1f3994fcf4f836ddd2811be692bd631"
+        ]
+      }
+    }
+  ],
+  "baseline_containers": "f1848826e3d1 alia-settings-read-authorization-linux-20261012-v3 Exited (137) 4 days ago 6cd7a7a06976\nf89f6f89c1c3 alia-settings-read-authorization-linux-20261012-v1 Exited (137) 4 days ago 6cd7a7a06976\n28a195e4285a alia-settings-read-authorization-20261012-db Exited (0) 4 days ago 306e00ca1290\n2ca420624192 alia-settings-authorization-linux-20261012-v1 Exited (137) 5 days ago 6cd7a7a06976\ncef49d87ba53 alia-settings-authorization-20261012-db Exited (0) 5 days ago 306e00ca1290\n01dceb7a73d0 alia-settings-recovery-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\nb1afbd57917b alia-settings-recovery-20261011-db Exited (0) 5 days ago 306e00ca1290\ne610b22fc7f6 alia-config-durability-linux-20261011-v3 Exited (137) 5 days ago 6cd7a7a06976\n20997cefb139 alia-config-durability-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n2b55652b30dc alia-config-durability-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n855c6b584f4f alia-config-durability-20261011-db Exited (0) 5 days ago 306e00ca1290\n19ad2873dd29 alia-health-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n57bddadc51eb alia-health-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n8bd33f2dd752 alia-health-20261011-db Exited (0) 5 days ago 306e00ca1290\nf5c1b984dc3e alia-classifier-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\nf9cd39494560 alia-classifier-20261011-db Exited (0) 5 days ago 306e00ca1290\n55d1a0aa72aa alia-skills-linux-20261011-v2 Exited (137) 5 days ago 6cd7a7a06976\n58bd401313b6 alia-skills-linux-20261011-v1 Exited (137) 5 days ago 6cd7a7a06976\n1319a90070a6 alia-skills-20261011-db Exited (0) 5 days ago 306e00ca1290\n9bb31eba6aaa alia-l12-linux-20261010-v4 Exited (137) 6 days ago 6cd7a7a06976\n3a33dbb804a3 alia-l12-linux-20261010-v3 Exited (137) 6 days ago 6cd7a7a06976\n6f11e6144de7 alia-l12-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\ne88886f8926f alia-l12-linux-20261010-v1-cache Exited (137) 6 days ago 6cd7a7a06976\n0b408560e17d alia-l12-linux-20261010-v1 Exited (137) 6 days ago 6cd7a7a06976\nc6626354e2bb alia-l12-20261010-db Exited (0) 6 days ago 306e00ca1290\n44c3cda9b85d alia-l11-linux-20261010-v4 Exited (137) 6 days ago 6cd7a7a06976\nd09d50e199f8 alia-l11-linux-20261010-v3 Exited (137) 6 days ago 6cd7a7a06976\nf37ef00fa819 alia-l11-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\ne3ffff2c8f11 alia-l11-20261010-db Exited (0) 6 days ago 306e00ca1290\nfc3b77293558 alia-l10-linux-20261010-v2 Exited (137) 6 days ago 6cd7a7a06976\nd8b396eb8886 alia-l10-linux-20261010-v1 Exited (137) 6 days ago 6cd7a7a06976\n240b89097260 alia-l10-20261010-db Exited (0) 6 days ago 306e00ca1290\nca3203b69892 alia-l09-linux-20261009-v1 Exited (137) 7 days ago 6cd7a7a06976\n3fc6d6011973 alia-l09-20261009-db Exited (0) 7 days ago 306e00ca1290\n59fda9b500b0 alia-layering-linux-20261008-v2 Exited (137) 8 days ago 6cd7a7a06976\n242a30220f8f alia-layering-linux-20261008-v1 Exited (137) 8 days ago 6cd7a7a06976\n7e194358e500 alia-layering-20261008-db Exited (0) 8 days ago pgvector/pgvector:pg17\n5b61a1d13a6a alia-cleanup-linux-20261006-v3 Exited (137) 10 days ago 6cd7a7a06976\n372d14771aad alia-cleanup-linux-20261006-v2 Exited (137) 10 days ago 6cd7a7a06976\n3476eac59436 alia-cleanup-20261006-db Exited (0) 10 days ago pgvector/pgvector:pg17\n69b859362770 alia-review-linux-20261004-v1 Exited (137) 12 days ago 6cd7a7a06976\n616068ade5a1 alia-review-20261004-db Exited (0) 12 days ago pgvector/pgvector:pg17\nc8d3c3d09af2 alia-r04-arm64-20260928-v4 Exited (137) 2 weeks ago 6cd7a7a06976\n62d58b979c77 alia-r04-arm64-20260928-v2 Exited (137) 2 weeks ago 6cd7a7a06976\n13ad6f93de47 alia-r04-arm64-20260928-v1 Created 6cd7a7a06976\n502c9f41d177 alia-cp-arm64-20260928-v1 Exited (137) 2 weeks ago 6cd7a7a06976\n25ca66db858e alia-refactor-test-db Exited (0) 13 days ago pgvector/pgvector:pg17\n488d5b784518 alia-companion-arm64-20260926-v3 Exited (137) 2 weeks ago 6cd7a7a06976\nc6a81063d66c alia-companion-arm64-20260926-v2 Exited (137) 2 weeks ago rust\n965d0a454d15 alia-home-assistant-dev-home-assistant-1 Exited (0) 2 days ago ghcr.io/home-assistant/home-assistant:stable\n905470a16802 alia-postgres Exited (0) 2 days ago pgvector/pgvector:pg17\n7365984e79e5 alia-python-postgres Exited (0) 3 months ago pgvector/pgvector:pg17\nf29c4066877c astrbot_shipyard Exited (0) 3 months ago soulter/shipyard-bay:latest\nff11509546b7 ship-d724212e-936e-43d8-9e1e-3e667a5f70cc Exited (0) 3 months ago soulter/shipyard-ship:latest\nc5aaca070870 astrbot Up 34 hours astrbot:kimi-code",
+  "network_id": "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e",
+  "database_id": "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+  "database_preflight": "alia_linux_release_20261017|alia_test|PostgreSQL 17.10 (Debian 17.10-1.pgdg12+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+  "linux_id": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005"
+}

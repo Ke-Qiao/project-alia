@@ -1,0 +1,258 @@
+{
+  "at": "2026-10-16T16:47:46.403624+00:00",
+  "base_commit": "da3eca2fe6853f104dd558051aebf92dd62f067b",
+  "source_commit": "4e2968f18d765f326e76d24a3bcdf5bba9034efc",
+  "files": [
+    {
+      "path": "evidence/archive.py",
+      "sha256": "f00c52479acbcad759ca4cf2f15dac48bd09285bb607ade0fe69790f4ad4a930",
+      "bytes": 1891
+    },
+    {
+      "path": "evidence/cleanup.py",
+      "sha256": "e3b360b1b4740e1ebfcb08d2848b92b0039e7d4b123dd4e02f0646950e842d5b",
+      "bytes": 2919
+    },
+    {
+      "path": "evidence/count_cargo_tests.py",
+      "sha256": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236",
+      "bytes": 13500
+    },
+    {
+      "path": "evidence/counter-self-test.json",
+      "sha256": "afaba8acbf9b132cfcc9434b87a13cf5f92958f958b3dd881461d5957406a50b",
+      "bytes": 183
+    },
+    {
+      "path": "evidence/evidence/after-workspace-resources.json",
+      "sha256": "8cd36cdf0ac628f41335411431a32fc1c2d20ab389ed379f38351741f93cec65",
+      "bytes": 786
+    },
+    {
+      "path": "evidence/evidence/baseline-commit-verification.json",
+      "sha256": "53901bb552481056ec1beb25db15507b574cb02c6bb51ed7a8f7a9e8a99f380f",
+      "bytes": 290
+    },
+    {
+      "path": "evidence/evidence/cached-release-before.json",
+      "sha256": "94808309d20a857a1c0307ea2a65aedb6edc368767f30ed23a4d8eb7c5029986",
+      "bytes": 285
+    },
+    {
+      "path": "evidence/evidence/cleanup.json",
+      "sha256": "f8a35c3e78e6b052b2f13aec650a3cc8ceca0448448f75fd5bcbb22cc57c8e3d",
+      "bytes": 17317
+    },
+    {
+      "path": "evidence/evidence/counter-selftest.json",
+      "sha256": "57a590d18d3406db1dde877b02c3902675b926d29c1f8fcdb8ee6960c8f66e9c",
+      "bytes": 281
+    },
+    {
+      "path": "evidence/evidence/embedded-no-default.command.json",
+      "sha256": "2d0931153098ae58dc07a186783edf60a1890f311dafd7273a70bf5950251e30",
+      "bytes": 960
+    },
+    {
+      "path": "evidence/evidence/embedded-no-default.log",
+      "sha256": "ac9fc7e3c231c8dd0eafa7994331546138bc96b0e96bc01de5ed5ef48e84eaa6",
+      "bytes": 471
+    },
+    {
+      "path": "evidence/evidence/embedded-no-default.result.json",
+      "sha256": "fba5b087fb614b5296d797f6d0d793cf90f9ce4073ddfa5f172c508648e60501",
+      "bytes": 1125
+    },
+    {
+      "path": "evidence/evidence/environment.command.json",
+      "sha256": "6b915e909dd3a4e952d7c947b50849af85827b5c8154cd8e2397a21e9b1c58b4",
+      "bytes": 867
+    },
+    {
+      "path": "evidence/evidence/environment.log",
+      "sha256": "62dc5c7df03d5e025c345b26611f023efed89809d7b470e3589678332713d113",
+      "bytes": 4890
+    },
+    {
+      "path": "evidence/evidence/environment.py",
+      "sha256": "52e220edcfed74d2a22175133e0c27fbe5465358cf90a4655b6ca2d36b5df88e",
+      "bytes": 1620
+    },
+    {
+      "path": "evidence/evidence/environment.result.json",
+      "sha256": "193380f11a054cb446161af463f8493f190f2b1202b04b96035cf7dde652c0cb",
+      "bytes": 1032
+    },
+    {
+      "path": "evidence/evidence/final-host-verification.json",
+      "sha256": "c9b427b624fd648d39a42604dc287e335ea22381ec909d60567efded834d70a8",
+      "bytes": 291
+    },
+    {
+      "path": "evidence/evidence/mac-linux-input-comparison.json",
+      "sha256": "471caacbebae5242ef886963062572c05104817162d62165794952f55290e6d6",
+      "bytes": 382
+    },
+    {
+      "path": "evidence/evidence/native-inputs-after.json",
+      "sha256": "94ab1e94cc4626a1781d44bb25681207843ad5440a82391b2e3605872f629d87",
+      "bytes": 185
+    },
+    {
+      "path": "evidence/evidence/native-inputs-before.json",
+      "sha256": "ed14e0267f0530330932fff77e77b67e5a723338e457990270149e676d44b161",
+      "bytes": 3337
+    },
+    {
+      "path": "evidence/evidence/release-audit.json",
+      "sha256": "267ee601c51526457ab87f17d0016f40e849ebaf99d7b421bb85ea382482847f",
+      "bytes": 47577
+    },
+    {
+      "path": "evidence/evidence/release-audit.py",
+      "sha256": "7ddd26485eea5d52ab45ed85b973bc9624d976af7675715c7b09469d85fdd1b1",
+      "bytes": 2570
+    },
+    {
+      "path": "evidence/evidence/release-default.command.json",
+      "sha256": "c8a85c3dc140915e37cde6459050ef384d59ab452562111b3cdc22ed54c82ea5",
+      "bytes": 956
+    },
+    {
+      "path": "evidence/evidence/release-default.log",
+      "sha256": "23e3977fd0b57fa03285c038068f9fd612ffa5e561e56e4f0f828f58479f9381",
+      "bytes": 381
+    },
+    {
+      "path": "evidence/evidence/release-default.result.json",
+      "sha256": "0767a3560cf62de9db03ce0597278ec2d80fe6ff594b331003a662c834499450",
+      "bytes": 1123
+    },
+    {
+      "path": "evidence/evidence/release-link-audit.command.json",
+      "sha256": "d41823f9e48ef90b4c16dfe87f2f99f7f8b1be4ff39206fd66bd43bf94f3365c",
+      "bytes": 869
+    },
+    {
+      "path": "evidence/evidence/release-link-audit.log",
+      "sha256": "726e8165097e64a98aa4c36129868bf1e9e2c7bbbd7216d612f6b6727ab69010",
+      "bytes": 277
+    },
+    {
+      "path": "evidence/evidence/release-link-audit.result.json",
+      "sha256": "4e97106d7a9faecf1af1f30f34531c4cc6b999fbd33bd22dab432d1deaf57762",
+      "bytes": 1034
+    },
+    {
+      "path": "evidence/evidence/retained-artifacts.json",
+      "sha256": "b65aeccb36a5a6b9c6a3117e70ded6abde595299965ed1b3ee2832be992f25e7",
+      "bytes": 584
+    },
+    {
+      "path": "evidence/evidence/server-no-default.command.json",
+      "sha256": "d4b479598d514ad1bd46b06b804f8d14293f941e8531dd27812fcc7a6e4a01f8",
+      "bytes": 958
+    },
+    {
+      "path": "evidence/evidence/server-no-default.log",
+      "sha256": "a9da1705cae1a9ab4f55cfb4825d707061754b9949bca4b07de85b36942d7eb4",
+      "bytes": 391
+    },
+    {
+      "path": "evidence/evidence/server-no-default.result.json",
+      "sha256": "e44fb6fd0b8ede0399e1f4f4d6a4f57958ff071946ca35aebc0d430ba8c4c185",
+      "bytes": 1124
+    },
+    {
+      "path": "evidence/evidence/setup.json",
+      "sha256": "8809c495261b8795f7751d2c2758a79a999bef457b2e3b6375fcac58c206fca4",
+      "bytes": 16002
+    },
+    {
+      "path": "evidence/evidence/source-manifest.json",
+      "sha256": "c239c76799e4f70096c2c7e5898e396534beb2a762fb7628203c671d2941c5bf",
+      "bytes": 124740
+    },
+    {
+      "path": "evidence/evidence/source-preparation.json",
+      "sha256": "e5f289ba4c4e99cfed5ce1da502108d548f4248ae38435f448900b008a23c1bb",
+      "bytes": 206
+    },
+    {
+      "path": "evidence/evidence/validation-summary.json",
+      "sha256": "ff52c9bcc84cb97e1d5808cc00364946a2f57fcc8380041d1af757ee2bfc9ef2",
+      "bytes": 3385
+    },
+    {
+      "path": "evidence/evidence/workspace-counts.json",
+      "sha256": "57038c9ca396d15695ac848868594cfaae23d5019a4829775a9099d60423f28d",
+      "bytes": 46352
+    },
+    {
+      "path": "evidence/evidence/workspace-counts.txt",
+      "sha256": "297f9abdf0ac7fa753b14c90cc0fc4863b74bd44fe1ece8aea45a71b01fc23e7",
+      "bytes": 10339
+    },
+    {
+      "path": "evidence/evidence/workspace-default.command.json",
+      "sha256": "2bf2584bddf71172be6b27a9b4da87e60e0a942331af90252fc68a546a4c3b2e",
+      "bytes": 897
+    },
+    {
+      "path": "evidence/evidence/workspace-default.log",
+      "sha256": "20a7b25d3f468756b81d909213bc77dfd851c02c3bbc176da504b389bc8ec211",
+      "bytes": 142617
+    },
+    {
+      "path": "evidence/evidence/workspace-default.result.json",
+      "sha256": "865c7791ab76af92eb362bab508c6c1dbc4270d33676995cc1af97bb2f4a5ea5",
+      "bytes": 1064
+    },
+    {
+      "path": "evidence/final-host-manifest.json",
+      "sha256": "0bcf0a1dbff3185fe33f0cb1e43dd5f85a6f103e65bb6a8de4d8036a71f8709f",
+      "bytes": 124740
+    },
+    {
+      "path": "evidence/freeze-source.py",
+      "sha256": "138a65082d58b0756ae4df6b1b5c2c096a78d2ca6abf6df1ab1d2d8e1874cf34",
+      "bytes": 1155
+    },
+    {
+      "path": "evidence/native-after.py",
+      "sha256": "ce7016993e68aec715b4b645688ab30cd050196d1baed2ffea40c8692117b32e",
+      "bytes": 867
+    },
+    {
+      "path": "evidence/resources.py",
+      "sha256": "6ff6f5836b3d30580476951752879c70072ad0bff5c14a901883cf617d1168b2",
+      "bytes": 1352
+    },
+    {
+      "path": "evidence/run-stage.py",
+      "sha256": "e9ea55df8da7b4bc80837f0b083cbcfa1aaae9f8b919784b3f17ef0cdb33ca06",
+      "bytes": 3755
+    },
+    {
+      "path": "evidence/setup.py",
+      "sha256": "82ed064ea516e251f4a6557e8de5ca7eceb04e37358897576bf91f967812bf3f",
+      "bytes": 4338
+    },
+    {
+      "path": "evidence/source-manifest.json",
+      "sha256": "c239c76799e4f70096c2c7e5898e396534beb2a762fb7628203c671d2941c5bf",
+      "bytes": 124740
+    },
+    {
+      "path": "evidence/test-counter.py",
+      "sha256": "bf1ca9870b6602ce99a644839ab1993901bafde36cea114439b9f089c2a2618c",
+      "bytes": 2406
+    },
+    {
+      "path": "evidence/verify-commit.py",
+      "sha256": "5dce754f59aaf94905beccadc407d81abc4d7abd97a3b4e76133365822bfc23c",
+      "bytes": 1743
+    }
+  ],
+  "scope": "Byte-exact run originals, with original directory layout. Binary/cache/source snapshot remain under ignored run; binary identities are in release-audit.json. Scripts require their original run environment and are not standalone deployment tools."
+}

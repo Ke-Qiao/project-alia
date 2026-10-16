@@ -1,0 +1,81 @@
+{
+  "archive": "native/sherpa-onnx-v1.13.1-linux-aarch64-static-lib.tar.bz2",
+  "archive_sha256": "86d0d3818770d4f6a087e52691d3ae171393972030f133df064a271fe9fe1749",
+  "libraries": [
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libpiper_phonemize.a",
+      "sha256": "d4a39987018d963d31f077dff6407254efade048c6075fe663fe35ec3fcf242c",
+      "bytes": 448566
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-kaldifst-core.a",
+      "sha256": "269881528e2ec2f0e2a3aba2d9354b842d9b94f9fd317e7250e6663272a8256e",
+      "bytes": 2659912
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libucd.a",
+      "sha256": "af4921188af257f16ca4c931e3ef07b01b9abfc6d481d8b7d459059c6c4e9b23",
+      "bytes": 229688
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libonnxruntime.a",
+      "sha256": "3db52f251125ef4f01ee9ed62fdf59be9adb94142cc2a3f76d7f6fbb26282438",
+      "bytes": 93676618
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-fst.a",
+      "sha256": "13dd1a4fabfafaf573bd4a2171470ab512d58152a98fb9d025ab0331ca5b57d6",
+      "bytes": 4327536
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libkaldi-decoder-core.a",
+      "sha256": "eda0380227e7fa1c8dc546681f63290110abf07a24f33bfe594fc193a9c438fb",
+      "bytes": 1304474
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libkissfft-float.a",
+      "sha256": "429f43ed66b7fb55c4fc8a9e61dc168435f49418c92f5c1fef5e03a35611b9ab",
+      "bytes": 23422
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-portaudio_static.a",
+      "sha256": "450006fca58f51845d62343b95dc1cc1a4b6de4456bf79105627bd62880ab00b",
+      "bytes": 242714
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libssentencepiece_core.a",
+      "sha256": "075b5e63c97e317ae552c44e7043ba5c763c69edbb5536b637b1bcfbf8b78794",
+      "bytes": 221512
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-fstfar.a",
+      "sha256": "7661611b2af89f4f78137a8be8efad934841352a34388caecd856ec2b1d29ad4",
+      "bytes": 40432
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-c-api.a",
+      "sha256": "b3f635ef534661c3d28975e14aa3c1889643eb866e4b700035e80cdf565627fb",
+      "bytes": 495144
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-core.a",
+      "sha256": "4c20fc0948f0fe19b7b40b82bbdf1d37a6691d047be2969d8290aed1853eb566",
+      "bytes": 15873494
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libkaldi-native-fbank-core.a",
+      "sha256": "75e08fea214d849e148d4881e9397bb4078536210632c4b9399aff26e70cd2b4",
+      "bytes": 207606
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libsherpa-onnx-cxx-api.a",
+      "sha256": "3ccfeae355f446a08f1b18b7b36366b20f417f1150703dcf3ac22b339c4589bc",
+      "bytes": 192994
+    },
+    {
+      "member": "sherpa-onnx-v1.13.1-linux-aarch64-static-lib/lib/libespeak-ng.a",
+      "sha256": "89b1aa4c40fd733db9b366c95e3adb5c0e3535daecb8ce911b1e533d05b120c6",
+      "bytes": 555168
+    }
+  ]
+}

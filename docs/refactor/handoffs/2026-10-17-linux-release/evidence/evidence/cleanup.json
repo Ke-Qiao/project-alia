@@ -1,0 +1,214 @@
+{
+  "at": "2026-10-16T16:46:43.192306+00:00",
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}}",
+        "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005"
+      ],
+      "exit_code": 0,
+      "stdout": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005 linux-release-20261017\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}}",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51"
+      ],
+      "exit_code": 0,
+      "stdout": "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51 linux-release-20261017\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "inspect",
+        "--format",
+        "{{.Id}} {{.Internal}} {{index .Labels \"alia.validation\"}}",
+        "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e"
+      ],
+      "exit_code": 0,
+      "stdout": "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e true linux-release-20261017\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "top",
+        "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005",
+        "-eo",
+        "pid,ppid,args"
+      ],
+      "exit_code": 0,
+      "stdout": "PID                 PPID                COMMAND\n13594               13576               sleep infinity\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+        "psql",
+        "-U",
+        "alia_test",
+        "-d",
+        "alia_linux_release_20261017",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-Atc",
+        "SELECT json_build_object('schemas',(SELECT count(*) FROM pg_namespace WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'),'other_clients',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'));"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"schemas\" : 0, \"other_clients\" : 0}\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51"
+      ],
+      "exit_code": 0,
+      "stdout": "[\n    {\n        \"Id\": \"7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51\",\n        \"Created\": \"2026-10-16T16:30:54.705875105Z\",\n        \"Path\": \"docker-entrypoint.sh\",\n        \"Args\": [\n            \"postgres\"\n        ],\n        \"State\": {\n            \"Status\": \"running\",\n            \"Running\": true,\n            \"Paused\": false,\n            \"Restarting\": false,\n            \"OOMKilled\": false,\n            \"Dead\": false,\n            \"Pid\": 13408,\n            \"ExitCode\": 0,\n            \"Error\": \"\",\n            \"StartedAt\": \"2026-10-16T16:30:54.782171147Z\",\n            \"FinishedAt\": \"0001-01-01T00:00:00Z\"\n        },\n        \"Image\": \"sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3\",\n        \"ResolvConfPath\": \"/var/lib/docker/containers/7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51/resolv.conf\",\n        \"HostnamePath\": \"/var/lib/docker/containers/7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51/hostname\",\n        \"HostsPath\": \"/var/lib/docker/containers/7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51/hosts\",\n        \"LogPath\": \"/var/lib/docker/containers/7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51/7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51-json.log\",\n        \"Name\": \"/alia-linux-release-20261017-db\",\n        \"RestartCount\": 0,\n        \"Driver\": \"overlay2\",\n        \"Platform\": \"linux\",\n        \"MountLabel\": \"\",\n        \"ProcessLabel\": \"\",\n        \"AppArmorProfile\": \"\",\n        \"ExecIDs\": null,\n        \"HostConfig\": {\n            \"Binds\": null,\n            \"ContainerIDFile\": \"\",\n            \"LogConfig\": {\n                \"Type\": \"json-file\",\n                \"Config\": {\n                    \"max-file\": \"5\",\n                    \"max-size\": \"20m\"\n                }\n            },\n            \"NetworkMode\": \"4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e\",\n            \"PortBindings\": {},\n            \"RestartPolicy\": {\n                \"Name\": \"no\",\n                \"MaximumRetryCount\": 0\n            },\n            \"AutoRemove\": false,\n            \"VolumeDriver\": \"\",\n            \"VolumesFrom\": null,\n            \"ConsoleSize\": [\n                0,\n                0\n            ],\n            \"CapAdd\": null,\n            \"CapDrop\": null,\n            \"CgroupnsMode\": \"private\",\n            \"Dns\": null,\n            \"DnsOptions\": [],\n            \"DnsSearch\": [],\n            \"ExtraHosts\": null,\n            \"GroupAdd\": null,\n            \"IpcMode\": \"private\",\n            \"Cgroup\": \"\",\n            \"Links\": null,\n            \"OomScoreAdj\": 0,\n            \"PidMode\": \"\",\n            \"Privileged\": false,\n            \"PublishAllPorts\": false,\n            \"ReadonlyRootfs\": false,\n            \"SecurityOpt\": null,\n            \"UTSMode\": \"\",\n            \"UsernsMode\": \"\",\n            \"ShmSize\": 8407482368,\n            \"Runtime\": \"runc\",\n            \"Isolation\": \"\",\n            \"CpuShares\": 0,\n            \"Memory\": 0,\n            \"NanoCpus\": 0,\n            \"CgroupParent\": \"\",\n            \"BlkioWeight\": 0,\n            \"BlkioWeightDevice\": [],\n            \"BlkioDeviceReadBps\": [],\n            \"BlkioDeviceWriteBps\": [],\n            \"BlkioDeviceReadIOps\": [],\n            \"BlkioDeviceWriteIOps\": [],\n            \"CpuPeriod\": 0,\n            \"CpuQuota\": 0,\n            \"CpuRealtimePeriod\": 0,\n            \"CpuRealtimeRuntime\": 0,\n            \"CpusetCpus\": \"\",\n            \"CpusetMems\": \"\",\n            \"Devices\": [],\n            \"DeviceCgroupRules\": null,\n            \"DeviceRequests\": null,\n            \"MemoryReservation\": 0,\n            \"MemorySwap\": 0,\n            \"MemorySwappiness\": null,\n            \"OomKillDisable\": null,\n            \"PidsLimit\": null,\n            \"Ulimits\": null,\n            \"CpuCount\": 0,\n            \"CpuPercent\": 0,\n            \"IOMaximumIOps\": 0,\n            \"IOMaximumBandwidth\": 0,\n            \"MaskedPaths\": [\n                \"/proc/acpi\",\n                \"/proc/asound\",\n                \"/proc/interrupts\",\n                \"/proc/kcore\",\n                \"/proc/keys\",\n                \"/proc/latency_stats\",\n                \"/proc/sched_debug\",\n                \"/proc/scsi\",\n                \"/proc/timer_list\",\n                \"/proc/timer_stats\",\n                \"/sys/devices/virtual/powercap\",\n                \"/sys/firmware\"\n            ],\n            \"ReadonlyPaths\": [\n                \"/proc/bus\",\n                \"/proc/fs\",\n                \"/proc/irq\",\n                \"/proc/sys\",\n                \"/proc/sysrq-trigger\"\n            ]\n        },\n        \"GraphDriver\": {\n            \"Data\": {\n                \"ID\": \"7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51\",\n                \"LowerDir\": \"/var/lib/docker/overlay2/d0a36cd065a87e145a78f94c371725876b644f71be36d8ad7c653a8a14495c0e-init/diff:/var/lib/docker/overlay2/007f63901a1010e3ccf4d808406f111afe9f2b6918d9e5fea5e8a02389f2c416/diff:/var/lib/docker/overlay2/fb7c0623461494a96355a7028bbf4c8fd01f0e71ebb854c8b8e678149ba4af02/diff:/var/lib/docker/overlay2/d4877e1bb66872712aa6602c9a52a0c9744cde3ccc7379a0f53d9125c0202dc1/diff:/var/lib/docker/overlay2/9471c3209ab7444f0f9477f81f475df303d18f1598109e3df03f9b27d8dd8ef3/diff:/var/lib/docker/overlay2/e2d53c24c5fc7a049b250706eef594c3b15cbfd0f60933dfdf298f127d520aa2/diff:/var/lib/docker/overlay2/08e36230a2f679b119350dfd35eab10a76927e2638d0860ee734b05461fad3f1/diff:/var/lib/docker/overlay2/3e760c8f0b48c014b311547ce8d5db1d098d778058f2eb3ce0a4e694a0976fff/diff:/var/lib/docker/overlay2/dc2815be7d50ce5a51d5a88b84ddd597e5aabb30af5a3d099fb2580436f2dfc7/diff:/var/lib/docker/overlay2/336b52d9b9b9198d65ec3c91140d7bab9b5a9839c875b13fded6f90b961a3b33/diff:/var/lib/docker/overlay2/da01645bcf45a5304e265cb8978d96af78818668dccded8b6d3bc6148031f230/diff:/var/lib/docker/overlay2/4a96e198e95c7be5e05eec23a1fe6a7b6881bb50d6872da17976d2953d9867b4/diff:/var/lib/docker/overlay2/3858551b3e05bfee8a5eb73da3d4679df8e9c20c4749e5ced913c7cedf424cbe/diff:/var/lib/docker/overlay2/3c4bfd6accdb519d183d1b3fff4158822f43e48470510c6ad7f9f0a1d4943b28/diff:/var/lib/docker/overlay2/2cb0d706fa2568c01cf047c8b3bbb15cca2827fd6efa9302903fb027fcabf299/diff:/var/lib/docker/overlay2/04ee5cf24e233bdcad03d293fcc8cfecc2f1c8b4fcb539c3d8fbd9d8641b03e6/diff:/var/lib/docker/overlay2/16ccd02cc896f214e7de76395fc91f7da89b27d27a21c85371fea2f18fd687d7/diff\",\n                \"MergedDir\": \"/var/lib/docker/overlay2/d0a36cd065a87e145a78f94c371725876b644f71be36d8ad7c653a8a14495c0e/merged\",\n                \"UpperDir\": \"/var/lib/docker/overlay2/d0a36cd065a87e145a78f94c371725876b644f71be36d8ad7c653a8a14495c0e/diff\",\n                \"WorkDir\": \"/var/lib/docker/overlay2/d0a36cd065a87e145a78f94c371725876b644f71be36d8ad7c653a8a14495c0e/work\"\n            },\n            \"Name\": \"overlay2\"\n        },\n        \"Mounts\": [\n            {\n                \"Type\": \"volume\",\n                \"Name\": \"5ae0c0635f76f72494608eccdc7186618488c69a87bc2076ce4016c235622502\",\n                \"Source\": \"/var/lib/docker/volumes/5ae0c0635f76f72494608eccdc7186618488c69a87bc2076ce4016c235622502/_data\",\n                \"Destination\": \"/var/lib/postgresql/data\",\n                \"Driver\": \"local\",\n                \"Mode\": \"\",\n                \"RW\": true,\n                \"Propagation\": \"\"\n            }\n        ],\n        \"Config\": {\n            \"Hostname\": \"7f760321c3d3\",\n            \"Domainname\": \"\",\n            \"User\": \"\",\n            \"AttachStdin\": false,\n            \"AttachStdout\": false,\n            \"AttachStderr\": false,\n            \"ExposedPorts\": {\n                \"5432/tcp\": {}\n            },\n            \"Tty\": false,\n            \"OpenStdin\": false,\n            \"StdinOnce\": false,\n            \"Env\": [\n                \"POSTGRES_USER=alia_test\",\n                \"POSTGRES_PASSWORD=alia_test\",\n                \"POSTGRES_DB=alia_linux_release_20261017\",\n                \"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/17/bin\",\n                \"GOSU_VERSION=1.19\",\n                \"LANG=en_US.utf8\",\n                \"PG_MAJOR=17\",\n                \"PG_VERSION=17.10-1.pgdg12+1\",\n                \"PGDATA=/var/lib/postgresql/data\"\n            ],\n            \"Cmd\": [\n                \"postgres\"\n            ],\n            \"Image\": \"sha256:306e00ca129081f4a69081c09ff0bdf0ef5169779019200a5c22ce9e0c6148f3\",\n            \"Volumes\": {\n                \"/var/lib/postgresql/data\": {}\n            },\n            \"WorkingDir\": \"\",\n            \"Entrypoint\": [\n                \"docker-entrypoint.sh\"\n            ],\n            \"Labels\": {\n                \"alia.validation\": \"linux-release-20261017\"\n            },\n            \"StopSignal\": \"SIGINT\"\n        },\n        \"NetworkSettings\": {\n            \"SandboxID\": \"926155816ca317373983a8917b26bf490c2e9e7808016c86a042830f2cdca078\",\n            \"SandboxKey\": \"/var/run/docker/netns/926155816ca3\",\n            \"Ports\": {\n                \"5432/tcp\": null\n            },\n            \"Networks\": {\n                \"alia-linux-release-20261017-net\": {\n                    \"IPAMConfig\": null,\n                    \"Links\": null,\n                    \"Aliases\": null,\n                    \"DriverOpts\": null,\n                    \"GwPriority\": 0,\n                    \"NetworkID\": \"4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e\",\n                    \"EndpointID\": \"121d851ca39407abc785ab8967b5cc22d03752ecf322ed401fbb1191b9e226c5\",\n                    \"Gateway\": \"\",\n                    \"IPAddress\": \"192.168.148.2\",\n                    \"MacAddress\": \"52:c7:cc:b0:68:c4\",\n                    \"IPPrefixLen\": 24,\n                    \"IPv6Gateway\": \"\",\n                    \"GlobalIPv6Address\": \"\",\n                    \"GlobalIPv6PrefixLen\": 0,\n                    \"DNSNames\": [\n                        \"alia-linux-release-20261017-db\",\n                        \"7f760321c3d3\"\n                    ]\n                }\n            }\n        }\n    }\n]\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--timeout",
+        "10",
+        "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005"
+      ],
+      "exit_code": 0,
+      "stdout": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005"
+      ],
+      "exit_code": 0,
+      "stdout": "348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "id=348b7462f152c6ba4ee06f752e7f4065a81cbe97626fa7b176cfd96ab33e1005",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--timeout",
+        "10",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51"
+      ],
+      "exit_code": 0,
+      "stdout": "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51"
+      ],
+      "exit_code": 0,
+      "stdout": "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "id=7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e"
+      ],
+      "exit_code": 0,
+      "stdout": "4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "ls",
+        "--filter",
+        "id=4d151571f476bd84449a796458a5a069e98cef385dd431d9a0dc455bad1be89e",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "volume",
+        "ls",
+        "--format",
+        "{{.Name}}"
+      ],
+      "exit_code": 0,
+      "stdout": "4d8dc39bead04edc68165aefa23d198117f7956d8133eb5a487f5da533604bc9\n5d00e20d56e50e308c126e62442fcab99355ce5b69bc8526803edf2486670ee2\n6b868e6fb90bf167fc47ff8d8315581553208939173269449dc21aa137cbbd3b\n7ae5b2b5d0afb1417876509d742570a7a06929758fbf920ddef3fd4a46f5e542\n9dcb79d29289232bdb4596251f6a829c32774eae50fc4404c0228a13a3964a07\n19b2dcfe5702a3b411e0b5bfbd2dbfb0c92afb864a9b1667e5e44417da890bf1\n33e12c1af061ffa49226deef429ea35fd8c4cba55f6a935a7fba97c0a05d8fe4\n35b203b74ba10ca5ea4470da3811ee07bbbc13264632869c6b81a0bdd672b068\n59d7c1d2a97d0c62b150bb6648ba1e8434ba4deded4e20c2df7dc97977071ac1\n75d3e7703e5df2e540bc213a754c857fca496fa3ec16ce963997ab824288a533\n79ab89c0656f75a2c484aa54d27a60d65c4bff8fbd840e55c8421547dbd6cc6a\n304e5be50bd3f20b62e5dfdf267b08a47d74bd30408b3590103501ac9a618db6\n676f501037314262135537e09664b4791cb06f688a0fb92ece6282c397617979\nalia-home-assistant-dev-config\nalia_python_postgres-data\nb1ff8871146b4cf18a53527a61e50618aa97d4eb7b3c9c0c6ce9af38f02b91b2\nf2a90f2d2afb3665f56590f88ed133e9c56603c4db9c927a5717e04321734185\nproject-alia_pgdata\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Image}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot astrbot:kimi-code\n",
+      "stderr": ""
+    }
+  ],
+  "complete": true,
+  "database_before_cleanup": {
+    "schemas": 0,
+    "other_clients": 0
+  },
+  "database_volumes": [
+    "5ae0c0635f76f72494608eccdc7186618488c69a87bc2076ce4016c235622502"
+  ],
+  "remaining_running_containers": "c5aaca070870 astrbot astrbot:kimi-code"
+}

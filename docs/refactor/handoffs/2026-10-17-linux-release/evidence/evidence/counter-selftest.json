@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "stdout": "{\"cases\": 8, \"passed\": 8, \"scope\": \"adjacent early start and delayed matching prior tail accepted; nested child preserved; starts, diagnostics and count mismatches rejected\"}\n",
+  "stderr": "",
+  "at": "2026-10-16T16:34:31.366708+00:00"
+}

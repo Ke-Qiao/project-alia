@@ -1,0 +1,6 @@
+   Compiling alia-proto v0.1.0 (/workspace/crates/proto)
+   Compiling alia-core v0.1.0 (/workspace/crates/alia-core)
+   Compiling alia-transport v0.1.0 (/workspace/crates/transport)
+   Compiling alia-server v0.1.0 (/workspace/packages/alia-server)
+   Compiling alia-embedded v0.1.0 (/workspace/packages/alia-embedded)
+    Finished `release` profile [optimized] target(s) in 1m 55s

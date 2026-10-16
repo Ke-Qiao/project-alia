@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-16T16:45:30.710038+00:00",
+  "mac_manifest_sha256": "4713f1a8f475c8524ca8c8dec270fbec441a984eea913bc8d49f98482b785ac2",
+  "linux_manifest_sha256": "c239c76799e4f70096c2c7e5898e396534beb2a762fb7628203c671d2941c5bf",
+  "mac_inputs": 677,
+  "linux_inputs": 677,
+  "different_inputs": [],
+  "scope": "per-path source bytes; manifest metadata and timestamps differ"
+}

@@ -1,0 +1,453 @@
+{
+  "binaries": [
+    {
+      "name": "alia-server",
+      "bytes": 46092832,
+      "mtime_ns": 1792169164237437208,
+      "sha256": "3528c5e02708e126d560cdaade8a431c0ed3e60de6c86892f931dcb0250de330",
+      "file": "/cache/target/release/alia-server: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=6b52a23038555a351e1d1489da0985881c69cb40, for GNU/Linux 3.7.0, not stripped\n",
+      "elf_header": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - System V\n  ABI Version:                       0\n  Type:                              DYN (Position-Independent Executable file)\n  Machine:                           AArch64\n  Version:                           0x1\n  Entry point address:               0x20c5c0\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          46090784 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         10\n  Size of section headers:           64 (bytes)\n  Number of section headers:         32\n  Section header string table index: 31\n",
+      "program_headers": "\nElf file type is DYN (Position-Independent Executable file)\nEntry point 0x20c5c0\nThere are 10 program headers, starting at offset 64\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040\n                 0x0000000000000230 0x0000000000000230  R      0x8\n  INTERP         0x0000000000000270 0x0000000000000270 0x0000000000000270\n                 0x000000000000001b 0x000000000000001b  R      0x1\n      [Requesting program interpreter: /lib/ld-linux-aarch64.so.1]\n  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000001f8c90c 0x0000000001f8c90c  R E    0x10000\n  LOAD           0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000001beb30 0x00000000001bed50  RW     0x10000\n  DYNAMIC        0x000000000214e078 0x000000000214e078 0x000000000214e078\n                 0x0000000000000230 0x0000000000000230  RW     0x8\n  NOTE           0x000000000000028c 0x000000000000028c 0x000000000000028c\n                 0x0000000000000044 0x0000000000000044  R      0x4\n  TLS            0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000000000e0 0x0000000000000348  R      0x8\n  GNU_EH_FRAME   0x0000000001a71250 0x0000000001a71250 0x0000000001a71250\n                 0x000000000005a004 0x000000000005a004  R      0x4\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n  GNU_RELRO      0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000001b8e60 0x00000000001b8e60  R      0x1\n\n Section to Segment mapping:\n  Segment Sections...\n   00     \n   01     .interp \n   02     .interp .note.gnu.build-id .note.ABI-tag .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt .init .plt .text .fini .rodata .eh_frame_hdr .eh_frame .gcc_except_table \n   03     .tdata .init_array .fini_array .data.rel.ro .dynamic .got .data .bss \n   04     .dynamic \n   05     .note.gnu.build-id .note.ABI-tag \n   06     .tdata .tbss \n   07     .eh_frame_hdr \n   08     \n   09     .tdata .init_array .fini_array .data.rel.ro .dynamic .got \n",
+      "dynamic": "\nDynamic section at offset 0x214e078 contains 31 entries:\n  Tag        Type                         Name/Value\n 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]\n 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]\n 0x000000000000000c (INIT)               0x1b3168\n 0x000000000000000d (FINI)               0x1889d3c\n 0x0000000000000019 (INIT_ARRAY)         0x1f97280\n 0x000000000000001b (INIT_ARRAYSZ)       32 (bytes)\n 0x000000000000001a (FINI_ARRAY)         0x1f972a0\n 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)\n 0x000000006ffffef5 (GNU_HASH)           0x2d0\n 0x0000000000000005 (STRTAB)             0x18f8\n 0x0000000000000006 (SYMTAB)             0x2f0\n 0x000000000000000a (STRSZ)              3289 (bytes)\n 0x000000000000000b (SYMENT)             24 (bytes)\n 0x0000000000000015 (DEBUG)              0x0\n 0x0000000000000003 (PLTGOT)             0x214e2a8\n 0x0000000000000002 (PLTRELSZ)           5424 (bytes)\n 0x0000000000000014 (PLTREL)             RELA\n 0x0000000000000017 (JMPREL)             0x1b1c38\n 0x0000000000000007 (RELA)               0x28f8\n 0x0000000000000008 (RELASZ)             1766208 (bytes)\n 0x0000000000000009 (RELAENT)            24 (bytes)\n 0x000000000000001e (FLAGS)              BIND_NOW\n 0x000000006ffffffb (FLAGS_1)            Flags: NOW PIE\n 0x000000006ffffffe (VERNEED)            0x27a8\n 0x000000006fffffff (VERNEEDNUM)         5\n 0x000000006ffffff0 (VERSYM)             0x25d2\n 0x000000006ffffff9 (RELACOUNT)          73579\n 0x0000000000000000 (NULL)               0x0\n",
+      "ldd": "\tlinux-vdso.so.1 (0x0000ffffb349c000)\n\tlibssl.so.3 => /lib/aarch64-linux-gnu/libssl.so.3 (0x0000ffffb1240000)\n\tlibcrypto.so.3 => /lib/aarch64-linux-gnu/libcrypto.so.3 (0x0000ffffb0de0000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffb0da0000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffb0cf0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffb0b40000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffb3460000)\n",
+      "loader_list": "\t (0x0000ffffa2cf0000)\n\tlinux-vdso.so.1 (0x0000ffffa4e8c000)\n\tlibssl.so.3 => /lib/aarch64-linux-gnu/libssl.so.3 (0x0000ffffa2c30000)\n\tlibcrypto.so.3 => /lib/aarch64-linux-gnu/libcrypto.so.3 (0x0000ffffa27d0000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffa2790000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffa26e0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffa2530000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffa4e50000)\n",
+      "resolved_libraries": [
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libc.so.6",
+          "sha256": "e4ac8ae1d81e4865e3aadedb962879cf9415903b3f2ba81ec75e9962b86ab8b0",
+          "bytes": 1651408
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libcrypto.so.3",
+          "sha256": "dfbbbff72234e55b7bb2b8ae57a1fbed326d49d4b56882e3d4a046399f93cacf",
+          "bytes": 4532392
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libgcc_s.so.1",
+          "sha256": "046856f95f4636f1fc7c3a12bf4f3cd5634c2fc5145c3fdf7395d4f349fa69c7",
+          "bytes": 133448
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libm.so.6",
+          "sha256": "3c4cb3be0b974edf05f023f85ab15107fb5afc2687163593d0d4cf8e80c17b39",
+          "bytes": 591960
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libssl.so.3",
+          "sha256": "9e171264a6651d714938e83d81277d16524c150a36eaa59ce56e79b9cdbea7ce",
+          "bytes": 737192
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+          "sha256": "17538b8f9889a470c061f69a8fea8124da89627311cd16546c133a89f09056df",
+          "bytes": 202912
+        }
+      ]
+    },
+    {
+      "name": "alia-embedded",
+      "bytes": 49540200,
+      "mtime_ns": 1792169098195843208,
+      "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+      "file": "/cache/target/release/alia-embedded: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (GNU/Linux), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=1358ca3e1a5b29c3105f15dabd4bcc1e4d7dff51, for GNU/Linux 3.7.0, not stripped\n",
+      "elf_header": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 03 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - GNU\n  ABI Version:                       0\n  Type:                              DYN (Position-Independent Executable file)\n  Machine:                           AArch64\n  Version:                           0x1\n  Entry point address:               0x1af980\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          49538088 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         10\n  Size of section headers:           64 (bytes)\n  Number of section headers:         33\n  Section header string table index: 32\n",
+      "program_headers": "\nElf file type is DYN (Position-Independent Executable file)\nEntry point 0x1af980\nThere are 10 program headers, starting at offset 64\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040\n                 0x0000000000000230 0x0000000000000230  R      0x8\n  INTERP         0x0000000000000270 0x0000000000000270 0x0000000000000270\n                 0x000000000000001b 0x000000000000001b  R      0x1\n      [Requesting program interpreter: /lib/ld-linux-aarch64.so.1]\n  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000002396988 0x0000000002396988  R E    0x10000\n  LOAD           0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x00000000000a2670 0x00000000000c80f0  RW     0x10000\n  DYNAMIC        0x0000000002424868 0x0000000002434868 0x0000000002434868\n                 0x0000000000000240 0x0000000000000240  RW     0x8\n  NOTE           0x000000000000028c 0x000000000000028c 0x000000000000028c\n                 0x0000000000000044 0x0000000000000044  R      0x4\n  TLS            0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x0000000000000108 0x00000000000018e0  R      0x40\n  GNU_EH_FRAME   0x0000000001ebd6e0 0x0000000001ebd6e0 0x0000000001ebd6e0\n                 0x000000000006be54 0x000000000006be54  R      0x4\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n  GNU_RELRO      0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x0000000000096b80 0x0000000000096b80  R      0x1\n\n Section to Segment mapping:\n  Segment Sections...\n   00     \n   01     .interp \n   02     .interp .note.gnu.build-id .note.ABI-tag .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt .init .plt .text malloc_hook .fini .rodata .eh_frame_hdr .eh_frame .gcc_except_table \n   03     .tdata .init_array .fini_array .data.rel.ro .dynamic .got .data .bss \n   04     .dynamic \n   05     .note.gnu.build-id .note.ABI-tag \n   06     .tdata .tbss \n   07     .eh_frame_hdr \n   08     \n   09     .tdata .init_array .fini_array .data.rel.ro .dynamic .got \n",
+      "dynamic": "\nDynamic section at offset 0x2424868 contains 32 entries:\n  Tag        Type                         Name/Value\n 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libdbus-1.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libasound.so.2]\n 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]\n 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]\n 0x000000000000000c (INIT)               0x1383e0\n 0x000000000000000d (FINI)               0x1cc028c\n 0x0000000000000019 (INIT_ARRAY)         0x23a95c0\n 0x000000000000001b (INIT_ARRAYSZ)       4800 (bytes)\n 0x000000000000001a (FINI_ARRAY)         0x23aa880\n 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)\n 0x000000006ffffef5 (GNU_HASH)           0x2d0\n 0x0000000000000005 (STRTAB)             0x51b0\n 0x0000000000000006 (SYMTAB)             0x4a0\n 0x000000000000000a (STRSZ)              22809 (bytes)\n 0x000000000000000b (SYMENT)             24 (bytes)\n 0x0000000000000015 (DEBUG)              0x0\n 0x0000000000000003 (PLTGOT)             0x2434aa8\n 0x0000000000000002 (PLTRELSZ)           17256 (bytes)\n 0x0000000000000014 (PLTREL)             RELA\n 0x0000000000000017 (JMPREL)             0x134078\n 0x0000000000000007 (RELA)               0xb438\n 0x0000000000000008 (RELASZ)             1215552 (bytes)\n 0x0000000000000009 (RELAENT)            24 (bytes)\n 0x000000000000001e (FLAGS)              BIND_NOW\n 0x000000006ffffffb (FLAGS_1)            Flags: NOW PIE\n 0x000000006ffffffe (VERNEED)            0xb138\n 0x000000006fffffff (VERNEEDNUM)         6\n 0x000000006ffffff0 (VERSYM)             0xaaca\n 0x000000006ffffff9 (RELACOUNT)          49857\n 0x0000000000000000 (NULL)               0x0\n",
+      "ldd": "\tlinux-vdso.so.1 (0x0000ffff99567000)\n\tlibstdc++.so.6 => /lib/aarch64-linux-gnu/libstdc++.so.6 (0x0000ffff96e80000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffff96dd0000)\n\tlibdbus-1.so.3 => /lib/aarch64-linux-gnu/libdbus-1.so.3 (0x0000ffff96d50000)\n\tlibasound.so.2 => /lib/aarch64-linux-gnu/libasound.so.2 (0x0000ffff96c30000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffff96bf0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffff96a40000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffff99520000)\n\tlibsystemd.so.0 => /lib/aarch64-linux-gnu/libsystemd.so.0 (0x0000ffff96950000)\n\tlibcap.so.2 => /lib/aarch64-linux-gnu/libcap.so.2 (0x0000ffff96920000)\n\tlibgcrypt.so.20 => /lib/aarch64-linux-gnu/libgcrypt.so.20 (0x0000ffff96810000)\n\tliblzma.so.5 => /lib/aarch64-linux-gnu/liblzma.so.5 (0x0000ffff967c0000)\n\tlibzstd.so.1 => /lib/aarch64-linux-gnu/libzstd.so.1 (0x0000ffff96700000)\n\tliblz4.so.1 => /lib/aarch64-linux-gnu/liblz4.so.1 (0x0000ffff966b0000)\n\tlibgpg-error.so.0 => /lib/aarch64-linux-gnu/libgpg-error.so.0 (0x0000ffff96660000)\n",
+      "loader_list": "\t (0x0000ffffbbd00000)\n\tlinux-vdso.so.1 (0x0000ffffbe1c7000)\n\tlibstdc++.so.6 => /lib/aarch64-linux-gnu/libstdc++.so.6 (0x0000ffffbbae0000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffbba30000)\n\tlibdbus-1.so.3 => /lib/aarch64-linux-gnu/libdbus-1.so.3 (0x0000ffffbb9b0000)\n\tlibasound.so.2 => /lib/aarch64-linux-gnu/libasound.so.2 (0x0000ffffbb890000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffbb850000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffbb6a0000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffbe180000)\n\tlibsystemd.so.0 => /lib/aarch64-linux-gnu/libsystemd.so.0 (0x0000ffffbb5b0000)\n\tlibcap.so.2 => /lib/aarch64-linux-gnu/libcap.so.2 (0x0000ffffbb580000)\n\tlibgcrypt.so.20 => /lib/aarch64-linux-gnu/libgcrypt.so.20 (0x0000ffffbb470000)\n\tliblzma.so.5 => /lib/aarch64-linux-gnu/liblzma.so.5 (0x0000ffffbb420000)\n\tlibzstd.so.1 => /lib/aarch64-linux-gnu/libzstd.so.1 (0x0000ffffbb360000)\n\tliblz4.so.1 => /lib/aarch64-linux-gnu/liblz4.so.1 (0x0000ffffbb310000)\n\tlibgpg-error.so.0 => /lib/aarch64-linux-gnu/libgpg-error.so.0 (0x0000ffffbb2c0000)\n",
+      "resolved_libraries": [
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libasound.so.2.0.0",
+          "sha256": "9fade6b3aedf1ba944e6795b52b74378f2f89166b92ee542582171416a76572d",
+          "bytes": 1116648
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libc.so.6",
+          "sha256": "e4ac8ae1d81e4865e3aadedb962879cf9415903b3f2ba81ec75e9962b86ab8b0",
+          "bytes": 1651408
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libcap.so.2.66",
+          "sha256": "dcb3587efc518852f7a1430594526ee9d7334126a9afb46f23cfa60f1b2d1927",
+          "bytes": 67552
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libdbus-1.so.3.32.4",
+          "sha256": "e35b314463bc7d7e48d542b13941c49172abb2ba8e8fe5b1f54e6a50b636bdfc",
+          "bytes": 395336
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libgcc_s.so.1",
+          "sha256": "046856f95f4636f1fc7c3a12bf4f3cd5634c2fc5145c3fdf7395d4f349fa69c7",
+          "bytes": 133448
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libgcrypt.so.20.4.1",
+          "sha256": "c1f66f90593ad52e76afae29605dda4e8850a25f5430362201eba69486ef20cc",
+          "bytes": 1000296
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libgpg-error.so.0.33.1",
+          "sha256": "44c67a9e7a5cfc227e84dcb8f96463103c12415286a8e003bc66abebc4b1f6bd",
+          "bytes": 198640
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/liblz4.so.1.9.4",
+          "sha256": "43109ed13afa34ff991ed73c4d520c5056378949b17d77c50d5773c5aa851439",
+          "bytes": 199056
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/liblzma.so.5.4.1",
+          "sha256": "ab23dcbdd1dc751283f24c5d1a4b58574d5c81782ee35b71efb679d558a1fe74",
+          "bytes": 198584
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libm.so.6",
+          "sha256": "3c4cb3be0b974edf05f023f85ab15107fb5afc2687163593d0d4cf8e80c17b39",
+          "bytes": 591960
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libstdc++.so.6.0.30",
+          "sha256": "532f3a12d7b8fef6cc7a064ea106b6c4ab2365674b73e743e4a385d4ffb6c8ab",
+          "bytes": 2174296
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libsystemd.so.0.35.0",
+          "sha256": "e38e0c11131d330c9a49a4a7f9437f8cf9d6a198355a47ecff02bc4aabe52171",
+          "bytes": 923696
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/libzstd.so.1.5.4",
+          "sha256": "63ff891e4316be1d30a8e551ded6cbb0283772105b352103608e60c06c95ac15",
+          "bytes": 657352
+        },
+        {
+          "path": "/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+          "sha256": "17538b8f9889a470c061f69a8fea8124da89627311cd16546c133a89f09056df",
+          "bytes": 202912
+        }
+      ],
+      "sherpa_defined_symbols": [
+        "00000000008a5a20 T SherpaOnnxAcceptWaveformOffline",
+        "00000000008ac600 T SherpaOnnxAudioTaggingCompute",
+        "00000000008af830 T SherpaOnnxAudioTaggingCreateOfflineStream",
+        "00000000008ac7b0 T SherpaOnnxAudioTaggingFreeResults",
+        "00000000008a7d60 T SherpaOnnxCircularBufferFree",
+        "00000000008a7c44 T SherpaOnnxCircularBufferGet",
+        "00000000008a7da0 T SherpaOnnxCircularBufferHead",
+        "00000000008a7d70 T SherpaOnnxCircularBufferPop",
+        "00000000008a7c34 T SherpaOnnxCircularBufferPush",
+        "00000000008a7dc0 T SherpaOnnxCircularBufferReset",
+        "00000000008a7d80 T SherpaOnnxCircularBufferSize",
+        "00000000008ac190 T SherpaOnnxCreateAudioTagging",
+        "00000000008a7b50 T SherpaOnnxCreateCircularBuffer",
+        "00000000008a3ee0 T SherpaOnnxCreateDisplay",
+        "00000000008a66d0 T SherpaOnnxCreateKeywordSpotter",
+        "00000000008a72b0 T SherpaOnnxCreateKeywordStream",
+        "00000000008a7310 T SherpaOnnxCreateKeywordStreamWithKeywords",
+        "00000000008ad3b0 T SherpaOnnxCreateLinearResampler",
+        "00000000008ac840 T SherpaOnnxCreateOfflinePunctuation",
+        "00000000008a5510 T SherpaOnnxCreateOfflineRecognizer",
+        "00000000008add70 T SherpaOnnxCreateOfflineSourceSeparation",
+        "00000000008ae8b0 T SherpaOnnxCreateOfflineSpeakerDiarization",
+        "00000000008ad830 T SherpaOnnxCreateOfflineSpeechDenoiser",
+        "00000000008af610 T SherpaOnnxCreateOfflineStream",
+        "00000000008af670 T SherpaOnnxCreateOfflineStreamWithHotwords",
+        "00000000008a87e0 T SherpaOnnxCreateOfflineTts",
+        "00000000008acd90 T SherpaOnnxCreateOnlinePunctuation",
+        "00000000008a1fa4 T SherpaOnnxCreateOnlineRecognizer",
+        "00000000008ae294 T SherpaOnnxCreateOnlineSpeechDenoiser",
+        "00000000008a30a0 T SherpaOnnxCreateOnlineStream",
+        "00000000008a3100 T SherpaOnnxCreateOnlineStreamWithHotwords",
+        "00000000008ab280 T SherpaOnnxCreateSpeakerEmbeddingExtractor",
+        "00000000008ab710 T SherpaOnnxCreateSpeakerEmbeddingManager",
+        "00000000008aada4 T SherpaOnnxCreateSpokenLanguageIdentification",
+        "00000000008a7dd0 T SherpaOnnxCreateVoiceActivityDetector",
+        "00000000008a74c4 T SherpaOnnxDecodeKeywordStream",
+        "00000000008a7520 T SherpaOnnxDecodeMultipleKeywordStreams",
+        "00000000008a5ed0 T SherpaOnnxDecodeMultipleOfflineStreams",
+        "00000000008a3340 T SherpaOnnxDecodeMultipleOnlineStreams",
+        "00000000008a5e94 T SherpaOnnxDecodeOfflineStream",
+        "00000000008a3304 T SherpaOnnxDecodeOnlineStream",
+        "00000000008ac5b0 T SherpaOnnxDestroyAudioTagging",
+        "00000000008a7be0 T SherpaOnnxDestroyCircularBuffer",
+        "00000000008add30 T SherpaOnnxDestroyDenoisedAudio",
+        "00000000008a3f40 T SherpaOnnxDestroyDisplay",
+        "00000000008a7930 T SherpaOnnxDestroyKeywordResult",
+        "00000000008a7264 T SherpaOnnxDestroyKeywordSpotter",
+        "00000000008ad4e0 T SherpaOnnxDestroyLinearResampler",
+        "00000000008acb74 T SherpaOnnxDestroyOfflinePunctuation",
+        "00000000008a5980 T SherpaOnnxDestroyOfflineRecognizer",
+        "00000000008a6540 T SherpaOnnxDestroyOfflineRecognizerResult",
+        "00000000008ae134 T SherpaOnnxDestroyOfflineSourceSeparation",
+        "00000000008aed40 T SherpaOnnxDestroyOfflineSpeakerDiarization",
+        "00000000008adba0 T SherpaOnnxDestroyOfflineSpeechDenoiser",
+        "00000000008a59d0 T SherpaOnnxDestroyOfflineStream",
+        "00000000008a66c0 T SherpaOnnxDestroyOfflineStreamResultJson",
+        "00000000008a9734 T SherpaOnnxDestroyOfflineTts",
+        "00000000008aa870 T SherpaOnnxDestroyOfflineTtsGeneratedAudio",
+        "00000000008ad0f0 T SherpaOnnxDestroyOnlinePunctuation",
+        "00000000008a3054 T SherpaOnnxDestroyOnlineRecognizer",
+        "00000000008a37e0 T SherpaOnnxDestroyOnlineRecognizerResult",
+        "00000000008ae600 T SherpaOnnxDestroyOnlineSpeechDenoiser",
+        "00000000008a3280 T SherpaOnnxDestroyOnlineStream",
+        "00000000008a3a00 T SherpaOnnxDestroyOnlineStreamResultJson",
+        "00000000008ae1b0 T SherpaOnnxDestroySourceSeparationOutput",
+        "00000000008ab574 T SherpaOnnxDestroySpeakerEmbeddingExtractor",
+        "00000000008ab794 T SherpaOnnxDestroySpeakerEmbeddingManager",
+        "00000000008a86c0 T SherpaOnnxDestroySpeechSegment",
+        "00000000008ab140 T SherpaOnnxDestroySpokenLanguageIdentification",
+        "00000000008ab240 T SherpaOnnxDestroySpokenLanguageIdentificationResult",
+        "00000000008a82b0 T SherpaOnnxDestroyVoiceActivityDetector",
+        "00000000008ad730 T SherpaOnnxFileExists",
+        "00000000008a7b40 T SherpaOnnxFreeKeywordResultJson",
+        "00000000008aad50 T SherpaOnnxFreeMultiChannelWave",
+        "00000000008aad10 T SherpaOnnxFreeWave",
+        "00000000008a1fa0 T SherpaOnnxGetGitDate",
+        "00000000008a1f94 T SherpaOnnxGetGitSha1",
+        "00000000008a7600 T SherpaOnnxGetKeywordResult",
+        "00000000008a79a0 T SherpaOnnxGetKeywordResultAsJson",
+        "00000000008a5ff0 T SherpaOnnxGetOfflineStreamResult",
+        "00000000008a6614 T SherpaOnnxGetOfflineStreamResultAsJson",
+        "00000000008a3460 T SherpaOnnxGetOnlineStreamResult",
+        "00000000008a3850 T SherpaOnnxGetOnlineStreamResultAsJson",
+        "00000000008a1f90 T SherpaOnnxGetVersionStr",
+        "00000000008a7490 T SherpaOnnxIsKeywordStreamReady",
+        "00000000008a32d0 T SherpaOnnxIsOnlineStreamReady",
+        "00000000008ad5c0 T SherpaOnnxLinearResamplerResample",
+        "00000000008ad6a0 T SherpaOnnxLinearResamplerResampleFree",
+        "00000000008ad6e0 T SherpaOnnxLinearResamplerResampleGetInputSampleRate",
+        "00000000008ad700 T SherpaOnnxLinearResamplerResampleGetOutputSampleRate",
+        "00000000008ad720 T SherpaOnnxLinearResamplerReset",
+        "00000000008a57a0 T SherpaOnnxOfflineRecognizerSetConfig",
+        "00000000008ae194 T SherpaOnnxOfflineSourceSeparationGetNumberOfStems",
+        "00000000008ae180 T SherpaOnnxOfflineSourceSeparationGetOutputSampleRate",
+        "00000000008b0470 T SherpaOnnxOfflineSourceSeparationProcess",
+        "00000000008af220 T SherpaOnnxOfflineSpeakerDiarizationDestroyResult",
+        "00000000008af084 T SherpaOnnxOfflineSpeakerDiarizationDestroySegment",
+        "00000000008aed90 T SherpaOnnxOfflineSpeakerDiarizationGetSampleRate",
+        "00000000008af090 T SherpaOnnxOfflineSpeakerDiarizationProcess",
+        "00000000008af2c0 T SherpaOnnxOfflineSpeakerDiarizationProcessWithCallback",
+        "00000000008af470 T SherpaOnnxOfflineSpeakerDiarizationProcessWithCallbackNoArg",
+        "00000000008aeef4 T SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments",
+        "00000000008aeef0 T SherpaOnnxOfflineSpeakerDiarizationResultGetNumSpeakers",
+        "00000000008aef00 T SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime",
+        "00000000008aeda0 T SherpaOnnxOfflineSpeakerDiarizationSetConfig",
+        "00000000008adbf0 T SherpaOnnxOfflineSpeechDenoiserGetSampleRate",
+        "00000000008adc04 T SherpaOnnxOfflineSpeechDenoiserRun",
+        "00000000008a5c14 T SherpaOnnxOfflineStreamGetOption",
+        "00000000008a5d54 T SherpaOnnxOfflineStreamHasOption",
+        "00000000008a5a30 T SherpaOnnxOfflineStreamSetOption",
+        "00000000008a9b14 T SherpaOnnxOfflineTtsGenerate",
+        "00000000008a9c34 T SherpaOnnxOfflineTtsGenerateWithCallback",
+        "00000000008aa0e0 T SherpaOnnxOfflineTtsGenerateWithCallbackWithArg",
+        "00000000008b2e50 T SherpaOnnxOfflineTtsGenerateWithConfig",
+        "00000000008a9dc0 T SherpaOnnxOfflineTtsGenerateWithProgressCallback",
+        "00000000008a9f50 T SherpaOnnxOfflineTtsGenerateWithProgressCallbackWithArg",
+        "00000000008aa270 T SherpaOnnxOfflineTtsGenerateWithZipvoice",
+        "00000000008a9790 T SherpaOnnxOfflineTtsNumSpeakers",
+        "00000000008a9780 T SherpaOnnxOfflineTtsSampleRate",
+        "00000000008ad140 T SherpaOnnxOnlinePunctuationAddPunct",
+        "00000000008ad3a4 T SherpaOnnxOnlinePunctuationFreeText",
+        "00000000008ae7a0 T SherpaOnnxOnlineSpeechDenoiserFlush",
+        "00000000008ae664 T SherpaOnnxOnlineSpeechDenoiserGetFrameShiftInSamples",
+        "00000000008ae650 T SherpaOnnxOnlineSpeechDenoiserGetSampleRate",
+        "00000000008ae8a0 T SherpaOnnxOnlineSpeechDenoiserReset",
+        "00000000008ae680 T SherpaOnnxOnlineSpeechDenoiserRun",
+        "00000000008a32c0 T SherpaOnnxOnlineStreamAcceptWaveform",
+        "00000000008a3c24 T SherpaOnnxOnlineStreamGetOption",
+        "00000000008a3d64 T SherpaOnnxOnlineStreamHasOption",
+        "00000000008a3a30 T SherpaOnnxOnlineStreamInputFinished",
+        "00000000008a3ea4 T SherpaOnnxOnlineStreamIsEndpoint",
+        "00000000008a3a10 T SherpaOnnxOnlineStreamReset",
+        "00000000008a3a40 T SherpaOnnxOnlineStreamSetOption",
+        "00000000008a3f80 T SherpaOnnxPrint",
+        "00000000008aab44 T SherpaOnnxReadWave",
+        "00000000008af880 T SherpaOnnxReadWaveFromBinaryData",
+        "00000000008b09b0 T SherpaOnnxReadWaveMultiChannel",
+        "00000000008a7500 T SherpaOnnxResetKeywordStream",
+        "00000000008ab644 T SherpaOnnxSpeakerEmbeddingExtractorComputeEmbedding",
+        "00000000008ab5d0 T SherpaOnnxSpeakerEmbeddingExtractorCreateStream",
+        "00000000008ab700 T SherpaOnnxSpeakerEmbeddingExtractorDestroyEmbedding",
+        "00000000008ab5c0 T SherpaOnnxSpeakerEmbeddingExtractorDim",
+        "00000000008ab624 T SherpaOnnxSpeakerEmbeddingExtractorIsReady",
+        "00000000008ab7e0 T SherpaOnnxSpeakerEmbeddingManagerAdd",
+        "00000000008afd00 T SherpaOnnxSpeakerEmbeddingManagerAddList",
+        "00000000008b00d4 T SherpaOnnxSpeakerEmbeddingManagerAddListFlattened",
+        "00000000008abea0 T SherpaOnnxSpeakerEmbeddingManagerContains",
+        "00000000008ac150 T SherpaOnnxSpeakerEmbeddingManagerFreeAllSpeakers",
+        "00000000008abcf0 T SherpaOnnxSpeakerEmbeddingManagerFreeBestMatches",
+        "00000000008abad0 T SherpaOnnxSpeakerEmbeddingManagerFreeSearch",
+        "00000000008abfc0 T SherpaOnnxSpeakerEmbeddingManagerGetAllSpeakers",
+        "00000000008abae0 T SherpaOnnxSpeakerEmbeddingManagerGetBestMatches",
+        "00000000008abfb4 T SherpaOnnxSpeakerEmbeddingManagerNumSpeakers",
+        "00000000008ab900 T SherpaOnnxSpeakerEmbeddingManagerRemove",
+        "00000000008aba14 T SherpaOnnxSpeakerEmbeddingManagerSearch",
+        "00000000008abd74 T SherpaOnnxSpeakerEmbeddingManagerVerify",
+        "00000000008ab190 T SherpaOnnxSpokenLanguageIdentificationCompute",
+        "00000000008af7e0 T SherpaOnnxSpokenLanguageIdentificationCreateOfflineStream",
+        "00000000008a8300 T SherpaOnnxVoiceActivityDetectorAcceptWaveform",
+        "00000000008a8540 T SherpaOnnxVoiceActivityDetectorClear",
+        "00000000008a8444 T SherpaOnnxVoiceActivityDetectorDetected",
+        "00000000008a83c0 T SherpaOnnxVoiceActivityDetectorEmpty",
+        "00000000008a8770 T SherpaOnnxVoiceActivityDetectorFlush",
+        "00000000008a85b0 T SherpaOnnxVoiceActivityDetectorFront",
+        "00000000008a84d0 T SherpaOnnxVoiceActivityDetectorPop",
+        "00000000008a8700 T SherpaOnnxVoiceActivityDetectorReset",
+        "00000000008aa9e0 T SherpaOnnxWaveFileSize",
+        "00000000008aa8b0 T SherpaOnnxWriteWave",
+        "00000000008aaa10 T SherpaOnnxWriteWaveMultiChannel",
+        "00000000008aa9f0 T SherpaOnnxWriteWaveToBuffer"
+      ],
+      "safe_help": "Usage: alia-embedded [--check-config <path>]\n\nNo arguments: start the device runtime.\n--check-config: inspect an existing configuration and motion files without starting devices, models or services.\n"
+    }
+  ],
+  "commands": [
+    {
+      "command": [
+        "file",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "/cache/target/release/alia-server: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=6b52a23038555a351e1d1489da0985881c69cb40, for GNU/Linux 3.7.0, not stripped\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-h",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - System V\n  ABI Version:                       0\n  Type:                              DYN (Position-Independent Executable file)\n  Machine:                           AArch64\n  Version:                           0x1\n  Entry point address:               0x20c5c0\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          46090784 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         10\n  Size of section headers:           64 (bytes)\n  Number of section headers:         32\n  Section header string table index: 31\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-l",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "\nElf file type is DYN (Position-Independent Executable file)\nEntry point 0x20c5c0\nThere are 10 program headers, starting at offset 64\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040\n                 0x0000000000000230 0x0000000000000230  R      0x8\n  INTERP         0x0000000000000270 0x0000000000000270 0x0000000000000270\n                 0x000000000000001b 0x000000000000001b  R      0x1\n      [Requesting program interpreter: /lib/ld-linux-aarch64.so.1]\n  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000001f8c90c 0x0000000001f8c90c  R E    0x10000\n  LOAD           0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000001beb30 0x00000000001bed50  RW     0x10000\n  DYNAMIC        0x000000000214e078 0x000000000214e078 0x000000000214e078\n                 0x0000000000000230 0x0000000000000230  RW     0x8\n  NOTE           0x000000000000028c 0x000000000000028c 0x000000000000028c\n                 0x0000000000000044 0x0000000000000044  R      0x4\n  TLS            0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000000000e0 0x0000000000000348  R      0x8\n  GNU_EH_FRAME   0x0000000001a71250 0x0000000001a71250 0x0000000001a71250\n                 0x000000000005a004 0x000000000005a004  R      0x4\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n  GNU_RELRO      0x0000000001f971a0 0x0000000001f971a0 0x0000000001f971a0\n                 0x00000000001b8e60 0x00000000001b8e60  R      0x1\n\n Section to Segment mapping:\n  Segment Sections...\n   00     \n   01     .interp \n   02     .interp .note.gnu.build-id .note.ABI-tag .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt .init .plt .text .fini .rodata .eh_frame_hdr .eh_frame .gcc_except_table \n   03     .tdata .init_array .fini_array .data.rel.ro .dynamic .got .data .bss \n   04     .dynamic \n   05     .note.gnu.build-id .note.ABI-tag \n   06     .tdata .tbss \n   07     .eh_frame_hdr \n   08     \n   09     .tdata .init_array .fini_array .data.rel.ro .dynamic .got \n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-d",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "\nDynamic section at offset 0x214e078 contains 31 entries:\n  Tag        Type                         Name/Value\n 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]\n 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]\n 0x000000000000000c (INIT)               0x1b3168\n 0x000000000000000d (FINI)               0x1889d3c\n 0x0000000000000019 (INIT_ARRAY)         0x1f97280\n 0x000000000000001b (INIT_ARRAYSZ)       32 (bytes)\n 0x000000000000001a (FINI_ARRAY)         0x1f972a0\n 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)\n 0x000000006ffffef5 (GNU_HASH)           0x2d0\n 0x0000000000000005 (STRTAB)             0x18f8\n 0x0000000000000006 (SYMTAB)             0x2f0\n 0x000000000000000a (STRSZ)              3289 (bytes)\n 0x000000000000000b (SYMENT)             24 (bytes)\n 0x0000000000000015 (DEBUG)              0x0\n 0x0000000000000003 (PLTGOT)             0x214e2a8\n 0x0000000000000002 (PLTRELSZ)           5424 (bytes)\n 0x0000000000000014 (PLTREL)             RELA\n 0x0000000000000017 (JMPREL)             0x1b1c38\n 0x0000000000000007 (RELA)               0x28f8\n 0x0000000000000008 (RELASZ)             1766208 (bytes)\n 0x0000000000000009 (RELAENT)            24 (bytes)\n 0x000000000000001e (FLAGS)              BIND_NOW\n 0x000000006ffffffb (FLAGS_1)            Flags: NOW PIE\n 0x000000006ffffffe (VERNEED)            0x27a8\n 0x000000006fffffff (VERNEEDNUM)         5\n 0x000000006ffffff0 (VERSYM)             0x25d2\n 0x000000006ffffff9 (RELACOUNT)          73579\n 0x0000000000000000 (NULL)               0x0\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "ldd",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "\tlinux-vdso.so.1 (0x0000ffffb349c000)\n\tlibssl.so.3 => /lib/aarch64-linux-gnu/libssl.so.3 (0x0000ffffb1240000)\n\tlibcrypto.so.3 => /lib/aarch64-linux-gnu/libcrypto.so.3 (0x0000ffffb0de0000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffb0da0000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffb0cf0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffb0b40000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffb3460000)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/lib/ld-linux-aarch64.so.1",
+        "--verify",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/lib/ld-linux-aarch64.so.1",
+        "--list",
+        "/cache/target/release/alia-server"
+      ],
+      "exit_code": 0,
+      "stdout": "\t (0x0000ffffa2cf0000)\n\tlinux-vdso.so.1 (0x0000ffffa4e8c000)\n\tlibssl.so.3 => /lib/aarch64-linux-gnu/libssl.so.3 (0x0000ffffa2c30000)\n\tlibcrypto.so.3 => /lib/aarch64-linux-gnu/libcrypto.so.3 (0x0000ffffa27d0000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffa2790000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffa26e0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffa2530000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffa4e50000)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "file",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "/cache/target/release/alia-embedded: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (GNU/Linux), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=1358ca3e1a5b29c3105f15dabd4bcc1e4d7dff51, for GNU/Linux 3.7.0, not stripped\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-h",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "ELF Header:\n  Magic:   7f 45 4c 46 02 01 01 03 00 00 00 00 00 00 00 00 \n  Class:                             ELF64\n  Data:                              2's complement, little endian\n  Version:                           1 (current)\n  OS/ABI:                            UNIX - GNU\n  ABI Version:                       0\n  Type:                              DYN (Position-Independent Executable file)\n  Machine:                           AArch64\n  Version:                           0x1\n  Entry point address:               0x1af980\n  Start of program headers:          64 (bytes into file)\n  Start of section headers:          49538088 (bytes into file)\n  Flags:                             0x0\n  Size of this header:               64 (bytes)\n  Size of program headers:           56 (bytes)\n  Number of program headers:         10\n  Size of section headers:           64 (bytes)\n  Number of section headers:         33\n  Section header string table index: 32\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-l",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "\nElf file type is DYN (Position-Independent Executable file)\nEntry point 0x1af980\nThere are 10 program headers, starting at offset 64\n\nProgram Headers:\n  Type           Offset             VirtAddr           PhysAddr\n                 FileSiz            MemSiz              Flags  Align\n  PHDR           0x0000000000000040 0x0000000000000040 0x0000000000000040\n                 0x0000000000000230 0x0000000000000230  R      0x8\n  INTERP         0x0000000000000270 0x0000000000000270 0x0000000000000270\n                 0x000000000000001b 0x000000000000001b  R      0x1\n      [Requesting program interpreter: /lib/ld-linux-aarch64.so.1]\n  LOAD           0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000002396988 0x0000000002396988  R E    0x10000\n  LOAD           0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x00000000000a2670 0x00000000000c80f0  RW     0x10000\n  DYNAMIC        0x0000000002424868 0x0000000002434868 0x0000000002434868\n                 0x0000000000000240 0x0000000000000240  RW     0x8\n  NOTE           0x000000000000028c 0x000000000000028c 0x000000000000028c\n                 0x0000000000000044 0x0000000000000044  R      0x4\n  TLS            0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x0000000000000108 0x00000000000018e0  R      0x40\n  GNU_EH_FRAME   0x0000000001ebd6e0 0x0000000001ebd6e0 0x0000000001ebd6e0\n                 0x000000000006be54 0x000000000006be54  R      0x4\n  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000\n                 0x0000000000000000 0x0000000000000000  RW     0x10\n  GNU_RELRO      0x0000000002399480 0x00000000023a9480 0x00000000023a9480\n                 0x0000000000096b80 0x0000000000096b80  R      0x1\n\n Section to Segment mapping:\n  Segment Sections...\n   00     \n   01     .interp \n   02     .interp .note.gnu.build-id .note.ABI-tag .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt .init .plt .text malloc_hook .fini .rodata .eh_frame_hdr .eh_frame .gcc_except_table \n   03     .tdata .init_array .fini_array .data.rel.ro .dynamic .got .data .bss \n   04     .dynamic \n   05     .note.gnu.build-id .note.ABI-tag \n   06     .tdata .tbss \n   07     .eh_frame_hdr \n   08     \n   09     .tdata .init_array .fini_array .data.rel.ro .dynamic .got \n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "readelf",
+        "-d",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "\nDynamic section at offset 0x2424868 contains 32 entries:\n  Tag        Type                         Name/Value\n 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]\n 0x0000000000000001 (NEEDED)             Shared library: [libdbus-1.so.3]\n 0x0000000000000001 (NEEDED)             Shared library: [libasound.so.2]\n 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]\n 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]\n 0x000000000000000c (INIT)               0x1383e0\n 0x000000000000000d (FINI)               0x1cc028c\n 0x0000000000000019 (INIT_ARRAY)         0x23a95c0\n 0x000000000000001b (INIT_ARRAYSZ)       4800 (bytes)\n 0x000000000000001a (FINI_ARRAY)         0x23aa880\n 0x000000000000001c (FINI_ARRAYSZ)       8 (bytes)\n 0x000000006ffffef5 (GNU_HASH)           0x2d0\n 0x0000000000000005 (STRTAB)             0x51b0\n 0x0000000000000006 (SYMTAB)             0x4a0\n 0x000000000000000a (STRSZ)              22809 (bytes)\n 0x000000000000000b (SYMENT)             24 (bytes)\n 0x0000000000000015 (DEBUG)              0x0\n 0x0000000000000003 (PLTGOT)             0x2434aa8\n 0x0000000000000002 (PLTRELSZ)           17256 (bytes)\n 0x0000000000000014 (PLTREL)             RELA\n 0x0000000000000017 (JMPREL)             0x134078\n 0x0000000000000007 (RELA)               0xb438\n 0x0000000000000008 (RELASZ)             1215552 (bytes)\n 0x0000000000000009 (RELAENT)            24 (bytes)\n 0x000000000000001e (FLAGS)              BIND_NOW\n 0x000000006ffffffb (FLAGS_1)            Flags: NOW PIE\n 0x000000006ffffffe (VERNEED)            0xb138\n 0x000000006fffffff (VERNEEDNUM)         6\n 0x000000006ffffff0 (VERSYM)             0xaaca\n 0x000000006ffffff9 (RELACOUNT)          49857\n 0x0000000000000000 (NULL)               0x0\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "ldd",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "\tlinux-vdso.so.1 (0x0000ffff99567000)\n\tlibstdc++.so.6 => /lib/aarch64-linux-gnu/libstdc++.so.6 (0x0000ffff96e80000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffff96dd0000)\n\tlibdbus-1.so.3 => /lib/aarch64-linux-gnu/libdbus-1.so.3 (0x0000ffff96d50000)\n\tlibasound.so.2 => /lib/aarch64-linux-gnu/libasound.so.2 (0x0000ffff96c30000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffff96bf0000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffff96a40000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffff99520000)\n\tlibsystemd.so.0 => /lib/aarch64-linux-gnu/libsystemd.so.0 (0x0000ffff96950000)\n\tlibcap.so.2 => /lib/aarch64-linux-gnu/libcap.so.2 (0x0000ffff96920000)\n\tlibgcrypt.so.20 => /lib/aarch64-linux-gnu/libgcrypt.so.20 (0x0000ffff96810000)\n\tliblzma.so.5 => /lib/aarch64-linux-gnu/liblzma.so.5 (0x0000ffff967c0000)\n\tlibzstd.so.1 => /lib/aarch64-linux-gnu/libzstd.so.1 (0x0000ffff96700000)\n\tliblz4.so.1 => /lib/aarch64-linux-gnu/liblz4.so.1 (0x0000ffff966b0000)\n\tlibgpg-error.so.0 => /lib/aarch64-linux-gnu/libgpg-error.so.0 (0x0000ffff96660000)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/lib/ld-linux-aarch64.so.1",
+        "--verify",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/lib/ld-linux-aarch64.so.1",
+        "--list",
+        "/cache/target/release/alia-embedded"
+      ],
+      "exit_code": 0,
+      "stdout": "\t (0x0000ffffbbd00000)\n\tlinux-vdso.so.1 (0x0000ffffbe1c7000)\n\tlibstdc++.so.6 => /lib/aarch64-linux-gnu/libstdc++.so.6 (0x0000ffffbbae0000)\n\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffbba30000)\n\tlibdbus-1.so.3 => /lib/aarch64-linux-gnu/libdbus-1.so.3 (0x0000ffffbb9b0000)\n\tlibasound.so.2 => /lib/aarch64-linux-gnu/libasound.so.2 (0x0000ffffbb890000)\n\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffbb850000)\n\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffbb6a0000)\n\t/lib/ld-linux-aarch64.so.1 (0x0000ffffbe180000)\n\tlibsystemd.so.0 => /lib/aarch64-linux-gnu/libsystemd.so.0 (0x0000ffffbb5b0000)\n\tlibcap.so.2 => /lib/aarch64-linux-gnu/libcap.so.2 (0x0000ffffbb580000)\n\tlibgcrypt.so.20 => /lib/aarch64-linux-gnu/libgcrypt.so.20 (0x0000ffffbb470000)\n\tliblzma.so.5 => /lib/aarch64-linux-gnu/liblzma.so.5 (0x0000ffffbb420000)\n\tlibzstd.so.1 => /lib/aarch64-linux-gnu/libzstd.so.1 (0x0000ffffbb360000)\n\tliblz4.so.1 => /lib/aarch64-linux-gnu/liblz4.so.1 (0x0000ffffbb310000)\n\tlibgpg-error.so.0 => /lib/aarch64-linux-gnu/libgpg-error.so.0 (0x0000ffffbb2c0000)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/cache/target/release/alia-embedded",
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "Usage: alia-embedded [--check-config <path>]\n\nNo arguments: start the device runtime.\n--check-config: inspect an existing configuration and motion files without starting devices, models or services.\n",
+      "stderr": "onnxruntime cpuid_info warning: Unknown CPU vendor. cpuinfo_vendor value: 0\n"
+    }
+  ],
+  "passed": true
+}

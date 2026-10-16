@@ -1,0 +1,131 @@
+{
+  "at": "2026-10-16T16:47:46.346680+00:00",
+  "source_commit": "4e2968f18d765f326e76d24a3bcdf5bba9034efc",
+  "baseline": "da3eca2fe6853f104dd558051aebf92dd62f067b",
+  "input_count": 677,
+  "stages": {
+    "environment": {
+      "command": [
+        "python3",
+        "/evidence/environment.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.536,
+      "source_drift": []
+    },
+    "workspace-default": {
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--offline",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 483.737,
+      "source_drift": []
+    },
+    "server-no-default": {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-server",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 21.055,
+      "source_drift": []
+    },
+    "embedded-no-default": {
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "alia-embedded",
+        "--no-default-features",
+        "--all-targets",
+        "--offline",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 6.163,
+      "source_drift": []
+    },
+    "release-default": {
+      "command": [
+        "cargo",
+        "build",
+        "-p",
+        "alia-server",
+        "-p",
+        "alia-embedded",
+        "--release",
+        "--offline",
+        "--locked"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 115.452,
+      "source_drift": []
+    },
+    "release-link-audit": {
+      "command": [
+        "python3",
+        "/evidence/release-audit.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.405,
+      "source_drift": []
+    }
+  },
+  "workspace": {
+    "totals": {
+      "passed": 1285,
+      "failed": 0,
+      "ignored": 5,
+      "measured": 0,
+      "filtered_out": 0
+    },
+    "running_targets": 67,
+    "doctest_targets": 5,
+    "excluded_nested_summary_count": 3,
+    "excluded_nested_totals": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered_out": 1149
+    },
+    "log_sha256": "20a7b25d3f468756b81d909213bc77dfd851c02c3bbc176da504b389bc8ec211"
+  },
+  "new_ignored": 0,
+  "production_changes": false,
+  "database_after_workspace": {
+    "at": "2026-10-16T16:43:09.482802+00:00",
+    "command": [
+      "docker",
+      "exec",
+      "7f760321c3d3345db7db26ca411af88552a0f775e1191d0eaf993ea4aa710e51",
+      "psql",
+      "-U",
+      "alia_test",
+      "-d",
+      "alia_linux_release_20261017",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-Atc",
+      "SELECT json_build_object('schemas',(SELECT count(*) FROM pg_namespace WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'),'other_clients',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'));"
+    ],
+    "exit_code": 0,
+    "stdout": "{\"schemas\" : 0, \"other_clients\" : 0}\n",
+    "stderr": "",
+    "schemas": 0,
+    "other_clients": 0,
+    "seconds_after_workspace_result": 11.165
+  },
+  "cleanup_complete": true,
+  "scope": "Existing Debian12 Linux ARM64 container, default workspace, separate no-default all-targets, both default release links; no hardware, real model or ordinary standalone service lifecycle"
+}

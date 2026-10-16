@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-17：当前源码 `4e2968f` Linux ARM64 构建/测试/release链接10/10完成。** Debian12/Rust1.95，677冻结输入同源；一次默认workspace1285/0/5/0filtered（67 Running+5 Doc），两端分别no-default all-targets、两端default release及ELF/loader/ldd通过。Embedded实际定义170个Sherpa符号，safe help通过；既有15个native静态库前后同字节。与同源Mac1277的差异仅8项Linux cfg用例，没有新增ignored。任务PG两次0/0、两个容器/卷/network已回收。见[当前检查点](resume-checkpoint-linux-release-2026-10-17.md)、[完整证据](handoffs/2026-10-17-linux-release/README.md)。没有普通Server/Embedded服务启停、Pi/硬件、真实模型、其他平台或长稳结论。以下均保留历史源码边界。
+
 **2026-10-12 Settings GET 身份重验证：10/10。** 当前同源双平台结果见 [最新检查点](resume-checkpoint-settings-read-authorization-2026-10-12.md)，下方保留历史验证范围。
 **2026-10-12 Settings 身份重验证：10/10。** 当前同源双平台结果见 [最新检查点](resume-checkpoint-settings-authorization-2026-10-12.md)，下方保留历史验证范围。
 **2026-10-11 配置持久性：10/10，L09—L12 4/4，六轮仍 2/6。** 源码 `095499676496fba79853532b2ad4f570b368d37c`，V3 manifest `11373f598d31148c27b15bfa1fc5bb015e3b2726f877347560b23bbcc1b9343f`，650/650 Git blob 一致。 macOS workspace **1108/0/5**；Linux ARM64 Server 默认并行完整回归 **826/0/5**。两端无默认 feature 全目标检查、架构边界正反自测、变更文件格式检查、计数器 8 例自测通过。数字为 passed/failed/ignored；嵌套子进程摘要不重复累计，最终阶段同源、无源码漂移。 见 [本轮技术说明](config-durability-2026-10-11.md#最终验证与证据)。未运行真实断电、独立进程 kill/restart、Linux 全 workspace、release/native release link、部署 smoke、真实 PTY、外部或付费模型、Pi/声学/执行器及长稳验证。故障注入与丢弃旧 setup owner 后加载证明软件恢复语义；不代表任意存储设备兑现 flush，也不提供其他本机进程的文件系统锁。 以下旧结果保留各自源码语境。

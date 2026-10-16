@@ -1,0 +1,6 @@
+{
+  "source_inputs": 677,
+  "timestamps_preserved_for_unchanged_inputs": 590,
+  "source_readonly_mount": true,
+  "mode": "copy2 from exact host manifest; prior timestamps only for byte-identical content"
+}

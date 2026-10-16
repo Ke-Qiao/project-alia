@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-17：当前 Linux 软件发布构建/测试/链接10/10完成，应用源码仍 `4e2968f`。** 默认完整 workspace 一次1285/0/5/0filtered，两端分别no-default all-targets与default release/native链接通过；677输入与同源Mac及基线Git一致，50份原件归档，任务PG0/0后两个容器/卷/network回收。无生产、测试或依赖修改，原期限与并发、默认shadow/政策保持；R03暂停、历史V01根因open、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-linux-release-2026-10-17.md)和[四份HANDOFF](handoffs/2026-10-17-linux-release/README.md)继续；下一软件候选为已有全noop staging的实际进程启动/关闭/重启与恢复。以下为历史。
+
 **2026-10-17：CompanionInvitation 历史只读引用10/10完成。** 源码`4e2968f`；用户确认历史事实与输出授权分离，专用marker保留规范身份、完整根/真实TTL，Memory派生保存及防主动自我强化完成。真实RED0/1，定向13/0/0；一次workspace1277/0/5/0filtered，677提交输入匹配，34原件归档，任务PG0/0后容器与卷已回收。原期限、并发、默认shadow/当前政策保持，R03暂停、历史V01open、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-invitation-history-2026-10-16.md)和[checklist](checklists/invitation-history-2026-10-16.md)继续；下一步候选为当前版本的软件发布验收。以下为历史。
 
 **2026-10-15：V01 ServerStartup初始化取消10/10完成，历史根因仍open。** 源码`9e3a934`；一次RED确认已取消的缓冲成功仍交付，交付前检查与原rollback复用修复，原错误/typed incomplete/完成句柄保留。四项新回归加四旧GREEN8/0/0；一次workspace1270/0/5（既有ignored、0filtered），server_runtime85/0/0，676提交输入匹配。同库结束约0.248秒0/0，任务容器/卷已回收。原期限、并发、默认shadow/政策不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-v01-server-startup-2026-10-15.md)和[checklist](checklists/v01-server-startup-2026-10-15.md)继续，以下为历史。

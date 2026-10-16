@@ -1,5 +1,7 @@
 # 暂停纵向整合后的首轮任务 checklist
 
+**2026-10-17：当前 Linux 软件构建/测试/release链接10/10完成。** 应用源码仍`4e2968f`，完整workspace1285/0/5/0filtered，两端no-default全目标与default release链接通过，677输入和同源Mac一致；证据归档、任务资源已回收。无生产改动，默认shadow/政策/原期限并发保持，R03暂停、历史V01open、六轮仍2/6。最新恢复从[检查点](../resume-checkpoint-linux-release-2026-10-17.md)与[checklist](linux-release-2026-10-17.md)继续；下一候选为已有全noop staging的真实进程生命周期与恢复验收。以下为历史。
+
 **2026-10-17：CompanionInvitation 历史只读引用10/10完成。** 源码`4e2968f`；用户确认历史事实与输出授权分离，专用marker保留规范身份、完整根/真实TTL，Memory派生保存及防主动自我强化完成。真实RED0/1，定向13/0/0；一次workspace1277/0/5/0filtered，677提交输入匹配，34原件归档，任务PG0/0后容器与卷已回收。原期限、并发、默认shadow/当前政策保持，R03暂停、历史V01open、六轮仍2/6。恢复从[本轮检查点](../resume-checkpoint-invitation-history-2026-10-16.md)和[checklist](invitation-history-2026-10-16.md)继续；下一步候选为当前版本的软件发布验收。以下为历史。
 
 **2026-10-15：V01初始数据库构造取消10/10完成，历史根因仍open。** 源码`8bcda7a`；独立测试owner保留原SQL、Fixture与CASE许可至清理结束，四项取消回归覆盖未poll/缓冲ready与真实CREATE drain。保留RED0/2和V1全量1265/1/5失败；只修测试阶段门与observer清理后，V2 workspace1266/0/5（既有ignored、0filtered）、duplex31/0/0，675提交输入匹配。结束约0.175秒同库PG0/0，任务容器/卷已回收。原期限、并发、默认shadow/政策不变，R03暂停、六轮仍2/6。恢复从[本轮检查点](../resume-checkpoint-v01-db-cancel-2026-10-15.md)和[checklist](v01-db-cancel-2026-10-15.md)继续，以下为历史。
