@@ -82,8 +82,6 @@ minor = "minor"
 major = "major"
 default = "major"
 embedding = "embedding"
-# Optional dedicated LLM for STT transcript correction. Omit to fall back to
-# the configured minor/major LLMs.
 # Optional dedicated LLM for selective memory capture. Omit to fall back to the
 # configured minor LLM.
 # memory_capture = "memory_capture"

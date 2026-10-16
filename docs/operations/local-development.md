@@ -2,6 +2,10 @@
 
 This guide covers Server and Embedded development. Web, iOS and Android work is deferred; Node/pnpm and a frontend are not required for this workflow. Provider-specific setup is documented in [model services](model-services.md).
 
+For verified release artifacts, platform coverage and pending model/deployment
+inputs, use the [software release record](software-release.md). The setup
+examples below do not establish an already deployed or approved model service.
+
 ## Prerequisites
 
 - `mise` for toolchain versions

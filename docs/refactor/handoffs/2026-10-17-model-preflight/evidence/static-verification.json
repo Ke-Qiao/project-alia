@@ -1,0 +1,39 @@
+{
+  "at": "2026-10-16T19:47:19.430197+00:00",
+  "base_head": "6a8b1133cf00c4ff6abe9ddc6efc8047029551a5",
+  "tested_source": "6c62c84ee60e3a5fd387f2172ead432031907599",
+  "scope": "local static checks only; no builds/tests/network/service/device actions",
+  "source_manifest_sha256": "0133b6f493b3c8b39b365abe03e3cfc035d88b0f21962e0ed6abd745796ed8c7",
+  "inputs_checked": 678,
+  "unchanged_inputs": 677,
+  "changed_inputs": [
+    {
+      "path": "config/server.example.toml",
+      "before_sha256": "a04fd2ed331e870ab8347488bf1bbec411310637c6742ff0d2f428f0fe6ba5b7",
+      "after_sha256": "5a2982ca6b0e0f632df8b72da6c6b528315897d113006aa34258eb71999b5bda",
+      "after_bytes": 3632
+    }
+  ],
+  "config_exact_two_comment_lines_removed": true,
+  "config_toml_semantics_equal_to_base_and_tested_source": true,
+  "rust_cargo_lock_and_other_manifest_inputs_unchanged": true,
+  "artifacts": [
+    {
+      "path": "run/validation-20261017-release-lifecycle/v2/artifacts/alia-server",
+      "sha256": "0374aa62602a3e6c2908459b7e8a4a574bd937071d182dbb18172eccb0695616",
+      "bytes": 46092208
+    },
+    {
+      "path": "run/validation-20261017-release-lifecycle/v2/artifacts/alia-embedded",
+      "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+      "bytes": 49540200
+    }
+  ],
+  "previous_archive_files_checked": 148,
+  "git_diff_check": "passed",
+  "markdown_files_checked": 15,
+  "local_link_paths_checked": 276,
+  "broken_local_link_paths": [],
+  "link_scope": "local file targets in changed/new Markdown; heading anchors not validated",
+  "user_model_and_deployment_confirmation": "received; model/embedding selection explicitly pending; local assets inventoried; development account and optional containers accepted"
+}

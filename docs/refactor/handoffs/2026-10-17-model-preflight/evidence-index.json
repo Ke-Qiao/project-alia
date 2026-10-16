@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-16T19:47:19.430197+00:00",
+  "base_commit": "6a8b1133cf00c4ff6abe9ddc6efc8047029551a5",
+  "source_commit": "6c62c84ee60e3a5fd387f2172ead432031907599",
+  "files": [
+    {
+      "path": "evidence/baseline-identity.json",
+      "bytes": 1066,
+      "sha256": "a61d5cf0249b1768f81a9ae4b521e0eaf0ca2d4e356123379445ae889f1f03f9",
+      "kind": "local static verification original"
+    },
+    {
+      "path": "evidence/static-verification.json",
+      "bytes": 1751,
+      "sha256": "f787f8e8e94091ee56d29ca41da027cf338efbf69fa091067399b23b7ba925f7",
+      "kind": "local static verification original"
+    },
+    {
+      "path": "evidence/verify.py",
+      "bytes": 5437,
+      "sha256": "7c76ced7b8cf1f00decf8526ef755bd29cbaba5ceb3f312627f8bf2996a93d5d",
+      "kind": "local static verification original"
+    }
+  ],
+  "total_bytes": 8254,
+  "scope": "local static checks only; no builds/tests/network/service/device actions"
+}

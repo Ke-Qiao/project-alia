@@ -1,5 +1,7 @@
 # 暂停纵向整合后的首轮任务 checklist
 
+**2026-10-17：软件发布资料与真实模型链前置10/10，MP10答复已登记。** 已核对三个分工、配置／模型入口和来源，修正文档与两行旧注释；677受测输入全同、1项仅TOML注释差异，生产／依赖／测试不变。新[发布记录](../../operations/software-release.md)区分Linux release、Mac定向／历史全量与未验真实LLM/TTS链。BotCF候选／模型待定、本地语音资产与开发验证方式已有答复，旧base/settings方案不同，不能直接复用；从[当前检查点](../resume-checkpoint-model-preflight-2026-10-17.md)和[本轮checklist](model-preflight-2026-10-17.md)补精确模型／素材与任务配置后确定有限执行范围。未调用服务或硬件，默认shadow／probe=false、当前政策与原期限／并发保持，R03暂停、历史V01open、六轮仍2/6。以下为历史。
+
 **2026-10-17：当前release全noop staging生命周期与恢复10/10完成。** 源码`6c62c84`；实际V1失败→确定性RED→单点取消归属修复→GREEN2/0，Linuxworkspace1287/0/5/0filtered、两端no-default/release/native链接和V2双轮正常启停/恢复通过。678提交输入、148归档证据与资源清理闭环；原日志分块派生计数显式保留，不重复测试求绿。默认shadow/政策/原期限并发不变，R03暂停、历史V01open、六轮仍2/6。从[最新检查点](../resume-checkpoint-release-lifecycle-2026-10-17.md)和[checklist](release-lifecycle-2026-10-17.md)继续；下一步先确认模型服务与部署资料，再做约定软件模型链验收，R02/R05现场门槛保持。以下为历史。
 
 **2026-10-17：当前 Linux 软件构建/测试/release链接10/10完成。** 应用源码仍`4e2968f`，完整workspace1285/0/5/0filtered，两端no-default全目标与default release链接通过，677输入和同源Mac一致；证据归档、任务资源已回收。无生产改动，默认shadow/政策/原期限并发保持，R03暂停、历史V01open、六轮仍2/6。最新恢复从[检查点](../resume-checkpoint-linux-release-2026-10-17.md)与[checklist](linux-release-2026-10-17.md)继续；下一候选为已有全noop staging的真实进程生命周期与恢复验收。以下为历史。

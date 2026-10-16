@@ -3,6 +3,9 @@
 更新：2026-10-17。本轮以当前开发 Mac Server、Pi 5 / 8 GB Embedded 为目标，Easy-Turn 位于 Server。Pi 的 Ubuntu24.04.4 / aarch64 已经只读核对；实际音频链、执行器接线/校准、服务目录和模型服务仍待现场资料。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
+
+当前软件产物／平台证据和真实模型端点／版本／部署待确认项见[软件发布记录](software-release.md)。Linux noop通过不代表当前Mac部署或真实模型链已验收。
+
 ## 配置与启动
 
 从仓库根目录按 [本地开发](local-development.md) 准备主文件和 `.d` 分片；[Server 配置](../../packages/alia-server/docs/configuration.md)与 [Embedded 配置](../../packages/alia-embedded/docs/configuration.md)分别管理业务/模型和设备实时运行时。`ALIA_CONFIG_PATH` 可以选择 Server 主文件，配套分片目录为同名 `.d`；Embedded 使用独立的 `ALIA_EMBEDDED_CONFIG_PATH`。
