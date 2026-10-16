@@ -33,7 +33,7 @@
 
 该报告区分请求音频格式、配置路径、模块选择、静态校准解析和未验证项；`hardware_verified=false`、`physical_state=not_observed`。它不实例化模块，不证明所选模块名/feature/模型可启动，不核对 Server 清单，不证明 ALSA 权限、AEC、时钟共享、机构校准或物理保持。选择 PCA 后即使 hardware=false 也检查原有地址覆盖/重复规则；这比禁用状态的普通启动更严格，不新增电气安全判断。输入有字节数界限，但同步本地文件读取没有墙钟超时；配置与父目录由可信本地操作者控制。
 
-另提供[无设备 staging 模板](../../config/embedded.staging.example.toml)，用于未来独立目录中的生命周期验证：七个模块均 noop，所有设备与发现关闭，保留绑定门槛，监听 loopback 临时端口。**正常启动 staging 仍写 key/SQLite 并监听**；本轮只验证模板离线检查，没有启动它。通用 embedded.example.toml 不是 Pi 实际配置，更不是无设备模板。详见[部署步骤](server-embedded.md)。
+另提供[无设备 staging 模板](../../config/embedded.staging.example.toml)，用于未来独立目录中的生命周期验证：七个模块均 noop，所有设备与发现关闭，保留绑定门槛，监听 loopback 临时端口。**正常启动 staging 仍写 key/SQLite 并监听**；2026-10-14前置包只验证模板离线检查。后续2026-10-17已在隔离Linux ARM64环境完成全noop两轮正常启停/恢复，见[最新软件检查点](../refactor/resume-checkpoint-release-lifecycle-2026-10-17.md)；它不改变本页Mac/Pi现场与硬件门槛。通用 embedded.example.toml 不是 Pi 实际配置，更不是无设备模板。详见[部署步骤](server-embedded.md)。
 
 ### 待用户集中补充的现场记录
 

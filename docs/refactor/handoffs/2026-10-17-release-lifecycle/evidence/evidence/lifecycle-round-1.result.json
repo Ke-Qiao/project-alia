@@ -1,0 +1,33 @@
+{
+  "started": "2026-10-16T17:07:24.018119+00:00",
+  "command": [
+    "python3",
+    "/evidence/lifecycle.py",
+    "1"
+  ],
+  "container": "5b211401b71c0a64168b3d79fdd00f3b9080e07e5e80cc0397065b4b51d4f234",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PostgreSQL",
+    "DATABASE_URL": "unset",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset",
+    "SHERPA_ONNX_LIB_DIR": "unset"
+  },
+  "manifest_sha256": "2c96c12280339932f38de228cb3a324144c0bfc51dc4ba932725ae8c28d312db",
+  "container_watchdog_seconds": 1800,
+  "container_kill_after_seconds": 10,
+  "host_watchdog_seconds": 1850,
+  "exit_code": 1,
+  "source_before": {
+    "file_count": 677,
+    "errors": []
+  },
+  "source_after": {
+    "file_count": 677,
+    "errors": []
+  },
+  "source_drift": [],
+  "elapsed_seconds": 0.975,
+  "finished_at": "2026-10-16T17:07:24.993558+00:00"
+}

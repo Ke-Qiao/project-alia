@@ -1,0 +1,11 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.91s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 2 tests
+sensor cancellation: owner_active=true sensor_job_retained=true resources_released=true stopped=Ok(()) stopped_again=Ok(())
+test channels::embedded::channel::lifecycle_tests::actual_loop_early_return_stays_a_shutdown_failure ... ok
+test channels::embedded::channel::lifecycle_tests::sensor_sync_waits_for_background_owner_cancellation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.01s
+

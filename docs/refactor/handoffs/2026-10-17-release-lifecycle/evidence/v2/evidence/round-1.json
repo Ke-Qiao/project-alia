@@ -1,0 +1,254 @@
+{
+  "started_at": "2026-10-16T17:29:34.671345+00:00",
+  "round": 1,
+  "passed": true,
+  "processes": [
+    {
+      "name": "embedded",
+      "pid": 9539,
+      "started_at": "2026-10-16T17:29:34.672811+00:00",
+      "binary_sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003"
+    },
+    {
+      "name": "server",
+      "pid": 9562,
+      "started_at": "2026-10-16T17:29:34.767421+00:00",
+      "binary_sha256": "0374aa62602a3e6c2908459b7e8a4a574bd937071d182dbb18172eccb0695616"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "embedded",
+      "pid": 9539,
+      "needed": false,
+      "forced_kill": false,
+      "exit_code": 0
+    },
+    {
+      "name": "server",
+      "pid": 9562,
+      "needed": false,
+      "forced_kill": false,
+      "exit_code": 0
+    }
+  ],
+  "grpc": [
+    {
+      "route": "/alia.binding.DeviceBinding/GetBindingStatus",
+      "port": 51503,
+      "status": 0
+    },
+    {
+      "route": "/alia.playback.v3.Playback/ObserveControl",
+      "port": 51503,
+      "status": 16
+    },
+    {
+      "route": "/alia.audio.AudioStream/StopPlayback",
+      "port": 51503,
+      "status": 12
+    },
+    {
+      "route": "/alia.audio.AudioStream/PlayDirectResponse",
+      "port": 51503,
+      "status": 12
+    },
+    {
+      "route": "/alia.expression.EmbeddedExpression/GetCapabilities",
+      "port": 51503,
+      "status": 12
+    },
+    {
+      "route": "/alia.audio.ServerAudioIngress/InterruptActiveTurn",
+      "port": 60017,
+      "status": 12
+    }
+  ],
+  "config_before": {
+    "server.toml": "a8f19493565414aa06d57b183189832749751c0bd2906f7757de11e95137e24d",
+    "embedded.toml": "69519b0d7fa42b4cf274f2bda08c32a399dec51d48248b009fa970db6110fa0a"
+  },
+  "binding": {
+    "device_id": "alia-embedded-a177cba3ad73",
+    "unbound": true,
+    "decoded": "device_id: \"alia-embedded-a177cba3ad73\"\ndevice_public_key: \"\\241w\\313\\243\\255s\\314\\037d[\\364\\345\\355\\207fJ\\022_\\244y\\313\\300r\\222\\360\\363\\\"\\204\\3751D\\351\"\n"
+  },
+  "device_ready_at": "2026-10-16T17:29:34.767090+00:00",
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "modules": {
+      "llm.minor": {
+        "status": "healthy"
+      },
+      "router": {
+        "status": "healthy"
+      },
+      "embedding": {
+        "status": "healthy"
+      },
+      "skills": {
+        "status": "healthy"
+      },
+      "scheduler": {
+        "status": "healthy"
+      },
+      "conversation": {
+        "status": "healthy"
+      },
+      "rule_engine": {
+        "status": "healthy"
+      },
+      "cache": {
+        "status": "healthy"
+      },
+      "tools": {
+        "status": "healthy"
+      },
+      "stt": {
+        "status": "healthy"
+      },
+      "persona": {
+        "status": "healthy"
+      },
+      "memory": {
+        "status": "healthy"
+      },
+      "llm.major": {
+        "status": "healthy"
+      },
+      "insights": {
+        "status": "healthy"
+      },
+      "tts": {
+        "status": "healthy"
+      }
+    }
+  },
+  "account_id": "c417e61e-8bc9-4dd2-b4fc-a331b58484b0",
+  "device_status": {
+    "device_id": "alia-embedded-a177cba3ad73",
+    "online": true,
+    "cpu_percent": null,
+    "memory_percent": null,
+    "temperature_c": null
+  },
+  "server_ready_at": "2026-10-16T17:29:35.058366+00:00",
+  "companion_policy": {
+    "revision": 1,
+    "policy": {
+      "mode": "shadow",
+      "quiet": false,
+      "paused": false,
+      "daily_budget": 3,
+      "cooldown_seconds": 900,
+      "candidate_ttl_seconds": 60,
+      "require_response_before_next": true
+    }
+  },
+  "context_policy_etag": "\"1\"",
+  "settings_patch": {
+    "applied": [],
+    "changed": [
+      "core.profiles.llm.major.temperature"
+    ],
+    "context_policy_version": 1,
+    "errors": [],
+    "ignored_runtime": [
+      "core.profiles.llm.major.temperature"
+    ],
+    "module_reports": [],
+    "requires_restart": [],
+    "success": true
+  },
+  "persisted_setting": {
+    "core.profiles.llm.major.temperature": 0.25
+  },
+  "files_while_running": {
+    "server_config": "a8f19493565414aa06d57b183189832749751c0bd2906f7757de11e95137e24d",
+    "embedded_config": "a621d5ac0af70486e8841ffd3341bd56364d2380632f6fe793fb7cb69e788ca7",
+    "server_key": "727df850e388d40e0fea7ca023daae43ca66b306398fb5006f03dd82bbd1ee65",
+    "embedded_key": "79c4c4fe0a9aa99c2e70e1e2d28d84031cbaa160bb20e183c6009f7fe1abb188",
+    "device_id": "alia-embedded-a177cba3ad73"
+  },
+  "shutdown": [
+    {
+      "name": "server",
+      "pid": 9562,
+      "alive_before_signal": true,
+      "signal": "SIGTERM",
+      "at": "2026-10-16T17:29:35.181701+00:00",
+      "exit_code": 0,
+      "elapsed_seconds": 0.007289
+    },
+    {
+      "name": "embedded",
+      "pid": 9539,
+      "alive_before_signal": true,
+      "signal": "SIGTERM",
+      "at": "2026-10-16T17:29:35.189006+00:00",
+      "exit_code": 0,
+      "elapsed_seconds": 0.005775
+    }
+  ],
+  "listeners_closed": [
+    38745,
+    60017,
+    51503
+  ],
+  "files_after_shutdown": {
+    "server_config": "a8f19493565414aa06d57b183189832749751c0bd2906f7757de11e95137e24d",
+    "embedded_config": "a621d5ac0af70486e8841ffd3341bd56364d2380632f6fe793fb7cb69e788ca7",
+    "server_key": "727df850e388d40e0fea7ca023daae43ca66b306398fb5006f03dd82bbd1ee65",
+    "embedded_key": "79c4c4fe0a9aa99c2e70e1e2d28d84031cbaa160bb20e183c6009f7fe1abb188",
+    "device_id": "alia-embedded-a177cba3ad73"
+  },
+  "settings_file": {
+    "sha256": "3d75caecba6e222320c3fb491f470aff4b886cdbdaa5f86fff5a328e2589e9e0",
+    "bytes": 8232,
+    "mode": "0o600",
+    "value": 0.25
+  },
+  "sqlite": {
+    "path": "/runtime/staging/staging/state/embedded.sqlite3",
+    "integrity": [
+      [
+        "ok"
+      ]
+    ],
+    "schema": [
+      [
+        "index",
+        "idx_direct_responses_slug",
+        "direct_responses",
+        "CREATE UNIQUE INDEX idx_direct_responses_slug\n            ON direct_responses(slug)\n            WHERE slug <> ''"
+      ],
+      [
+        "index",
+        "sqlite_autoindex_embedded_state_1",
+        "embedded_state",
+        null
+      ],
+      [
+        "table",
+        "direct_responses",
+        "direct_responses",
+        "CREATE TABLE direct_responses (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                slug TEXT NOT NULL DEFAULT '',\n                keywords_json TEXT NOT NULL,\n                audio_variants_json TEXT NOT NULL DEFAULT '[]',\n                action TEXT,\n                enabled INTEGER NOT NULL DEFAULT 1,\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+      ],
+      [
+        "table",
+        "embedded_state",
+        "embedded_state",
+        "CREATE TABLE embedded_state (\n                key TEXT PRIMARY KEY,\n                value_json TEXT NOT NULL,\n                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+      ],
+      [
+        "table",
+        "sqlite_sequence",
+        "sqlite_sequence",
+        "CREATE TABLE sqlite_sequence(name,seq)"
+      ]
+    ],
+    "bytes": 4096
+  },
+  "finished_at": "2026-10-16T17:29:35.197627+00:00"
+}

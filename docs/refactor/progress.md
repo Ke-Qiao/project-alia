@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-17：当前 release 全noop staging 生命周期与恢复10/10完成。** 源码`6c62c84`；V1实际SIGTERM失败与确定性RED确认sensor取消域竞态，仅统一owner token后GREEN2/0。Linux一次workspace1287/0/5/0filtered、两端no-default与default release/native链接、V2双轮启动/正常关闭/同状态恢复通过；678输入逐Git blob匹配，148份证据归档，任务容器/卷/network精确回收。原日志一处分块仅生成有映射派生计数，原失败与INVALID保留；无重复测试求绿。默认shadow/政策/原期限并发保持，R03暂停、历史V01open、六轮仍2/6。从[最新检查点](resume-checkpoint-release-lifecycle-2026-10-17.md)与[四份HANDOFF](handoffs/2026-10-17-release-lifecycle/README.md)继续，下一软件出口为发布资料与真实模型部署信息确认；未完成硬件/模型/断电或长稳验收。以下为历史。
+
 **2026-10-17：当前 Linux 软件发布构建/测试/链接10/10完成，应用源码仍 `4e2968f`。** 默认完整 workspace 一次1285/0/5/0filtered，两端分别no-default all-targets与default release/native链接通过；677输入与同源Mac及基线Git一致，50份原件归档，任务PG0/0后两个容器/卷/network回收。无生产、测试或依赖修改，原期限与并发、默认shadow/政策保持；R03暂停、历史V01根因open、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-linux-release-2026-10-17.md)和[四份HANDOFF](handoffs/2026-10-17-linux-release/README.md)继续；下一软件候选为已有全noop staging的实际进程启动/关闭/重启与恢复。以下为历史。
 
 **2026-10-17：CompanionInvitation 历史只读引用10/10完成。** 源码`4e2968f`；用户确认历史事实与输出授权分离，专用marker保留规范身份、完整根/真实TTL，Memory派生保存及防主动自我强化完成。真实RED0/1，定向13/0/0；一次workspace1277/0/5/0filtered，677提交输入匹配，34原件归档，任务PG0/0后容器与卷已回收。原期限、并发、默认shadow/当前政策保持，R03暂停、历史V01open、六轮仍2/6。恢复从[本轮检查点](resume-checkpoint-invitation-history-2026-10-16.md)和[checklist](checklists/invitation-history-2026-10-16.md)继续；下一步候选为当前版本的软件发布验收。以下为历史。

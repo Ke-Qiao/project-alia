@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-16T17:29:30.517396+00:00",
+  "config_unchanged": true,
+  "no_key_or_state_created": true,
+  "directory_entries": [
+    "embedded.toml",
+    "private.json",
+    "server.toml"
+  ],
+  "stderr_preamble": "onnxruntime cpuid_info warning: Unknown CPU vendor. cpuinfo_vendor value: 0\n"
+}

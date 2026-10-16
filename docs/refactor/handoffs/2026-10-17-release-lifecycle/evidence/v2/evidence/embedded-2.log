@@ -1,0 +1,7 @@
+onnxruntime cpuid_info warning: Unknown CPU vendor. cpuinfo_vendor value: 0
+[2m2026-10-16T17:29:48.847096Z[0m [32m INFO[0m [2malia_embedded[0m[2m:[0m alia-embedded starting
+[2m2026-10-16T17:29:48.847329Z[0m [32m INFO[0m [2malia_embedded[0m[2m:[0m identity loaded [3mdevice_id[0m[2m=[0malia-embedded-a177cba3ad73 [3mdevice_name[0m[2m=[0mAlia no-device staging
+[2m2026-10-16T17:29:48.847339Z[0m [32m INFO[0m [2malia_embedded[0m[2m:[0m device keypair ready [3mkeypair_path[0m[2m=[0m/runtime/staging/staging/identity/device.key [3mpublic_key_len[0m[2m=[0m32 [3mexpected_device_public_key[0m[2m=[0moXfLo61zzB9kW/Tl7YdmShJfpHnLwHKS8PMihP0xROk=
+[2m2026-10-16T17:29:48.848543Z[0m [32m INFO[0m [2malia_embedded::module::builder[0m[2m:[0m starting embedded modules
+[2m2026-10-16T17:29:48.848657Z[0m [32m INFO[0m [2malia_embedded::module::builder[0m[2m:[0m gRPC server listening [3maddr[0m[2m=[0m127.0.0.1:51503
+[2m2026-10-16T17:29:49.250920Z[0m [32m INFO[0m [2malia_embedded[0m[2m:[0m shutdown requested

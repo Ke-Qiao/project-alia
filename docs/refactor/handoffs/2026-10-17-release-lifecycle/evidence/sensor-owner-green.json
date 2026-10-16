@@ -1,0 +1,27 @@
+{
+  "phase": "green",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "channels::embedded::channel::lifecycle_tests::",
+    "--offline",
+    "--locked",
+    "--",
+    "--nocapture"
+  ],
+  "started_at": "2026-10-16T17:19:05.477628+00:00",
+  "elapsed_seconds": 23.12,
+  "exit_code": 0,
+  "source_manifest_sha256": "0133b6f493b3c8b39b365abe03e3cfc035d88b0f21962e0ed6abd745796ed8c7",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "no external database; temporary SQLite fixtures only",
+  "build_jobs": 2,
+  "process_watchdog_seconds": 900,
+  "process_watchdog_expired": false,
+  "binary_sha256": null,
+  "binary_unchanged": null
+}

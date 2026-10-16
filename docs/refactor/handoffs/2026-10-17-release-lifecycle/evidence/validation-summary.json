@@ -1,0 +1,333 @@
+{
+  "at": "2026-10-16T17:30:52.876694+00:00",
+  "source_manifest_sha256": "0133b6f493b3c8b39b365abe03e3cfc035d88b0f21962e0ed6abd745796ed8c7",
+  "source_files": 678,
+  "changed_inputs": [
+    "packages/alia-server/src/channels/embedded/channel.rs",
+    "packages/alia-server/src/channels/embedded/channel_lifecycle_tests.rs"
+  ],
+  "mac_targeted": {
+    "red": "1 passed / 1 failed / 0 ignored / 384 filtered",
+    "green": "2 passed / 0 failed / 0 ignored / 384 filtered",
+    "red_elapsed": 58.45,
+    "green_elapsed": 23.12
+  },
+  "linux_workspace": {
+    "totals": {
+      "passed": 1287,
+      "failed": 0,
+      "ignored": 5,
+      "measured": 0,
+      "filtered_out": 0
+    },
+    "running_targets": 67,
+    "doctest_targets": 5,
+    "elapsed_seconds": 405.963
+  },
+  "stage_elapsed_seconds": {
+    "workspace-default": 405.963,
+    "server-no-default": 4.345,
+    "embedded-no-default": 1.465,
+    "release-default": 113.179,
+    "release-link": 0.431,
+    "prepare": 0.272,
+    "embedded-preflight": 0.201,
+    "lifecycle-round-1": 0.791,
+    "lifecycle-round-2": 0.627
+  },
+  "artifacts": [
+    {
+      "name": "alia-server",
+      "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/cache/target/release/alia-server",
+      "sha256": "0374aa62602a3e6c2908459b7e8a4a574bd937071d182dbb18172eccb0695616",
+      "bytes": 46092208
+    },
+    {
+      "name": "alia-embedded",
+      "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/cache/target/release/alia-embedded",
+      "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+      "bytes": 49540200
+    }
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "passed": true,
+      "processes": [
+        {
+          "name": "embedded",
+          "pid": 9539,
+          "started_at": "2026-10-16T17:29:34.672811+00:00",
+          "binary_sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003"
+        },
+        {
+          "name": "server",
+          "pid": 9562,
+          "started_at": "2026-10-16T17:29:34.767421+00:00",
+          "binary_sha256": "0374aa62602a3e6c2908459b7e8a4a574bd937071d182dbb18172eccb0695616"
+        }
+      ],
+      "shutdown": [
+        {
+          "name": "server",
+          "pid": 9562,
+          "alive_before_signal": true,
+          "signal": "SIGTERM",
+          "at": "2026-10-16T17:29:35.181701+00:00",
+          "exit_code": 0,
+          "elapsed_seconds": 0.007289
+        },
+        {
+          "name": "embedded",
+          "pid": 9539,
+          "alive_before_signal": true,
+          "signal": "SIGTERM",
+          "at": "2026-10-16T17:29:35.189006+00:00",
+          "exit_code": 0,
+          "elapsed_seconds": 0.005775
+        }
+      ],
+      "cleanup": [
+        {
+          "name": "embedded",
+          "pid": 9539,
+          "needed": false,
+          "forced_kill": false,
+          "exit_code": 0
+        },
+        {
+          "name": "server",
+          "pid": 9562,
+          "needed": false,
+          "forced_kill": false,
+          "exit_code": 0
+        }
+      ],
+      "account_id": "c417e61e-8bc9-4dd2-b4fc-a331b58484b0",
+      "device_id": "alia-embedded-a177cba3ad73",
+      "companion_policy": {
+        "revision": 1,
+        "policy": {
+          "mode": "shadow",
+          "quiet": false,
+          "paused": false,
+          "daily_budget": 3,
+          "cooldown_seconds": 900,
+          "candidate_ttl_seconds": 60,
+          "require_response_before_next": true
+        }
+      },
+      "context_policy_etag": "\"1\"",
+      "settings_file": {
+        "sha256": "3d75caecba6e222320c3fb491f470aff4b886cdbdaa5f86fff5a328e2589e9e0",
+        "bytes": 8232,
+        "mode": "0o600",
+        "value": 0.25
+      },
+      "files_after_shutdown": {
+        "server_config": "a8f19493565414aa06d57b183189832749751c0bd2906f7757de11e95137e24d",
+        "embedded_config": "a621d5ac0af70486e8841ffd3341bd56364d2380632f6fe793fb7cb69e788ca7",
+        "server_key": "727df850e388d40e0fea7ca023daae43ca66b306398fb5006f03dd82bbd1ee65",
+        "embedded_key": "79c4c4fe0a9aa99c2e70e1e2d28d84031cbaa160bb20e183c6009f7fe1abb188",
+        "device_id": "alia-embedded-a177cba3ad73"
+      },
+      "sqlite_integrity": [
+        [
+          "ok"
+        ]
+      ],
+      "listeners_closed": [
+        38745,
+        60017,
+        51503
+      ],
+      "resources": {
+        "at": "2026-10-16T17:29:48.682363+00:00",
+        "command": [
+          "docker",
+          "exec",
+          "72b2eab8afdf24b3301494320c8ca38e12c3635e4ab5a395480d8ae762ee565d",
+          "psql",
+          "-U",
+          "alia_test",
+          "-d",
+          "alia_release_lifecycle_v2_20261017",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-Atc",
+          "SELECT json_build_object('schemas',(SELECT count(*) FROM pg_namespace WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'),'other_clients',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'));"
+        ],
+        "exit_code": 0,
+        "stdout": "{\"schemas\" : 0, \"other_clients\" : 0}\n",
+        "stderr": "",
+        "schemas": 0,
+        "other_clients": 0,
+        "seconds_after_round_result": 13.373,
+        "processes": {
+          "exit_code": 0,
+          "stdout": "PID                 PPID                COMMAND\n27229               27212               sleep infinity\n",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "round": 2,
+      "passed": true,
+      "processes": [
+        {
+          "name": "embedded",
+          "pid": 9594,
+          "started_at": "2026-10-16T17:29:48.844977+00:00",
+          "binary_sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003"
+        },
+        {
+          "name": "server",
+          "pid": 9617,
+          "started_at": "2026-10-16T17:29:48.921026+00:00",
+          "binary_sha256": "0374aa62602a3e6c2908459b7e8a4a574bd937071d182dbb18172eccb0695616"
+        }
+      ],
+      "shutdown": [
+        {
+          "name": "server",
+          "pid": 9617,
+          "alive_before_signal": true,
+          "signal": "SIGTERM",
+          "at": "2026-10-16T17:29:49.242875+00:00",
+          "exit_code": 0,
+          "elapsed_seconds": 0.00797
+        },
+        {
+          "name": "embedded",
+          "pid": 9594,
+          "alive_before_signal": true,
+          "signal": "SIGTERM",
+          "at": "2026-10-16T17:29:49.250855+00:00",
+          "exit_code": 0,
+          "elapsed_seconds": 0.007013
+        }
+      ],
+      "cleanup": [
+        {
+          "name": "embedded",
+          "pid": 9594,
+          "needed": false,
+          "forced_kill": false,
+          "exit_code": 0
+        },
+        {
+          "name": "server",
+          "pid": 9617,
+          "needed": false,
+          "forced_kill": false,
+          "exit_code": 0
+        }
+      ],
+      "account_id": "c417e61e-8bc9-4dd2-b4fc-a331b58484b0",
+      "device_id": "alia-embedded-a177cba3ad73",
+      "companion_policy": {
+        "revision": 1,
+        "policy": {
+          "mode": "shadow",
+          "quiet": false,
+          "paused": false,
+          "daily_budget": 3,
+          "cooldown_seconds": 900,
+          "candidate_ttl_seconds": 60,
+          "require_response_before_next": true
+        }
+      },
+      "context_policy_etag": "\"1\"",
+      "settings_file": {
+        "sha256": "3d75caecba6e222320c3fb491f470aff4b886cdbdaa5f86fff5a328e2589e9e0",
+        "bytes": 8232,
+        "mode": "0o600",
+        "value": 0.25
+      },
+      "files_after_shutdown": {
+        "server_config": "a8f19493565414aa06d57b183189832749751c0bd2906f7757de11e95137e24d",
+        "embedded_config": "a621d5ac0af70486e8841ffd3341bd56364d2380632f6fe793fb7cb69e788ca7",
+        "server_key": "727df850e388d40e0fea7ca023daae43ca66b306398fb5006f03dd82bbd1ee65",
+        "embedded_key": "79c4c4fe0a9aa99c2e70e1e2d28d84031cbaa160bb20e183c6009f7fe1abb188",
+        "device_id": "alia-embedded-a177cba3ad73"
+      },
+      "sqlite_integrity": [
+        [
+          "ok"
+        ]
+      ],
+      "listeners_closed": [
+        38745,
+        60017,
+        51503
+      ],
+      "resources": {
+        "at": "2026-10-16T17:29:49.461025+00:00",
+        "command": [
+          "docker",
+          "exec",
+          "72b2eab8afdf24b3301494320c8ca38e12c3635e4ab5a395480d8ae762ee565d",
+          "psql",
+          "-U",
+          "alia_test",
+          "-d",
+          "alia_release_lifecycle_v2_20261017",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-Atc",
+          "SELECT json_build_object('schemas',(SELECT count(*) FROM pg_namespace WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'),'other_clients',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'));"
+        ],
+        "exit_code": 0,
+        "stdout": "{\"schemas\" : 0, \"other_clients\" : 0}\n",
+        "stderr": "",
+        "schemas": 0,
+        "other_clients": 0,
+        "seconds_after_round_result": 0.098,
+        "processes": {
+          "exit_code": 0,
+          "stdout": "PID                 PPID                COMMAND\n27229               27212               sleep infinity\n",
+          "stderr": ""
+        }
+      }
+    }
+  ],
+  "original_failure": {
+    "failure": {
+      "class": "AssertionError",
+      "message": "server normal shutdown failed"
+    },
+    "shutdown": [
+      {
+        "name": "server",
+        "pid": 66,
+        "alive_before_signal": true,
+        "signal": "SIGTERM",
+        "at": "2026-10-16T17:07:24.870341+00:00",
+        "exit_code": 1,
+        "elapsed_seconds": 0.007628
+      }
+    ],
+    "cleanup": [
+      {
+        "name": "embedded",
+        "pid": 43,
+        "needed": true,
+        "forced_kill": false,
+        "exit_code": 0
+      },
+      {
+        "name": "server",
+        "pid": 66,
+        "needed": false,
+        "forced_kill": false,
+        "exit_code": 1
+      }
+    ]
+  },
+  "resource_cleanup": {
+    "v1": true,
+    "v2": true
+  },
+  "counting_evidence": "Original Cargo log and invalid initial count preserved; one exact split heading reconstructed with line mapping in derived view; confirmed count refers to that view. No test rerun.",
+  "scope": "Debian 12 Linux ARM64 release, all noop, two normal SIGTERM lifecycle rounds with same V2 state; no crash/power-loss/hardware/model/physical feedback claims; original V01 root remains open"
+}

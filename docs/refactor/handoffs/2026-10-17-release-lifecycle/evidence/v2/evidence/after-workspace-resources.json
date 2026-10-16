@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-16T17:27:02.812098+00:00",
+  "command": [
+    "docker",
+    "exec",
+    "72b2eab8afdf24b3301494320c8ca38e12c3635e4ab5a395480d8ae762ee565d",
+    "psql",
+    "-U",
+    "alia_test",
+    "-d",
+    "alia_release_lifecycle_v2_20261017",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-Atc",
+    "SELECT json_build_object('schemas',(SELECT count(*) FROM pg_namespace WHERE nspname <> 'public' AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg_%'),'other_clients',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'));"
+  ],
+  "exit_code": 0,
+  "stdout": "{\"schemas\" : 0, \"other_clients\" : 0}\n",
+  "stderr": "",
+  "schemas": 0,
+  "other_clients": 0,
+  "processes": {
+    "exit_code": 0,
+    "stdout": "PID                 PPID                COMMAND\n27229               27212               sleep infinity\n",
+    "stderr": ""
+  }
+}

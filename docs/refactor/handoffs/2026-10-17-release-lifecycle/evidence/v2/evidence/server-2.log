@@ -1,0 +1,30 @@
+[2m2026-10-16T17:29:48.922837Z[0m [32m INFO[0m [2malia_server[0m[2m:[0m configuration loaded [3mconfig_dir[0m[2m=[0m/runtime/staging
+[2m2026-10-16T17:29:48.928730Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating LLM adapter (noop) [3mprofile[0m[2m=[0m"noop"
+[2m2026-10-16T17:29:48.928767Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating embedding adapter (noop) [3mprofile[0m[2m=[0m"noop"
+[2m2026-10-16T17:29:48.928839Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0msensor
+[2m2026-10-16T17:29:48.928847Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mtime_range
+[2m2026-10-16T17:29:48.928852Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mevent_field
+[2m2026-10-16T17:29:48.928856Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mevent_pattern
+[2m2026-10-16T17:29:48.928861Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0mlog
+[2m2026-10-16T17:29:48.928865Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0minsights
+[2m2026-10-16T17:29:48.928870Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0memit_event
+[2m2026-10-16T17:29:48.928899Z[0m [32m INFO[0m [2malia_server::bootstrap::builder[0m[2m:[0m initializing modules...
+[2m2026-10-16T17:29:48.929178Z[0m [32m INFO[0m [2malia_server::scheduler::cron[0m[2m:[0m AutomationScheduler initialized
+[2m2026-10-16T17:29:48.931532Z[0m [32m INFO[0m [2malia_server::modules::interaction::conversation::service[0m[2m:[0m ConversationService initialized
+[2m2026-10-16T17:29:48.978749Z[0m [32m INFO[0m [2malia_server::tools::builtin[0m[2m:[0m BuiltinToolRegistry initialized [3mexecutor_count[0m[2m=[0m10
+[2m2026-10-16T17:29:49.063743Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0mtool_call
+[2m2026-10-16T17:29:49.064268Z[0m [32m INFO[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m ensuring default built-in skills [3mcount[0m[2m=[0m7
+[2m2026-10-16T17:29:49.086414Z[0m [33m WARN[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m failed to ensure builtin skill preferred tools [3mskill[0m[2m=[0mhome_assistant_lights [3mpreferred_tools[0m[2m=[0m["home_assistant_list_lights", "home_assistant_light_control"] [3merror[0m[2m=[0mskill references unknown tool 'home_assistant_list_lights'
+[2m2026-10-16T17:29:49.100005Z[0m [32m INFO[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m loaded skills from database [3mcount[0m[2m=[0m7
+[2m2026-10-16T17:29:49.100248Z[0m [32m INFO[0m [2malia_server::modules::interaction::persona::service[0m[2m:[0m PersonaService loaded personas from database [3mcount[0m[2m=[0m1
+[2m2026-10-16T17:29:49.100262Z[0m [32m INFO[0m [2malia_server::modules::interaction::routing::service[0m[2m:[0m RouterService initialized [3mtimeout_sec[0m[2m=[0m5 [3mminor_llm[0m[2m=[0mtrue [3mmajor_llm[0m[2m=[0mtrue [3mmode[0m[2m=[0mBothEnabled
+[2m2026-10-16T17:29:49.100389Z[0m [32m INFO[0m [2malia_server::rules::engine[0m[2m:[0m EventRuleEngine initialized
+[2m2026-10-16T17:29:49.100398Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating EmbeddedChannel [3mchannel_id[0m[2m=[0misolated-no-device
+[2m2026-10-16T17:29:49.100753Z[0m [32m INFO[0m [2malia_server::modules::platform::sensors::registry[0m[2m:[0m sensor read provider registered [3msource[0m[2m=[0mcomponent:isolated-no-device
+[2m2026-10-16T17:29:49.100819Z[0m [32m INFO[0m [2malia_server::bootstrap::builder[0m[2m:[0m starting modules...
+[2m2026-10-16T17:29:49.102495Z[0m [32m INFO[0m [2malia_server::scheduler::cron[0m[2m:[0m AutomationScheduler started
+[2m2026-10-16T17:29:49.102534Z[0m [32m INFO[0m [2malia_server::rules::engine[0m[2m:[0m EventRuleEngine started
+[2m2026-10-16T17:29:49.104860Z[0m [32m INFO[0m [2malia_server::channels::embedded::channel[0m[2m:[0m connected to alia-embedded [3mendpoint[0m[2m=[0mhttp://127.0.0.1:51503 [3mchannel_id[0m[2m=[0misolated-no-device
+[2m2026-10-16T17:29:49.242946Z[0m [32m INFO[0m [2malia_server[0m[2m:[0m shutdown requested
+[2m2026-10-16T17:29:49.242983Z[0m [32m INFO[0m [2malia_server::modules::interaction::runtime[0m[2m:[0m pipeline requests drained
+[2m2026-10-16T17:29:49.243622Z[0m [32m INFO[0m [2malia_server::modules::platform::sensors::registry[0m[2m:[0m sensor read provider unregistered [3msource[0m[2m=[0mcomponent:isolated-no-device

@@ -1,0 +1,78 @@
+{
+  "at": "2026-10-16T17:05:17.817040+00:00",
+  "ports": [
+    40597,
+    51549,
+    59849
+  ],
+  "template_sha256": "c9d380599475f642ca20c6961f111604f44d87ed803e2735aaa0e9a744939ead",
+  "configuration_sha256": {
+    "server.toml": "66fd041468dfbb7ba773474fbe42aae78dd44362ef5e23e1e00d08d47083d30e",
+    "embedded.toml": "e857992e6add064c263ec4d518b3dce92e591c9b9487b029157346eeac6d6dd0"
+  },
+  "embedded": {
+    "runtime": {
+      "provisioned": false
+    },
+    "device_runtime": {
+      "listen_addr": "127.0.0.1:59849",
+      "state_path": "staging/state/embedded.sqlite3",
+      "plugins_dir": "staging/plugins",
+      "shutdown_grace_ms": 5000,
+      "grpc_drain_timeout_ms": 1000
+    },
+    "identity": {
+      "device_id": "",
+      "device_name": "Alia no-device staging",
+      "keypair_path": "staging/identity/device.key"
+    },
+    "modules": {
+      "wakeword": "noop",
+      "vad": "noop",
+      "direct_response": "noop",
+      "audio_capture": "noop",
+      "audio_playback": "noop",
+      "face_tracker": "noop",
+      "discovery": "noop"
+    },
+    "audio": {
+      "capture_sample_rate": 16000,
+      "capture_channels": 1,
+      "playback_sample_rate": 24000,
+      "playback_channels": 1
+    },
+    "speech": {
+      "channel_id": "pi-living-room",
+      "pre_roll_ms": 200,
+      "upload_queue_frames": 32
+    },
+    "direct_response_defaults": {
+      "audio_dir": "staging/cues"
+    },
+    "motion": {
+      "enabled": false,
+      "hardware_enabled": false,
+      "calibration_confirmed": false,
+      "approved_animations": []
+    },
+    "vision": {
+      "enabled": false
+    },
+    "vision_debug": {
+      "enabled": false
+    },
+    "hmmd_mmwave": {
+      "enabled": false
+    },
+    "discovery": {
+      "mdns_enabled": false,
+      "ble_provision_enabled": false,
+      "require_physical_confirm": true
+    },
+    "dev": {
+      "skip_binding": false
+    }
+  },
+  "server_config_redacted": "[server]\nid = \"isolated-release-lifecycle-server\"\nhost = \"127.0.0.1\"\nport = 40597\ngrpc_port = 51549\ndiscovery_enabled = false\nlog_level = \"info\"\nshutdown_grace_ms = 3000\ndrain_timeout_ms = 100\n[database]\nurl = \"postgresql://alia_test:alia_test@127.0.0.1:5432/alia_release_lifecycle_20261017\"\nmax_connections = 4\nmin_connections = 0\n[auth]\njwt_secret = \"<TASK_SECRET>\"\nserver_keypair_path = \"server.key\"\njwt_expiry_hours = 1\nrefresh_expiry_days = 1\nargon2_memory_kib = 19456\nargon2_iterations = 2\nargon2_parallelism = 1\n[[channels]]\ntype = \"embedded\"\nid = \"isolated-no-device\"\nenabled = true\nendpoint = \"http://127.0.0.1:59849\"\ndiscovery_timeout_sec = 1\nreconnect_interval_sec = 1\nreconnect_max_backoff_sec = 1\ngrpc_timeout_sec = 2\n[modules]\nstt = \"noop\"\ntts = \"noop\"\n[llm.roles]\nminor = \"noop\"\nmajor = \"noop\"\ndefault = \"noop\"\nembedding = \"noop\"\n[providers.easy_turn]\nenabled = false\n[plugins.home_assistant]\nenabled = false\n",
+  "scope": "all noop providers/devices; Server channel mDNS browse stays inside internal network; no binding or policy mutation"
+}

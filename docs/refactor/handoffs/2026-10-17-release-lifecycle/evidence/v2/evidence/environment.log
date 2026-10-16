@@ -1,0 +1,154 @@
+{
+  "commands": [
+    {
+      "command": [
+        "uname",
+        "-a"
+      ],
+      "exit_code": 0,
+      "stdout": "Linux 72b2eab8afdf 7.2.9-orbstack-00391-g2b298d05fbd4 #1 SMP PREEMPT Mon Oct 12 05:39:36 UTC 2026 aarch64 GNU/Linux\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "rustc",
+        "-Vv"
+      ],
+      "exit_code": 0,
+      "stdout": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-unknown-linux-gnu\nrelease: 1.95.0\nLLVM version: 22.1.2\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "cargo",
+        "-V"
+      ],
+      "exit_code": 0,
+      "stdout": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "protoc",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "libprotoc 3.21.12\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "exit_code": 0,
+      "stdout": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "pkg-config",
+        "--modversion",
+        "alsa",
+        "dbus-1",
+        "openssl"
+      ],
+      "exit_code": 0,
+      "stdout": "1.2.8\n1.14.10\n3.0.20\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "libasound2-dev",
+        "libdbus-1-dev",
+        "libssl-dev",
+        "libc6",
+        "libstdc++6",
+        "protobuf-compiler"
+      ],
+      "exit_code": 0,
+      "stdout": "libasound2-dev:arm64\t1.2.8-1+b1\nlibc6:arm64\t2.36-9+deb12u14\nlibdbus-1-dev:arm64\t1.14.10-1~deb12u1\nlibssl-dev:arm64\t3.0.20-1~deb12u1\nlibstdc++6:arm64\t12.2.0-14+deb12u1\nprotobuf-compiler\t3.21.12-3+deb12u1\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "ldd",
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "ldd (Debian GLIBC 2.36-9+deb12u14) 2.36\nCopyright (C) 2022 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\nWritten by Roland McGrath and Ulrich Drepper.\n",
+      "stderr": ""
+    }
+  ],
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "postgresql://alia_test:alia_test@127.0.0.1:5432/alia_release_lifecycle_v2_20261017",
+    "DATABASE_URL": null,
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "RUST_TEST_THREADS": null,
+    "RUST_MIN_STACK": null,
+    "RUST_BACKTRACE": null,
+    "DOCS_RS": null,
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "SHERPA_ONNX_LIB_DIR": null
+  },
+  "native_system_libraries": [
+    {
+      "name": "libasound.so.2",
+      "path": "/usr/lib/aarch64-linux-gnu/libasound.so.2.0.0",
+      "sha256": "9fade6b3aedf1ba944e6795b52b74378f2f89166b92ee542582171416a76572d",
+      "bytes": 1116648
+    },
+    {
+      "name": "libdbus-1.so.3",
+      "path": "/usr/lib/aarch64-linux-gnu/libdbus-1.so.3.32.4",
+      "sha256": "e35b314463bc7d7e48d542b13941c49172abb2ba8e8fe5b1f54e6a50b636bdfc",
+      "bytes": 395336
+    },
+    {
+      "name": "libssl.so.3",
+      "path": "/usr/lib/aarch64-linux-gnu/libssl.so.3",
+      "sha256": "9e171264a6651d714938e83d81277d16524c150a36eaa59ce56e79b9cdbea7ce",
+      "bytes": 737192
+    },
+    {
+      "name": "libcrypto.so.3",
+      "path": "/usr/lib/aarch64-linux-gnu/libcrypto.so.3",
+      "sha256": "dfbbbff72234e55b7bb2b8ae57a1fbed326d49d4b56882e3d4a046399f93cacf",
+      "bytes": 4532392
+    },
+    {
+      "name": "libc.so.6",
+      "path": "/usr/lib/aarch64-linux-gnu/libc.so.6",
+      "sha256": "e4ac8ae1d81e4865e3aadedb962879cf9415903b3f2ba81ec75e9962b86ab8b0",
+      "bytes": 1651408
+    },
+    {
+      "name": "libstdc++.so.6",
+      "path": "/usr/lib/aarch64-linux-gnu/libstdc++.so.6.0.30",
+      "sha256": "532f3a12d7b8fef6cc7a064ea106b6c4ab2365674b73e743e4a385d4ffb6c8ab",
+      "bytes": 2174296
+    },
+    {
+      "name": "libgcc_s.so.1",
+      "path": "/usr/lib/aarch64-linux-gnu/libgcc_s.so.1",
+      "sha256": "046856f95f4636f1fc7c3a12bf4f3cd5634c2fc5145c3fdf7395d4f349fa69c7",
+      "bytes": 133448
+    },
+    {
+      "name": "libm.so.6",
+      "path": "/usr/lib/aarch64-linux-gnu/libm.so.6",
+      "sha256": "3c4cb3be0b974edf05f023f85ab15107fb5afc2687163593d0d4cf8e80c17b39",
+      "bytes": 591960
+    },
+    {
+      "name": "ld-linux-aarch64.so.1",
+      "path": "/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+      "sha256": "17538b8f9889a470c061f69a8fea8124da89627311cd16546c133a89f09056df",
+      "bytes": 202912
+    }
+  ]
+}

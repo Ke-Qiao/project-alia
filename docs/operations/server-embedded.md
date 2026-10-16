@@ -1,6 +1,6 @@
 # Server 与 Embedded 无前端操作入口
 
-更新：2026-10-14。本轮以当前开发 Mac Server、Pi 5 / 8 GB Embedded 为目标，Easy-Turn 位于 Server。Pi 的 Ubuntu24.04.4 / aarch64 已经只读核对；实际音频链、执行器接线/校准、服务目录和模型服务仍待现场资料。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。
+更新：2026-10-17。本轮以当前开发 Mac Server、Pi 5 / 8 GB Embedded 为目标，Easy-Turn 位于 Server。Pi 的 Ubuntu24.04.4 / aarch64 已经只读核对；实际音频链、执行器接线/校准、服务目录和模型服务仍待现场资料。以下指向当前 CLI/REST 和既有权限契约；Web/iOS/Android 不参与安装或验收。
 
 当前硬件/部署输入、只读核对与R02/R03→R05门槛集中在 [部署资料清单](hardware-deployment-readiness.md)。
 ## 配置与启动
@@ -25,6 +25,8 @@ ALIA_EMBEDDED_CONFIG_PATH=/absolute/path/embedded.toml cargo run -p alia-embedde
 ```
 
 上面是正常运行命令，现场前置未完成时不执行硬件配置的启动。staging 需要正常运行时，应把第二行路径明确指向复制后的 staging 文件。使用该前台进程的 Ctrl+C 或针对其 PID 的 SIGTERM 请求正常关闭，并核对进程退出与清理结果；超时不证明 native 工作或物理输出已安全停止，不使用按名称批量 kill 或顺带停止共享服务。
+
+2026-10-17 已在既有 Linux ARM64 release 上完成隔离全 noop 的两轮实际启停与恢复，见[验收与恢复检查点](../refactor/resume-checkpoint-release-lifecycle-2026-10-17.md)。联调使用私有loopback端口和任务数据库；Server选择noop模型、禁用Easy-Turn/HA且保留默认政策，现有channel内部mDNS browse仅在隔离网络内。首次Embedded启动会按新密钥推导device ID并写回配置，即使仍未provisioned；重启应保留该配置、key和state，以首次正常关闭后的身份为基线。Server持久settings也需保留；noop模块的`ignored_runtime`只表示保存了期望值，不能当作模型已应用。此次通过不覆盖真实服务账户部署、绑定恢复、异常强杀/断电或硬件/模型。
 
 仓内 `pnpm dev:backend` 会同时启动开发数据库、Server 和 Embedded，`pnpm dev` 还包含前端；这些便利入口不负责本轮隔离目录、设备权限或测试资源归属。`scripts/setup-embedded-vision-pi.sh` 是安装/模型/摄像头配置工具，可能安装依赖、下载文件和查询设备节点，`--run` 会启动完整 Embedded；它不是无设备只读预检。Server 普通配置加载也可能执行已有发布恢复；不能把正常 Server 启动称为纯只读解析。
 

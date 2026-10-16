@@ -1,0 +1,12 @@
+[
+  {
+    "name": "alia-server",
+    "sha256": "3528c5e02708e126d560cdaade8a431c0ed3e60de6c86892f931dcb0250de330",
+    "bytes": 46092832
+  },
+  {
+    "name": "alia-embedded",
+    "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+    "bytes": 49540200
+  }
+]

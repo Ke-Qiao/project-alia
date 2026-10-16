@@ -1,0 +1,63 @@
+[2m2026-10-16T17:07:24.432095Z[0m [32m INFO[0m [2malia_server[0m[2m:[0m configuration loaded [3mconfig_dir[0m[2m=[0m/runtime/staging
+[2m2026-10-16T17:07:24.451232Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260507_000001_enable_pgvector.sql"
+[2m2026-10-16T17:07:24.453837Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260507_000004_create_llm_cache.sql"
+[2m2026-10-16T17:07:24.456649Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260507_000005_create_skills_tools.sql"
+[2m2026-10-16T17:07:24.459169Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260508_000001_create_personas.sql"
+[2m2026-10-16T17:07:24.460841Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260509_000001_create_insight_logs.sql"
+[2m2026-10-16T17:07:24.462923Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260509_000002_create_sensors.sql"
+[2m2026-10-16T17:07:24.464747Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260511_000001_create_chat_sessions.sql"
+[2m2026-10-16T17:07:24.465850Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260516_000001_normalize_skill_tools.sql"
+[2m2026-10-16T17:07:24.468156Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260516_000002_create_registry_artifacts.sql"
+[2m2026-10-16T17:07:24.469415Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260517_000001_add_tool_catalog_metadata.sql"
+[2m2026-10-16T17:07:24.471108Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260518_000001_create_conversation_events.sql"
+[2m2026-10-16T17:07:24.473499Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260518_000002_create_automation.sql"
+[2m2026-10-16T17:07:24.476132Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260518_000003_create_users_auth.sql"
+[2m2026-10-16T17:07:24.477778Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260519_000001_create_expression_appraisal_events.sql"
+[2m2026-10-16T17:07:24.482144Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260520_000001_create_memory_runtime.sql"
+[2m2026-10-16T17:07:24.484929Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260522_000001_create_plugin_storage_records.sql"
+[2m2026-10-16T17:07:24.487710Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260908_000001_create_execution_ledger.sql"
+[2m2026-10-16T17:07:24.490368Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260908_000002_memory_privacy.sql"
+[2m2026-10-16T17:07:24.491558Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260908_000003_source_privacy_epoch.sql"
+[2m2026-10-16T17:07:24.494248Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260908_000004_delivery.sql"
+[2m2026-10-16T17:07:24.497326Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260908_000005_text_delivery.sql"
+[2m2026-10-16T17:07:24.499362Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260913_000006_body_delivery.sql"
+[2m2026-10-16T17:07:24.501618Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260913_000007_context_lease.sql"
+[2m2026-10-16T17:07:24.505017Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260913_000008_cache_context.sql"
+[2m2026-10-16T17:07:24.506998Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260913_000009_memory_embedding_identity.sql"
+[2m2026-10-16T17:07:24.511144Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260913_000010_appraisal_provenance.sql"
+[2m2026-10-16T17:07:24.513066Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260914_000011_appraisal_rebuild.sql"
+[2m2026-10-16T17:07:24.514381Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260920_000012_appraisal_memory_erasure.sql"
+[2m2026-10-16T17:07:24.516789Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260920_000013_output_control.sql"
+[2m2026-10-16T17:07:24.520597Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260926_000014_companion.sql"
+[2m2026-10-16T17:07:24.525149Z[0m [32m INFO[0m [2malia_server::modules::platform::migrations[0m[2m:[0m applied SQL migration [3mmigration[0m[2m=[0m"m20260926_000015_companion_live.sql"
+[2m2026-10-16T17:07:24.525864Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating LLM adapter (noop) [3mprofile[0m[2m=[0m"noop"
+[2m2026-10-16T17:07:24.525882Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating embedding adapter (noop) [3mprofile[0m[2m=[0m"noop"
+[2m2026-10-16T17:07:24.526011Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0msensor
+[2m2026-10-16T17:07:24.526018Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mtime_range
+[2m2026-10-16T17:07:24.526022Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mevent_field
+[2m2026-10-16T17:07:24.526025Z[0m [32m INFO[0m [2malia_server::scheduler::condition[0m[2m:[0m registered condition evaluator [3mcondition_type[0m[2m=[0mevent_pattern
+[2m2026-10-16T17:07:24.526030Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0mlog
+[2m2026-10-16T17:07:24.526033Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0minsights
+[2m2026-10-16T17:07:24.526037Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0memit_event
+[2m2026-10-16T17:07:24.526086Z[0m [32m INFO[0m [2malia_server::bootstrap::builder[0m[2m:[0m initializing modules...
+[2m2026-10-16T17:07:24.526282Z[0m [32m INFO[0m [2malia_server::scheduler::cron[0m[2m:[0m AutomationScheduler initialized
+[2m2026-10-16T17:07:24.528675Z[0m [32m INFO[0m [2malia_server::modules::interaction::conversation::service[0m[2m:[0m ConversationService initialized
+[2m2026-10-16T17:07:24.565495Z[0m [32m INFO[0m [2malia_server::tools::builtin[0m[2m:[0m BuiltinToolRegistry initialized [3mexecutor_count[0m[2m=[0m10
+[2m2026-10-16T17:07:24.641545Z[0m [32m INFO[0m [2malia_server::scheduler::action[0m[2m:[0m registered action executor [3maction_type[0m[2m=[0mtool_call
+[2m2026-10-16T17:07:24.641910Z[0m [32m INFO[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m ensuring default built-in skills [3mcount[0m[2m=[0m7
+[2m2026-10-16T17:07:24.668586Z[0m [33m WARN[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m failed to ensure builtin skill preferred tools [3mskill[0m[2m=[0mhome_assistant_lights [3mpreferred_tools[0m[2m=[0m["home_assistant_list_lights", "home_assistant_light_control"] [3merror[0m[2m=[0mskill references unknown tool 'home_assistant_list_lights'
+[2m2026-10-16T17:07:24.681428Z[0m [32m INFO[0m [2malia_server::modules::interaction::skills::registry[0m[2m:[0m loaded skills from database [3mcount[0m[2m=[0m7
+[2m2026-10-16T17:07:24.681628Z[0m [32m INFO[0m [2malia_server::modules::interaction::persona::service[0m[2m:[0m PersonaService loaded personas from database [3mcount[0m[2m=[0m1
+[2m2026-10-16T17:07:24.681638Z[0m [32m INFO[0m [2malia_server::modules::interaction::routing::service[0m[2m:[0m RouterService initialized [3mtimeout_sec[0m[2m=[0m5 [3mminor_llm[0m[2m=[0mtrue [3mmajor_llm[0m[2m=[0mtrue [3mmode[0m[2m=[0mBothEnabled
+[2m2026-10-16T17:07:24.681783Z[0m [32m INFO[0m [2malia_server::rules::engine[0m[2m:[0m EventRuleEngine initialized
+[2m2026-10-16T17:07:24.681791Z[0m [32m INFO[0m [2malia_server::bootstrap::factory[0m[2m:[0m creating EmbeddedChannel [3mchannel_id[0m[2m=[0misolated-no-device
+[2m2026-10-16T17:07:24.682140Z[0m [32m INFO[0m [2malia_server::modules::platform::sensors::registry[0m[2m:[0m sensor read provider registered [3msource[0m[2m=[0mcomponent:isolated-no-device
+[2m2026-10-16T17:07:24.682206Z[0m [32m INFO[0m [2malia_server::bootstrap::builder[0m[2m:[0m starting modules...
+[2m2026-10-16T17:07:24.683396Z[0m [32m INFO[0m [2malia_server::scheduler::cron[0m[2m:[0m AutomationScheduler started
+[2m2026-10-16T17:07:24.683530Z[0m [32m INFO[0m [2malia_server::rules::engine[0m[2m:[0m EventRuleEngine started
+[2m2026-10-16T17:07:24.687007Z[0m [32m INFO[0m [2malia_server::channels::embedded::channel[0m[2m:[0m connected to alia-embedded [3mendpoint[0m[2m=[0mhttp://127.0.0.1:59849 [3mchannel_id[0m[2m=[0misolated-no-device
+[2m2026-10-16T17:07:24.870429Z[0m [32m INFO[0m [2malia_server[0m[2m:[0m shutdown requested
+[2m2026-10-16T17:07:24.870472Z[0m [32m INFO[0m [2malia_server::modules::interaction::runtime[0m[2m:[0m pipeline requests drained
+[2m2026-10-16T17:07:24.871730Z[0m [32m INFO[0m [2malia_server::modules::platform::sensors::registry[0m[2m:[0m sensor read provider unregistered [3msource[0m[2m=[0mcomponent:isolated-no-device
+[2m2026-10-16T17:07:24.871866Z[0m [31mERROR[0m [2malia_server::modules::platform::lifecycle[0m[2m:[0m server cleanup failed [3merror[0m[2m=[0mchannels: channel shutdown incomplete: isolated-no-device: stop: embedded channel shutdown failed: background: background shutdown failed: embedded sensor sync: background task exited before cancellation
+Error: server shutdown failed: channels: channel shutdown incomplete: isolated-no-device: stop: embedded channel shutdown failed: background: background shutdown failed: embedded sensor sync: background task exited before cancellation

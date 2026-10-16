@@ -1,0 +1,71 @@
+# No-device staging profile. Copy to a fresh, private configuration directory.
+# This is not a Raspberry Pi hardware preset and does not validate real devices.
+#
+# All paths below are relative to the copied configuration file. Use a separate
+# directory for each instance; never point these at an existing device identity
+# or state database. Normal startup still creates key/state files and binds a
+# loopback listener. Use --check-config for a read-only configuration check.
+
+[runtime]
+provisioned = false
+
+[device_runtime]
+listen_addr = "127.0.0.1:0"
+state_path = "staging/state/embedded.sqlite3"
+plugins_dir = "staging/plugins"
+shutdown_grace_ms = 5000
+grpc_drain_timeout_ms = 1000
+
+[identity]
+device_id = ""
+device_name = "Alia no-device staging"
+keypair_path = "staging/identity/device.key"
+
+# Every configurable implementation slot is intentionally disabled. Compiling
+# with native/model features does not override these runtime choices.
+[modules]
+wakeword = "noop"
+vad = "noop"
+direct_response = "noop"
+audio_capture = "noop"
+audio_playback = "noop"
+face_tracker = "noop"
+discovery = "noop"
+
+# Retain the voice format contract even though capture and playback are off.
+[audio]
+capture_sample_rate = 16000
+capture_channels = 1
+playback_sample_rate = 24000
+playback_channels = 1
+
+[speech]
+channel_id = "pi-living-room"
+pre_roll_ms = 200
+upload_queue_frames = 32
+
+[direct_response_defaults]
+audio_dir = "staging/cues"
+
+[motion]
+enabled = false
+hardware_enabled = false
+calibration_confirmed = false
+approved_animations = []
+
+[vision]
+enabled = false
+
+[vision_debug]
+enabled = false
+
+[hmmd_mmwave]
+enabled = false
+
+[discovery]
+mdns_enabled = false
+ble_provision_enabled = false
+require_physical_confirm = true
+
+[dev]
+skip_binding = false

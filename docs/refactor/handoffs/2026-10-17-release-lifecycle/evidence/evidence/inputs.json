@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-16T16:58:35.040261+00:00",
+  "base_head": "1c632184946ec4ad90a3d42d3adf2508383c798d",
+  "source_files": 677,
+  "same_inputs_as_previous_release": true,
+  "source_manifest_sha256": "2c96c12280339932f38de228cb3a324144c0bfc51dc4ba932725ae8c28d312db",
+  "artifacts": [
+    {
+      "name": "alia-server",
+      "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/artifacts/alia-server",
+      "sha256": "3528c5e02708e126d560cdaade8a431c0ed3e60de6c86892f931dcb0250de330",
+      "bytes": 46092832
+    },
+    {
+      "name": "alia-embedded",
+      "source": "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-linux-release/artifacts/alia-embedded",
+      "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+      "bytes": 49540200
+    }
+  ]
+}

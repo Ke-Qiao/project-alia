@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-16T17:00:05.026974+00:00",
+  "records": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{.State.Status}} {{index .Config.Labels \"alia.validation\"}}",
+        "1a8f1f66a67b5b7021fb2954627e31c06bdd885eae3548a817da2d84129de008"
+      ],
+      "exit_code": 0,
+      "stdout": "1a8f1f66a67b5b7021fb2954627e31c06bdd885eae3548a817da2d84129de008 running release-lifecycle-20261017\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "logs",
+        "1a8f1f66a67b5b7021fb2954627e31c06bdd885eae3548a817da2d84129de008"
+      ],
+      "exit_code": 0,
+      "stdout": "The files belonging to this database system will be owned by user \"postgres\".\nThis user must also own the server process.\n\nThe database cluster will be initialized with locale \"en_US.utf8\".\nThe default database encoding has accordingly been set to \"UTF8\".\nThe default text search configuration will be set to \"english\".\n\nData page checksums are disabled.\n\nfixing permissions on existing directory /var/lib/postgresql/data ... ok\ncreating subdirectories ... ok\nselecting dynamic shared memory implementation ... posix\nselecting default \"max_connections\" ... 100\nselecting default \"shared_buffers\" ... 128MB\nselecting default time zone ... Etc/UTC\ncreating configuration files ... ok\nrunning bootstrap script ... ok\nperforming post-bootstrap initialization ... ok\nsyncing data to disk ... ok\n\n\nSuccess. You can now start the database server using:\n\n    pg_ctl -D /var/lib/postgresql/data -l logfile start\n\nwaiting for server to start....2026-10-16 16:59:06.319 UTC [51] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg12+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit\n2026-10-16 16:59:06.320 UTC [51] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\n2026-10-16 16:59:06.322 UTC [54] LOG:  database system was shut down at 2026-10-16 16:59:05 UTC\n2026-10-16 16:59:06.324 UTC [51] LOG:  database system is ready to accept connections\n done\nserver started\n2026-10-16 16:59:06.445 UTC [68] FATAL:  database \"alia_release_lifecycle_20261017\" does not exist\nCREATE DATABASE\n\n\n/usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*\n\nwaiting for server to shut down....2026-10-16 16:59:06.456 UTC [51] LOG:  received fast shutdown request\n2026-10-16 16:59:06.456 UTC [51] LOG:  aborting any active transactions\n2026-10-16 16:59:06.457 UTC [51] LOG:  background worker \"logical replication launcher\" (PID 57) exited with exit code 1\n2026-10-16 16:59:06.458 UTC [52] LOG:  shutting down\n2026-10-16 16:59:06.458 UTC [52] LOG:  checkpoint starting: shutdown immediate\n2026-10-16 16:59:06.485 UTC [75] FATAL:  the database system is shutting down\n2026-10-16 16:59:06.612 UTC [52] LOG:  checkpoint complete: wrote 921 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.143 s, total=0.155 s; sync files=301, longest=0.003 s, average=0.001 s; distance=4238 kB, estimate=4238 kB; lsn=0/1908978, redo lsn=0/1908978\n2026-10-16 16:59:06.614 UTC [51] LOG:  database system is shut down\n done\nserver stopped\n\nPostgreSQL init process complete; ready for start up.\n\n",
+      "stderr": "initdb: warning: enabling \"trust\" authentication for local connections\ninitdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.\n2026-10-16 16:59:06.670 UTC [1] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg12+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit\n2026-10-16 16:59:06.670 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432\n2026-10-16 16:59:06.670 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432\n2026-10-16 16:59:06.671 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"\n2026-10-16 16:59:06.673 UTC [79] LOG:  database system was shut down at 2026-10-16 16:59:06 UTC\n2026-10-16 16:59:06.675 UTC [1] LOG:  database system is ready to accept connections\n"
+    }
+  ]
+}

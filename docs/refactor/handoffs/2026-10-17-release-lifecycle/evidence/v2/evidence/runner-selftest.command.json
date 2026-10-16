@@ -1,0 +1,29 @@
+{
+  "started": "2026-10-16T17:19:47.215704+00:00",
+  "command": [
+    "python3",
+    "/evidence/selftest.py"
+  ],
+  "container": "46cf51e178f98f24a8a4e9ddf60741fe00b3421a0f8a7eeaaa1c7a9db28d85ff",
+  "environment": {
+    "ALIA_TEST_DATABASE_URL": "isolated task PostgreSQL",
+    "DATABASE_URL": "unset",
+    "CARGO_HOME": "/cache/cargo",
+    "CARGO_TARGET_DIR": "/cache/target",
+    "CARGO_BUILD_JOBS": "2",
+    "SHERPA_ONNX_ARCHIVE_DIR": "/native",
+    "RUST_TEST_THREADS": "unset",
+    "RUST_MIN_STACK": "unset",
+    "DOCS_RS": "unset",
+    "SHERPA_ONNX_LIB_DIR": "unset"
+  },
+  "manifest_sha256": "0133b6f493b3c8b39b365abe03e3cfc035d88b0f21962e0ed6abd745796ed8c7",
+  "container_watchdog_seconds": 1800,
+  "container_kill_after_seconds": 10,
+  "host_watchdog_seconds": 1850,
+  "exit_code": null,
+  "source_before": {
+    "file_count": 678,
+    "errors": []
+  }
+}

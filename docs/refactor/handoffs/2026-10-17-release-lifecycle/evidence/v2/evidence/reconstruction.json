@@ -1,0 +1,109 @@
+{
+  "kind": "derived evidence; not an original command log and not a test rerun",
+  "scope": "one exact reviewed stderr Cargo heading split around the preceding stdout zero-test summary",
+  "inputs_sha256_before": {
+    "evidence/workspace-default.log": "304a66e66027fb47df88960c31f4657fb3a92dd24ce493e2bd8e30a8345ab08b",
+    "evidence/workspace-counts.json": "97f5c68c6ddbb4da765d0b295908d3ea794180b91fb02dea4ae53062d45de06a",
+    "evidence/workspace-counts.txt": "c731ab7b1e122a48bf6de967108c31e47ad55b0dabd8d2af6e761d794302f8ab",
+    "evidence/workspace-default.result.json": "7249d6259eed0fa60e8db9d2c9977507a158288ec1863084c16e4342234b68fe",
+    "count_cargo_tests.py": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236"
+  },
+  "inputs_sha256_after": {
+    "evidence/workspace-default.log": "304a66e66027fb47df88960c31f4657fb3a92dd24ce493e2bd8e30a8345ab08b",
+    "evidence/workspace-counts.json": "97f5c68c6ddbb4da765d0b295908d3ea794180b91fb02dea4ae53062d45de06a",
+    "evidence/workspace-counts.txt": "c731ab7b1e122a48bf6de967108c31e47ad55b0dabd8d2af6e761d794302f8ab",
+    "evidence/workspace-default.result.json": "7249d6259eed0fa60e8db9d2c9977507a158288ec1863084c16e4342234b68fe",
+    "count_cargo_tests.py": "6415d669a51a2afb530a033455260b76d0127a19c38351faaa8567d0b92cd236"
+  },
+  "original_log_lines": 1818,
+  "derived_log_lines": 1817,
+  "original_block_lines": [
+    896,
+    904
+  ],
+  "original_block_utf8": "     Running unittests src/main.rs (/cache/target/debug/deps/alia_server-c5a3f1c9bba3e839)\n\nrunning 0 tests\n     Running\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n tests/appraisal_provenance.rs (/cache/target/debug/deps/appraisal_provenance-117dda89bb0a0a84)\n\nrunning 20 tests\n",
+  "transformation": "Move line 899 prefix after line 901, remove only its LF, and concatenate with line 902. All other line bytes are copied unchanged.",
+  "line_mapping_1_based_inclusive": [
+    {
+      "derived": [
+        1,
+        898
+      ],
+      "original": [
+        1,
+        898
+      ],
+      "operation": "verbatim"
+    },
+    {
+      "derived": [
+        899,
+        900
+      ],
+      "original": [
+        900,
+        901
+      ],
+      "operation": "verbatim"
+    },
+    {
+      "derived": [
+        901,
+        901
+      ],
+      "original": [
+        899,
+        902
+      ],
+      "operation": "concatenate original line 899 without final LF, then original line 902; original lines 900/901 are mapped separately above"
+    },
+    {
+      "derived": [
+        902,
+        1817
+      ],
+      "original": [
+        903,
+        1818
+      ],
+      "operation": "verbatim"
+    }
+  ],
+  "self_test": {
+    "cases": 5,
+    "passed": 5,
+    "scope": "exact bounded split accepted; duplicate block, changed summary, other target, extra split rejected"
+  },
+  "parser_command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/count_cargo_tests.py",
+    "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/evidence/workspace-default.derived.log",
+    "--result",
+    "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/evidence/workspace-default.result.json",
+    "--json",
+    "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/evidence/workspace-counts-confirmed.json",
+    "--text",
+    "/Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/evidence/workspace-counts-confirmed.txt"
+  ],
+  "parser_exit_code": 0,
+  "outputs_sha256": {
+    "evidence/workspace-default.derived.log": "0cf009be95412c9eecbebea5b4b5857187d1411852a39e1b3c6d030b1b84bae7",
+    "evidence/workspace-counts-confirmed.json": "87895866c76f504b04ae859abcab1754bc6f7983ce7fad22803cce50ad22f7e6",
+    "evidence/workspace-counts-confirmed.txt": "5e58bd6a75e1f514f950eb50608f3c8d1ec4908fb73d402a91113353914901cb"
+  },
+  "confirmed_assessment": "PASSED_RECORDED_RUN",
+  "confirmed_running_targets": 67,
+  "confirmed_doctest_targets": 5,
+  "confirmed_totals": {
+    "passed": 1287,
+    "failed": 0,
+    "ignored": 5,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "limitations": [
+    "No generalized log repair; other byte shapes or originals fail closed.",
+    "Confirmed report line numbers refer to the derived view; use the mapping for original evidence.",
+    "The original INVALID_OR_INCOMPLETE_PARSE reports remain unchanged."
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-16T17:07:20.742310+00:00",
+  "files": [
+    {
+      "path": "run-stage.py",
+      "sha256": "af0c2f0a331182008a548d53212e462a8bdb3fe6c6b86181ba85e301485f534d",
+      "bytes": 3885
+    },
+    {
+      "path": "evidence/lifecycle.py",
+      "sha256": "ff76b9200d00cd526c19178efe58792ff2606608f7629f8b2cb57ea2aa62245f",
+      "bytes": 18174
+    },
+    {
+      "path": "evidence/selftest.py",
+      "sha256": "434659147a55040e94178707db3897540b36e443c66ccd937ef52d7558d778c6",
+      "bytes": 1172
+    },
+    {
+      "path": "resources.py",
+      "sha256": "1be9571d8d9028a31dd4881d7808147474d1e3c2947bf180f540c754913eab1d",
+      "bytes": 1752
+    }
+  ]
+}

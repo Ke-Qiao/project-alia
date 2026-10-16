@@ -1,0 +1,1 @@
+{"checks": 6, "passed": 6, "scope": "deadline cap/expiry, protocol success, premature/during-readiness exit, late success rejected; no app processes started"}

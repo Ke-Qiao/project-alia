@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-17：当前release全noop实际进程验收10/10。** 源码`6c62c84`；macOS确定性RED1/1→GREEN2/0，Linux ARM64一次默认workspace1287/0/5/0filtered（405.963秒）、两端no-default与default release/native链接通过。修复前真实SIGTERM失败保留，修复后V2双轮两端启动/正常关闭/同配置与DB恢复通过，四进程exit0、无兜底；端口关闭、PG0/0、任务资源精确回收。678受测输入对应Git blob；148证据保留原日志、原INVALID与有行映射的派生计数，无测试重跑。默认shadow/政策/期限并发不变，R03暂停、历史V01open、六轮仍2/6。见[恢复检查点](resume-checkpoint-release-lifecycle-2026-10-17.md)和[实测细节](handoffs/2026-10-17-release-lifecycle/root-HANDOFF.md)；正常重启不代表crash、硬件、真实模型或Mac/Pi部署通过。以下为历史。
+
 **2026-10-17：当前源码 `4e2968f` Linux ARM64 构建/测试/release链接10/10完成。** Debian12/Rust1.95，677冻结输入同源；一次默认workspace1285/0/5/0filtered（67 Running+5 Doc），两端分别no-default all-targets、两端default release及ELF/loader/ldd通过。Embedded实际定义170个Sherpa符号，safe help通过；既有15个native静态库前后同字节。与同源Mac1277的差异仅8项Linux cfg用例，没有新增ignored。任务PG两次0/0、两个容器/卷/network已回收。见[当前检查点](resume-checkpoint-linux-release-2026-10-17.md)、[完整证据](handoffs/2026-10-17-linux-release/README.md)。没有普通Server/Embedded服务启停、Pi/硬件、真实模型、其他平台或长稳结论。以下均保留历史源码边界。
 
 **2026-10-12 Settings GET 身份重验证：10/10。** 当前同源双平台结果见 [最新检查点](resume-checkpoint-settings-read-authorization-2026-10-12.md)，下方保留历史验证范围。

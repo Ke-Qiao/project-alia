@@ -1,0 +1,21 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 54.95s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 2 tests
+sensor cancellation: owner_active=true sensor_job_retained=false resources_released=true stopped=Err(background shutdown failed: embedded sensor sync: background task exited before cancellation) stopped_again=Err(background shutdown failed: embedded sensor sync: background task exited before cancellation)
+
+thread 'channels::embedded::channel::lifecycle_tests::sensor_sync_waits_for_background_owner_cancellation' (3543940) panicked at packages/alia-server/src/channels/embedded/channel_lifecycle_tests.rs:56:5:
+discovery cancellation must not produce a false early exit: Err(background shutdown failed: embedded sensor sync: background task exited before cancellation)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test channels::embedded::channel::lifecycle_tests::actual_loop_early_return_stays_a_shutdown_failure ... ok
+test channels::embedded::channel::lifecycle_tests::sensor_sync_waits_for_background_owner_cancellation ... FAILED
+
+failures:
+
+failures:
+    channels::embedded::channel::lifecycle_tests::sensor_sync_waits_for_background_owner_cancellation
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 384 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p alia-server --lib`

@@ -1,0 +1,145 @@
+{
+  "commands": [
+    {
+      "command": [
+        "uname",
+        "-a"
+      ],
+      "stdout": "Linux 1a8f1f66a67b 7.2.9-orbstack-00391-g2b298d05fbd4 #1 SMP PREEMPT Mon Oct 12 05:39:36 UTC 2026 aarch64 GNU/Linux\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "stdout": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python3",
+        "--version"
+      ],
+      "stdout": "Python 3.11.2\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "curl",
+        "--version"
+      ],
+      "stdout": "curl 7.88.1 (aarch64-unknown-linux-gnu) libcurl/7.88.1 OpenSSL/3.0.20 zlib/1.2.13 brotli/1.0.9 zstd/1.5.4 libidn2/2.3.3 libpsl/0.21.2 (+libidn2/2.3.3) libssh2/1.10.0 nghttp2/1.52.0 librtmp/2.3 OpenLDAP/2.5.13\nRelease-Date: 2023-02-20, security patched: 7.88.1-10+deb12u14\nProtocols: dict file ftp ftps gopher gophers http https imap imaps ldap ldaps mqtt pop3 pop3s rtmp rtsp scp sftp smb smbs smtp smtps telnet tftp\nFeatures: alt-svc AsynchDNS brotli GSS-API HSTS HTTP2 HTTPS-proxy IDN IPv6 Kerberos Largefile libz NTLM NTLM_WB PSL SPNEGO SSL threadsafe TLS-SRP UnixSockets zstd\n",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "protoc",
+        "--version"
+      ],
+      "stdout": "libprotoc 3.21.12\n",
+      "stderr": "",
+      "exit_code": 0
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "alia-server",
+      "sha256": "3528c5e02708e126d560cdaade8a431c0ed3e60de6c86892f931dcb0250de330",
+      "bytes": 46092832,
+      "loader_exit_code": 0
+    },
+    {
+      "name": "alia-embedded",
+      "sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003",
+      "bytes": 49540200,
+      "loader_exit_code": 0
+    }
+  ],
+  "dynamic_libraries": [
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libc.so.6",
+      "sha256": "e4ac8ae1d81e4865e3aadedb962879cf9415903b3f2ba81ec75e9962b86ab8b0",
+      "bytes": 1651408
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libcrypto.so.3",
+      "sha256": "dfbbbff72234e55b7bb2b8ae57a1fbed326d49d4b56882e3d4a046399f93cacf",
+      "bytes": 4532392
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libgcc_s.so.1",
+      "sha256": "046856f95f4636f1fc7c3a12bf4f3cd5634c2fc5145c3fdf7395d4f349fa69c7",
+      "bytes": 133448
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libm.so.6",
+      "sha256": "3c4cb3be0b974edf05f023f85ab15107fb5afc2687163593d0d4cf8e80c17b39",
+      "bytes": 591960
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libssl.so.3",
+      "sha256": "9e171264a6651d714938e83d81277d16524c150a36eaa59ce56e79b9cdbea7ce",
+      "bytes": 737192
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+      "sha256": "17538b8f9889a470c061f69a8fea8124da89627311cd16546c133a89f09056df",
+      "bytes": 202912
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libasound.so.2.0.0",
+      "sha256": "9fade6b3aedf1ba944e6795b52b74378f2f89166b92ee542582171416a76572d",
+      "bytes": 1116648
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libcap.so.2.66",
+      "sha256": "dcb3587efc518852f7a1430594526ee9d7334126a9afb46f23cfa60f1b2d1927",
+      "bytes": 67552
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libdbus-1.so.3.32.4",
+      "sha256": "e35b314463bc7d7e48d542b13941c49172abb2ba8e8fe5b1f54e6a50b636bdfc",
+      "bytes": 395336
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libgcrypt.so.20.4.1",
+      "sha256": "c1f66f90593ad52e76afae29605dda4e8850a25f5430362201eba69486ef20cc",
+      "bytes": 1000296
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libgpg-error.so.0.33.1",
+      "sha256": "44c67a9e7a5cfc227e84dcb8f96463103c12415286a8e003bc66abebc4b1f6bd",
+      "bytes": 198640
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/liblz4.so.1.9.4",
+      "sha256": "43109ed13afa34ff991ed73c4d520c5056378949b17d77c50d5773c5aa851439",
+      "bytes": 199056
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/liblzma.so.5.4.1",
+      "sha256": "ab23dcbdd1dc751283f24c5d1a4b58574d5c81782ee35b71efb679d558a1fe74",
+      "bytes": 198584
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libstdc++.so.6.0.30",
+      "sha256": "532f3a12d7b8fef6cc7a064ea106b6c4ab2365674b73e743e4a385d4ffb6c8ab",
+      "bytes": 2174296
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libsystemd.so.0.35.0",
+      "sha256": "e38e0c11131d330c9a49a4a7f9437f8cf9d6a198355a47ecff02bc4aabe52171",
+      "bytes": 923696
+    },
+    {
+      "path": "/usr/lib/aarch64-linux-gnu/libzstd.so.1.5.4",
+      "sha256": "63ff891e4316be1d30a8e551ded6cbb0283772105b352103608e60c06c95ac15",
+      "bytes": 657352
+    }
+  ]
+}

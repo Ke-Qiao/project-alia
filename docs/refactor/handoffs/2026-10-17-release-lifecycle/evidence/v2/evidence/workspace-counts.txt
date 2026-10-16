@@ -1,0 +1,103 @@
+Log: /Users/ke-qiao/Developer/project-alia/run/validation-20261017-release-lifecycle/v2/evidence/workspace-default.log
+SHA-256: 304a66e66027fb47df88960c31f4657fb3a92dd24ce493e2bd8e30a8345ab08b
+Assessment: INVALID_OR_INCOMPLETE_PARSE
+Targets: 66 Running + 5 Doc-tests
+Counted outer totals: {"passed": 1287, "failed": 0, "ignored": 5, "measured": 0, "filtered_out": 0}
+Excluded nested summaries: 4; totals: {"passed": 3, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 1155}
+Extra nested harness starts: 5
+Earlier summaries are excluded, not added to passed / filtered totals.
+
+Recorded invocation: {"command": ["cargo", "test", "--workspace", "--offline", "--locked"], "workspace_requested": true, "all_features_requested": false, "default_features_disabled": false, "explicit_features": [], "target_argument": null, "evidence_limit": "recorded command only; not a resolved feature graph or hardware validation"}
+Cargo exit code: 0
+
+line	status	passed	failed	ignored	measured	filtered	target
+42	ok	33	0	0	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_core-ea458b4280c5ae3d)
+311	ok	262	0	0	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_embedded-752ec18b5e31d3c3)
+317	ok	0	0	0	0	0	Running unittests src/main.rs (/cache/target/debug/deps/alia_embedded-4cae793200b6de16)
+334	ok	10	0	0	0	0	Running tests/audio.rs (/cache/target/debug/deps/audio-c3bab0a592dcbfec)
+342	ok	1	0	0	0	0	Running tests/binding.rs (/cache/target/debug/deps/binding-c9ad4e46a19a0b9d)
+370	ok	21	0	0	0	0	Running tests/config.rs (/cache/target/debug/deps/config-1d25b30d73d5ebd4)
+385	ok	8	0	0	0	0	Running tests/direct_response.rs (/cache/target/debug/deps/direct_response-d970363b5dbe1412)
+394	ok	2	0	0	0	0	Running tests/discovery.rs (/cache/target/debug/deps/discovery-ac14c3406ce6182b)
+402	ok	1	0	0	0	0	Running tests/identity.rs (/cache/target/debug/deps/identity-f990530860d3f26c)
+413	ok	5	0	0	0	0	Running tests/preflight.rs (/cache/target/debug/deps/preflight-8a61f6405a64c20f)
+429	ok	9	0	0	0	0	Running tests/runtime.rs (/cache/target/debug/deps/runtime-3cb006a06ae8c52b)
+441	ok	5	0	0	0	0	Running tests/sensors.rs (/cache/target/debug/deps/sensors-a76065055174c5ed)
+453	ok	5	0	0	0	0	Running tests/speech.rs (/cache/target/debug/deps/speech-7e66189254feb612)
+469	ok	9	0	0	0	0	Running tests/storage.rs (/cache/target/debug/deps/storage-488165c129f1854e)
+480	ok	5	0	0	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_proto-1370c9b13ff5bd54)
+894	ok	383	0	3	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_server-88f14cc3258a1963)
+  EXCLUDED nested summary line 774: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 385, "status": "ok", "seconds": 0.07, "line": 774}
+  EXCLUDED nested summary line 860: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 385, "status": "ok", "seconds": 0.03, "line": 860}
+  EXCLUDED nested summary line 874: {"passed": 1, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 385, "status": "ok", "seconds": 0.03, "line": 874}
+  Nested harness start line 767: 1 selected; child may exit intentionally without a summary
+  Nested harness start line 847: 1 selected; child may exit intentionally without a summary
+  Nested harness start line 850: 1 selected; child may exit intentionally without a summary
+  Observed ignored line 496: bootstrap::setup::tests::setup_terminal_worker_releases_input_after_cancellation; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 499: channels::cli::tests::idle_terminal_worker_joins_and_restores_terminal_on_shutdown; requires a real PTY; run with --ignored --nocapture --test-threads=1
+  Observed ignored line 503: channels::cli::text::tests::real_console_write_proves_utf8_bytes_and_restores_terminal; requires a real PTY; run with --ignored --nocapture --test-threads=1
+926	ok	20	0	0	0	0	Running unittests src/main.rs (/cache/target/debug/deps/alia_server-c5a3f1c9bba3e839)
+  EXCLUDED nested summary line 900: {"passed": 0, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 0, "status": "ok", "seconds": 0.0, "line": 900}
+  Nested harness start line 904: 20 selected; child may exit intentionally without a summary
+940	ok	8	0	0	0	0	Running tests/body_delivery.rs (/cache/target/debug/deps/body_delivery-e043535938eca081)
+963	ok	17	0	0	0	0	Running tests/cache_context.rs (/cache/target/debug/deps/cache_context-85730d90342aadd0)
+972	ok	3	0	0	0	0	Running tests/channel_registry.rs (/cache/target/debug/deps/channel_registry-7dd76f680d4aad89)
+983	ok	5	0	0	0	0	Running tests/config.rs (/cache/target/debug/deps/config-a5735840f64b3fd9)
+1015	ok	26	0	0	0	0	Running tests/context_lease.rs (/cache/target/debug/deps/context_lease-28e2815225453aa4)
+1036	ok	15	0	0	0	0	Running tests/delivery_repository.rs (/cache/target/debug/deps/delivery_repository-eb4398cc6d052269)
+1054	ok	12	0	0	0	0	Running tests/delivery_service.rs (/cache/target/debug/deps/delivery_service-dfaf99bc942e9c2f)
+1066	ok	6	0	0	0	0	Running tests/delivery_text.rs (/cache/target/debug/deps/delivery_text-29cc5b21e42dbabe)
+1076	ok	4	0	0	0	0	Running tests/delivery_text_service.rs (/cache/target/debug/deps/delivery_text_service-25ffbc3eaa14bf27)
+1114	ok	31	0	0	0	0	Running tests/duplex_playback.rs (/cache/target/debug/deps/duplex_playback-2f4fe6777053c391)
+1121	ok	0	0	1	0	0	Running tests/easy_turn_live.rs (/cache/target/debug/deps/easy_turn_live-824035ec0d8ddb82)
+  Observed ignored line 1119: official_audio_through_production_rust_adapter; requires a real Easy-Turn service and ALIA_EASY_TURN_PCM pointing to official backchannel_real_1 PCM16
+1130	ok	3	0	0	0	0	Running tests/embedded_channel.rs (/cache/target/debug/deps/embedded_channel-c1319f150e36cda6)
+1155	ok	19	0	0	0	0	Running tests/execution_repository.rs (/cache/target/debug/deps/execution_repository-8e415b3100222311)
+1191	ok	30	0	0	0	0	Running tests/execution_service.rs (/cache/target/debug/deps/execution_service-9da65eefc446b703)
+1199	ok	2	0	0	0	0	Running tests/expression_abi.rs (/cache/target/debug/deps/expression_abi-ef8aaf7c0b39ca2e)
+1207	ok	2	0	0	0	0	Running tests/expression_appraisal.rs (/cache/target/debug/deps/expression_appraisal-7bd17137fc45fe3a)
+1219	ok	6	0	0	0	0	Running tests/expression_eval.rs (/cache/target/debug/deps/expression_eval-76d48ada31441092)
+1226	ok	1	0	0	0	0	Running tests/expression_regulation.rs (/cache/target/debug/deps/expression_regulation-1a12287fa4ba0a61)
+1234	ok	2	0	0	0	0	Running tests/expression_trace.rs (/cache/target/debug/deps/expression_trace-db7b89a364749cfa)
+1257	ok	17	0	0	0	0	Running tests/interaction.rs (/cache/target/debug/deps/interaction-c36f68a3f88defc7)
+1276	ok	13	0	0	0	0	Running tests/interaction_tools.rs (/cache/target/debug/deps/interaction_tools-f59362903a2f432c)
+1283	ok	1	0	0	0	0	Running tests/llm.rs (/cache/target/debug/deps/llm-bb881341f4ccf3d7)
+1294	ok	5	0	0	0	0	Running tests/llm_providers.rs (/cache/target/debug/deps/llm_providers-bf23c8fd53949bd5)
+1313	ok	13	0	0	0	0	Running tests/memory.rs (/cache/target/debug/deps/memory-0ccc7c8745fb72d5)
+1325	ok	6	0	0	0	0	Running tests/memory_capture.rs (/cache/target/debug/deps/memory_capture-cd5c47474db43028)
+1344	ok	13	0	0	0	0	Running tests/memory_embedding.rs (/cache/target/debug/deps/memory_embedding-e25b5f9ef07f830e)
+1357	ok	7	0	0	0	0	Running tests/memory_embedding_provenance.rs (/cache/target/debug/deps/memory_embedding_provenance-fe2dbb3788eb1a25)
+1366	ok	3	0	0	0	0	Running tests/memory_message_pins.rs (/cache/target/debug/deps/memory_message_pins-e4b3f06913729575)
+1403	ok	31	0	0	0	0	Running tests/memory_privacy.rs (/cache/target/debug/deps/memory_privacy-bf6b080e03fd6161)
+1416	ok	7	0	0	0	0	Running tests/migrations.rs (/cache/target/debug/deps/migrations-a35247e69166f18b)
+1435	ok	13	0	0	0	0	Running tests/output_control.rs (/cache/target/debug/deps/output_control-6ef8ab24d2234032)
+1452	ok	11	0	0	0	0	Running tests/output_lifecycle.rs (/cache/target/debug/deps/output_lifecycle-a3cf6107d043e1b0)
+1459	ok	1	0	0	0	0	Running tests/persona.rs (/cache/target/debug/deps/persona-8b1cc9ba10a96d2b)
+1469	ok	4	0	0	0	0	Running tests/plugin_storage.rs (/cache/target/debug/deps/plugin_storage-242354d77c754e64)
+1481	ok	6	0	0	0	0	Running tests/provider_adapters.rs (/cache/target/debug/deps/provider_adapters-594fb40f195b245b)
+1488	ok	1	0	0	0	0	Running tests/registry.rs (/cache/target/debug/deps/registry-189bbac4cffc15f2)
+1509	ok	15	0	0	0	0	Running tests/router.rs (/cache/target/debug/deps/router-26ad96885c4f01d9)
+1516	ok	1	0	0	0	0	Running tests/rules.rs (/cache/target/debug/deps/rules-4572672b0097710a)
+1523	ok	1	0	0	0	0	Running tests/scheduler.rs (/cache/target/debug/deps/scheduler-88bf7f34e5ef4de2)
+1537	ok	8	0	0	0	0	Running tests/sensors.rs (/cache/target/debug/deps/sensors-8c17282d80aac0db)
+1556	ok	13	0	0	0	0	Running tests/server_background.rs (/cache/target/debug/deps/server_background-810e68b0d33b9d0b)
+1703	ok	85	0	0	0	0	Running tests/server_runtime.rs (/cache/target/debug/deps/server_runtime-4cbbb8548bbbea75)
+  Nested harness start line 1564: 1 selected; child may exit intentionally without a summary
+1714	ok	5	0	0	0	0	Running tests/settings.rs (/cache/target/debug/deps/settings-dc519765d9151cc9)
+1722	ok	2	0	0	0	0	Running tests/settings_cancellation.rs (/cache/target/debug/deps/settings_cancellation-c0050c78881ad3cb)
+1739	ok	11	0	0	0	0	Running tests/skills.rs (/cache/target/debug/deps/skills-2b704cb30a6d22dc)
+1760	ok	15	0	0	0	0	Running tests/tools.rs (/cache/target/debug/deps/tools-1ccbc4ef66f18e6a)
+1767	ok	0	0	1	0	0	Running tests/voice_stream_live.rs (/cache/target/debug/deps/voice_stream_live-29cf24cfb5415eb0)
+  Observed ignored line 1765: official_audio_over_grpc_preserves_original_response_across_backchannel_and_wait; requires real Easy-Turn service, ALIA_EASY_TURN_PCM_DIR and disposable ALIA_TEST_DATABASE_URL
+1776	ok	3	0	0	0	0	Running unittests src/lib.rs (/cache/target/debug/deps/alia_transport-04c06a8791982179)
+1787	ok	5	0	0	0	0	Running tests/transport.rs (/cache/target/debug/deps/transport-ec3f05cd5c1bfc15)
+1793	ok	0	0	0	0	0	Doc-tests alia_core
+1799	ok	0	0	0	0	0	Doc-tests alia_embedded
+1805	ok	0	0	0	0	0	Doc-tests alia_proto
+1811	ok	0	0	0	0	0	Doc-tests alia_server
+1817	ok	0	0	0	0	0	Doc-tests alia_transport
+PARSE ISSUE: line 926: last summary does not match the outer harness count; do not treat a possible child summary as completed parent evidence
+
+Limits: sequential Cargo log required; nested Cargo Running headings or interleaved
+independent Cargo invocations require separate logs. Test lines may include child output;
+only outer summaries contribute counts. No sidecar means overall run completion is unconfirmed.

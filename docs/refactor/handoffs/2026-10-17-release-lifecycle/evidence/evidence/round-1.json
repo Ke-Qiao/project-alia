@@ -1,0 +1,190 @@
+{
+  "started_at": "2026-10-16T17:07:24.337852+00:00",
+  "round": 1,
+  "passed": false,
+  "processes": [
+    {
+      "name": "embedded",
+      "pid": 43,
+      "started_at": "2026-10-16T17:07:24.338313+00:00",
+      "binary_sha256": "159becdbd3783b77ad308d02096ed39158fc54cfef43f648091a2c0f015f4003"
+    },
+    {
+      "name": "server",
+      "pid": 66,
+      "started_at": "2026-10-16T17:07:24.427671+00:00",
+      "binary_sha256": "3528c5e02708e126d560cdaade8a431c0ed3e60de6c86892f931dcb0250de330"
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "embedded",
+      "pid": 43,
+      "needed": true,
+      "forced_kill": false,
+      "exit_code": 0
+    },
+    {
+      "name": "server",
+      "pid": 66,
+      "needed": false,
+      "forced_kill": false,
+      "exit_code": 1
+    }
+  ],
+  "grpc": [
+    {
+      "route": "/alia.binding.DeviceBinding/GetBindingStatus",
+      "port": 59849,
+      "status": 0
+    },
+    {
+      "route": "/alia.playback.v3.Playback/ObserveControl",
+      "port": 59849,
+      "status": 16
+    },
+    {
+      "route": "/alia.audio.AudioStream/StopPlayback",
+      "port": 59849,
+      "status": 12
+    },
+    {
+      "route": "/alia.audio.AudioStream/PlayDirectResponse",
+      "port": 59849,
+      "status": 12
+    },
+    {
+      "route": "/alia.expression.EmbeddedExpression/GetCapabilities",
+      "port": 59849,
+      "status": 12
+    },
+    {
+      "route": "/alia.audio.ServerAudioIngress/InterruptActiveTurn",
+      "port": 51549,
+      "status": 12
+    }
+  ],
+  "config_before": {
+    "server.toml": "66fd041468dfbb7ba773474fbe42aae78dd44362ef5e23e1e00d08d47083d30e",
+    "embedded.toml": "e857992e6add064c263ec4d518b3dce92e591c9b9487b029157346eeac6d6dd0"
+  },
+  "binding": {
+    "device_id": "alia-embedded-28c11792472d",
+    "unbound": true,
+    "decoded": "device_id: \"alia-embedded-28c11792472d\"\ndevice_public_key: \"(\\301\\027\\222G-\\022N\\031 \\n\\261\\226\\260\\324z\\247\\321\\255$\\234\\003\\2010@\\223\\337#\\004\\236\\241t\"\n"
+  },
+  "device_ready_at": "2026-10-16T17:07:24.427349+00:00",
+  "health": {
+    "status": "ok",
+    "version": "0.1.0",
+    "modules": {
+      "stt": {
+        "status": "healthy"
+      },
+      "scheduler": {
+        "status": "healthy"
+      },
+      "llm.major": {
+        "status": "healthy"
+      },
+      "embedding": {
+        "status": "healthy"
+      },
+      "conversation": {
+        "status": "healthy"
+      },
+      "tts": {
+        "status": "healthy"
+      },
+      "memory": {
+        "status": "healthy"
+      },
+      "insights": {
+        "status": "healthy"
+      },
+      "cache": {
+        "status": "healthy"
+      },
+      "persona": {
+        "status": "healthy"
+      },
+      "llm.minor": {
+        "status": "healthy"
+      },
+      "tools": {
+        "status": "healthy"
+      },
+      "rule_engine": {
+        "status": "healthy"
+      },
+      "skills": {
+        "status": "healthy"
+      },
+      "router": {
+        "status": "healthy"
+      }
+    }
+  },
+  "account_id": "74542614-cf59-43d2-b518-93bd35a52f54",
+  "device_status": {
+    "device_id": "alia-embedded-28c11792472d",
+    "online": true,
+    "cpu_percent": null,
+    "memory_percent": null,
+    "temperature_c": null
+  },
+  "server_ready_at": "2026-10-16T17:07:24.703647+00:00",
+  "companion_policy": {
+    "revision": 1,
+    "policy": {
+      "mode": "shadow",
+      "quiet": false,
+      "paused": false,
+      "daily_budget": 3,
+      "cooldown_seconds": 900,
+      "candidate_ttl_seconds": 60,
+      "require_response_before_next": true
+    }
+  },
+  "context_policy_etag": "\"1\"",
+  "settings_patch": {
+    "applied": [],
+    "changed": [
+      "core.profiles.llm.major.temperature"
+    ],
+    "context_policy_version": 1,
+    "errors": [],
+    "ignored_runtime": [
+      "core.profiles.llm.major.temperature"
+    ],
+    "module_reports": [],
+    "requires_restart": [],
+    "success": true
+  },
+  "persisted_setting": {
+    "core.profiles.llm.major.temperature": 0.25
+  },
+  "files_while_running": {
+    "server_config": "66fd041468dfbb7ba773474fbe42aae78dd44362ef5e23e1e00d08d47083d30e",
+    "embedded_config": "a227271ac0d3546fc9b88a5d288d6b4497b19ae898d4ddf3eaccad9d631bd91f",
+    "server_key": "bcb181701cad1ab7eb7e06756ab8a0e1b335dae6a0be3e820183de467b52eafd",
+    "embedded_key": "65c74c63e486ce40bcd71284b1bede4bba55ec1fdba2638cbb37b53b410ed348",
+    "device_id": "alia-embedded-28c11792472d"
+  },
+  "shutdown": [
+    {
+      "name": "server",
+      "pid": 66,
+      "alive_before_signal": true,
+      "signal": "SIGTERM",
+      "at": "2026-10-16T17:07:24.870341+00:00",
+      "exit_code": 1,
+      "elapsed_seconds": 0.007628
+    }
+  ],
+  "failure": {
+    "class": "AssertionError",
+    "message": "server normal shutdown failed"
+  },
+  "finished_at": "2026-10-16T17:07:24.884315+00:00"
+}
