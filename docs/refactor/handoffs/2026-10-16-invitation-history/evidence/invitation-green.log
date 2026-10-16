@@ -1,0 +1,21 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.79s
+     Running unittests src/lib.rs (target/debug/deps/alia_server-3407bad9e0b4f382)
+
+running 13 tests
+test modules::memory::context::invitation::purpose_tests::invitation_authorizes_only_its_two_output_operations ... ok
+test modules::memory::context::invitation::tests::invitation_keeps_original_parent_and_every_root_but_grants_only_new_output_request ... ok
+test modules::memory::context::invitation::tests::invitation_stored_content_and_final_content_are_revalidated_before_output ... ok
+test modules::memory::context::invitation::history_tests::ordinary_appraisal_with_invitation_history_cannot_become_another_companion_source ... ok
+test modules::memory::context::invitation::history_tests::committed_live_invitation_is_read_only_history_for_a_new_generation_request ... ok
+test modules::memory::context::invitation::history_tests::invitation_history_requires_committed_response_and_same_owner_session_channel ... ok
+test modules::memory::context::invitation::history_tests::derived_history_cannot_omit_or_forge_companion_marker_or_inherit_live_admission ... ok
+test modules::memory::context::invitation::tests::invitation_rejects_changed_envelopes_final_text_and_additional_media_at_real_delivery_gates ... ok
+test modules::memory::context::invitation::history_tests::memory_and_cache_preserve_history_roots_and_reject_a_deleted_invitation_on_consumption ... ok
+test modules::memory::context::invitation::tests::invitation_current_policy_and_source_erasure_revoke_gates_but_preserve_cleanup_and_charge ... ok
+test modules::memory::context::invitation::history_tests::invitation_history_rechecks_sources_text_policy_and_privacy_before_late_commit ... ok
+test modules::memory::context::invitation::tests::invitation_short_admission_expiry_preserves_existing_output_until_original_candidate_deadline ... ok
+test modules::memory::context::invitation::history_tests::expired_retired_invitation_survives_context_reconstruction_and_shadow_as_history_only ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 371 filtered out; finished in 5.63s
+

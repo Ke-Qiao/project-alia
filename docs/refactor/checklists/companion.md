@@ -35,5 +35,5 @@
 
 - [ ] Pi 真实麦克风/声卡/扬声器、AEC、物理静音/恢复听感与 24 小时整机运行，归 R02/R05。
 - [ ] 执行器位置反馈和真实 D3 动作，归 R03。
-- [ ] 后续普通 Generation 对邀请历史的只读引用；当前邀请 Context 不扩展为 Generation 权限，见 [延期台账](../deferred.md)。
+- [x] 2026-10-17：普通 Generation 对已提交邀请历史的只读引用完成，源码`4e2968f`；原邀请不扩权，来源/真实TTL/隐私与当前政策保持，见[本轮10/10](invitation-history-2026-10-16.md)及[契约](../companion-invitation-history.md)。
 - [ ] 前端、通用 Embedded 适配、设备侧模型和同机部署分别按用户原决定延后，不能把 Cargo 编译通过当作部署验收。

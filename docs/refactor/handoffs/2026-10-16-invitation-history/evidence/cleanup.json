@@ -1,0 +1,69 @@
+{
+  "at": "2026-10-16T16:10:14.616273+00:00",
+  "removed_task_container": "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867",
+  "task_absent": true,
+  "other_containers_modified": false,
+  "shared_runtime_left_running": true,
+  "records": [
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Id}} {{index .Config.Labels \"alia.validation\"}}",
+        "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867"
+      ],
+      "exit_code": 0,
+      "stdout": "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867 invitation-history-20261016\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "--timeout",
+        "10",
+        "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867"
+      ],
+      "exit_code": 0,
+      "stdout": "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867"
+      ],
+      "exit_code": 0,
+      "stdout": "0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "-a",
+        "--filter",
+        "id=0473e0746cba7b0964c110b6de8013f202597d3b5a6bac1c5c50910e717bd867",
+        "--format",
+        "{{.ID}}"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "docker",
+        "ps",
+        "--format",
+        "{{.ID}} {{.Names}} {{.Image}}"
+      ],
+      "exit_code": 0,
+      "stdout": "c5aaca070870 astrbot astrbot:kimi-code\n",
+      "stderr": ""
+    }
+  ]
+}

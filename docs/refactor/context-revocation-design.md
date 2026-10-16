@@ -1,5 +1,7 @@
 # ContextLease 与派生上下文撤销契约
 
+2026-10-17补充：普通Generation可按专用只读证据引用已提交CompanionInvitation，输出授权与历史事实分离，完整来源/TTL/隐私/政策继续约束派生。当前契约见[邀请历史设计](companion-invitation-history.md)；下方2026-09-14状态与验证数字为原包历史，不能代替最新进度。
+
 状态：2026-09-14，`a33ec67` 已实现 Context、Cache、Pipeline、Execution 和输出接纳的来源校验。后续 Memory 向量身份包通过 macOS 默认 workspace 802 项整体回归，详细证据见[构建记录](progress.md)。本文替代 2026-09-08 的只读设计，区分已落地契约、定向证据和未完成主线。**派生 Memory 的递归父根、Appraisal/Relationship 和 Companion 尚未全部合并，不能据本包宣称全链清除已经完成。**这些工作不属于用户指定的延期范围。
 
 ## Context 的身份、用途与实际读集

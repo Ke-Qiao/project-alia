@@ -80,7 +80,11 @@ N01 不是“欠下的迁移任务”。只有后来出现真实保留需求时�
 
 ## 2026-09-28：Companion 邀请历史的只读使用
 
-当前固定邀请会以规范 Response/history 原子提交，但后续 Generation history 只读取原 Generation purpose，所以会跳过 CompanionInvitation。后续需要明确“邀请可被只读引用”的契约和来源校验后再接入；不得因此扩大 Companion 对 Memory/Affect/Generation 的权限。CP05 不将此视为自动已实现。
+历史状态：CP05只提交规范Response/history，普通Generation当时跳过CompanionInvitation，未将只读引用视为自动实现。
+
+**2026-10-17已关闭本缺口，源码`4e2968f`、本轮10/10。** 用户确认历史事实与输出期限/重建/shadow分离；新增只读marker、完整来源与真实TTL、派生Memory根和防自我强化，原邀请不取得Generation用途。一次workspace1277/0/5/0filtered、677提交输入匹配；见[契约](companion-invitation-history.md)、[checklist](checklists/invitation-history-2026-10-16.md)和[恢复检查点](resume-checkpoint-invitation-history-2026-10-16.md)。
+
+仍需区分：来源失效阻止模型再利用，裸删SQL不保证物理擦除全部管理可见派生；含邀请历史的Appraisal当前不能再次成为主动来源，若后续要求恢复候选须先定义独立实际读集。真实进程重启、当前Linux/模型和硬件出口不是本轮通过范围；R03暂停、历史V01open、六轮仍2/6。
 
 
 ## 2026-09-28：仍需跟踪的验证异常

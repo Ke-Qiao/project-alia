@@ -1,0 +1,104 @@
+//! Real PostgreSQL history checks reuse the original Companion admission fixture.
+use super::*;
+use crate::modules::{
+    companion::{
+        live::{tests::with_fixture, types::InvitationContent},
+        types::{CompanionMode, CompanionPolicy},
+    },
+    delivery::repository::DeliveryRepository,
+    memory::source::capture_source_epochs,
+};
+use sea_orm::{ConnectionTrait, TransactionTrait};
+
+#[tokio::test]
+async fn committed_live_invitation_is_read_only_history_for_a_new_generation_request() {
+    with_fixture(|f| async move {
+        f.enable_live(CompanionPolicy {
+            mode: CompanionMode::Enabled,
+            candidate_ttl_seconds: 60,
+            ..Default::default()
+        })
+        .await;
+        let live = f.live(Uuid::new_v4());
+        let (_, invitation_binding, response) = f.fresh(&live).await;
+        let invitation: InvitationContent =
+            serde_json::from_value(response.content.clone()).unwrap();
+        let assistant = Uuid::new_v4();
+        let tx = f.db.begin().await.unwrap();
+        tx.execute(stmt(
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content) VALUES($1,$2,$3,'assistant',$4)",
+            vec![
+                assistant.into(),
+                f.session.into(),
+                f.owner.to_string().into(),
+                invitation.text.clone().into(),
+            ],
+        ))
+        .await
+        .unwrap();
+        DeliveryRepository::mark_generated_in_transaction(
+            &tx,
+            f.owner,
+            response.response_id,
+            assistant,
+            json!({"text": invitation.text}),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let epochs = capture_source_epochs(&f.db, f.owner).await.unwrap();
+        let source_event_id = Uuid::new_v4();
+        let text = "Yes, I would like to keep talking.";
+        let row = f.db.query_one(stmt(
+            "INSERT INTO chat_messages(id,session_id,user_id,role,content,created_at,source_received_at,source_privacy_epoch,source_relationship_epoch) VALUES($1,$2,$3,'user',$4,clock_timestamp(),clock_timestamp(),$5,$6) RETURNING source_received_at",
+            vec![
+                source_event_id.into(),
+                f.session.into(),
+                f.owner.to_string().into(),
+                text.into(),
+                epochs.privacy_epoch.into(),
+                epochs.relationship_epoch.into(),
+            ],
+        )).await.unwrap().unwrap();
+        let source = ContextSource {
+            owner_id: f.owner,
+            request_id: Uuid::new_v4(),
+            channel_id: response.channel_id,
+            conversation_id: Some(f.session),
+            source_event_id: Some(source_event_id),
+            source_received_at: row.try_get("", "source_received_at").unwrap(),
+            source_privacy_epoch: epochs.privacy_epoch,
+        };
+        let mut before = Vec::new();
+        for table in [
+            "companion_admissions",
+            "companion_source_claims",
+            "delivery_responses",
+            "deliveries",
+            "execution_effects",
+            "memory_items",
+            "appraisal_records",
+        ] {
+            before.push((table, f.count(table).await));
+        }
+
+        let generation = f.context().materialize(source.clone(), text).await.unwrap();
+
+        assert_eq!(generation.source(), &source);
+        assert_ne!(generation.lease().id(), invitation_binding.context_id);
+        assert_ne!(source.request_id, invitation_binding.request_id);
+        for (table, count) in before {
+            assert_eq!(f.count(table).await, count, "history replay mutated {table}");
+        }
+        assert!(
+            generation.history().iter().any(|message| {
+                message.id() == assistant
+                    && message.message().role == "assistant"
+                    && message.message().content == invitation.text
+            }),
+            "committed same-session invitation was omitted from ordinary Generation history"
+        );
+    })
+    .await;
+}

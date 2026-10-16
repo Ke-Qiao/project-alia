@@ -1,0 +1,26 @@
+{
+  "phase": "red",
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "alia-server",
+    "--lib",
+    "--offline",
+    "--locked",
+    "--",
+    "modules::memory::context::invitation::history_tests::committed_live_invitation_is_read_only_history_for_a_new_generation_request"
+  ],
+  "started_at": "2026-10-16T15:45:42.297123+00:00",
+  "elapsed_seconds": 66.77,
+  "exit_code": 101,
+  "source_manifest_sha256": "dfb4b737298d557008c6e357bd9d81fbf7faf96162232655f071d2bf21c087e1",
+  "source_drift": [],
+  "test_parallelism": "default",
+  "database": "isolated task PostgreSQL available; individual targets may only use local SQLite or no DB",
+  "build_jobs": 2,
+  "process_watchdog_seconds": 900,
+  "process_watchdog_expired": false,
+  "binary_sha256": null,
+  "binary_unchanged": null
+}
