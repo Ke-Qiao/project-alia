@@ -18,6 +18,14 @@ There is no generic raw audio stream, direct-response playback RPC, unscoped
 stop RPC, or legacy expression execution service. Local wake cues enter the same
 native playback owner through the in-process scoped cue API.
 
+The current `PluginManager` controls trusted host-user processes; its binding
+token check is not a sandbox or proof of administrator approval for arbitrary
+code. Command responses can mean only sent, and stop requests do not themselves
+prove process exit. The [plugin contract](../../../docs/architecture/plugin-contract.md)
+defines the target package, run/command identity, management authorization and
+cleanup semantics, with unreviewed code installation retained as a future goal.
+Those targets have not been implemented by this documentation change.
+
 ## Server-Hosted Voice Session
 
 | Service | Purpose |

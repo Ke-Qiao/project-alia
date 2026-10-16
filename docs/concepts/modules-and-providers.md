@@ -9,6 +9,11 @@ Package-specific module details live in:
 - [alia-server architecture](../../packages/alia-server/docs/architecture.md)
 - [alia-embedded architecture](../../packages/alia-embedded/docs/architecture.md)
 
+The [plugin contract](../architecture/plugin-contract.md) separates implemented
+extension points from the target management, identity, lifecycle and isolation
+rules. Installing unreviewed third-party code is a retained future goal; the
+current process runners do not provide that isolation guarantee.
+
 ## Terms
 
 | Term | Meaning |
@@ -68,12 +73,14 @@ generation, streaming, and persistence. The retired `module` directory has
 also been removed; its assembly code is in `bootstrap`, and its lifecycle and
 background ownership are in `modules/platform`.
 
-Directory names do not yet prove all architectural boundaries are complete.
-Conversation, cache, persona, router, skills, insights, and sensor services are
-fixed core implementations still located under `providers`. Non-Memory domain
-contracts remain in `providers/adapter.rs`, and `ModuleContext` remains a broad
-initialization bundle. These are recorded follow-up work, not newly exposed
-provider replacement slots.
+Conversation, cache, persona, routing and skills now belong to Interaction;
+Platform owns sensors and insight scheduling. Memory owns memory maintenance,
+and Interaction owns cache review. Bootstrap wires explicit dependencies;
+`ModuleContext` has been removed. Response/history commit belongs to
+`ResponseCommitter`, and Delivery owns output transport and its audio budget.
+These completed boundaries are recorded in the
+[L09–L12 checklist](../refactor/checklists/layering-next.md). Remaining provider
+contracts are not permission to replace fixed core policy or state owners.
 
 ## Channels Are Not Providers
 
@@ -108,15 +115,16 @@ there is no separate direct-response feature or mixer module slot.
 
 ## Plugin Direction
 
-The future plugin model should use the same abstractions instead of inventing a
-parallel system:
+Compiled-in tool plugins already receive namespaced storage and the
+Execution-backed tool registry. Those Rust interfaces are trusted in-process
+APIs, not a security boundary for arbitrary code. Skills contribute context and
+tool preferences; they do not grant permission to install or execute code.
 
-- register settings under `plugin.<name>.*`
-- register tools with code-backed executors
-- register skills with explicit tool bindings
-- register automation conditions through the shared condition registry
-- register automation actions through the shared action registry
-- register dependency ownership for safe uninstall
-- expose health and restart requirements when runtime updates are unsafe
-
-That keeps built-in components and plugins visible to the same dependency tree.
+Future extensions reuse core ownership and approval while exposing only the
+host capabilities actually supported for their execution mode. Package
+installation, capability grants, activation and effect approval remain separate.
+Unreviewed packages must have an installation path that does not require source
+review or marketplace certification; their execution needs a verified isolation
+backend. Exact management and lifecycle rules, implementation gaps and software
+acceptance cases live in the plugin contract. No generic dynamic installer,
+MCP host or isolated plugin SDK is claimed by this conceptual overview.

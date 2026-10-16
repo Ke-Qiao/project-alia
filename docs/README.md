@@ -14,6 +14,9 @@ below when trying to understand the active architecture.
   runtime settings, and package-local configuration docs fit together.
 - [Protocols](architecture/protocols.md) summarizes REST, WebSocket, and gRPC
   responsibilities.
+- [Plugin contract](architecture/plugin-contract.md) defines extension types,
+  trust, management, content/instance identity and lifecycle targets, including
+  future installation and isolated execution of unreviewed third-party code.
 
 ## Package Docs
 

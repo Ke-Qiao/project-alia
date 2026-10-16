@@ -1,174 +1,92 @@
-# Plugin Storage Design
+# Plugin Storage
 
-Future LLM tool plugins need durable state, but they should not own the server
-database schema or receive raw database connections. The server stays the
-persistence authority and gives compiled-in tool plugins a namespaced storage
-capability.
+Updated: 2026-10-17, checked against `89d04a2`. This page describes the existing
+storage service and its limits. The cross-package
+[plugin contract](../../../docs/architecture/plugin-contract.md) defines target
+management, runtime trust and lifecycle rules; it does not make those future
+rules active in the current endpoints.
 
-Built-in server components are not plugins. Core systems such as embedded
-channels, memory, expression, scheduler, sensors, and rules should keep using
-their own repositories, migrations, and domain tables.
+## Current Ownership
 
-## Goals
+The server owns schema, migrations and persistence. Built-in Memory,
+Interaction, Execution, Delivery and Platform services use their domain
+repositories; they are not plugin implementations of replaceable core slots.
 
-- Keep the server core independent from plugin-owned schema.
-- Prevent plugin SQL/schema drift from breaking server migrations.
-- Let plugins store user-scoped state, channel-scoped state, cache entries, and
-  small structured documents.
-- Prepare storage semantics for future plugin lifecycle without implementing
-  dynamic plugin install/start/stop yet.
+Compiled-in tool plugins implement `CompiledToolPlugin`. Bootstrap creates a
+`PluginToolContext` with namespaced `PluginStorage` and the Execution-backed
+`ToolRegistry`. Dependencies are wired explicitly; `ModuleContext` was removed
+in L10. These are trusted in-process Rust interfaces, not a sandbox ABI.
 
-## Domain Model
+Source contracts:
 
-| Concept | Identity | Notes |
-| --- | --- | --- |
-| Plugin | `plugin_name` | Stable compiled-in tool plugin name; owns storage collections. |
-| Collection | `(plugin_name, collection)` | Plugin-declared logical bucket, for example `settings`, `cache`, `devices`. |
-| Record | `(plugin_name, scope, owner_id, collection, key)` | A JSON document with version and timestamps. |
-| Blob | `(plugin_name, blob_id)` | Optional future large binary/object reference, not inline JSON. |
+- [Plugin context](../src/plugins/context.rs)
+- [Storage service and handles](../src/plugins/storage.rs)
+- [Collection declarations](../src/plugins/manifest.rs)
+- [Execution registry](../src/modules/execution/registry.rs)
+- [Existing storage tests](../tests/plugin_storage.rs)
 
-`scope` should be one of:
+## Data and Implemented Semantics
 
-- `global`: one plugin-wide record namespace.
-- `user`: records owned by a user.
-- `channel`: records owned by a channel/device.
-- `conversation`: records tied to a conversation/session.
+Records use `(plugin_name, scope, owner_id, collection, key)` identity in
+`plugin_storage_records`. Global records use an empty owner ID so the SQL unique
+constraint covers them; non-global records require an owner. User, channel and
+conversation scopes are supported.
 
-## Storage Table
+Implemented mechanisms include declared collections and scope types, schema
+version, TTL, per-record size validation, record versions and compare-and-put.
+The storage handle fixes the plugin namespace. Record data does not become a
+registered tool or Skill; runtime artifact ownership stays in the core catalog.
 
-First pass should use a generic JSONB document table, not plugin-created SQL
-tables:
+The existing methods accept a `StorageScope` containing an owner ID. Validation
+checks the scope type and identifier, not the current authenticated actor's
+permission to access that owner. The same interface must not be exposed directly
+to unreviewed code. A future host broker must derive namespace and authorized
+user/channel/conversation scope from trusted invocation context. Per-plugin
+aggregate quotas also need implementation and evidence; per-record validation
+is not proof of an aggregate bound.
 
-```sql
-CREATE TABLE plugin_storage_records (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    plugin_name VARCHAR(100) NOT NULL,
-    collection VARCHAR(100) NOT NULL,
-    key VARCHAR(200) NOT NULL,
-    scope VARCHAR(30) NOT NULL,
-    owner_id VARCHAR(200) NOT NULL DEFAULT '',
-    value JSONB NOT NULL,
-    schema_version INTEGER NOT NULL DEFAULT 1,
-    version BIGINT NOT NULL DEFAULT 1,
-    ttl_expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK ((scope = 'global' AND owner_id = '') OR (scope <> 'global' AND owner_id <> '')),
-    UNIQUE (plugin_name, scope, owner_id, collection, key)
-);
-```
+## Management API Boundary
 
-`owner_id` is stored as an empty string for `global` scope so PostgreSQL unique
-constraints cannot be bypassed by multiple `NULL` values. Runtime structs still
-present global records as having no owner.
+Current routes provide plugin listing, usage, export and purge. At this baseline
+[handlers](../src/api/plugins.rs) require `AuthUser`; full export/purge queries
+operate by plugin name across owners. There is no additional administrator or
+per-owner boundary at those handlers. This is a statically identified gap, not
+a dynamically reproduced result or a permission fix shipped by this page.
 
-Recommended indexes:
+The target administrator/user scope distinction is recorded in the plugin
+contract. Its later implementation must test ordinary users, current admin
+identity after waiting, cross-owner refusal and unchanged data on rejection.
+Complete configuration, API keys and raw private payloads are not audit output.
+Plugin records should contain secret references; no general secret broker is
+claimed as already implemented here.
 
-```sql
-CREATE INDEX idx_plugin_storage_owner
-    ON plugin_storage_records(plugin_name, scope, owner_id, collection);
+## Retention and Lifecycle
 
-CREATE INDEX idx_plugin_storage_ttl
-    ON plugin_storage_records(ttl_expires_at)
-    WHERE ttl_expires_at IS NOT NULL;
-```
+`apply_uninstall_policy` implements collection retention:
 
-Use JSONB GIN indexes only after a real plugin needs query-heavy document
-search. The default API should prefer `get`, `put`, `delete`, and prefix/list
-by collection/key.
+- `retain_on_uninstall` is the default and preserves records.
+- `delete_on_uninstall` removes that collection's records.
+- `export_required` blocks normal removal while records remain. The trusted
+  `force_export_required` argument bypasses that check but still counts and
+  retains those records; explicit purge is a separate operation. The helper
+  does not itself verify an external export or authorize a purge.
 
-## Runtime API
+These helpers are not a complete Server dynamic uninstall transaction. Future
+uninstall must close admission, retire tools and dependencies, finish original
+runtime owners, then apply authorized retention and remove unreferenced assets.
+A file deletion or process signal alone is not uninstall completion. Preserve
+historical effect/audit records and report partial failures with their identity.
 
-Plugins should receive a scoped handle:
+## Remaining Delivery
 
-```rust
-pub trait PluginStorage: Send + Sync {
-    async fn get(&self, collection: &str, key: &str, scope: StorageScope)
-        -> anyhow::Result<Option<PluginRecord>>;
+Server dynamic install/activate/upgrade/uninstall, an isolated host API,
+aggregate quotas and a standalone third-party SDK are not yet delivered. Keep
+the current storage/CAS/TTL/retention and Execution authority while implementing
+those capabilities in bounded steps. Installation of unreviewed third-party
+code is an explicit future requirement; neither source review nor a market
+certificate should be universally required merely to receive an inactive
+package. Runtime isolation and capability grants remain separate gates.
 
-    async fn put(&self, collection: &str, key: &str, scope: StorageScope, value: serde_json::Value)
-        -> anyhow::Result<PluginRecord>;
-
-    async fn compare_and_put(
-        &self,
-        collection: &str,
-        key: &str,
-        scope: StorageScope,
-        expected_version: i64,
-        value: serde_json::Value,
-    ) -> anyhow::Result<PluginRecord>;
-
-    async fn delete(&self, collection: &str, key: &str, scope: StorageScope)
-        -> anyhow::Result<bool>;
-
-    async fn list(&self, collection: &str, scope: StorageScope, prefix: Option<&str>, limit: u32)
-        -> anyhow::Result<Vec<PluginRecord>>;
-}
-```
-
-The handle is constructed with `plugin_name`; plugins cannot choose or spoof
-another plugin namespace.
-
-`alia-server` exposes this through `PluginStorageService`. Compiled-in tool
-plugins receive a `PluginToolContext` containing only their scoped storage handle
-and the shared tool registry. `ModuleContext` carries the service so this stays
-independent from embedded channel support.
-
-## Static Declaration Contract
-
-First-pass compiled-in plugins should declare storage use in Rust code. The
-shape intentionally mirrors a future manifest, but there is no dynamic plugin
-installer in this phase:
-
-```rust
-PluginStorageManifest {
-    collections: vec![
-        PluginStorageCollection {
-            name: "settings".into(),
-            scope: vec![PluginStorageScopeKind::User],
-            schema_version: 1,
-            retention: PluginStorageRetention::RetainOnUninstall,
-            ttl_sec: None,
-            max_record_bytes: None,
-        },
-    ],
-}
-```
-
-The server validates collection names, allowed scopes, retention policy, and
-record limits before handing storage to the plugin.
-
-## Security And Boundaries
-
-- Do not store secrets in `plugin_storage_records`; use a server-managed secret
-  store and keep only secret references in plugin records.
-- Do not expose arbitrary SQL to plugins.
-- Do not let plugin storage rows masquerade as skills/tools/sensors. Runtime
-  artifacts remain in `registry_artifacts`; storage is plugin-private data.
-- Enforce size limits per record and per plugin.
-- Record writes should be attributed in audit/debug output when they happen
-  during tool execution.
-- Embedded-side plugin management is not part of this server plugin-storage
-  phase.
-
-## Future Uninstall Behavior
-
-When dynamic plugins exist, plugin uninstall should:
-
-1. Stop plugin execution.
-2. Unregister plugin tools, skills, sensors, and other artifacts.
-3. Apply each collection retention policy:
-   - `delete_on_uninstall`: delete rows.
-   - `retain_on_uninstall`: keep rows for reinstall/export.
-   - `export_required`: block uninstall until exported or explicitly purged.
-4. Emit an audit event with deleted/retained counts.
-
-## Suggested Phases
-
-1. Add `plugin_storage_records` and a `PluginStorage` trait. Done.
-2. Inject a scoped storage handle into compiled-in tool plugin contexts. Done.
-3. Add static declaration validation for declared collections and scopes. Done.
-4. Add API/admin visibility for plugin storage usage and purge/export. Done.
-5. Add dynamic plugin lifecycle only when the project actually needs it.
-6. Add optional blob storage and JSONB query indexes only after concrete plugin
-   requirements appear.
+No production code, API, schema or permission is changed by this documentation
+update. See the [implementation checklist](../../../docs/refactor/checklists/plugin-contract-2026-10-17.md)
+for current design status and later regression requirements.

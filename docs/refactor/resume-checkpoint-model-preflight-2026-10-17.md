@@ -1,5 +1,7 @@
 # 恢复检查点：软件发布资料与真实模型链前置
 
+**后续接续：** 当前转入[插件契约与信任边界检查点](resume-checkpoint-plugin-contract-2026-10-17.md)。下列模型精确ID／素材及运行验收待定项继续保留；插件文档轮次不关闭这些出口，也不构成启动服务许可。
+
 2026-10-17；分支 `codex/architecture-refactor`，资料起点 `6a8b1133cf00c4ff6abe9ddc6efc8047029551a5`，已验应用源码 `6c62c84ee60e3a5fd387f2172ead432031907599`。本轮 **10/10**：发布资料与三组答复收口，明确未定项保留；没有真实模型运行。本轮只有文档与两行示例注释删除，随正常提交保存。
 
 恢复先读[本轮checklist](checklists/model-preflight-2026-10-17.md)、[四份HANDOFF](handoffs/2026-10-17-model-preflight/README.md)、[发布记录](../operations/software-release.md)。先核对当前Git与本轮提交，不把旧全量结果说成新源码验收。

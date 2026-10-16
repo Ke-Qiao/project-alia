@@ -1,5 +1,7 @@
 # 隔离平台验证
 
+**2026-10-17：插件契约技术草案9/10，仅源码／资料审查。** 应用源码仍`6c62c84`，本轮没有新构建、测试、插件进程、隔离后端或平台运行结果。旧Linux1287/0/5、release/noop双轮及Mac定向／历史全量保留原版本语境；空插件目录不能作为插件进程清理验收。目标与静态差异见[契约](../architecture/plugin-contract.md)，集中设计答复和静态证据收口见[检查点](resume-checkpoint-plugin-contract-2026-10-17.md)及[证据索引](handoffs/2026-10-17-plugin-contract/evidence-index.json)。未加依赖、调用模型或启用硬件，默认shadow／当前政策不变，R03暂停，六轮仍2/6。以下保留历史范围。
+
 **2026-10-17：发布资料与模型前置10/10，仅静态核对，实模未验。** 已验应用源码仍`6c62c84`，Linux1287/0/5及release/noop两轮是上轮证据，当前Mac仅2项定向，Mac全量1277/0/5属于旧`4e2968f`。起点678输入／双产物／148旧原件一致；最终677项不变，Server示例只删2行注释，TOML语义相同；不声称新构建或当前Mac发布通过。已登记BotCF候选与模型待定、现有本地语音目录／Juno、开发验证必要时容器；只读盘点不证明loaded模型，旧配置覆盖冲突先保留待整理。见[发布记录](../operations/software-release.md)、[恢复检查点](resume-checkpoint-model-preflight-2026-10-17.md)与[静态证据](handoffs/2026-10-17-model-preflight/evidence-index.json)。默认shadow／政策／原期限并发保持，R03暂停，未探测／启用模型或硬件；历史V01open、六轮仍2/6。以下保留历史范围。
 
 **2026-10-17：当前release全noop实际进程验收10/10。** 源码`6c62c84`；macOS确定性RED1/1→GREEN2/0，Linux ARM64一次默认workspace1287/0/5/0filtered（405.963秒）、两端no-default与default release/native链接通过。修复前真实SIGTERM失败保留，修复后V2双轮两端启动/正常关闭/同配置与DB恢复通过，四进程exit0、无兜底；端口关闭、PG0/0、任务资源精确回收。678受测输入对应Git blob；148证据保留原日志、原INVALID与有行映射的派生计数，无测试重跑。默认shadow/政策/期限并发不变，R03暂停、历史V01open、六轮仍2/6。见[恢复检查点](resume-checkpoint-release-lifecycle-2026-10-17.md)和[实测细节](handoffs/2026-10-17-release-lifecycle/root-HANDOFF.md)；正常重启不代表crash、硬件、真实模型或Mac/Pi部署通过。以下为历史。

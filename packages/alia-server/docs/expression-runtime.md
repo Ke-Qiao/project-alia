@@ -61,6 +61,13 @@ appraisal additionally requires implementation approval, supervised cancellation
 and disabled raw stderr tracing. A loaded manifest alone does not satisfy those
 gates; a dispatcher without a provenance pin cannot contribute private drafts.
 
+The current JSON process adapter is a trusted-host integration, not an
+unreviewed-code sandbox. Output bounds, exact process cleanup, data-minimized
+inputs and content identity require the separate implementation work listed in
+the [plugin contract](../../../docs/architecture/plugin-contract.md). Environment
+clearing and a manifest capability do not establish those guarantees. Future
+isolated plugins still submit drafts and cannot replace final core policy.
+
 The mutable affect reducer interface, `reduce_affect` request, snapshot response
 and source-free observation APIs have been removed. Unknown capability fields
 are rejected instead of silently retaining a second extension contract.
@@ -74,7 +81,7 @@ Execution requires a nonempty canonical Response ID. Missing authority returns
 a local `skipped` result without contacting an actuator adapter.
 
 The Embedded channel's `execute_expression`, `observe_expression` and
-`cancel_expression` actions are internal adapters to signed Body v1. They are
+`cancel_expression` actions are internal adapters to signed BodyControl. They are
 not a separate device RPC protocol. The old `alia.expression.EmbeddedExpression`
 service, its JSON execute/cancel methods and its protobuf have been removed.
 
@@ -102,9 +109,11 @@ Stop cancels future targets and waits for entered native work without adding a
 center or disable command. The old soft-start and shutdown-reset settings are
 rejected. Channel limits, angle validation and speed limits between submitted
 software targets remain; the initial physical position is unknown. Animation preparation
-validates file location, size, frame shape and the complete expanded plan before
-native output. The command signature covers the filename and parameters; it is
-not a signature of the file's bytes.
+uses a bounded read to verify and parse the same asset bytes, then validates the
+frame shape and complete expanded plan before native output. Body signing
+version 2 binds the animation filename, approved version, SHA-256 and byte count
+alongside its parameters. Both ends require matching local approved catalogs;
+the catalog is empty by default. See the [motion asset contract](../../alia-embedded/docs/motion-assets.md).
 
 ## Evidence and recovery
 

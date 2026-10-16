@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "checked_at_utc": "2026-10-16T20:30:53.724430+00:00",
+  "baseline_commit": "89d04a259779784107e430baa2b24f415bc15362",
+  "branch": "codex/architecture-refactor",
+  "checks": {
+    "scope": "PASS: only Markdown and JSON documentation evidence changed or added",
+    "tracked_non_document_paths_unchanged_by_git": 672,
+    "local_markdown_file_targets_checked": 318,
+    "missing_targets": [],
+    "link_limit": "File existence only; heading anchors and remote availability are not checked by this script.",
+    "git_diff_check": "PASS",
+    "checklist": "9/10; PC09 and D01-D03 correctly pending",
+    "method": "Read git diff --name-only against baseline plus untracked non-ignored paths; assert permitted paths; check relative Markdown target existence; git diff --check; hash changed Markdown files. No build input manifest or runtime test is implied."
+  },
+  "changed_markdown_files": [
+    {
+      "path": "docs/README.md",
+      "sha256": "78f5955ede66c63fb31e68c6f74aaf08035520c80b998d7fc2f461d056c6372d"
+    },
+    {
+      "path": "docs/architecture/plugin-contract.md",
+      "sha256": "abf1aa23d7916e95c780a43d03d2d1b8dbe38a993bcb60c5835e496e33d60909"
+    },
+    {
+      "path": "docs/concepts/modules-and-providers.md",
+      "sha256": "6fae508d9d29ba4738c8b6ccb7dc8771fc960a8eab2aaaf3f175f8b06730a28a"
+    },
+    {
+      "path": "docs/concepts/skills-and-tools.md",
+      "sha256": "82f9558240c7d5c9491503de871f5839c39146f745299e479dd5e6f8bfb05b40"
+    },
+    {
+      "path": "docs/refactor/checklists/next-round.md",
+      "sha256": "5ba143d63f03f2719b823353c242bf274ff9b481aced3539c1a41894d32d5a20"
+    },
+    {
+      "path": "docs/refactor/checklists/plugin-contract-2026-10-17.md",
+      "sha256": "bca27fc0fff9f7c5937a7f4bd90f8a0108c64441d57a325d9e1ff2a0ecc98841"
+    },
+    {
+      "path": "docs/refactor/deferred.md",
+      "sha256": "8bebaf591b33769d87841a7b7c2f983129b239872ef651c675c0855585ed1425"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/README.md",
+      "sha256": "c4e5b9b53708e3bc4a5c9d4153d2698624147d06b748fbce055e17cb5a0596c7"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/embedded-HANDOFF.md",
+      "sha256": "ecfe584a3bf6ab938235a8ff1511c424e45cf731929958f75779346aaeb422cb"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/review-HANDOFF.md",
+      "sha256": "77d2d82bc055549e68f8b06baab4641947a434218425c244a546581065ce41ad"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/root-HANDOFF.md",
+      "sha256": "b5c18fa4ef4cb70fbd21df291ae7d9f46c205ba426b2afa5b81bc00e3ecff584"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/server-HANDOFF.md",
+      "sha256": "c7afe495487456ea2c01f468ee18fff17c5ce34065f7483e91a59b0f8f9b3f9d"
+    },
+    {
+      "path": "docs/refactor/platform-validation.md",
+      "sha256": "4076bdf31045d2120c754589cd807718b540ce61a160f8fb7b8d842b555631b3"
+    },
+    {
+      "path": "docs/refactor/progress.md",
+      "sha256": "2347923cba00aaa6d410371e4ce5e65222465674e213105c4347fc29a1aace3d"
+    },
+    {
+      "path": "docs/refactor/resume-checkpoint-model-preflight-2026-10-17.md",
+      "sha256": "a3379fec345ba23b1e646bda7a370c73b07a25e0544e72df74bee0f294bf8298"
+    },
+    {
+      "path": "docs/refactor/resume-checkpoint-plugin-contract-2026-10-17.md",
+      "sha256": "0155d15012a45b60fa4f5196481392a1bfddb9e645d690344f755080469b5425"
+    },
+    {
+      "path": "packages/alia-embedded/docs/grpc-services.md",
+      "sha256": "7faf2ccc92fa99f2f9f3f5ae8a8520711aaac5d6f309ec3b61f5c52a8362b391"
+    },
+    {
+      "path": "packages/alia-server/docs/README.md",
+      "sha256": "b66745503afa364131b1bd53c51011e7f7f42953d78e811f5382a802138b1b9b"
+    },
+    {
+      "path": "packages/alia-server/docs/expression-runtime.md",
+      "sha256": "f020165ed258fc633142a3356762ff4101d22cc16e860aeee54730494b09afd7"
+    },
+    {
+      "path": "packages/alia-server/docs/plugin-storage.md",
+      "sha256": "0fa7063803ecd80a84385fee37f9d3350c3ad59ca04720576388981172a86cc3"
+    }
+  ],
+  "verification_setup_note": "The first final-report attempt stopped because the checkpoint linked to this not-yet-created report. Created the report path, then completed the checks; no runtime test was run or retried.",
+  "new_runtime_results": [],
+  "not_run": [
+    "Cargo build/test/release",
+    "plugin processes or isolation backend",
+    "models/external services",
+    "containers/SSH/hardware"
+  ],
+  "decisions_pending": [
+    "D01",
+    "D02",
+    "D03"
+  ],
+  "agent_progress": {
+    "server": "5/6; decision pending",
+    "embedded": "6/7; decision pending",
+    "review": "4/5; decision pending"
+  }
+}

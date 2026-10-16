@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-17",
+  "scope": "Documentation and static contract audit only; no runtime execution or sandbox validation.",
+  "baseline_commit": "89d04a259779784107e430baa2b24f415bc15362",
+  "application_source_commit": "6c62c84ee60e3a5fd387f2172ead432031907599",
+  "design_status": "awaiting_D01_D02_D03",
+  "decisions_pending": [
+    "D01 management roles",
+    "D02 isolated execution and separately trusted native mode",
+    "D03 upgrade drain or cancel"
+  ],
+  "verification": "evidence/static-check.json",
+  "review_handoffs": [
+    "server-HANDOFF.md",
+    "embedded-HANDOFF.md",
+    "review-HANDOFF.md",
+    "root-HANDOFF.md"
+  ],
+  "new_runtime_test_results": [],
+  "prior_evidence_boundary": "Linux workspace 1287/0/5, release/native linking and empty-plugin noop lifecycle belong to 6c62c84 and the prior release-lifecycle packet; not rerun or counted as plugin acceptance.",
+  "upstream_sources": [
+    "https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices",
+    "https://docs.wasmtime.dev/security.html",
+    "https://theupdateframework.github.io/specification/latest/#fetch-target"
+  ],
+  "future_acceptance": "PA01-PA11 in docs/architecture/plugin-contract.md; not executed in this round.",
+  "design_checklist": {
+    "completed": 9,
+    "total": 10,
+    "pending": "PC09"
+  },
+  "implementation_stages": {
+    "completed": 0,
+    "total": 4
+  }
+}

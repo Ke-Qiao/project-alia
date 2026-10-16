@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-17：插件契约技术草案9/10，集中设计答复待确认。** 三个subagent核对Server权限／Execution、Embedded包与进程、表达ABI及独立审查；[统一契约](../architecture/plugin-contract.md)明确扩展分类、五项信任事实、版本／实例身份和生命周期。用户要求的未经审查代码安装与后续隔离运行为明确目标，不以签名／审核作所有安装前提。清理旧概念和包文档，未修改运行时、API、依赖或测试；静态差异尚未动态复现，后续实施0/4、PA01—PA11未验。静态范围／链接／diff核对通过，唯一剩余PC09为D01—D03集中答复，从[当前检查点](resume-checkpoint-plugin-contract-2026-10-17.md)和[四份HANDOFF](handoffs/2026-10-17-plugin-contract/README.md)继续。默认shadow／政策／原期限并发保持，R03暂停、V01历史根因open、六轮仍2/6；模型链沿用前一包待定项。以下为历史。
+
 **2026-10-17：软件发布资料与真实模型链前置10/10，实际推理未验。** 三个subagent核对配置、入口与证据；仅修正旧语音开关／STT注释／Memory健康语义并汇总[发布资料](../operations/software-release.md)。起点678输入与两产物／148旧证据一致；最终677输入不变，1项仅删注释且TOML语义相同，无生产／依赖／测试变动。MP10答复已登记：BotCF候选、模型／embedding待定，Developer模型／Juno及项目Whisper按旧资料盘点；开发账户与必要容器即可，不要求正式服务账户。发现旧base/fragments与settings存在不同历史方案，未修改或直接启动。当前Linux完整验收、当前Mac定向与旧Mac全量严格分开；从[最新检查点](resume-checkpoint-model-preflight-2026-10-17.md)和[四份HANDOFF](handoffs/2026-10-17-model-preflight/README.md)继续。默认shadow／probe=false、政策、原期限／并发保持，R03暂停、V01历史根因open、六轮仍2/6。以下为历史。
 
 **2026-10-17：当前 release 全noop staging 生命周期与恢复10/10完成。** 源码`6c62c84`；V1实际SIGTERM失败与确定性RED确认sensor取消域竞态，仅统一owner token后GREEN2/0。Linux一次workspace1287/0/5/0filtered、两端no-default与default release/native链接、V2双轮启动/正常关闭/同状态恢复通过；678输入逐Git blob匹配，148份证据归档，任务容器/卷/network精确回收。原日志一处分块仅生成有映射派生计数，原失败与INVALID保留；无重复测试求绿。默认shadow/政策/原期限并发保持，R03暂停、历史V01open、六轮仍2/6。从[最新检查点](resume-checkpoint-release-lifecycle-2026-10-17.md)与[四份HANDOFF](handoffs/2026-10-17-release-lifecycle/README.md)继续，下一软件出口为发布资料与真实模型部署信息确认；未完成硬件/模型/断电或长稳验收。以下为历史。

@@ -18,6 +18,9 @@ settings, automation, tools, skills, sensors, and user/session state.
   memory, cache, insights, users, auth, and traceable agent history.
 - [Plugin storage](plugin-storage.md) describes the server-owned, namespaced
   persistence layer for plugin-private data.
+- [Plugin contract](../../../docs/architecture/plugin-contract.md) distinguishes
+  current trusted interfaces from future grants, isolated third-party execution
+  and lifecycle acceptance requirements.
 
 ## Boundaries
 
