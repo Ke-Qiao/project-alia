@@ -50,6 +50,10 @@ use crate::channels::adapter::{ChannelAction, ChannelAdapter, ChannelCapabilitie
 const SENSOR_SYNC_INTERVAL_SEC: u64 = 30;
 
 #[cfg(test)]
+#[path = "channel_lifecycle_tests.rs"]
+mod lifecycle_tests;
+
+#[cfg(test)]
 mod body_pin_tests {
     use super::*;
 
@@ -406,7 +410,7 @@ impl EmbeddedChannel {
     }
 
     fn spawn_sensor_sync_loop(&self, background: &mut BackgroundStart<'_>) {
-        let cancel = self.discovery_cancel.child_token();
+        let cancel = background.token();
         let sensor_client = self.sensor_client.clone();
         let sensor_registry = self.sensor_registry.clone();
         let channel_id = self.config.id.clone();
