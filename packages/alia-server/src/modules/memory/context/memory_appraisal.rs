@@ -291,6 +291,17 @@ pub(crate) async fn bind_memory_roots(
     };
     let lease = load(tx, context.user_id, context_id).await?;
     for root in &lease.dependencies {
+        if let ContextEvidence::CompanionHistory { context_id, .. } = root {
+            let parent = load(tx, context.user_id, *context_id).await?;
+            let (history, until) = super::invitation::history_roots(tx, &parent).await?;
+            if !history.iter().all(|root| lease.dependencies.contains(root)) {
+                return Err(revoked("memory invitation history omitted canonical roots"));
+            }
+            merge(&mut roots, &history)?;
+            merge(&mut roots, std::slice::from_ref(root))?;
+            expiry = earliest(expiry, until);
+            continue;
+        }
         let row=match root {
             ContextEvidence::Appraisal{id, ..}=>tx.query_one(stmt("SELECT roots,roots_digest,valid_until FROM appraisal_records WHERE appraisal_id=$1 AND owner_id=$2 AND status='active'",vec![(*id).into(),context.user_id.into()])).await?,
             ContextEvidence::AffectProjection{id,..}=>tx.query_one(stmt("SELECT roots,roots_digest,valid_until FROM affect_projections WHERE projection_id=$1 AND owner_id=$2",vec![(*id).into(),context.user_id.into()])).await?,

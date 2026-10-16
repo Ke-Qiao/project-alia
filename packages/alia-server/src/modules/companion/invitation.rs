@@ -9,10 +9,40 @@ use super::{
     live::types::{INVITATION_OUTPUT_KEY, LiveAdmissionGrant},
     types::{CompanionMode, CompanionPolicy, PolicySnapshot as CompanionPolicySnapshot},
 };
-use crate::modules::memory::context::{ContextError, ContextResult};
+use crate::modules::memory::context::{ContextError, ContextLease, ContextResult};
 
 fn revoked() -> anyhow::Error {
     ContextError::Revoked("Companion invitation authority is unavailable or changed".into()).into()
+}
+
+/// Retirement erases live grants, but cannot rewrite the identity of a committed
+/// invitation. This check grants neither a new admission nor output permission.
+pub(crate) async fn read_history_identity(
+    tx: &DatabaseTransaction,
+    lease: &ContextLease,
+    admission_id: Uuid,
+) -> ContextResult<Uuid> {
+    let source = lease.source();
+    let row = tx
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT candidate_id,initiative_request_id,context_id,conversation_id,output_key,valid_until FROM companion_admissions WHERE admission_id=$1 AND owner_id=$2",
+            vec![admission_id.into(), source.owner_id.into()],
+        ))
+        .await?
+        .ok_or_else(revoked)?;
+    if row.try_get::<Uuid>("", "initiative_request_id")? != source.request_id
+        || row.try_get::<Uuid>("", "context_id")? != lease.id()
+        || Some(row.try_get::<Uuid>("", "conversation_id")?) != source.conversation_id
+        || row.try_get::<String>("", "output_key")? != INVITATION_OUTPUT_KEY
+        || Some(
+            row.try_get::<DateTime<Utc>>("", "valid_until")?
+                .timestamp_micros(),
+        ) != lease.valid_until().map(|value| value.timestamp_micros())
+    {
+        return Err(revoked());
+    }
+    Ok(row.try_get("", "candidate_id")?)
 }
 
 async fn grant(

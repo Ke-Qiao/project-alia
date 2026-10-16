@@ -51,7 +51,8 @@ pub(crate) async fn load_companion_source(
             ContextEvidence::Appraisal { id, .. } => roots.push(("appraisal", *id)),
             ContextEvidence::AffectProjection { id, .. } => roots.push(("affect", *id)),
             ContextEvidence::Relationship { .. } => (),
-            ContextEvidence::CompanionAdmission { .. } => {
+            ContextEvidence::CompanionAdmission { .. }
+            | ContextEvidence::CompanionHistory { .. } => {
                 return Err(ContextError::Revoked(
                     "an invitation cannot become a new Companion source".into(),
                 )

@@ -240,6 +240,7 @@ fn evidence_key(value: &ContextEvidence) -> (u8, Uuid) {
         ContextEvidence::AffectProjection { id, .. } => (8, *id),
         ContextEvidence::MemorySourceMessage { id, .. } => (9, *id),
         ContextEvidence::CompanionAdmission { id, .. } => (10, *id),
+        ContextEvidence::CompanionHistory { id, .. } => (11, *id),
     }
 }
 
@@ -262,6 +263,22 @@ pub(crate) async fn validate_evidence(
     for reference in &refs {
         let owner = lease.source.owner_id;
         match reference {
+            ContextEvidence::CompanionHistory {
+                id,
+                response_id,
+                context_id,
+                content_digest,
+            } => {
+                super::invitation::validate_history_reference(
+                    tx,
+                    lease,
+                    *id,
+                    *response_id,
+                    *context_id,
+                    content_digest,
+                )
+                .await?;
+            }
             ContextEvidence::CompanionAdmission { id, intent_digest } => {
                 Box::pin(super::invitation::validate_invitation_reference(
                     tx,

@@ -333,25 +333,54 @@ impl ContextService {
                         let parent = load(&tx, source.owner_id, context).await?;
                         if parent.policy_version != policy.version
                             || parent.source.source_privacy_epoch != source.source_privacy_epoch
-                            || parent.purpose != ContextPurpose::Generation
                         {
                             return Err(ContextError::Revoked(
                                 "historical context no longer current".into(),
                             )
                             .into());
                         }
-                        ensure_live(&tx, parent.valid_until).await?;
-                        merge(&mut candidate.dependencies, &parent.dependencies)?;
-                        merge(
-                            &mut candidate.dependencies,
-                            &[ContextEvidence::DerivedMessage {
-                                id,
-                                response_id: response,
-                                context_id: context,
-                                content_digest: digest(&json!(content))?,
-                            }],
-                        )?;
-                        candidate.valid_until = earliest(candidate.valid_until, parent.valid_until);
+                        let content_digest = digest(&json!(content))?;
+                        let reference = match parent.purpose {
+                            ContextPurpose::Generation => {
+                                ensure_live(&tx, parent.valid_until).await?;
+                                merge(&mut candidate.dependencies, &parent.dependencies)?;
+                                candidate.valid_until =
+                                    earliest(candidate.valid_until, parent.valid_until);
+                                ContextEvidence::DerivedMessage {
+                                    id,
+                                    response_id: response,
+                                    context_id: context,
+                                    content_digest,
+                                }
+                            }
+                            ContextPurpose::CompanionInvitation => {
+                                if parent.source.conversation_id != source.conversation_id
+                                    || parent.source.channel_id != source.channel_id
+                                {
+                                    return Err(ContextError::Revoked(
+                                        "invitation history belongs to another conversation".into(),
+                                    )
+                                    .into());
+                                }
+                                let (roots, until) =
+                                    super::invitation::history_roots(&tx, &parent).await?;
+                                merge(&mut candidate.dependencies, &roots)?;
+                                candidate.valid_until = earliest(candidate.valid_until, until);
+                                ContextEvidence::CompanionHistory {
+                                    id,
+                                    response_id: response,
+                                    context_id: context,
+                                    content_digest,
+                                }
+                            }
+                            _ => {
+                                return Err(ContextError::Revoked(
+                                    "context does not authorize assistant history".into(),
+                                )
+                                .into());
+                            }
+                        };
+                        merge(&mut candidate.dependencies, &[reference])?;
                     }
                     validate_evidence(&tx, &candidate).await?;
                     Ok(())

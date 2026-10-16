@@ -1,18 +1,172 @@
 //! Context-owned invitation evidence and immutable lease issuance.
 //! The original source closure is locked before a live grant or its policy.
-use sea_orm::DatabaseTransaction;
-use serde_json::json;
+use chrono::{DateTime, Utc};
+use sea_orm::{ConnectionTrait, DatabaseTransaction};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{appraisal_source::lock_appraisal_authority, repository::*, *};
 use crate::modules::companion::{
-    invitation::{lock_invitation_grant, read_invitation_grant},
-    live::types::{INVITATION_KIND, LiveAdmissionGrant},
+    invitation::{lock_invitation_grant, read_history_identity, read_invitation_grant},
+    live::types::{INVITATION_KIND, INVITATION_OUTPUT_KEY, InvitationContent, LiveAdmissionGrant},
     source::load_companion_source,
 };
 
 fn revoked() -> anyhow::Error {
     ContextError::Revoked("Companion invitation authority is unavailable or changed".into()).into()
+}
+
+/// Keep every consumed source while excluding the authority to speak again.
+pub(crate) async fn history_roots(
+    tx: &DatabaseTransaction,
+    lease: &ContextLease,
+) -> ContextResult<(Vec<ContextEvidence>, Option<DateTime<Utc>>)> {
+    if lease.purpose != ContextPurpose::CompanionInvitation
+        || lease
+            .dependencies
+            .iter()
+            .filter(|root| matches!(root, ContextEvidence::CompanionAdmission { .. }))
+            .count()
+            != 1
+    {
+        return Err(revoked());
+    }
+    let roots = lease
+        .dependencies
+        .iter()
+        .filter(|root| !matches!(root, ContextEvidence::CompanionAdmission { .. }))
+        .cloned()
+        .collect::<Vec<_>>();
+    let owner = lease.source.owner_id;
+    let mut expiry = None;
+    for root in &roots {
+        let until = match root {
+            ContextEvidence::UserMessage { .. }
+            | ContextEvidence::MemorySourceMessage { .. }
+            | ContextEvidence::Relationship { .. } => None,
+            ContextEvidence::Memory { id, .. } => tx
+                .query_one(stmt(
+                    "SELECT expires_at FROM memory_items WHERE id=$1 AND user_id=$2 AND tenant_id=$3",
+                    vec![(*id).into(), owner.into(), Uuid::nil().into()],
+                ))
+                .await?
+                .ok_or_else(revoked)?
+                .try_get("", "expires_at")?,
+            ContextEvidence::Graph { edge_id, .. } => graph_projection(tx, owner, *edge_id)
+                .await?
+                .ok_or_else(revoked)?
+                .2,
+            ContextEvidence::Cache { id, .. } => {
+                let cache = cache_projection(tx, owner, *id).await?.ok_or_else(revoked)?;
+                earliest(
+                    Some(cache.expires_at),
+                    load(tx, owner, cache.context_id).await?.valid_until,
+                )
+            }
+            ContextEvidence::DerivedMessage { context_id, .. } => {
+                load(tx, owner, *context_id).await?.valid_until
+            }
+            ContextEvidence::Execution { effect_id, .. } => {
+                let projection = execution_projection(tx, owner, *effect_id)
+                    .await?
+                    .ok_or_else(revoked)?;
+                let parent = projection["context_id"]
+                    .as_str()
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .ok_or_else(revoked)?;
+                load(tx, owner, parent).await?.valid_until
+            }
+            ContextEvidence::Appraisal { id, .. }
+            | ContextEvidence::AffectProjection { id, .. } => {
+                let query = if matches!(root, ContextEvidence::Appraisal { .. }) {
+                    "SELECT context_id,valid_until FROM appraisal_records WHERE appraisal_id=$1 AND owner_id=$2"
+                } else {
+                    "SELECT context_id,valid_until FROM affect_projections WHERE projection_id=$1 AND owner_id=$2"
+                };
+                let row = tx
+                    .query_one(stmt(query, vec![(*id).into(), owner.into()]))
+                    .await?
+                    .ok_or_else(revoked)?;
+                earliest(
+                    row.try_get("", "valid_until")?,
+                    load(tx, owner, row.try_get("", "context_id")?)
+                        .await?
+                        .valid_until,
+                )
+            }
+            // Canonical Companion sources never consume an earlier invitation.
+            ContextEvidence::CompanionAdmission { .. }
+            | ContextEvidence::CompanionHistory { .. } => return Err(revoked()),
+        };
+        expiry = earliest(expiry, until);
+    }
+    ensure_live(tx, expiry).await?;
+    Ok((roots, expiry))
+}
+
+pub(crate) async fn validate_history_reference(
+    tx: &DatabaseTransaction,
+    current: &ContextLease,
+    message_id: Uuid,
+    response_id: Uuid,
+    context_id: Uuid,
+    content_digest: &str,
+) -> ContextResult<()> {
+    let parent = load(tx, current.source.owner_id, context_id).await?;
+    let (roots, _) = history_roots(tx, &parent).await?;
+    if parent.policy_version != current.policy_version
+        || parent.source.source_privacy_epoch != current.source.source_privacy_epoch
+        || !roots.iter().all(|root| current.dependencies.contains(root))
+    {
+        return Err(revoked());
+    }
+    lock_authority(tx, &parent.source, parent.policy_version).await?;
+    let admission_id = parent
+        .dependencies
+        .iter()
+        .find_map(|root| match root {
+            ContextEvidence::CompanionAdmission { id, .. } => Some(*id),
+            _ => None,
+        })
+        .ok_or_else(revoked)?;
+    // These admission columns cannot change or be deleted. History must not
+    // acquire the live-grant lock while retirement requests Response cancellation.
+    let candidate_id = read_history_identity(tx, &parent, admission_id).await?;
+    let message = tx.query_one(stmt(
+        "SELECT m.content FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=$1 AND m.session_id=$2 AND s.creator_id=$3 AND m.role='assistant' FOR SHARE OF m",
+        vec![message_id.into(), parent.source.conversation_id.into(), current.source.owner_id.to_string().into()],
+    )).await?.ok_or_else(revoked)?;
+    let row = tx.query_one(stmt(
+        "SELECT request_id,source_event_id,source_received_at,source_privacy_epoch,channel_id,content AS response_content,final_content FROM delivery_responses WHERE assistant_message_id=$1 AND response_id=$2 AND context_id=$3 AND user_id=$4 AND conversation_id=$5 AND status='committed' AND kind=$6 AND output_key=$7 FOR SHARE",
+        vec![message_id.into(), response_id.into(), context_id.into(), current.source.owner_id.into(), parent.source.conversation_id.into(), INVITATION_KIND.into(), INVITATION_OUTPUT_KEY.into()],
+    )).await?.ok_or_else(revoked)?;
+    let content: String = message.try_get("", "content")?;
+    let envelope: Value = row.try_get("", "response_content")?;
+    let invitation: InvitationContent =
+        serde_json::from_value(envelope.clone()).map_err(|_| revoked())?;
+    invitation.validate().map_err(|_| revoked())?;
+    if digest(&json!(content))? != content_digest
+        || row.try_get::<Value>("", "final_content")? != json!({"text":content})
+        || invitation.text != content
+        || invitation.admission_id != admission_id
+        || invitation.candidate_id != candidate_id
+        || Some(invitation.source_event_id) != parent.source.source_event_id
+        || digest(&envelope)? != parent.materialized_digest
+        || row.try_get::<Uuid>("", "request_id")? != parent.source.request_id
+        || row.try_get::<Option<Uuid>>("", "source_event_id")? != parent.source.source_event_id
+        || row
+            .try_get::<chrono::DateTime<chrono::Utc>>("", "source_received_at")?
+            .timestamp_micros()
+            != parent.source.source_received_at.timestamp_micros()
+        || row.try_get::<Option<i64>>("", "source_privacy_epoch")?
+            != Some(parent.source.source_privacy_epoch)
+        || row.try_get::<String>("", "channel_id")? != parent.source.channel_id
+    {
+        return Err(revoked());
+    }
+    // Parent valid_until belongs to output admission. The roots above retain
+    // their own expiry checks in validate_evidence, even after live retirement.
+    Ok(())
 }
 
 async fn invitation_lease(
@@ -112,6 +266,8 @@ pub(crate) async fn validate_invitation_reference(
     Ok(())
 }
 
+#[cfg(test)]
+mod history_tests;
 #[cfg(test)]
 mod tests;
 

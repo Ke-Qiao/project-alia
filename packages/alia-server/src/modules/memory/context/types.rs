@@ -130,6 +130,13 @@ pub enum ContextEvidence {
         context_id: Uuid,
         content_digest: String,
     },
+    /// Committed invitation text is evidence, never its former live output grant.
+    CompanionHistory {
+        id: Uuid,
+        response_id: Uuid,
+        context_id: Uuid,
+        content_digest: String,
+    },
     Graph {
         edge_id: Uuid,
         projection_digest: String,
