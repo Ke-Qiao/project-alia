@@ -1,0 +1,67 @@
+observed_at=2026-10-17T11:39:34Z
+hostname=KeQiaopi
+uid=1000(ke-qiao) gid=1000(ke-qiao) groups=1000(ke-qiao),4(adm),20(dialout),24(cdrom),27(sudo),30(dip),101(lxd),110(i2c)
+Linux 6.8.0-1065-raspi aarch64 GNU/Linux
+board=Raspberry Pi 5 Model B Rev 1.0
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+usb_inventory
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 003 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 004 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 005 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+usb_device=/sys/bus/usb/devices/usb1
+idVendor=1d6b
+idProduct=0002
+manufacturer=Linux 6.8.0-1065-raspi dwc2_hsotg
+product=DWC OTG Controller
+serial=1000480000.usb
+usb_device=/sys/bus/usb/devices/usb2
+idVendor=1d6b
+idProduct=0002
+manufacturer=Linux 6.8.0-1065-raspi xhci-hcd
+product=xHCI Host Controller
+serial=xhci-hcd.0
+usb_device=/sys/bus/usb/devices/usb3
+idVendor=1d6b
+idProduct=0003
+manufacturer=Linux 6.8.0-1065-raspi xhci-hcd
+product=xHCI Host Controller
+serial=xhci-hcd.0
+usb_device=/sys/bus/usb/devices/usb4
+idVendor=1d6b
+idProduct=0002
+manufacturer=Linux 6.8.0-1065-raspi xhci-hcd
+product=xHCI Host Controller
+serial=xhci-hcd.1
+usb_device=/sys/bus/usb/devices/usb5
+idVendor=1d6b
+idProduct=0003
+manufacturer=Linux 6.8.0-1065-raspi xhci-hcd
+product=xHCI Host Controller
+serial=xhci-hcd.1
+alsa_cards
+ 0 [vc4hdmi0       ]: vc4-hdmi - vc4-hdmi-0
+                      vc4-hdmi-0
+ 1 [vc4hdmi1       ]: vc4-hdmi - vc4-hdmi-1
+                      vc4-hdmi-1
+alsa_pcm
+00-00: MAI PCM i2s-hifi-0 : MAI PCM i2s-hifi-0 : playback 1
+01-00: MAI PCM i2s-hifi-0 : MAI PCM i2s-hifi-0 : playback 1
+sound_device=/sys/class/sound/card0 path=/sys/devices/platform/soc/107c701400.hdmi
+sound_device=/sys/class/sound/card1 path=/sys/devices/platform/soc/107c706400.hdmi
+audio_nodes
+total 0
+drwxr-xr-x 2 root root       80 Oct 17 19:36 by-path
+crw-rw---- 1 root audio 116,  3 Oct 17 19:36 controlC0
+crw-rw---- 1 root audio 116,  5 Oct 17 19:36 controlC1
+crw-rw---- 1 root audio 116,  2 Oct 17 19:36 pcmC0D0p
+crw-rw---- 1 root audio 116,  4 Oct 17 19:36 pcmC1D0p
+crw-rw---- 1 root audio 116,  1 Oct 17 19:36 seq
+crw-rw---- 1 root audio 116, 33 Oct 17 19:36 timer
+node=/dev/snd/controlC0 readable=no writable=no
+node=/dev/snd/controlC1 readable=no writable=no
+node=/dev/snd/pcmC0D0p readable=no writable=no
+node=/dev/snd/pcmC1D0p readable=no writable=no
+node=/dev/snd/seq readable=no writable=no
+node=/dev/snd/timer readable=no writable=no

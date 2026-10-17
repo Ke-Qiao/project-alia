@@ -1,5 +1,7 @@
 # 构建记录
 
+**2026-10-17：R02 R1 USB 只读核对 4/4 完成，设备未枚举。** 三个 subagent 核对资料／音频结果／边界；Root 一次严格 SSH 成功（3.293 秒），Pi 身份与既有目标一致。USB／sysfs 只有 5 个 root hub，ALSA 只有 2 个 HDMI playback，无 capture；当前账户对已有音频节点无读写权限。只更新记录，无代码／依赖／远端配置变更，不运行构建／测试、录放音或执行器。接入 R1 后再枚举，不重复软件整备。见[检查点](resume-checkpoint-r02-usb-2026-10-17.md)及[四份 HANDOFF](handoffs/2026-10-17-r02-usb/README.md)。R03 暂停，默认 shadow／政策／执行批准保持，六轮仍 2/6；未将本轮计为声学验收。以下为历史。
+
 **2026-10-17：PN01完成6/6，插件实施1/4。** 普通用户全插件export泄露／purge跨owner删除已真实RED 0/2复现；管理四入口admin-only、本人三入口固定认证用户及user scope，读后复验／事务删除失权回滚已完成。macOS定向HTTP7/0/0＋storage4/0/0，共11项；未扩大workspace／平台矩阵。任务PG退出前schema0/client0，容器已回收。见[检查点](resume-checkpoint-pn01-2026-10-17.md)、[四份HANDOFF](handoffs/2026-10-17-pn01/README.md)。按用户效率要求，下一步优先R1 USB接入／枚举，PN02—PN04不作为无插件音频试验前置；默认shadow／政策／执行批准保持，R03暂停、V01历史open、六轮仍2/6。以下为历史。
 
 **2026-10-17：插件契约与信任边界定稿10/10，运行时实施仍0/4。** 三个subagent核对Server权限／Execution、Embedded包与进程、表达ABI及独立审查；[统一契约](../architecture/plugin-contract.md)明确扩展分类、五项信任事实、版本／实例身份和生命周期。用户要求的未经审查代码安装与后续隔离运行为明确目标，不以签名／审核作所有安装前提。清理旧概念和包文档，未修改运行时、API、依赖或测试；静态差异尚未动态复现，后续实施0/4、PA01—PA11未验。用户确认管理员管理＋用户隔离、默认隔离＋独立受信本机模式、升级排空／停用撤权取消；静态范围／链接／diff核对通过，草案与定稿证据分开保存，从[当前检查点](resume-checkpoint-plugin-contract-2026-10-17.md)和[四份HANDOFF](handoffs/2026-10-17-plugin-contract/README.md)继续。默认shadow／政策／原期限并发保持，R03暂停、V01历史根因open、六轮仍2/6；模型链沿用前一包待定项。以下为历史。
