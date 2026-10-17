@@ -4,13 +4,9 @@
   "scope": "Documentation and static contract audit only; no runtime execution or sandbox validation.",
   "baseline_commit": "89d04a259779784107e430baa2b24f415bc15362",
   "application_source_commit": "6c62c84ee60e3a5fd387f2172ead432031907599",
-  "design_status": "awaiting_D01_D02_D03",
-  "decisions_pending": [
-    "D01 management roles",
-    "D02 isolated execution and separately trusted native mode",
-    "D03 upgrade drain or cancel"
-  ],
-  "verification": "evidence/static-check.json",
+  "design_status": "confirmed_contract",
+  "decisions_pending": [],
+  "verification": "evidence/confirmed-static-check.json",
   "review_handoffs": [
     "server-HANDOFF.md",
     "embedded-HANDOFF.md",
@@ -26,12 +22,23 @@
   ],
   "future_acceptance": "PA01-PA11 in docs/architecture/plugin-contract.md; not executed in this round.",
   "design_checklist": {
-    "completed": 9,
+    "completed": 10,
     "total": 10,
-    "pending": "PC09"
+    "pending": null
   },
   "implementation_stages": {
     "completed": 0,
     "total": 4
+  },
+  "decisions_confirmed": {
+    "source": "Direct user reply on 2026-10-17; all three recommended choices explicitly selected.",
+    "D01": "管理员管理＋用户数据隔离",
+    "D02": "隔离默认＋单独受信本机模式；管理员单独明确授予宿主执行信任，无自动降级",
+    "D03": "升级关闭新准入，原期限排空并真实清理后切换；停用／撤权取消；新版不继承旧批准"
+  },
+  "previous_verification": {
+    "path": "evidence/static-check.json",
+    "commit": "826dbf022b3e67eaf75bde1329b936eab469bb7c",
+    "design_status": "9/10, D01-D03 awaiting user at that time; original report preserved unchanged"
   }
 }

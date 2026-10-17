@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "checked_at_utc": "2026-10-17T10:56:39.830022+00:00",
+  "round_baseline_commit": "89d04a259779784107e430baa2b24f415bc15362",
+  "confirmation_baseline_commit": "826dbf022b3e67eaf75bde1329b936eab469bb7c",
+  "branch": "codex/architecture-refactor",
+  "checks": {
+    "scope": "PASS: only Markdown and JSON documentation evidence changed or added",
+    "tracked_non_document_paths_unchanged_by_git": 672,
+    "local_markdown_file_targets_checked": 318,
+    "missing_targets": [],
+    "link_limit": "File existence only; heading anchors and remote availability are not checked by this script.",
+    "git_diff_check": "PASS",
+    "checklist": "10/10; D01-D03 explicitly confirmed; implementation remains 0/4",
+    "prior_static_report_preserved": true,
+    "prior_static_report_sha256": "fbabaee0eff7e9a8c6bd2b34a8b3c7c9d5ee2492b6469571df326cacf8eda92e",
+    "method": "Compare Git paths against round baseline and draft; assert documentation-only scope; check relative Markdown file targets, checklist state and prior report byte equality; git diff --check; hash current round Markdown files. No runtime validation is implied."
+  },
+  "confirmation_changed_paths": [
+    "docs/architecture/plugin-contract.md",
+    "docs/refactor/checklists/next-round.md",
+    "docs/refactor/checklists/plugin-contract-2026-10-17.md",
+    "docs/refactor/deferred.md",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/README.md",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/embedded-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/evidence-index.json",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/evidence/confirmed-static-check.json",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/review-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/root-HANDOFF.md",
+    "docs/refactor/handoffs/2026-10-17-plugin-contract/server-HANDOFF.md",
+    "docs/refactor/platform-validation.md",
+    "docs/refactor/progress.md",
+    "docs/refactor/resume-checkpoint-plugin-contract-2026-10-17.md"
+  ],
+  "round_markdown_files": [
+    {
+      "path": "docs/README.md",
+      "sha256": "78f5955ede66c63fb31e68c6f74aaf08035520c80b998d7fc2f461d056c6372d"
+    },
+    {
+      "path": "docs/architecture/plugin-contract.md",
+      "sha256": "7fb72043ab9b84f0c584639f431040a8122dd6c6afe83b52ad9f063431842a8f"
+    },
+    {
+      "path": "docs/concepts/modules-and-providers.md",
+      "sha256": "6fae508d9d29ba4738c8b6ccb7dc8771fc960a8eab2aaaf3f175f8b06730a28a"
+    },
+    {
+      "path": "docs/concepts/skills-and-tools.md",
+      "sha256": "82f9558240c7d5c9491503de871f5839c39146f745299e479dd5e6f8bfb05b40"
+    },
+    {
+      "path": "docs/refactor/checklists/next-round.md",
+      "sha256": "e62028c543d21ce67ec69049e3a1dc2dca6a107bd9654e7355722035c34895a9"
+    },
+    {
+      "path": "docs/refactor/checklists/plugin-contract-2026-10-17.md",
+      "sha256": "f975d86bfc48dddc2411cc35d26807b201eff3a38e5a64ddcc0cec03b2030c79"
+    },
+    {
+      "path": "docs/refactor/deferred.md",
+      "sha256": "d301eab070c1a02580a53d8a25ac0a140027b5e47e0fdb9711ab6b112156b60d"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/README.md",
+      "sha256": "5d60cfa459aa8dd2a16e447b2471a3f00ff354e7e4a39744ad1a43cc502f9d31"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/embedded-HANDOFF.md",
+      "sha256": "08cd65c2c09f728e3c9fdee1a0210efd022822e53d3fd9ed8bbb117fd11e81e5"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/review-HANDOFF.md",
+      "sha256": "152e45ef4e71e740212cc60600ff7bf40454661d6077505b5351ed33572fc9b1"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/root-HANDOFF.md",
+      "sha256": "bb78452299e155cda058b0f6f88437f8e8687f3ae5da33aa6d9ebcf83948c611"
+    },
+    {
+      "path": "docs/refactor/handoffs/2026-10-17-plugin-contract/server-HANDOFF.md",
+      "sha256": "9099f18f9c95b311dd050a1ef2a4d7228db3a35661890c8fbccb5ca6bec406bc"
+    },
+    {
+      "path": "docs/refactor/platform-validation.md",
+      "sha256": "1d4c7a744ed023aca95ae1ea009d5f753fe3a9b9d32d07deb7e0b679c7e8c0c9"
+    },
+    {
+      "path": "docs/refactor/progress.md",
+      "sha256": "66be2dbfba699272d9e9a82bc4ee8f73f4529b51ea65586639aa63630f037b6a"
+    },
+    {
+      "path": "docs/refactor/resume-checkpoint-model-preflight-2026-10-17.md",
+      "sha256": "a3379fec345ba23b1e646bda7a370c73b07a25e0544e72df74bee0f294bf8298"
+    },
+    {
+      "path": "docs/refactor/resume-checkpoint-plugin-contract-2026-10-17.md",
+      "sha256": "aacc9d1bad2a3b858ba8ccdf4189015665ef891ddddfb6e6090e3a83b797df60"
+    },
+    {
+      "path": "packages/alia-embedded/docs/grpc-services.md",
+      "sha256": "7faf2ccc92fa99f2f9f3f5ae8a8520711aaac5d6f309ec3b61f5c52a8362b391"
+    },
+    {
+      "path": "packages/alia-server/docs/README.md",
+      "sha256": "b66745503afa364131b1bd53c51011e7f7f42953d78e811f5382a802138b1b9b"
+    },
+    {
+      "path": "packages/alia-server/docs/expression-runtime.md",
+      "sha256": "f020165ed258fc633142a3356762ff4101d22cc16e860aeee54730494b09afd7"
+    },
+    {
+      "path": "packages/alia-server/docs/plugin-storage.md",
+      "sha256": "0fa7063803ecd80a84385fee37f9d3350c3ad59ca04720576388981172a86cc3"
+    }
+  ],
+  "decisions_confirmed": [
+    "D01 administrator management and user isolation",
+    "D02 isolation by default plus separately authorized trusted native mode, no automatic fallback",
+    "D03 drain at original deadline and clean up before upgrade; cancel on disable/revoke; no inherited execution approval"
+  ],
+  "agent_progress": {
+    "server": "6/6",
+    "embedded": "7/7",
+    "review": "5/5; final cross-review GO"
+  },
+  "new_runtime_results": [],
+  "not_run": [
+    "Cargo build/test/release",
+    "plugin processes or isolation backend",
+    "models/external services",
+    "containers/SSH/hardware"
+  ]
+}

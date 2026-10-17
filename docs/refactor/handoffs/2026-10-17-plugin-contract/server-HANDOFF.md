@@ -1,6 +1,6 @@
 # 插件契约定稿：Server 所有权与批准边界 HANDOFF
 
-日期：2026-10-17。负责人：`v01_fixture`。只读核对基线 `89d04a2`。本轮用户明确要求保留未来允许安装未经审核第三方代码的能力；这不等于已选择隔离实现、允许直接执行当前目录里的代码，或授予外部效果批准。本 agent 仅拥有本文件，不编辑生产、其他交接或最终契约；未运行 Cargo、测试、服务、容器、网络、真实音频或硬件，未读取私有配置。无新增依赖，R03 暂停。
+日期：2026-10-17。负责人：`v01_fixture`。只读核对基线 `89d04a2`。本轮用户明确要求保留未来允许安装未经审核第三方代码的能力，并已确认 D01 管理员管理与用户数据隔离、D02 隔离默认及单独明确授予宿主信任的受信本机模式、D03 原期限内排空升级及停用／撤权取消清理。具体隔离后端仍未选择，这些决定不等于允许直接执行当前目录里的代码，或授予外部效果批准。本 agent 仅拥有本文件，不编辑生产、其他交接或统一契约；未运行 Cargo、测试、服务、容器、网络、真实音频或硬件，未读取私有配置。无新增依赖，R03 暂停。
 
 ## Checklist
 
@@ -9,7 +9,7 @@
 - [x] 核对工具实现身份、注册／替换、Execution 提议／批准／claim／收尾路径。
 - [x] 向 Root 提交初步目标语义、调用／测试／文档影响。
 - [x] 将已实现、源码确认但未动态复现的缺口、未来目标分开记录。
-- [ ] 收到 Root 转达的管理角色、未来隔离模式及升级生命周期决定后，收敛本文件；目前初审 5/6，不代替最终契约。
+- [x] 根据 Root 转达的用户 D01–D03 决定收敛本文件，并对照统一契约核对；本轮 Server 契约审阅 6/6，不表示生产实现或动态验收已完成。
 
 ## 已实现能力及扩展分类
 
@@ -20,7 +20,7 @@
 | 生命周期 extension | `bootstrap/builder.rs:201` 的 `with_extension`、`:664` 先初始化 extensions 再初始化 skills；通过 Runtime cleanup 接管 | 是已编译 `ModuleLifecycle` 的注册入口，非安装任意包／动态库的第三方安装器 |
 | 外部表达插件 | `expression/abi.rs:42` manifest，`:228` 本地目录加载，`:285` JSON stdin/stdout 子进程实现 | 当前仅有环境清理、期限和 kill-on-drop 等进程选项；不是 OS 文件／网络权限沙箱，也不是通用工具插件 SDK。进程细节由本轮另一 agent 专项负责 |
 | Skills | `modules/interaction/skills/registry.rs:34` 明确 Skill 不可直接调用，只提供路由／提示与 preferred tools；`:83` 原子提交／索引发布 | 技能文本、目录内容和 tool preference 均不能授予执行批准，不能作为插件实现身份或新信任来源 |
-| MCP／动态第三方安装 | 本次有界源码／Cargo 清单未发现 Server MCP host/client adapter 或独立通用 SDK；`packages/alia-server/docs/plugin-storage.md` 明确动态生命周期留待需求 | 协议接入属于未来能力；不能把当前工具 trait 或 Embedded PluginManager RPC 等同于 Server 已实现 MCP／第三方运行平台 |
+| MCP／动态第三方安装 | 本次有界源码／Cargo 清单未发现 Server MCP host/client adapter 或独立通用 SDK；当前动态生命周期尚未实现，未审核安装／隔离运行已是明确后续目标 | 协议接入属于未来能力；不能把当前工具 trait 或 Embedded PluginManager RPC 等同于 Server 已实现 MCP／第三方运行平台 |
 
 插件专用存储已实现命名空间、collection 声明、scope 类型、schema version、TTL、单条大小限制、CAS 和 uninstall retention（`plugins/storage.rs:65`、`:120`、`:174`、`:819`；`plugins/manifest.rs:36`）。底层 PostgreSQL 是宿主所有，编译内插件只拿 `PluginStorage` trait，不拿 raw DB。该接口有现有 `tests/plugin_storage.rs:100` 真实 PG 用例；本轮未运行或重新认证其结果。
 
@@ -30,7 +30,7 @@
 
 `api/plugins.rs:45` list、`:78` usage、`:93` export、`:111` purge 只提取 `AuthUser`，未检查管理员或调用者 owner。`api/mod.rs:49` 直接 merge 插件 routes，无额外管理员 gate；`auth/middleware.rs:26` 的认证会核对账号 active，但不自动提升为管理员授权。
 
-export SQL（`plugins/storage.rs:769`）按 plugin_name 导出全部尚未 TTL 过期的 scope／owner 内容；purge SQL（`:790`）按 plugin 或 collection 删除，不带 actor／owner 条件。因此普通已登录 active 用户可抵达全插件数据管理路径。代码路径已核对，HTTP 动态 RED 尚未执行；最终该如何收紧由用户管理角色决定，不由本 agent 默改。
+export SQL（`plugins/storage.rs:769`）按 plugin_name 导出全部尚未 TTL 过期的 scope／owner 内容；purge SQL（`:790`）按 plugin 或 collection 删除，不带 actor／owner 条件。因此普通已登录 active 用户可抵达全插件数据管理路径。代码路径已核对，HTTP 动态 RED 尚未执行；用户已确认 D01 将全局／跨用户管理收紧至管理员，普通用户数据走隔离入口。本轮仅定稿契约，尚未修改这些 API。
 
 ### S2：存储 namespace 并非每用户访问授权
 
@@ -42,7 +42,7 @@ export SQL（`plugins/storage.rs:769`）按 plugin_name 导出全部尚未 TTL �
 
 单个工具注册（`tools/builtin.rs:602`）可更新 SQL 元数据、artifact owner，再放入内存 executor；批量插件工具移除（`:713`）会先检查外部依赖并提交删除，再移除内存 executor。它们提供可复用构件，尚未实现“任意第三方包 install→activate→upgrade→rollback→uninstall”的统一持久生命周期。
 
-`PluginStorageService::apply_uninstall_policy` 已能处理 retention，但与进程停止／多个工具、skills、传感器、依赖图和存储的完整卸载顺序没有动态 Server 安装器衔接。此处是明确未实现的能力，不声称已证出现升级数据损坏。只在用户选定生命周期后对具体转换设计失败注入，不先建设通用插件平台。
+`PluginStorageService::apply_uninstall_policy` 已能处理 retention，但与进程停止／多个工具、skills、传感器、依赖图和存储的完整卸载顺序没有动态 Server 安装器衔接。此处是明确未实现的能力，不声称已证出现升级数据损坏。后续按已确认 D03 对具体生命周期转换设计失败注入，不先建设通用插件平台。
 
 准确的现有卸载语义（`plugins/storage.rs:819`）是：`force_export_required=false` 时，非空 `export_required` collection 在执行 retention 前阻止卸载；`force_export_required=true` 只跳过这项前置检查，记录仍保留，并计入 `export_required_records`。该参数不等于 purge，也不证明已完成导出。`delete_on_uninstall` 才在该流程删除记录，`retain_on_uninstall` 保留并计数；`purge_plugin` 是独立删除操作，须接受最终管理授权边界约束。后续测试必须区分“跳过检查后保留”和“明确 purge”，不能把强制卸载写成强制擦除。
 
@@ -73,13 +73,13 @@ export SQL（`plugins/storage.rs:769`）按 plugin_name 导出全部尚未 TTL �
 
 现有可复用测试入口（本轮只读）：`tests/execution_service.rs:642` 模型参数不能自批，`:797` claim 固定旧 executor，`:837` 同 schema 热替换使旧批准失效，`:875` 缺 implementation revision 拒绝，`:909` Unknown 不重试，`:983` 取消 shutdown waiter 保留 join；`tests/server_runtime.rs:918` dispatch 后保留外部插件和数据库至 receipt。后续只补插件组合场景缺口，不重写这些已有保障。
 
-## 目标语义建议（待 Root 转达用户决定）
+## 已确认目标契约（后续实施）
 
-1. **管理与使用分开。** 全局安装、启用、停止、升级、卸载、权限授予、全量 export/purge 属管理控制面；建议当前 active admin 才可操作。普通用户只通过执行批准链使用已允许工具。若未来增加用户自己的数据导出，必须明确限定本人／被授权 scope，另用宿主检查过的查询，不复用当前全量 export。插件列表是否给普通用户看简化摘要由集中确认决定。
-2. **保留未经审核代码安装路线，但不假称现有隔离已实现。** 未审核包可作为未来可安装对象；安装状态、启用状态、权限批准和外部效果批准分别记录。实际执行须走用户选定的隔离模式与宿主能力代理；当前 compiled-in extension 维持受信同进程模型，不把“未审核”误当已批准直接加载到宿主。
-3. **宿主赋予身份／scope／能力。** 外部插件不得提交 plugin owner、user ID 或 source metadata 来取得权限，也不得获得 raw DB、通用 ToolRegistry、全部文件系统、任意网络或宿主凭据。只从当前已授权调用获得宿主绑定的能力；其输出是数据，不是自动可信 Memory/Appraisal/执行来源。具体文件／网络／凭据能力随真实首个扩展用例限定，不发明本轮全套新框架。
+1. **D01：管理员管理，用户数据隔离。** 全局安装、启用、停止、升级、卸载、权限授予、全量 export/purge 属管理控制面，仅当前 active admin 经身份与授权复验后可操作。普通用户只通过执行批准链使用已允许工具，只看必要使用说明；本人数据入口限定本人／被授权 scope，由宿主绑定身份并检查查询，不复用当前全量 export。管理权限不代替 effect owner 的批准。
+2. **D02：隔离默认，受信本机模式单独授权。** 未审核包可安装为未激活资产；安装状态、启用状态、能力授予和外部效果批准分别记录。实际执行默认使用经验证的隔离与宿主能力代理；所需隔离约束不支持时拒绝运行，绝不自动降级。另保留受信本机模式，但必须单独明确授予宿主信任，绑定实际内容身份；它不具有未经审核隔离模式的保证。当前 compiled-in extension 维持受信同进程模型，具体隔离后端及未审核示例均待后续实现与验收。
+3. **宿主赋予身份／scope／能力。** 未审核隔离插件的宿主接口不得接受 plugin owner、user ID 或 source metadata 来取得权限，也不得交出 raw DB、通用 ToolRegistry、全部文件系统、任意网络或宿主凭据。只从当前已授权调用获得宿主绑定的能力；其输出是数据，不是自动可信 Memory/Appraisal/执行来源。受信本机代码实际拥有宿主账户权限，不声称此接口约束能够强制隔离恶意受信代码。具体文件／网络／凭据能力随真实首个扩展用例限定，不发明本轮全套新框架。
 4. **批准绑定实际内容和权限。** 延续现有 Execution digest 与原政策；未来外部执行器身份至少由宿主确认的实际版本／内容、目标配置和权限构成。包升级或权限扩张不得复用旧审批。仍允许不同信任来源的插件，但未经审核代码不能自己签发可信 pin 或绕过 current policy。
-5. **升级先按明确生命周期收敛。** 建议初版禁止新 admission、等待原 in-flight 实际收尾，再切换新版；失败留可审计旧版／失败状态，不能把部分卸载伪装回滚成功。是否允许热并行和权限扩张需用户决定。现有已 dispatch effects 的独立事实与等待策略必须保留；uninstall 顺序复用依赖图、资源 owner、retention，不直接删除未知结果记录。
+5. **D03：排空后升级，停用／撤权取消并清理。** 升级关闭新 admission，旧调用保留原实例与原期限，实际排空并完成资源清理后才切换新版；不延长期限，不让新版本继承旧执行批准。停用／撤权关闭准入并取消相关调用，保留原 owner 等待真实清理。清理预算耗尽时明确未完成并保留 owner／资产引用，不伪装 Stopped、升级成功或回滚成功。已 dispatch effects 的迟到真实回执、失败及 Unknown 事实按原身份保留，不恢复授权、不自动重试；uninstall 顺序复用依赖图、资源 owner、retention，不直接删除未知结果记录。
 
 ## 调用、测试与文档影响
 
@@ -93,15 +93,15 @@ export SQL（`plugins/storage.rs:769`）按 plugin_name 导出全部尚未 TTL �
 
 建议管理权限先保存确定性 HTTP RED，再做最小修复；使用隔离 PG、普通用户和管理员、至少两 owner 的同插件存储，先证被拒绝时数据和资源未动。进程／ABI 场景由本轮对应 agent 负责，本文件不重复扩张其实现计划。后续无需真实 Home Assistant、模型、硬件或外部网络，用本地受控 executor／stub 完成组合验收即可。
 
-## 技术草案交叉核对
+## 统一契约交叉核对
 
-已对照 `docs/architecture/plugin-contract.md` 完成本 agent 所负责的 Server 分类、管理／存储边界、工具身份及 Execution 批准路径核对。草案将当前能力与目标要求分开，并保留宿主核心权威、现有批准账本、实际内容身份、原 in-flight owner 和资源收尾，没有将现有编译内接口冒称为未经审核代码的隔离框架。以上核对仅为源码与文档一致性审阅，不是动态验收。
+已对照 `docs/architecture/plugin-contract.md` 完成本 agent 所负责的 Server 分类、管理／存储边界、工具身份及 Execution 批准路径核对，并按 Root 转达的用户答复落实 D01–D03。契约将当前能力与目标要求分开，并保留宿主核心权威、现有批准账本、实际内容身份、原 in-flight owner 和资源收尾，没有将现有编译内接口冒称为未经审核代码的隔离框架。以上核对仅为源码与文档一致性审阅，不是动态验收。
 
-D01 管理角色、D02 未来隔离模式、D03 升级生命周期仍待用户答复，本文件的目标建议不能代替决定。无论 D01 最终如何选择，插件管理授权都不代替 effect owner 的现有批准；也不能将 `force_export_required` 解释为删除授权或已完成导出的证据。当前保留初审 5/6，第 6 项待 Root 收到答复后收敛。
+D01–D03 均已确认；已逐项保留管理员管理与用户数据隔离、隔离默认与受信本机模式单独明确授予、无自动降级、原期限排空并清理后升级、停用／撤权取消清理以及不继承旧执行批准。插件管理授权仍不代替 effect owner 的现有批准；`force_export_required` 仍不是删除授权或已完成导出的证据。本轮 Server 契约审阅完成 6/6；所列静态缺口、隔离后端选择及具体实现和动态验收仍是后续工作。
 
 ## 交接停止条件
 
 - 当前未编写生产补丁、测试或新的协议框架，所有缺口仍保持“源码确认／尚未动态复现”标签。
-- 最终管理角色、隔离路线与升级语义由 Root 集中问用户；答复前本文件仅为建议，不能据此触发外部动作。
+- 用户已确认管理角色、隔离默认与受信模式、升级／撤权语义；本轮将决定收敛为目标契约，不据此启动外部代码、服务或硬件。
 - 用户保留未来未审核第三方代码能力的要求已经纳入；不以默认拒绝所有第三方代码作为最终设计，也不以当前无隔离实现直接执行来冒充完成。
-- 本 agent 的有界源码／草案审阅完成，本文件冻结待 Root 收到决定后回填第 6 项。本轮文档由 Root 正常提交；具体生产实现、RED/GREEN 和动态证据归档属于后续授权任务。
+- 本 agent 的有界源码／统一契约审阅及决定收敛完成 6/6，本文件冻结。本轮文档由 Root 正常提交；具体生产实现、RED/GREEN 和动态证据归档属于后续授权任务。
