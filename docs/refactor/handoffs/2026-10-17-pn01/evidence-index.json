@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-17",
+  "baseline_commit": "15604e33de480b88bb885da1e3e6fcc04f002948",
+  "branch": "codex/architecture-refactor",
+  "scope": "PN01 Server plugin administration and authenticated personal user storage",
+  "tests": [
+    {
+      "path": "evidence/red.log",
+      "sha256": "bb49832292d1702d82659346d8953487c08cd3b9615de228fb2e8517e97ec9f0",
+      "passed": 0,
+      "failed": 2,
+      "ignored": 0,
+      "filtered": 85,
+      "test_seconds": 2.44,
+      "exit_code": 101
+    },
+    {
+      "path": "evidence/green-http.log",
+      "sha256": "7871d920dd2c42e2a68f8401bb1854f45f996f622e7df65d97e56ea99e7376db",
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 85,
+      "test_seconds": 3.32,
+      "exit_code": 0
+    },
+    {
+      "path": "evidence/green-storage.log",
+      "sha256": "6892a827d80f702183bdd21b34ae3abe15da58a5455a7da3ad6289f29f7fbc57",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0,
+      "test_seconds": 0.07,
+      "exit_code": 0
+    }
+  ],
+  "unique_final_passing_tests": 11,
+  "test_environment": "macOS native default features; offline locked Cargo; explicit ALIA_TEST_DATABASE_URL points to task-owned loopback PostgreSQL using preinstalled pgvector/pgvector:pg17. Original fixture/test deadlines and concurrency unchanged.",
+  "tested_source_files": [
+    {
+      "path": "packages/alia-server/src/api/plugins.rs",
+      "sha256": "f13138c64bcda601cd7c7b526ff22967d65de4e0c599e455337afd638dd15b29"
+    },
+    {
+      "path": "packages/alia-server/src/plugins/storage.rs",
+      "sha256": "57c11305af79fd9ef4ac42d802716596bc40b53dd7f01efec0cf616e456589d8"
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime.rs",
+      "sha256": "433b2ce1d2e7d854f31624c9ad7300a54d1404aeb41c317c601ae8e116b08cec"
+    },
+    {
+      "path": "packages/alia-server/tests/server_runtime/plugin_authorization.rs",
+      "sha256": "e556797fb8bd8741a3e7bc9ddc7aeedc1a5dbcbbcab7ee5a39ce191c746dc5e2"
+    }
+  ],
+  "resources": {
+    "before_stop": {
+      "fixture_schemas": 0,
+      "other_database_clients": 0
+    },
+    "evidence": "evidence/resources-before-stop.json",
+    "container": "alia-pn01-pg-20261017",
+    "container_removed": true,
+    "observation": "docker stop succeeded; --rm removed the task container and the name-filtered docker ps -a output was empty. Shared services unchanged."
+  },
+  "review": "Three subagents: reproduction/tests, implementation, independent review. Final GO; no remaining PN01 blocker.",
+  "validation": {
+    "rustfmt_changed_files": "passed",
+    "git_diff_check": "Code and documentation pass; raw Cargo logs preserve their original terminal blank line and are excluded from the staged whitespace check.",
+    "local_markdown_target_count": 312,
+    "missing_local_targets": [],
+    "note": "Local file targets checked; no remote URLs or heading anchors revalidated. No repeated prior release validation."
+  },
+  "not_run": [
+    "full workspace",
+    "Linux/release rebuild",
+    "plugin isolation backend",
+    "real models/external services",
+    "Pi/audio/actuators"
+  ],
+  "next_priority": "First R02 USB connection/enumeration, then bounded audio validation. PN02-PN04 remain future goals and are not prerequisites for audio trials with no plugins. R03 paused."
+}

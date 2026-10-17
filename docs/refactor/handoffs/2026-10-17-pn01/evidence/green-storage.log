@@ -1,0 +1,12 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.79s
+     Running tests/plugin_storage.rs (target/debug/deps/plugin_storage-89d2a57517c6e5d5)
+
+running 4 tests
+test plugin_storage_migration_declares_server_owned_json_store ... ok
+test plugin_storage_manifest_accepts_declared_collections ... ok
+test plugin_storage_manifest_rejects_unsafe_declarations ... ok
+test postgres_plugin_storage_round_trips_records_and_policy ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+

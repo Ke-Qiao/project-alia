@@ -77,7 +77,16 @@ impl PluginStorageService {
 
     pub async fn usage_for_plugin(&self, plugin_name: &str) -> anyhow::Result<PluginStorageUsage> {
         validate_plugin_name(plugin_name)?;
-        storage_usage_for_plugin(&self.db, plugin_name).await
+        storage_usage_for_plugin(&self.db, plugin_name, None).await
+    }
+
+    pub(crate) async fn usage_for_user(
+        &self,
+        plugin_name: &str,
+        actor: Uuid,
+    ) -> anyhow::Result<PluginStorageUsage> {
+        validate_plugin_name(plugin_name)?;
+        storage_usage_for_plugin(&self.db, plugin_name, Some(actor)).await
     }
 
     pub async fn list_plugin_usage(&self) -> anyhow::Result<Vec<PluginStorageUsage>> {
@@ -89,7 +98,16 @@ impl PluginStorageService {
         plugin_name: &str,
     ) -> anyhow::Result<Vec<PluginRecord>> {
         validate_plugin_name(plugin_name)?;
-        export_plugin_records(&self.db, plugin_name).await
+        export_plugin_records(&self.db, plugin_name, None).await
+    }
+
+    pub(crate) async fn export_user_records(
+        &self,
+        plugin_name: &str,
+        actor: Uuid,
+    ) -> anyhow::Result<Vec<PluginRecord>> {
+        validate_plugin_name(plugin_name)?;
+        export_plugin_records(&self.db, plugin_name, Some(actor)).await
     }
 
     pub async fn purge_plugin(
@@ -101,7 +119,7 @@ impl PluginStorageService {
         if let Some(collection) = collection {
             validate_collection_name(collection)?;
         }
-        purge_plugin_storage(&self.db, plugin_name, collection).await
+        purge_plugin_storage(&self.db, plugin_name, collection, None).await
     }
 
     pub async fn apply_uninstall_policy(
@@ -722,6 +740,7 @@ async fn list_records(
 async fn storage_usage_for_plugin(
     db: &DatabaseConnection,
     plugin_name: &str,
+    actor: Option<Uuid>,
 ) -> anyhow::Result<PluginStorageUsage> {
     let row = db
         .query_one(Statement::from_sql_and_values(
@@ -735,8 +754,12 @@ async fn storage_usage_for_plugin(
                     AS expired_record_count
             FROM plugin_storage_records
             WHERE plugin_name = $1
+              AND ($2::text IS NULL OR (scope = 'user' AND owner_id = $2))
             "#,
-            vec![plugin_name.to_string().into()],
+            vec![
+                plugin_name.to_string().into(),
+                actor.map(|id| id.to_string()).into(),
+            ],
         ))
         .await?
         .ok_or_else(|| anyhow::anyhow!("plugin storage usage query returned no row"))?;
@@ -769,6 +792,7 @@ async fn list_plugin_storage_usage(
 async fn export_plugin_records(
     db: &DatabaseConnection,
     plugin_name: &str,
+    actor: Option<Uuid>,
 ) -> anyhow::Result<Vec<PluginRecord>> {
     let rows = db
         .query_all(Statement::from_sql_and_values(
@@ -778,39 +802,36 @@ async fn export_plugin_records(
                    schema_version, version, ttl_expires_at, created_at, updated_at
             FROM plugin_storage_records
             WHERE plugin_name = $1
+              AND ($2::text IS NULL OR (scope = 'user' AND owner_id = $2))
               AND (ttl_expires_at IS NULL OR ttl_expires_at > NOW())
             ORDER BY collection, scope, owner_id, key
             "#,
-            vec![plugin_name.to_string().into()],
+            vec![
+                plugin_name.to_string().into(),
+                actor.map(|id| id.to_string()).into(),
+            ],
         ))
         .await?;
     rows.iter().map(record_from_row).collect()
 }
 
-async fn purge_plugin_storage(
-    db: &DatabaseConnection,
+pub(crate) async fn purge_plugin_storage(
+    db: &impl ConnectionTrait,
     plugin_name: &str,
     collection: Option<&str>,
+    actor: Option<Uuid>,
 ) -> anyhow::Result<u64> {
-    let (sql, values) = if let Some(collection) = collection {
-        (
-            "DELETE FROM plugin_storage_records WHERE plugin_name = $1 AND collection = $2",
-            vec![
-                plugin_name.to_string().into(),
-                collection.to_string().into(),
-            ],
-        )
-    } else {
-        (
-            "DELETE FROM plugin_storage_records WHERE plugin_name = $1",
-            vec![plugin_name.to_string().into()],
-        )
-    };
     let result = db
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            sql,
-            values,
+            "DELETE FROM plugin_storage_records WHERE plugin_name = $1
+             AND ($2::text IS NULL OR collection = $2)
+             AND ($3::text IS NULL OR (scope = 'user' AND owner_id = $3))",
+            vec![
+                plugin_name.to_string().into(),
+                collection.map(str::to_owned).into(),
+                actor.map(|id| id.to_string()).into(),
+            ],
         ))
         .await?;
     Ok(result.rows_affected())
@@ -845,7 +866,7 @@ async fn apply_uninstall_policy(
         match collection.retention {
             PluginStorageRetention::DeleteOnUninstall => {
                 report.deleted_records +=
-                    purge_plugin_storage(db, plugin_name, Some(&collection.name)).await?;
+                    purge_plugin_storage(db, plugin_name, Some(&collection.name), None).await?;
             }
             PluginStorageRetention::RetainOnUninstall => {
                 report.retained_records += count;

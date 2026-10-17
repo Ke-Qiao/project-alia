@@ -70,6 +70,9 @@ mod settings_read_authorization;
 #[path = "server_runtime/settings_shutdown.rs"]
 mod settings_shutdown;
 
+#[path = "server_runtime/plugin_authorization.rs"]
+mod plugin_authorization;
+
 #[path = "server_runtime/startup.rs"]
 mod startup;
 

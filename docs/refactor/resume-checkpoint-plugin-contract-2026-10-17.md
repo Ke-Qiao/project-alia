@@ -1,5 +1,7 @@
 # 恢复检查点：插件契约与信任边界
 
+**后续接续：** PN01已完成管理与本人数据权限实现，当前从[PN01恢复检查点](resume-checkpoint-pn01-2026-10-17.md)继续，优先首个R02 USB接入。下文保留契约定稿时点，实施0/4及旧源码身份不代表PN01后的当前状态。
+
 2026-10-17；分支`codex/architecture-refactor`，起点`89d04a2`，应用源码仍`6c62c84ee60e3a5fd387f2172ead432031907599`。当前设计包**10/10**：技术审计、资料清理、用户D01—D03确认及最终静态核对完成。草案提交`826dbf0`保留当时9/10状态，收到答复后单独提交本次定稿。没有运行时修改或新的插件动态验收。
 
 先读[规范契约](../architecture/plugin-contract.md)、[checklist](checklists/plugin-contract-2026-10-17.md)、[四份HANDOFF](handoffs/2026-10-17-plugin-contract/README.md)。以下属于目标设计，不代表权限／隔离／进程清理已经实现。

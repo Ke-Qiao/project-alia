@@ -1,0 +1,30 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 10s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 2 tests
+[plugin-authorization] purge=false status=200 exposed_other=true changed=false records_before=9 records_after=9
+
+thread 'plugin_authorization::ordinary_user_cannot_export_all_plugin_owners' (5077600) panicked at packages/alia-server/tests/server_runtime/plugin_authorization.rs:80:13:
+assertion `left == right` failed: ordinary user reached global plugin management: exposed_other=true, changed=false
+  left: 200
+ right: 403
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[plugin-authorization] purge=true status=200 exposed_other=false changed=true records_before=9 records_after=1
+
+thread 'plugin_authorization::ordinary_user_cannot_purge_all_plugin_owners' (5077601) panicked at packages/alia-server/tests/server_runtime/plugin_authorization.rs:80:13:
+assertion `left == right` failed: ordinary user reached global plugin management: exposed_other=false, changed=true
+  left: 200
+ right: 403
+test plugin_authorization::ordinary_user_cannot_export_all_plugin_owners ... FAILED
+test plugin_authorization::ordinary_user_cannot_purge_all_plugin_owners ... FAILED
+
+failures:
+
+failures:
+    plugin_authorization::ordinary_user_cannot_export_all_plugin_owners
+    plugin_authorization::ordinary_user_cannot_purge_all_plugin_owners
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 85 filtered out; finished in 2.44s
+
+error: test failed, to rerun pass `-p alia-server --test server_runtime`

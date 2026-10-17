@@ -1,0 +1,23 @@
+   Compiling alia-server v0.1.0 (/Users/ke-qiao/Developer/project-alia/packages/alia-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.89s
+     Running tests/server_runtime.rs (target/debug/deps/server_runtime-500c3b878a1c5de6)
+
+running 7 tests
+[plugin-authorization-wait] case=AdminExport observed=true request_finished=false
+[plugin-authorization-revoked] case=AdminExport status=403 exposed_other=false changed=false
+test plugin_authorization::global_export_rechecks_admin_after_storage_wait ... ok
+test plugin_authorization::personal_storage_is_bound_to_authenticated_user_and_scope ... ok
+[plugin-authorization] purge=false status=403 exposed_other=false changed=false records_before=9 records_after=9
+[plugin-authorization-wait] case=AdminPurge observed=true request_finished=false
+[plugin-authorization-revoked] case=AdminPurge status=403 exposed_other=false changed=false
+test plugin_authorization::ordinary_user_cannot_export_all_plugin_owners ... ok
+test plugin_authorization::global_purge_rechecks_admin_after_storage_wait_without_deleting ... ok
+[plugin-authorization] purge=true status=403 exposed_other=false changed=false records_before=9 records_after=9
+test plugin_authorization::ordinary_user_cannot_purge_all_plugin_owners ... ok
+test plugin_authorization::administrator_retains_global_management_contract ... ok
+[plugin-authorization-wait] case=PersonalPurge observed=true request_finished=false
+[plugin-authorization-revoked] case=PersonalPurge status=403 exposed_other=false changed=false
+test plugin_authorization::personal_purge_rechecks_active_account_after_storage_wait_without_deleting ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 85 filtered out; finished in 3.32s
+

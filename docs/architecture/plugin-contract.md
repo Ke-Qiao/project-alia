@@ -1,6 +1,6 @@
 # 插件契约与信任边界
 
-更新：2026-10-17；核对基线`89d04a2`，应用源码仍为`6c62c84`。D01—D03于2026-10-17经用户确认。本页是已定稿的目标契约及实施分界，**不声明当前运行时已经满足目标**。本轮不修改运行API、权限或协议，不安装依赖、不运行插件／模型／设备。默认shadow、当前政策、Execution批准、Context来源／隐私校验、Delivery/Body身份与取消保持；R03暂停。
+更新：2026-10-17；D01—D03已由用户确认。本页定义目标契约及实施分界，**不声明全部目标已实现**。PN01已完成Server管理HTTP权限、本人数据scope与等待后身份复验，证据见[PN01检查点](../refactor/resume-checkpoint-pn01-2026-10-17.md)；其余运行器／隔离／生命周期能力继续按后续阶段推进。默认shadow、当前政策、Execution批准、Context来源／隐私校验、Delivery/Body身份与取消保持；R03暂停。
 
 ## 1. 目标与决策状态
 
@@ -127,11 +127,11 @@ stdin/stdout/stderr、请求体、单行／单消息、累计输出、并发、�
 
 ## 10. 现实现与后续实施映射
 
-以下仅静态核对，不是已复现、已修复或新的运行验收。
+PN01的HTTP权限与本人数据边界已复现、修复并定向验证；其他条目仍是静态核对与待实施差异。
 
 | 当前入口／事实 | 目标差异 | 后续主要调用／测试范围 |
 | --- | --- | --- |
-| Server `api/plugins.rs`普通AuthUser导出／purge，存储按plugin跨scope | D01管理权限与scope隔离 | auth/admin复验、plugin storage API、真实隔离DB与并发撤权回归 |
+| Server管理HTTP要求当前admin，本人三入口固定认证UUID与user scope，删除末尾事务复验 | PN01已完成HTTP边界；受信Rust接口仍非不可信broker | 7项真实HTTP＋4项原storage回归；原始失败、跨owner拒绝和等待撤权见PN01证据 |
 | `CompiledToolPlugin`和Execution registry已有受信接口、实现修订／批准 | 保留核心机制；不直接作为不可信host ABI | Bootstrap／tools／Skills索引、catalog_gate、Execution账本／取消／旧批准失效 |
 | Embedded ZIP原地发布，name/entry/版本／总量边界不足 | 有界暂存与内容身份，安装／启用分离 | PluginManager、registry、proto、Server channel调用者、包故障注入 |
 | Embedded stop signal、按name回写、Stopping可重启／卸载 | instance owner、D03切换与真实清理 | registry／PluginCleanup、无硬件子进程、start/stop/uninstall并发与crash |
@@ -143,6 +143,8 @@ stdin/stdout/stderr、请求体、单行／单消息、累计输出、并发、�
 具体源码位置与已有测试见[三份分工和Root交接](../refactor/handoffs/2026-10-17-plugin-contract/README.md)。当前没有通用MCP／隔离后端或独立第三方SDK交付证据；旧noop生命周期为空插件目录，不代表插件进程矩阵通过。
 
 ## 11. 后续软件验收矩阵
+
+PA01已由PN01覆盖本轮HTTP管理与本人数据边界；其余项继续按后续阶段推进，不能将HTTP修复扩称为完整插件隔离验收。
 
 | ID | 必须观察的行为 | 无硬件验证方法 |
 | --- | --- | --- |
@@ -158,7 +160,7 @@ stdin/stdout/stderr、请求体、单行／单消息、累计输出、并发、�
 | PA10 | 未审核插件确实不能访问未授予文件／网络／密钥／设备，限额真实生效 | 后续选定隔离后端的负例；仅manifest检查不算通过 |
 | PA11 | 安装→授权→调用→升级→撤销→卸载与数据保留完整闭环 | 一个受信示例及一个未审核隔离示例，各有原失败和清理证据 |
 
-先复现静态差异再修，不以扩大期限、降低并发、跳过测试求绿。隔离后端尚未选择时PA10/PA11不填通过，未审核代码接入继续作为明确目标保留；不因此阻止PA01—PA09的纯软件实施。
+先复现静态差异再修，不以扩大期限、降低并发、跳过测试求绿。隔离后端尚未选择时PA10/PA11不填通过，未审核代码接入继续作为明确目标保留；不因此阻止其余PA02—PA09的纯软件实施。PN02—PN04不是无插件R02音频试验的前置条件。
 
 ## 12. 行业资料依据与项目选择
 
