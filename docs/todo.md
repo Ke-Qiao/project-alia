@@ -1,6 +1,6 @@
 # Project Alia TODO
 
-更新：2026-10-25。**R1 当前阶段已收口；本地软件候选与双平台软件验证已固定，真实模型方案已选定，生产部署和真实模型验收仍是下一轮。** 已完成的软件、分阶段现场结果和历史失败分别保留，不将它们合并成一次真实模型整链通过。待模型资产／配置和组件预检出口具备后，集中验收一次“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”；原先零散的同轮长句／全部控制、生产初始化／真人语音组合缺口一并纳入。AEC 等商家确认后单独验证，固件继续暂缓。
+更新：2026-10-25。**R1 当前阶段已收口；本地软件候选与双平台软件验证已固定，真实模型方案与 Mac 有限组件预检已完成，生产部署和真人整链验收仍是下一轮。** 已完成的软件、分阶段现场结果和历史失败分别保留，不将它们合并成一次真实模型整链通过。待模型资产／配置和组件预检出口具备后，集中验收一次“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”；原先零散的同轮长句／全部控制、生产初始化／真人语音组合缺口一并纳入。AEC 等商家确认后单独验证，固件继续暂缓。
 
 最新实现：[架构概览](architecture/overview.md)、[Embodiment](architecture/embodiment.md)、[工具构建](concepts/skills-and-tools.md)、[MCP](operations/mcp-tools.md)、[WASM 插件](operations/wasm-plugins.md)。验证结果统一引用[软件发布记录](operations/software-release.md)，不将不同源码、平台或重复测试相加为项目完成率。
 
@@ -35,7 +35,7 @@ S01—S03 是 10 月 20 日的交付与部署出口，该轮没有新增生产�
 
 | ID | 任务与当前状态 | 恢复条件与完成标准 |
 | --- | --- | --- |
-| M01 | **方案已选定；资产／配置准备与真实组件预检未完成** | minor 选 Magpie 本地 Qwen3.8 27B Instant，major/default 选 DeepSeek Flash；memory_capture 复用 minor，sentence_expression 用确定性规则；本地 Qwen3-Embedding-0.6B Q8_0／1024，复用固定 CPU Easy-Turn 与独占 Juno，首版不启用独立 Whisper。下一步固定 embedding 文件／runtime ID、Juno runtime 兼容性与参考逐字文本、独立有效配置／SQL profile；获准启动及有限调用后先验组件和原期限，再集中完成“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”，纳入换气长句、Start／Stop、生产初始化后的真人语音。当前只读目录与文件身份不算推理／整链通过；不重复 R1 硬件基线，不代替 AEC。见[方案与剩余输入](operations/model-services.md#下一轮输入清单2026-10-25)。 |
+| M01 | **资产已固定，Mac 有限组件预检通过；生产整链仍未验** | minor 选 Magpie 本地 Qwen3.8 27B Instant，major/default 选 DeepSeek Flash；memory_capture 复用 minor，sentence_expression 用确定性规则；本地 Qwen3-Embedding-0.6B Q8_0／1024，复用固定 CPU Easy-Turn 与独占 Juno，首版不启用独立 Whisper。固定 embedding 文件／runtime ID、复用 Juno 环境、按用户说明用文件名作参考文本，独立配置通过 Rust 加载；聊天／embedding／三份 Easy-Turn PCM／两次 Juno 合成已在原期限内通过有限组件检查。下一步核对生产有效配置与 SQL profile／投影迁移，再集中完成“生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话”，纳入换气长句、Start／Stop、生产初始化后的真人语音。组件样本不算真人整链或长稳通过，路由单样本 4.175 秒接近原 5 秒上限；不重复 R1 硬件基线，不代替 AEC。见[方案与剩余输入](operations/model-services.md#下一轮输入清单2026-10-25)。 |
 | E01 | **ROS 与具体具身适配器暂缓**：Embodiment 地基已完成，默认没有实际物理适配器 | 用户指定首个设备、通信协议／ROS 版本和目标能力后，实现 `PhysicalAdapter`；核对设备身份、反馈、停止证据、迟到请求终结、断线／重启和共享执行器仲裁。先仿真再实机，沿用 Execution；不扩大 expression 的设备权限。见[接入契约](architecture/embodiment.md)。 |
 | R02-F | **R1 固件改造由用户明确暂缓**：新旧资料、镜像及两份不同虚拟机已核查，未找到匹配板端 SDK；未开发、构建或烧录新固件 | 用户明确恢复后，再取得匹配的最小板端应用 SDK／ABI，或满足契约的受支持常开模式，并补齐当前 1.9.6 恢复路径。核查与候选方案见[硬件记录](operations/hardware-deployment-readiness.md#r1-通用固件工作2026-10-21)，[商家资料清单](operations/r1-firmware-vendor-inputs.md)仅保留为参考，不继续调查或索取。 |
 | R02 | **当前软件接入与分阶段验证已收口；整体验收按条件恢复** | 真实模型整链统一归 M01；AEC 归 R02-AEC。其他方向／安装标定及长稳在实际部署时随 R05 明确范围，不默认重做已通过的 R1 基线。模块正常，R02-F 暂缓不阻断 Alia 主线；FYP ROS 验收不等于 Alia ROS 接入。见[硬件资料](operations/hardware-deployment-readiness.md)。 |
