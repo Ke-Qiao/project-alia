@@ -11,20 +11,30 @@ not evidence that a service is installed or permission to start or probe it.
 
 ## 下一轮输入清单（2026-10-25）
 
-真实模型方案未定不阻塞本轮软件候选固定。下面集中区分已确认的部署方向、历史候选和真正待定输入；不读取或归档密钥原值，也不从旧私有配置推导当前选择。
+用户已选择 Magpie 的本地 Qwen3.8 27B 作为 minor、DeepSeek Flash 作为 major，并授权其余按推荐处理。minor 的标准高思考版与 Instant 由业务需求选择：采用 **Instant、关闭思考**，适配路由／分类原 5 秒和记忆捕获原 3 秒期限；复杂任务沿用 major 升级路径。512K 是该服务的上下文配置，不提高 Alia 的上下文、输出、并发或期限预算。本节替代先前的模型待选清单；软件候选 `6123691516fae1c2b0e813652eaa1104c33da9af` 及归档保持独立。
+
+本次只读核对 Magpie 0.1.1436 的模型目录、LM Studio 的模型／已加载实例元数据，以及磁盘资产；没有发送推理请求、启动／加载／切换模型、下载权重、修改运行配置或 SQL、接触 Pi。目录能力不是实际工具调用、延迟或模型输出的验收证据。
 
 | 项目 | 已确认 | 历史候选／已盘点资产 | 下一轮待提供或核对 |
 | --- | --- | --- | --- |
-| 聊天与角色 | 复用当前 Rig／Execution 和角色装配；模型待定 | 曾拟测试 `https://botcf.com/v1`；旧主文件为 DeepSeek `deepseek-v4-flash`，持久设置另有不同 minor；示例的 Qwen／Gemini 也不是选择 | 每个实际启用角色的 profile：`major`、`minor`、`default`，以及 `memory_capture` 专用或 minor fallback、`sentence_expression` 专用或确定性规则。逐项给 provider ID、精确 model/version、base URL、API family、凭据来源名称；确认 streaming／tools／JSON 支持 |
-| Embedding | 独立于聊天；模型与维度待定 | 旧文件有 OpenAI `text-embedding-3-small`／1536，持久设置有 local Nomic／768，二者冲突 | 选定 endpoint、model/version、实际 dimensions、凭据来源，核对 SQL active embedding profile；不得直接沿用旧值或静默关闭 Memory/cache |
-| Easy-Turn | 在 Mac Server，Pi 5 不承载；已有 Python 3.10 CPU 固定栈 | `Developer/Easy-Turn` 与 `run/models/easy-turn-source` 历史 HEAD 为 `fe175eaa…`，固定 checkpoint／Qwen 目录已盘点；不是本轮 loaded 证据 | 确认复用的隔离环境、source/checkpoint/Qwen 绝对路径、实际文件身份及 loopback endpoint；启动后核对加载版本、能力、冷启动／后续延迟和服务 owner。MPS 不是当前锁文件已通过路径 |
-| GPT-SoVITS／Juno | 用户指定本机 Developer 内服务及 Juno 权重方向 | 历史 checkout `08d627c…`、CPU／v2ProPlus，`Juno-e30.ckpt` 和 `v2Pro/Juno_e16_s80.pth` 文件存在；旧 Alia 配置的权重／参考路径为空 | 确认完整 GPT＋SoVITS 权重组合与摘要、voice ID、服务版本和 `/tts` URL；选参考音频及逐字匹配的文本、参考／目标语言、TTS 主机上的绝对路径；明确独占实例还是共享服务、谁可切权重 |
-| 独立 Whisper | **是否进入首版单独待定**；现有 VoiceSession 使用 Easy-Turn transcript，不重复 STT | 历史发现 `/Users/ke-qiao/.local/share/alia/whisper.cpp`、HEAD `968eebe…` 与 `ggml-large-v3-turbo.bin`；旧配置 `large-v3` 只是说明标签 | 先回答首版是否需要显式 HTTP 音频转写；需要才固定服务／实际权重／base URL、样本语言和验收用例。它不作为已有设备语音链的重复环节 |
-| 调用与素材范围 | 先有限组件检查，再生产整链；默认 Companion shadow 保持 | 既有离线 PCM 和 R1 硬件基线可复用 | 非敏感文本／离线 PCM、参考素材使用范围、允许的远端供应商和有限调用预算、私有输出位置；凭据只提供受控文件位置或变量名 |
+| 聊天与角色 | `minor` → `lmstudio/local/qwen3.8-27b-512k-instant`；`major` → `deepseek/deepseek-flash`；`default` 绑定同一个 major profile；省略 `memory_capture` 使用 minor fallback，省略 `sentence_expression` 使用确定性规则 | 两个路由均在 Magpie 目录；Instant 为 MLX 4bit，已存在的实例报告 context 524288／parallel 1／默认思考 off。DeepSeek 目录标签为 V4.1 Flash 1017 | 共用 `http://127.0.0.1:3425/v1`、`chat_completions`；两 profile 的 `provider_specific.reasoning_effort="none"`，保留原输出预算。下一轮验证参数转发、streaming／native tools／JSON、取消和原期限；供应商 alias 与目录标签不能代替不可变权重版本 |
+| Embedding | **本地 Qwen3-Embedding-0.6B、GGUF Q8_0、1024 维**，复用 LM Studio `http://localhost:1234/v1/embeddings`，不增加 Alia adapter 或模型框架 | LM Studio 内置 Nomic v1.5 Q4_K_M／768 权重存在、完整 SHA 已核对、目录显示未加载；Qwen embedding 尚未获取。旧 OpenAI／1536 和 Nomic／768 配置不作为本轮有效选择 | 固定 Qwen 文件身份后获取／导入；读取实际 runtime model ID 并验证 1024 维、中文检索和资源共存。核对 SQL active profile，保留 canonical memory，显式切换并重建投影。云端 `text-embedding-v4/1024` 仅为实测不满足需求时的备选，不自动切换或混用向量 |
+| Easy-Turn | **复用项目内固定 CPU 栈**：`services/easy-turn/.venv`、`run/models/easy-turn-source`、`run/models/easy-turn/checkpoint.pt`、`run/models/qwen2.5-0.5b-instruct`；loopback 8091、1 worker、并发 1 | source `fe175eaa…` 干净；66 项包版本元数据匹配；checkpoint 及 Qwen 所需 7 文件完整 SHA 匹配。外部 `Developer/Easy-Turn` 副本有修改／环境差异，不选用 | 后续启动时验证实际加载身份、冷／热延迟及与聊天／TTS 共存。元数据匹配不证明 ABI；MPS 不是当前固定栈已通过路径 |
+| GPT-SoVITS／Juno | **Alia 独占 loopback 实例**，CPU／FP32／v2ProPlus；复用 `Juno-e30.ckpt`＋`v2Pro/Juno_e16_s80.pth` 及 BERT／HuBERT／SV 基础资产 | 两权重 SHA 分别为 `b8830efd…a01c94`、`050dba36…76d`；现有 runtime 为 Python 3.10.17、torch 2.12.0、torchaudio 2.11.0，兼容性未验证。参考候选 `Juno_zhcn 3/demo/audio (3).wav` 为 8.98 秒／32kHz／mono／PCM16 | 先检查 runtime，再在后续授权窗口核对参考声音与逐字文本／语言，固定完整 `/tts` endpoint 和两权重 loaded 身份。此轮没有试听或转写；版本号差异不直接判作已证实冲突，不与其他客户端共享可切权重实例 |
+| 独立 Whisper | **首版 VoiceSession 不启用**；直接使用 Easy-Turn transcript | 既有 whisper.cpp／large-v3-turbo 资产保留 | 以后确有独立 HTTP 音频转写需求时单列启用与验收，不给当前 VoiceSession 增加重复 STT |
+| 调用与素材范围 | 先有限组件检查，再生产整链；默认 Companion shadow 保持；既有离线 PCM 和 R1 硬件基线复用 | Magpie 已配置所选上游，LM Studio 目录认证可用；凭据仅在内存中用于本机只读请求，未输出或归档原值 | 真实推理／服务启动仍未授权；进入下一轮时固定非敏感样本、调用预算和私有输出位置。major 的必要上下文仍会送往 DeepSeek，本地 embedding 不代表全部记忆／会话内容都只留本机 |
 
-这些资产盘点来自[此前模型预检交接](../refactor/handoffs/2026-10-17-model-preflight/acceptance-HANDOFF.md)，不是本轮重新扫描或运行结果。聊天基址可用不代表同站点有 embedding；磁盘存在或权重切换 HTTP ACK 也不代表实际加载字节已核实。当前角色只使用配置中已实现的五个聊天角色，不从历史方案恢复其他角色入口。
+当前选择与只读证据在 [selected-plan.json](../../run/model-plan-20261025/selected-plan.json)、[Magpie 目录](../../run/model-plan-20261025/selected-chat-catalog.json)、[LM Studio 目录](../../run/model-plan-20261025/lmstudio-models-readonly.json)、[Instant 资产](../../run/model-plan-20261025/instant-assets.json)、[Nomic 资产](../../run/model-plan-20261025/nomic-bundled-asset.json)、[Easy-Turn 资产](../../run/model-plan-20261025/easy-turn-readonly-inventory.json)和[Juno 资产](../../run/model-plan-20261025/gpt-sovits-juno-assets.json)。先前推荐、[历史交接](../refactor/handoffs/2026-10-17-model-preflight/acceptance-HANDOFF.md)及冲突配置保留为历史，不覆盖本次决定。
 
-收到输入后，先生成任务独立配置，核对 base／`.d`／环境补空／`settings.toml`／SQL policy 的有效组合，并完成不涉及现场硬件的真实组件预检。然后通知现场窗口，在 Mac Server＋Pi Embedded 上集中验收：**生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话**。该轮包含正常换气长句、系统 Start／Stop、生产单次初始化后的真人语音；复用已通过的插拔、方向拾音、试听和静默恢复基线，不把 fixture 音频算成真人语音通过。
+Instant 的本地 hub 清单实际指向 `orcarouter/Qwen3.8-27B-Uncensored-MLX-512K-Text`，不是标准 `qwen/qwen3.8-27b` 仅切换思考参数。已记录 12 个文件的 SHA，包括约 16.05 GB 的三个权重分片、config／tokenizer／chat template 与 hub 映射；没有可据以认定的上游 revision。当前固定的是磁盘资产，不能证明已驻留实例仍使用相同字节。下一轮须验路由分类、记忆 JSON 与工具参数质量，Execution／授权边界保持原样。
+
+本地 embedding 选择依据是中文／多语言定位、较小的共存开销和现有接口适配，不是 Alia 实测优于云端。[Qwen 官方模型卡](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF)列出 0.6B／1024 维和 Q8_0；拟固定 revision `370f27d7550e0def9b39c1f16d3fbaa13aa67728`、文件 `Qwen3-Embedding-0.6B-Q8_0.gguf`、SHA-256 `06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439`。Alia 目前不区分 query/document 指令，先按现有 plain input 验中文检索，不为选型增加 reranker 或协议。[Nomic 官方模型卡](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5)的英语定位和任务前缀要求与当前契约不同，保留其可复用资产，不据此断言中文不可用。
+
+[Magpie 接入文档](https://usemagpie.ai/docs/integrate)支持现有 OpenAI-compatible 聊天入口；本机 `magpie-alia` 只是调用方标识，不是供应商密钥。使用完整 provider/model 路由，避免 `auto/` 或裸模型名带来上游歧义。Embedding 直接走 [LM Studio embeddings](https://lmstudio.ai/docs/developer/openai-compat/embeddings)，不能由 Magpie 聊天目录推定其转发 embeddings。LM Studio 的真实 credential 留在受控来源，Alia 命名 provider 的 `api_key` 不会自动从任意同名环境变量读取。
+
+[独立配置片段](../../run/model-plan-20261025/model-sections.toml)只记录本次选择，缺少待核对的 embedding runtime ID／凭据和参考逐字文本，**不是可启动的完整配置**。组装独立候选时须从最终有效角色表删除旧 `memory_capture`／`sentence_expression` 绑定；TOML 深合并中的省略不会删除旧值。不得直接叠加到旧私有配置后假定已完成切换。聊天基址可用、磁盘文件存在或权重切换 ACK 均不证明实际推理身份。
+
+下一步先补齐 embedding 文件／runtime ID、Juno runtime 与参考逐字文本，生成任务独立配置，核对 base／`.d`／环境补空／`settings.toml`／SQL policy 的有效组合。得到启动与有限调用授权后，完成不涉及现场硬件的真实组件预检；原期限或资源共存不满足时保留失败并调整方案，不放宽期限求绿。组件出口具备后才进入现场窗口，在 Mac Server＋Pi Embedded 上集中验收：**生产启动 → 讲话 → 模型处理 → 回复播放 → 打断／恢复 → 取消与下一轮对话**。该轮包含正常换气长句、系统 Start／Stop、生产单次初始化后的真人语音；复用已通过的插拔、方向拾音、试听和静默恢复基线，不把 fixture 音频算成真人语音通过。
 
 实际部署后另做升级／恢复及至少 24 小时混合负载，覆盖断网、模型超时、进程退出、设备重连、内存／线程／句柄／队列与日志磁盘上界。验收前固定记录上界与观察方式，不以放宽原期限或并发求绿。AEC 等商家确认后独立验证；具体首版 MCP 服务和第三方插件按实际目标验证，通用框架回归不代替它们。V01／V02 历史根因继续开放，扩大无人值守主动运行前再处理对应条件；ROS、执行器现场、固件重写和其他平台不因模型接入自动恢复。
 
